@@ -1,0 +1,164 @@
+{% extends "sqladmin/base.html" %}
+{% from 'sqladmin/_macros.html' import display_menu %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
+{% block extra_css %}{% endblock %}
+{% endblock %}
+
+{% block body %}
+<main data-theme="light">
+    {% block main %}
+    <div class="wrapper">
+        <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md">
+            <div class="container-fluid">
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <a href="{{ url_for('admin:index') }}">
+                        {% if admin.logo_url %}
+                        <img src="{{ admin.logo_url }}" width="64" height="64" alt="Admin" class="navbar-brand-image" />
+                        {% else %}
+                        <h3>{{ admin.title }}</h3>
+                        {% endif %}
+                    </a>
+                </h1>
+                <nav class="navbar navbar-expand-sm" id="navbar-menu">
+                    <button class="navbar-toggler" type="button" data-toggle="collapse"
+                            data-target="#navbarSupportedContent"
+                            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                        {{ display_menu(admin._menu, request) }}
+                        {% if admin.authentication_backend %}
+                        <div class="navbar-nav">
+                            <a href="{{ request.url_for('admin:logout') }}" class="nav-link btn-icon">
+                                <i class="fa fa-sign-out"></i>
+                                <span>Выйти из аккаунта</span>
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </nav>
+            </div>
+        </aside>
+
+        <div class="page-wrapper">
+            <div class="container-fluid">
+                <div class="page-header d-print-none">
+                    {% block content_header %}
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">{{ title }}</h2>
+                            <div class="page-pretitle">{{ subtitle }}</div>
+                        </div>
+                    </div>
+                    {% endblock %}
+                </div>
+            </div>
+            <div class="page-body flex-grow-1">
+                <div class="container-fluid">
+                    <div class="row row-deck row-cards">
+                        {% block content %} {% endblock %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endblock %}
+</main>
+{% endblock %}
+
+{% block tail %}
+<script>
+    // Общие функции для всех форм аутентификации
+    document.addEventListener("DOMContentLoaded", function() {
+        // Переключение темы
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "light"
+            const newTheme = currentTheme === "light" ? "dark" : "light"
+
+            document.documentElement.setAttribute("data-theme", newTheme)
+            localStorage.setItem("theme", newTheme)
+        }
+
+        // Загрузка сохраненной темы
+        const savedTheme = localStorage.getItem("theme")
+        if (savedTheme) {
+            document.documentElement.setAttribute("data-theme", savedTheme)
+        }
+
+        // Добавляем кнопку переключения темы
+        const themeToggle = document.createElement("button")
+        themeToggle.className = "theme-toggle"
+        themeToggle.innerHTML = "🌓"
+        themeToggle.title = "Переключить тему"
+        themeToggle.onclick = toggleTheme
+        document.body.appendChild(themeToggle)
+
+        // Автофокус на первом поле ввода
+        const firstInput = document.querySelector("input[type=\"text\"], input[type=\"email\"]")
+        if (firstInput && !firstInput.value) {
+            firstInput.focus()
+        }
+
+        // Показать/скрыть пароль
+        const togglePasswordButtons = document.querySelectorAll(".toggle-password")
+        togglePasswordButtons.forEach(button => {
+            button.addEventListener("click", function() {
+                const targetId = this.getAttribute("data-target")
+                const passwordInput = document.getElementById(targetId)
+                if (passwordInput.type === "password") {
+                    passwordInput.type = "text"
+                    this.innerHTML = "👁️"
+                } else {
+                    passwordInput.type = "password"
+                    this.innerHTML = "👁️‍🗨️"
+                }
+            })
+        })
+
+        // Общая функция для показа ошибок
+        window.showError = function(message, isFatal = false) {
+            console.error("Auth error:", message)
+
+            let errorDiv = document.getElementById("authError")
+            if (!errorDiv) {
+                errorDiv = document.createElement("div")
+                errorDiv.id = "authError"
+                errorDiv.className = "alert alert-danger"
+
+                const container = document.querySelector(".auth-container")
+                if (container) {
+                    container.insertBefore(errorDiv, container.firstChild)
+                }
+            }
+
+            errorDiv.textContent = message
+            errorDiv.style.display = "block"
+            errorDiv.scrollIntoView({ behavior: "smooth", block: "center" })
+
+            if (isFatal) {
+                const submitButton = document.querySelector("button[type=\"submit\"]")
+                if (submitButton) submitButton.disabled = true
+                setTimeout(() => window.location.reload(), 3000)
+            }
+        }
+
+        // CSRF защита
+        window.validateCsrfToken = function() {
+            const csrfInput = document.querySelector("input[name=\"csrf_token\"]")
+            return csrfInput && csrfInput.value
+        }
+
+        // Валидация email
+        window.validateEmail = function(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+            return re.test(email)
+        }
+    })
+</script>
+
+{% block scripts %}{% endblock %}
+
+{% endblock tail %}

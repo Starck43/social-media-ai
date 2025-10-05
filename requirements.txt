@@ -1,0 +1,70 @@
+# FastAPI и веб-фреймворки
+fastapi
+uvicorn
+python-multipart
+fastapi-pagination
+slowapi
+
+# База данных и ORM
+sqlalchemy
+asyncpg
+alembic
+psycopg2-binary
+starlette
+typer
+sqladmin
+itsdangerous
+
+# Redis
+redis
+
+# HTTP клиенты для DeepSeek API
+httpx
+aiohttp
+requests
+
+# JWT
+python-jose
+passlib
+
+# AI и ML утилиты
+numpy
+pandas
+scikit-learn
+
+# Фронтенд и визуализация
+rich
+streamlit
+plotly
+matplotlib
+
+# Социальные сети API
+vk-api
+python-telegram-bot
+telethon
+tweepy
+
+# Утилиты и обработка данных
+python-dotenv
+pydantic
+pydantic-settings
+loguru
+python-dateutil
+beautifulsoup4
+lxml
+pillow
+
+# Безопасность
+cryptography
+bcrypt
+python-decouple
+
+# Тестирование и разработка
+pytest
+pytest-asyncio
+pytest-cov
+requests-mock
+black
+isort
+flake8
+mypy

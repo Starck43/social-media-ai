@@ -1,0 +1,150 @@
+{% extends "sqladmin/base.html" %}
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
+{% block extra_css %}{% endblock %}
+{% endblock %}
+
+{% block body %}
+<main data-theme="light">
+    <div class="auth-container">
+        <div class="card">
+            <div class="card-body">
+
+                <div class="auth-header">
+                    <h1 class="card-title">Админ панель</h1>
+                    <p>Войти в приложение "{{ admin.title }}"</p>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+                {% if message %}
+                <div class="alert alert-info">{{ message }}</div>
+                {% endif %}
+
+                <form id="loginForm" method="post" action="{{ url_for('admin:login') }}" autocomplete="off">
+                    <input type="hidden" name="csrf_token" id="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="form-group">
+                        <label for="username">Имя пользователя или e-mail</label>
+                        <input type="text" id="username" name="username" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Пароль</label>
+                        <input type="password" id="password" name="password" class="form-control" required>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Войти</button>
+                    </div>
+                </form>
+
+                <div class="auth-link">
+                    <a href="/admin/reset-password">Забыли пароль?</a>
+                </div>
+
+                {% if debug %}
+                <div class="debug-info">
+                    <strong>Отладочная информация:</strong><br>
+                    CSRF Token: {{ csrf_token()|default('Not set')|truncate(20) }}<br>
+                    Session Keys: {{ request.session.keys()|list }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const form = document.getElementById("loginForm")
+        const submitButton = form.querySelector("button[type='submit']")
+
+        let errorDiv = document.getElementById("loginError")
+        if (!errorDiv) {
+            errorDiv = document.createElement("div")
+            errorDiv.id = "loginError"
+            errorDiv.className = "alert alert-danger"
+            errorDiv.style.display = "none"
+            form.insertBefore(errorDiv, form.firstChild)
+        }
+
+        form.addEventListener("submit", async function(e) {
+            e.preventDefault()
+            const originalText = submitButton.textContent
+            submitButton.disabled = true
+            submitButton.textContent = "Signing in..."
+            errorDiv.style.display = "none"
+
+            // Get the CSRF token from the form
+            let csrfToken = document.getElementById("csrf_token")?.value
+
+            if (!csrfToken) {
+                console.error("CSRF token not found in the form")
+                showError("Security token missing. Please refresh the page.")
+                submitButton.disabled = false
+                submitButton.textContent = originalText
+                return
+            }
+
+            const username = document.querySelector("input[name='username']").value.trim()
+            const password = document.querySelector("input[name='password']").value
+
+            // Базовая валидация
+            if (!username || !password) {
+                showError("Please enter both username and password")
+                submitButton.disabled = false
+                submitButton.textContent = originalText
+                return
+            }
+
+            try {
+                const response = await fetch(form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    headers: {
+                        "X-CSRF-Token": csrfToken,
+                    },
+                    credentials: "same-origin",
+                })
+
+                console.log("Login response status:", response.status, "redirected:", response.redirected)
+
+                if (response.redirected) {
+                    console.log("Redirecting to:", response.url)
+                    window.location.href = response.url
+                    return
+                }
+
+                if (response.ok) {
+                    try {
+                        const result = await response.json()
+                        if (result.success && result.redirect) {
+                            window.location.href = result.redirect
+                        } else {
+                            showError(result.error || "Login failed")
+                        }
+                    } catch (jsonError) {
+                        console.log("Regular form submission successful")
+                        window.location.href = "/admin"
+                    }
+                } else {
+                    // Ошибка сервера
+                    const errorText = await response.text()
+                    showError(errorText || `Login failed (status: ${response.status})`)
+                }
+
+            } catch (error) {
+                console.error("Error during login:", error)
+                showError("An error occurred during login. Please try again.")
+            } finally {
+                submitButton.disabled = false
+                submitButton.textContent = originalText
+            }
+        })
+    })
+</script>
+{% endblock body %}

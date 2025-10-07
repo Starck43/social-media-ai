@@ -28,61 +28,56 @@ def register_model_types(connection, is_upgrade: bool = True):
 		text(f'SELECT table_name FROM "{schema}"."model_types"')
 	).fetchall()}
 
-	if is_upgrade:
-		# Register new tables
-		tables_to_register = user_tables - registered_tables
-		if not tables_to_register:
-			return
+	# ✅ Регистрируем новые таблицы
+	tables_to_register = user_tables - registered_tables
 
+	if tables_to_register:
 		print(f"ℹ️ [ModelType]: Registering new tables: {list(tables_to_register)}")
 
-		for table_name in tables_to_register:
-			model_class = get_model_class_by_table_name(table_name)
-			if model_class is None:
-				print(f"⚠️ No model class found for table: {table_name}. Skipping...")
-				continue
+	for table_name in tables_to_register:
+		model_class = get_model_class_by_table_name(table_name)
+		if model_class is None:
+			print(f"⚠️ No model class found for table: {table_name}. Skipping...")
+			continue
 
-			app_label = get_app_label_from_model(model_class)
-			model_name = model_class.__name__
+		app_label = get_app_label_from_model(model_class)
+		model_name = model_class.__name__
 
-			print(f"✅ {app_label}.{table_name}: {model_name} added")
+		print(f"✅ {app_label}.{table_name}: {model_name} added")
 
-			connection.execute(
-				text(f"""
-					INSERT INTO "{schema}"."model_types" 
-					(app_name, model_name, table_name, description, is_managed, created_at, updated_at) 
-					VALUES (:app_label, :model_name, :table_name, 'Automatically registered model', true, NOW(), NOW())
-				"""),
-				{
-					"app_label": app_label.lower(),
-					"model_name": model_name.lower(),
-					"table_name": table_name,
-				}
-			)
+		connection.execute(
+			text(f"""
+				INSERT INTO "{schema}"."model_types" 
+				(app_name, model_name, table_name, description, is_managed, created_at, updated_at) 
+				VALUES (:app_label, :model_name, :table_name, 'Automatically registered model', true, NOW(), NOW())
+			"""),
+			{
+				"app_label": app_label.lower(),
+				"model_name": model_name.lower(),
+				"table_name": table_name,
+			}
+		)
 
-			# Get model_type_id for the newly registered model
-			model_type_id = connection.execute(
-				text(f'SELECT id FROM "{schema}"."model_types" WHERE table_name = :table_name'),
-				{"table_name": table_name}
-			).scalar()
+		# Get model_type_id for the newly registered model
+		model_type_id = connection.execute(
+			text(f'SELECT id FROM "{schema}"."model_types" WHERE table_name = :table_name'),
+			{"table_name": table_name}
+		).scalar()
 
-			# Create permissions for current model
-			if model_type_id:
-				create_permissions_for_model(connection, model_type_id, app_label, model_name)
-			else:
-				print(f"❌ Failed to get model_type_id for {table_name}")
+		# Create permissions for current model
+		if model_type_id:
+			create_permissions_for_model(connection, model_type_id, app_label, model_name)
+		else:
+			print(f"❌ Failed to get model_type_id for {table_name}")
 
-	else:
-		# Downgrade: remove registrations for dropped tables
-		tables_to_remove = registered_tables - all_tables
-		if not tables_to_remove:
-			return
-
+	# ✅ Удаляем записи для несуществующих таблиц
+	tables_to_remove = registered_tables - user_tables
+	if tables_to_remove:
 		print(f"ℹ️ [ModelType]: Removing registrations for dropped tables: {list(tables_to_remove)}")
 
-		for table_name in tables_to_remove:
-			print(f"🗑️ {table_name} removed")
-			connection.execute(
-				text(f'DELETE FROM "{schema}"."model_types" WHERE table_name = :table_name'),
-				{"table_name": table_name}
-			)
+	for table_name in tables_to_remove:
+		print(f"🗑️ {table_name} removed")
+		connection.execute(
+			text(f'DELETE FROM "{schema}"."model_types" WHERE table_name = :table_name'),
+			{"table_name": table_name}
+		)

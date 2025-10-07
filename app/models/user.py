@@ -5,16 +5,16 @@ from typing import TYPE_CHECKING, ClassVar
 from sqlalchemy import Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
-from .base import Base
 from app.types.models import UserRole, ActionType
+from .base import Base, TimestampMixin
 from ..core.decorators import app_label
 
 if TYPE_CHECKING:
-    from . import SocialAccount, Notification, Role
+    from . import Role
 
 
 @app_label("account")
-class User(Base):
+class User(Base, TimestampMixin):
     __tablename__ = 'users'
     __table_args__ = ({'schema': 'social_manager'},)
 
@@ -28,10 +28,6 @@ class User(Base):
     # Relationship to Role
     role_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_manager.roles.id"), nullable=False)
     role: Mapped["Role"] = relationship("Role", back_populates="users")
-
-    # Relationships one-to-many to SocialAccount and Notification
-    social_accounts: Mapped[list["SocialAccount"]] = relationship("SocialAccount", back_populates="user")
-    notifications: Mapped[list["Notification"]] = relationship("Notification", back_populates="user")
 
     # Manager will be set after class definition to avoid circular imports
     if TYPE_CHECKING:

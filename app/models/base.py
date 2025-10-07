@@ -3,7 +3,7 @@ from enum import Enum
 from typing import ClassVar, TypeVar, TYPE_CHECKING, Literal
 
 import sqlalchemy as sa
-from sqlalchemy import func
+from sqlalchemy import func, DateTime
 from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase, Session
 
 T = TypeVar('T', bound='Base')
@@ -12,14 +12,20 @@ T = TypeVar('T', bound='Base')
 class TimestampMixin:
 	@declared_attr
 	def created_at(self) -> Mapped[datetime]:
-		return mapped_column(insert_default=func.now())
+		return mapped_column(
+			DateTime(timezone=True),
+			insert_default=func.now()
+		)
 
 	@declared_attr
 	def updated_at(self) -> Mapped[datetime]:
-		return mapped_column(insert_default=func.now())
+		return mapped_column(
+			DateTime(timezone=True),
+			insert_default=func.now()
+		)
 
 
-class Base(DeclarativeBase, TimestampMixin):
+class Base(DeclarativeBase):
 	"""Base model class with common functionality."""
 	__allow_unmapped__ = True
 

@@ -3,13 +3,13 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
 	from . import Permission
 
 
-class ModelType(Base):
+class ModelType(Base, TimestampMixin):
 	__tablename__ = "model_types"
 	__table_args__ = ({'schema': 'social_manager'},)
 
@@ -21,7 +21,12 @@ class ModelType(Base):
 	is_managed: Mapped[bool] = mapped_column(Boolean, default=True)
 
 	# Relationship one-to-many between ContentType and Permission
-	permissions: Mapped[list["Permission"]] = relationship("Permission", back_populates="model_type")
+	permissions: Mapped[list["Permission"]] = relationship(
+		"Permission",
+		back_populates="model_type",
+		cascade="all, delete-orphan",  # ✅ Удаляем permissions при удалении model_type
+		passive_deletes=True
+	)
 
 	def __str__(self) -> str:
 		return f"{self.app_name}.{self.model_name}"

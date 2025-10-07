@@ -65,6 +65,7 @@ def create_permissions_for_model(connection, model_type_id: int, app_label: str,
 
 	for action in ActionType:
 		try:
+			action_name = action.name
 			action_value = action.value
 
 			codename = f"{app_label}.{model_name}.{action_value}"
@@ -73,7 +74,7 @@ def create_permissions_for_model(connection, model_type_id: int, app_label: str,
 				permissions_to_create.append({
 					"codename": codename,
 					"name": f"Can {action_value} {model_name.capitalize()}",
-					"action_type": action_value,  # Use the lowercase value from the enum
+					"action_type": action_name,
 					"model_type_id": model_type_id
 				})
 		except ValueError:

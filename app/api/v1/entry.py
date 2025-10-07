@@ -6,14 +6,13 @@ from app.core.database import get_db
 from app.models import User
 from app.services.user.auth import get_authenticated_user
 
-from app.api.v1.endpoints import auth, user, social, roles
+from app.api.v1.endpoints import auth, user, roles
 
 router = APIRouter()
 
 router.include_router(user.router, prefix="/users", tags=["user"])
 router.include_router(roles.router, prefix="/users/roles", tags=["user"])
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
-router.include_router(social.router, prefix="/social", tags=["social"])
 # router.include_router(ai.router, prefix="/ai", tags=["ai"])
 
 

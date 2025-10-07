@@ -1,4 +1,6 @@
-# 🚀 AI-Powered Social Media Manager
+# Social Media AI Analytics
+
+**Сервис мониторинга и анализа активности в социальных сетях с использованием AI.**
 
 <div align="center">
 
@@ -7,27 +9,20 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-blue)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-**AI-powered social media analysis and monitoring system**
 
 [Demo](#demo) • [Installation](#installation) • [Usage](#usage) • [Configuration](#configuration)
 
 </div>
 
-## 🎯 Key Value Proposition
-An automated social media management and analysis system with AI that transforms raw social media data into actionable insights for businesses and community managers.
+## 🎯 Основные задачи
 
-## ✨ Features
+- **Мониторинг активности** в VK и Telegram по выбранным источникам (пользователи, группы, чаты, каналы)
+- **AI-анализ контента** - определение тем, настроения, активности без хранения сырых данных
+- **Автоматическое комментирование** через AI-бота в чатах/группах где есть права модератора
+- **Ежедневные отчеты** - краткая выжимка активности с рассылкой на email/telegram
+- **Единый интерфейс** для просмотра аналитики всех подключенных соцсетей
 
-- 🔐 **Secure Authentication** via OAuth 2.0 (VK, Telegram)
-- 🤖 **AI-Powered Content Analysis** using DeepSeek API
-- 🔐 **Unified Social Media Management** from a single interface
-- 📊 **Comprehensive Analytics** on reach, engagement, and sentiment
-- ⚡ **Automated Moderation** of comments and messages
-- 🔔 **Smart Notifications** for important events
-- 🎯 **Message Classification** for direct messages
-- 📈 **Automated Daily Digests**
-
-## 🏗️ Architecture
+## 🏗️ Архитектура
 
 ```mermaid
 graph TB
@@ -46,11 +41,12 @@ For a detailed description of the architecture and project structure, please ref
 ## 🛠️ Technology Stack
 
 ### Backend
-- **FastAPI** - High-performance ASGI framework
-- **PostgreSQL** - Relational database
-- **Redis** - Caching and message broker
+- **FastAPI** - веб-интерфейс и API
+- **PostgreSQL** - хранение аналитики и настроек
 - **SQLAlchemy** - ORM for database operations
-- **Celery** - Asynchronous task queue
+- **Redis** - Caching and message broker
+- **Celery** - фоновые задачи (мониторинг, анализ, рассылка)
+- **AI Models** - анализ текста, определение тем, sentiment analysis
 
 ### AI Integration
 - **DeepSeek API** - Powerful language model
@@ -64,6 +60,13 @@ For a detailed description of the architecture and project structure, please ref
 - **Docker** - Application containerization
 - **Docker Compose** - Container orchestration
 - **Nginx** - Reverse proxy and load balancer
+
+### Ключевые таблицы БД
+- `platforms` - платформы (VK, Telegram) - секреты в env
+- `sources` - источники контента (пользователи, группы, чаты, каналы)
+- `ai_analytics` - результаты AI анализа (настроение, темы, активность)
+- `bot_scenarios` - сценарии для автоматического комментирования
+- `notifications` - системные уведомления для администраторов
 
 For a complete list of technologies and dependencies, see the [Architecture Documentation](./docs/architecture.md).
 

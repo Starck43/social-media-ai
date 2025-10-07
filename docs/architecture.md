@@ -63,8 +63,6 @@ social-media-ai/
 │   └── architecture.md             # This file
 │
 ├── 📁 tests/                        # Tests
-│   └── test_main.http              # HTTP test requests
-│
 ├── 📁 logs/                         # Application logs
 │
 ├── .dockerignore                   # Docker ignore rules
@@ -194,7 +192,7 @@ cli --help
 ## 🛠 Development
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.10+
 - PostgreSQL 13+
 - Redis (for caching and task queue)
 

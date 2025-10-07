@@ -15,7 +15,7 @@ else:
     Notification = 'Notification'
 
 
-class NotificationManager(BaseManager['Notification']):
+class NotificationManager(BaseManager):
     """Manager for Notification model operations."""
 
     def __init__(self):

@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any
 
 from sqladmin import ModelView
@@ -18,8 +17,8 @@ class BaseAdmin(ModelView):
 
     column_formatters = {
         "role": lambda m, a: m.role.name.upper() if m.role else "",
-        "updated_at": lambda m, a: m.updated_at.strftime("%d.%m.%Y") if m.updated_at else "",
-        "created_at": lambda m, a: m.created_at.strftime("%d.%m.%Y") if m.updated_at else "",
+        "updated_at": lambda m, a: m.updated_at.strftime("%d.%m.%Y") if hasattr(m, 'updated_at') else "",
+        "created_at": lambda m, a: m.created_at.strftime("%d.%m.%Y") if hasattr(m, 'created_at') else "",
     }
 
     async def on_model_change(

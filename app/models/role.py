@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import String, Text, Integer, Table, Column, ForeignKey
+from sqlalchemy import String, Text, Integer, Table, Column, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from . import Base
+from . import Base, TimestampMixin
 from ..types.models import UserRole
 
 if TYPE_CHECKING:
@@ -20,13 +20,15 @@ role_permission = Table(
 )
 
 
-class Role(Base):
+class Role(Base, TimestampMixin):
 	__tablename__ = "roles"
 	__table_args__ = ({'schema': 'social_manager'},)
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-	codename: Mapped[UserRole]
+	codename: Mapped[UserRole] = mapped_column(
+		Enum(UserRole, name='user_role_type', schema='social_manager', inherit_schema=True)
+	)
 	description: Mapped[str] = mapped_column(Text, nullable=True)
 
 	# Relation one-to-many with User

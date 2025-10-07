@@ -1,24 +1,23 @@
-from .setup import setup_admin
 from .auth import AdminAuthBackend
+from .setup import setup_admin
 from .views import (
-    UserAdmin, RoleAdmin, PermissionAdmin, SocialAccountAdmin,
-    SocialGroupAdmin, PostAdmin, CommentAdmin, StatisticsAdmin,
-    AIAnalysisResultAdmin, NotificationAdmin
+	UserAdmin, RoleAdmin, PermissionAdmin,
+	PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
+	BotScenarioAdmin, AIAnalyticsAdmin, NotificationAdmin
 )
 
 __all__ = [
-    'setup_admin',
-    'AdminAuthBackend',
-    
-    # Admin views
-    'UserAdmin',
-    'RoleAdmin',
-    'PermissionAdmin',
-    'SocialAccountAdmin',
-    'SocialGroupAdmin',
-    'PostAdmin',
-    'CommentAdmin',
-    'StatisticsAdmin',
-    'AIAnalysisResultAdmin',
-    'NotificationAdmin',
+	'setup_admin',
+	'AdminAuthBackend',
+
+	# Admin views
+	'UserAdmin',
+	'RoleAdmin',
+	'PermissionAdmin',
+	'PlatformAdmin',
+	'SourceAdmin',
+	'SourceUserRelationshipAdmin',
+	'BotScenarioAdmin',
+	'AIAnalyticsAdmin',
+	'NotificationAdmin',
 ]

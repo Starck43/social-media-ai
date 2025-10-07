@@ -10,19 +10,24 @@ This package contains all data models for the application, including:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 # Core models
 from .base import Base, TimestampMixin
 from .model_type import ModelType
 
-# Import all models to ensure they're registered with SQLAlchemy
+# Import all models to ensure they are registered with SQLAlchemy
 from .permission import Permission
 from .role import Role
 from .user import User
-from .social import SocialAccount, SocialGroup
-from .content import Post, Comment
-from .analytics import Statistics, AIAnalysisResult
+
+# Social monitoring models
+from .platform import Platform
+from .source import Source, SourceUserRelationship
+from .bot_scenario import BotScenario
+
+# Analytics models
+from .ai_analytics import AIAnalytics
+
+# Notification models
 from .notification import Notification
 
 
@@ -31,17 +36,21 @@ __all__ = [
     'Base',
     'TimestampMixin',
 
-    # Models
+    # Core models
     'ModelType',
     'Permission',
     'Role',
     'User',
-    'SocialAccount',
-    'SocialGroup',
-    'Post',
-    'Comment',
-    'Statistics',
-    'AIAnalysisResult',
+
+    # Social monitoring models
+    'Platform',
+    'Source',
+    'SourceUserRelationship',
+    'BotScenario',
+
+    # Analytics models
+    'AIAnalytics',
+
+    # Notification models
     'Notification',
 ]
-

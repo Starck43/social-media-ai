@@ -14,7 +14,7 @@ router = APIRouter(tags=["users"])
 @router.get("/", response_model=Page[RoleResponse])
 async def list_roles() -> Page[RoleResponse]:
 	"""Get paginated list of all roles with their permissions"""
-	roles = await Role.objects.select_related("permissions").order_by(Role.id).all()
+	roles = await Role.objects.select_related("permissions").order_by(Role.id)
 	return paginate(roles)
 
 

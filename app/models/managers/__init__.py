@@ -18,11 +18,13 @@ from .bot_scenario_manager import BotScenarioManager
 from .ai_analytics_manager import AIAnalyticsManager
 
 # Base manager
-from .base_manager import BaseManager
+from .base_manager import BaseManager, Prefetch, prefetch
 
 __all__ = [
     # Base manager
     'BaseManager',
+    'Prefetch',
+    'prefetch',
 
     # Core managers
     'UserManager',

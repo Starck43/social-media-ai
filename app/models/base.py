@@ -1,9 +1,7 @@
 from datetime import datetime
-from enum import Enum
-from typing import ClassVar, TypeVar, TYPE_CHECKING, Literal
+from typing import ClassVar, TypeVar, TYPE_CHECKING
 
-import sqlalchemy as sa
-from sqlalchemy import func, DateTime
+from sqlalchemy import func, DateTime, MetaData, Enum
 from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase, Session
 
 T = TypeVar('T', bound='Base')
@@ -14,14 +12,17 @@ class TimestampMixin:
 	def created_at(self) -> Mapped[datetime]:
 		return mapped_column(
 			DateTime(timezone=True),
-			insert_default=func.now()
+			nullable=False,
+			server_default=func.now(),
 		)
 
 	@declared_attr
 	def updated_at(self) -> Mapped[datetime]:
 		return mapped_column(
 			DateTime(timezone=True),
-			insert_default=func.now()
+			nullable=False,
+			server_default=func.now(),
+			onupdate=func.now(),
 		)
 
 
@@ -29,11 +30,7 @@ class Base(DeclarativeBase):
 	"""Base model class with common functionality."""
 	__allow_unmapped__ = True
 
-	metadata = sa.MetaData(schema="social_manager")
-	type_annotation_map = {
-		Enum: sa.Enum(Enum, inherit_schema=True),
-		Literal: sa.Enum(Enum, inherit_schema=True),
-	}
+	metadata = MetaData(schema="social_manager")
 
 	# Manager will be set after class definition to avoid circular imports
 	if TYPE_CHECKING:

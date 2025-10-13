@@ -25,7 +25,7 @@ async def get_users(
 			detail="Not enough permissions"
 		)
 
-	return User.objects.get_active_users(skip=skip, limit=limit)
+	return await User.objects.get_active_users(skip=skip, limit=limit)
 
 
 @router.get("/me", response_model=UserInDB, summary="Получение текущего пользователя")
@@ -65,7 +65,7 @@ async def update_user(
 	if 'password' in update_data:
 		del update_data['password']
 
-	updated_user = User.objects.update_user(
+	updated_user = await User.objects.update_user(
 		user_id=user_id,
 		update_data=update_data,
 		current_user=current_user
@@ -94,7 +94,7 @@ async def delete_user(
 			detail="Not enough permissions"
 		)
 
-	if not User.objects.delete_user(user_id):
+	if not await User.objects.delete_user(user_id):
 		raise HTTPException(
 			status_code=status.HTTP_404_NOT_FOUND,
 			detail="User not found"
@@ -113,7 +113,7 @@ async def change_password(
 	Returns:
 		Success message
 	"""
-	success = User.objects.change_password(
+	success = await User.objects.change_password(
 		user_id=user_id,
 		current_password=password_data.current_password,
 		new_password=password_data.new_password,

@@ -1,49 +1,495 @@
 """
-Query Manager for SQLAlchemy models.
-This module provides a BaseManager class can be used to create custom query methods for SQLAlchemy models.
+Improved Query Manager for SQLAlchemy models.
+Fixes identified issues and improves API consistency.
 """
-from datetime import datetime
-from typing import Any, Generic, TypeVar, Type, Optional, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, date
+from typing import Any, Generic, TypeVar, Type, Optional, Sequence, cast
 
 from fastapi import HTTPException
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload, QueryableAttribute, InstrumentedAttribute
 from sqlalchemy.sql import and_, exists, select, Select
 
-from app.core.database import with_db_session
+from app.core.database import async_session_maker, with_db_session
 from app.schemas.common import PaginationResult
 
 M = TypeVar('M')
 
 
+@dataclass
+class Prefetch:
+	"""Descriptor for a prefetch with optional filters and criteria."""
+	path: str | QueryableAttribute
+	queryset: Optional['QuerySet[Any]'] = None
+	filters: Optional[dict[str, Any]] = None
+	criteria: Sequence[ColumnElement[bool]] = field(default_factory=tuple)
+
+
+def prefetch(
+		path: str | QueryableAttribute,
+		*,
+		queryset: Optional['QuerySet[Any]'] = None,
+		filters: Optional[dict[str, Any]] = None,
+		criteria: Optional[Sequence[ColumnElement[bool]]] = None
+) -> Prefetch:
+	"""Helper to create Prefetch descriptors with optional filters/criteria."""
+	return Prefetch(path=path, queryset=queryset, filters=filters, criteria=criteria or tuple())
+
+
+class LookupCompiler:
+	"""Компилятор lookup-выражений в SQLAlchemy условия."""
+
+	@staticmethod
+	def compile_lookup(model: Type[M], key: str, value: Any) -> ColumnElement[bool]:
+		"""
+		Компилирует lookup выражение в SQLAlchemy условие.
+		
+		Поддерживаемые lookups:
+		- field (равенство)
+		- field__in (вхождение в список)
+		- field__isnull (проверка на NULL)
+		- field__contains (подстрока)
+		- field__icontains (подстрока без учета регистра)
+		- field__startswith (начинается с)
+		- field__endswith (заканчивается на)
+		- field__gt (больше)
+		- field__gte (больше или равно)
+		- field__lt (меньше)
+		- field__lte (меньше или равно)
+		- field__ne (не равно)
+		"""
+		if '__' in key:
+			field_name, lookup = key.rsplit('__', 1)
+			f = getattr(model, field_name, None)
+			if f is None:
+				raise AttributeError(f"Model {model.__name__} has no attribute '{field_name}'")
+
+			return LookupCompiler._apply_lookup(f, lookup, value)
+		else:
+			f = getattr(model, key, None)
+			if f is None:
+				raise AttributeError(f"Model {model.__name__} has no attribute '{key}'")
+			return cast(ColumnElement[bool], f == value)
+
+	@staticmethod
+	def _apply_lookup(f: Any, lookup: str, value: Any) -> ColumnElement[bool]:
+		"""Применяет конкретный lookup к полю."""
+		if lookup == 'in':
+			if not isinstance(value, (list, tuple, set)):
+				raise ValueError(f"'in' lookup requires list, tuple or set, got {type(value).__name__}")
+			return cast(ColumnElement[bool], f.in_(value))
+
+		elif lookup == 'isnull':
+			return cast(ColumnElement[bool], f.is_(None) if value else f.is_not(None))
+
+		elif lookup == 'contains':
+			return cast(ColumnElement[bool], f.contains(str(value)))
+
+		elif lookup == 'icontains':
+			return cast(ColumnElement[bool], f.ilike(f'%{value}%'))
+
+		elif lookup == 'startswith':
+			return cast(ColumnElement[bool], f.startswith(str(value)))
+
+		elif lookup == 'endswith':
+			return cast(ColumnElement[bool], f.endswith(str(value)))
+
+		elif lookup == 'gt':
+			return cast(ColumnElement[bool], f > value)
+
+		elif lookup == 'gte':
+			return cast(ColumnElement[bool], f >= value)
+
+		elif lookup == 'lt':
+			return cast(ColumnElement[bool], f < value)
+
+		elif lookup == 'lte':
+			return cast(ColumnElement[bool], f <= value)
+
+		elif lookup == 'ne':
+			return cast(ColumnElement[bool], f != value)
+
+		else:
+			raise ValueError(f"Unsupported lookup: {lookup}")
+
+	@staticmethod
+	def compile_filters(model: Type[M], filters: dict[str, Any]) -> list[ColumnElement[bool]]:
+		"""Компилирует словарь фильтров в список условий."""
+		return [
+			LookupCompiler.compile_lookup(model, key, value)
+			for key, value in filters.items()
+		]
+
+
+class QuerySet(Generic[M]):
+	"""
+	Lazy query builder supporting method chaining and awaiting.
+	
+	All methods return new QuerySet instances, allowing full chaining:
+		users = await User.objects.filter(is_active=True).order_by(User.id.desc()).limit(10)
+	"""
+
+	def __init__(
+			self,
+			manager: 'BaseManager[M]',
+			session: AsyncSession | None = None,
+			*,
+			criterion: Optional[list[ColumnElement[bool]]] = None,
+			kw_filters: Optional[dict[str, Any]] = None,
+			orderings: Optional[list[Any]] = None,
+			limit_value: Optional[int] = None,
+			offset_value: Optional[int] = None,
+			eager_loads: Optional[list[str | QueryableAttribute]] = None,
+			prefetch_loads: Optional[list[str | QueryableAttribute | Prefetch]] = None,
+	) -> None:
+		self._manager = manager
+		self._session = session
+		self._criterion = criterion or []
+		self._kw_filters = kw_filters or {}
+		self._orderings = orderings or []
+		self._limit_value = limit_value
+		self._offset_value = offset_value
+		self._eager_loads = eager_loads or []
+		self._prefetch_loads = prefetch_loads or []
+
+	def _clone(self, **overrides: Any) -> 'QuerySet[M]':
+		"""Create a copy of this QuerySet with optional overrides."""
+		return QuerySet(
+			manager=self._manager,
+			session=overrides.get('session', self._session),
+			criterion=list(overrides.get('criterion', self._criterion)),
+			kw_filters=dict(overrides.get('kw_filters', self._kw_filters)),
+			orderings=list(overrides.get('orderings', self._orderings)),
+			limit_value=overrides.get('limit_value', self._limit_value),
+			offset_value=overrides.get('offset_value', self._offset_value),
+			eager_loads=list(overrides.get('eager_loads', self._eager_loads)),
+			prefetch_loads=list(overrides.get('prefetch_loads', self._prefetch_loads)),
+		)
+
+	def filter(self, *criterion: ColumnElement[bool], **kwargs: Any) -> 'QuerySet[M]':
+		"""
+		Filter queryset by criteria and/or keyword arguments.
+		
+		Examples:
+			# Using SQLAlchemy expressions
+			qs.filter(User.email.endswith('@example.com'))
+
+			# Using keyword arguments with lookups
+			qs.filter(email__endswith='@example.com', is_active=True)
+
+			# Combining both
+			qs.filter(or_(User.is_active == True, User.is_superuser == True), role_id=2)
+		"""
+		new_criterion = list(self._criterion) + list(criterion)
+		new_kw = dict(self._kw_filters)
+		new_kw.update(kwargs)
+
+		return self._clone(criterion=new_criterion, kw_filters=new_kw)
+
+	def exclude(self, *criterion: ColumnElement[bool], **kwargs: Any) -> 'QuerySet[M]':
+		"""
+		Exclude objects matching the given criteria.
+		
+		Examples:
+			# Exclude by expression
+			qs.exclude(User.is_active == True)
+
+			# Exclude by keyword arguments
+			qs.exclude(role='admin', is_superuser=True)
+
+			# With lookups
+			qs.exclude(email__endswith='@spam.com')
+		"""
+		# Convert criterion to negated conditions
+		negated_criterion = [~c for c in criterion]
+
+		# Convert kwargs to negated conditions
+		if kwargs:
+			conditions = LookupCompiler.compile_filters(self._manager.model, kwargs)
+			negated_criterion.extend([~c for c in conditions])
+
+		new_criterion = list(self._criterion) + negated_criterion
+		return self._clone(criterion=new_criterion)
+
+	def order_by(self, *clauses: Any) -> 'QuerySet[M]':
+		"""
+		Order results by the given clauses.
+		
+		Examples:
+			qs.order_by(User.created_at.desc())
+			qs.order_by(User.last_name, User.first_name)
+		"""
+		new_orderings = list(self._orderings) + list(clauses)
+		return self._clone(orderings=new_orderings)
+
+	def limit(self, value: int) -> 'QuerySet[M]':
+		"""Limit the amount results."""
+		return self._clone(limit_value=value)
+
+	def offset(self, value: int) -> 'QuerySet[M]':
+		"""Skip the first 'value' results."""
+		return self._clone(offset_value=value)
+
+	def select_related(self, *relations: str | QueryableAttribute) -> 'QuerySet[M]':
+		"""
+		Optimize a query for foreign-key relationships using JOIN.
+		
+		Supports nested relationships using '__' syntax (Django-style).
+		
+		Examples:
+			qs.select_related('role')
+			qs.select_related('source', 'user')
+			qs.select_related('source__platform') # Nested relationship
+			qs.select_related('source__platform', 'user__platform') # Multiple nested
+			qs.select_related(User.role) # Using attribute directly
+		"""
+		new_eager = list(self._eager_loads) + list(relations)
+		return self._clone(eager_loads=new_eager)
+
+	def prefetch_related(self, *relations: str | QueryableAttribute | Prefetch) -> 'QuerySet[M]':
+		"""
+		Optimize a query for many-to-many and reverse FK relationships.
+		
+		Examples:
+			qs.prefetch_related('sources')
+			qs.prefetch_related(prefetch('sources', filters={'is_active': True}))
+		"""
+		new_prefetch = list(self._prefetch_loads) + list(relations)
+		return self._clone(prefetch_loads=new_prefetch)
+
+	@asynccontextmanager
+	async def _get_session(self):
+		"""Get session from an instance or create a new one."""
+		if self._session is not None:
+			yield self._session
+		else:
+			async with async_session_maker() as session:
+				try:
+					yield session
+					await session.commit()
+				except Exception:
+					await session.rollback()
+					raise
+
+	def _build_statement_sync(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
+		"""
+		Build the SQLAlchemy Select statement from accumulated parameters (sync version).
+		
+		This is a synchronous version for use in admin views where async is not supported.
+		"""
+		stmt = select(self._manager.model)
+
+		# Apply a criterion (expressions)
+		if self._criterion:
+			stmt = stmt.where(and_(*self._criterion))
+
+		# Apply keyword filters
+		if self._kw_filters:
+			conditions = LookupCompiler.compile_filters(self._manager.model, self._kw_filters)
+			if conditions:
+				stmt = stmt.where(and_(*conditions))
+
+		# Apply eager loading (joinedload)
+		if self._eager_loads:
+			for rel in self._eager_loads:
+				if isinstance(rel, str):
+					# Support nested relationships with '__' syntax (Django-style)
+					# e.g., "source__platform" → joinedload(Model.source).joinedload(Source.platform)
+					if '__' in rel:
+						parts = rel.split('__')
+						current_model = self._manager.model
+						option = None
+
+						for part in parts:
+							rel_attr = getattr(current_model, part, None)
+							if rel_attr is None:
+								break
+
+							if option is None:
+								option = joinedload(rel_attr)
+							else:
+								option = option.joinedload(rel_attr)
+
+							# Get the related model for the next iteration
+							if hasattr(rel_attr.property, 'mapper'):
+								current_model = rel_attr.property.mapper.class_
+
+						if option is not None:
+							stmt = stmt.options(option)
+					else:
+						# Simple relationship name
+						rel_attr = getattr(self._manager.model, rel, None)
+						if rel_attr is not None:
+							stmt = stmt.options(joinedload(rel_attr))
+				elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
+					stmt = stmt.options(joinedload(rel))
+
+		# Apply prefetch loading (selectinload)
+		if self._prefetch_loads:
+			for rel in self._prefetch_loads:
+				option = self._manager._build_prefetch_option(rel)
+				if option is not None:
+					stmt = stmt.options(option)
+
+		# Apply ordering
+		if self._orderings:
+			stmt = stmt.order_by(*self._orderings)
+
+		# Apply pagination
+		if apply_pagination:
+			if self._offset_value is not None:
+				stmt = stmt.offset(self._offset_value)
+			if self._limit_value is not None:
+				stmt = stmt.limit(self._limit_value)
+
+		return stmt
+
+	async def _build_statement(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
+		"""Build the SQLAlchemy Select statement (async version for compatibility)."""
+		return self._build_statement_sync(apply_pagination=apply_pagination)
+
+	def to_select(self) -> Select[tuple[M]]:
+		"""
+		Convert QuerySet to SQLAlchemy Select statement.
+		
+		Public API for getting Select object without executing query.
+		Useful for admin views, raw SQL inspection, or custom query building.
+		
+		Examples:
+			# In admin views
+			def list_query(self, request):
+				return User.objects.filter(is_active=True).to_select()
+
+			# For debugging
+			stmt = User.objects.filter(is_active=True).to_select()
+			print(stmt)
+
+			# For custom modifications
+			stmt = User.objects.filter(is_active=True).to_select()
+			stmt = stmt.limit(100) # Additional modifications
+		"""
+		return self._build_statement_sync()
+
+	async def all(self) -> Sequence[M]:
+		"""Execute a query and return all results."""
+		stmt = await self._build_statement()
+		async with self._get_session() as session:
+			result = await session.execute(stmt)
+			return result.scalars().unique().all()
+
+	def __await__(self):
+		"""Allow awaiting QuerySet directly."""
+		return self.all().__await__()
+
+	async def first(self) -> Optional[M]:
+		"""Execute a query and return first result or None."""
+		stmt = await self._build_statement(apply_pagination=False)
+		stmt = stmt.limit(1)
+		async with self._get_session() as session:
+			result = await session.execute(stmt)
+			return result.scalars().first()
+
+	async def exists(self) -> bool:
+		"""Check if any object exists matching the filters."""
+		stmt = await self._build_statement(apply_pagination=False)
+		stmt = select(exists(stmt))
+		async with self._get_session() as session:
+			result = await session.execute(stmt)
+			return result.scalar() or False
+
+	async def count(self) -> int:
+		"""Return the count of objects matching the filters."""
+		# Optimize count query — don't use subquery if not necessary
+		stmt = select(func.count()).select_from(self._manager.model)
+
+		# Apply only filters, not ordering or pagination
+		if self._criterion:
+			stmt = stmt.where(and_(*self._criterion))
+
+		if self._kw_filters:
+			conditions = LookupCompiler.compile_filters(self._manager.model, self._kw_filters)
+			if conditions:
+				stmt = stmt.where(and_(*conditions))
+
+		async with self._get_session() as session:
+			result = await session.execute(stmt)
+			return int(result.scalar() or 0)
+
+	async def get(self, **kwargs: Any) -> Optional[M]:
+		"""
+		Get a single object matching the filters.
+		Adds filters to existing queryset.
+		"""
+		qs = self.filter(**kwargs)
+		return await qs.first()
+
+	async def get_or_404(self, **kwargs: Any) -> M:
+		"""Get a single object or raise 404."""
+		obj = await self.get(**kwargs)
+		if obj is None:
+			raise HTTPException(
+				status_code=404,
+				detail=f"{self._manager.model.__name__} not found"
+			)
+		return obj
+
+	async def paginate(
+			self,
+			page: int = 1,
+			per_page: int = 20,
+	) -> PaginationResult[M]:
+		"""
+		Return a paginated list of objects.
+		
+		Examples:
+			result = await User.objects.filter(is_active=True).paginate(page=1, per_page=10)
+		"""
+		# Get total count
+		total = await self.count()
+
+		# Calculate pagination
+		pages = max(1, (total + per_page - 1) // per_page)
+		page = max(1, min(page, pages))
+		offset = (page - 1) * per_page
+
+		# Get paginated items
+		items = await self.offset(offset).limit(per_page).all()
+
+		return PaginationResult[M](
+			items=items,
+			total=total,
+			page=page,
+			per_page=per_page,
+			pages=pages
+		)
+
+
 class BaseManager(Generic[M]):
 	"""
-	An async manager that provides query methods for SQLAlchemy models.
-
+	Async manager providing query methods for SQLAlchemy models.
+	
+	All query methods return QuerySet for chaining.
+	Use await to execute the query.
+	
 	Usage:
-		class UserManager(BaseManager[User]):
-			# Option 1: With an explicit session (original way)
-			async def active(self, session: AsyncSession) → list[User]:
-				return await self.filter(session, User.is_active == True)
+		# Simple queries
+		users = await User.objects.all()
+		user = await User.objects.get(id=1)
 
-			# Option 2: Without a session (Django-style)
-			async def with_email_domain(self, domain: str) → list[User]:
-				return await self.filter(User.email.like(f'%@{domain}'))
+		# Chaining
+		users = await User.objects.filter(is_active=True).order_by(User.id.desc()).limit(10)
 
-		class User(Base):
-			__tablename__ = 'users'
-			objects = UserManager(User)
+		# With relations
+		users = await User.objects.select_related('role').filter(is_active=True)
 
-		# Usage examples:
-		# users = await User.objects.filter(is_active=True)
-		# user = await User.objects.get(id=1)
+		# Pagination
+		result = await User.objects.filter(is_active=True).paginate(page=1, per_page=20)
 	"""
 
 	def __init__(self, model: Type[M] | None = None) -> None:
-		self._prefetch_loads: list[str] = []
-		self._eager_loads: list[str] = []
-		self._annotations: dict[str, Any] = {}
 		self.model = model
 
 	def __get__(self, instance: Any, objtype: Type[Any] = None) -> 'BaseManager[M]':
@@ -56,528 +502,193 @@ class BaseManager(Generic[M]):
 
 		return self
 
-	@staticmethod
-	def _get_session(**kwargs: dict) -> AsyncSession:
-		session = kwargs.pop('session', None)
-		if session is None:
-			raise ValueError(
-				"Session is required. Either pass it as 'session' parameter or use Depends(get_db)")
-		if not isinstance(session, AsyncSession):
-			raise TypeError(f"Expected AsyncSession, got {type(session).__name__}")
-		return session
+	def get_queryset(self, session: AsyncSession | None = None) -> QuerySet[M]:
+		"""Create a new QuerySet instance."""
+		return QuerySet(manager=self, session=session)
 
-	def _build_filter_conditions(self, filters: dict[str, Any]) -> list[Any]:
-		"""
-		Build filter conditions from a dictionary of filters.
+	# Query methods returning QuerySet
 
-		Args:
-			filters: Dictionary of field names and values to filter by
-
-		Returns:
-			List of SQLAlchemy filter conditions
-
-		Example:
-			conditions = self._build_filter_conditions({
-				'is_active': True,
-				'role': ['admin', 'moderator']
-			})
-			stmt = stmt.where(*conditions)
-		"""
-		filter_conditions = []
-		for key, value in filters.items():
-			if hasattr(self.model, key):
-				column = getattr(self.model, key)
-				if isinstance(value, (list, tuple)):
-					filter_conditions.append(column.in_(value))
-				else:
-					filter_conditions.append(column == value)
-		return filter_conditions
-
-	async def get_queryset(self, **filters: Any) -> Select[tuple[M]]:
-		"""
-		Get the base query for this manager with applied options.
-
-		This method is the foundation for all queries and applies:
-		— Eager loading (joined load)
-		— Prefetch loading (selectin load)
-		— Annotations
-		— Custom filters
-
-		Args:
-			**filters: Field filters to apply (e.g., is_active=True, role__in=['admin', 'moderator'])
-
-		Returns:
-			Select[tuple[M]]: SQL select query
-
-		Example:
-			# Basic usage
-			stmt = await User.objects.get_queryset()
-
-			# With filters
-			stmt = await User.objects.get_queryset(is_active=True)
-
-			# With list filters
-			stmt = await User.objects.get_queryset(role__in=['admin', 'moderator'])
-		"""
-		stmt = select(self.model)
-
-		# Apply filters if any
-		if filters:
-			filter_conditions = self._build_filter_conditions(filters)
-			if filter_conditions:
-				stmt = stmt.where(*filter_conditions)
-
-		# Apply eager loading
-		for relation in getattr(self, '_eager_loads', []):
-			stmt = stmt.options(joinedload(getattr(self.model, relation)))
-
-		# Apply prefetch loading
-		for relation in getattr(self, '_prefetch_loads', []):
-			stmt = stmt.options(selectinload(getattr(self.model, relation)))
-
-		# Apply annotations
-		for alias, annotation in getattr(self, '_annotations', {}).items():
-			stmt = stmt.add_columns(annotation.label(alias))
-
-		return stmt
-
-	def _apply_eager_loads(self, stmt: Select[tuple[M]]) -> Select[tuple[M]]:
-		"""Apply eager loading options to the query."""
-		if not self._eager_loads:
-			return stmt
-
-		options = []
-		for rel in self._eager_loads:
-			if isinstance(rel, str):
-				rel_attr = getattr(self.model, rel, None)
-				if rel_attr is not None and hasattr(rel_attr, 'property') and rel_attr.property.is_attribute:
-					options.append(joinedload(rel_attr))
-			elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
-				options.append(joinedload(rel))
-
-		return stmt.options(*options) if options else stmt
-
-	def _apply_prefetch_loads(self, stmt: Select[tuple[M]]) -> Select[tuple[M]]:
-		"""Apply prefetch loading options to the query."""
-		if not hasattr(self, '_prefetch_loads') or not self._prefetch_loads:
-			return stmt
-
-		options = []
-		for rel in self._prefetch_loads:
-			if isinstance(rel, str):
-				rel_attr = getattr(self.model, rel, None)
-				if rel_attr is not None and hasattr(rel_attr, 'property') and rel_attr.property.is_attribute:
-					options.append(selectinload(rel_attr))
-			elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
-				options.append(selectinload(rel))
-
-		return stmt.options(*options) if options else stmt
-
-	@with_db_session
-	async def all(self, **kwargs: Any) -> Sequence[M]:
+	def all(self, session: AsyncSession | None = None) -> QuerySet[M]:
 		"""
 		Return all instances of the model.
-
-		Example:
+		
+		Examples:
 			users = await User.objects.all()
 		"""
-		session = kwargs['session']
-		stmt = await self.get_queryset()
-		result = await session.execute(stmt)
-		return result.scalars().all()
+		return self.get_queryset(session)
 
-	@with_db_session
-	async def get(self, **kwargs: Any) -> Optional[M]:
+	def filter(
+			self,
+			*criterion: ColumnElement[bool],
+			session: AsyncSession | None = None, **kwargs: Any) -> QuerySet[M]:
 		"""
-		Return the object matching the given filters or None if not found.
+		Filter objects by criteria.
+		
+		Examples:
+			# Expression-based
+			users = await User.objects.filter(User.is_active == True)
 
-		Args:
-			**kwargs: Filter conditions
+			# Keyword arguments
+			users = await User.objects.filter(is_active=True, role_id=2)
 
-		Example:
+			# With lookups
+			users = await User.objects.filter(email__endswith='@example.com')
+
+			# Chaining
+			users = await User.objects.filter(is_active=True).filter(role_id=2)
+		"""
+		return self.get_queryset(session).filter(*criterion, **kwargs)
+
+	def exclude(
+			self,
+			*criterion: ColumnElement[bool], session: AsyncSession | None = None,
+			**kwargs: Any) -> QuerySet[M]:
+		"""
+		Exclude objects matching the criteria.
+		
+		Examples:
+			non_admins = await User.objects.exclude(role='admin')
+			active_non_superusers = await User.objects.filter(is_active=True).exclude(is_superuser=True)
+		"""
+		return self.get_queryset(session).exclude(*criterion, **kwargs)
+
+	def order_by(self, *clauses: Any, session: AsyncSession | None = None) -> QuerySet[M]:
+		"""
+		Order results by the given clauses.
+		
+		Examples:
+			users = await User.objects.order_by(User.created_at.desc())
+		"""
+		return self.get_queryset(session).order_by(*clauses)
+
+	def select_related(self, *relations: str | QueryableAttribute, session: AsyncSession | None = None) -> QuerySet[M]:
+		"""
+		Optimize for foreign-key relationships.
+		
+		Examples:
+			users = await User.objects.select_related('role').all()
+		"""
+		return self.get_queryset(session).select_related(*relations)
+
+	def prefetch_related(
+			self,
+			*relations: str | QueryableAttribute | Prefetch, session: AsyncSession | None = None
+	) -> QuerySet[M]:
+		"""
+		Optimize for many-to-many and reverse foreign-key relationships.
+		
+		Examples:
+			platforms = await Platform.objects.prefetch_related('sources').all()
+			platforms = await Platform.objects.prefetch_related(
+				prefetch('sources', filters={'is_active': True})
+			).all()
+		"""
+		return self.get_queryset(session).prefetch_related(*relations)
+
+	# Direct execution methods
+
+	async def get(self, session: AsyncSession | None = None, **kwargs: Any) -> Optional[M]:
+		"""
+		Get a single object matching the filters or None.
+		
+		Examples:
 			user = await User.objects.get(id=1)
 			user = await User.objects.get(email="user@example.com")
 		"""
-		"""Получить объект по условиям или None, если не найден."""
-		session = self._get_session(**kwargs)
-		stmt = await self.get_queryset(**kwargs)
-		result = await session.execute(stmt)
-		return result.scalars().first()
+		return await self.get_queryset(session).get(**kwargs)
 
-	@with_db_session
-	async def get_or_404(self, **kwargs: Any) -> M:
+	async def get_or_404(self, session: AsyncSession | None = None, **kwargs: Any) -> M:
 		"""
-		Return the object matching the given filters or raise 404 if not found.
-
-		Example:
+		Get a single object or raise 404.
+		
+		Examples:
 			user = await User.objects.get_or_404(id=1)
 		"""
-		instance = await self.get(**kwargs)
-		if instance is None:
-			raise HTTPException(
-				status_code=404,
-				detail=f"{self.model.__name__} not found"
-			)
-		return instance
+		return await self.get_queryset(session).get_or_404(**kwargs)
+
+	async def exists(self, session: AsyncSession | None = None, **kwargs: Any) -> bool:
+		"""
+		Check if any object exists matching the filters.
+		
+		Examples:
+			exists = await User.objects.exists(username='admin')
+		"""
+		return await self.get_queryset(session).filter(**kwargs).exists()
+
+	async def count(self, session: AsyncSession | None = None, **kwargs: Any) -> int:
+		"""
+		Return the count of objects matching the filters.
+		
+		Examples:
+			total = await User.objects.count()
+			active_count = await User.objects.count(is_active=True)
+		"""
+		return await self.get_queryset(session).filter(**kwargs).count()
+
+	# CRUD methods
 
 	@with_db_session
-	async def exclude(self, **kwargs: Any) -> Sequence[M]:
-		"""
-		Exclude objects matching the given filters.
-
-		Example:
-			# Get all users except admins
-			non_admins = await User.objects.exclude(role='admin')
-		"""
-		session = self._get_session(**kwargs)
-		stmt = await self.get_queryset()
-
-		for k, v in kwargs.items():
-			column: ColumnElement = getattr(self.model, k)
-			stmt = stmt.filter(column != v)
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def exists(self, **kwargs: Any) -> bool:
-		"""
-		Check if any object exists matching the given filters.
-
-		Args:
-			**kwargs: Filter conditions.
-		"""
-		session = self._get_session(**kwargs)
-
-		# Use get_queryset to apply all standard filters and options
-		stmt = await self.get_queryset(**kwargs)
-		# Optimize by limiting to 1 since we only need to know if any exist
-		stmt = stmt.limit(1)
-
-		result = await session.execute(stmt)
-		return result.scalars().first() is not None
-	
-	@with_db_session
-	async def order_by(self, *clauses: Any, **kwargs: Any) -> Sequence[M]:
-		"""
-		Order results by the given clauses.
-
-		Example:
-			# Get users ordered by creation date (newest first)
-			users = await User.objects.order_by(User.created_at.desc())
-		"""
-		session = self._get_session(**kwargs)
-
-		stmt = await self.get_queryset(**kwargs)
-		stmt = stmt.order_by(*clauses)
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def filter(self, *criterion: ColumnElement[bool], **kwargs: ColumnElement[dict[str, Any]]) -> Sequence[M]:
-		"""
-		Return objects matching the given filters.
-
-		Can be used with both SQLAlchemy expressions and keyword arguments:
-
-		# Using SQLAlchemy expressions
-		users = await User.objects.filter(
-			User.email.endswith('@example.com'),
-			User.is_active == True
-		)
-
-		# Using keyword arguments (backward compatible)
-		users = await User.objects.filter(
-			email__endswith='@example.com',
-			is_active=True
-		)
-
-		# Or combine both styles
-		from sqlalchemy import or_
-		users = await User.objects.filter(
-			or_(
-				User.email.endswith('@example.com'),
-				User.username.like('admin%')
-			),
-			is_active=True
-		)
-		"""
-		session = self._get_session(**kwargs)
-
-		# Start with base query
-		stmt = await self.get_queryset()
-
-		# Process SQLAlchemy expressions if any
-		if criterion:
-			stmt = stmt.where(*criterion)
-
-		# Process keyword arguments (backward compatible)
-		if kwargs:
-			conditions: list[ColumnElement[bool]] = []
-
-			# Handle special lookups like field__startswith, field__contains, etc.
-			for key, value in kwargs.items():
-				if '__' in key:
-					field_name, lookup = key.split('__', 1)
-					field = getattr(self.model, field_name, None)
-					if field is None:
-						raise AttributeError(f"Model {self.model.__name__} has no attribute {field_name}")
-
-					if lookup == 'in' and isinstance(value, (list, tuple)):
-						conditions.append(field.in_(value))
-					elif lookup == 'isnull':
-						if value:
-							conditions.append(field.is_(None))
-						else:
-							conditions.append(field.is_not(None))
-					elif lookup == 'contains':
-						conditions.append(field.contains(str(value)))
-					elif lookup == 'startswith':
-						conditions.append(field.startswith(str(value)))
-					elif lookup == 'endswith':
-						conditions.append(field.endswith(str(value)))
-					elif lookup == 'gt':
-						conditions.append(field > value)
-					elif lookup == 'gte':
-						conditions.append(field >= value)
-					elif lookup == 'lt':
-						conditions.append(field < value)
-					elif lookup == 'lte':
-						conditions.append(field <= value)
-					elif lookup == 'ne':
-						conditions.append(field != value)
-					else:
-						raise ValueError(f"Unsupported lookup: {lookup}")
-				else:
-					field = getattr(self.model, key, None)
-					if field is None:
-						raise AttributeError(f"Model {self.model.__name__} has no attribute {key}")
-					conditions.append(field == value)
-
-			if conditions:
-				stmt = stmt.where(and_(*conditions))
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def limit(self, limit: int, **kwargs: Any) -> Sequence[M]:
-		"""
-		Limit the amount results.
-
-		Example:
-			# Get first 10 users
-			recent_users = await User.objects.limit(10)
-		"""
-		session = self._get_session(**kwargs)
-
-		stmt = await self.get_queryset(**kwargs)
-		stmt = stmt.limit(limit)
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def offset(self, offset: int, **kwargs: Any) -> Sequence[M]:
-		"""
-		Skip the first 'offset' results.
-
-		Example:
-			# Get users 11-20
-			next_page = await User.objects.offset(10).limit(10)
-		"""
-		session = self._get_session(**kwargs)
-
-		stmt = await self.get_queryset(**kwargs)
-		stmt = stmt.offset(offset)
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def paginate(
-			self,
-			page: int = 1,
-			per_page: int = 20,
-			**kwargs: Any
-	) -> PaginationResult[M]:
-		"""
-		Return a paginated list of objects.
-
-		Args:
-			page: Page number (1-based).
-			per_page: Amount items per page.
-			**kwargs: Optional filter conditions.
-
-		Example:
-			# Get first page with 10 items
-			result = await User.objects.paginate(page=1, per_page=10)
-
-			# With filters
-			result = await User.objects.paginate(
-				page=1,
-				per_page=10,
-				is_active=True,
-				role='admin'
-			)
-		"""
-		from sqlalchemy import func
-
-		session = self._get_session(**kwargs)
-
-		stmt = await self.get_queryset(**kwargs)
-
-		# Get total count
-		count_stmt = select(func.count()).select_from(stmt.subquery())
-		total = (await session.execute(count_stmt)).scalar() or 0
-
-		# Calculate pagination
-		pages = max(1, (total + per_page - 1) // per_page)
-		page = max(1, min(page, pages))
-		offset = (page - 1) * per_page
-
-		# Get paginated items
-		stmt = stmt.offset(offset).limit(per_page)
-		result = await session.execute(stmt)
-		items = result.scalars().all()
-
-		return PaginationResult[M](
-			items=items,
-			total=total,
-			page=page,
-			per_page=per_page,
-			pages=pages
-		)
-
-	@with_db_session
-	async def count(self, **kwargs: Any) -> int:
-		"""
-		Return the count of objects matching the given filters.
-
-		Example:
-			total_users = await User.objects.count()
-			active_users = await User.objects.count(is_active=True)
-		"""
-		from sqlalchemy import func
-
-		session = self._get_session(**kwargs)
-
-		# Get base query with filters applied
-		stmt = await self.get_queryset(**kwargs)
-		# Convert to count query
-		stmt = select(func.count()).select_from(stmt.subquery())
-
-		result = await session.execute(stmt)
-		return result.scalar() or 0
-
-	@with_db_session
-	async def filter_by_date_range(
-			self,
-			date_column: ColumnElement[datetime],
-			start_date: datetime | None = None,
-			end_date: datetime | None = None,
-			order_by: ColumnElement | None = None,
-			desc: bool = True,
-			skip: int = 0,
-			limit: int | None = None,
-			**kwargs: Any
-	) -> Sequence[M]:
-		"""
-		Filter by date range with pagination and optional ordering.
-
-		Args:
-			date_column: The column to filter on (e.g., self.model.created_at)
-			start_date: Start date (inclusive)
-			end_date: End date (inclusive)
-			order_by: Column to order by (defaults to date_column)
-			desc: Sort in descending order
-			skip: Amount records to skip
-			limit: Maximum amount records to return
-			**kwargs: Additional filter conditions.
-
-		Returns:
-			List of filtered model instances.
-		"""
-
-		session = self._get_session(**kwargs)
-
-		stmt = await self.get_queryset(**kwargs)
-
-		if start_date is not None:
-			stmt = stmt.filter(date_column >= start_date)
-
-		if end_date is not None:
-			stmt = stmt.filter(date_column <= end_date)
-
-		order_column = order_by or date_column
-		if order_column is not None:
-			if desc:
-				stmt = stmt.order_by(order_column.desc())
-			else:
-				stmt = stmt.order_by(order_column.asc())
-
-		if skip > 0:
-			stmt = stmt.offset(skip)
-
-		if limit is not None:
-			stmt = stmt.limit(limit)
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	@with_db_session
-	async def create(self, **kwargs: Any) -> M:
+	async def create(self, session: AsyncSession, **kwargs: Any) -> M:
 		"""
 		Create a new object with the given attributes.
-
-		Args:
-			**kwargs: Object attributes.
-
-		Returns:
-			The created model instance.
-
-		Example:
+		
+		Examples:
 			user = await User.objects.create(
 				username='john',
 				email='john@example.com',
 				is_active=True
 			)
-
-		Raises:
-			SQLAlchemyError: If there's an error during creation.
 		"""
-		session = self._get_session(**kwargs)
-
 		instance = self.model(**kwargs)
 		session.add(instance)
-
 		await session.flush()
 		await session.refresh(instance)
 		return instance
 
 	@with_db_session
-	async def update_by_id(self, user_id: int, **kwargs: Any) -> Optional[M]:
+	async def bulk_create(
+			self,
+			objects: list[dict[str, Any]],
+			session: AsyncSession,
+			return_instances: bool = False,
+	) -> list[M] | int:
+		"""
+		Create multiple objects in a single query.
+		
+		Examples:
+			users_data = [
+				{'username': 'user1', 'email': 'user1@example.com'},
+				{'username': 'user2', 'email': 'user2@example.com'}
+			]
+			count = await User.objects.bulk_create(users_data)
+			users = await User.objects.bulk_create(users_data, return_instances=True)
+		"""
+		if not objects:
+			return [] if return_instances else 0
+
+		instances = [self.model(**obj) for obj in objects]
+		session.add_all(instances)
+		await session.flush()
+
+		if return_instances:
+			for instance in instances:
+				await session.refresh(instance)
+			return instances
+
+		return len(instances)
+
+	@with_db_session
+	async def update_by_id(self, instance_id: int, session: AsyncSession, **kwargs: Any) -> Optional[M]:
 		"""
 		Update an object by its ID.
-
-		Args:
-			user_id: ID of the object to update.
-			**kwargs: Attributes to update.
-
-		Returns:
-			The updated model instance or None if not found.
-
-		Example:
+		
+		Examples:
 			user = await User.objects.update_by_id(
 				user_id=1,
-				email='new@example.com',
-				is_active=True
+				email='new@example.com'
 			)
 		"""
-		session = self._get_session(**kwargs)
-
-		instance = await self.get(id=user_id, session=session)
+		instance = await self.get(id=instance_id, session=session)
 		if not instance:
 			return None
 
@@ -590,23 +701,14 @@ class BaseManager(Generic[M]):
 		return instance
 
 	@with_db_session
-	async def delete_by_id(self, _id: int, **kwargs: Any) -> bool:
+	async def delete_by_id(self, instance_id: int, session: AsyncSession) -> bool:
 		"""
 		Delete an object by its ID.
-
-		Args:
-			_id: ID of the object to delete.
-
-		Returns:
-			True if the object was deleted, False if not found.
-
-		Example:
-			# Delete user with ID 1
+		
+		Examples:
 			success = await User.objects.delete_by_id(1)
 		"""
-		session = self._get_session(**kwargs)
-
-		instance = await self.get(id=_id, session=session)
+		instance = await self.get(id=instance_id, session=session)
 		if not instance:
 			return False
 
@@ -614,159 +716,153 @@ class BaseManager(Generic[M]):
 		await session.flush()
 		return True
 
-	def select_related(self, *relations: str | QueryableAttribute) -> 'BaseManager[M]':
-		"""
-		Optimize for foreign-key relationships.
+	# Advanced query methods
 
-		Args:
-			*relations: String names of relationships to eager load
-
-		Returns:
-			Self for method chaining
-		"""
-		self._eager_loads.extend(relations)
-		return self
-
-	def prefetch_related(self, *relations: str) -> 'BaseManager[M]':
-		"""
-		Optimize for many-to-many and reverse foreign-key relationships.
-
-		Args:
-			*relations: String names of relationships to prefetch
-
-		Returns:
-			Self for method chaining
-		"""
-		if not hasattr(self, '_prefetch_loads'):
-			self._prefetch_loads: list[str] = []
-
-		self._prefetch_loads.extend(relations)
-		return self
-
-	@with_db_session
-	async def bulk_create(
+	async def filter_by_date_range(
 			self,
-			objects: list[dict[str, Any]],
-			return_instances: bool = False,
-			**kwargs: Any
-	) -> list[M] | int:
+			date_column: ColumnElement[datetime],
+			start_date: date | None = None,
+			end_date: date | None = None,
+			order_by: ColumnElement | None = None,
+			desc: bool = True,
+			skip: int = 0,
+			limit: int | None = None,
+			session: AsyncSession | None = None,
+	) -> Sequence[M]:
 		"""
-		Create multiple objects in a single query.
+		Filter by date range with pagination and optional ordering.
+		
+		Examples:
+			from datetime import datetime, timedelta
 
-		Args:
-			objects: List of dictionaries containing object attributes.
-			return_instances: If True, return created instances (slower).
+			start = datetime.now() — timedelta(days=7)
+			end = datetime.now()
 
-		Returns:
-			List of created instances if return_instances is True, else count of created objects.
-
-		Example:
-			# Create multiple users
-			users_data = [
-				{'username': 'user1', 'email': 'user1@example.com'},
-				{'username': 'user2', 'email': 'user2@example.com'}
-			]
-			created_count = await User.objects.bulk_create(users_data)
-			
-			# Get created instances with their IDs
-			created_users = await User.objects.bulk_create(users_data, return_instances=True)
-		"""
-		session = self._get_session(**kwargs)
-
-		if not objects:
-			return [] if return_instances else 0
-
-		instances = [self.model(**obj) for obj in objects]
-		session.add_all(instances)
-		await session.flush()
-
-		if return_instances:
-			# Refresh all instances to get their IDs
-			for instance in instances:
-				await session.refresh(instance)
-			return instances
-
-		return len(instances)
-
-	@with_db_session
-	async def has(self, **kwargs: Any) -> Sequence[M]:
-		"""
-		Return objects that have related objects matching the given filters.
-
-		Args:
-			**kwargs: Filters to apply to related objects
-				Format: {relation_name={field: value}}
-				Example: social_accounts={"user_id": 1}
-
-		Returns:
-			List of model instances with matching related objects
-
-		Example:
-			# Get groups that have at least one social account for user with ID 1
-			groups = await SocialGroup.objects.has(social_accounts={"user_id": 1})
-		"""
-		from sqlalchemy.sql.expression import literal
-
-		session = self._get_session(**kwargs)
-		stmt = await self.get_queryset()
-
-		for relation, conditions in kwargs.items():
-			if not hasattr(self.model, relation):
-				continue
-
-			# Handle dictionary conditions
-			if isinstance(conditions, dict):
-				relationship = getattr(self.model, relation).property
-				related_model = relationship.mapper.class_
-
-				# Create correlation condition
-				if relationship.direction.name == 'MANYTOONE':
-					# For many-to-one, use the foreign key directly
-					fk_column = getattr(self.model, f"{relation}_id")
-					correlation = (fk_column == related_model.id)
-				else:
-					# For one-to-many or many-to-many, use the relationship's primaryjoin
-					correlation = relationship.primaryjoin
-
-				# Build conditions for the subquery
-				condition_parts = [correlation]
-				for key, value in conditions.items():
-					if hasattr(related_model, key):
-						column = getattr(related_model, key)
-						if value is not None:
-							condition_parts.append(column == value)
-
-				# Create the subquery with proper correlation
-				sub_query = (
-					select(literal(1))
-					.where(and_(*condition_parts))
-					.correlate(self.model)
-				)
-
-				# Add EXISTS clause
-				stmt = stmt.where(exists(sub_query))
-
-		result = await session.execute(stmt)
-		return result.scalars().all()
-
-	def annotate(self, **annotations: Any) -> 'BaseManager[M]':
-		"""
-		Add annotations to the query.
-
-		Args:
-			**annotations: Annotation expressions
-				(e.g., user_count=func.count(User.id))
-
-		Returns:
-			Self for method chaining
-
-		Example:
-			# Annotate groups with member count
-			groups = await (
-				Group.objects
-				.annotate(member_count=func.count(Group.members))
-				.filter(member_count__gt=5)
+			recent = await User.objects.filter_by_date_range(
+				User.created_at,
+				start_date=start,
+				end_date=end,
+				limit=10
 			)
 		"""
-		self._annotations.update(annotations)
-		return self
+		qs = self.get_queryset(session)
+
+		if start_date is not None:
+			qs = qs.filter(date_column >= start_date)
+
+		if end_date is not None:
+			qs = qs.filter(date_column <= end_date)
+
+		order_column = order_by or date_column
+		if order_column is not None:
+			qs = qs.order_by(order_column.desc() if desc else order_column.asc())
+
+		if skip > 0:
+			qs = qs.offset(skip)
+
+		if limit is not None:
+			qs = qs.limit(limit)
+
+		return await qs.all()
+
+	async def paginate(
+			self,
+			page: int = 1,
+			per_page: int = 20,
+			session: AsyncSession | None = None,
+			**filters: Any
+	) -> PaginationResult[M]:
+		"""
+		Return a paginated list of objects.
+		
+		Examples:
+			result = await User.objects.paginate(page=1, per_page=10, is_active=True)
+		"""
+		return await self.get_queryset(session).filter(**filters).paginate(page=page, per_page=per_page)
+
+	# Helper methods for building queries
+
+	def _build_prefetch_option(self, relation: str | QueryableAttribute | InstrumentedAttribute | Prefetch):
+		"""Create selectinload option for a relation or Prefetch descriptor."""
+		if isinstance(relation, Prefetch):
+			return self._build_prefetch_from_descriptor(relation)
+
+		if isinstance(relation, (QueryableAttribute, InstrumentedAttribute)):
+			return selectinload(relation)
+
+		if isinstance(relation, str):
+			if '.' in relation:
+				return self._build_nested_selectinload(self.model, relation)
+			rel_attr = getattr(self.model, relation, None)
+			if rel_attr is not None and hasattr(rel_attr, 'property'):
+				return selectinload(rel_attr)
+
+		return None
+
+	def _build_prefetch_from_descriptor(self, descriptor: Prefetch):
+		"""Build selectinload with filters from Prefetch descriptor."""
+		path = descriptor.path
+		filters = descriptor.filters or {}
+		criteria = list(descriptor.criteria)
+		queryset = descriptor.queryset
+
+		if isinstance(path, (QueryableAttribute, InstrumentedAttribute)):
+			attr = path
+			mapper = attr.property.mapper.class_
+		elif isinstance(path, str):
+			if '.' in path:
+				if filters or criteria or queryset:
+					raise ValueError("Filtered prefetch is not supported for dotted relation paths")
+				return self._build_nested_selectinload(self.model, path)
+			attr = getattr(self.model, path, None)
+			if attr is None:
+				return None
+			mapper = attr.property.mapper.class_
+		else:
+			return None
+
+		# Build conditions from different sources
+		conditions: list[ColumnElement[bool]] = []
+
+		# 1. From queryset (Django-style)
+		if queryset is not None:
+			# Извлекаем условия из QuerySet
+			if hasattr(queryset, '_criterion') and queryset._criterion:
+				conditions.extend(queryset._criterion)
+			if hasattr(queryset, '_kw_filters') and queryset._kw_filters:
+				conditions.extend(LookupCompiler.compile_filters(mapper, queryset._kw_filters))
+
+		# 2. From filters
+		if filters:
+			conditions.extend(LookupCompiler.compile_filters(mapper, filters))
+
+		# 3. From criteria
+		conditions.extend(criteria)
+
+		if conditions:
+			prefetch_attr = attr
+			for condition in conditions:
+				prefetch_attr = prefetch_attr.and_(condition)
+			return selectinload(prefetch_attr)
+
+		return selectinload(attr)
+
+	@staticmethod
+	def _build_nested_selectinload(model: Type[M], path: str):
+		"""Build nested selectinload for dotted paths like 'role.permissions'."""
+		parts = path.split('.')
+		attr = getattr(model, parts[0], None)
+		if attr is None or not hasattr(attr, 'property'):
+			return None
+
+		option = selectinload(attr)
+		current_cls = attr.property.mapper.class_
+
+		for part in parts[1:]:
+			next_attr = getattr(current_cls, part, None)
+			if next_attr is None or not hasattr(next_attr, 'property'):
+				return option
+			option = option.selectinload(next_attr)
+			current_cls = next_attr.property.mapper.class_
+
+		return option

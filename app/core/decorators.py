@@ -2,7 +2,7 @@ from functools import wraps
 
 from fastapi import HTTPException
 
-from app.types.models import UserRole
+from app.types.models import UserRoleType
 
 
 def app_label(label: str):
@@ -15,7 +15,7 @@ def app_label(label: str):
 	return decorator
 
 
-def role_required(min_role: UserRole):
+def role_required(min_role: UserRoleType):
 	def decorator(func):
 		@wraps(func)
 		async def wrapper(*args, **kwargs):

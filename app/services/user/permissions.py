@@ -5,7 +5,7 @@ from fastapi.params import Depends
 
 from app.models import User, Permission, Role
 from app.services.user.auth import get_authenticated_user
-from app.types.models import ActionType, UserRole
+from app.types.models import ActionType, UserRoleType
 
 logger = logging.getLogger(__name__)
 
@@ -367,31 +367,31 @@ class RolePermissionService:
 	def assign_default_permissions():
 		"""Assign default permissions based on role hierarchy"""
 		default_permissions = {
-			UserRole.VIEWER: [
+			UserRoleType.VIEWER: [
 				"social.notification.view",
 				"social.post.view",
 			],
-			UserRole.AI_BOT: [
+			UserRoleType.AI_BOT: [
 				"social.notification.view",
 				"social.post.view",
 				"social.post.create",
 			],
-			UserRole.MANAGER: [
+			UserRoleType.MANAGER: [
 				"social.notification.view",
 				"social.post.*",
 				"dashboard.statistics.view",
 			],
-			UserRole.ANALYST: [
+			UserRoleType.ANALYST: [
 				"social.notification.view",
 				"social.post.view",
 				"dashboard.aianalysisresult.*",
 			],
-			UserRole.MODERATOR: [
+			UserRoleType.MODERATOR: [
 				"social.notification.*",
 				"social.post.*",
 				"dashboard.aianalysisresult.view",
 			],
-			UserRole.ADMIN: [
+			UserRoleType.ADMIN: [
 				"*"
 			],
 		}

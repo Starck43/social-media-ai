@@ -1,22 +1,24 @@
-from typing import Any, Dict, List, Optional, Union
-from pydantic import AnyHttpUrl, EmailStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Optional
 from dotenv import load_dotenv
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
 
 class Settings(BaseSettings):
+	model_config = SettingsConfigDict(
+		env_file=".env",
+		env_file_encoding="utf-8",
+		case_sensitive=False,
+		extra="ignore"  # Игнорируем лишние переменные в .env
+	)
 
 	# Настройки приложения
 	ENVIRONMENT: str = "development"
 	ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:8501"
-	BACKEND_CORS_ORIGINS: List[str] = [
+	BACKEND_CORS_ORIGINS: list[str] = [
 		"http://localhost:3000",  # React dev server
 		"http://localhost:8000",  # FastAPI dev server
-		# "https://ваш-продакшн-домен.com",
+		# "https://real-domain.com",
 	]
 	HOST: str = "0.0.0.0"
 	PORT: int = 8000
@@ -62,19 +64,14 @@ class Settings(BaseSettings):
 
 	POSTGRES_URL: str
 	REDIS_URL: str
-	DB_SCHEMA: str = 'social_manager'
+	DB_SCHEMA: str = "social_manager"
 
-	# Опциональные переменные
-	DEEPSEEK_API_KEY: str = ""
-	VK_APP_ID: str = ""
-	VK_APP_SECRET: str = ""
-	TELEGRAM_BOT_TOKEN: str = ""
-
-	model_config = SettingsConfigDict(
-		env_file=".env",
-		env_file_encoding="utf-8",
-		extra="ignore"  # Игнорируем лишние переменные в .env
-	)
+	DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
+	DEEPSEEK_API_KEY: str
+	VK_APP_ID: str
+	VK_SERVICE_ACCESS_TOKEN: str
+	TELEGRAM_BOT_TOKEN: str
+	TELEGRAM_ADMIN_CHAT_ID: str # Chat ID for admin notifications
 
 
 settings = Settings()

@@ -1,0 +1,211 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2>
+                <i class="fa fa-check-circle text-success"></i>
+                Проверка источника: {{ source.name }}
+            </h2>
+            <p class="text-muted">
+                <i class="fa fa-clock"></i> {{ checked_at.strftime('%d.%m.%Y %H:%M:%S') }}
+                •
+                <i class="fa fa-globe"></i> {{ source.platform.name }}
+                •
+                <i class="fa fa-tag"></i> {{ source.source_type.value }}
+            </p>
+        </div>
+        <div class="col-auto">
+            <a href="{{ request.url_for('admin:list', identity='source') }}" class="btn btn-secondary">
+                <i class="fa fa-arrow-left"></i> Назад к списку
+            </a>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">
+        <h4 class="alert-heading"><i class="fa fa-exclamation-triangle"></i> Ошибка</h4>
+        <p>{{ error }}</p>
+    </div>
+    {% else %}
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1">Всего постов</h6>
+                            <h2 class="mb-0">{{ total_count }}</h2>
+                        </div>
+                        <i class="fa fa-file-text fa-3x opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1">Лайков</h6>
+                            <h2 class="mb-0">{{ stats.total_likes }}</h2>
+                        </div>
+                        <i class="fa fa-heart fa-3x opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1">Комментариев</h6>
+                            <h2 class="mb-0">{{ stats.total_comments }}</h2>
+                        </div>
+                        <i class="fa fa-comment fa-3x opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1">Просмотров</h6>
+                            <h2 class="mb-0">{{ stats.total_views }}</h2>
+                        </div>
+                        <i class="fa fa-eye fa-3x opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content List -->
+    <div class="card">
+        <div class="card-header">
+            <h4 class="mb-0">
+                <i class="fa fa-list"></i>
+                Собранный контент
+                <small class="text-muted">(показано {{ content|length }} из {{ total_count }})</small>
+            </h4>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="5%">#</th>
+                            <th width="10%">Дата</th>
+                            <th width="45%">Текст</th>
+                            <th width="10%" class="text-center">❤️ Лайки</th>
+                            <th width="10%" class="text-center">💬 Комменты</th>
+                            <th width="10%" class="text-center">👁 Просмотры</th>
+                            <th width="10%" class="text-end">Ссылка</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in content %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <small class="text-muted">
+                                    {% if item.created_at %}
+                                        {{ item.created_at.strftime('%d.%m.%Y') }}<br>
+                                        {{ item.created_at.strftime('%H:%M') }}
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <div style="max-height: 80px; overflow: hidden;">
+                                    {{ item.text[:200] }}
+                                    {% if item.text|length > 200 %}...{% endif %}
+                                </div>
+                                {% if item.attachments %}
+                                <small class="text-muted">
+                                    <i class="fa fa-paperclip"></i>
+                                    {{ item.attachments|length }} вложений
+                                </small>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-danger">{{ item.likes or 0 }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-info">{{ item.comments or 0 }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ item.views or 0 }}</span>
+                            </td>
+                            <td class="text-end">
+                                {% if item.url %}
+                                <a href="{{ item.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-external-link"></i>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if total_count > content|length %}
+        <div class="card-footer text-center">
+            <small class="text-muted">
+                <i class="fa fa-info-circle"></i>
+                Показано только первые 20 записей. Всего собрано: {{ total_count }}
+            </small>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="row mt-4">
+        <div class="col">
+            <a href="{{ request.url_for('admin:list', identity='source') }}" class="btn btn-secondary">
+                <i class="fa fa-arrow-left"></i> Назад
+            </a>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-success" onclick="location.reload()">
+                <i class="fa fa-refresh"></i> Обновить
+            </button>
+        </div>
+    </div>
+
+    {% endif %}
+</div>
+
+<style>
+    .opacity-50 {
+        opacity: 0.5;
+    }
+    .card {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        border: none;
+    }
+    .card-body {
+        padding: 1.5rem;
+    }
+    .table td {
+        vertical-align: middle;
+    }
+    .badge {
+        font-size: 0.9rem;
+        padding: 0.35em 0.65em;
+    }
+</style>
+{% endblock %}

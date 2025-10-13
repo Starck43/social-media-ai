@@ -6,6 +6,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from . import Base, TimestampMixin
+from ..core.config import settings
 from ..core.decorators import app_label
 from ..types.models import NotificationType
 
@@ -13,14 +14,16 @@ from ..types.models import NotificationType
 @app_label("social")
 class Notification(Base, TimestampMixin):
 	__tablename__ = 'notifications'
-	__table_args__ = {'schema': 'social_manager'}
+	__table_args__ = {'schema': settings.DB_SCHEMA}
 
 	id: Mapped[int] = Column(Integer, primary_key=True)
 	title: Mapped[str] = Column(String(200), nullable=False)
 	message: Mapped[str] = Column(Text, nullable=False)
-	notification_type: Mapped[NotificationType] = mapped_column(
-		Enum(NotificationType, name='notification_type', schema='social_manager', inherit_schema=True)
-	)  # 'alert', 'info', 'warning'
+	# Используем существующий тип notification_type из базы данных
+	notification_type: Mapped[NotificationType] = NotificationType.sa_column(
+		type_name='notification_type',
+		store_as_name=True  # Хранить как имена (REPORT_READY, MOOD_CHANGE, etc.)
+	)
 	is_read: Mapped[bool] = Column(Boolean, default=False)
 	related_entity_type: Mapped[str] = Column(String(50))  # 'source', 'platform', 'analysis'
 	related_entity_id: Mapped[int] = Column(Integer)

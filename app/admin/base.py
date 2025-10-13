@@ -1,6 +1,7 @@
 from typing import Any
 
 from sqladmin import ModelView
+from wtforms import SelectField
 
 
 class BaseAdmin(ModelView):
@@ -14,6 +15,24 @@ class BaseAdmin(ModelView):
 
     form_include_relationships = True
     form_excluded_columns = ['created_at', 'updated_at']
+    
+    # Переопределяем is_active как SelectField с "Да / Нет"
+    form_overrides = {
+        'is_active': SelectField
+    }
+    
+    form_args = {
+        'is_active': {
+            'choices': [(True, 'Да'), (False, 'Нет')],
+            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
+        }
+    }
+    
+    column_labels = {
+        "created_at": "Дата создания",
+        "updated_at": "Дата обновления",
+        "is_active": "Активен",
+    }
 
     column_formatters = {
         "role": lambda m, a: m.role.name.upper() if m.role else "",

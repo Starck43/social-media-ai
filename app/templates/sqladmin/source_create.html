@@ -1,0 +1,45 @@
+{% extends "sqladmin/create.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Используем более надежные селекторы
+            const sourceTypeField = document.querySelector("select[name=\"source_type\"], [name$=\".source_type\"]")
+            const monitoredUsersContainer = document.querySelector(".form-group:has([name=\"monitored_users\"]), .form-group:has([name$=\".monitored_users\"]), .field:has([name=\"monitored_users\"])")
+
+            // Альтернативный поиск контейнера поля
+            let monitoredUsersField = null
+            if (!monitoredUsersContainer) {
+                const monitoredUsersInput = document.querySelector("[name=\"monitored_users\"], [name$=\".monitored_users\"]")
+                if (monitoredUsersInput) {
+                    monitoredUsersField = monitoredUsersInput.closest(".form-group, .field, .mb-3")
+                }
+            } else {
+                monitoredUsersField = monitoredUsersContainer
+            }
+
+            if (!sourceTypeField || !monitoredUsersField) return
+
+            function toggleMonitoredUsersField() {
+                const sourceType = sourceTypeField.value ? sourceTypeField.value.toLowerCase() : ""
+
+                // Скрываем поле если выбран USER
+                if (sourceType === "user") {
+                    monitoredUsersField.style.display = "none"
+                } else {
+                    monitoredUsersField.style.display = "flex"
+                }
+            }
+
+            // Вызываем при загрузке
+            toggleMonitoredUsersField()
+
+            // И при изменении типа источника
+            sourceTypeField.addEventListener("change", toggleMonitoredUsersField)
+
+            // Также слушаем событие на форме для динамических изменений
+            sourceTypeField.addEventListener("input", toggleMonitoredUsersField)
+        })
+    </script>
+{% endblock %}

@@ -4,7 +4,7 @@
 	--tblr-primary-darken: #1c2e7f;
 	--tblr-primary-rgb: 46, 71, 193;
 
-	--tblr-secondary: #a786f1;
+	--tblr-secondary: #5e33c8;
 	--tblr-success: #4cc9f0;
 	--tblr-danger: #f72585;
 	--tblr-warning: #fca311;
@@ -27,10 +27,6 @@
 		--tblr-btn-disabled-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
 	}
 
-	.input-group .btn {
-		--tblr-btn-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
-	}
-
 	.navbar {
 		--tblr-navbar-color: rgba(var(--tblr-white-rgb), 1);
 	}
@@ -39,6 +35,19 @@
 		--tblr-light: transparent;
 		--tblr-light-fg: var(--tblr-body-color);
 		--tblr-btn-border-color: var(--tblr-body-color);
+	}
+
+	.form-fieldset {
+		background-color: rgba(var(--tblr-bg-surface-rgb), 0.2);
+	}
+
+	label {
+		font-weight: bold;
+		margin-bottom: 0.5rem;
+	}
+
+	.input-group .btn {
+		--tblr-btn-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
 	}
 
 	/* Фон для страниц аутентификации */
@@ -60,7 +69,7 @@
 [data-theme="dark"] {
 	/* Переопределение темной темы Tabler */
 	--tblr-primary: #6b83f3;
-	--tblr-secondary: #3a0ca3;
+	--tblr-secondary: #a17fed;
 	--tblr-bg-surface: #25213e;
 	--tblr-bg-surface-rgb: 0, 0, 0;
 	--tblr-bg-surface-secondary: #192f62;
@@ -250,6 +259,14 @@ button[type=submit] {
 	color: rgba(var(--tblr-white-rgb), 0.5);
 }
 
+.btn i {
+	margin-right: 5px;
+}
+.btn-sm {
+	padding: 3px 8px;
+	border-radius: 3px;
+}
+
 .btn.disabled, .btn:disabled, fieldset:disabled .btn {
 	border: var(--tblr-border-width) solid var(--tblr-border-color);
 	opacity: 1;
@@ -275,14 +292,18 @@ button[type=submit] {
 }
 
 /* Специфичные стили для форм */
+.form-control {
+	padding: .625rem .75rem;
+}
+
+.form-control:focus {
+	background-color: rgba(var(--tblr-bg-surface-rgb), 1);
+}
+
 .form-group {
 	width: 100%;
 	margin-top: 1rem;
 	align-items: baseline;
-}
-
-.form-control {
-	padding: .625rem .75rem;
 }
 
 .form-group input:not(:focus) {
@@ -463,9 +484,25 @@ button[type=submit] {
 	backdrop-filter: blur(10px);
 }
 
+.select2-container--default .select2-selection--multiple {
+	background-color: inherit;
+}
+
 .select2-container--default .select2-search--dropdown .select2-search__field {
 	background-color: transparent;
 	padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
+}
+
+.select2-container--default .select2-selection--multiple {
+    border: var(--tblr-border-width) solid var(--tblr-border-color) !important;
+}
+
+.select2-container--default .select2-search__field {
+	color: var(--tblr-body-color);
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+	background-color: var(--tblr-secondary);
 }
 
 .select2-container--default .select2-selection--single .select2-selection__arrow {

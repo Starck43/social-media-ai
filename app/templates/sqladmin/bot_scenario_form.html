@@ -1,0 +1,518 @@
+{% extends "sqladmin/base_form.html" %}
+
+{% block extra_css %}
+    {{ super() }}
+    <style>
+		/* Скрываем поля которые рендерим вручную */
+		.form-group:has([name="scope"]),
+		.form-group:has([name="content_types"]),
+		.form-group:has([name="analysis_types"]) {
+			display: none !important;
+		}
+
+		/* Секции формы */
+		.form-section {
+			padding: 24px;
+			margin-bottom: 24px;
+		}
+
+		.form-section-title {
+			font-size: 1.1rem;
+			font-weight: bold;
+			margin-bottom: 16px;
+			color: var(--tblr-body-color);
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.form-section-title i {
+			color: var(--tblr-primary);
+		}
+
+		.form-section-title i {
+			font-size: 1.2rem;
+		}
+
+		.form-section-desc {
+			font-size: 0.875rem;
+			color: var(--tblr-secondary);
+			margin-bottom: 16px;
+		}
+
+		/* Choice grid для radio/checkbox */
+		.choice-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+			gap: 12px;
+		}
+
+		.choice-item {
+			position: relative;
+		}
+
+		.choice-item input {
+			position: absolute;
+			opacity: 0;
+			width: 0;
+			height: 0;
+		}
+
+		.choice-label {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			min-height: 54px;
+			height: 100%;
+			padding: 14px 16px;
+			background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+			border: 2px solid var(--tblr-border-color);
+			border-radius: 8px;
+			transition: all 0.2s ease;
+			cursor: pointer;
+		}
+
+		.choice-item:hover .choice-label {
+			border-color: var(--tblr-primary);
+			background: rgba(var(--tblr-primary-rgb), 0.1);
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+		}
+
+		.choice-item input:checked + .choice-label {
+			border-color: var(--tblr-primary);
+			background: rgba(var(--tblr-primary-rgb), 0.15);
+			box-shadow: 0 0 0 3px rgba(var(--tblr-primary-rgb), 0.1);
+		}
+
+		.choice-emoji {
+			font-size: 1.5rem;
+			line-height: 1;
+			flex-shrink: 0;
+			width: 32px;
+			text-align: center;
+		}
+
+		.choice-text {
+			font-size: 0.95rem;
+			font-weight: 500;
+			line-height: 1.3;
+			color: inherit;
+			flex-grow: 1;
+		}
+
+		.choice-item input:checked + .choice-label .choice-text {
+			font-weight: 600;
+		}
+
+		/* Scope editor */
+		.scope-preset {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+			gap: 12px;
+			margin-bottom: 20px;
+		}
+
+		.preset-btn {
+			padding: 12px 16px;
+			border: 2px solid var(--tblr-border-color);
+			border-radius: 8px;
+			background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+			cursor: pointer;
+			transition: all 0.2s;
+			font-weight: 500;
+			text-align: left;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.preset-btn:hover {
+			background: rgba(var(--tblr-primary-rgb), 0.1);
+			border-color: var(--tblr-primary);
+			transform: translateY(-2px);
+		}
+
+		.preset-btn.active {
+			background: var(--tblr-primary);
+			color: white;
+			border-color: var(--tblr-primary);
+			box-shadow: 0 4px 12px rgba(var(--tblr-primary-rgb), 0.3);
+		}
+
+		.scope-json {
+			font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+			font-size: 13px;
+			min-height: 200px;
+			color: inherit;
+			background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+			border: 2px solid var(--tblr-border-color);
+			border-radius: var(--tblr-border-radius);
+			padding: 12px;
+			width: 100%;
+		}
+
+		/* Быстрые действия */
+		.quick-actions {
+			display: flex;
+			gap: 8px;
+			flex-wrap: wrap;
+			margin-top: 1.5rem;
+		}
+    </style>
+{% endblock %}
+
+{% block form_content %}
+    {{ super() }}
+
+    <!-- Секция 1: Типы анализа -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-brain"></i>
+            Типы AI анализа
+        </div>
+        <div class="form-section-desc">
+            Выберите один или несколько типов анализа (сохраняются в scope.analysis_types)
+        </div>
+
+        <div class="choice-grid">
+            {% if form.analysis_types_enum %}
+                {% for analysis_type in form.analysis_types_enum %}
+                    <div class="choice-item">
+                        <input
+                            type="checkbox"
+                            value="{{ analysis_type.name.lower() }}"
+                            id="analysis_{{ analysis_type.name.lower() }}"
+                            class="analysis-type-input">
+                        <label for="analysis_{{ analysis_type.name.lower() }}" class="choice-label">
+                            <span class="choice-emoji">{{ analysis_type.emoji }}</span>
+                            <span class="choice-text">{{ analysis_type.display_name }}</span>
+                        </label>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-primary" onclick="selectAllAnalysisTypes()">
+                <i class="fa fa-check-square"></i> Выбрать все
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="clearAllAnalysisTypes()">
+                <i class="fa fa-square-o"></i> Очистить
+            </button>
+        </div>
+    </fieldset>
+
+    <!-- Секция 2: Типы контента -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-list"></i>
+            Типы контента для мониторинга
+        </div>
+        <div class="form-section-desc">
+            Выберите какие типы контента будут анализироваться
+        </div>
+
+        <div class="choice-grid">
+            {% if form.content_types_enum %}
+                {% for content_type in form.content_types_enum %}
+                    <div class="choice-item">
+                        <input
+                            type="checkbox"
+                            value="{{ content_type.name.lower() }}"
+                            id="content_{{ content_type.name.lower() }}"
+                            class="content-type-input">
+                        <label for="content_{{ content_type.name.lower() }}" class="choice-label">
+                            <span class="choice-emoji">{{ content_type.emoji }}</span>
+                            <span class="choice-text">{{ content_type.display_name }}</span>
+                        </label>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-primary" onclick="selectAllContentTypes()">
+                <i class="fa fa-check-square"></i> Выбрать все
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="clearAllContentTypes()">
+                <i class="fa fa-square-o"></i> Очистить
+            </button>
+            <button type="button" class="btn btn-sm btn-info" onclick="selectCommonContentTypes()">
+                <i class="fa fa-star"></i> Популярные
+            </button>
+        </div>
+    </fieldset>
+
+    <!-- Секция 3: Настройка Scope -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-code"></i>
+            Условия срабатывания (Scope)
+        </div>
+        <div class="form-section-desc">
+            Выберите пресет или создайте собственные условия в JSON формате
+        </div>
+
+        <div class="scope-preset">
+            {% if form.presets %}
+                {% for preset_key, preset_data in form.presets.items() %}
+                    <button type="button" class="preset-btn choice-text" data-preset="{{ preset_key }}"
+                            onclick="loadPreset('{{ preset_key }}')">
+                        <span style="font-size: 1.2em;">{{ preset_data.icon }}</span> {{ preset_data.name }}
+                    </button>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <label for="scope-json">JSON (Переменные)</label>
+        <textarea class="scope-json" id="scope-json" rows="10"></textarea>
+        <div class="help-text">
+            Переменные используются в промпте как {<b>variable_name</b>}. <b>Пример</b>: <i>{"topics": ["политика",
+            "экономика"]}</i>
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="formatScopeJSON()">
+                <i class="fa fa-indent"></i> Форматировать
+            </button>
+            <button type="button" class="btn btn-sm btn-info" onclick="addVariable()">
+                <i class="fa fa-plus"></i> Добавить переменную
+            </button>
+        </div>
+    </fieldset>
+
+    <!-- Поле action_type рендерится автоматически SQLAdmin после наших кастомных секций -->
+    <!-- action_type отображается автоматически sqladmin -->
+
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        // Presets data from Python config
+        const presets = {{ form.presets|tojson if form.presets else '{}' }};
+
+        // Load preset
+        function loadPreset(presetName) {
+            const preset = presets[presetName]
+            if (!preset) return
+
+            // Load scope (includes analysis_types)
+            document.getElementById("scope-json").value = JSON.stringify(preset.scope, null, 2)
+
+            // Load content_types checkboxes
+            clearAllContentTypes()
+            if (preset.content_types) {
+                preset.content_types.forEach(type => {
+                    const checkbox = document.getElementById(`content_${type}`)
+                    if (checkbox) checkbox.checked = true
+                })
+            }
+
+            // Load analysis_types checkboxes (из отдельного поля пресета)
+            clearAllAnalysisTypes()
+            if (preset.analysis_types) {
+                preset.analysis_types.forEach(type => {
+                    const checkbox = document.getElementById(`analysis_${type}`)
+                    if (checkbox) checkbox.checked = true
+                })
+            }
+
+            // Update UI
+            document.querySelectorAll(".preset-btn").forEach(btn => btn.classList.remove("active"))
+            const presetBtn = document.querySelector(`.preset-btn[data-preset="${presetName}"]`)
+            if (presetBtn) presetBtn.classList.add("active")
+
+            // Sync to form
+            syncContentTypesToForm()
+            syncScopeToForm()
+        }
+
+        // Format JSON
+        function formatScopeJSON() {
+            const textarea = document.getElementById("scope-json")
+            try {
+                const obj = JSON.parse(textarea.value)
+                textarea.value = JSON.stringify(obj, null, 2)
+            } catch (e) {
+                alert("Ошибка форматирования JSON: " + e.message)
+            }
+        }
+
+        // Add variable
+        function addVariable() {
+            const textarea = document.getElementById("scope-json")
+            const varName = prompt("Название переменной:")
+            if (!varName) return
+
+            const varValue = prompt("Значение переменной (или JSON):")
+            if (!varValue) return
+
+            try {
+                const current = textarea.value ? JSON.parse(textarea.value) : {}
+                try {
+                    current[varName] = JSON.parse(varValue)
+                } catch {
+                    current[varName] = varValue
+                }
+                textarea.value = JSON.stringify(current, null, 2)
+                syncScopeToForm()
+            } catch (e) {
+                alert("Ошибка: " + e.message)
+            }
+        }
+
+        // Analysis types functions
+        function selectAllAnalysisTypes() {
+            document.querySelectorAll(".analysis-type-input").forEach(cb => cb.checked = true)
+            syncScopeToForm()
+        }
+
+        function clearAllAnalysisTypes() {
+            document.querySelectorAll(".analysis-type-input").forEach(cb => cb.checked = false)
+            syncScopeToForm()
+        }
+
+        // Content types functions
+        function selectAllContentTypes() {
+            document.querySelectorAll(".content-type-input").forEach(cb => cb.checked = true)
+            syncContentTypesToForm()
+        }
+
+        function clearAllContentTypes() {
+            document.querySelectorAll(".content-type-input").forEach(cb => cb.checked = false)
+            syncContentTypesToForm()
+        }
+
+        function selectCommonContentTypes() {
+            clearAllContentTypes();
+            ["posts", "comments"].forEach(type => {
+                const checkbox = document.getElementById(`content_${type}`)
+                if (checkbox) checkbox.checked = true
+            })
+            syncContentTypesToForm()
+        }
+
+        // Sync to form fields
+        function syncContentTypesToForm() {
+            const selected = Array.from(document.querySelectorAll(".content-type-input:checked"))
+                .map(cb => cb.value)
+
+            // Создаем скрытое поле если его нет
+            let contentTypesField = document.querySelector("input[name=\"content_types\"]")
+            if (!contentTypesField) {
+                contentTypesField = document.createElement("input")
+                contentTypesField.type = "hidden"
+                contentTypesField.name = "content_types"
+                document.querySelector("form").appendChild(contentTypesField)
+            }
+            contentTypesField.value = JSON.stringify(selected)
+        }
+
+        function syncScopeToForm() {
+            // Get selected analysis types
+            const selectedAnalysisTypes = Array.from(document.querySelectorAll(".analysis-type-input:checked"))
+                .map(cb => cb.value)
+
+            // Parse current scope JSON
+            const scopeTextarea = document.getElementById("scope-json")
+            let scope = {}
+            try {
+                scope = scopeTextarea.value ? JSON.parse(scopeTextarea.value) : {}
+            } catch (e) {
+                console.warn("Invalid JSON in scope, creating new scope object")
+            }
+
+            // НЕ добавляем analysis_types в scope - они теперь в отдельном поле!
+            // Удаляем analysis_types из scope если они там есть
+            delete scope.analysis_types
+
+            // Update textarea (без analysis_types)
+            scopeTextarea.value = JSON.stringify(scope, null, 2)
+
+            // Create/update hidden field
+            let scopeField = document.querySelector("textarea[name=\"scope\"]")
+            if (!scopeField) {
+                scopeField = document.createElement("textarea")
+                scopeField.name = "scope"
+                scopeField.style.display = "none"
+                document.querySelector("form").appendChild(scopeField)
+            }
+            scopeField.value = scopeTextarea.value
+
+            // Create or update hidden field for analysis_types (отдельно!)
+            let analysisTypesField = document.querySelector("input[name=\"analysis_types\"]")
+            if (!analysisTypesField) {
+                analysisTypesField = document.createElement("input")
+                analysisTypesField.type = "hidden"
+                analysisTypesField.name = "analysis_types"
+                document.querySelector("form").appendChild(analysisTypesField)
+            }
+            analysisTypesField.value = JSON.stringify(selectedAnalysisTypes)
+        }
+
+        // Action type handled by sqladmin, no custom sync needed
+
+        // Init on page load
+        document.addEventListener("DOMContentLoaded", function() {
+            // Add checkbox listeners for content types
+            document.querySelectorAll(".content-type-input").forEach(cb => {
+                cb.addEventListener("change", syncContentTypesToForm)
+            })
+
+            // Add checkbox listeners for analysis types (saves to scope)
+            document.querySelectorAll(".analysis-type-input").forEach(cb => {
+                cb.addEventListener("change", syncScopeToForm)
+            })
+
+            // Sync scope on manual change
+            const scopeJson = document.getElementById("scope-json")
+            if (scopeJson) {
+                scopeJson.addEventListener("change", function() {
+                    // Просто синхронизируем scope, analysis_types теперь отдельно
+                    syncScopeToForm()
+                })
+            }
+
+            // Load initial values from model (edit mode)
+            const initialContentTypes = {{ obj.content_types|tojson if obj and obj.content_types else '[]' }};
+            if (initialContentTypes && initialContentTypes.length > 0) {
+                initialContentTypes.forEach(type => {
+                    const checkbox = document.getElementById(`content_${type}`)
+                    if (checkbox) checkbox.checked = true
+                })
+            }
+
+            // Analysis types - теперь отдельное поле!
+            const initialAnalysisTypes = {{ obj.analysis_types|tojson if obj and obj.analysis_types else '[]' }};
+            if (initialAnalysisTypes && initialAnalysisTypes.length > 0) {
+                initialAnalysisTypes.forEach(type => {
+                    const checkbox = document.getElementById(`analysis_${type}`)
+                    if (checkbox) checkbox.checked = true
+                })
+            }
+
+            // Scope (БЕЗ analysis_types - они теперь в отдельном поле)
+            const initialScope = {{ obj.scope|tojson if obj and obj.scope else '{}' }};
+            if (initialScope && Object.keys(initialScope).length > 0) {
+                scopeJson.value = JSON.stringify(initialScope, null, 2)
+            }
+
+            // Action type handled by sqladmin
+
+            // Submit handler
+            const form = document.querySelector("form")
+            if (form) {
+                form.addEventListener("submit", function(e) {
+                    syncContentTypesToForm()
+                    syncScopeToForm()  // This now includes analysis_types
+                })
+            }
+
+            // Initial sync to create hidden fields
+            syncContentTypesToForm()
+            syncScopeToForm()  // This now includes analysis_types
+        })
+    </script>
+{% endblock %}

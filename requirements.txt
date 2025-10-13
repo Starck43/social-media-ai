@@ -15,8 +15,8 @@ typer
 sqladmin
 itsdangerous
 
-# Redis
 redis
+celery
 
 # HTTP клиенты для DeepSeek API
 httpx
@@ -68,3 +68,5 @@ black
 isort
 flake8
 mypy
+
+WTForms

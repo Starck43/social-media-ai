@@ -58,7 +58,7 @@ async def get_authenticated_user(
 	return user
 
 
-def authenticate(username_or_email: str, password: str, password_hasher: callable) -> User:
+async def authenticate(username_or_email: str, password: str, password_hasher: callable) -> User:
 	"""Authenticate a user by a username/email and password.
 
 	Args:
@@ -78,7 +78,7 @@ def authenticate(username_or_email: str, password: str, password_hasher: callabl
 			detail="Username/email and password are required"
 		)
 
-	user = User.objects.get_by_username_or_email(username_or_email)
+	user = await User.objects.get_by_username_or_email(username_or_email)
 
 	if not user:
 		# Don't reveal whether the user exists or not for security

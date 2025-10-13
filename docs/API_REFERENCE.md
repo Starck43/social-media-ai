@@ -6,7 +6,6 @@ This document provides a comprehensive reference for all implemented functions a
 - [Authentication](#authentication)
 - [Users](#users)
 - [Roles and Permissions](#roles-and-permissions)
-- [Social Media](#social-media)
 - [AI Analysis](#ai-analysis)
 - [Data Schemas](#data-schemas)
 - [Database Models](#database-models)
@@ -166,45 +165,6 @@ Update permissions for a role using the specified strategy.
 **Returns:**
 - `dict`: Update result with added/removed permissions
 
-## Social Media
-
-### `social.py`
-
-#### Functions
-
-##### `read_social_accounts`
-```python
-def read_social_accounts(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: User = Depends(get_authenticated_user),
-)
-```
-Retrieve social media accounts for current user.
-
-**Parameters:**
-- `skip`: Number of records to skip
-- `limit`: Maximum number of records to return
-- `current_user`: Authenticated user
-
-**Returns:**
-- `List[SocialAccountInDB]`: List of social media accounts
-
-##### `create_social_account`
-```python
-def create_social_account(
-    account_in: SocialAccountCreate,
-    current_user: User = Depends(get_authenticated_user),
-)
-```
-Add a new social media account.
-
-**Parameters:**
-- `account_in`: Social account details
-- `current_user`: Authenticated user
-
-**Returns:**
-- `SocialAccountInDB`: Created social account
 
 ## AI Analysis
 

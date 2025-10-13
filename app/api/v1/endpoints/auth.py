@@ -29,7 +29,7 @@ async def login_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -
 
 	try:
 		# Authenticate the user
-		user = authenticate(
+		user = await authenticate(
 			username_or_email=form_data.username,
 			password=form_data.password,
 			password_hasher=verify_password
@@ -118,7 +118,7 @@ async def create_user(new_user: UserCreate) -> dict[str, Any]:
 		HTTPException: If user with the same username or email already exists
 	"""
 	# Check if username already exists
-	if User.objects.get_by_username_or_email(new_user.username):
+	if await User.objects.get_by_username_or_email(new_user.username):
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
 			detail="Username already registered",
@@ -134,7 +134,7 @@ async def create_user(new_user: UserCreate) -> dict[str, Any]:
 	try:
 		# Convert Pydantic model to dict and remove None values
 		user_data = new_user.model_dump(exclude_unset=True)
-		user = User.objects.create_user(**user_data)
+		user = await User.objects.create_user(**user_data)
 
 		# Generate tokens for the new user
 		tokens = create_tokens_pair(subject=str(user.id))

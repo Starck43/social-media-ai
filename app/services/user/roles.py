@@ -1,12 +1,12 @@
 from fastapi import Depends, HTTPException
 from starlette import status
 
-from app.types.models import UserRole
+from app.types.models import UserRoleType
 from app.services.user.auth import get_authenticated_user
 from app.models import User
 
 
-def require_minimum_role(min_role: UserRole):
+def require_minimum_role(min_role: UserRoleType):
 	"""Requires minimum role level."""
 
 	async def checker(user: User = Depends(get_authenticated_user)) -> User:
@@ -20,7 +20,7 @@ def require_minimum_role(min_role: UserRole):
 	return checker
 
 
-def require_any_role(*roles: UserRole):
+def require_any_role(*roles: UserRoleType):
 	""" Requires any of the specified roles."""
 
 	async def checker(user: User = Depends(get_authenticated_user)) -> User:
@@ -37,7 +37,7 @@ def require_any_role(*roles: UserRole):
 	return checker
 
 
-def require_all_roles(*roles: UserRole):
+def require_all_roles(*roles: UserRoleType):
 	"""Requires all the specified roles"""
 
 	async def checker(user: User = Depends(get_authenticated_user)) -> User:

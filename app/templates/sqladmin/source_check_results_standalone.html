@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Проверка источника: {{ source.name }}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .navbar {
+            background-color: #343a40;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        .navbar-brand {
+            color: #fff !important;
+            font-weight: 600;
+        }
+        .stat-card {
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            color: white;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+        }
+        .stat-card h6 {
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.9;
+        }
+        .stat-card h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        .stat-card i {
+            font-size: 3rem;
+            opacity: 0.3;
+        }
+        .bg-primary-custom { background-color: #0d6efd; }
+        .bg-success-custom { background-color: #198754; }
+        .bg-info-custom { background-color: #0dcaf0; }
+        .bg-warning-custom { background-color: #ffc107; }
+        
+        .content-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+            margin-bottom: 2rem;
+        }
+        .content-card-header {
+            background-color: #f8f9fa;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #dee2e6;
+            border-radius: 0.5rem 0.5rem 0 0;
+        }
+        .table-hover tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        .badge {
+            font-size: 0.9rem;
+            padding: 0.35em 0.65em;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand">
+                <i class="fas fa-check-circle"></i>
+                Проверка источника
+            </span>
+            <a href="/admin/source/list" class="btn btn-outline-light btn-sm">
+                <i class="fas fa-arrow-left"></i> Назад к списку
+            </a>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <h2>{{ source.name }}</h2>
+                <p class="text-muted">
+                    <i class="fas fa-globe"></i> {{ source.platform.name }}
+                    •
+                    <i class="fas fa-tag"></i> {{ source.source_type.value }}
+                    •
+                    <i class="fas fa-clock"></i> {{ checked_at.strftime('%d.%m.%Y %H:%M:%S') }}
+                </p>
+            </div>
+        </div>
+
+        {% if error %}
+        <!-- Error Alert -->
+        <div class="alert alert-danger" role="alert">
+            <h4 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Ошибка</h4>
+            <p>{{ error }}</p>
+        </div>
+        {% else %}
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stat-card bg-primary-custom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6>Всего постов</h6>
+                            <h2>{{ total_count }}</h2>
+                        </div>
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stat-card bg-success-custom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6>Лайков</h6>
+                            <h2>{{ stats.total_likes }}</h2>
+                        </div>
+                        <i class="fas fa-heart"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stat-card bg-info-custom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6>Комментариев</h6>
+                            <h2>{{ stats.total_comments }}</h2>
+                        </div>
+                        <i class="fas fa-comment"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stat-card bg-warning-custom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6>Просмотров</h6>
+                            <h2>{{ stats.total_views }}</h2>
+                        </div>
+                        <i class="fas fa-eye"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Table -->
+        <div class="content-card">
+            <div class="content-card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list"></i>
+                    Собранный контент
+                    <small class="text-muted">(показано {{ content|length }} из {{ total_count }})</small>
+                </h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="5%">#</th>
+                            <th width="10%">Дата</th>
+                            <th width="45%">Текст</th>
+                            <th width="10%" class="text-center">❤️ Лайки</th>
+                            <th width="10%" class="text-center">💬 Комменты</th>
+                            <th width="10%" class="text-center">👁 Просмотры</th>
+                            <th width="10%" class="text-end">Ссылка</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in content %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <small class="text-muted">
+                                    {% if item.created_at %}
+                                        {{ item.created_at.strftime('%d.%m.%Y') }}<br>
+                                        {{ item.created_at.strftime('%H:%M') }}
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <div style="max-height: 80px; overflow: hidden;">
+                                    {{ item.text[:200] if item.text else '—' }}
+                                    {% if item.text and item.text|length > 200 %}...{% endif %}
+                                </div>
+                                {% if item.attachments %}
+                                <small class="text-muted">
+                                    <i class="fas fa-paperclip"></i>
+                                    {{ item.attachments|length }} вложений
+                                </small>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-danger">{{ item.likes or 0 }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-info">{{ item.comments or 0 }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ item.views or 0 }}</span>
+                            </td>
+                            <td class="text-end">
+                                {% if item.url %}
+                                <a href="{{ item.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if total_count > content|length %}
+            <div class="card-footer text-center bg-light">
+                <small class="text-muted">
+                    <i class="fas fa-info-circle"></i>
+                    Показано только первые 20 записей. Всего собрано: {{ total_count }}
+                </small>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="row mb-4">
+            <div class="col">
+                <a href="/admin/source/list" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад
+                </a>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-success" onclick="location.reload()">
+                    <i class="fas fa-sync-alt"></i> Обновить
+                </button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

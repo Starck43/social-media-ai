@@ -5,7 +5,7 @@ from typing import cast
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
-from app.types.models import UserRole
+from app.types.models import UserRoleType
 
 
 def seed_roles() -> None:
@@ -25,7 +25,7 @@ def seed_roles() -> None:
 		updated_count = 0
 
 		# Create or update each role
-		for role_enum in UserRole:
+		for role_enum in UserRoleType:
 			# Add type annotation to help the linter
 			role = cast(Enum, role_enum)
 			role_codename = role.name  # Use the enum name in uppercase as codename

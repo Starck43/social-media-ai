@@ -56,7 +56,6 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
 	"""
 	Асинхронный генератор сессий для FastAPI Dependency Injection.
-
 	Использование:
 		async def some_endpoint(db: AsyncSession = Depends(get_db)):
 			# ... работа с БД ...
@@ -71,7 +70,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 def with_db_session(func: Callable[..., T]) -> Callable[..., T]:
 	"""
 	Асинхронный декоратор для автоматического управления сессией БД.
-
 	Пример использования:
 		@with_db_session
 		async def some_function():
@@ -80,13 +78,13 @@ def with_db_session(func: Callable[..., T]) -> Callable[..., T]:
 
 	@wraps(func)
 	async def wrapper(self, *args, **kwargs):
+		# Если session уже передан, используем его
 		if 'session' in kwargs and kwargs['session'] is not None:
 			return await func(self, *args, **kwargs)
 
 		async with async_session_maker() as session:
-			kwargs['session'] = session
 			try:
-				result = await func(self, *args, **kwargs)
+				result = await func(self, *args, session=session, **kwargs)
 				await session.commit()
 				return result
 			except Exception as e:

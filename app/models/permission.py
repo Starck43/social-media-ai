@@ -1,11 +1,12 @@
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Integer, String, UniqueConstraint, ForeignKey, CheckConstraint, Enum
+from sqlalchemy import Integer, String, UniqueConstraint, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.types.models import ActionType
 from .base import Base, TimestampMixin
+from ..core.config import settings
 
 if TYPE_CHECKING:
 	from . import ModelType
@@ -16,16 +17,17 @@ class Permission(Base, TimestampMixin):
 	__table_args__ = (
 		UniqueConstraint('codename', 'model_type_id', name='uq_permission_model_type'),
 		CheckConstraint("codename ~ '^[a-z_]+\\.[a-z_]+\\.[a-z]+$'", name="check_codename_format"),
-		{'schema': 'social_manager'}
+		{'schema': settings.DB_SCHEMA}
 	)
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	codename: Mapped[str] = mapped_column(String(100), nullable=False)
 	name: Mapped[str] = mapped_column(String(200), nullable=False)
-	action_type: Mapped[ActionType] = mapped_column(
-		Enum(ActionType, name='action_type', schema='social_manager', inherit_schema=True)
+	action_type: Mapped[ActionType] = ActionType.sa_column(
+		type_name='action_type',
+		nullable=False,
+		store_as_name=True  # Хранить как имена (VIEW, CREATE, UPDATE, etc.)
 	)
-
 	# Relationships
 	model_type_id: Mapped[int] = mapped_column(ForeignKey("social_manager.model_types.id"))
 	model_type: Mapped["ModelType"] = relationship("ModelType", back_populates="permissions")

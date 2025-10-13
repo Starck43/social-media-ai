@@ -1,0 +1,263 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block title %}Мониторинг источников{% endblock %}
+
+{% block extra_css %}
+<style>
+	.monitoring-dashboard {
+		padding: 20px;
+	}
+
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 20px;
+		margin-bottom: 30px;
+	}
+
+	.stat-card {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		border-radius: 8px;
+		padding: 20px;
+		border: 1px solid var(--tblr-border-color);
+		text-align: center;
+	}
+
+	.stat-value {
+		font-size: 2rem;
+		font-weight: bold;
+		color: var(--tblr-primary);
+	}
+
+	.stat-label {
+		font-size: 0.9rem;
+		color: var(--tblr-secondary);
+		margin-top: 5px;
+	}
+
+	.sources-list {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		border-radius: 8px;
+		padding: 20px;
+		border: 1px solid var(--tblr-border-color);
+	}
+
+	.source-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 15px;
+		border-bottom: 1px solid var(--tblr-border-color);
+		transition: background-color 0.2s ease;
+	}
+
+	.source-item:hover {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.1);
+	}
+
+	.source-item:last-child {
+		border-bottom: none;
+	}
+
+	.source-info {
+		flex: 1;
+	}
+
+	.source-name {
+		font-weight: 500;
+		margin-bottom: 5px;
+	}
+
+	.source-meta {
+		font-size: 0.8rem;
+		color: var(--tblr-secondary);
+	}
+
+	.source-status {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.status-indicator {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+	}
+
+	.status-active {
+		background: var(--tblr-success);
+	}
+
+	.status-inactive {
+		background: var(--tblr-danger);
+	}
+
+	.status-pending {
+		background: var(--tblr-warning);
+	}
+
+	.last-checked {
+		font-size: 0.8rem;
+		color: var(--tblr-secondary);
+	}
+
+	.refresh-btn {
+		margin-bottom: 20px;
+	}
+
+	.platform-badge {
+		background: var(--tblr-primary);
+		color: white;
+		padding: 2px 8px;
+		border-radius: 12px;
+		font-size: 0.7rem;
+		margin-left: 10px;
+	}
+
+	@media (max-width: 768px) {
+		.stats-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+
+		.source-item {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 10px;
+		}
+
+		.source-status {
+			align-self: flex-end;
+		}
+	}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="monitoring-dashboard">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Мониторинг источников</h1>
+        <div>
+            <button class="btn btn-primary refresh-btn" onclick="refreshData()">
+                <i class="fa fa-refresh"></i> Обновить
+            </button>
+            <a href="{{ url_for('admin:list', identity='source') }}" class="btn btn-outline-secondary">
+                Управление источниками
+            </a>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="totalSources">0</div>
+            <div class="stat-label">Всего источников</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="activeSources">0</div>
+            <div class="stat-label">Активных</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="checkedToday">0</div>
+            <div class="stat-label">Проверено сегодня</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="needsCheck">0</div>
+            <div class="stat-label">Требуют проверки</div>
+        </div>
+    </div>
+
+    <div class="sources-list">
+        <h3 class="mb-4">Источники в реальном времени</h3>
+        <div id="sourcesContainer">
+            <!-- Источники будут загружены через JavaScript -->
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-2">Загрузка источников...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content%}
+
+{% block scripts %}
+<script>
+    let refreshInterval
+
+    async function loadMonitoringData() {
+        try {
+            const response = await fetch("{{ url_for(\"admin:api-monitoring-stats\") }}")
+            const data = await response.json()
+
+            // Обновляем статистику
+            document.getElementById("totalSources").textContent = data.total_sources
+            document.getElementById("activeSources").textContent = data.active_sources
+            document.getElementById("checkedToday").textContent = data.checked_today
+            document.getElementById("needsCheck").textContent = data.needs_check
+
+            // Обновляем список источников
+            updateSourcesList(data.sources)
+        } catch (error) {
+            console.error("Error loading monitoring data:", error)
+        }
+    }
+
+    function updateSourcesList(sources) {
+        const container = document.getElementById("sourcesContainer")
+
+        if (sources.length === 0) {
+            container.innerHTML = "<div class=\"text-center py-4 text-muted\">Нет источников для отображения</div>"
+            return
+        }
+
+        container.innerHTML = sources.map(source => `
+        <div class="source-item">
+            <div class="source-info">
+                <div class="source-name">
+                    ${source.name}
+                    <span class="platform-badge">${source.platform}</span>
+                </div>
+                <div class="source-meta">
+                    ${source.external_id} • ${source.source_type}
+                </div>
+            </div>
+            <div class="source-status">
+                <div class="status-indicator status-${source.is_active ? "active" : "inactive"}"></div>
+                <div class="last-checked">
+                    ${source.last_checked ? `Проверен: ${new Date(source.last_checked).toLocaleString()}` : "Никогда не проверялся"}
+                </div>
+            </div>
+        </div>
+    `).join("")
+    }
+
+    function refreshData() {
+        const btn = document.querySelector(".refresh-btn")
+        const originalHtml = btn.innerHTML
+
+        btn.innerHTML = "<i class=\"fa fa-spinner fa-spin\"></i> Обновление..."
+        btn.disabled = true
+
+        loadMonitoringData().finally(() => {
+            btn.innerHTML = originalHtml
+            btn.disabled = false
+        })
+    }
+
+    // Загружаем данные при загрузке страницы
+    document.addEventListener("DOMContentLoaded", function() {
+        loadMonitoringData()
+
+        // Обновляем данные каждые 30 секунд
+        refreshInterval = setInterval(loadMonitoringData, 30000)
+    })
+
+    // Очищаем интервал при уходе со страницы
+    window.addEventListener("beforeunload", function() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval)
+        }
+    })
+</script>
+{% endblock scripts%}

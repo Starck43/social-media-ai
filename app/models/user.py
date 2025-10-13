@@ -5,8 +5,9 @@ from typing import TYPE_CHECKING, ClassVar
 from sqlalchemy import Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
-from app.types.models import UserRole, ActionType
+from app.types.models import UserRoleType, ActionType
 from .base import Base, TimestampMixin
+from ..core.config import settings
 from ..core.decorators import app_label
 
 if TYPE_CHECKING:
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 @app_label("account")
 class User(Base, TimestampMixin):
     __tablename__ = 'users'
-    __table_args__ = ({'schema': 'social_manager'},)
+    __table_args__ = {'schema': settings.DB_SCHEMA}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
@@ -54,15 +55,15 @@ class User(Base, TimestampMixin):
     def __str__(self) -> str:
         return f"{self.username}"
 
-    def has_role(self, role: UserRole) -> bool:
+    def has_role(self, role: UserRoleType) -> bool:
         """Check if user has a specific role"""
         return self.role.codename == role.name
 
-    def has_minimum_role(self, min_role: UserRole) -> bool:
+    def has_minimum_role(self, min_role: UserRoleType) -> bool:
         """Check if user has at least the specified role in hierarchy"""
-        role_hierarchy = list(UserRole)
+        role_hierarchy = list(UserRoleType)
         try:
-            user_level = role_hierarchy.index(UserRole[self.role.codename.name])
+            user_level = role_hierarchy.index(UserRoleType[self.role.codename.name])
             min_level = role_hierarchy.index(min_role)
             return user_level >= min_level
         except (ValueError, KeyError):

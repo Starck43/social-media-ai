@@ -4,8 +4,6 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
-from sqlalchemy import select, or_
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.hashing import get_password_hash, verify_password
 from app.models.managers.base_manager import BaseManager
@@ -24,7 +22,7 @@ class UserManager(BaseManager['User']):
 		super().__init__(User)
 
 	async def get_by_email(self, email: str) -> Optional['User']:
-		return await self.model.objects.get(email=email)
+		return await self.get(email=email)
 
 	async def get_by_username_or_email(self, username_or_email: str) -> Optional['User']:
 		"""Get user by a username or email (case-insensitive).
@@ -42,26 +40,26 @@ class UserManager(BaseManager['User']):
 		is_email = '@' in username_or_email
 
 		if is_email:
-			return await self.model.objects.get(email=username_or_email)
+			return await self.filter(email=username_or_email).first()
 		else:
-			return await self.model.objects.get(username=username_or_email)
+			return await self.filter(username=username_or_email).first()
 
-	def get_active_users(self, skip: int = 0, limit: int = 100) -> list['User']:
+	async def get_active_users(self, skip: int = 0, limit: int = 100) -> list['User']:
 		"""Get paginated list of active users."""
-		return self.filter(self.model.is_active).offset(skip).limit(limit).all()
+		return await self.filter(is_active=True).offset(skip).limit(limit)
 
-	def create_user(self, username: str, password: str, **extra_data) -> 'User':
+	async def create_user(self, username: str, password: str, **extra_data) -> 'User':
 		"""Create a new user with hashed password."""
 		if not all([username, password]):
 			raise ValueError("Username, email and password are required")
 
-		return self.create(
+		return await self.create(
 			username=username,
 			hashed_password=get_password_hash(password),
 			**extra_data
 		)
 
-	def update_user(
+	async def update_user(
 			self,
 			user_id: int,
 			update_data: Dict[str, Any],
@@ -78,7 +76,7 @@ class UserManager(BaseManager['User']):
 		Returns:
 			Updated User object or None if not found
 		"""
-		user = self.get_queryset().get(id=user_id)
+		user = await self.get(id=user_id)
 		if not user:
 			return None
 
@@ -93,21 +91,21 @@ class UserManager(BaseManager['User']):
 		if 'password' in update_data:
 			update_data['hashed_password'] = pwd_context.hash(update_data.pop('password'))
 
-		return self.update_by_id(user_id, **update_data)
+		return await self.update_by_id(user_id, **update_data)
 
-	def delete_user(self, user_id: int) -> bool:
+	async def delete_user(self, user_id: int) -> bool:
 		"""
 		Delete a user by ID.
-		
+
 		Args:
 			user_id: ID of the user to delete
-			
+
 		Returns:
 			bool: True if deletion successful, False otherwise
 		"""
-		return bool(self.delete_by_id(user_id))
+		return await self.delete_by_id(user_id)
 
-	def change_password(
+	async def change_password(
 			self,
 			user_id: int,
 			current_password: str,
@@ -116,17 +114,17 @@ class UserManager(BaseManager['User']):
 	) -> bool:
 		"""
 		Change a user's password.
-		
+
 		Args:
 			user_id: ID of the user
 			current_password: A current password for verification
 			new_password: New password to set
 			current_user: Optional user making the request
-			
+
 		Returns:
 			bool: True if password was changed successfully
 		"""
-		user = self.get_queryset().get(id=user_id)
+		user = await self.get(id=user_id)
 		if not user:
 			raise HTTPException(
 				status_code=status.HTTP_404_NOT_FOUND,
@@ -148,7 +146,7 @@ class UserManager(BaseManager['User']):
 			)
 
 		# Update password
-		self.update_by_id(
+		await self.update_by_id(
 			user_id,
 			hashed_password=pwd_context.hash(new_password)
 		)

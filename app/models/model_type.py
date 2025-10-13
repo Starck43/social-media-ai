@@ -4,6 +4,7 @@ from sqlalchemy import Integer, String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
+from ..core.config import settings
 
 if TYPE_CHECKING:
 	from . import Permission
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 
 class ModelType(Base, TimestampMixin):
 	__tablename__ = "model_types"
-	__table_args__ = ({'schema': 'social_manager'},)
+	__table_args__ = {'schema': settings.DB_SCHEMA}
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	app_name: Mapped[str] = mapped_column(String(100), nullable=False)

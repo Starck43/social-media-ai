@@ -1,10 +1,11 @@
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import String, Text, Integer, Table, Column, ForeignKey, Enum
+from sqlalchemy import String, Text, Integer, Table, Column, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from . import Base, TimestampMixin
-from ..types.models import UserRole
+from ..core.config import settings
+from ..types.models import UserRoleType
 
 if TYPE_CHECKING:
 	from . import User, Permission
@@ -16,18 +17,20 @@ role_permission = Table(
 	Base.metadata,
 	Column("role_id", Integer, ForeignKey("social_manager.roles.id"), primary_key=True),
 	Column("permission_id", Integer, ForeignKey("social_manager.permissions.id"), primary_key=True),
-	schema="social_manager"
+	schema=settings.DB_SCHEMA
 )
 
 
 class Role(Base, TimestampMixin):
 	__tablename__ = "roles"
-	__table_args__ = ({'schema': 'social_manager'},)
+	__table_args__ = {'schema': settings.DB_SCHEMA}
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-	codename: Mapped[UserRole] = mapped_column(
-		Enum(UserRole, name='user_role_type', schema='social_manager', inherit_schema=True)
+	codename: Mapped[UserRoleType] = UserRoleType.sa_column(
+		type_name='user_role_type',
+		default=UserRoleType.VIEWER,
+		store_as_name=True  # Хранить как имена (VIEWER, AI_BOT, etc.)
 	)
 	description: Mapped[str] = mapped_column(Text, nullable=True)
 
@@ -49,7 +52,7 @@ class Role(Base, TimestampMixin):
 		objects: ClassVar = None
 
 	def __str__(self) -> str:
-		return f"{self.codename.name}"
+		return f"{self.codename}"
 
 
 # Attach the manager to the Role model

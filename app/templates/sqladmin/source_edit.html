@@ -1,0 +1,70 @@
+{% extends "sqladmin/edit.html" %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Получаем ID текущего источника из URL
+            const urlParts = window.location.pathname.split('/')
+            const currentSourceId = urlParts[urlParts.length - 1]
+            
+            // Находим поля формы
+            const sourceTypeField = document.querySelector("select[name=\"source_type\"], [name$=\".source_type\"]")
+            const monitoredUsersContainer = document.querySelector(".form-group:has([name=\"monitored_users\"]), .form-group:has([name$=\".monitored_users\"]), .field:has([name=\"monitored_users\"])")
+
+            // Альтернативный поиск контейнера поля
+            let monitoredUsersField = null
+            let monitoredUsersSelect = null
+            
+            if (!monitoredUsersContainer) {
+                monitoredUsersSelect = document.querySelector("[name=\"monitored_users\"], [name$=\".monitored_users\"]")
+                if (monitoredUsersSelect) {
+                    monitoredUsersField = monitoredUsersSelect.closest(".form-group, .field, .mb-3")
+                }
+            } else {
+                monitoredUsersField = monitoredUsersContainer
+                monitoredUsersSelect = monitoredUsersField.querySelector("select")
+            }
+
+            if (!sourceTypeField || !monitoredUsersField) return
+
+            function toggleMonitoredUsersField() {
+                const sourceType = sourceTypeField.value ? sourceTypeField.value.toLowerCase() : ""
+
+                // Скрываем поле если выбран USER (пользователь не может отслеживать других пользователей)
+                if (sourceType === "user") {
+                    monitoredUsersField.style.display = "none"
+                    
+                    // Очищаем выбор, если тип изменился на USER
+                    if (monitoredUsersSelect) {
+                        // Снимаем все выборы
+                        Array.from(monitoredUsersSelect.options).forEach(opt => opt.selected = false)
+                    }
+                } else {
+                    monitoredUsersField.style.display = "flex"
+                }
+                
+                // Дополнительно: удаляем сам источник из списка выбора (если он там есть)
+                if (monitoredUsersSelect && currentSourceId) {
+                    Array.from(monitoredUsersSelect.options).forEach(option => {
+                        // Если option.value совпадает с ID текущего источника - скрываем его
+                        if (option.value === currentSourceId) {
+                            option.disabled = true
+                            option.selected = false
+                            option.style.display = 'none'
+                        }
+                    })
+                }
+            }
+
+            // Вызываем при загрузке
+            toggleMonitoredUsersField()
+
+            // И при изменении типа источника
+            sourceTypeField.addEventListener("change", toggleMonitoredUsersField)
+
+            // Также слушаем событие на форме для динамических изменений
+            sourceTypeField.addEventListener("input", toggleMonitoredUsersField)
+        })
+    </script>
+{% endblock %}

@@ -1,0 +1,258 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block title %}Детали AI анализа - {{ model.id }}{% endblock %}
+
+{% block extra_css %}
+<style>
+	.analysis-container {
+		max-width: 1200px;
+		margin: 0 auto;
+		padding: 20px;
+	}
+
+	.analysis-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 30px;
+		padding-bottom: 20px;
+		border-bottom: 2px solid var(--tblr-border-color);
+	}
+
+	.analysis-metrics {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: 20px;
+		margin-bottom: 30px;
+	}
+
+	.metric-card {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		border-radius: 8px;
+		padding: 20px;
+		border: 1px solid var(--tblr-border-color);
+	}
+
+	.metric-value {
+		font-size: 2rem;
+		font-weight: bold;
+		color: var(--tblr-primary);
+	}
+
+	.metric-label {
+		font-size: 0.9rem;
+		color: var(--tblr-secondary);
+		margin-top: 5px;
+	}
+
+	.sentiment-chart {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		border-radius: 8px;
+		padding: 20px;
+		margin-bottom: 30px;
+		border: 1px solid var(--tblr-border-color);
+	}
+
+	.topics-list {
+		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		border-radius: 8px;
+		padding: 20px;
+		border: 1px solid var(--tblr-border-color);
+	}
+
+	.topic-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 10px 0;
+		border-bottom: 1px solid var(--tblr-border-color);
+	}
+
+	.topic-item:last-child {
+		border-bottom: none;
+	}
+
+	.topic-name {
+		font-weight: 500;
+	}
+
+	.topic-stats {
+		display: flex;
+		gap: 15px;
+		color: var(--tblr-secondary);
+	}
+
+	.sentiment-badge {
+		padding: 4px 8px;
+		border-radius: 12px;
+		font-size: 0.8rem;
+		font-weight: 500;
+	}
+
+	.sentiment-positive {
+		background: var(--alert-bg-success);
+		color: var(--alert-text-success);
+	}
+
+	.sentiment-negative {
+		background: var(--alert-bg-danger);
+		color: var(--alert-text-danger);
+	}
+
+	.sentiment-neutral {
+		background: var(--alert-bg-info);
+		color: var(--alert-text-info);
+	}
+
+	.actions-bar {
+		display: flex;
+		gap: 10px;
+		margin-top: 20px;
+	}
+
+	@media (max-width: 768px) {
+		.analysis-metrics {
+			grid-template-columns: 1fr;
+		}
+
+		.analysis-header {
+			flex-direction: column;
+			gap: 15px;
+			align-items: flex-start;
+		}
+	}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analysis-container">
+    <div class="analysis-header">
+        <div>
+            <h1>AI Аналитика источника: {{ model.source.name if model.source else 'Неизвестный источник' }}</h1>
+            <p class="text-muted">Дата анализа: {{ model.analysis_date }} | Период: {{ model.period_type }}</p>
+        </div>
+        <div class="actions-bar">
+            <a href="{{ url_for('admin:list', identity='ai-analytics') }}" class="btn btn-secondary">
+                <i class="fa fa-arrow-left"></i> Назад к списку
+            </a>
+            <button class="btn btn-primary" onclick="exportAnalysis()">
+                <i class="fa fa-download"></i> Экспорт
+            </button>
+        </div>
+    </div>
+
+    {% if model.summary_data %}
+    <div class="analysis-metrics">
+        <div class="metric-card">
+            <div class="metric-value">{{ "%.1f"|format(model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100) }}%</div>
+            <div class="metric-label">Позитивное настроение</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ model.summary_data.get('content_statistics', {}).get('total_posts', 0) }}</div>
+            <div class="metric-label">Сообщений</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ model.summary_data.get('content_statistics', {}).get('total_reactions', 0) }}</div>
+            <div class="metric-label">Реакций</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ "%.1f"|format(model.summary_data.get('content_statistics', {}).get('avg_reactions_per_post', 0)) }}</div>
+            <div class="metric-label">Средняя вовлеченность</div>
+        </div>
+    </div>
+
+    <div class="sentiment-chart">
+        <h3>Анализ настроения</h3>
+        <div class="sentiment-bars">
+            <div class="d-flex align-items-center mb-2">
+                <span class="me-3" style="width: 100px;">Позитивное:</span>
+                <div class="progress flex-grow-1">
+                    <div class="progress-bar bg-success"
+                         style="width: {{ model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100 }}%">
+                        {{ "%.1f"|format(model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100) }}%
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center mb-2">
+                <span class="me-3" style="width: 100px;">Нейтральное:</span>
+                <div class="progress flex-grow-1">
+                    <div class="progress-bar bg-info"
+                         style="width: {{ (1 - model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0)) * 50 }}%">
+                        50%
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center mb-2">
+                <span class="me-3" style="width: 100px;">Негативное:</span>
+                <div class="progress flex-grow-1">
+                    <div class="progress-bar bg-danger"
+                         style="width: {{ (1 - model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0)) * 50 }}%">
+                        50%
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="topics-list">
+        <h3>Основные темы обсуждения</h3>
+        {% for topic in model.summary_data.get('ai_analysis', {}).get('topic_analysis', {}).get('main_topics', [])[:10] %}
+        <div class="topic-item">
+            <div class="topic-name">{{ topic }}</div>
+            <div class="topic-stats">
+                <span class="sentiment-badge sentiment-positive">
+                    Топ тема
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not model.summary_data.get('ai_analysis', {}).get('topic_analysis', {}).get('main_topics') %}
+        <div class="topic-item">
+            <div class="text-muted">Данные о темах недоступны</div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if model.summary_data.get('ai_analysis', {}).get('audience_insights', {}).get('suggestions') %}
+    <div class="metric-card mt-4">
+        <h4>Рекомендации</h4>
+        <ul>
+        {% for suggestion in model.summary_data.ai_analysis.audience_insights.suggestions %}
+            <li>{{ suggestion }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fa fa-info-circle"></i> Данные анализа не доступны.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function exportAnalysis() {
+        // Экспорт данных анализа в JSON
+        const data = {
+            id: {{ model.id }},
+            source: "{{ model.source.name if model.source else 'Неизвестный источник' }}",
+            analysis_date: "{{ model.analysis_date }}",
+            period_type: "{{ model.period_type }}",
+            summary_data: {{ model.summary_data | tojson if model.summary_data else '{}' }}
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analysis-{{ model.id }}-{{ model.analysis_date }}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }
+</script>
+{% endblock %}

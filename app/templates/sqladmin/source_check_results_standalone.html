@@ -103,10 +103,35 @@
 
         {% if error %}
         <!-- Error Alert -->
+        {% if error_type == 'access_denied' and error_details %}
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">
+                <i class="fas fa-lock"></i> {{ error_details.title }}
+            </h4>
+            <p class="mb-3">{{ error_details.message }}</p>
+            
+            <div class="mb-3">
+                <strong>Что нужно сделать:</strong>
+                <ul class="mb-0 mt-2">
+                    {% for instruction in error_details.instructions %}
+                    <li>{{ instruction }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <div class="alert alert-info mb-0">
+                <i class="fas fa-info-circle"></i> {{ error_details.alternative }}
+            </div>
+            
+            <hr>
+            <small class="text-muted">Техническая информация: {{ error }}</small>
+        </div>
+        {% else %}
         <div class="alert alert-danger" role="alert">
             <h4 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Ошибка</h4>
             <p>{{ error }}</p>
         </div>
+        {% endif %}
         {% else %}
 
         <!-- Statistics Cards -->
@@ -240,6 +265,47 @@
             </div>
             {% endif %}
         </div>
+
+        <!-- Pagination -->
+        {% if pagination and (pagination.has_prev or pagination.has_next) %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <nav>
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                            <a class="page-link" href="?pks={{ source.id }}&page={{ pagination.page - 1 }}&per_page={{ pagination.per_page }}">
+                                <i class="fas fa-chevron-left"></i> Предыдущая
+                            </a>
+                        </li>
+                        
+                        <li class="page-item active">
+                            <span class="page-link">
+                                Страница {{ pagination.page }} из ~{{ pagination.total_pages }}
+                            </span>
+                        </li>
+                        
+                        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                            <a class="page-link" href="?pks={{ source.id }}&page={{ pagination.page + 1 }}&per_page={{ pagination.per_page }}">
+                                Следующая <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+                
+                <div class="text-center mb-3">
+                    <small class="text-muted">
+                        Показано {{ content|length }} записей (offset: {{ pagination.offset }})
+                        •
+                        <a href="?pks={{ source.id }}&page=1&per_page=10">10</a> |
+                        <a href="?pks={{ source.id }}&page=1&per_page=20">20</a> |
+                        <a href="?pks={{ source.id }}&page=1&per_page=50">50</a> |
+                        <a href="?pks={{ source.id }}&page=1&per_page=100">100</a>
+                        на странице
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Action Buttons -->
         <div class="row mb-4">

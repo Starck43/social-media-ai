@@ -26,6 +26,10 @@ class BaseClient(ABC):
 			list[dict]: Список нормализованных данных
 		"""
 		try:
+			# 0. Auto-resolve screen_name to numeric ID (if needed)
+			if hasattr(self, '_resolve_external_id'):
+				source.external_id = await self._resolve_external_id(source.external_id)
+			
 			# 1. Получаем метод API для типа источника
 			method = self._get_api_method(source.source_type, content_type)
 

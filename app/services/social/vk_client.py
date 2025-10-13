@@ -75,6 +75,50 @@ class VKClient(BaseClient):
 
 		return methods.get(source_type, {}).get(content_type, "wall.get")
 
+	async def _resolve_external_id(self, external_id: str) -> str:
+		"""
+		Convert screen_name to numeric ID if needed.
+		
+		Args:
+			external_id: Either numeric ID or screen_name
+			
+		Returns:
+			str: Numeric ID (with minus for groups)
+		"""
+		# If already numeric (or negative for groups)
+		if external_id.lstrip('-').isdigit():
+			return external_id
+		
+		# Resolve screen_name via VK API
+		logger.info(f"Resolving screen_name: {external_id}")
+		url = f"{self.platform.params.get('api_base_url', 'https://api.vk.com/method')}/utils.resolveScreenName"
+		params = {
+			"screen_name": external_id,
+			"access_token": settings.VK_SERVICE_ACCESS_TOKEN,
+			"v": "5.199"
+		}
+		
+		import httpx
+		async with httpx.AsyncClient() as client:
+			response = await client.get(url, params=params)
+			data = response.json()
+			
+			if 'response' in data and data['response']:
+				object_id = data['response']['object_id']
+				object_type = data['response']['type']
+				
+				# For groups/pages/events, add minus prefix
+				if object_type in ['group', 'page', 'event']:
+					resolved_id = f"-{object_id}"
+				else:
+					resolved_id = str(object_id)
+				
+				logger.info(f"Resolved {external_id} → {resolved_id} (type: {object_type})")
+				return resolved_id
+			
+			logger.warning(f"Cannot resolve screen_name: {external_id}, using as-is")
+			return external_id
+
 	def _build_params(self, source: Source, method: str) -> dict:
 		"""
 		Build VK API request parameters.

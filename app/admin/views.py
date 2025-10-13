@@ -241,7 +241,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 		pk = int(request.path_params["pk"])
 
 		monitored_prefetch = prefetch("monitored_users", queryset=Source.objects.exclude(id=pk))
-
 		# monitored_prefetch = prefetch("monitored_users", filters={"id__ne": pk})
 
 		return (
@@ -270,7 +269,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 			current_platform_id = None
 			current_source_id = None
 
-			# Try to fetch current source id (edit mode)
 			try:
 				if hasattr(self, "request") and self.request:
 					current_source_id = self.request.path_params.get("pk")
@@ -306,7 +304,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 
 	@action(name="check_source", label="Проверить сейчас", add_in_list=True, add_in_detail=True)
 	async def check_source_action(self, request: Request):
-		"""Collect content and display in template."""
+		"""Collect content and display in a template."""
 		from app.services.social.factory import get_social_client
 		from starlette.templating import Jinja2Templates
 		from pathlib import Path
@@ -330,37 +328,92 @@ class SourceAdmin(BaseAdmin, model=Source):
 		if not source:
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
+		# Get pagination params
+		page = int(request.query_params.get("page", 1))
+		per_page = int(request.query_params.get("per_page", 20))
+		offset = (page - 1) * per_page
+
 		# Collect content in real-time
 		try:
 			client = get_social_client(source.platform)
+			
+			# Temporarily modify source params for pagination
+			original_params = source.params.copy() if source.params else {}
+			if not source.params:
+				source.params = {}
+			if 'collection' not in source.params:
+				source.params['collection'] = {}
+			
+			source.params['collection']['offset'] = offset
+			source.params['collection']['count'] = per_page
+			
 			content = await client.collect_data(
 				source=source,
 				content_type="posts"
 			)
+			
+			# Restore original params
+			source.params = original_params
+
+			# Calculate pagination
+			total_count = len(content) if len(content) < per_page else (page * per_page + 1)
+			total_pages = (total_count + per_page - 1) // per_page if content else 1
+			has_next = len(content) == per_page
+			has_prev = page > 1
 
 			return templates.TemplateResponse(
 				"sqladmin/source_check_results_standalone.html",
 				{
 					"request": request,
 					"source": source,
-					"content": content[:20],  # Show first 20 items
-					"total_count": len(content),
+					"content": content,
+					"total_count": total_count,
 					"checked_at": datetime.now(),
 					"stats": {
 						"total_likes": sum(item.get("likes", 0) for item in content),
 						"total_comments": sum(item.get("comments", 0) for item in content),
 						"total_views": sum(item.get("views", 0) for item in content),
+					},
+					"pagination": {
+						"page": page,
+						"per_page": per_page,
+						"total_pages": total_pages,
+						"has_next": has_next,
+						"has_prev": has_prev,
+						"offset": offset
 					}
 				}
 			)
 		except Exception as e:
 			logger.error(f"Error checking source {source_id}: {e}")
+			
+			# Check for VK privacy error
+			error_msg = str(e)
+			error_type = "generic"
+			error_details = None
+			
+			if "Access denied" in error_msg or "error_code: 15" in error_msg:
+				error_type = "access_denied"
+				error_details = {
+					"title": "Стена закрыта настройками приватности",
+					"message": "Пользователь ограничил доступ к своим записям в настройках VK.",
+					"instructions": [
+						"Попросите пользователя открыть стену в настройках:",
+						"1. Перейти на vk.com/settings?act=privacy",
+						"2. Раздел 'Кто видит мои записи на стене?'",
+						"3. Выбрать 'Все пользователи' или 'Друзья и друзья друзей'"
+					],
+					"alternative": "Или используйте другой источник с открытой стеной"
+				}
+			
 			return templates.TemplateResponse(
 				"sqladmin/source_check_results_standalone.html",
 				{
 					"request": request,
 					"source": source,
-					"error": str(e),
+					"error": error_msg,
+					"error_type": error_type,
+					"error_details": error_details,
 					"checked_at": datetime.now(),
 				}
 			)
@@ -603,9 +656,6 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 	)
 	async def mark_read_action(self, request: Request):
 		"""Mark notifications as read."""
-		import logging
-
-		logger = logging.getLogger(__name__)
 
 		pks = request.query_params.get("pks", "")
 		if not pks:
@@ -637,10 +687,7 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 	)
 	async def send_to_messenger_action(self, request: Request):
 		"""Send notification to messenger (Telegram/VK)."""
-		import logging
 		from app.services.notifications.messenger import messenger_service
-
-		logger = logging.getLogger(__name__)
 
 		pks = request.query_params.get("pks", "")
 		if not pks:

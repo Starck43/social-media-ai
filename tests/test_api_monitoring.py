@@ -3,7 +3,7 @@ import uuid
 
 from app.api.v1.endpoints.monitoring import get_source_analytics
 from app.models import Platform, Source
-from app.types.models import PlatformType, SourceType
+from app.types import PlatformType, SourceType
 
 
 class DummyUser:

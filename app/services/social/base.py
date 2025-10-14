@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import httpx
 
 from app.models import Source
-from app.types.models import SourceType
+from app.types import SourceType
 
 logger = logging.getLogger(__name__)
 

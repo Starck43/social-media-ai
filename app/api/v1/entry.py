@@ -6,7 +6,10 @@ from app.core.database import get_db
 from app.models import User
 from app.services.user.auth import get_authenticated_user
 
-from app.api.v1.endpoints import auth, user, roles, monitoring, scenarios, notifications, dashboard
+from app.api.v1.endpoints import (
+	auth, user, roles, monitoring, scenarios, 
+	notifications, dashboard, llm_providers
+)
 
 router = APIRouter()
 
@@ -17,6 +20,7 @@ router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring
 router.include_router(scenarios.router, prefix="/ai", tags=["scenarios"])
 router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+router.include_router(llm_providers.router, prefix="/llm", tags=["llm"])
 
 
 # Keep the test endpoints for backward compatibility

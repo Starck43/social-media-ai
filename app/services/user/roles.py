@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException
 from starlette import status
 
-from app.types.models import UserRoleType
+from app.types import UserRoleType
 from app.services.user.auth import get_authenticated_user
 from app.models import User
 

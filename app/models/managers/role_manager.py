@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
 	from ..role import Role
 	from ..permission import Permission
-	from app.types.models import UserRoleType, ActionType
+	from app.types import UserRoleType, ActionType
 
 
 class RoleManager(BaseManager['Role']):

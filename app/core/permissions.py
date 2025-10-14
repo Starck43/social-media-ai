@@ -6,7 +6,7 @@ from starlette.requests import Request
 
 from app.models import Base
 from app.services.user.auth import get_authenticated_user
-from app.types.models import ActionType
+from app.types import ActionType
 from app.utils.permission import generate_permission_codename
 
 if TYPE_CHECKING:

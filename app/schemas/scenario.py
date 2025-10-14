@@ -8,7 +8,7 @@ bot scenario data through the API.
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from app.types.models import BotActionType
+from app.types import BotActionType
 
 
 class ScenarioBase(BaseModel):

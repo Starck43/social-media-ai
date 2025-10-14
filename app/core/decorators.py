@@ -2,7 +2,7 @@ from functools import wraps
 
 from fastapi import HTTPException
 
-from app.types.models import UserRoleType
+from app.types import UserRoleType
 
 
 def app_label(label: str):

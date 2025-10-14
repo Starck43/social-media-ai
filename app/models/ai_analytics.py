@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, relationship
 from .base import Base, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types.models import PeriodType
+from ..types import PeriodType
 
 if TYPE_CHECKING:
 	from . import Source

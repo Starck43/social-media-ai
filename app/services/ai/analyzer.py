@@ -7,19 +7,31 @@ import httpx
 
 from app.core.config import settings
 from app.models import Source, AIAnalytics, BotScenario
-from app.types.models import PeriodType
+from app.types import PeriodType
 
 logger = logging.getLogger(__name__)
+
+# Import new analyzer
+try:
+	from app.services.ai.analyzer_v2 import AIAnalyzerV2
+	USE_V2_ANALYZER = True
+	logger.info("Using AIAnalyzerV2 with multi-LLM support")
+except ImportError as e:
+	logger.warning(f"Failed to import AIAnalyzerV2, using legacy analyzer: {e}")
+	USE_V2_ANALYZER = False
 
 
 class AIAnalyzer:
 	"""
-	Service for comprehensive social media content analysis using DeepSeek AI.
+	Service for comprehensive social media content analysis.
+	
+	LEGACY VERSION: This class is deprecated in favor of AIAnalyzerV2 which supports
+	multiple LLM providers and multi-modal content analysis.
 	
 	This service handles:
 	— Collecting content from various social media sources
 	— Building AI prompts based on bot scenarios or default templates
-	— Calling the DeepSeek LLM API for analysis
+	— Calling the LLM API for analysis
 	— Saving analysis results with full LLM tracing
 	
 	The analyzer supports both scenario-based and default analysis modes.
@@ -29,6 +41,12 @@ class AIAnalyzer:
 		"""Initialize an analyzer with API configuration from settings."""
 		self.api_key = settings.DEEPSEEK_API_KEY
 		self.api_url = settings.DEEPSEEK_API_URL
+		
+		# Use V2 analyzer if available
+		if USE_V2_ANALYZER:
+			self._v2_analyzer = AIAnalyzerV2()
+		else:
+			self._v2_analyzer = None
 
 	async def analyze_content(
 			self,
@@ -49,6 +67,16 @@ class AIAnalyzer:
 		Returns:
 				AIAnalytics object with complete analysis results or None if failed
 		"""
+		# Use V2 analyzer if available for multi-LLM support
+		if self._v2_analyzer:
+			logger.info(f"Using AIAnalyzerV2 for source {source.id}")
+			return await self._v2_analyzer.analyze_content(
+				content, source, topic_chain_id, parent_analysis_id
+			)
+		
+		# Fall back to legacy single-LLM analysis
+		logger.info(f"Using legacy AIAnalyzer for source {source.id}")
+		
 		if not content:
 			logger.warning(f"No content to analyze for source {source.id}")
 			return None

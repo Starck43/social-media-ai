@@ -11,7 +11,7 @@ from typing import List, Dict, Any
 
 from app.models import Source
 from app.services.social.base import BaseClient
-from app.types.models import SourceType
+from app.types import SourceType
 
 logger = logging.getLogger(__name__)
 

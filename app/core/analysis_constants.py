@@ -3,7 +3,7 @@ Common constants and default parameters for AI analysis.
 Shared across all scenarios to ensure consistency.
 """
 
-from app.types.models import SentimentLabel
+from app.types import SentimentLabel
 
 # Default parameters injected into all scenarios
 DEFAULT_ANALYSIS_PARAMS = {

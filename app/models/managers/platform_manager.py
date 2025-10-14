@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
 	from ..platform import Platform
-	from app.types.models import PlatformType
+	from app.types import PlatformType
 
 
 class PlatformManager(BaseManager['Platform']):

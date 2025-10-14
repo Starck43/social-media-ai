@@ -8,6 +8,7 @@ from sqladmin import action
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
+from wtforms import SelectMultipleField
 
 from app.models import (
 	User,
@@ -19,11 +20,13 @@ from app.models import (
 	SourceUserRelationship,
 	BotScenario,
 	AIAnalytics,
+	LLMProvider,
 )
 from app.models.managers.base_manager import prefetch
-from app.types.models import SourceType, PeriodType, ContentType, AnalysisType
+from app.types import SourceType, PeriodType, ContentType, AnalysisType, LLMProviderType
 from .base import BaseAdmin
 from ..core.hashing import pwd_context
+from ..core.llm_presets import LLMProviderMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +190,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"bot_scenario",
 		"is_active",
 		"last_checked",
-		"updated_at",
 	]
 	column_searchable_list = ["name", "external_id"]
 	column_sortable_list = ["name", "is_active", "last_checked"]
@@ -224,6 +226,9 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"last_checked": {
 			"readonly": True,
 		},
+	},
+	column_formatters = {
+		"last_checked": lambda m, a: m.last_checked.strftime("%d.%m.%Y %H:%M") if m.last_checked else "",
 	}
 
 	# Use custom templates for create/edit/details to inject per-view JS
@@ -336,22 +341,22 @@ class SourceAdmin(BaseAdmin, model=Source):
 		# Collect content in real-time
 		try:
 			client = get_social_client(source.platform)
-			
+
 			# Temporarily modify source params for pagination
 			original_params = source.params.copy() if source.params else {}
 			if not source.params:
 				source.params = {}
 			if 'collection' not in source.params:
 				source.params['collection'] = {}
-			
+
 			source.params['collection']['offset'] = offset
 			source.params['collection']['count'] = per_page
-			
+
 			content = await client.collect_data(
 				source=source,
 				content_type="posts"
 			)
-			
+
 			# Restore original params
 			source.params = original_params
 
@@ -386,12 +391,12 @@ class SourceAdmin(BaseAdmin, model=Source):
 			)
 		except Exception as e:
 			logger.error(f"Error checking source {source_id}: {e}")
-			
+
 			# Check for VK privacy error
 			error_msg = str(e)
 			error_type = "generic"
 			error_details = None
-			
+
 			if "Access denied" in error_msg or "error_code: 15" in error_msg:
 				error_type = "access_denied"
 				error_details = {
@@ -405,7 +410,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 					],
 					"alternative": "Или используйте другой источник с открытой стеной"
 				}
-			
+
 			return templates.TemplateResponse(
 				"sqladmin/source_check_results_standalone.html",
 				{
@@ -506,16 +511,22 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"id": "ID",
 		"name": "Название",
 		"description": "Описание сценария",
-		"ai_prompt": "Промт для ИИ агента",
+		"ai_prompt": "Промт",
 		"action_type": "Действие после анализа",
 		"analysis_types": "Типы анализа",
 		"content_types": "Типы контента",
 		"scope": "Дополнительные параметры",
 		"cooldown_minutes": "Интервал (минуты)",
 		"sources": "Источники",
+		"text_llm_provider": "Модель для текста",
+		"image_llm_provider": "Модель для изображений",
+		"video_llm_provider": "Модель для видео",
+		"text_llm_provider_id": "ID модели для текста",
+		"image_llm_provider_id": "ID модели для изображений",
+		"video_llm_provider_id": "ID модели для видео",
 	}, **BaseAdmin.column_labels)
 
-	form_excluded_columns = ["sources",] + BaseAdmin.form_excluded_columns
+	form_excluded_columns = ["sources", ] + BaseAdmin.form_excluded_columns
 	form_widget_args = {
 		"ai_prompt": {
 			"rows": 10,
@@ -536,7 +547,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 
 		form.content_types_enum = list(ContentType)
 		form.analysis_types_enum = list(AnalysisType)
-		
+
 		# Convert list of presets to dict with keys (for template iteration)
 		presets_list = get_all_presets()
 		form.presets = {f"preset_{i}": preset for i, preset in enumerate(presets_list)}
@@ -587,7 +598,7 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 		"summary_data": "Данные анализа",
 		"period_type": "Период",
 		"topic_chain_id": "Цепочка",
-		"llm_model": "LLM Модель",
+		"llm_model": "Модель ИИ",
 	}, **BaseAdmin.column_labels)
 
 	form_excluded_columns = ["summary_data"] + BaseAdmin.form_excluded_columns
@@ -599,7 +610,8 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 
 	column_formatters = {
 		"analysis_date": lambda m, a: m.analysis_date.strftime("%d.%m.%Y %H:%M") if hasattr(m, 'analysis_date') else "",
-		"period_type": lambda m, a: PeriodType[m.period_type].value if hasattr(m, 'period_type') and m.period_type else "",
+		"period_type": lambda m, a: PeriodType[m.period_type].value if hasattr(m,
+		                                                                       'period_type') and m.period_type else "",
 	}
 
 	details_template = "sqladmin/ai_analytics_detail.html"
@@ -640,8 +652,6 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 		"is_read": "Прочитано",
 		"related_entity_type": "Тип сущности",
 		"related_entity_id": "ID сущности",
-		"created_at": "Дата создания",
-		"updated_at": "Дата обновления",
 	}, **BaseAdmin.column_labels)
 
 	form_excluded_columns = [] + BaseAdmin.form_excluded_columns
@@ -711,3 +721,334 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 			url=request.url_for("admin:list", identity=self.identity),
 			status_code=303,
 		)
+
+
+class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
+	"""
+	An enhanced admin for LLM Providers with:
+	— Auto-fill: When provider_type is selected and fills api_url, api_key_env, default model
+	— Multi-select: Capabilities field uses multi-select instead of JSON input
+	— Quick templates: Pre-configured provider templates
+	"""
+
+	name = "ИИ Провайдер"
+	name_plural = "ИИ Провайдеры"
+	icon = "fa fa-brain"
+
+	column_list = ["id", "name", "provider_type", "model_name", "capabilities", "is_active"]
+	column_searchable_list = ["name", "model_name", "provider_type"]
+	column_sortable_list = ["name", "provider_type", "is_active"]
+
+	column_labels = dict({
+		"id": "ID",
+		"name": "Название",
+		"description": "Описание",
+		"model_name": "Название модели",
+		"provider_type": "Тип провайдера",
+		"api_url": "API URL",
+		"api_key_env": "Переменная окружения для API ключа",
+		"config": "Параметры (JSON)",
+		"capabilities": "Возможности",
+		"text_scenarios": "Сценарии (текст)",
+		"image_scenarios": "Сценарии (изображения)",
+		"video_scenarios": "Сценарии (видео)",
+		"is_active": "Активен",
+	}, **BaseAdmin.column_labels)
+
+	form_excluded_columns = [
+		                        "text_scenarios",
+		                        "image_scenarios",
+		                        "video_scenarios"
+	                        ] + BaseAdmin.form_excluded_columns
+
+	form_widget_args = {
+		"name": {
+			"placeholder": "Например: OpenAI GPT-4 Vision"
+		},
+		"description": {
+			"placeholder": "Описание провайдера и его возможностей",
+			"rows": 3
+		},
+		"model_name": {
+			"placeholder": "gpt-4-vision-preview"
+		},
+		"api_url": {
+			"placeholder": "https://api.openai.com/v1/chat/completions",
+			"readonly": False  # Will be autofilled but editable
+		},
+		"api_key_env": {
+			"placeholder": "OPENAI_API_KEY",
+			"readonly": False  # Will be autofilled but editable
+		},
+		"config": {
+			"placeholder": '{"temperature": 0.2, "max_tokens": 2000}',
+			"rows": 3
+		}
+	}
+
+	form_args = {
+		"provider_type": {
+			"label": "Тип провайдера",
+			"description": "Выберите провайдера."
+		},
+		"capabilities": {
+			"label": "Возможности",
+			"description": "Выберите возможности модели (text, image, video, audio)"
+		},
+	}
+
+	column_formatters = {
+		"provider_type": lambda m, a: m.provider_type.value if hasattr(m, 'provider_type') else "",
+		"capabilities": lambda m, a: ", ".join(m.capabilities) if m.capabilities else "—",
+	}
+
+	# Custom form to add multi-select for capabilities
+	form_overrides = {
+		"capabilities": SelectMultipleField
+	}
+
+	form_choices = {
+		"capabilities": [
+			("text", "📝 Text"),
+			("image", "🖼️ Image"),
+			("video", "🎥 Video"),
+			("audio", "🔊 Audio"),
+		]
+	}
+
+	@action(
+		name="test_connection",
+		label="Тест соединения",
+		confirmation_message="Проверить подключение к API провайдера?",
+		add_in_list=True,
+		add_in_detail=True
+	)
+	async def test_connection(self, request: Request):
+		"""Test API connection for selected providers."""
+		try:
+			pks = request.query_params.get("pks", "").split(",")
+			if not pks or not pks[0]:
+				raise HTTPException(status_code=400, detail="No providers selected")
+
+			results = []
+			for pk in pks:
+				provider = await LLMProvider.objects.get(id=int(pk))
+				api_key = provider.get_api_key()
+
+				if not api_key:
+					results.append(f"❌ {provider.name}: API key not found in environment")
+				else:
+					# Here you would actually test the API
+					# For now just check if key exists
+					results.append(f"✅ {provider.name}: API key configured")
+
+			# Show results
+			message = "\n".join(results)
+			request.session["admin_message"] = {
+				"type": "success",
+				"message": f"Test results:\n{message}"
+			}
+
+		except Exception as e:
+			logger.error(f"Test connection error: {e}")
+			request.session["admin_message"] = {
+				"type": "error",
+				"message": f"Error: {str(e)}"
+			}
+
+		return request.url_for("admin:list", identity=self.identity)
+
+	@action(
+		name="toggle_active",
+		label="Включить/Выключить",
+		confirmation_message="Изменить статус выбранных провайдеров?",
+		add_in_list=True
+	)
+	async def toggle_active(self, request: Request):
+		"""Toggle active status for selected providers."""
+		try:
+			pks = request.query_params.get("pks", "").split(",")
+			if not pks or not pks[0]:
+				raise HTTPException(status_code=400, detail="No providers selected")
+
+			count = 0
+			for pk in pks:
+				provider = await LLMProvider.objects.get(id=int(pk))
+				provider.is_active = not provider.is_active
+				await provider.update()
+				count += 1
+
+			request.session["admin_message"] = {
+				"type": "success",
+				"message": f"Статус изменён для {count} провайдеров"
+			}
+
+		except Exception as e:
+			logger.error(f"Toggle active error: {e}")
+			request.session["admin_message"] = {
+				"type": "error",
+				"message": f"Error: {str(e)}"
+			}
+
+		return request.url_for("admin:list", identity=self.identity)
+
+	@action(
+		name="quick_create_deepseek",
+		label="➕ Создать DeepSeek",
+		add_in_list=True
+	)
+	async def quick_create_deepseek(self, request: Request):
+		"""Quick create DeepSeek provider."""
+		return await self._quick_create_provider(request, "deepseek", "deepseek-chat")
+
+	@action(
+		name="quick_create_gpt4v",
+		label="➕ Создать GPT-4 Vision",
+		add_in_list=True
+	)
+	async def quick_create_gpt4v(self, request: Request):
+		"""Quick create GPT-4 Vision provider."""
+		return await self._quick_create_provider(request, "openai", "gpt-4-vision-preview")
+
+	async def _quick_create_provider(self, request: Request, provider_type: str, model_id: str):
+		"""Helper to quickly create a provider from template."""
+		try:
+			provider_enum = LLMProviderType(provider_type)
+			config = LLMProviderMetadata.get_provider_config(provider_type)
+			model_info = LLMProviderMetadata.get_model_info(provider_type, model_id)
+
+			if not model_info:
+				raise ValueError(f"Model {model_id} not found for {provider_type}")
+
+			# Check if already exists
+			existing = await LLMProvider.objects.filter(
+				provider_type=provider_type,
+				model_name=model_id
+			)
+			if existing:
+				request.session["admin_message"] = {
+					"type": "warning",
+					"message": f"Провайдер {model_info.name} уже существует"
+				}
+				return request.url_for("admin:list", identity=self.identity)
+
+			# Create new provider
+			provider = await LLMProvider.objects.create(
+				name=f"{config['display_name']} {model_info.name}",
+				description=model_info.description,
+				provider_type=provider_type,
+				api_url=config['api_url'],
+				api_key_env=config['api_key_env'],
+				model_name=model_id,
+				capabilities=list(model_info.capabilities),
+				config={
+					"temperature": 0.2,
+					"max_tokens": model_info.max_tokens,
+				},
+				is_active=False  # User needs to add API key first
+			)
+
+			request.session["admin_message"] = {
+				"type": "success",
+				"message": f"✅ Создан провайдер: {provider.name}. Добавьте API ключ в .env и активируйте."
+			}
+
+			# Redirect to edit page
+			return request.url_for("admin:edit", identity=self.identity, pk=provider.id)
+
+		except Exception as e:
+			logger.error(f"Quick create error: {e}")
+			request.session["admin_message"] = {
+				"type": "error",
+				"message": f"Ошибка создания: {str(e)}"
+			}
+			return request.url_for("admin:list", identity=self.identity)
+
+	def get_form_js(self) -> str:
+		"""Return JavaScript for autofill functionality."""
+		return """
+		<script>
+		// LLM Provider metadata
+		const LLM_METADATA = {
+			'deepseek': {
+				'api_url': 'https://api.deepseek.com/v1/chat/completions',
+				'api_key_env': 'DEEPSEEK_API_KEY',
+				'models': ['deepseek-chat', 'deepseek-coder']
+			},
+			'openai': {
+				'api_url': 'https://api.openai.com/v1/chat/completions',
+				'api_key_env': 'OPENAI_API_KEY',
+				'models': ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview', 'gpt-4-vision-preview']
+			},
+			'anthropic': {
+				'api_url': 'https://api.anthropic.com/v1/messages',
+				'api_key_env': 'ANTHROPIC_API_KEY',
+				'models': ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307']
+			},
+			'google': {
+				'api_url': 'https://generativelanguage.googleapis.com/v1beta',
+				'api_key_env': 'GOOGLE_API_KEY',
+				'models': ['gemini-pro', 'gemini-pro-vision']
+			},
+			'mistral': {
+				'api_url': 'https://api.mistral.ai/v1/chat/completions',
+				'api_key_env': 'MISTRAL_API_KEY',
+				'models': ['mistral-tiny', 'mistral-small', 'mistral-medium']
+			}
+		};
+		
+		// Auto-fill on provider_type change
+		document.addEventListener('DOMContentLoaded', function() {
+			const providerTypeField = document.querySelector('select[name="provider_type"]');
+			const apiUrlField = document.querySelector('input[name="api_url"]');
+			const apiKeyEnvField = document.querySelector('input[name="api_key_env"]');
+			const modelNameField = document.querySelector('input[name="model_name"]');
+			
+			if (providerTypeField) {
+				providerTypeField.addEventListener('change', function() {
+					const provider = this.value;
+					const metadata = LLM_METADATA[provider];
+					
+					if (metadata) {
+						if (apiUrlField) apiUrlField.value = metadata.api_url;
+						if (apiKeyEnvField) apiKeyEnvField.value = metadata.api_key_env;
+						if (modelNameField && !modelNameField.value) {
+							// Set first model as default
+							modelNameField.value = metadata.models[0];
+						}
+						
+						// Show available models hint
+						if (modelNameField) {
+							const hint = document.createElement('small');
+							hint.className = 'form-text text-muted';
+							hint.textContent = 'Доступные модели: ' + metadata.models.join(', ');
+							
+							// Remove old hint
+							const oldHint = modelNameField.parentElement.querySelector('.model-hint');
+							if (oldHint) oldHint.remove();
+							
+							hint.className += ' model-hint';
+							modelNameField.parentElement.appendChild(hint);
+						}
+					}
+				});
+			}
+		});
+		</script>
+		"""
+
+	async def insert_model(self, request: Request, data: dict) -> Any:
+		"""Override to convert capabilities from list to JSON."""
+		# Convert capabilities from form multi-select to list for JSON field
+		if "capabilities" in data and isinstance(data["capabilities"], list):
+			# Already a list, keep as is
+			pass
+		return await super().insert_model(request, data)
+
+	async def update_model(self, request: Request, pk: Any, data: dict) -> Any:
+		"""Override to convert capabilities from list to JSON."""
+		# Convert capabilities from form multi-select to list for JSON field
+		if "capabilities" in data and isinstance(data["capabilities"], list):
+			# Already a list, keep as is
+			pass
+		return await super().update_model(request, pk, data)

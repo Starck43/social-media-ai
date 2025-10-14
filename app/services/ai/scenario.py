@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List
 
 from app.models import BotScenario, Source
-from app.types.models import BotActionType
+from app.types import BotActionType
 
 logger = logging.getLogger(__name__)
 

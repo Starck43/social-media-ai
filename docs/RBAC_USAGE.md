@@ -55,7 +55,7 @@ class ActionType(Enum):
 
 ```python
 from app.models import Role
-from app.types.models import UserRoleType
+from app.types.__init__ import UserRoleType
 
 # По имени
 role = await Role.objects.get_by_name("admin")
@@ -73,7 +73,7 @@ role = await Role.objects.get_with_users(role_id=1)
 #### 2. Создание роли
 
 ```python
-from app.types.models import UserRoleType
+from app.types.__init__ import UserRoleType
 
 role = await Role.objects.create_role(
 	name="content_manager",
@@ -142,7 +142,7 @@ stats = await Role.objects.get_stats()
 
 ```python
 from app.models import Permission
-from app.types.models import ActionType
+from app.types.__init__ import ActionType
 
 # По codename
 perm = await Permission.objects.get_by_codename("social.source.view")
@@ -152,15 +152,15 @@ perms = await Permission.objects.get_by_action_type(ActionType.DELETE)
 
 # Для конкретной модели
 perms = await Permission.objects.get_for_model(
-    app_name="social",
-    model_name="source",
-    action_type=ActionType.VIEW  # Optional
+	app_name="social",
+	model_name="source",
+	action_type=ActionType.VIEW  # Optional
 )
 
 # Для ModelType ID
 perms = await Permission.objects.get_for_model_type(
-    model_type_id=1,
-    action_type=ActionType.CREATE  # Optional
+	model_type_id=1,
+	action_type=ActionType.CREATE  # Optional
 )
 
 # С загруженным model_type
@@ -170,27 +170,27 @@ perm = await Permission.objects.get_with_model_type(permission_id=5)
 #### 2. Создание прав
 
 ```python
-from app.types.models import ActionType
+from app.types.__init__ import ActionType
 
 # Создать одно право
 perm = await Permission.objects.create_permission(
-    codename="social.source.view",
-    name="Can view source",
-    action_type=ActionType.VIEW,
-    model_type_id=1
+	codename="social.source.view",
+	name="Can view source",
+	action_type=ActionType.VIEW,
+	model_type_id=1
 )
 
 # Создать права для всех действий над моделью
 perms = await Permission.objects.bulk_create_for_model(
-    app_name="social",
-    model_name="source",
-    model_type_id=1,
-    action_types=[
-        ActionType.VIEW,
-        ActionType.CREATE,
-        ActionType.UPDATE,
-        ActionType.DELETE
-    ]
+	app_name="social",
+	model_name="source",
+	model_type_id=1,
+	action_types=[
+		ActionType.VIEW,
+		ActionType.CREATE,
+		ActionType.UPDATE,
+		ActionType.DELETE
+	]
 )
 ```
 
@@ -329,7 +329,7 @@ class RoleAdmin(ModelView, model=Role):
 
 ```python
 from app.models import Role, Permission, ModelType
-from app.types.models import UserRoleType, ActionType
+from app.types.__init__ import UserRoleType, ActionType
 
 # 1. Создать ModelType для Source
 model_type = await ModelType.objects.create(
@@ -529,4 +529,4 @@ if not existing:
 - [Модель ModelType](../app/models/model_type.py)
 - [RoleManager](../app/models/managers/role_manager.py)
 - [PermissionManager](../app/models/managers/permission_manager.py)
-- [Enum типы](../app/types/models.py)
+- [Enum типы](../app/types/__init__.py)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from . import Base, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types.models import NotificationType
+from ..types import NotificationType
 
 
 @app_label("social")

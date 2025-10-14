@@ -1,4 +1,4 @@
-from app.types.models import ActionType
+from app.types import ActionType
 
 
 def generate_permission_codename(app_label: str, model_name: str, action: ActionType) -> str:

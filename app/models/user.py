@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, ClassVar
 from sqlalchemy import Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
-from app.types.models import UserRoleType, ActionType
+from app.types import UserRoleType, ActionType
 from .base import Base, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label

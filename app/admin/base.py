@@ -13,21 +13,6 @@ class BaseAdmin(ModelView):
     page_size_options = [25, 50, 100, 200]
     save_as = True
 
-    form_include_relationships = True
-    form_excluded_columns = ['created_at', 'updated_at']
-    
-    # Переопределяем is_active как SelectField с "Да / Нет"
-    form_overrides = {
-        'is_active': SelectField
-    }
-    
-    form_args = {
-        'is_active': {
-            'choices': [(True, 'Да'), (False, 'Нет')],
-            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
-        }
-    }
-    
     column_labels = {
         "created_at": "Дата создания",
         "updated_at": "Дата обновления",
@@ -39,6 +24,19 @@ class BaseAdmin(ModelView):
         "updated_at": lambda m, a: m.updated_at.strftime("%d.%m.%Y") if hasattr(m, 'updated_at') else "",
         "created_at": lambda m, a: m.created_at.strftime("%d.%m.%Y") if hasattr(m, 'created_at') else "",
     }
+
+    form_overrides = {
+        'is_active': SelectField
+    }
+
+    form_args = {
+        'is_active': {
+            'choices': [(True, 'Да'), (False, 'Нет')],
+            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
+        }
+    }
+    form_excluded_columns = ['created_at', 'updated_at']
+    form_include_relationships = True
 
     async def on_model_change(
             self,

@@ -235,7 +235,7 @@ async def demo_prefetch_with_lookups():
     print(f"   Загружено платформ: {len(platforms)}")
     
     print("\n2. Prefetch с несколькими lookups:")
-    from app.types.models import SourceType
+    from app.types import SourceType
     platforms = await Platform.objects.prefetch_related(
         prefetch('sources', filters={
             'is_active': True,

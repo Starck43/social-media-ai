@@ -2,7 +2,7 @@ from app.models import Platform
 from app.services.social.base import BaseClient
 from app.services.social.vk_client import VKClient
 from app.services.social.tg_client import TelegramClient
-from app.types.models import PlatformType
+from app.types import PlatformType
 
 
 def get_social_client(platform: Platform) -> BaseClient:

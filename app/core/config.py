@@ -66,8 +66,15 @@ class Settings(BaseSettings):
 	REDIS_URL: str
 	DB_SCHEMA: str = "social_manager"
 
+	# Legacy LLM settings (deprecated, use LLMProvider model instead)
 	DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
-	DEEPSEEK_API_KEY: str
+	DEEPSEEK_API_KEY: str = ""
+	
+	# Additional LLM provider API keys (stored in env)
+	OPENAI_API_KEY: str = ""
+	ANTHROPIC_API_KEY: str = ""
+	GOOGLE_API_KEY: str = ""
+	
 	VK_APP_ID: str
 	VK_SERVICE_ACCESS_TOKEN: str
 	TELEGRAM_BOT_TOKEN: str

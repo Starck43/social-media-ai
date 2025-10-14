@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from . import Base, TimestampMixin
 from ..core.config import settings
-from ..types.models import UserRoleType
+from ..types import UserRoleType
 
 if TYPE_CHECKING:
 	from . import User, Permission

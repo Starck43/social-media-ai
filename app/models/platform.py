@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, relationship, mapped_column, validates
 from .base import Base
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types.models import PlatformType
+from ..types import PlatformType
 
 if TYPE_CHECKING:
 	from . import Source

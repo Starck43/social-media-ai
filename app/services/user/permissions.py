@@ -5,7 +5,7 @@ from fastapi.params import Depends
 
 from app.models import User, Permission, Role
 from app.services.user.auth import get_authenticated_user
-from app.types.models import ActionType, UserRoleType
+from app.types import ActionType, UserRoleType
 
 logger = logging.getLogger(__name__)
 

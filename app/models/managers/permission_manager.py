@@ -6,7 +6,7 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
 	from ..permission import Permission
-	from app.types.models import ActionType
+	from app.types import ActionType
 
 
 class PermissionManager(BaseManager):

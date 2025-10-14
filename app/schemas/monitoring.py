@@ -7,7 +7,7 @@ These schemas define the structure for content collection requests.
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from app.types.models import SourceType
+from app.types import SourceType
 
 
 class CollectRequest(BaseModel):

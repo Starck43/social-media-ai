@@ -380,23 +380,23 @@ print(f"Success: {result['successful']}/{result['total_sources']}")
 
 ```python
 from app.services.ai.analyzer import AIAnalyzer
-from app.types.models import AnalysisType
+from app.types.__init__ import AnalysisType
 
 analyzer = AIAnalyzer()
 
 content = [
-    {"text": "Отличный продукт, всем рекомендую!"},
-    {"text": "Очень доволен покупкой"},
-    {"text": "Качество на высоте"}
+   {"text": "Отличный продукт, всем рекомендую!"},
+   {"text": "Очень доволен покупкой"},
+   {"text": "Качество на высоте"}
 ]
 
 source = await Source.objects.get(id=5)
 
 # Анализ тональности
 analytics = await analyzer.analyze_content(
-    content=content,
-    source=source,
-    analysis_type=AnalysisType.SENTIMENT
+   content=content,
+   source=source,
+   analysis_type=AnalysisType.SENTIMENT
 )
 
 print(analytics.summary_data)
@@ -411,14 +411,14 @@ print(analytics.summary_data)
 
 ```python
 from app.models import AIAnalytics
-from app.types.models import AnalysisType
+from app.types.__init__ import AnalysisType
 
 # Последняя аналитика по источнику
 analytics = await (
-    AIAnalytics.objects
-    .filter(source_id=5, analysis_type=AnalysisType.SENTIMENT)
-    .order_by(AIAnalytics.analysis_date.desc())
-    .first()
+   AIAnalytics.objects
+   .filter(source_id=5, analysis_type=AnalysisType.SENTIMENT)
+   .order_by(AIAnalytics.analysis_date.desc())
+   .first()
 )
 
 print(analytics.summary_data['sentiment'])  # "positive"

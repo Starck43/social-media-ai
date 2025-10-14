@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.services.crud import create_permissions_for_model
 from app.services.user.permissions import RolePermissionService
-from app.types.models import ActionType
+from app.types import ActionType
 
 
 def seed_permissions():

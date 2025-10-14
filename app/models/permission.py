@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, ClassVar
 from sqlalchemy import Integer, String, UniqueConstraint, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.types.models import ActionType
+from app.types import ActionType
 from .base import Base, TimestampMixin
 from ..core.config import settings
 

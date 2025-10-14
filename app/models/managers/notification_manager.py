@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
 	from ..notification import Notification
-	from app.types.models import NotificationType
+	from app.types import NotificationType
 
 
 class NotificationManager(BaseManager):

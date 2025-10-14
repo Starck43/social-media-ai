@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.models import User, Source, AIAnalytics, Platform, Notification
 from app.services.user.auth import get_authenticated_user
-from app.types.models import SourceType, PeriodType
+from app.types import SourceType, PeriodType
 from app.schemas.dashboard import (
     DashboardStats,
     SourceSummary,

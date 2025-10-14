@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-class UserManager(BaseManager['User']):
+class UserManager(BaseManager):
 	"""Manager for User model operations."""
 
 	def __init__(self):

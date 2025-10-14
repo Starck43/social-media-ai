@@ -9,7 +9,7 @@ from app.core.database import async_engine
 from .auth import AdminAuthBackend
 from .views import (
 	UserAdmin, RoleAdmin, PermissionAdmin, NotificationAdmin, PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
-	BotScenarioAdmin, AIAnalyticsAdmin
+	BotScenarioAdmin, AIAnalyticsAdmin, LLMProviderAdmin
 )
 
 # Get the project root directory
@@ -66,6 +66,7 @@ def setup_admin(app):
 		SourceAdmin,
 		SourceUserRelationshipAdmin,
 		BotScenarioAdmin,
+		LLMProviderAdmin,
 		AIAnalyticsAdmin,
 		NotificationAdmin,
 	]

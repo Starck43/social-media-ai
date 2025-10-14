@@ -5,7 +5,7 @@ from sqlalchemy.orm.clsregistry import ClsRegistryToken
 
 from app.core.config import settings
 from app.models import Base
-from app.types.models import ActionType
+from app.types import ActionType
 
 
 def get_model(tablename: str) -> type | ClsRegistryToken:

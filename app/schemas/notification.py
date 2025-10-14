@@ -8,7 +8,7 @@ and returning notification data.
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from app.types.models import NotificationType
+from app.types import NotificationType
 
 
 class NotificationResponse(BaseModel):

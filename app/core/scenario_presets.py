@@ -3,7 +3,7 @@ Preset bot scenarios for quick configuration.
 Provides 8 real-world monitoring scenarios with Russian prompts.
 """
 
-from app.types.models import ContentType, AnalysisType
+from app.types import ContentType, AnalysisType
 
 
 def get_all_presets():

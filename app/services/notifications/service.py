@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from app.models import Notification
-from app.types.models import NotificationType
+from app.types import NotificationType
 
 logger = logging.getLogger(__name__)
 

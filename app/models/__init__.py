@@ -24,6 +24,9 @@ from .platform import Platform
 from .source import Source, SourceUserRelationship
 from .bot_scenario import BotScenario
 
+# AI models
+from .llm_provider import LLMProvider
+
 # Analytics models
 from .ai_analytics import AIAnalytics
 
@@ -47,6 +50,9 @@ __all__ = [
     'Source',
     'SourceUserRelationship',
     'BotScenario',
+
+    # AI models
+    'LLMProvider',
 
     # Analytics models
     'AIAnalytics',

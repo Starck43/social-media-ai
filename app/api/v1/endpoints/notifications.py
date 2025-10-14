@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models import User, Notification
 from app.services.user.auth import get_authenticated_user
 from app.services.notifications.service import notify
-from app.types.models import NotificationType
+from app.types import NotificationType
 from app.schemas.notification import (
     NotificationResponse,
     NotificationCreate,

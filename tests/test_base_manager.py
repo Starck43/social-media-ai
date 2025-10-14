@@ -11,7 +11,7 @@ from app.models.role import Role
 from app.models.source import Source, SourceUserRelationship
 from app.models.platform import Platform
 from app.models.managers.base_manager import prefetch
-from app.types.models import SourceType
+from app.types import SourceType
 
 
 # Фикстура для создания тестовой БД в памяти

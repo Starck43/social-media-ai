@@ -5,7 +5,7 @@ from typing import cast
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
-from app.types.models import UserRoleType
+from app.types import UserRoleType
 
 
 def seed_roles() -> None:

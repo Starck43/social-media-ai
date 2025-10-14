@@ -155,12 +155,12 @@ Content types сохраняются как JSON массив:
 content_types = ["posts", "comments", "reactions"]
 
 # В Python:
-from app.types.models import ContentType
+from app.types.__init__ import ContentType
 
 # Используется так:
 for ct in bot_scenario.content_types:
-    if ct == ContentType.POSTS.value:
-        await collect_posts()
+	if ct == ContentType.POSTS.value:
+		await collect_posts()
 ```
 
 ## Валидация

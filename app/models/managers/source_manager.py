@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
     from ..source import Source, SourceUserRelationship
-    from app.types.models import SourceType
+    from app.types import SourceType
 
 
 class SourceManager(BaseManager):
@@ -23,7 +23,6 @@ class SourceManager(BaseManager):
 
     def __init__(self):
         from ..source import Source
-
         super().__init__(Source)
 
     async def get_by_platform(

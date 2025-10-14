@@ -5,7 +5,7 @@ from datetime import datetime, UTC
 from app.models import Source, Platform
 from app.services.social.factory import get_social_client
 from app.services.ai.analyzer import AIAnalyzer
-from app.types.models import SourceType, NotificationType
+from app.types import SourceType, NotificationType
 
 # Try to import notification service
 try:

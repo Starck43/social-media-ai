@@ -2,12 +2,14 @@
 """
 Direct test script for VK content collection.
 Bypasses API authentication for testing purposes.
+Updated for new VKClient methods and error handling.
 """
 
 import asyncio
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from typing import cast
+
+from sqlalchemy import select, ColumnElement
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.models import Source, Platform
 from app.services.social.vk_client import VKClient
@@ -21,19 +23,23 @@ async def test_collection():
     # Setup database
     db_url = settings.POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async with async_session() as session:
-        # Get source
-        result = await session.execute(select(Source).where(Source.id == 2))
+        # Get source (use a more robust way to find test source)
+        result = await session.execute(
+            select(Source)
+            .where(Source.is_active)
+            .limit(1)
+        )
         source = result.scalar_one_or_none()
         
         if not source:
-            print('❌ Source with ID=2 not found')
+            print('❌ No active sources found. Please create a test source in admin panel.')
             return
         
         # Get platform
-        result = await session.execute(select(Platform).where(Platform.id == source.platform_id))
+        result = await session.execute(select(Platform).where(cast(ColumnElement, Platform.id == source.platform_id)))
         platform = result.scalar_one_or_none()
         
         if not platform:
@@ -49,42 +55,30 @@ async def test_collection():
         # Create VKClient
         client = VKClient(platform=platform)
         
-        # Collect posts
-        print('Collecting posts...')
-        try:
-            posts = await client.collect_data(
-                source=source,
-                content_type='posts'
-            )
-            
-            print(f'\n✅ Successfully collected {len(posts)} posts\n')
-            
-            # Display posts
-            for i, post in enumerate(posts[:5], 1):
-                print(f'{i}. Post ID: {post.get("id")}')
-                print(f'   External ID: {post.get("external_id")}')
-                print(f'   Date: {post.get("date")}')
-                print(f'   Text: {post.get("text", "")[:100]}...')
-                print(f'   Likes: {post.get("likes")} | Comments: {post.get("comments")} | Shares: {post.get("shares")}')
-                print(f'   Views: {post.get("views")} | Reactions: {post.get("reactions")}')
-                print()
+        # Test different content types
+        content_types = ['posts', 'comments', 'info']
+        
+        for content_type in content_types:
+            print(f'Collecting {content_type}...')
+            try:
+                data = await client.collect_data(
+                    source=source,
+                    content_type=content_type
+                )
                 
-            # Show summary
-            total_likes = sum(p.get('likes', 0) for p in posts)
-            total_comments = sum(p.get('comments', 0) for p in posts)
-            total_views = sum(p.get('views', 0) for p in posts)
-            
-            print(f'--- Summary ---')
-            print(f'Total posts: {len(posts)}')
-            print(f'Total likes: {total_likes}')
-            print(f'Total comments: {total_comments}')
-            print(f'Total views: {total_views}')
-            
-        except Exception as e:
-            print(f'❌ Collection failed: {e}')
-            import traceback
-            traceback.print_exc()
-    
+                print(f'✅ Successfully collected {len(data)} {content_type}\n')
+                
+                # Display sample
+                for i, item in enumerate(data[:3], 1):
+                    print(f'{i}. {content_type.capitalize()} ID: {item.get("id")}')
+                    if content_type == 'posts':
+                        print(f'   Text: {item.get("text", "")[:100]}...')
+                        print(f'   Likes: {item.get("likes")} | Comments: {item.get("comments")}')
+                    print()
+                    
+            except Exception as e:
+                print(f'❌ Collection failed for {content_type}: {e}')
+        
     await engine.dispose()
 
 

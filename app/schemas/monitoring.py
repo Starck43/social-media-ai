@@ -31,7 +31,7 @@ class CollectPlatformRequest(BaseModel):
     """
     
     platform_id: int = Field(..., gt=0, description="ID of the platform")
-    source_types: Optional[List[SourceType]] = Field(
+    source_types: Optional[list[SourceType]] = Field(
         None,
         description="Optional filter by source types (USER, GROUP, CHANNEL)"
     )

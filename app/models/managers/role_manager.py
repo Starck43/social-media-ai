@@ -267,8 +267,10 @@ class RoleManager(BaseManager['Role']):
 			'by_codename': {}
 		}
 		
+		from app.utils.enum_helpers import get_enum_value
+		
 		for role in all_roles:
-			codename = role.codename.value if hasattr(role.codename, 'value') else str(role.codename)
+			codename = get_enum_value(role.codename)
 			stats['by_codename'][codename] = {
 				'name': role.name,
 				'description': role.description

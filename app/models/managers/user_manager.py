@@ -62,7 +62,7 @@ class UserManager(BaseManager):
 	async def update_user(
 			self,
 			user_id: int,
-			update_data: Dict[str, Any],
+			update_data: dict[str, Any],
 			current_user: Optional['User'] = None
 	) -> Optional['User']:
 		"""

@@ -222,9 +222,11 @@ class PlatformManager(BaseManager['Platform']):
 			'sources_per_platform': {}
 		}
 		
+		from app.utils.enum_helpers import get_enum_value
+		
 		for platform in all_platforms:
 			# Count by type
-			type_name = platform.platform_type.value if hasattr(platform.platform_type, 'value') else str(platform.platform_type)
+			type_name = get_enum_value(platform.platform_type)
 			stats['by_type'][type_name] = stats['by_type'].get(type_name, 0) + 1
 			
 			# Count sources for this platform

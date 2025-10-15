@@ -14,8 +14,8 @@ class LLMProviderCreate(BaseModel):
 	api_url: str = Field(..., description="API endpoint URL")
 	api_key_env: str = Field(..., description="Environment variable name for API key")
 	model_name: str = Field(..., description="Model name to use")
-	capabilities: List[str] = Field(default_factory=list, description="Capabilities: text, image, video")
-	config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional configuration")
+	capabilities: list[str] = Field(default_factory=list, description="Capabilities: text, image, video")
+	config: Optional[dict[str, Any]] = Field(default_factory=dict, description="Additional configuration")
 	is_active: bool = Field(default=True, description="Whether provider is active")
 
 
@@ -27,8 +27,8 @@ class LLMProviderUpdate(BaseModel):
 	api_url: Optional[str] = None
 	api_key_env: Optional[str] = None
 	model_name: Optional[str] = None
-	capabilities: Optional[List[str]] = None
-	config: Optional[Dict[str, Any]] = None
+	capabilities: Optional[list[str]] = None
+	config: Optional[dict[str, Any]] = None
 	is_active: Optional[bool] = None
 
 
@@ -41,8 +41,8 @@ class LLMProviderResponse(BaseModel):
 	api_url: str
 	api_key_env: str
 	model_name: str
-	capabilities: List[str]
-	config: Dict[str, Any]
+	capabilities: list[str]
+	config: dict[str, Any]
 	is_active: bool
 	created_at: str
 	updated_at: str
@@ -53,5 +53,5 @@ class LLMProviderResponse(BaseModel):
 
 class LLMProviderList(BaseModel):
 	"""Schema for list of LLM providers."""
-	providers: List[LLMProviderResponse]
+	providers: list[LLMProviderResponse]
 	total: int

@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
 from app.types import SourceType
+from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +309,7 @@ class VKClient(BaseClient):
 					'reactions': likes + comments + reposts,  # Combined metric
 
 					# Metadata
-					'source_type': source_type.value if hasattr(source_type, 'value') else str(source_type),
+					'source_type': get_enum_value(source_type),
 					'platform': 'vkontakte',
 					'post_type': item.get('post_type', 'post'),
 

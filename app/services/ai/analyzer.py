@@ -1,52 +1,28 @@
 import logging
 from datetime import UTC
-from typing import Optional, Any
-import json
+from typing import Optional, Any, Dict
 
-import httpx
-
-from app.core.config import settings
-from app.models import Source, AIAnalytics, BotScenario
+from app.models import Source, AIAnalytics, BotScenario, LLMProvider
+from app.services.ai.content_classifier import ContentClassifier
+from app.services.ai.llm_client import LLMClientFactory
+from app.services.ai.prompts import PromptBuilder
 from app.types import PeriodType
+from app.types.enums.llm_types import MediaType
 
 logger = logging.getLogger(__name__)
-
-# Import new analyzer
-try:
-	from app.services.ai.analyzer_v2 import AIAnalyzerV2
-	USE_V2_ANALYZER = True
-	logger.info("Using AIAnalyzerV2 with multi-LLM support")
-except ImportError as e:
-	logger.warning(f"Failed to import AIAnalyzerV2, using legacy analyzer: {e}")
-	USE_V2_ANALYZER = False
 
 
 class AIAnalyzer:
 	"""
-	Service for comprehensive social media content analysis.
-	
-	LEGACY VERSION: This class is deprecated in favor of AIAnalyzerV2 which supports
-	multiple LLM providers and multi-modal content analysis.
+	AI Analyzer with multi-LLM support.
 	
 	This service handles:
-	— Collecting content from various social media sources
-	— Building AI prompts based on bot scenarios or default templates
-	— Calling the LLM API for analysis
-	— Saving analysis results with full LLM tracing
-	
-	The analyzer supports both scenario-based and default analysis modes.
+	— Classification of content by media type (text, image, video)
+	— Selection of appropriate LLM providers for each content type
+	— Parallel analysis using multiple specialized LLMs
+	— Unification of results into a single comprehensive summary
+	— Full LLM tracing for debugging and monitoring
 	"""
-
-	def __init__(self):
-		"""Initialize an analyzer with API configuration from settings."""
-		self.api_key = settings.DEEPSEEK_API_KEY
-		self.api_url = settings.DEEPSEEK_API_URL
-		
-		# Use V2 analyzer if available
-		if USE_V2_ANALYZER:
-			self._v2_analyzer = AIAnalyzerV2()
-		else:
-			self._v2_analyzer = None
 
 	async def analyze_content(
 			self,
@@ -56,134 +32,356 @@ class AIAnalyzer:
 			parent_analysis_id: Optional[int] = None,
 	) -> Optional[AIAnalytics]:
 		"""
-		Comprehensive analysis of collected content using AI.
+		Comprehensive analysis of collected content using multiple LLM providers.
 
 		Args:
-				content: List of normalized content items
-				source: Source from which content was collected
-				topic_chain_id: Optional chain ID for ongoing topics
-				parent_analysis_id: Optional parent analysis ID for threaded analysis
+			content: List of normalized content items
+			source: Source from which content was collected
+			topic_chain_id: Optional chain ID for ongoing topics
+			parent_analysis_id: Optional parent analysis ID for threaded analysis
 
 		Returns:
-				AIAnalytics object with complete analysis results or None if failed
+			AIAnalytics object with complete analysis results or None if failed
 		"""
-		# Use V2 analyzer if available for multi-LLM support
-		if self._v2_analyzer:
-			logger.info(f"Using AIAnalyzerV2 for source {source.id}")
-			return await self._v2_analyzer.analyze_content(
-				content, source, topic_chain_id, parent_analysis_id
-			)
-		
-		# Fall back to legacy single-LLM analysis
-		logger.info(f"Using legacy AIAnalyzer for source {source.id}")
-		
 		if not content:
 			logger.warning(f"No content to analyze for source {source.id}")
 			return None
 
-		# Load bot scenario if assigned to the source
-		# Bot scenario defines analysis_types, scope and custom AI prompt
+		# Load bot scenario if assigned
 		bot_scenario = None
 		if source.bot_scenario_id:
-			from app.models import BotScenario
 			try:
 				bot_scenario = await BotScenario.objects.get(id=source.bot_scenario_id)
 				logger.info(
 					f"Using bot scenario '{bot_scenario.name}' (ID: {bot_scenario.id}) "
-					f"with analysis types: {bot_scenario.analysis_types} for source {source.id}"
+					f"for source {source.id}"
 				)
 			except Exception as e:
 				logger.warning(f"Failed to load bot scenario {source.bot_scenario_id}: {e}")
 
-		# Prepare content and metadata
-		text_content = self._prepare_text(content)
+		# Prepare metadata
 		content_stats = self._calculate_content_stats(content)
 		platform_name = await self._get_platform_name(source)
 
+		# Classify content by media type
+		classified = ContentClassifier.classify_content(content)
+		
 		try:
-			# Build prompt (scenario-based or default)
-			# Scenario-based: Uses custom prompt template with analysis_types and scope
-			# Default: Uses comprehensive analysis prompt with all standard features
-			if bot_scenario and bot_scenario.ai_prompt:
-				from app.services.ai.scenario import ScenarioPromptBuilder
-
-				# Build context for prompt variable substitution
-				context = {
-					'platform': platform_name,
-					'source_type': source.source_type.value if hasattr(source.source_type, 'value') else str(
-						source.source_type),
-					'total_posts': len(content),
-					'content': text_content,
-					'date_range': content_stats.get('date_range'),
-				}
-
-				# ScenarioPromptBuilder merges scope with defaults and substitutes variables
-				prompt = ScenarioPromptBuilder.build_prompt(bot_scenario, context)
-				logger.info(
-					f"Using scenario-based prompt for analysis types: {bot_scenario.analysis_types}, "
-					f"content types: {bot_scenario.content_types}"
+			# Analyze each content type with appropriate LLM
+			analysis_results = {}
+			
+			# Text analysis
+			if classified[MediaType.TEXT.value]:
+				text_result = await self._analyze_text(
+					classified[MediaType.TEXT.value],
+					bot_scenario,
+					content_stats,
+					platform_name,
+					source
 				)
-			else:
-				prompt = self._get_default_prompt(text_content, content_stats, source, platform_name)
-				logger.info("Using default comprehensive analysis prompt (no scenario assigned)")
-
-			# Call LLM
-			result = await self._call_api_with_prompt(prompt)
-
-			# Save analysis results to database
-			# This creates an AIAnalytics record with:
-			# — AI analysis results (sentiment, topics, etc.)
-			# — Content statistics (total posts, reactions, etc.)
-			# — LLM tracing data (model, prompt, response)
+				if text_result:
+					analysis_results['text_analysis'] = text_result
+			
+			# Image analysis
+			if classified['images']:
+				image_result = await self._analyze_images(
+					classified['images'],
+					bot_scenario,
+					platform_name
+				)
+				if image_result:
+					analysis_results['image_analysis'] = image_result
+			
+			# Video analysis
+			if classified['videos']:
+				video_result = await self._analyze_videos(
+					classified['videos'],
+					bot_scenario,
+					platform_name
+				)
+				if video_result:
+					analysis_results['video_analysis'] = video_result
+			
+			# Create unified summary if multiple analyses
+			unified_summary = await self._create_unified_summary(analysis_results, bot_scenario)
+			
+			# Save comprehensive analysis
 			analysis = await self._save_analysis(
-				result, source, content_stats, platform_name, bot_scenario, topic_chain_id, parent_analysis_id
+				analysis_results,
+				unified_summary,
+				source,
+				content_stats,
+				platform_name,
+				bot_scenario,
+				topic_chain_id,
+				parent_analysis_id,
 			)
+			
 			return analysis
 
 		except Exception as e:
 			logger.error(f"Error analyzing content for source {source.id}: {e}", exc_info=True)
 			return None
 
-	def _prepare_text(self, content: list[dict]) -> str:
+	async def _analyze_text(
+		self,
+		text_items: list[dict],
+		bot_scenario: Optional[BotScenario],
+		content_stats: dict[str, Any],
+		platform_name: str,
+		source: Source
+	) -> Optional[dict[str, Any]]:
+		"""Analyze text content using text LLM provider."""
+		try:
+			# Get LLM provider for text
+			provider = await self._get_llm_provider(bot_scenario, MediaType.TEXT)
+			if not provider:
+				logger.warning("No text LLM provider configured, skipping text analysis")
+				return None
+			
+			# Prepare text content
+			text_content = ContentClassifier.prepare_text_content(text_items)
+			
+			# Build prompt
+			if bot_scenario and bot_scenario.ai_prompt:
+				from app.services.ai.scenario import ScenarioPromptBuilder
+				from app.utils.enum_helpers import get_enum_value
+				
+				context = {
+					'platform': platform_name,
+					'source_type': get_enum_value(source.source_type),
+					'total_posts': len(text_items),
+					'content': text_content,
+					'date_range': content_stats.get('date_range'),
+				}
+				prompt = ScenarioPromptBuilder.build_prompt(bot_scenario, context)
+			else:
+				source_type = getattr(source, "source_type", None)
+				stype = get_enum_value(source_type) if source_type else ""
+				prompt = PromptBuilder.build_text_prompt(text_content, content_stats, platform_name, stype)
+			
+			# Create LLM client and analyze
+			client = LLMClientFactory.create(provider)
+			result = await client.analyze(prompt)
+			
+			logger.info(f"Text analysis completed using {provider.name}")
+			return result
+			
+		except Exception as e:
+			logger.error(f"Error in text analysis: {e}", exc_info=True)
+			return None
+
+	async def _analyze_images(
+		self,
+		image_items: list[dict],
+		bot_scenario: Optional[BotScenario],
+		platform_name: str
+	) -> Optional[dict[str, Any]]:
+		"""Analyze images using image LLM provider."""
+		try:
+			# Get LLM provider for images
+			provider = await self._get_llm_provider(bot_scenario, MediaType.IMAGE)
+			if not provider:
+				logger.warning("No image LLM provider configured, skipping image analysis")
+				return None
+			
+			# Extract image URLs
+			media_urls = ContentClassifier.get_media_urls(image_items)
+			if not media_urls:
+				return None
+			
+			# Build prompt
+			prompt = PromptBuilder.build_image_prompt(len(media_urls), platform_name)
+			
+			# Create LLM client and analyze
+			client = LLMClientFactory.create(provider)
+			result = await client.analyze(prompt, media_urls=media_urls)
+			
+			logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
+			return result
+			
+		except Exception as e:
+			logger.error(f"Error in image analysis: {e}", exc_info=True)
+			return None
+
+	async def _analyze_videos(
+		self,
+		video_items: list[dict],
+		bot_scenario: Optional[BotScenario],
+		platform_name: str
+	) -> Optional[dict[str, Any]]:
+		"""Analyze videos using video LLM provider."""
+		try:
+			# Get LLM provider for videos
+			provider = await self._get_llm_provider(bot_scenario, MediaType.VIDEO)
+			if not provider:
+				logger.warning("No video LLM provider configured, skipping video analysis")
+				return None
+			
+			# Extract video URLs
+			media_urls = ContentClassifier.get_media_urls(video_items)
+			if not media_urls:
+				return None
+			
+			# Build prompt
+			prompt = PromptBuilder.build_video_prompt(len(media_urls), platform_name)
+			
+			# Create LLM client and analyze
+			client = LLMClientFactory.create(provider)
+			result = await client.analyze(prompt, media_urls=media_urls)
+			
+			logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
+			return result
+			
+		except Exception as e:
+			logger.error(f"Error in video analysis: {e}", exc_info=True)
+			return None
+
+	async def _create_unified_summary(
+		self,
+		analysis_results: dict[str, Any],
+		bot_scenario: Optional[BotScenario]
+	) -> Optional[dict[str, Any]]:
 		"""
-		Prepare content for AI analysis with intelligent sampling.
+		Create unified summary from multiple analysis results.
 		
-		To avoid sending too much data to the LLM, we sample representative
-		content items using a step function (first, middle, last posts).
+		This combines insights from text, image, and video analyses into
+		a single coherent summary with actionable insights.
+		"""
+		if len(analysis_results) <= 1:
+			# Only one type of analysis, no need to unify
+			return None
+		
+		try:
+			# Get default text provider for summary creation
+			provider = await self._get_llm_provider(bot_scenario, MediaType.TEXT)
+			if not provider:
+				logger.warning("No text LLM provider for unified summary")
+				return None
+			
+			# Extract parsed results
+			text_analysis = analysis_results.get('text_analysis', {}).get('parsed', {})
+			image_analysis = analysis_results.get('image_analysis', {}).get('parsed', {})
+			video_analysis = analysis_results.get('video_analysis', {}).get('parsed', {})
+			
+			# Build unification prompt
+			prompt = PromptBuilder.build_unified_summary_prompt(
+				text_analysis,
+				image_analysis,
+				video_analysis
+			)
+			
+			# Create summary
+			client = LLMClientFactory.create(provider)
+			result = await client.analyze(prompt)
+			
+			logger.info("Unified summary created successfully")
+			return result
+			
+		except Exception as e:
+			logger.error(f"Error creating unified summary: {e}", exc_info=True)
+			return None
+
+	async def _get_llm_provider(
+		self,
+		bot_scenario: Optional[BotScenario],
+		media_type: MediaType | str
+	) -> Optional[LLMProvider]:
+		"""
+		Get appropriate LLM provider for media type.
+		
+		Priority:
+		1. Explicit FK override (text_llm_provider_id, etc.)
+		2. Auto-resolve by llm_strategy (fallback)
 		
 		Args:
-			content: List of normalized content items with 'text' and 'date' fields
+			bot_scenario: Bot scenario with provider configuration
+			media_type: Type of media (MediaType enum or string)
 			
 		Returns:
-			Formatted text ready for LLM analysis
+			LLMProvider instance or None
 		"""
-		texts = []
-		# Take representative sample (evenly distributed across the dataset)
-		sample_size = min(100, len(content))
-		step = max(1, len(content) // sample_size)
-
-		for i in range(0, len(content), step):
-			if len(texts) >= sample_size:
-				break
-			text = content[i].get("text", "")
-			if text and len(text.strip()) > 10:  # Skip very short texts
-				texts.append(f"[{content[i].get('date', '')}] {text}")
-
-		return "\n\n".join(texts[:sample_size])
+		# Convert string to MediaType if needed
+		if isinstance(media_type, str):
+			media_type = MediaType(media_type)
+		
+		provider_id = None
+		
+		# Priority 1: Try explicit FK override from scenario
+		if bot_scenario:
+			if media_type == MediaType.TEXT:
+				provider_id = bot_scenario.text_llm_provider_id
+			elif media_type == MediaType.IMAGE:
+				provider_id = bot_scenario.image_llm_provider_id
+			elif media_type == MediaType.VIDEO:
+				provider_id = bot_scenario.video_llm_provider_id
+		
+		# Load explicit provider if configured
+		if provider_id:
+			try:
+				provider = await LLMProvider.objects.get(id=provider_id)
+				if provider.is_active:
+					logger.info(f"✅ Using explicit provider {provider.name} for {media_type}")
+					return provider
+				logger.warning(f"Provider {provider_id} is inactive, trying fallback")
+			except Exception as e:
+				logger.warning(f"Failed to load provider {provider_id}: {e}, trying fallback")
+		
+		# Priority 2: Auto-resolve by llm_strategy (fallback)
+		if bot_scenario and bot_scenario.llm_strategy:
+			try:
+				from .llm_provider_resolver import LLMProviderResolver
+				
+				# Get all active providers
+				all_providers = await LLMProvider.objects.filter(is_active=True)
+				
+				# Build available providers dict for resolver
+				available = {
+					p.id: (
+						get_enum_value(p.provider_type),
+						p.model_name,
+						p.capabilities or []
+					)
+					for p in all_providers
+				}
+				
+				if not available:
+					logger.error("No active providers available for auto-resolve")
+				else:
+					# Resolve by strategy
+					resolved = LLMProviderResolver.resolve_for_content_types(
+						content_types=bot_scenario.content_types or [],
+						available_providers=available,
+						strategy=bot_scenario.llm_strategy.value
+					)
+					
+					# Get provider for this media type
+					if media_type in resolved:
+						provider_id = resolved[media_type].provider_id
+						provider = await LLMProvider.objects.get(id=provider_id)
+						logger.info(
+							f"✅ Auto-resolved provider {provider.name} for {media_type} "
+							f"using strategy '{bot_scenario.llm_strategy}'"
+						)
+						return provider
+					
+			except Exception as e:
+				logger.error(f"Failed to auto-resolve provider: {e}")
+		
+		# Priority 3: Fall back to default provider for media type
+		try:
+			provider = await LLMProvider.objects.get_default_for_media_type(media_type)
+			if provider:
+				logger.info(f"✅ Using default fallback provider {provider.name} for {media_type}")
+				return provider
+		except Exception as e:
+			logger.error(f"Failed to get default provider: {e}")
+		
+		logger.error(f"❌ No provider found for {media_type}")
+		return None
 
 	async def _get_platform_name(self, source: Source) -> str:
-		"""
-		Safely get platform name without relying on lazy relationship loading.
-		
-		First attempts to get from 'source.platform' relationship if already loaded,
-		otherwise fetches from a database to avoid lazy loading issues in async context.
-		
-		Args:
-			source: Source object with platform_id
-			
-		Returns:
-			Platform name (e.g., “VK”, “Telegram”)
-		"""
+		"""Get platform name safely."""
 		try:
 			plat = getattr(source, "platform", None)
 			if plat and getattr(plat, "name", None):
@@ -191,24 +389,12 @@ class AIAnalyzer:
 		except Exception:
 			pass
 
-		# Fetch from a database if not already loaded
 		from app.models import Platform
 		obj = await Platform.objects.get(id=source.platform_id)
 		return obj.name
 
 	def _calculate_content_stats(self, content: list[dict]) -> dict[str, Any]:
-		"""
-		Calculate basic content statistics for analysis context.
-		
-		These stats help the LLM understand the scale and engagement of the content,
-		and are saved alongside the AI analysis for reference.
-		
-		Args:
-			content: List of normalized content items
-			
-		Returns:
-			Dictionary with statistics (total posts, avg reactions, date range, etc.)
-		"""
+		"""Calculate content statistics."""
 		if not content:
 			return {}
 
@@ -227,132 +413,10 @@ class AIAnalyzer:
 			"date_range": {"first": min(dates) if dates else None, "last": max(dates) if dates else None},
 		}
 
-	def _get_default_prompt(
-			self, text: str, stats: dict[str, Any], source: Source, platform_name: str
-	) -> str:
-		"""
-		Build default comprehensive analysis prompt when no scenario is assigned.
-		
-		This prompt requests a full analysis covering:
-		— Sentiment analysis (emotions, positive/negative topics)
-		— Topic analysis (main themes, emerging topics)
-		— Engagement analysis (viral potential, audience interest)
-		— Content analysis (quality, key phrases, hashtags)
-		— Audience insights (mood, concerns, suggestions)
-		
-		Args:
-			text: Prepared content text
-			stats: Content statistics
-			source: Source object
-			platform_name: Name of the social media platform
-			
-		Returns:
-			Complete prompt for DeepSeek API
-		"""
-		# Safely extract source type value
-		source_type = getattr(source, "source_type", None)
-		if hasattr(source_type, "value"):
-			stype = source_type.value
-		else:
-			stype = str(source_type) if source_type is not None else ""
-
-		return f"""
-Проанализируй контент из социальной сети и предоставь комплексный анализ в JSON формате.
-
-ИСХОДНЫЕ ДАННЫЕ:
-— Тип источника: {stype}
-— Платформа: {platform_name}
-— Общее количество постов: {stats.get('total_posts', 0)}
-— Период: {stats.get('date_range', {}).get('first')} — {stats.get('date_range', {}).get('last')}
-
-КОНТЕНТ ДЛЯ АНАЛИЗА:
-{text}
-
-ВЕРНИ ОТВЕТ В СЛЕДУЮЩЕЙ JSON СТРУКТУРЕ:
-{{
-    "sentiment_analysis": {{
-        "overall_sentiment": "positive/negative/neutral/mixed",
-        "sentiment_score": 0.0-1.0,
-        "dominant_emotions": ["эмоция1", "эмоция2", "эмоция3"],
-        "positive_topics": ["тема1", "тема2"],
-        "negative_topics": ["тема1", "тема2"],
-        "sentiment_summary": "краткое описание эмоционального настроя"
-    }},
-    "topic_analysis": {{
-        "main_topics": ["тема1", "тема2", "тема3", "тема4", "тема5"],
-        "topic_prevalence": {{"тема1": 0.25, "тема2": 0.20, "тема3": 0.15}},
-        "emerging_topics": ["новая тема1", "новая тема2"],
-        "topic_summary": "краткое описание тематического содержания"
-    }},
-    "engagement_analysis": {{
-        "engagement_level": "high/medium/low",
-        "engagement_score": 0.0-1.0,
-        "viral_potential": "high/medium/low",
-        "audience_interest": ["интерес1", "интерес2"],
-        "engagement_summary": "краткое описание вовлеченности"
-    }},
-    "content_analysis": {{
-        "content_quality": "high/medium/low",
-        "content_types": ["тип1", "тип2"],
-        "key_phrases": ["фраза1", "фраза2", "фраза3"],
-        "hashtags": ["#хэштег1", "#хэштег2"],
-        "content_summary": "краткое описание качества контента"
-    }},
-    "audience_insights": {{
-        "audience_mood": "описание настроения аудитории",
-        "key_concerns": ["проблема1", "проблема2"],
-        "suggestions": ["предложение1", "предложение2"],
-        "audience_summary": "краткое описание аудитории"
-    }},
-    "metadata": {{
-        "analysis_version": "2.0",
-        "processed_samples": {len(text.split('\n\n'))},
-        "analysis_timestamp": "временная метка"
-    }}
-}}
-
-Будь точным и объективным в анализе. Используй статистические данные для подкрепления выводов.
-"""
-
-	async def _call_api_with_prompt(self, prompt: str) -> dict:
-		"""
-		Call DeepSeek API with prepared prompt and parse response.
-		
-		Uses JSON response format for structured analysis data.
-		Includes full request and response for LLM tracing.
-		
-		Args:
-			prompt: Complete prompt for the LLM
-			
-		Returns:
-			Dictionary with 'request' and 'response' keys for tracing
-			
-		Raises:
-			ValueError: If API key is not configured
-			httpx.HTTPError: If API request fails
-		"""
-		if not self.api_key:
-			raise ValueError("DEEPSEEK_API_KEY not configured")
-
-		async with httpx.AsyncClient() as client:
-			response = await client.post(
-				self.api_url,
-				headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-				json={
-					"model": "deepseek-chat",
-					"messages": [{"role": "user", "content": prompt}],
-					"temperature": 0.2,
-					"max_tokens": 2000,
-					"response_format": {"type": "json_object"},
-				},
-				timeout=60.0,
-			)
-			response.raise_for_status()
-			return {"request": {"model": "deepseek-chat", "prompt": prompt}, "response": response.json()}
-
 	async def _save_analysis(
 			self,
-			api_result: dict,
+			analysis_results: dict[str, Any],
+			unified_summary: Optional[dict[str, Any]],
 			source: Source,
 			content_stats: dict[str, Any],
 			platform_name: str,
@@ -360,56 +424,32 @@ class AIAnalyzer:
 			topic_chain_id: Optional[str] = None,
 			parent_analysis_id: Optional[int] = None,
 	) -> AIAnalytics:
-		"""
-		Save comprehensive analysis results to database with full LLM tracing.
-		
-		Creates an AIAnalytics record containing:
-		— AI analysis results (parsed from LLM response)
-		— Content statistics (engagement, post counts, etc.)
-		— Source metadata (platform, source type, name)
-		— LLM tracing data (model, prompt, full response)
-		— Scenario information if applicable
-		
-		This enables full audit trail of AI analysis for debugging and monitoring.
-		
-		Args:
-			api_result: Dictionary with 'request' and 'response' from LLM API
-			source: Source that content was collected from
-			content_stats: Statistics about the analyzed content
-			platform_name: Name of the social media platform
-			bot_scenario: Bot scenario that was used (if any)
-			topic_chain_id: Optional chain ID for topic continuity
-			parent_analysis_id: Optional parent analysis for threaded analysis
-			
-		Returns:
-			Created AIAnalytics object
-		"""
+		"""Save comprehensive analysis results to database."""
 		from datetime import date, datetime
 
-		# Extract request/response from LLM API call
-		req = api_result.get("request", {})
-		resp = api_result.get("response", {})
-		content = resp.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+		# Extract LLM tracing info from first available analysis
+		llm_model = None
+		prompt_text = None
+		response_payload = {}
+		
+		for analysis_type, result in analysis_results.items():
+			if result and isinstance(result, dict):
+				llm_model = result.get('request', {}).get('model')
+				prompt_text = result.get('request', {}).get('prompt')
+				response_payload[analysis_type] = result.get('response', {})
 
-		# Try to parse LLM response as JSON
-		# If parsing fails, store raw response for debugging
-		try:
-			result_data = json.loads(content)
-		except json.JSONDecodeError:
-			logger.warning("Failed to parse AI response as JSON, storing raw response")
-			result_data = {"raw_response": content, "parse_error": True}
-
-		# Combine AI analysis with content statistics and metadata
 		# Safe enum/string handling for source_type
 		st = getattr(source, "source_type", None)
-		if hasattr(st, "value"):
-			st_val = st.value
-		else:
-			st_val = str(st) if st is not None else ""
+		st_val = get_enum_value(st) if st is not None else ""
 
-		# Build comprehensive analysis data structure
+		# Build comprehensive data structure
 		comprehensive_data = {
-			"ai_analysis": result_data,
+			"multi_llm_analysis": {
+				"text_analysis": analysis_results.get('text_analysis', {}).get('parsed', {}),
+				"image_analysis": analysis_results.get('image_analysis', {}).get('parsed', {}),
+				"video_analysis": analysis_results.get('video_analysis', {}).get('parsed', {}),
+			},
+			"unified_summary": unified_summary.get('parsed', {}) if unified_summary else {},
 			"content_statistics": content_stats,
 			"source_metadata": {
 				"source_type": st_val,
@@ -417,9 +457,10 @@ class AIAnalyzer:
 				"source_name": source.name
 			},
 			"analysis_metadata": {
-				"analysis_version": "2.0",
+				"analysis_version": "3.0-multi-llm",
 				"analysis_timestamp": datetime.now(UTC).isoformat(),
 				"content_samples_analyzed": content_stats.get("total_posts", 0),
+				"llm_providers_used": len([r for r in analysis_results.values() if r])
 			},
 		}
 
@@ -432,13 +473,13 @@ class AIAnalyzer:
 				"content_types": bot_scenario.content_types,
 			}
 
-		# Create analytics record with LLM tracing
+		# Create analytics record
 		analytics = await AIAnalytics.objects.create(
 			source_id=source.id,
 			summary_data=comprehensive_data,
-			llm_model=req.get("model"),
-			prompt_text=req.get("prompt"),
-			response_payload=resp,
+			llm_model=llm_model or "multi-llm",
+			prompt_text=prompt_text,
+			response_payload=response_payload,
 			analysis_date=date.today(),
 			period_type=PeriodType.DAILY,
 			topic_chain_id=topic_chain_id,
@@ -447,7 +488,7 @@ class AIAnalyzer:
 
 		scenario_info = f" using scenario '{bot_scenario.name}'" if bot_scenario else ""
 		logger.info(
-			f"Comprehensive analysis saved for source {source.id}{scenario_info} "
-			f"(analytics_id: {analytics.id}, chain: {topic_chain_id}, parent: {parent_analysis_id})"
+			f"Multi-LLM analysis saved for source {source.id}{scenario_info} "
+			f"(analytics_id: {analytics.id}, providers: {len(analysis_results)})"
 		)
 		return analytics

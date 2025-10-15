@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, status
 
 from app.models import LLMProvider, User
+from app.utils.enum_helpers import get_enum_value
 from app.schemas.llm_provider import (
 	LLMProviderCreate,
 	LLMProviderUpdate,
@@ -51,7 +52,7 @@ async def create_llm_provider(
 			id=provider.id,
 			name=provider.name,
 			description=provider.description,
-			provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+			provider_type=get_enum_value(provider.provider_type),
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,
@@ -99,7 +100,7 @@ async def list_llm_providers(
 				id=provider.id,
 				name=provider.name,
 				description=provider.description,
-				provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+				provider_type=get_enum_value(provider.provider_type),
 				api_url=provider.api_url,
 				api_key_env=provider.api_key_env,
 				model_name=provider.model_name,
@@ -143,7 +144,7 @@ async def get_llm_provider(
 			id=provider.id,
 			name=provider.name,
 			description=provider.description,
-			provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+			provider_type=get_enum_value(provider.provider_type),
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,
@@ -202,7 +203,7 @@ async def update_llm_provider(
 			id=provider.id,
 			name=provider.name,
 			description=provider.description,
-			provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+			provider_type=get_enum_value(provider.provider_type),
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,

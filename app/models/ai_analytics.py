@@ -57,7 +57,6 @@ class AIAnalytics(Base, TimestampMixin):
 		server_default=text("'{}'::jsonb")
 	)
 
-	# Minimal LLM trace fields
 	llm_model: Mapped[str | None] = Column(String(100), nullable=True)
 	prompt_text: Mapped[str | None] = Column(Text, nullable=True)
 	response_payload: Mapped[JSON] = Column(JSON, nullable=True)

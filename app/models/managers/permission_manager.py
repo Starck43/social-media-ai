@@ -246,9 +246,11 @@ class PermissionManager(BaseManager):
 			'by_app': {}
 		}
 		
+		from app.utils.enum_helpers import get_enum_value
+		
 		for perm in all_perms:
 			# Count by action type
-			action = perm.action_type.value if hasattr(perm.action_type, 'value') else str(perm.action_type)
+			action = get_enum_value(perm.action_type)
 			stats['by_action'][action] = stats['by_action'].get(action, 0) + 1
 			
 			# Count by app

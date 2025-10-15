@@ -70,3 +70,5 @@ flake8
 mypy
 
 WTForms
+
+MarkupSafe

@@ -5,10 +5,10 @@ These schemas define the structure for creating, updating, and returning
 bot scenario data through the API.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
-from app.types import BotActionType
+from app.types import BotActionType, BotTriggerType
 
 
 class ScenarioBase(BaseModel):
@@ -18,7 +18,7 @@ class ScenarioBase(BaseModel):
 	description: Optional[str] = Field(None, description="Scenario description")
 	ai_prompt: Optional[str] = Field(None, description="AI prompt template with variables")
 	is_active: bool = Field(True, description="Whether scenario is active")
-	cooldown_minutes: int = Field(30, ge=1, le=10080, description="Cooldown period in minutes (max 1 week)")
+	collection_interval_hours: int = Field(1, ge=1, le=168, description="Collection interval in hours (1-168, max 1 week)")
 
 
 class ScenarioCreate(ScenarioBase):
@@ -29,17 +29,25 @@ class ScenarioCreate(ScenarioBase):
 	Scope contains only configuration parameters for the selected analysis types.
 	"""
 
-	analysis_types: List[str] = Field(
+	analysis_types: list[str] = Field(
 		default_factory=list,
 		description="List of analysis type names (e.g. ['sentiment', 'keywords', 'topics'])"
 	)
-	content_types: List[str] = Field(
+	content_types: list[str] = Field(
 		default_factory=list,
 		description="List of content type values (e.g. ['posts', 'comments', 'videos'])"
 	)
 	scope: Optional[dict] = Field(
 		None,
 		description="Configuration parameters for analysis (e.g. {'sentiment_config': {...}})"
+	)
+	trigger_type: Optional[BotTriggerType] = Field(
+		None,
+		description="Trigger condition for when to analyze/act"
+	)
+	trigger_config: Optional[dict[str, Any]] = Field(
+		None,
+		description="Configuration for trigger evaluation"
 	)
 	action_type: Optional[BotActionType] = Field(
 		None,
@@ -56,13 +64,15 @@ class ScenarioUpdate(BaseModel):
 
 	name: Optional[str] = Field(None, min_length=1, max_length=255)
 	description: Optional[str] = None
-	analysis_types: Optional[List[str]] = None
-	content_types: Optional[List[str]] = None
+	analysis_types: Optional[list[str]] = None
+	content_types: Optional[list[str]] = None
 	scope: Optional[dict] = None
 	ai_prompt: Optional[str] = None
+	trigger_type: Optional[BotTriggerType] = None
+	trigger_config: Optional[dict[str, Any]] = None
 	action_type: Optional[BotActionType] = None
 	is_active: Optional[bool] = None
-	cooldown_minutes: Optional[int] = Field(None, ge=1, le=10080)
+	collection_interval_hours: Optional[int] = Field(None, ge=1, le=168)
 
 
 class ScenarioResponse(BaseModel):
@@ -75,13 +85,13 @@ class ScenarioResponse(BaseModel):
 	id: int
 	name: str
 	description: Optional[str]
-	analysis_types: List[str]
-	content_types: List[str]
+	analysis_types: list[str]
+	content_types: list[str]
 	scope: Optional[dict]
 	ai_prompt: Optional[str]
 	action_type: Optional[str]
 	is_active: bool
-	cooldown_minutes: int
+	collection_interval_hours: int
 	created_at: str
 	updated_at: str
 
@@ -101,4 +111,4 @@ class ScenarioSourcesResponse(BaseModel):
 
 	scenario_id: int
 	scenario_name: str
-	sources: List[dict]
+	sources: list[dict]

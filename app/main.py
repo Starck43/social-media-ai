@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Awaitable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_pagination import add_pagination
@@ -15,8 +15,14 @@ from app.api.v1 import entry
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 
+from fastapi import Request
+from fastapi.templating import Jinja2Templates
+
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Настройка шаблонов
+templates = Jinja2Templates(directory="app/templates")
 
 
 async def rate_limit_exceeded_handler(
@@ -87,6 +93,18 @@ def create_application() -> FastAPI:
 app = create_application()
 
 
+@app.get("/dashboard/topic-chains", tags=["Dashboard"])
+async def topic_chains_dashboard(request: Request):
+	"""
+	Дашборд для визуализации цепочек тем.
+	Отображает цепочки тем из данных аналитики.
+	"""
+	return templates.TemplateResponse(
+		"dashboard_topic_chains.html",
+		{"request": request}
+	)
+
+
 @app.get("/", tags=["Root"])
 async def root():
 	return {
@@ -94,6 +112,7 @@ async def root():
 		"version": "1.0.0",
 		"docs": "/docs",
 		"health": "/health",
+		"dashboard": "/dashboard/topic-chains",
 		"environment": settings.ENVIRONMENT
 	}
 

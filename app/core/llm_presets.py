@@ -9,7 +9,7 @@ class ModelInfo(NamedTuple):
     """Information about a specific LLM model."""
     name: str                # Display name
     model_id: str            # API model identifier
-    capabilities: List[str]  # ["text", "image", "video"]
+    capabilities: list[str]  # ["text", "image", "video"]
     max_tokens: int          # Maximum context length
     cost_per_1k: float       # Approximate cost per 1k tokens (USD)
     description: str = ""    # Optional description
@@ -19,7 +19,7 @@ class LLMProviderMetadata:
     """Metadata and available models for LLM providers."""
     
     # DeepSeek models
-    DEEPSEEK_MODELS: Dict[str, ModelInfo] = {
+    DEEPSEEK_MODELS: dict[str, ModelInfo] = {
         "deepseek-chat": ModelInfo(
             name="DeepSeek Chat",
             model_id="deepseek-chat",
@@ -39,7 +39,7 @@ class LLMProviderMetadata:
     }
     
     # OpenAI models
-    OPENAI_MODELS: Dict[str, ModelInfo] = {
+    OPENAI_MODELS: dict[str, ModelInfo] = {
         "gpt-3.5-turbo": ModelInfo(
             name="GPT-3.5 Turbo",
             model_id="gpt-3.5-turbo",
@@ -75,7 +75,7 @@ class LLMProviderMetadata:
     }
     
     # Anthropic models
-    ANTHROPIC_MODELS: Dict[str, ModelInfo] = {
+    ANTHROPIC_MODELS: dict[str, ModelInfo] = {
         "claude-3-opus-20240229": ModelInfo(
             name="Claude 3 Opus",
             model_id="claude-3-opus-20240229",
@@ -103,7 +103,7 @@ class LLMProviderMetadata:
     }
     
     # Google models
-    GOOGLE_MODELS: Dict[str, ModelInfo] = {
+    GOOGLE_MODELS: dict[str, ModelInfo] = {
         "gemini-pro": ModelInfo(
             name="Gemini Pro",
             model_id="gemini-pro",
@@ -123,7 +123,7 @@ class LLMProviderMetadata:
     }
     
     # Mistral models
-    MISTRAL_MODELS: Dict[str, ModelInfo] = {
+    MISTRAL_MODELS: dict[str, ModelInfo] = {
         "mistral-tiny": ModelInfo(
             name="Mistral Tiny",
             model_id="mistral-tiny",
@@ -196,7 +196,7 @@ class LLMProviderMetadata:
         return cls.PROVIDER_CONFIGS.get(provider_type, cls.PROVIDER_CONFIGS["custom"])
     
     @classmethod
-    def get_available_models(cls, provider_type: str) -> Dict[str, ModelInfo]:
+    def get_available_models(cls, provider_type: str) -> dict[str, ModelInfo]:
         """Get available models for a provider type."""
         return cls.get_provider_config(provider_type).get("models", {})
     
@@ -207,7 +207,7 @@ class LLMProviderMetadata:
         return models.get(model_id)
     
     @classmethod
-    def get_models_by_capability(cls, provider_type: str, capability: str) -> List[str]:
+    def get_models_by_capability(cls, provider_type: str, capability: str) -> list[str]:
         """Get model IDs that support a specific capability."""
         models = cls.get_available_models(provider_type)
         return [
@@ -218,7 +218,7 @@ class LLMProviderMetadata:
 
 
 # Helper functions for quick access
-def get_multimodal_models() -> Dict[str, List[str]]:
+def get_multimodal_models() -> dict[str, list[str]]:
     """Get models that support image/video analysis by provider."""
     result = {}
     for provider_type, config in LLMProviderMetadata.PROVIDER_CONFIGS.items():

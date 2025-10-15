@@ -93,7 +93,7 @@ class TelegramClient(BaseClient):
 		# Merge with custom source parameters
 		return {**base_params, **source_params}
 
-	def _normalize_response(self, raw_data: dict, source_type: SourceType) -> List[Dict[str, Any]]:
+	def _normalize_response(self, raw_data: dict, source_type: SourceType) -> list[dict[str, Any]]:
 		"""
 		Normalize Telegram API response to unified format.
 		

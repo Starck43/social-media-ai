@@ -35,9 +35,9 @@ class LLMClient(ABC):
 	async def analyze(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""
 		Analyze content using the LLM.
 		
@@ -55,9 +55,9 @@ class LLMClient(ABC):
 	def _prepare_request(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""
 		Prepare API request payload for the specific provider.
 		
@@ -72,7 +72,7 @@ class LLMClient(ABC):
 		pass
 	
 	@abstractmethod
-	def _parse_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+	def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
 		"""
 		Parse provider-specific response into a unified format.
 		
@@ -91,9 +91,9 @@ class DeepSeekClient(LLMClient):
 	async def analyze(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""
 		Analyze content using DeepSeek API.
 		
@@ -136,9 +136,9 @@ class DeepSeekClient(LLMClient):
 	def _prepare_request(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""Prepare DeepSeek API request."""
 		return {
 			"model": self.model_name,
@@ -148,7 +148,7 @@ class DeepSeekClient(LLMClient):
 			"response_format": {"type": "json_object"},
 		}
 	
-	def _parse_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+	def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
 		"""Parse DeepSeek response."""
 		try:
 			content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
@@ -164,9 +164,9 @@ class OpenAIClient(LLMClient):
 	async def analyze(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""
 		Analyze content using OpenAI API.
 		
@@ -208,9 +208,9 @@ class OpenAIClient(LLMClient):
 	def _prepare_request(
 		self,
 		prompt: str,
-		media_urls: Optional[List[str]] = None,
+		media_urls: Optional[list[str]] = None,
 		**kwargs
-	) -> Dict[str, Any]:
+	) -> dict[str, Any]:
 		"""Prepare OpenAI API request with optional vision support."""
 		messages = []
 		
@@ -235,7 +235,7 @@ class OpenAIClient(LLMClient):
 			"response_format": {"type": "json_object"} if not media_urls else None,
 		}
 	
-	def _parse_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+	def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
 		"""Parse OpenAI response."""
 		try:
 			content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
@@ -274,7 +274,8 @@ class LLMClientFactory:
 		Raises:
 			ValueError: If provider type is not supported
 		"""
-		provider_type = provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type)
+		from app.utils.enum_helpers import get_enum_value
+		provider_type = get_enum_value(provider.provider_type)
 		
 		client_class = cls._client_map.get(provider_type.lower())
 		

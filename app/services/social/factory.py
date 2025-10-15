@@ -25,7 +25,13 @@ def get_social_client(platform: Platform) -> BaseClient:
 	}
 	
 	# Get platform type value (works with both enum and string)
-	platform_value = platform.platform_type.value if hasattr(platform.platform_type, 'value') else str(platform.platform_type)
+	# For tuple enum, use db_value; for simple enum use value; for string use as-is
+	if hasattr(platform.platform_type, 'db_value'):
+		platform_value = platform.platform_type.db_value
+	elif hasattr(platform.platform_type, 'value'):
+		platform_value = platform.platform_type.value
+	else:
+		platform_value = str(platform.platform_type)
 	
 	client_class = client_map.get(platform_value)
 	if not client_class:

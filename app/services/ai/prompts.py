@@ -11,7 +11,7 @@ class PromptBuilder:
 	"""Builder for LLM analysis prompts."""
 	
 	@staticmethod
-	def build_text_prompt(text: str, stats: Dict[str, Any], platform_name: str, source_type: str) -> str:
+	def build_text_prompt(text: str, stats: dict[str, Any], platform_name: str, source_type: str) -> str:
 		"""
 		Build comprehensive text analysis prompt.
 		
@@ -168,9 +168,9 @@ class PromptBuilder:
 	
 	@staticmethod
 	def build_unified_summary_prompt(
-		text_analysis: Dict[str, Any],
-		image_analysis: Dict[str, Any],
-		video_analysis: Dict[str, Any]
+		text_analysis: dict[str, Any],
+		image_analysis: dict[str, Any],
+		video_analysis: dict[str, Any]
 	) -> str:
 		"""
 		Build prompt for creating unified summary from multiple analyses.

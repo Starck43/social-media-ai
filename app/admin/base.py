@@ -1,7 +1,7 @@
 from typing import Any
 
 from sqladmin import ModelView
-from wtforms import SelectField
+from sqladmin.fields import SelectField
 
 
 class BaseAdmin(ModelView):

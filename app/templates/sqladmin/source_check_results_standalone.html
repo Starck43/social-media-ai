@@ -94,7 +94,7 @@
                 <p class="text-muted">
                     <i class="fas fa-globe"></i> {{ source.platform.name }}
                     •
-                    <i class="fas fa-tag"></i> {{ source.source_type.value }}
+                    <i class="fas fa-tag"></i> {{ source.source_type.label if source.source_type.label is defined else source.source_type }}
                     •
                     <i class="fas fa-clock"></i> {{ checked_at.strftime('%d.%m.%Y %H:%M:%S') }}
                 </p>

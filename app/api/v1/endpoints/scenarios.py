@@ -63,9 +63,11 @@ async def create_scenario(
         content_types=request.content_types,
         scope=request.scope,
         ai_prompt=request.ai_prompt,
+        trigger_type=request.trigger_type,
+        trigger_config=request.trigger_config,
         action_type=request.action_type,
         is_active=request.is_active,
-        cooldown_minutes=request.cooldown_minutes,
+        collection_interval_hours=request.collection_interval_hours,
     )
 
     return ScenarioResponse(
@@ -78,7 +80,7 @@ async def create_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        cooldown_minutes=scenario.cooldown_minutes,
+        collection_interval_hours=scenario.collection_interval_hours,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )
@@ -115,7 +117,7 @@ async def list_scenarios(
             ai_prompt=s.ai_prompt,
             action_type=s.action_type,
             is_active=s.is_active,
-            cooldown_minutes=s.cooldown_minutes,
+            collection_interval_hours=s.collection_interval_hours,
             created_at=s.created_at.isoformat() if s.created_at else "",
             updated_at=s.updated_at.isoformat() if s.updated_at else "",
         )
@@ -149,7 +151,7 @@ async def get_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        cooldown_minutes=scenario.cooldown_minutes,
+        collection_interval_hours=scenario.collection_interval_hours,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )
@@ -196,12 +198,16 @@ async def update_scenario(
         updates["scope"] = request.scope
     if request.ai_prompt is not None:
         updates["ai_prompt"] = request.ai_prompt
+    if request.trigger_type is not None:
+        updates["trigger_type"] = request.trigger_type
+    if request.trigger_config is not None:
+        updates["trigger_config"] = request.trigger_config
     if request.action_type is not None:
-        updates["action_type"] = request.action_type.value
+        updates["action_type"] = request.action_type
     if request.is_active is not None:
         updates["is_active"] = request.is_active
-    if request.cooldown_minutes is not None:
-        updates["cooldown_minutes"] = request.cooldown_minutes
+    if request.collection_interval_hours is not None:
+        updates["collection_interval_hours"] = request.collection_interval_hours
 
     scenario = await scenario_service.update_scenario(scenario_id, **updates)
 
@@ -218,7 +224,7 @@ async def update_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        cooldown_minutes=scenario.cooldown_minutes,
+        collection_interval_hours=scenario.collection_interval_hours,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )

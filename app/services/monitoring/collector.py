@@ -162,7 +162,7 @@ class ContentCollector:
 
     async def _analyze_content(
         self,
-        content: List[dict],
+        content: list[dict],
         source: Source,
         topic_chain_id: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,

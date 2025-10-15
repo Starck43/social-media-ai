@@ -20,7 +20,7 @@ router = APIRouter(tags=["notifications"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/notifications", response_model=List[NotificationResponse])
+@router.get("/notifications", response_model=list[NotificationResponse])
 async def list_notifications(
     is_read: Optional[bool] = None,
     notification_type: Optional[NotificationType] = None,

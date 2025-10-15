@@ -34,6 +34,34 @@ class ContentType(Enum):
 		return self._emoji
 	
 	@property
+	def label(self):
+		"""Get label with emoji."""
+		return f"{self._emoji} {self._display_name}"
+	
+	@classmethod
+	def choices(cls, use_db_value: bool = True):
+		"""Get choices for form fields."""
+		if use_db_value:
+			return [(c.db_value, c.label) for c in cls]
+		return [(c.name, c.label) for c in cls]
+	
+	@classmethod
+	def get_by_value(cls, value: str):
+		"""Get enum by database value."""
+		for content in cls:
+			if content.db_value == value:
+				return content
+		return None
+	
+	@classmethod
+	def get_by_name(cls, name: str):
+		"""Get enum by name."""
+		try:
+			return cls[name]
+		except KeyError:
+			return None
+	
+	@property
 	def required_media_type(self) -> str:
 		"""Get required MediaType for this ContentType."""
 		# Map ContentType to MediaType capability

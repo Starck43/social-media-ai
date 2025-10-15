@@ -24,7 +24,7 @@ class LLMProvider(Base, TimestampMixin):
 	provider_type: Mapped[LLMProviderType] = LLMProviderType.sa_column(
 		type_name='llm_provider_type',
 		nullable=False,
-		store_as_name=False  # Store as values (deepseek, openai) not names (DEEPSEEK, OPENAI)
+		store_as_name=False  # Store as values (deepseek, openai)
 	)
 	api_url: Mapped[str] = Column(String(500), nullable=False)
 	# Environment variable name for API key (e.g., "OPENAI_API_KEY")
@@ -65,7 +65,8 @@ class LLMProvider(Base, TimestampMixin):
 		objects: ClassVar = None
 
 	def __str__(self) -> str:
-		provider_type_str = self.provider_type.value if hasattr(self.provider_type, 'value') else str(self.provider_type)
+		from app.utils.enum_helpers import get_enum_value
+		provider_type_str = get_enum_value(self.provider_type)
 		capabilities_str = ', '.join(self.capabilities) if self.capabilities else 'none'
 		return f"{self.name} ({provider_type_str}) - {capabilities_str}"
 

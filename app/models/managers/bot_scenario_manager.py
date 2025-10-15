@@ -145,7 +145,7 @@ class BotScenarioManager(BaseManager):
             action_type=action_type,
             content_types=content_types or [],
             is_active=is_active,
-            cooldown_minutes=cooldown_minutes,
+            collection_interval_hours=collection_interval_hours,
         )
 
         db.add(scenario)

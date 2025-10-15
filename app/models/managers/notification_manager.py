@@ -255,12 +255,10 @@ class NotificationManager(BaseManager):
 			'by_type': {}
 		}
 
+		from app.utils.enum_helpers import get_enum_value
+		
 		for notification in all_notifications:
-			type_name = (
-				notification.notification_type.value
-				if hasattr(notification.notification_type, 'value')
-				else str(notification.notification_type)
-			)
+			type_name = get_enum_value(notification.notification_type)
 
 			if type_name not in stats['by_type']:
 				stats['by_type'][type_name] = {'total': 0, 'unread': 0}

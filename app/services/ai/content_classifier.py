@@ -1,6 +1,8 @@
 import logging
 from typing import Dict, List, Any
 
+from app.types.enums.llm_types import MediaType
+
 logger = logging.getLogger(__name__)
 
 
@@ -12,7 +14,7 @@ class ContentClassifier:
 	"""
 	
 	@staticmethod
-	def classify_content(content: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+	def classify_content(content: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
 		"""
 		Classify content items by their media type.
 		
@@ -20,18 +22,18 @@ class ContentClassifier:
 			content: List of normalized content items with potential attachments
 			
 		Returns:
-			Dictionary with keys: 'text', 'images', 'videos', each containing relevant items
+			Dictionary with keys: MediaType values, each containing relevant items
 		"""
 		classified = {
-			'text': [],
-			'images': [],
-			'videos': []
+			MediaType.TEXT.value: [],
+			MediaType.IMAGE.value: [],
+			MediaType.VIDEO.value: []
 		}
 		
 		for item in content:
 			# All items have text component
 			if item.get('text'):
-				classified['text'].append(item)
+				classified[MediaType.TEXT.value].append(item)
 			
 			# Check for media attachments
 			attachments = item.get('attachments', [])
@@ -40,27 +42,27 @@ class ContentClassifier:
 				media_type = attachment.get('type', '').lower()
 				
 				if media_type in ['photo', 'image']:
-					classified['images'].append({
+					classified[MediaType.IMAGE.value].append({
 						**item,
 						'media_url': attachment.get('url'),
-						'media_type': 'image'
+						'media_type': MediaType.IMAGE.value
 					})
 				elif media_type in ['video', 'video_file']:
-					classified['videos'].append({
+					classified[MediaType.VIDEO.value].append({
 						**item,
 						'media_url': attachment.get('url'),
-						'media_type': 'video'
+						'media_type': MediaType.VIDEO.value
 					})
 		
 		logger.info(
-			f"Classified content: {len(classified['text'])} text items, "
-			f"{len(classified['images'])} images, {len(classified['videos'])} videos"
+			f"Classified content: {len(classified[MediaType.TEXT.value])} text items, "
+			f"{len(classified[MediaType.IMAGE.value])} images, {len(classified[MediaType.VIDEO.value])} videos"
 		)
 		
 		return classified
 	
 	@staticmethod
-	def get_media_urls(items: List[Dict[str, Any]]) -> List[str]:
+	def get_media_urls(items: list[dict[str, Any]]) -> list[str]:
 		"""
 		Extract media URLs from classified items.
 		
@@ -79,7 +81,7 @@ class ContentClassifier:
 		return urls
 	
 	@staticmethod
-	def prepare_text_content(items: List[Dict[str, Any]], sample_size: int = 100) -> str:
+	def prepare_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> str:
 		"""
 		Prepare text content for LLM analysis with sampling.
 		

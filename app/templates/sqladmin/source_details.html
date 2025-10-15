@@ -21,7 +21,7 @@
                         </tr>
                         </thead>
                         <tbody>
-                        {% set raw_source_type = model.source_type.value if model.source_type is not none and (model.source_type is not string) else model.source_type %}
+                        {% set raw_source_type = model.source_type.name if model.source_type.name is defined else model.source_type %}
                         {% set normalized_source_type = (raw_source_type|string).lower() %}
                         {% set show_tracked_only = normalized_source_type == 'user' %}
                         {% for name in model_view._details_prop_names %}

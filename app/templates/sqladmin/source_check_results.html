@@ -13,7 +13,7 @@
                 •
                 <i class="fa fa-globe"></i> {{ source.platform.name }}
                 •
-                <i class="fa fa-tag"></i> {{ source.source_type.value }}
+                <i class="fa fa-tag"></i> {{ source.source_type.label if source.source_type.label is defined else source.source_type }}
             </p>
         </div>
         <div class="col-auto">

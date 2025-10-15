@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Dict, Any
+from typing import TYPE_CHECKING, ClassVar, Any
 
 from sqlalchemy import Column, Integer, String, Text, Boolean, JSON, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, relationship
 
 from .base import Base, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types import BotActionType
+from ..types import BotActionType, BotTriggerType, LLMStrategyType
 
 
 @app_label("social")
@@ -31,6 +30,21 @@ class BotScenario(Base, TimestampMixin):
 	# AI prompt template with variables
 	ai_prompt: Mapped[str] = Column(Text, nullable=True)
 	
+	# 🆕 Trigger conditions for when to analyze/act
+	# Trigger type: when to analyze content or perform action
+	trigger_type: Mapped[BotTriggerType] = BotTriggerType.sa_column(
+		type_name='bot_trigger_type',
+		nullable=True,
+		store_as_name=True
+	)
+	# Trigger configuration: parameters for trigger evaluation
+	# Examples:
+	# - KEYWORD_MATCH: {"keywords": ["жалоба", "проблема"], "mode": "any"}
+	# - SENTIMENT_THRESHOLD: {"threshold": 0.3, "direction": "below"}
+	# - ACTIVITY_SPIKE: {"baseline_period_hours": 24, "spike_multiplier": 3.0}
+	# - USER_MENTION: {"usernames": ["@brand", "@support"]}
+	trigger_config: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
+	
 	# Action to perform after analysis
 	action_type: Mapped[BotActionType] = BotActionType.sa_column(
 		type_name='bot_action_type',
@@ -39,7 +53,11 @@ class BotScenario(Base, TimestampMixin):
 	)
 	
 	is_active: Mapped[bool] = Column(Boolean, default=True)
-	cooldown_minutes: Mapped[int] = Column(Integer, default=30)
+	
+	# Collection interval in hours (how often to check and collect content)
+	# Used by CheckpointManager to determine if collection is needed
+	# Minimum: 1 hour (don't collect more frequently)
+	collection_interval_hours: Mapped[int] = Column(Integer, nullable=False, default=1, server_default='1')
 
 	# LLM providers for different content types
 	# LEGACY: Individual FK fields (kept for backward compatibility)
@@ -59,13 +77,13 @@ class BotScenario(Base, TimestampMixin):
 		nullable=True
 	)
 	
-	# NEW: Flexible LLM mapping (JSON format)
-	# Structure: {"text": {"provider_id": 1, "model_id": "gpt-4", "provider_type": "openai"}, ...}
-	# Allows using same provider with different models for different media types
-	llm_mapping: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
-	
-	# LLM resolution strategy: "cost_efficient", "quality", "multimodal"
-	llm_strategy: Mapped[str] = Column(String(50), nullable=True, default="cost_efficient")
+	# LLM resolution strategy: "cost_efficient", “quality”, “multimodal”
+	# Used for auto-resolve when explicit FK is not set
+	llm_strategy: Mapped[LLMStrategyType] = LLMStrategyType.sa_column(
+		type_name='llm_strategy_type',
+		nullable=True,
+		default=LLMStrategyType.COST_EFFICIENT
+	)
 
 	# Relationships to LLM providers
 	text_llm_provider: Mapped["LLMProvider | None"] = relationship(

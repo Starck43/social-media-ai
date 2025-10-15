@@ -297,8 +297,10 @@ class SourceManager(BaseManager):
         }
 
         # Count by source type
+        from app.utils.enum_helpers import get_enum_value
+        
         for source in all_sources:
-            type_name = source.source_type.value if hasattr(source.source_type, "value") else str(source.source_type)
+            type_name = get_enum_value(source.source_type)
             stats["by_type"][type_name] = stats["by_type"].get(type_name, 0) + 1
             stats["by_platform"][source.platform_id] = stats["by_platform"].get(source.platform_id, 0) + 1
 

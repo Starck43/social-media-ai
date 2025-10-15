@@ -27,7 +27,7 @@ class Platform(Base):
 		store_as_name=False  # Хранить как значения ('vk', 'telegram')
 	)
 	base_url: Mapped[str] = mapped_column(String(255), nullable=False)
-	params: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+	params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 	# {
 	#     "api_base_url": "https://api.vk.com/method",
 	#     "api_version": "5.131",

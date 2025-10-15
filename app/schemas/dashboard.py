@@ -13,7 +13,7 @@ class DashboardStats(BaseModel):
     """
     Dashboard statistics response.
     
-    Provides overview of sources, platforms, analytics, and notifications.
+    Provides an overview of sources, platforms, analytics and notifications.
     """
     
     total_sources: int = Field(..., description="Total number of sources")
@@ -21,6 +21,7 @@ class DashboardStats(BaseModel):
     total_platforms: int = Field(..., description="Total number of platforms")
     active_platforms: int = Field(..., description="Number of active platforms")
     total_analytics: int = Field(..., description="Total number of analytics records")
+    total_topics: int = Field(..., description="Total number of unique topics")
     unread_notifications: int = Field(..., description="Number of unread notifications")
     sources_by_platform: dict = Field(..., description="Source count grouped by platform")
     sources_by_type: dict = Field(..., description="Source count grouped by type")

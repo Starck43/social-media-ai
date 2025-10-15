@@ -19,7 +19,7 @@ from .analysis_types import AnalysisType, SentimentLabel, PeriodType
 from .bot_types import BotActionType, BotTriggerType
 
 # LLM types
-from .llm_types import LLMProviderType
+from .llm_types import LLMProviderType, LLMStrategyType
 
 # Notifications
 from .notification_types import NotificationType
@@ -50,6 +50,7 @@ __all__ = [
     
     # LLM
     "LLMProviderType",
+    "LLMStrategyType",
     
     # Notifications
     "NotificationType",

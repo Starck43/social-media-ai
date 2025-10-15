@@ -20,7 +20,7 @@ class LLMMapping:
     provider_id: int
     provider_type: str  # "openai", "deepseek", etc.
     model_id: str       # "gpt-4-vision-preview", "deepseek-chat", etc.
-    capabilities: List[str]  # ["text", "image", "video"]
+    capabilities: list[str]  # ["text", "image", "video"]
     
     def to_dict(self) -> dict:
         return {
@@ -58,7 +58,7 @@ class LLMProviderResolver:
     """
     
     @staticmethod
-    def get_required_capabilities(content_types: List[str]) -> Dict[str, List[str]]:
+    def get_required_capabilities(content_types: list[str]) -> dict[str, list[str]]:
         """
         Determine required MediaType capabilities from ContentTypes.
         
@@ -100,10 +100,10 @@ class LLMProviderResolver:
     
     @staticmethod
     def find_optimal_provider(
-        required_capabilities: List[str],
-        available_providers: Dict[int, Tuple[str, str, List[str]]],
+        required_capabilities: list[str],
+        available_providers: dict[int, tuple[str, str, list[str]]],
         prefer_multimodal: bool = True
-    ) -> Optional[Tuple[int, str, str, List[str]]]:
+    ) -> Optional[tuple[int, str, str, list[str]]]:
         """
         Find the best provider that supports all required capabilities.
         
@@ -136,13 +136,16 @@ class LLMProviderResolver:
         if not candidates:
             return None
         
-        # Sort by preference
+        # Sort by preference with stable tiebreaker
+        # When capabilities count is equal, prefer lower ID (first created = higher priority)
         if prefer_multimodal:
             # Prefer providers with MORE capabilities (multimodal)
-            candidates.sort(key=lambda x: x[4], reverse=True)
+            # Tiebreaker: lower ID (first created)
+            candidates.sort(key=lambda x: (-x[4], x[0]))
         else:
             # Prefer providers with FEWER capabilities (specialized)
-            candidates.sort(key=lambda x: x[4])
+            # Tiebreaker: lower ID (first created)
+            candidates.sort(key=lambda x: (x[4], x[0]))
         
         # Return best match (without capability count)
         best = candidates[0]
@@ -151,10 +154,10 @@ class LLMProviderResolver:
     @classmethod
     def resolve_for_content_types(
         cls,
-        content_types: List[str],
-        available_providers: Dict[int, Tuple[str, str, List[str]]],
+        content_types: list[str],
+        available_providers: dict[int, tuple[str, str, list[str]]],
         strategy: str = "cost_efficient"
-    ) -> Dict[str, LLMMapping]:
+    ) -> dict[str, LLMMapping]:
         """
         Resolve LLM providers for given content types.
         
@@ -263,11 +266,11 @@ class LLMProviderResolver:
         return result
     
     @classmethod
-    def resolve_from_bot_scenario(cls, bot_scenario) -> Dict[str, LLMMapping]:
+    def resolve_from_bot_scenario(cls, bot_scenario) -> dict[str, LLMMapping]:
         """
         Resolve LLM providers from BotScenario configuration.
         
-        Supports both legacy (FK to providers) and new (llm_mapping JSON) formats.
+        Uses FK fields (text_llm_provider_id, etc.) for provider resolution.
         
         Args:
             bot_scenario: BotScenario instance
@@ -275,26 +278,15 @@ class LLMProviderResolver:
         Returns:
             Mapping of MediaType to LLMMapping
         """
-        # Priority 1: Use llm_mapping if present (new format)
-        if hasattr(bot_scenario, 'llm_mapping') and bot_scenario.llm_mapping:
-            result = {}
-            for media_type, config in bot_scenario.llm_mapping.items():
-                result[media_type] = LLMMapping(
-                    provider_id=config['provider_id'],
-                    provider_type=config.get('provider_type', ''),
-                    model_id=config.get('model_id', ''),
-                    capabilities=config.get('capabilities', [media_type])
-                )
-            return result
-        
-        # Priority 2: Use legacy FK fields
+        # Use FK fields to build mapping
         result = {}
         
         if hasattr(bot_scenario, 'text_llm_provider') and bot_scenario.text_llm_provider:
             provider = bot_scenario.text_llm_provider
+            from app.utils.enum_helpers import get_enum_value
             result['text'] = LLMMapping(
                 provider_id=provider.id,
-                provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+                provider_type=get_enum_value(provider.provider_type),
                 model_id=provider.model_name,
                 capabilities=provider.capabilities or ['text']
             )
@@ -303,7 +295,7 @@ class LLMProviderResolver:
             provider = bot_scenario.image_llm_provider
             result['image'] = LLMMapping(
                 provider_id=provider.id,
-                provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+                provider_type=get_enum_value(provider.provider_type),
                 model_id=provider.model_name,
                 capabilities=provider.capabilities or ['image']
             )
@@ -312,7 +304,7 @@ class LLMProviderResolver:
             provider = bot_scenario.video_llm_provider
             result['video'] = LLMMapping(
                 provider_id=provider.id,
-                provider_type=provider.provider_type.value if hasattr(provider.provider_type, 'value') else str(provider.provider_type),
+                provider_type=get_enum_value(provider.provider_type),
                 model_id=provider.model_name,
                 capabilities=provider.capabilities or ['video']
             )
@@ -322,9 +314,9 @@ class LLMProviderResolver:
     @classmethod
     def auto_resolve(
         cls,
-        content_types: List[str],
+        content_types: list[str],
         strategy: str = "cost_efficient"
-    ) -> Dict[str, LLMMapping]:
+    ) -> dict[str, LLMMapping]:
         """
         Automatically resolve LLM providers from database.
         
@@ -346,9 +338,9 @@ class LLMProviderResolver:
 
 
 def print_resolution_report(
-    content_types: List[str],
-    mapping: Dict[str, LLMMapping],
-    requirements: Dict[str, List[str]]
+    content_types: list[str],
+    mapping: dict[str, LLMMapping],
+    requirements: dict[str, list[str]]
 ):
     """Pretty print resolution report."""
     print("="*80)

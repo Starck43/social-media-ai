@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List
 
 from app.models import BotScenario, Source
-from app.types import BotActionType
+from app.types import BotActionType, BotTriggerType
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +138,8 @@ class ScenarioService:
         self,
         name: str,
         description: Optional[str] = None,
-        analysis_types: Optional[List[str]] = None,
-        content_types: Optional[List[str]] = None,
+        analysis_types: Optional[list[str]] = None,
+        content_types: Optional[list[str]] = None,
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
         action_type: Optional[BotActionType] = None,
@@ -163,8 +163,6 @@ class ScenarioService:
         Returns:
             Created BotScenario object
         """
-        action_type_str = action_type.value if action_type else None
-
         scenario = await BotScenario.objects.create(
             name=name,
             description=description,
@@ -172,9 +170,11 @@ class ScenarioService:
             content_types=content_types or [],
             scope=scope or {},
             ai_prompt=ai_prompt,
-            action_type=action_type_str,
+            trigger_type=trigger_type,
+            trigger_config=trigger_config or {},
+            action_type=action_type,
             is_active=is_active,
-            cooldown_minutes=cooldown_minutes,
+            collection_interval_hours=collection_interval_hours,
         )
 
         logger.info(
@@ -203,7 +203,7 @@ class ScenarioService:
 
         return source
 
-    async def get_sources_by_scenario(self, scenario_id: int, is_active: Optional[bool] = True) -> List[Source]:
+    async def get_sources_by_scenario(self, scenario_id: int, is_active: Optional[bool] = True) -> list[Source]:
         """
         Get all sources using a specific scenario.
 
@@ -260,7 +260,7 @@ class ScenarioService:
         logger.warning(f"Scenario {scenario_id} not found")
         return False
 
-    async def get_active_scenarios(self) -> List[BotScenario]:
+    async def get_active_scenarios(self) -> list[BotScenario]:
         """Get all active scenarios."""
         return await BotScenario.objects.filter(is_active=True)
 

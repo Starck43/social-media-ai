@@ -11,6 +11,7 @@ from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms.fields.choices import SelectMultipleField
+from wtforms.validators import Optional
 
 from app.admin.actions import LLMProviderActions
 from app.models import (
@@ -542,13 +543,13 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 	}, **BaseAdmin.column_labels)
 
 	form_excluded_columns = [
-		"sources",
-		"llm_mapping",
-		# Exclude these fields - we handle them manually in custom template
-		"content_types",
-		"analysis_types",
-		"scope",
-	] + BaseAdmin.form_excluded_columns
+		                        "sources",
+		                        "llm_mapping",
+		                        # Exclude these fields - we handle them manually in custom template
+		                        "content_types",
+		                        "analysis_types",
+		                        "scope",
+	                        ] + BaseAdmin.form_excluded_columns
 	form_overrides = {
 		'llm_strategy': SelectField,
 		'action_type': SelectField,
@@ -560,21 +561,38 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 			'choices': LLMStrategyType.choices(),
 			'coerce': str
 		},
-		'action_type': {
-			'choices': [('', '— Не выбрано —')] + BotActionType.choices(),
-			'coerce': lambda x: BotActionType.get_by_value(x) if x else None,
-			'validators': []
-		},
 		'trigger_type': {
-			'choices': [('', '— Не выбрано —')] + BotTriggerType.choices(),
-			'coerce': lambda x: BotTriggerType.get_by_value(x) if x else None,
-			'validators': []
+			'choices': [('', '— Не выбрано —')] + [(t.name, t.label) for t in BotTriggerType],
+			'coerce': lambda x: x if isinstance(x, BotTriggerType) else (BotTriggerType[x] if x else None),
+			'validators': [Optional()],
+			'description': 'Условие когда запускать анализ (по ключевым словам, тональности, активности и т.д.)'
+		},
+		'action_type': {
+			'choices': [('', '— Не выбрано —')] + [(a.name, a.label) for a in BotActionType],
+			'coerce': lambda x: x if isinstance(x, BotActionType) else (BotActionType[x] if x else None),
+			'validators': [Optional()],
+			'description': 'Действие которое будет выполнено после анализа (комментарий, реакция, перепост и т.д.)'
 		},
 		'trigger_config': {
-			'description': 'JSON конфигурация триггера. См. справку справа →'
+			'description': 'JSON конфигурация для триггера. Например: {"keywords": ["жалоба", "проблема"], "mode": "any"}'
 		},
 		'scope': {
-			'description': 'JSON параметры для типов анализа. См. справку справа →'
+			'description': 'JSON параметры для выбранных типов анализа + кастомные переменные для промптов. Конфиги автоматически добавляются при выборе чекбоксов выше.'
+		},
+		'text_prompt': {
+			'description': 'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
+		},
+		'image_prompt': {
+			'description': 'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+		},
+		'video_prompt': {
+			'description': 'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+		},
+		'audio_prompt': {
+			'description': 'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+		},
+		'unified_summary_prompt': {
+			'description': 'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
 		},
 		**BaseAdmin.form_args
 	}
@@ -594,32 +612,35 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		**BaseAdmin.column_formatters
 	}
 	form_widget_args = {
-		# Media prompts
-		"text_prompt": {"rows": 10},
-		"image_prompt": {"rows": 10},
-		"video_prompt": {"rows": 10},
-		"audio_prompt": {"rows": 10},
-		"unified_summary_prompt": {"rows": 10},
+		# Media prompts with placeholders
+		"text_prompt": {
+			"rows": 10,
+			"placeholder": "Проанализируй следующий текстовый контент из {platform}.\n\nКонтент: {text}\nВсего постов: {total_posts}\n\nОпредели основные темы, тональность и ключевые моменты."
+		},
+		"image_prompt": {
+			"rows": 10,
+			"placeholder": "Проанализируй {count} изображений из {platform}.\n\nОпиши визуальные элементы, стиль, основные объекты и общую тематику."
+		},
+		"video_prompt": {
+			"rows": 10,
+			"placeholder": "Проанализируй {count} видео из {platform}.\n\nОпиши контент видео, основные темы, стиль подачи."
+		},
+		"audio_prompt": {
+			"rows": 10,
+			"placeholder": "Проанализируй {count} аудиозаписей из {platform}.\n\nОпредели темы обсуждения, тональность речи, ключевые моменты."
+		},
+		"unified_summary_prompt": {
+			"rows": 10,
+			"placeholder": "Создай единое резюме на основе следующих анализов:\n\nТекст: {text_analysis}\nИзображения: {image_analysis}\nВидео: {video_analysis}\n\nВыдели общие темы и ключевые инсайты."
+		},
 		"description": {"rows": 2},
-	}
-
-	# Add help texts for prompt fields
-	form_args = {
-		**form_args,
-		'text_prompt': {
-			'description': 'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
+		"trigger_config": {
+			"rows": 5,
+			"placeholder": '{\n  "keywords": ["жалоба", "проблема"],\n  "mode": "any"\n}'
 		},
-		'image_prompt': {
-			'description': 'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
-		},
-		'video_prompt': {
-			'description': 'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
-		},
-		'audio_prompt': {
-			'description': 'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
-		},
-		'unified_summary_prompt': {
-			'description': 'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+		"scope": {
+			"rows": 8,
+			"placeholder": '{\n  "brand_name": "Мой бренд",\n  "competitors": ["Конкурент 1", "Конкурент 2"]\n}'
 		}
 	}
 
@@ -657,21 +678,21 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 				data["content_types"] = json.loads(data["content_types"])
 			except (json.JSONDecodeError, TypeError):
 				data["content_types"] = []
-		
+
 		# Parse analysis_types from hidden field (JSON string)
 		if "analysis_types" in data and isinstance(data["analysis_types"], str):
 			try:
 				data["analysis_types"] = json.loads(data["analysis_types"])
 			except (json.JSONDecodeError, TypeError):
 				data["analysis_types"] = []
-		
+
 		# Parse scope from textarea (JSON string)
 		if "scope" in data and isinstance(data["scope"], str):
 			try:
 				data["scope"] = json.loads(data["scope"]) if data["scope"].strip() else {}
 			except (json.JSONDecodeError, TypeError):
 				data["scope"] = {}
-		
+
 		# Parse trigger_config from textarea (JSON string)
 		if "trigger_config" in data and isinstance(data["trigger_config"], str):
 			try:
@@ -682,12 +703,12 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 	async def _prepare_form_data(self, request: Request, data: dict) -> None:
 		"""Extract and parse excluded fields from request."""
 		form_data = await request.form()
-		
+
 		# Add excluded fields back to data
 		for field in ["content_types", "analysis_types", "scope"]:
 			if field in form_data:
 				data[field] = form_data.get(field)
-		
+
 		# Parse JSON strings to Python objects
 		self._parse_json_fields(data)
 

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
 from starlette import status
+from starlette.responses import RedirectResponse
 
 from app.core.config import settings
 from app.models import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.TOKEN_URL)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.TOKEN_URL, auto_error=False)
 
 
 async def get_authenticated_user(
@@ -34,6 +35,10 @@ async def get_authenticated_user(
 		detail="Could not validate credentials",
 		headers={"WWW-Authenticate": "Bearer"},
 	)
+	
+	# Check if token is None (from auto_error=False)
+	if token is None:
+		raise credentials_exception
 
 	try:
 		payload = jwt.decode(
@@ -101,3 +106,48 @@ async def authenticate(username_or_email: str, password: str, password_hasher: c
 		)
 
 	return user
+
+
+async def get_session_user(request: Request) -> 'User':
+	"""
+	Get authenticated user from session (for web pages like dashboard).
+	
+	Args:
+		request: Starlette Request object with session
+	
+	Returns:
+		User object if authenticated
+	
+	Raises:
+		HTTPException: Redirects to login if not authenticated
+	"""
+	token = request.session.get("token")
+	
+	if not token:
+		# Redirect to admin login with next parameter
+		raise HTTPException(
+			status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+			headers={"Location": f"/admin/login?next={request.url.path}"}
+		)
+	
+	try:
+		# Reuse existing authentication logic
+		user = await get_authenticated_user(token=token, token_type="access")
+		
+		if not user or not user.is_active:
+			# Clear invalid session
+			request.session.clear()
+			raise HTTPException(
+				status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+				headers={"Location": f"/admin/login?next={request.url.path}"}
+			)
+		
+		return user
+		
+	except (JWTError, ValidationError, HTTPException):
+		# Invalid token - clear session and redirect
+		request.session.clear()
+		raise HTTPException(
+			status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+			headers={"Location": f"/admin/login?next={request.url.path}"}
+		)

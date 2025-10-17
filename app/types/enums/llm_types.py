@@ -3,6 +3,8 @@ from enum import Enum
 
 from app.utils.db_enums import database_enum
 
+from .content_types import MediaType  # noqa: F401
+
 LLM_STRATEGY_LABELS_RU: dict[str, str] = {
 	"cost_efficient": "Экономичная",
 	"quality": "Качество",
@@ -14,81 +16,6 @@ LLM_STRATEGY_EMOJI: dict[str, str] = {
 	"quality": "✨",
 	"multimodal": "🖼️",
 }
-
-
-class MediaType(str, Enum):
-	"""Media content types for LLM processing."""
-	TEXT = "text"
-	IMAGE = "image"
-	VIDEO = "video"
-	AUDIO = "audio"  # For future use
-	
-	def __str__(self) -> str:
-		"""Return string value for compatibility."""
-		return self.value
-	
-	@property
-	def label(self) -> str:
-		"""Get human-readable label."""
-		labels = {
-			"text": "Текст",
-			"image": "Изображение",
-			"video": "Видео",
-			"audio": "Аудио"
-		}
-		return labels.get(self.value, self.value)
-	
-	@property
-	def description(self) -> str:
-		"""Get description for the media type."""
-		descriptions = {
-			"text": "Текстовый анализ постов, комментариев, описаний",
-			"image": "Анализ изображений и фотографий",
-			"video": "Анализ видеоконтента",
-			"audio": "Анализ аудио и голосовых сообщений"
-		}
-		return descriptions.get(self.value, "")
-	
-	@classmethod
-	def from_string(cls, value: str) -> "MediaType":
-		"""Convert string to MediaType enum."""
-		value_lower = value.lower()
-		for media_type in cls:
-			if media_type.value == value_lower:
-				return media_type
-		raise ValueError(f"Invalid media type: {value}")
-	
-	@classmethod
-	def values(cls) -> list[str]:
-		"""Get all media type values as list."""
-		return [mt.value for mt in cls]
-	
-	@classmethod
-	def choices(cls) -> list[tuple[str, str]]:
-		"""
-		Get choices for form fields.
-		
-		Returns:
-			List of (value, label) tuples for SelectMultipleField
-		"""
-		return [(mt.value, mt.label) for mt in cls]
-	
-	@classmethod
-	def choices_with_descriptions(cls) -> list[dict[str, str]]:
-		"""
-		Get choices with descriptions for admin forms.
-		
-		Returns:
-			List of dicts with value, label and description
-		"""
-		return [
-			{
-				"value": mt.value,
-				"label": mt.label,
-				"description": mt.description
-			}
-			for mt in cls
-		]
 
 
 @database_enum

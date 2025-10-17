@@ -3,13 +3,6 @@
 {% block extra_css %}
     {{ super() }}
     <style>
-		/* Скрываем поля которые рендерим вручную */
-		.form-group:has([name="scope"]),
-		.form-group:has([name="content_types"]),
-		.form-group:has([name="analysis_types"]) {
-			display: none !important;
-		}
-
 		/* Секции формы */
 		.form-section {
 			padding: 24px;
@@ -266,7 +259,7 @@
         </div>
 
         <label for="scope-json">JSON (Переменные)</label>
-        <textarea class="scope-json" id="scope-json" rows="10"></textarea>
+        <textarea class="scope-json" id="scope-json" name="scope" rows="10"></textarea>
         <div class="help-text">
             Переменные используются в промпте как {<b>variable_name</b>}. <b>Пример</b>: <i>{"topics": ["политика",
             "экономика"]}</i>
@@ -292,6 +285,15 @@
     <script>
         // Presets data from Python config
         const presets = {{ form.presets|tojson if form.presets else '{}' }};
+
+        // Analysis type defaults for auto-population of scope
+        window.analysisDefaults = {{ form.analysis_defaults|tojson if form.analysis_defaults else '{}' }};
+        
+        // All possible analysis types for cleanup
+        window.allAnalysisTypes = {{ form.all_analysis_types|tojson if form.all_analysis_types else '[]' }};
+        
+        // Flag to prevent auto-adding configs on initial load
+        window.isInitialLoad = true;
 
         // Load preset
         function loadPreset(presetName) {
@@ -402,10 +404,15 @@
             // Создаем скрытое поле если его нет
             let contentTypesField = document.querySelector("input[name=\"content_types\"]")
             if (!contentTypesField) {
+                const form = document.querySelector("form")
+                if (!form) {
+                    console.error("ERROR: Form not found when creating content_types field!")
+                    return
+                }
                 contentTypesField = document.createElement("input")
                 contentTypesField.type = "hidden"
                 contentTypesField.name = "content_types"
-                document.querySelector("form").appendChild(contentTypesField)
+                form.appendChild(contentTypesField)
             }
             contentTypesField.value = JSON.stringify(selected)
         }
@@ -428,26 +435,53 @@
             // Удаляем analysis_types из scope если они там есть
             delete scope.analysis_types
 
+            // AUTO-ADD default configs ТОЛЬКО если это НЕ первоначальная загрузка
+            if (!window.isInitialLoad) {
+                selectedAnalysisTypes.forEach(type => {
+                    // Добавляем config только если его нет в scope (БЕЗ _config!)
+                    if (!scope[type] && window.analysisDefaults && window.analysisDefaults[type]) {
+                        scope[type] = window.analysisDefaults[type];
+                    }
+                });
+            }
+
+            // REMOVE configs for unselected analysis types
+            // Проверяем ВСЕ ключи в scope и удаляем configs для analysis types которые не выбраны
+            if (window.allAnalysisTypes && window.allAnalysisTypes.length > 0) {
+                window.allAnalysisTypes.forEach(type => {
+                    // Если этот тип НЕ выбран - удаляем ОБА варианта ключа
+                    if (!selectedAnalysisTypes.includes(type)) {
+                        // Новый формат (БЕЗ _config)
+                        if (scope.hasOwnProperty(type)) {
+                            delete scope[type];
+                        }
+                        // Старый формат (С _config) - для обратной совместимости
+                        const oldKey = `${type}_config`;
+                        if (scope.hasOwnProperty(oldKey)) {
+                            delete scope[oldKey];
+                        }
+                    }
+                });
+            }
+
             // Update textarea (без analysis_types)
             scopeTextarea.value = JSON.stringify(scope, null, 2)
 
-            // Create/update hidden field
-            let scopeField = document.querySelector("textarea[name=\"scope\"]")
-            if (!scopeField) {
-                scopeField = document.createElement("textarea")
-                scopeField.name = "scope"
-                scopeField.style.display = "none"
-                document.querySelector("form").appendChild(scopeField)
-            }
-            scopeField.value = scopeTextarea.value
+            // Textarea уже существует (#scope-json с name="scope"), он и отправится в форме
+            // Ничего дополнительно создавать не нужно!
 
             // Create or update hidden field for analysis_types (отдельно!)
             let analysisTypesField = document.querySelector("input[name=\"analysis_types\"]")
             if (!analysisTypesField) {
+                const form = document.querySelector("form")
+                if (!form) {
+                    console.error("ERROR: Form not found when creating analysis_types field!")
+                    return
+                }
                 analysisTypesField = document.createElement("input")
                 analysisTypesField.type = "hidden"
                 analysisTypesField.name = "analysis_types"
-                document.querySelector("form").appendChild(analysisTypesField)
+                form.appendChild(analysisTypesField)
             }
             analysisTypesField.value = JSON.stringify(selectedAnalysisTypes)
         }
@@ -494,9 +528,36 @@
             }
 
             // Scope (БЕЗ analysis_types - они теперь в отдельном поле)
+            // ВАЖНО: Очищаем scope от analysis type configs которые НЕ выбраны
             const initialScope = {{ obj.scope|tojson if obj and obj.scope else '{}' }};
+            const cleanedScope = {};
+            
             if (initialScope && Object.keys(initialScope).length > 0) {
-                scopeJson.value = JSON.stringify(initialScope, null, 2)
+                // Копируем переменные в cleaned scope
+                for (const [key, value] of Object.entries(initialScope)) {
+                    // Проверяем является ли это analysis type config
+                    const isAnalysisConfig = window.allAnalysisTypes && window.allAnalysisTypes.includes(key);
+                    const isOldFormatConfig = key.endsWith('_config') && window.allAnalysisTypes && 
+                        window.allAnalysisTypes.includes(key.replace('_config', ''));
+                    
+                    if (isAnalysisConfig || isOldFormatConfig) {
+                        // Это analysis config
+                        // Проверяем выбран ли этот analysis type в checkboxes
+                        const analysisType = isOldFormatConfig ? key.replace('_config', '') : key;
+                        const isSelected = initialAnalysisTypes.includes(analysisType);
+                        
+                        if (isSelected) {
+                            // Тип выбран - сохраняем config (может быть кастомизирован)
+                            // Используем новый формат (без _config)
+                            cleanedScope[analysisType] = value;
+                        }
+                    } else {
+                        // Это кастомная переменная, всегда оставляем
+                        cleanedScope[key] = value;
+                    }
+                }
+                
+                scopeJson.value = JSON.stringify(cleanedScope, null, 2);
             }
 
             // Action type handled by sqladmin
@@ -504,15 +565,40 @@
             // Submit handler
             const form = document.querySelector("form")
             if (form) {
+                let isSubmitting = false
+                
                 form.addEventListener("submit", function(e) {
+                    // Prevent double submit
+                    if (isSubmitting) {
+                        e.preventDefault()
+                        return false
+                    }
+                    
+                    // Sync data before submit
                     syncContentTypesToForm()
-                    syncScopeToForm()  // This now includes analysis_types
+                    syncScopeToForm()
+                    
+                    // Check if all required fields exist
+                    const contentTypesField = document.querySelector("input[name='content_types']")
+                    const analysisTypesField = document.querySelector("input[name='analysis_types']")
+                    const scopeField = document.getElementById("scope-json")
+                    
+                    if (!contentTypesField || !analysisTypesField || !scopeField) {
+                        console.error("Required fields missing")
+                        e.preventDefault()
+                        return false
+                    }
+                    
+                    isSubmitting = true
                 })
             }
 
             // Initial sync to create hidden fields
             syncContentTypesToForm()
-            syncScopeToForm()  // This now includes analysis_types
+            syncScopeToForm()  // Синхронизируем checkboxes и scope при загрузке
+            
+            // После первоначальной загрузки - разрешаем автодобавление
+            window.isInitialLoad = false;
         })
     </script>
 {% endblock %}

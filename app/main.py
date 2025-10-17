@@ -68,7 +68,7 @@ def create_application() -> FastAPI:
 		SessionMiddleware,
 		secret_key=settings.SECRET_KEY,
 		session_cookie="session",
-		max_age=3600  # 1 hour
+		max_age=3600 * 24  # 24 hour
 	)
 
 	if settings.BACKEND_CORS_ORIGINS:
@@ -142,5 +142,5 @@ if __name__ == "__main__":
 		"app.main:app",
 		host=settings.HOST or "0.0.0.0",
 		port=settings.PORT or 8000,
-		reload=settings.DEBUG or True
+		reload=settings.DEBUG
 	)

@@ -1,4 +1,5 @@
 import logging
+import json
 
 from datetime import datetime
 from typing import Any
@@ -11,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms.fields.choices import SelectMultipleField
 
+from app.admin.actions import LLMProviderActions
 from app.models import (
 	User,
 	Role,
@@ -23,12 +25,12 @@ from app.models import (
 	AIAnalytics, LLMProvider,
 )
 from app.models.managers.base_manager import prefetch
-from app.types import SourceType, PeriodType, ContentType, AnalysisType, LLMStrategyType, BotActionType, BotTriggerType, \
-	NotificationType
+from app.services.ai.llm_metadata import LLMMetadataHelper
+from app.types import (
+	SourceType, ContentType, AnalysisType, LLMStrategyType, BotActionType, BotTriggerType, NotificationType
+)
 from app.types.enums.llm_types import MediaType
 from .base import BaseAdmin
-from app.admin.actions import LLMProviderActions
-from app.services.ai.llm_metadata import LLMMetadataHelper
 from ..core.hashing import pwd_context
 
 logger = logging.getLogger(__name__)
@@ -514,7 +516,14 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"id": "ID",
 		"name": "Название",
 		"description": "Описание сценария",
-		"ai_prompt": "Промт",
+
+		# Media prompts
+		"text_prompt": "Промпт для текста",
+		"image_prompt": "Промпт для изображений",
+		"video_prompt": "Промпт для видео",
+		"audio_prompt": "Промпт для аудио",
+		"unified_summary_prompt": "Промпт для общего резюме",
+
 		"trigger_type": "Тип триггера",
 		"trigger_config": "Настройки триггера",
 		"action_type": "Действие после анализа",
@@ -532,7 +541,14 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"llm_strategy": "Стратегия выбора модели"
 	}, **BaseAdmin.column_labels)
 
-	form_excluded_columns = ["sources", "llm_mapping"] + BaseAdmin.form_excluded_columns
+	form_excluded_columns = [
+		"sources",
+		"llm_mapping",
+		# Exclude these fields - we handle them manually in custom template
+		"content_types",
+		"analysis_types",
+		"scope",
+	] + BaseAdmin.form_excluded_columns
 	form_overrides = {
 		'llm_strategy': SelectField,
 		'action_type': SelectField,
@@ -546,12 +562,12 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		},
 		'action_type': {
 			'choices': [('', '— Не выбрано —')] + BotActionType.choices(),
-			'coerce': lambda x: x if x else None,
+			'coerce': lambda x: BotActionType.get_by_value(x) if x else None,
 			'validators': []
 		},
 		'trigger_type': {
 			'choices': [('', '— Не выбрано —')] + BotTriggerType.choices(),
-			'coerce': lambda x: x if x else None,
+			'coerce': lambda x: BotTriggerType.get_by_value(x) if x else None,
 			'validators': []
 		},
 		'trigger_config': {
@@ -575,14 +591,36 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 			if m.action_type and hasattr(m.action_type, 'label')
 			else str(m.action_type) if m.action_type else "—"
 		),
+		**BaseAdmin.column_formatters
 	}
 	form_widget_args = {
-		"ai_prompt": {
-			"rows": 10,
+		# Media prompts
+		"text_prompt": {"rows": 10},
+		"image_prompt": {"rows": 10},
+		"video_prompt": {"rows": 10},
+		"audio_prompt": {"rows": 10},
+		"unified_summary_prompt": {"rows": 10},
+		"description": {"rows": 2},
+	}
+
+	# Add help texts for prompt fields
+	form_args = {
+		**form_args,
+		'text_prompt': {
+			'description': 'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
 		},
-		"description": {
-			"rows": 2,
+		'image_prompt': {
+			'description': 'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
 		},
+		'video_prompt': {
+			'description': 'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+		},
+		'audio_prompt': {
+			'description': 'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+		},
+		'unified_summary_prompt': {
+			'description': 'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+		}
 	}
 
 	create_template = "sqladmin/bot_scenario_create.html"
@@ -592,6 +630,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"""Provide enum types and presets to template."""
 		from app.core.scenario_presets import get_all_presets
 		from app.core.trigger_hints import TRIGGER_HINTS, SCOPE_HINTS
+		from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
 
 		form = await super().scaffold_form(rules)
 
@@ -604,7 +643,177 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		presets_list = get_all_presets()
 		form.presets = {f"preset_{i}": preset for i, preset in enumerate(presets_list)}
 
+		# Provide analysis defaults and all types for JavaScript
+		form.analysis_defaults = ANALYSIS_TYPE_DEFAULTS
+		form.all_analysis_types = [at.db_value for at in AnalysisType]
+
 		return form
+
+	def _parse_json_fields(self, data: dict) -> None:
+		"""Parse JSON fields from form data (hidden inputs and textareas)."""
+		# Parse content_types from hidden field (JSON string)
+		if "content_types" in data and isinstance(data["content_types"], str):
+			try:
+				data["content_types"] = json.loads(data["content_types"])
+			except (json.JSONDecodeError, TypeError):
+				data["content_types"] = []
+		
+		# Parse analysis_types from hidden field (JSON string)
+		if "analysis_types" in data and isinstance(data["analysis_types"], str):
+			try:
+				data["analysis_types"] = json.loads(data["analysis_types"])
+			except (json.JSONDecodeError, TypeError):
+				data["analysis_types"] = []
+		
+		# Parse scope from textarea (JSON string)
+		if "scope" in data and isinstance(data["scope"], str):
+			try:
+				data["scope"] = json.loads(data["scope"]) if data["scope"].strip() else {}
+			except (json.JSONDecodeError, TypeError):
+				data["scope"] = {}
+		
+		# Parse trigger_config from textarea (JSON string)
+		if "trigger_config" in data and isinstance(data["trigger_config"], str):
+			try:
+				data["trigger_config"] = json.loads(data["trigger_config"]) if data["trigger_config"].strip() else {}
+			except (json.JSONDecodeError, TypeError):
+				data["trigger_config"] = {}
+
+	async def _prepare_form_data(self, request: Request, data: dict) -> None:
+		"""Extract and parse excluded fields from request."""
+		form_data = await request.form()
+		
+		# Add excluded fields back to data
+		for field in ["content_types", "analysis_types", "scope"]:
+			if field in form_data:
+				data[field] = form_data.get(field)
+		
+		# Parse JSON strings to Python objects
+		self._parse_json_fields(data)
+
+	async def insert_model(self, request: Request, data: dict) -> Any:
+		"""Parse JSON fields before creating scenario."""
+		await self._prepare_form_data(request, data)
+		return await super().insert_model(request, data)
+
+	async def update_model(self, request: Request, pk: Any, data: dict) -> Any:
+		"""Parse JSON fields before updating scenario."""
+		await self._prepare_form_data(request, data)
+		return await super().update_model(request, pk, data)
+
+	@action(
+		name="view_prompts",
+		label="👁️ Просмотр промптов",
+		add_in_list=False,
+		add_in_detail=True,
+	)
+	async def view_prompts_action(self, request: Request):
+		"""View full prompts with JSON instructions."""
+		from starlette.templating import Jinja2Templates
+		from app.services.ai.prompts import PromptBuilder
+		from app.types import MediaType
+		from pathlib import Path
+		import sqladmin
+
+		# Get scenario ID
+		pks = request.query_params.get("pks", "")
+		if not pks:
+			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+		scenario_id = int(pks.split(",")[0])
+
+		# Load scenario
+		try:
+			scenario = await BotScenario.objects.get(id=scenario_id)
+		except Exception:
+			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+		# Build prompts with auto-append JSON
+		prompts_data = {}
+
+		# Text prompt
+		text_prompt = PromptBuilder.get_prompt(
+			MediaType.TEXT,
+			scenario=scenario,
+			text="{text}",
+			platform_name="{platform}",
+			source_type="{source_type}",
+			stats={"total_posts": "{total_posts}", "avg_reactions": "{avg_reactions}"}
+		)
+		prompts_data['text'] = {
+			'custom': scenario.text_prompt if scenario.text_prompt else None,
+			'full': text_prompt,
+			'has_custom': bool(scenario.text_prompt)
+		}
+
+		# Image prompt
+		image_prompt = PromptBuilder.get_prompt(
+			MediaType.IMAGE,
+			scenario=scenario,
+			count="{count}",
+			platform_name="{platform}"
+		)
+		prompts_data['image'] = {
+			'custom': scenario.image_prompt if scenario.image_prompt else None,
+			'full': image_prompt,
+			'has_custom': bool(scenario.image_prompt)
+		}
+
+		# Video prompt
+		video_prompt = PromptBuilder.get_prompt(
+			MediaType.VIDEO,
+			scenario=scenario,
+			count="{count}",
+			platform_name="{platform}"
+		)
+		prompts_data['video'] = {
+			'custom': scenario.video_prompt if scenario.video_prompt else None,
+			'full': video_prompt,
+			'has_custom': bool(scenario.video_prompt)
+		}
+
+		# Audio prompt
+		audio_prompt = PromptBuilder.get_prompt(
+			MediaType.AUDIO,
+			scenario=scenario,
+			count="{count}",
+			platform_name="{platform}"
+		)
+		prompts_data['audio'] = {
+			'custom': scenario.audio_prompt if scenario.audio_prompt else None,
+			'full': audio_prompt,
+			'has_custom': bool(scenario.audio_prompt)
+		}
+
+		# Unified summary prompt
+		unified_prompt = PromptBuilder.get_unified_summary_prompt(
+			text_analysis={},
+			image_analysis={},
+			video_analysis={},
+			scenario=scenario
+		)
+		prompts_data['unified'] = {
+			'custom': scenario.unified_summary_prompt if scenario.unified_summary_prompt else None,
+			'full': unified_prompt,
+			'has_custom': bool(scenario.unified_summary_prompt)
+		}
+
+		# Setup templates
+		sqladmin_path = Path(sqladmin.__file__).parent
+		template_dirs = [
+			str(Path(__file__).parent.parent / "templates"),
+			str(sqladmin_path / "templates")
+		]
+		templates = Jinja2Templates(directory=template_dirs)
+
+		return templates.TemplateResponse(
+			"sqladmin/scenario_prompts.html",
+			{
+				"request": request,
+				"scenario": scenario,
+				"prompts": prompts_data,
+			}
+		)
 
 	@action(
 		name="toggle_active",
@@ -807,12 +1016,12 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 	"""
-	Admin for LLM Providers with auto-fill functionality.
+	Admin for LLM Providers with autofill functionality.
 
 	Features:
-	- Auto-fill: JavaScript auto-completion when provider is selected
-	- Multi-select: Capabilities field for multiple media types
-	- Actions: Test connection, toggle active status
+	— Auto-fill: JavaScript auto-completion when provider is selected
+	— Multi-select: Capabilities field for multiple media types
+	— Actions: Test connection, toggle active status
 	"""
 
 	name = "Провайдер"
@@ -912,7 +1121,6 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 		form_class = await super().scaffold_form(rules)
 
 		# Add metadata for JavaScript auto-fill
-		import json
 		metadata = LLMMetadataHelper.get_metadata_for_js()
 		form_class.llm_metadata_json = json.dumps(metadata, ensure_ascii=False)
 

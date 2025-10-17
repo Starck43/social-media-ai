@@ -1,0 +1,217 @@
+"""
+Сервис для обработки цепочек тем из данных аналитики.
+
+Извлекает темы из response_payload и объединяет с summary_data для построения
+эволюции тем во времени.
+"""
+
+import logging
+from collections import defaultdict
+from typing import Dict, List, Any
+
+logger = logging.getLogger(__name__)
+
+
+class TopicChainService:
+	"""Сервис для анализа цепочек тем из данных AIAnalytics."""
+
+	def __init__(self):
+		self.logger = logging.getLogger(__name__)
+
+	def extract_topics_from_response_payload(self, response_payload: dict[str, Any]) -> list[dict[str, Any]]:
+		"""
+		Извлечь темы из response payload анализатора V2.
+
+		Args:
+			response_payload: Сырые данные из поля response_payload
+
+		Returns:
+		"""
+		topics = []
+
+		try:
+			# Обработка multi-LLM анализа
+			multi_llm = response_payload.get("multi_llm_analysis", {})
+
+			for analysis_type in ["text_analysis", "image_analysis", "video_analysis"]:
+				analysis_data = multi_llm.get(analysis_type, {})
+				parsed_data = analysis_data.get("parsed", {})
+
+				# Извлечение тем из topic_analysis
+				topic_analysis = parsed_data.get("topic_analysis", {})
+				main_topics = topic_analysis.get("main_topics", [])
+				topic_prevalence = topic_analysis.get("topic_prevalence", {})
+
+				for topic in main_topics:
+					prevalence = topic_prevalence.get(topic, 0)
+					topics.append({
+						"topic": topic,
+						"prevalence": prevalence,
+						"analysis_type": analysis_type,
+						"sentiment": parsed_data.get("sentiment_analysis", {}).get("overall_sentiment", "neutral"),
+						"confidence": 0.8  # Заглушка, можно рассчитать из данных
+					})
+
+		except Exception as e:
+			self.logger.error(f"Ошибка извлечения тем из response_payload: {e}")
+
+		return topics
+
+	def extract_topics_from_summary_data(self, summary_data: dict[str, Any]) -> list[dict[str, Any]]:
+		"""
+		Извлечь темы из summary_data для обратной совместимости.
+
+		Args:
+			summary_data: Обработанные данные из поля summary_data
+
+		Returns:
+			Список тем с метаданными
+		"""
+		topics = []
+
+		try:
+			# Извлечение из нового формата multi-LLM анализа
+			multi_llm = summary_data.get("multi_llm_analysis", {})
+
+			# Извлечь темы из text_analysis
+			text_analysis = multi_llm.get("text_analysis", {})
+			main_topics = text_analysis.get("main_topics", [])
+
+			for topic in main_topics:
+				if topic:
+					topics.append({
+						"topic": topic,
+						"prevalence": 0.8,  # Заглушка, можно рассчитать
+						"analysis_type": "text",
+						"sentiment": text_analysis.get("overall_mood", "neutral"),
+						"confidence": 0.8
+					})
+
+		except Exception as e:
+			self.logger.error(f"Ошибка извлечения тем из summary_data: {e}")
+
+		return topics
+
+	def build_topic_chain(self, analytics_list: list[Any]) -> dict[str, Any]:
+		"""
+		Построить цепочку тем из списка аналитик.
+
+		Args:
+			analytics_list: Список объектов AIAnalytics с topic_chain_id
+
+		Returns:
+			Структура цепочки с эволюцией тем
+		"""
+		if not analytics_list:
+			return {}
+
+		# Группировка по цепочкам
+		chains = defaultdict(list)
+		for analytics in analytics_list:
+			chain_id = getattr(analytics, 'topic_chain_id', None)
+			if chain_id:
+				chains[chain_id].append(analytics)
+
+		# Построение эволюции для каждой цепочки
+		result = {}
+		for chain_id, analytics_chain in chains.items():
+			# Сортировка по дате
+			sorted_analytics = sorted(analytics_chain, key=lambda x: x.analysis_date)
+
+			chain_evolution = []
+			for analytics in sorted_analytics:
+				# Извлечение тем из response_payload (приоритет) или summary_data
+				topics = []
+
+				if hasattr(analytics, 'response_payload') and analytics.response_payload:
+					topics = self.extract_topics_from_response_payload(analytics.response_payload)
+				elif hasattr(analytics, 'summary_data') and analytics.summary_data:
+					topics = self.extract_topics_from_summary_data(analytics.summary_data)
+
+				self.logger.info(f"Analytics ID: {analytics.id}, topics extracted: {len(topics)}")
+				for topic in topics:
+					self.logger.info(f"  Topic: {topic}")
+
+				# Метрики из summary_data
+				summary = getattr(analytics, 'summary_data', {})
+				content_stats = summary.get("content_statistics", {})
+
+				chain_evolution.append({
+					"date": analytics.analysis_date.isoformat()
+					if hasattr(analytics.analysis_date, 'isoformat')
+					else str(analytics.analysis_date),
+					"topics": topics,
+					"metrics": {
+						"total_posts": content_stats.get("total_posts", 0),
+						"sentiment_score": self._extract_sentiment_score(summary),
+						"engagement_rate": content_stats.get("avg_reactions_per_post", 0)
+					},
+					"source_info": {
+						"source_id": getattr(analytics, 'source_id', None),
+						"platform": summary.get("source_metadata", {}).get("platform", "unknown")
+					}
+				})
+
+			result[chain_id] = {
+				"chain_id": chain_id,
+				"evolution": chain_evolution,
+				"total_analyses": len(chain_evolution),
+				"date_range": {
+					"start": chain_evolution[0]["date"] if chain_evolution else None,
+					"end": chain_evolution[-1]["date"] if chain_evolution else None
+				}
+			}
+
+		return result
+
+	def _extract_sentiment_score(self, summary_data: dict[str, Any]) -> float:
+		"""Извлечь общий score тональности из summary_data."""
+		try:
+			ai_analysis = summary_data.get("ai_analysis", {})
+			sentiment = ai_analysis.get("sentiment_analysis", {})
+			return sentiment.get("sentiment_score", 0.0)
+		except:
+			return 0.0
+
+	def get_topic_statistics(self, chain_data: dict[str, Any]) -> dict[str, Any]:
+		"""Получить статистику по темам в цепочке."""
+		all_topics = []
+
+		for analysis in chain_data.get("evolution", []):
+			all_topics.extend(analysis.get("topics", []))
+
+		# Подсчет частоты тем
+		topic_freq = defaultdict(int)
+		topic_sentiment = defaultdict(list)
+
+		for topic in all_topics:
+			topic_name = topic.get("topic", "")
+			topic_freq[topic_name] += 1
+			if topic.get("sentiment"):
+				topic_sentiment[topic_name].append(topic["sentiment"])
+
+		# Вычисление средней тональности для каждой темы
+		topic_stats = {}
+		for topic, freq in topic_freq.items():
+			sentiments = topic_sentiment.get(topic, [])
+			avg_sentiment = "neutral"
+			if sentiments:
+				# Простая логика определения тональности
+				positive = sum(1 for s in sentiments if s in ["positive", "положительный"])
+				negative = sum(1 for s in sentiments if s in ["negative", "отрицательный"])
+				if positive > negative:
+					avg_sentiment = "positive"
+				elif negative > positive:
+					avg_sentiment = "negative"
+
+			topic_stats[topic] = {
+				"frequency": freq,
+				"avg_sentiment": avg_sentiment,
+				"prevalence_score": topic_freq[topic] / len(chain_data.get("evolution", []))
+			}
+
+		return {
+			"total_topics": len(topic_freq),
+			"most_frequent_topics": sorted(topic_stats.items(), key=lambda x: x[1]["frequency"], reverse=True)[:10],
+			"topic_details": topic_stats
+		}

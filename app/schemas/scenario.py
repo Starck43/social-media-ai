@@ -5,7 +5,8 @@ These schemas define the structure for creating, updating, and returning
 bot scenario data through the API.
 """
 
-from typing import Optional, List, Any
+from typing import Optional, Any
+
 from pydantic import BaseModel, Field
 
 from app.types import BotActionType, BotTriggerType
@@ -16,7 +17,14 @@ class ScenarioBase(BaseModel):
 
 	name: str = Field(..., min_length=1, max_length=255, description="Scenario name")
 	description: Optional[str] = Field(None, description="Scenario description")
-	ai_prompt: Optional[str] = Field(None, description="AI prompt template with variables")
+	# Unified prompt system: per-media prompts and unified summary prompt
+	text_prompt: Optional[str] = Field(None, description="Custom prompt for text analysis")
+	image_prompt: Optional[str] = Field(None, description="Custom prompt for image analysis")
+	video_prompt: Optional[str] = Field(None, description="Custom prompt for video analysis")
+	audio_prompt: Optional[str] = Field(None, description="Custom prompt for audio analysis")
+	unified_summary_prompt: Optional[str] = Field(None, description="Custom prompt to build unified summary")
+	# Legacy (kept for backward compatibility)
+	ai_prompt: Optional[str] = Field(None, description="[Deprecated] Legacy AI prompt template")
 	is_active: bool = Field(True, description="Whether scenario is active")
 	collection_interval_hours: int = Field(1, ge=1, le=168, description="Collection interval in hours (1-168, max 1 week)")
 
@@ -67,6 +75,13 @@ class ScenarioUpdate(BaseModel):
 	analysis_types: Optional[list[str]] = None
 	content_types: Optional[list[str]] = None
 	scope: Optional[dict] = None
+	# New prompt fields
+	text_prompt: Optional[str] = None
+	image_prompt: Optional[str] = None
+	video_prompt: Optional[str] = None
+	audio_prompt: Optional[str] = None
+	unified_summary_prompt: Optional[str] = None
+	# Legacy
 	ai_prompt: Optional[str] = None
 	trigger_type: Optional[BotTriggerType] = None
 	trigger_config: Optional[dict[str, Any]] = None
@@ -88,6 +103,13 @@ class ScenarioResponse(BaseModel):
 	analysis_types: list[str]
 	content_types: list[str]
 	scope: Optional[dict]
+	# New prompt fields
+	text_prompt: Optional[str]
+	image_prompt: Optional[str]
+	video_prompt: Optional[str]
+	audio_prompt: Optional[str]
+	unified_summary_prompt: Optional[str]
+	# Legacy
 	ai_prompt: Optional[str]
 	action_type: Optional[str]
 	is_active: bool
@@ -112,3 +134,11 @@ class ScenarioSourcesResponse(BaseModel):
 	scenario_id: int
 	scenario_name: str
 	sources: list[dict]
+
+
+class ScenarioListItem(BaseModel):
+	"""Schema for listing scenarios in filters and simple lists."""
+
+	id: int
+	name: str
+	description: Optional[str] = None

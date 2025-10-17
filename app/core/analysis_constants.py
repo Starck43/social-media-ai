@@ -14,7 +14,7 @@ DEFAULT_ANALYSIS_PARAMS = {
 
 # Sentiment analysis defaults
 SENTIMENT_DEFAULTS = {
-    "categories": [label.value for label in SentimentLabel],
+    "categories": [label.display_name for label in SentimentLabel],
     "detect_sarcasm": False,
     "emotion_analysis": True,
     "confidence_threshold": 0.7,
@@ -22,6 +22,7 @@ SENTIMENT_DEFAULTS = {
 
 # Trend detection defaults
 TRENDS_DEFAULTS = {
+    "trend_types": ["Восходящий тренд", "Нисходящий тренд", "Стабильный", "Вирусный"],
     "min_mentions": 5,
     "time_window_hours": 24,
     "track_growth": True,
@@ -31,6 +32,7 @@ TRENDS_DEFAULTS = {
 
 # Engagement analysis defaults
 ENGAGEMENT_DEFAULTS = {
+    "levels": ["Высокий", "Средний", "Низкий"],  # engagement_level options
     "metrics": ["likes", "comments", "shares", "views"],
     "calculate_rate": True,
     "detect_viral": True,
@@ -45,15 +47,29 @@ ENGAGEMENT_DEFAULTS = {
 
 # Keywords extraction defaults
 KEYWORDS_DEFAULTS = {
+    "entity_types": ["Персоны", "Организации", "Места", "Продукты", "События"],
     "min_frequency": 3,
     "exclude_common_words": True,
     "extract_entities": False,
     "max_keywords": 20,
-    "entity_types": ["person", "organization", "location"],
 }
 
 # Topics identification defaults
 TOPICS_DEFAULTS = {
+    "categories": [
+        "Политика",
+        "Экономика", 
+        "Технологии",
+        "Общество",
+        "Культура",
+        "Спорт",
+        "Развлечения",
+        "Наука",
+        "Образование",
+        "Здоровье",
+        "Экология",
+        "Другое"
+    ],
     "max_topics": 5,
     "min_topic_weight": 0.1,
     "identify_emerging": True,
@@ -61,6 +77,7 @@ TOPICS_DEFAULTS = {
 
 # Toxicity detection defaults
 TOXICITY_DEFAULTS = {
+    "categories": ["Чистый", "Слегка токсичный", "Умеренно токсичный", "Очень токсичный"],
     "threshold": 0.7,
     "detect_harassment": True,
     "detect_hate_speech": True,
@@ -78,6 +95,7 @@ DEMOGRAPHICS_DEFAULTS = {
 
 # Viral detection defaults
 VIRAL_DETECTION_DEFAULTS = {
+    "potential_levels": ["Высокий", "Средний", "Низкий"],  # viral potential categories
     "viral_threshold": 10000,
     "growth_rate_threshold": 2.0,
     "time_window_hours": 24,
@@ -156,15 +174,20 @@ def merge_with_defaults(analysis_types: list[str], scope: dict) -> dict:
     
     for analysis_type in analysis_types:
         defaults = get_analysis_defaults(analysis_type)
-        type_key = f"{analysis_type}_config"
         
-        # Merge user scope with defaults
-        user_config = scope.get(type_key, {})
-        config[type_key] = {**defaults, **user_config}
+        # Support both old format (type_config) and new format (type)
+        # New format (без _config): 'sentiment': {...}
+        # Old format (с _config): 'sentiment_config': {...}
+        user_config = scope.get(analysis_type, scope.get(f"{analysis_type}_config", {}))
+        
+        # Store in new format (без _config)
+        config[analysis_type] = {**defaults, **user_config}
     
-    # Add custom variables from scope
+    # Add custom variables from scope (не являющиеся analysis configs)
     for key, value in scope.items():
-        if not key.endswith('_config'):
+        # Skip analysis type configs (both formats)
+        is_analysis_config = key in analysis_types or key.endswith('_config')
+        if not is_analysis_config:
             config[key] = value
     
     return config

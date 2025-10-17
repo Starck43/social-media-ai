@@ -71,26 +71,35 @@ class TopicChainService:
 		topics = []
 
 		try:
-			# Извлечение из старого формата анализа
-			ai_analysis = summary_data.get("ai_analysis", {})
+			self.logger.info("Extracting topics from summary_data")
+			# Извлечение из нового формата multi-LLM анализа
+			multi_llm = summary_data.get("multi_llm_analysis", {})
+			self.logger.info(f"Multi LLM keys: {list(multi_llm.keys())}")
 
-			# Темы из topic_analysis
-			topic_analysis = ai_analysis.get("topic_analysis", {})
-			main_topics = topic_analysis.get("main_topics", [])
-			topic_prevalence = topic_analysis.get("topic_prevalence", {})
+			# Извлечь темы из text_analysis
+			text_analysis = multi_llm.get("text_analysis", {})
+			self.logger.info(f"Text analysis keys: {list(text_analysis.keys())}")
+			main_topics = text_analysis.get("main_topics", [])
+			self.logger.info(f"Main topics: {main_topics}")
+			self.logger.info(f"Main topics length: {len(main_topics)}")
 
-			for topic in main_topics:
-				prevalence = topic_prevalence.get(topic, 0)
-				topics.append({
-					"topic": topic,
-					"prevalence": prevalence,
-					"analysis_type": "legacy",
-					"sentiment": ai_analysis.get("sentiment_analysis", {}).get("overall_sentiment", "neutral"),
-					"confidence": 0.7
-				})
+			for i, topic in enumerate(main_topics):
+				self.logger.info(f"Topic {i}: '{topic}' (type: {type(topic)})")
+				if topic:
+					topics.append({
+						"topic": topic,
+						"prevalence": 0.8,  # Заглушка, можно рассчитать
+						"analysis_type": "text",
+						"sentiment": text_analysis.get("overall_mood", "neutral"),
+						"confidence": 0.8
+					})
+
+			self.logger.info(f"Final topics count: {len(topics)}")
 
 		except Exception as e:
 			self.logger.error(f"Ошибка извлечения тем из summary_data: {e}")
+			import traceback
+			self.logger.error(f"Traceback: {traceback.format_exc()}")
 
 		return topics
 
@@ -122,19 +131,25 @@ class TopicChainService:
 
 			chain_evolution = []
 			for analytics in sorted_analytics:
-				# Извлечение тем из response_payload (приоритет) или summary_data
+				# Извлечение тем из summary_data (приоритет) или response_payload
 				topics = []
 
-				if hasattr(analytics, 'response_payload') and analytics.response_payload:
-					topics = self.extract_topics_from_response_payload(analytics.response_payload)
-				elif hasattr(analytics, 'summary_data') and analytics.summary_data:
+				self.logger.info(f"Processing analytics ID: {analytics.id}")
+
+				if hasattr(analytics, 'summary_data') and analytics.summary_data:
+					self.logger.info("Extracting from summary_data")
 					topics = self.extract_topics_from_summary_data(analytics.summary_data)
+				elif hasattr(analytics, 'response_payload') and analytics.response_payload:
+					self.logger.info("Extracting from response_payload")
+					topics = self.extract_topics_from_response_payload(analytics.response_payload)
+				else:
+					self.logger.warning(f"No data found for analytics {analytics.id}")
 
 				self.logger.info(f"Analytics ID: {analytics.id}, topics extracted: {len(topics)}")
 				for topic in topics:
 					self.logger.info(f"  Topic: {topic}")
 
-				# Метрики из summary_data
+				# Метрики из summary_data аналитики
 				summary = getattr(analytics, 'summary_data', {})
 				content_stats = summary.get("content_statistics", {})
 

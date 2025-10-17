@@ -48,7 +48,10 @@ class AIAnalytics(Base, TimestampMixin):
 
 	# Chain tracking for ongoing topics/threads
 	topic_chain_id: Mapped[str] = Column(String(100), nullable=True)
-	parent_analysis_id: Mapped[int] = Column(ForeignKey("social_manager.ai_analytics.id"), nullable=True)
+	parent_analysis_id: Mapped[int] = Column(
+		ForeignKey("social_manager.ai_analytics.id", ondelete="SET NULL"),
+		nullable=True
+	)
 
 	summary_data: Mapped[JSON] = Column(
 		JSON,
@@ -56,10 +59,15 @@ class AIAnalytics(Base, TimestampMixin):
 		default=dict,
 		server_default=text("'{}'::jsonb")
 	)
+	response_payload: Mapped[JSON] = Column(JSON, nullable=True)
 
 	llm_model: Mapped[str | None] = Column(String(100), nullable=True)
 	prompt_text: Mapped[str | None] = Column(Text, nullable=True)
-	response_payload: Mapped[JSON] = Column(JSON, nullable=True)
+	provider_type: Mapped[str | None] = Column(String(100), nullable=True)
+	media_types: Mapped[list[str] | None] = Column(JSON, nullable=True)
+	request_tokens: Mapped[int | None] = Column(Integer, nullable=True)
+	response_tokens: Mapped[int | None] = Column(Integer, nullable=True)
+	estimated_cost: Mapped[int | None] = Column(Integer, nullable=True)  # Cost in cents
 
 	# Relationships
 	source: Mapped["Source"] = relationship("Source", back_populates="analytics")
@@ -67,12 +75,14 @@ class AIAnalytics(Base, TimestampMixin):
 		"AIAnalytics",
 		remote_side="AIAnalytics.id",
 		back_populates="children",
-		foreign_keys="AIAnalytics.parent_analysis_id"
+		foreign_keys="AIAnalytics.parent_analysis_id",
+		passive_deletes=True
 	)
 	children: Mapped[list["AIAnalytics"]] = relationship(
 		"AIAnalytics",
 		back_populates="parent",
-		cascade="all, delete-orphan"
+		cascade="save-update, merge",
+		passive_deletes=True
 	)
 
 	# Manager will be set after class definition

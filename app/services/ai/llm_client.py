@@ -31,6 +31,20 @@ class LLMClient(ABC):
 		self.model_name = provider.model_name
 		self.config = provider.config or {}
 	
+	def _get_provider_name(self) -> str:
+		"""Get provider name for analytics tracking."""
+		from app.utils.enum_helpers import get_enum_value
+		provider_type = get_enum_value(self.provider.provider_type)
+		# For custom providers, try to detect from API URL or name
+		if provider_type == 'custom':
+			if 'sambanova' in self.provider.api_url.lower():
+				return 'sambanova'
+			if 'openrouter' in self.provider.api_url.lower():
+				return 'openrouter'
+			# Fallback to provider name
+			return self.provider.name.lower().replace(' ', '_')
+		return provider_type
+	
 	@abstractmethod
 	async def analyze(
 		self,
@@ -128,7 +142,11 @@ class DeepSeekClient(LLMClient):
 			result = self._parse_response(response.json())
 			
 			return {
-				"request": {"model": self.model_name, "prompt": prompt},
+				"request": {
+					"model": self.model_name, 
+					"prompt": prompt,
+					"provider": self._get_provider_name()
+				},
 				"response": response.json(),
 				"parsed": result
 			}
@@ -200,7 +218,12 @@ class OpenAIClient(LLMClient):
 			result = self._parse_response(response.json())
 			
 			return {
-				"request": {"model": self.model_name, "prompt": prompt, "media_count": len(media_urls) if media_urls else 0},
+				"request": {
+					"model": self.model_name, 
+					"prompt": prompt, 
+					"media_count": len(media_urls) if media_urls else 0,
+					"provider": self._get_provider_name()
+				},
 				"response": response.json(),
 				"parsed": result
 			}
@@ -255,6 +278,7 @@ class LLMClientFactory:
 	_client_map = {
 		"deepseek": DeepSeekClient,
 		"openai": OpenAIClient,
+		"custom": DeepSeekClient,  # Custom providers use OpenAI-compatible API
 		# Add more providers here as needed
 		# "anthropic": AnthropicClient,
 		# "google": GoogleClient,

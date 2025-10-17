@@ -1,16 +1,17 @@
 {% extends "sqladmin/layout.html" %}
 
-{% block title %}Детали AI анализа - {{ model.id }}{% endblock %}
+{% block title %}AI Аналитика - {{ model.id }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <style>
-	.analysis-container {
-		max-width: 1200px;
+	.analytics-container {
+		max-width: 1400px;
 		margin: 0 auto;
 		padding: 20px;
 	}
 
-	.analysis-header {
+	.analytics-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
@@ -19,52 +20,96 @@
 		border-bottom: 2px solid var(--tblr-border-color);
 	}
 
-	.analysis-metrics {
+	.analytics-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 20px;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 15px;
 		margin-bottom: 30px;
 	}
 
 	.metric-card {
-		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+		background: var(--tblr-card-bg);
+		border: 1px solid var(--tblr-border-color);
 		border-radius: 8px;
 		padding: 20px;
-		border: 1px solid var(--tblr-border-color);
 	}
 
 	.metric-value {
-		font-size: 2rem;
+		font-size: 1.8rem;
 		font-weight: bold;
 		color: var(--tblr-primary);
+		margin-bottom: 5px;
 	}
 
 	.metric-label {
+		font-size: 0.85rem;
+		color: var(--tblr-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.section-card {
+		background: var(--tblr-card-bg);
+		border: 1px solid var(--tblr-border-color);
+		border-radius: 8px;
+		padding: 25px;
+		margin-bottom: 20px;
+	}
+
+	.section-title {
+		font-size: 1.2rem;
+		font-weight: 600;
+		margin-bottom: 20px;
+		padding-bottom: 10px;
+		border-bottom: 2px solid var(--tblr-primary);
+	}
+
+	.json-viewer {
+		background: #1e1e1e;
+		border-radius: 8px;
+		padding: 20px;
+		max-height: 600px;
+		overflow-y: auto;
+	}
+
+	.json-viewer pre {
+		margin: 0;
+		color: #d4d4d4;
+	}
+
+	.json-viewer code {
+		font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 		font-size: 0.9rem;
-		color: var(--tblr-secondary);
-		margin-top: 5px;
 	}
 
-	.sentiment-chart {
-		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
-		border-radius: 8px;
-		padding: 20px;
-		margin-bottom: 30px;
-		border: 1px solid var(--tblr-border-color);
+	.copy-btn {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		background: var(--tblr-primary);
+		color: white;
+		border: none;
+		padding: 8px 15px;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.85rem;
 	}
 
-	.topics-list {
-		background: rgba(var(--tblr-bg-surface-rgb), 0.3);
+	.copy-btn:hover {
+		background: var(--tblr-primary-darken);
+	}
+
+	.analysis-content {
+		background: var(--tblr-bg-surface);
 		border-radius: 8px;
 		padding: 20px;
-		border: 1px solid var(--tblr-border-color);
+		margin-top: 15px;
 	}
 
 	.topic-item {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
-		padding: 10px 0;
+		padding: 12px;
 		border-bottom: 1px solid var(--tblr-border-color);
 	}
 
@@ -72,187 +117,261 @@
 		border-bottom: none;
 	}
 
-	.topic-name {
-		font-weight: 500;
-	}
-
-	.topic-stats {
-		display: flex;
-		gap: 15px;
-		color: var(--tblr-secondary);
-	}
-
-	.sentiment-badge {
-		padding: 4px 8px;
+	.badge-provider {
+		background: var(--tblr-primary);
+		color: white;
+		padding: 4px 10px;
 		border-radius: 12px;
 		font-size: 0.8rem;
 		font-weight: 500;
 	}
 
-	.sentiment-positive {
-		background: var(--alert-bg-success);
-		color: var(--alert-text-success);
-	}
-
-	.sentiment-negative {
-		background: var(--alert-bg-danger);
-		color: var(--alert-text-danger);
-	}
-
-	.sentiment-neutral {
-		background: var(--alert-bg-info);
-		color: var(--alert-text-info);
-	}
-
-	.actions-bar {
-		display: flex;
-		gap: 10px;
-		margin-top: 20px;
+	.badge-model {
+		background: var(--tblr-secondary);
+		color: white;
+		padding: 4px 10px;
+		border-radius: 12px;
+		font-size: 0.8rem;
 	}
 
 	@media (max-width: 768px) {
-		.analysis-metrics {
+		.analytics-grid {
 			grid-template-columns: 1fr;
-		}
-
-		.analysis-header {
-			flex-direction: column;
-			gap: 15px;
-			align-items: flex-start;
 		}
 	}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="analysis-container">
-    <div class="analysis-header">
-        <div>
-            <h1>AI Аналитика источника: {{ model.source.name if model.source else 'Неизвестный источник' }}</h1>
-            <p class="text-muted">Дата анализа: {{ model.analysis_date }} | Период: {{ model.period_type }}</p>
-        </div>
-        <div class="actions-bar">
-            <a href="{{ url_for('admin:list', identity='ai-analytics') }}" class="btn btn-secondary">
-                <i class="fa fa-arrow-left"></i> Назад к списку
-            </a>
-            <button class="btn btn-primary" onclick="exportAnalysis()">
-                <i class="fa fa-download"></i> Экспорт
-            </button>
-        </div>
-    </div>
+<div class="analytics-container">
+	<div class="analytics-header">
+		<div>
+			<h1><i class="fa fa-chart-bar"></i> AI Аналитика #{{ model.id }}</h1>
+			<p class="text-muted">
+				Источник: <strong>{{ model.source.name if model.source else '—' }}</strong> | 
+				Дата: <strong>{{ model.analysis_date.strftime('%d.%m.%Y') if model.analysis_date else '—' }}</strong>
+			</p>
+		</div>
+		<div>
+			<a href="{{ url_for('admin:list', identity='ai-analytics') }}" class="btn btn-secondary">
+				<i class="fa fa-arrow-left"></i> Назад
+			</a>
+		</div>
+	</div>
 
-    {% if model.summary_data %}
-    <div class="analysis-metrics">
-        <div class="metric-card">
-            <div class="metric-value">{{ "%.1f"|format(model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100) }}%</div>
-            <div class="metric-label">Позитивное настроение</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ model.summary_data.get('content_statistics', {}).get('total_posts', 0) }}</div>
-            <div class="metric-label">Сообщений</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ model.summary_data.get('content_statistics', {}).get('total_reactions', 0) }}</div>
-            <div class="metric-label">Реакций</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ "%.1f"|format(model.summary_data.get('content_statistics', {}).get('avg_reactions_per_post', 0)) }}</div>
-            <div class="metric-label">Средняя вовлеченность</div>
-        </div>
-    </div>
+	<!-- LLM Metrics -->
+	<div class="analytics-grid">
+		<div class="metric-card">
+			<div class="metric-value">{{ model.llm_model or '—' }}</div>
+			<div class="metric-label">Модель</div>
+		</div>
+		<div class="metric-card">
+			<div class="metric-value">
+				<span class="badge-provider">{{ model.provider_type or '—' }}</span>
+			</div>
+			<div class="metric-label">Провайдер</div>
+		</div>
+		<div class="metric-card">
+			<div class="metric-value">{{ "{:,}".format(model.request_tokens) if model.request_tokens else '—' }}</div>
+			<div class="metric-label">Токенов (запрос)</div>
+		</div>
+		<div class="metric-card">
+			<div class="metric-value">{{ "{:,}".format(model.response_tokens) if model.response_tokens else '—' }}</div>
+			<div class="metric-label">Токенов (ответ)</div>
+		</div>
+		<div class="metric-card">
+			<div class="metric-value">${{ "%.4f"|format((model.estimated_cost or 0) / 100) }}</div>
+			<div class="metric-label">Стоимость</div>
+		</div>
+		<div class="metric-card">
+			<div class="metric-value">{{ ", ".join(model.media_types) if model.media_types else '—' }}</div>
+			<div class="metric-label">Типы медиа</div>
+		</div>
+	</div>
 
-    <div class="sentiment-chart">
-        <h3>Анализ настроения</h3>
-        <div class="sentiment-bars">
-            <div class="d-flex align-items-center mb-2">
-                <span class="me-3" style="width: 100px;">Позитивное:</span>
-                <div class="progress flex-grow-1">
-                    <div class="progress-bar bg-success"
-                         style="width: {{ model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100 }}%">
-                        {{ "%.1f"|format(model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0) * 100) }}%
-                    </div>
-                </div>
-            </div>
-            <div class="d-flex align-items-center mb-2">
-                <span class="me-3" style="width: 100px;">Нейтральное:</span>
-                <div class="progress flex-grow-1">
-                    <div class="progress-bar bg-info"
-                         style="width: {{ (1 - model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0)) * 50 }}%">
-                        50%
-                    </div>
-                </div>
-            </div>
-            <div class="d-flex align-items-center mb-2">
-                <span class="me-3" style="width: 100px;">Негативное:</span>
-                <div class="progress flex-grow-1">
-                    <div class="progress-bar bg-danger"
-                         style="width: {{ (1 - model.summary_data.get('ai_analysis', {}).get('sentiment_analysis', {}).get('sentiment_score', 0)) * 50 }}%">
-                        50%
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+	<!-- Content Statistics -->
+	{% if model.summary_data and model.summary_data.get('content_statistics') %}
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-chart-line"></i> Статистика контента</h3>
+		<div class="analytics-grid">
+			<div class="metric-card">
+				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_posts', 0) }}</div>
+				<div class="metric-label">Постов</div>
+			</div>
+			<div class="metric-card">
+				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_reactions', 0) }}</div>
+				<div class="metric-label">Реакций</div>
+			</div>
+			<div class="metric-card">
+				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_comments', 0) }}</div>
+				<div class="metric-label">Комментариев</div>
+			</div>
+			<div class="metric-card">
+				{% set avg_reactions = model.summary_data.content_statistics.get('avg_reactions_per_post', 0) %}
+				{% set avg_reactions_num = avg_reactions | float if avg_reactions is not none and avg_reactions | string | length > 0 else 0.0 %}
+				<div class="metric-value">{{ "%.1f"|format(avg_reactions_num) }}</div>
+				<div class="metric-label">Средняя вовлеченность</div>
+			</div>
+		</div>
+	</div>
+	{% endif %}
 
-    <div class="topics-list">
-        <h3>Основные темы обсуждения</h3>
-        {% for topic in model.summary_data.get('ai_analysis', {}).get('topic_analysis', {}).get('main_topics', [])[:10] %}
-        <div class="topic-item">
-            <div class="topic-name">{{ topic }}</div>
-            <div class="topic-stats">
-                <span class="sentiment-badge sentiment-positive">
-                    Топ тема
-                </span>
-            </div>
-        </div>
-        {% endfor %}
-        {% if not model.summary_data.get('ai_analysis', {}).get('topic_analysis', {}).get('main_topics') %}
-        <div class="topic-item">
-            <div class="text-muted">Данные о темах недоступны</div>
-        </div>
-        {% endif %}
-    </div>
+	<!-- Text Analysis Results -->
+	{% if model.summary_data and model.summary_data.get('multi_llm_analysis', {}).get('text_analysis') %}
+	{% set text_analysis = model.summary_data.multi_llm_analysis.text_analysis %}
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-comments"></i> Анализ текста</h3>
+		<div class="analysis-content">
+			{% if text_analysis.get('main_topics') %}
+			<h5>Главные темы:</h5>
+			<ul>
+				{% for topic in text_analysis.main_topics %}
+				<li>{{ topic }}</li>
+				{% endfor %}
+			</ul>
+			{% endif %}
 
-    {% if model.summary_data.get('ai_analysis', {}).get('audience_insights', {}).get('suggestions') %}
-    <div class="metric-card mt-4">
-        <h4>Рекомендации</h4>
-        <ul>
-        {% for suggestion in model.summary_data.ai_analysis.audience_insights.suggestions %}
-            <li>{{ suggestion }}</li>
-        {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
+			{% if text_analysis.get('overall_mood') %}
+			<h5>Общее настроение:</h5>
+			<p>{{ text_analysis.overall_mood }}</p>
+			{% endif %}
 
-    {% else %}
-    <div class="alert alert-info">
-        <i class="fa fa-info-circle"></i> Данные анализа не доступны.
-    </div>
-    {% endif %}
+			{% if text_analysis.get('highlights') %}
+			<h5>Выделяющиеся моменты:</h5>
+			<ul>
+				{% for highlight in text_analysis.highlights %}
+				<li>{{ highlight }}</li>
+				{% endfor %}
+			</ul>
+			{% endif %}
+
+			{% if text_analysis.get('sentiment_score') is not none %}
+			<h5>Оценка тональности:</h5>
+			<div class="progress" style="height: 30px;">
+				{% set score = text_analysis.sentiment_score %}
+				{% set score_num = score | float if score is not none and score | string | length > 0 else 0.0 %}
+				<div class="progress-bar bg-success" role="progressbar"
+					 style="width: {{ (score_num * 100)|round(1) }}%">
+					{{ "%.1f"|format(score_num * 100) }}%
+				</div>
+			</div>
+			{% endif %}
+		</div>
+	</div>
+	{% endif %}
+
+	<!-- Summary Data JSON Viewer -->
+	{% if model.summary_data %}
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-code"></i> Данные анализа (JSON)</h3>
+		<div style="position: relative;">
+			<button class="copy-btn" onclick="copyJSON('summary-json')"><i class="fa fa-copy"></i> Копировать</button>
+			<div class="json-viewer">
+				{% if model.summary_data %}
+				<pre><code id="summary-json" class="language-json">{{ model.summary_data | tojson(indent=2) }}</code></pre>
+				{% else %}
+				<pre><code id="summary-json" class="language-json">{}</code></pre>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+	{% endif %}
+
+	<!-- Response Payload JSON Viewer -->
+	{% if model.response_payload %}
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-robot"></i> Ответ LLM (JSON)</h3>
+		<div style="position: relative;">
+			<button class="copy-btn" onclick="copyJSON('response-json')"><i class="fa fa-copy"></i> Копировать</button>
+			<div class="json-viewer">
+				{% if model.response_payload %}
+				<pre><code id="response-json" class="language-json">{{ model.response_payload | tojson(indent=2) }}</code></pre>
+				{% else %}
+				<pre><code id="response-json" class="language-json">{}</code></pre>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+	{% endif %}
+
+	<!-- Technical Details -->
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-info-circle"></i> Технические детали</h3>
+		<table class="table table-sm">
+			<tr>
+				<th width="200">ID:</th>
+				<td>{{ model.id }}</td>
+			</tr>
+			<tr>
+				<th>Период:</th>
+				<td>{{ model.period_type.label if model.period_type and model.period_type.label is defined else model.period_type }}</td>
+			</tr>
+			<tr>
+				<th>Цепочка тем:</th>
+				<td>{{ model.topic_chain_id or '—' }}</td>
+			</tr>
+			<tr>
+				<th>Родительский анализ:</th>
+				<td>{{ model.parent_analysis_id or '—' }}</td>
+			</tr>
+			<tr>
+				<th>Создано:</th>
+				<td>{{ model.created_at.strftime('%d.%m.%Y %H:%M:%S') if model.created_at else '—' }}</td>
+			</tr>
+			<tr>
+				<th>Обновлено:</th>
+				<td>{{ model.updated_at.strftime('%d.%m.%Y %H:%M:%S') if model.updated_at else '—' }}</td>
+			</tr>
+		</table>
+	</div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
 <script>
-    function exportAnalysis() {
-        // Экспорт данных анализа в JSON
-        const data = {
-            id: {{ model.id }},
-            source: "{{ model.source.name if model.source else 'Неизвестный источник' }}",
-            analysis_date: "{{ model.analysis_date }}",
-            period_type: "{{ model.period_type }}",
-            summary_data: {{ model.summary_data | tojson if model.summary_data else '{}' }}
-        };
-        
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `analysis-{{ model.id }}-{{ model.analysis_date }}.json`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-    }
+	// Decode Unicode escapes in JSON
+	function decodeUnicode(str) {
+		return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
+			return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
+		});
+	}
+	
+	// Highlight JSON syntax and decode Unicode
+	document.addEventListener('DOMContentLoaded', function() {
+		// Decode Unicode in all JSON viewers
+		const jsonElements = document.querySelectorAll('.language-json');
+		jsonElements.forEach(function(element) {
+			if (element.textContent.trim() !== '{}') {
+				const decodedText = decodeUnicode(element.textContent);
+				element.textContent = decodedText;
+			}
+		});
+		
+		// Apply syntax highlighting after decoding
+		hljs.highlightAll();
+	});
+
+	// Copy JSON to clipboard
+	function copyJSON(elementId) {
+		const element = document.getElementById(elementId);
+		const text = element.textContent;
+		
+		navigator.clipboard.writeText(text).then(function() {
+			const btn = event.target.closest('button');
+			const originalText = btn.innerHTML;
+			btn.innerHTML = '<i class="fa fa-check"></i> Скопировано!';
+			btn.style.background = '#28a745';
+			
+			setTimeout(function() {
+				btn.innerHTML = originalText;
+				btn.style.background = '';
+			}, 2000);
+		}, function(err) {
+			console.error('Ошибка копирования: ', err);
+			alert('Не удалось скопировать в буфер обмена');
+		});
+	}
 </script>
 {% endblock %}

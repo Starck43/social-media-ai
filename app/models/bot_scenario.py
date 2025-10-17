@@ -27,8 +27,39 @@ class BotScenario(Base, TimestampMixin):
 	# Configuration parameters for analysis (no analysis_types here!)
 	scope: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
 	
-	# AI prompt template with variables
-	ai_prompt: Mapped[str] = Column(Text, nullable=True)
+	# Media-specific AI prompt templates with variable substitution support
+	# Variables: {text}, {platform}, {source_type}, {stats}, {count}, etc.
+	text_prompt: Mapped[str | None] = Column(
+		Text, nullable=True,
+		comment="Custom prompt for text analysis. If null, uses default."
+	)
+	image_prompt: Mapped[str | None] = Column(
+		Text, nullable=True,
+		comment="Custom prompt for image analysis. If null, uses default."
+	)
+	video_prompt: Mapped[str | None] = Column(
+		Text, nullable=True,
+		comment="Custom prompt for video analysis. If null, uses default."
+	)
+	audio_prompt: Mapped[str | None] = Column(
+		Text, nullable=True,
+		comment="Custom prompt for audio analysis. If null, uses default."
+	)
+	unified_summary_prompt: Mapped[str | None] = Column(
+		Text, nullable=True,
+		comment="Custom prompt for unified summary. If null, uses default."
+	)
+	
+	# Backward compatibility property
+	@property
+	def ai_prompt(self) -> str | None:
+		"""Legacy property for backward compatibility."""
+		return self.text_prompt
+	
+	@ai_prompt.setter
+	def ai_prompt(self, value: str | None):
+		"""Legacy setter for backward compatibility."""
+		self.text_prompt = value
 	
 	# 🆕 Trigger conditions for when to analyze/act
 	# Trigger type: when to analyze content or perform action

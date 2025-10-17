@@ -80,7 +80,57 @@ class ContentType(Enum):
 @database_enum
 class MediaType(Enum):
 	"""Types of media content for LLM processing."""
-	TEXT = "text"
-	IMAGE = "image"
-	VIDEO = "video"
-	AUDIO = "audio"
+	# Format: NAME = ("db_value", "Display Name", "Emoji")
+	TEXT = ("text", "Текст", "📝")
+	IMAGE = ("image", "Изображение", "🖼️")
+	VIDEO = ("video", "Видео", "🎥")
+	AUDIO = ("audio", "Аудио", "🎵")
+	
+	def __init__(self, db_value, display_name, emoji):
+		self._db_value = db_value
+		self._display_name = display_name
+		self._emoji = emoji
+	
+	@property
+	def db_value(self):
+		return self._db_value
+	
+	@property
+	def display_name(self):
+		return self._display_name
+	
+	@property
+	def emoji(self):
+		return self._emoji
+	
+	@property
+	def label(self):
+		"""Get label with emoji."""
+		return f"{self._emoji} {self._display_name}"
+	
+	@classmethod
+	def choices(cls, use_db_value: bool = True):
+		"""Get choices for form fields."""
+		if use_db_value:
+			return [(c.db_value, c.label) for c in cls]
+		return [(c.name, c.label) for c in cls]
+	
+	@classmethod
+	def get_by_value(cls, value: str):
+		"""Get enum by database value."""
+		for media in cls:
+			if media.db_value == value:
+				return media
+		return None
+	
+	@classmethod
+	def get_by_name(cls, name: str):
+		"""Get enum by name or value (for backward compatibility)."""
+		# Try by name first
+		try:
+			return cls[name.upper()]
+		except (KeyError, AttributeError):
+			pass
+		
+		# Try by db_value
+		return cls.get_by_value(name)

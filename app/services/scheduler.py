@@ -19,6 +19,16 @@ from app.services.ai.trigger_evaluator import trigger_evaluator
 logger = logging.getLogger(__name__)
 
 
+def _platform_type_value(platform) -> str:
+	"""Return normalized platform_type string (e.g., 'vk', 'telegram')."""
+	p = getattr(platform, 'platform_type', None)
+	if hasattr(p, 'db_value'):
+		return str(p.db_value).lower()
+	if hasattr(p, 'value'):
+		return str(p.value).lower()
+	return str(p).lower()
+
+
 class ContentScheduler:
 	"""
 	Scheduler for automatic content collection and analysis.
@@ -30,12 +40,12 @@ class ContentScheduler:
 	- Error handling and retry logic
 	- Comprehensive logging
 	"""
-	
+
 	def __init__(self):
 		"""Initialize scheduler with analyzer and optimizer."""
 		self.analyzer = AIAnalyzer()
 		self.optimizer = LLMOptimizer()
-	
+
 	async def run_collection_cycle(self) -> dict:
 		"""
 		Run one collection cycle for all eligible sources.
@@ -61,7 +71,7 @@ class ContentScheduler:
 		logger.info("=" * 60)
 		logger.info("STARTING COLLECTION CYCLE")
 		logger.info("=" * 60)
-		
+
 		stats = {
 			"total_sources": 0,
 			"collected": 0,
@@ -71,35 +81,39 @@ class ContentScheduler:
 			"total_cost": 0.0,
 			"started_at": datetime.now(timezone.utc).isoformat()
 		}
-		
+
 		try:
-			# Get all active sources
-			sources = await Source.objects.filter(is_active=True)
+			# Get all active sources with required relations preloaded to avoid DetachedInstanceError
+			sources = await (
+				Source.objects
+				.select_related('platform', 'bot_scenario')
+				.filter(is_active=True)
+			)
 			stats["total_sources"] = len(sources)
-			
+
 			logger.info(f"Found {len(sources)} active sources")
-			
+
 			# Process each source
 			for source in sources:
 				try:
 					result = await self._collect_source(source)
-					
+
 					if result:
 						stats["collected"] += 1
 						stats["total_content"] += result["content_count"]
 						stats["total_cost"] += result.get("cost", 0.0)
 					else:
 						stats["skipped"] += 1
-						
+
 				except Exception as e:
 					logger.error(f"Failed to collect source {source.id}: {e}", exc_info=True)
 					stats["failed"] += 1
-			
+
 			# Get cost summary from optimizer
 			cost_summary = self.optimizer.cost_tracker.get_session_summary()
 			stats["total_cost"] = cost_summary.get("total_cost", 0.0)
 			stats["ended_at"] = datetime.now(timezone.utc).isoformat()
-			
+
 			logger.info("=" * 60)
 			logger.info("COLLECTION CYCLE COMPLETE")
 			logger.info(f"Collected: {stats['collected']}/{stats['total_sources']}")
@@ -107,14 +121,14 @@ class ContentScheduler:
 			logger.info(f"Total content: {stats['total_content']} items")
 			logger.info(f"Total cost: ${stats['total_cost']:.4f}")
 			logger.info("=" * 60)
-			
+
 			return stats
-			
+
 		except Exception as e:
 			logger.error(f"Collection cycle failed: {e}", exc_info=True)
 			stats["error"] = str(e)
 			return stats
-	
+
 	async def _collect_source(self, source: Source) -> dict | None:
 		"""
 		Collect and analyze content from single source.
@@ -126,7 +140,7 @@ class ContentScheduler:
 			Dict with collection result or None if skipped
 		"""
 		logger.info(f"Processing source {source.id}: {source.name}")
-		
+
 		# Check if collection needed (via checkpoint)
 		if not CheckpointManager.should_collect(source):
 			logger.info(
@@ -134,29 +148,29 @@ class ContentScheduler:
 				f"(last: {source.last_checked}), skipping"
 			)
 			return None
-		
+
 		logger.info(f"Source {source.id} needs collection")
-		
+
 		try:
-			# Get platform client
-			client = get_social_client(source.platform.name)
+			# Get platform client (pass Platform instance, not name)
+			client = get_social_client(source.platform)
 			if not client:
 				logger.error(f"No client for platform {source.platform.name}")
 				return None
-			
+
 			# Get checkpoint for incremental collection
 			checkpoint = await CheckpointManager.get_checkpoint(source)
-			
+
 			# Collect new content (platform-specific)
 			content = await self._collect_platform_content(
 				client=client,
 				source=source,
 				checkpoint=checkpoint
 			)
-			
+
 			if not content:
 				logger.info(f"No new content for source {source.id}")
-				
+
 				# Update checkpoint anyway to avoid rechecking
 				result = CollectionResult(
 					source_id=source.id,
@@ -165,38 +179,38 @@ class ContentScheduler:
 				)
 				await result.save_checkpoint()
 				return None
-			
+
 			logger.info(f"Collected {len(content)} items from source {source.id}")
-			
+
 			# 🆕 Apply trigger filtering BEFORE LLM analysis
 			if source.bot_scenario:
 				filtered_content = await trigger_evaluator.should_analyze(
 					content=content,
 					scenario=source.bot_scenario
 				)
-				
+
 				if len(filtered_content) < len(content):
 					logger.info(
 						f"Trigger filter: {len(filtered_content)}/{len(content)} items "
 						f"({len(content) - len(filtered_content)} skipped, saved tokens!)"
 					)
-				
+
 				content = filtered_content
-			
+
 			if not content:
 				logger.info(f"No content passed trigger filter for source {source.id}")
 				return None
-			
+
 			# Analyze with LLM (optimized) - only filtered content
 			analysis = await self.analyzer.analyze_content(
 				content=content,
 				source=source
 			)
-			
+
 			if not analysis:
 				logger.error(f"Analysis failed for source {source.id}")
 				return None
-			
+
 			# Save checkpoint on success
 			result = CollectionResult(
 				source_id=source.id,
@@ -204,26 +218,26 @@ class ContentScheduler:
 				has_new_content=True
 			)
 			await result.save_checkpoint()
-			
+
 			logger.info(f"✅ Successfully processed source {source.id}")
-			
+
 			return {
 				"source_id": source.id,
 				"content_count": len(content),
 				"analysis_id": analysis.id,
 				"cost": 0.0  # Cost tracked by optimizer
 			}
-			
+
 		except Exception as e:
 			logger.error(f"Failed to collect source {source.id}: {e}", exc_info=True)
 			return None
-	
+
 	async def _collect_platform_content(
-		self,
-		client,
-		source: Source,
-		checkpoint: dict
-	) -> list[dict]:
+			self,
+			client,
+			source: Source,
+			checkpoint: dict
+		) -> list[dict]:
 		"""
 		Collect content from platform using checkpoint.
 		
@@ -236,63 +250,51 @@ class ContentScheduler:
 			List of collected content items
 		"""
 		last_checked = checkpoint.get("last_checked")
-		
-		# Platform-specific collection logic
-		# This is a placeholder - implement actual collection logic
+
+		# Delegate to platform client as done in admin check_source_action:
+		# temporarily merge checkpoint into source.params['collection'] and call client.collect_data()
 		try:
-			# Example: VK collection
-			if source.platform.name == "VK":
-				# Get posts after last_checked
-				params = {
-					"owner_id": source.external_id,
-					"count": 100
-				}
-				if last_checked:
-					params["start_time"] = int(last_checked.timestamp())
-				
-				# Call VK API (placeholder)
-				# response = await client.wall.get(**params)
-				# return response["items"]
-				pass
-			
-			# Example: Instagram collection
-			elif source.platform.name == "Instagram":
-				# Get posts after cursor
-				max_id = checkpoint.get("params", {}).get("instagram_max_id")
-				# Call Instagram API
-				pass
-			
-			# Example: Telegram collection
-			elif source.platform.name == "Telegram":
-				# Get messages after offset_id
-				offset_id = checkpoint.get("params", {}).get("telegram_offset_id")
-				# Call Telegram API
-				pass
-			
-			logger.warning(f"Collection not implemented for platform {source.platform.name}")
-			return []
-			
+			original_params = source.params.copy() if source.params else {}
+			if not source.params:
+				source.params = {}
+			if 'collection' not in source.params:
+				source.params['collection'] = {}
+
+			# Merge checkpoint params (cursors) and since timestamp
+			cp_params = checkpoint.get('params', {}) or {}
+			source.params['collection'].update(cp_params)
+			if last_checked:
+				# Common key that clients can use to filter since last collection
+				source.params['collection']['since'] = last_checked
+
+			# Let the concrete client handle request building and normalization
+			content = await client.collect_data(source=source, content_type="posts")
+			return content or []
+
 		except Exception as e:
 			logger.error(f"Platform collection failed: {e}")
 			return []
-	
+		finally:
+			# Restore original params to avoid side effects
+			source.params = original_params
+
 	async def run_forever(self, interval_minutes: int = 60):
 		"""
 		Run scheduler in continuous loop.
 		
-		Args:
+{{ ... }}
 			interval_minutes: Interval between collection cycles (default: 60)
 		"""
 		logger.info(f"Starting scheduler with {interval_minutes}min interval")
-		
+
 		while True:
 			try:
 				await self.run_collection_cycle()
-				
+
 				# Wait before next cycle
 				logger.info(f"Sleeping for {interval_minutes} minutes...")
 				await asyncio.sleep(interval_minutes * 60)
-				
+
 			except KeyboardInterrupt:
 				logger.info("Scheduler stopped by user")
 				break
@@ -319,8 +321,8 @@ async def start_scheduler(interval_minutes: int = 60):
 if __name__ == "__main__":
 	# Run scheduler standalone
 	import sys
-	
+
 	interval = int(sys.argv[1]) if len(sys.argv) > 1 else 60
-	
+
 	logger.info(f"Starting content scheduler (interval: {interval}min)")
 	asyncio.run(start_scheduler(interval))

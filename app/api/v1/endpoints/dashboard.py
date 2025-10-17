@@ -5,8 +5,10 @@ from datetime import date, timedelta
 from typing import Optional, List, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Source, AIAnalytics, Platform, Notification
+from app.core.database import get_db
 from app.schemas.dashboard import (
 	DashboardStats,
 	SourceSummary,
@@ -14,6 +16,7 @@ from app.schemas.dashboard import (
 	TrendData,
 )
 from app.services.ai.topic_chain_service import TopicChainService
+from app.services.ai.reporting import ReportAggregator
 from app.services.user.auth import get_authenticated_user
 from app.types import SourceType, PeriodType
 
@@ -115,7 +118,6 @@ async def get_sources_summary(
 		has_scenario: Optional[bool] = None,
 		limit: int = Query(50, ge=1, le=100),
 		offset: int = Query(0, ge=0),
-		current_user: 'User' = Depends(get_authenticated_user),
 ):
 	"""
 	Get sources summary with filters.
@@ -128,8 +130,7 @@ async def get_sources_summary(
 	— limit/offset: Pagination
 	"""
 	logger.info(
-		f"User {current_user.username} requesting sources summary "
-		f"(platform={platform_id}, type={source_type}, active={is_active})"
+		f"Requesting sources summary (platform={platform_id}, type={source_type}, active={is_active})"
 	)
 
 	# Build query
@@ -356,6 +357,8 @@ async def get_topic_chains(
 
 	# Группировка по цепочкам
 	chains = {}
+	source_ids = set()
+	
 	for a in analytics:
 		chain_id = getattr(a, 'topic_chain_id', None)
 		if chain_id:
@@ -366,16 +369,129 @@ async def get_topic_chains(
 					"analyses_count": 0,
 					"first_date": None,
 					"last_date": None,
-					"topics_count": 0
+					"topics_count": 0,
+					"topics": []
 				}
+				source_ids.add(a.source_id)
+			
 			chains[chain_id]["analyses_count"] += 1
-			# Обновить даты (простая логика)
+			
+			# Обновить даты
 			if not chains[chain_id]["first_date"] or a.analysis_date < chains[chain_id]["first_date"]:
 				chains[chain_id]["first_date"] = a.analysis_date
 			if not chains[chain_id]["last_date"] or a.analysis_date > chains[chain_id]["last_date"]:
 				chains[chain_id]["last_date"] = a.analysis_date
+			
+			# Добавить темы из summary_data или response_payload аналитики
+			all_chain_topics = set()
 
-	return list(chains.values())
+			try:
+				# Извлечь темы из summary_data аналитики
+				if hasattr(a, 'summary_data') and a.summary_data:
+					summary = a.summary_data
+					multi_llm = summary.get("multi_llm_analysis", {})
+
+					text_analysis = multi_llm.get("text_analysis", {})
+					main_topics = text_analysis.get("main_topics", [])
+
+					# Создать объекты тем из строк
+					sentiment = text_analysis.get("overall_mood", "neutral")
+					for topic in main_topics:
+						if topic:
+							topic_obj = {
+								"topic": topic,
+								"prevalence": 0.8,  # Заглушка, можно рассчитать
+								"analysis_type": "text",
+								"sentiment": sentiment,
+								"confidence": 0.8
+							}
+							all_chain_topics.add(frozenset(topic_obj.items()))
+
+				# Извлечь темы из response_payload (для старых записей)
+				if hasattr(a, 'response_payload') and a.response_payload:
+					response = a.response_payload
+					if "text_analysis" in response:
+						parsed = response["text_analysis"].get("parsed", {})
+						topic_analysis = parsed.get("topic_analysis", {})
+						main_topics = topic_analysis.get("main_topics", [])
+
+						sentiment = parsed.get("sentiment_analysis", {}).get("overall_sentiment", "neutral")
+						for topic in main_topics:
+							if topic:
+								topic_obj = {
+									"topic": topic,
+									"prevalence": 0.8,
+									"analysis_type": "text",
+									"sentiment": sentiment,
+									"confidence": 0.8
+								}
+								all_chain_topics.add(frozenset(topic_obj.items()))
+
+			except Exception as e:
+				logger.warning(f"Error extracting topics from analytics {a.id}: {e}")
+
+			# Добавить извлеченные темы в цепочку
+			for topic_frozenset in all_chain_topics:
+				topic_dict = dict(topic_frozenset)
+				if topic_dict not in chains[chain_id]["topics"]:
+					chains[chain_id]["topics"].append(topic_dict)
+
+	# Загрузить информацию об источниках
+	sources_map = {}
+	if source_ids:
+		sources = await Source.objects.select_related(Source.platform).filter(Source.id.in_(list(source_ids)))
+		for source in sources:
+			sources_map[source.id] = {
+				"id": source.id,
+				"name": source.name,
+				"platform": source.platform.name if source.platform else "unknown",
+				"platform_type": source.platform.platform_type.db_value if source.platform else "unknown",
+				"external_id": source.external_id,
+				"base_url": source.platform.base_url if source.platform else ""
+			}
+	
+	# Добавить информацию об источниках к цепочкам
+	result = []
+	for chain in chains.values():
+		chain["source"] = sources_map.get(chain["source_id"])
+		chain["topics_count"] = len(chain["topics"])
+
+		# Добавить красивое название цепочки на основе топ-тем
+		top_topics = []
+		if chain.get("topics"):
+			# Подсчет частоты тем
+			topic_freq = {}
+			for topic in chain["topics"]:
+				# Тема может быть строкой или объектом
+				if isinstance(topic, dict):
+					topic_name = topic.get("topic", "")
+				else:
+					topic_name = str(topic)
+				topic_freq[topic_name] = topic_freq.get(topic_name, 0) + 1
+
+			# Взять топ-3 темы
+			sorted_topics = sorted(topic_freq.items(), key=lambda x: x[1], reverse=True)
+			top_topics = [topic[0] for topic in sorted_topics[:3]]
+
+		# Сгенерировать название
+		if len(top_topics) == 1:
+			title = f"Тема: {top_topics[0]}"
+		elif len(top_topics) == 2:
+			title = f"Темы: {top_topics[0]} и {top_topics[1]}"
+		elif len(top_topics) >= 3:
+			title = f"Темы: {', '.join(top_topics[:2])} и другие"
+		else:
+			title = f"Цепочка {chain['chain_id']}"
+
+		# Добавить количество анализов если много
+		if chain["analyses_count"] > 5:
+			title += f" ({chain['analyses_count']} анализов)"
+
+		chain["title"] = title
+
+		result.append(chain)
+	
+	return result
 
 
 @router.get("/topic-chains/{chain_id}", response_model=dict)
@@ -397,12 +513,15 @@ async def get_topic_chain_details(
 	if not analytics:
 		raise HTTPException(status_code=404, detail="Topic chain not found")
 
-	# Получить информацию об источнике
-	source = await Source.objects.get(id=analytics[0].source_id)
+	# Получить информацию об источнике с платформой
+	source = await Source.objects.select_related(Source.platform).get(id=analytics[0].source_id)
 	source_info = {
 		"id": source.id,
 		"name": source.name,
-		"platform": "unknown"
+		"platform": source.platform.name if source.platform else "unknown",
+		"platform_type": source.platform.platform_type.db_value if source.platform else "unknown",
+		"external_id": source.external_id,
+		"base_url": source.platform.base_url if source.platform else ""
 	}
 
 	# Получить данные цепочки через сервис
@@ -437,43 +556,100 @@ async def get_topic_chain_evolution(
 		Данные для визуализации эволюции тем
 	"""
 
-	# Получить все аналитики для цепочки
-	analytics = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date.asc())
+	try:
+		logger.info(f"Getting evolution for chain_id: {chain_id}")
 
-	if not analytics:
-		raise HTTPException(status_code=404, detail="Topic chain not found")
+		# Получить все аналитики для цепочки
+		analytics = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date.asc())
 
-	# Получить данные цепочки через сервис
-	chain_data = topic_chain_service.build_topic_chain(analytics)
+		logger.info(f"Found {len(analytics)} analytics for chain {chain_id}")
 
-	if chain_id not in chain_data:
-		raise HTTPException(status_code=404, detail="Chain data not found")
+		if not analytics:
+			logger.warning(f"No analytics found for chain_id: {chain_id}")
+			raise HTTPException(status_code=404, detail="Topic chain not found")
 
-	evolution_data = []
-	chain_evolution = chain_data.get(chain_id, {}).get("evolution", [])
+		# Получить данные цепочки через сервис
+		chain_data = topic_chain_service.build_topic_chain(analytics)
 
-	logger.info(f"Chain evolution data: {chain_evolution}")
+		logger.info(f"Chain data built, chain_id in chain_data: {chain_id in chain_data}")
 
-	for analysis in chain_evolution:
-		# Подготовка данных для графика
-		topics_for_chart = []
-		for topic in analysis.get("topics", []):
-			topics_for_chart.append({
-				"topic": topic.get("topic", ""),
-				"prevalence": topic.get("prevalence", 0.0),
-				"sentiment": topic.get("sentiment", 0.0)
-			})
+		if chain_id not in chain_data:
+			logger.error(f"Chain {chain_id} not found in chain_data: {list(chain_data.keys())}")
+			raise HTTPException(status_code=404, detail="Chain data not found")
 
-		logger.info(f"Analysis date: {analysis.get('date')}, topics: {topics_for_chart}")
+		evolution_data = []
+		chain_evolution = chain_data.get(chain_id, {}).get("evolution", [])
 
-		evolution_data.append({
-			"date": analysis.get("date", ""),
-			"topics": topics_for_chart,
-			"metrics": analysis.get("metrics", {}),
-			"dominant_topics": sorted(topics_for_chart, key=lambda x: x["prevalence"], reverse=True)[:5]
-		})
+		logger.info(f"Chain evolution data: {len(chain_evolution)} items")
 
-	return evolution_data
+		for i, analysis in enumerate(chain_evolution):
+			try:
+				logger.info(f"Processing evolution item {i}: {analysis.get('date', 'no_date')}")
+
+				# Extract topics as simple strings for UI
+				topic_names = []
+				topics_data = analysis.get("topics", [])
+
+				logger.info(f"Processing analysis with topics: {topics_data}")
+
+				for topic in topics_data:
+					if isinstance(topic, dict):
+						topic_name = topic.get("topic", "")
+						if topic_name:
+							topic_names.append(topic_name)
+					elif isinstance(topic, str):
+						topic_names.append(topic)
+
+				logger.info(f"Extracted topic names: {topic_names}")
+
+				# Get sentiment score from metrics or calculate from topics
+				sentiment_score = 0.0
+				metrics = analysis.get("metrics", {})
+
+				if "sentiment_score" in metrics:
+					sentiment_score = metrics.get("sentiment_score", 0.0)
+					logger.info(f"Using sentiment from metrics: {sentiment_score}")
+				else:
+					# Calculate average sentiment from topics
+					sentiments = []
+					for topic in topics_data:
+						if isinstance(topic, dict) and "sentiment" in topic:
+							sent = topic.get("sentiment")
+							# Convert sentiment labels to scores
+							if isinstance(sent, str):
+								if sent.lower() in ["positive", "положительный"]:
+									sentiments.append(0.7)
+								elif sent.lower() in ["negative", "отрицательный"]:
+									sentiments.append(-0.7)
+								else:
+									sentiments.append(0.0)
+							elif isinstance(sent, (int, float)):
+								sentiments.append(float(sent))
+
+					if sentiments:
+						sentiment_score = sum(sentiments) / len(sentiments)
+						logger.info(f"Calculated sentiment from topics: {sentiment_score}")
+
+				evolution_data.append({
+					"analysis_date": analysis.get("date", ""),
+					"topics": topics_data,  # Возвращаем полные объекты тем, а не только названия
+					"sentiment_score": sentiment_score,
+					"post_url": None  # TODO: Add post URL if available
+				})
+
+				logger.info(f"Evolution item {i}: date={analysis.get('date')}, topics_count={len(topics_data)}, sentiment={sentiment_score}")
+
+			except Exception as e:
+				logger.error(f"Error processing analysis evolution item {i}: {e}")
+				logger.error(f"Problematic analysis data: {analysis}")
+				continue
+
+		logger.info(f"Returning {len(evolution_data)} evolution items")
+		return evolution_data
+
+	except Exception as e:
+		logger.error(f"Error in get_topic_chain_evolution for chain_id {chain_id}: {e}", exc_info=True)
+		raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/debug/topic-chain/{chain_id}", response_model=dict)
@@ -493,12 +669,20 @@ async def debug_topic_chain(chain_id: str):
 	# Получить данные цепочки через сервис
 	chain_data = topic_chain_service.build_topic_chain(analytics)
 
+	if chain_id not in chain_data:
+		logger.error(f"Chain {chain_id} not found in chain_data: {list(chain_data.keys())}")
+		raise HTTPException(status_code=404, detail="Chain data not found")
+
 	return {
 		"chain_id": chain_id,
 		"total_analytics": len(analytics),
 		"analytics_dates": [str(a.analysis_date) for a in analytics],
 		"chain_data": chain_data,
-		"evolution_data": chain_data.get(chain_id, {}).get("evolution", [])
+		"evolution_data": chain_data.get(chain_id, {}).get("evolution", []),
+		"debug_info": {
+			"analytics_summary_keys": [list(getattr(a, 'summary_data', {}).keys()) if hasattr(a, 'summary_data') and a.summary_data else [] for a in analytics],
+			"chain_data_keys": list(chain_data.keys()) if chain_data else []
+		}
 	}
 
 
@@ -527,4 +711,183 @@ async def debug_analytics_data():
 			if getattr(a, 'response_payload', None) else []
 		})
 
+@router.get("/debug/analytics/{analytics_id}", response_model=dict)
+async def debug_single_analytics(analytics_id: int):
+	"""
+	Диагностический эндпоинт для проверки данных конкретной аналитики.
+	"""
+	analytics = await AIAnalytics.objects.get(id=analytics_id)
+
+	result = {
+		"id": analytics.id,
+		"source_id": analytics.source_id,
+		"topic_chain_id": getattr(analytics, 'topic_chain_id', None),
+		"analysis_date": str(analytics.analysis_date) if analytics.analysis_date else None,
+		"summary_data": getattr(analytics, 'summary_data', None),
+		"response_payload": getattr(analytics, 'response_payload', None),
+	}
+
 	return result
+
+@router.get("/analytics/aggregate/sentiment-trends", response_model=dict)
+async def get_sentiment_trends_aggregate(
+	source_id: Optional[int] = Query(None, description="Filter by source"),
+	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
+	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+	group_by: str = Query('day', description="Group by: day, week"),
+	session: AsyncSession = Depends(get_db),
+):
+	"""
+	Get aggregated sentiment trends over time.
+	
+	Returns daily/weekly sentiment averages with distribution.
+	"""
+	logger.info(
+		f"Requesting sentiment trends (source={source_id}, scenario={scenario_id}, days={days})"
+	)
+	
+	aggregator = ReportAggregator(session=session)
+	trends = await aggregator.get_sentiment_trends(
+		source_id=source_id,
+		scenario_id=scenario_id,
+		days=days,
+		group_by=group_by
+	)
+	
+	return {
+		"trends": trends,
+		"period_days": days,
+		"group_by": group_by
+	}
+
+
+@router.get("/analytics/aggregate/top-topics", response_model=dict)
+async def get_top_topics_aggregate(
+	source_id: Optional[int] = Query(None, description="Filter by source"),
+	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
+	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+	limit: int = Query(10, ge=1, le=50, description="Max topics to return"),
+	session: AsyncSession = Depends(get_db),
+):
+	"""
+	Get top topics/keywords with sentiment and examples.
+	
+	Returns most mentioned topics with average sentiment scores.
+	"""
+	logger.info(
+		f"Requesting top topics (source={source_id}, scenario={scenario_id}, days={days})"
+	)
+	
+	aggregator = ReportAggregator(session=session)
+	topics = await aggregator.get_top_topics(
+		source_id=source_id,
+		scenario_id=scenario_id,
+		days=days,
+		limit=limit
+	)
+	
+	return {
+		"topics": topics,
+		"period_days": days,
+		"total_topics": len(topics)
+	}
+
+
+@router.get("/analytics/aggregate/llm-stats", response_model=dict)
+async def get_llm_provider_stats_aggregate(
+	source_id: Optional[int] = Query(None, description="Filter by source"),
+	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
+	days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+	session: AsyncSession = Depends(get_db),
+):
+	"""
+	Get LLM provider usage statistics and costs.
+	
+	Returns provider breakdown with token usage and estimated costs.
+	"""
+	logger.info(
+		f"Requesting LLM stats (source={source_id}, scenario={scenario_id}, days={days})"
+	)
+	
+	aggregator = ReportAggregator(session=session)
+	stats = await aggregator.get_llm_provider_stats(
+		source_id=source_id,
+		scenario_id=scenario_id,
+		days=days
+	)
+	
+	return stats
+
+
+@router.get("/analytics/aggregate/content-mix", response_model=dict)
+async def get_content_mix_aggregate(
+	source_id: Optional[int] = Query(None, description="Filter by source"),
+	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
+	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+	session: AsyncSession = Depends(get_db),
+):
+	"""
+	Get content type distribution (text/image/video).
+	
+	Returns percentage breakdown of analyzed media types.
+	"""
+	logger.info(
+		f"Requesting content mix (source={source_id}, scenario={scenario_id}, days={days})"
+	)
+	
+	aggregator = ReportAggregator(session=session)
+	mix = await aggregator.get_content_mix(
+		source_id=source_id,
+		scenario_id=scenario_id,
+		days=days
+	)
+	
+	return mix
+
+
+@router.get("/analytics/aggregate/engagement", response_model=dict)
+async def get_engagement_metrics_aggregate(
+	source_id: Optional[int] = Query(None, description="Filter by source"),
+	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
+	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+	session: AsyncSession = Depends(get_db),
+):
+	"""
+	Get engagement metrics (reactions, comments).
+	
+	Returns average engagement rates per post.
+	"""
+	logger.info(
+		f"Requesting engagement metrics (source={source_id}, scenario={scenario_id}, days={days})"
+	)
+	
+	aggregator = ReportAggregator(session=session)
+	metrics = await aggregator.get_engagement_metrics(
+		source_id=source_id,
+		scenario_id=scenario_id,
+		days=days
+	)
+	
+	return metrics
+
+
+@router.get("/scenarios", response_model=list[dict])
+async def get_scenarios_list():
+	"""
+	Get list of bot scenarios for filters.
+	
+	Returns:
+		List of scenarios with id and name
+	"""
+	from app.models import BotScenario
+	
+	scenarios = await BotScenario.objects.filter(is_active=True).order_by(BotScenario.name.asc())
+	
+	return [
+		{
+			"id": scenario.id,
+			"name": scenario.name,
+			"description": scenario.description or ""
+		}
+		for scenario in scenarios
+	]

@@ -113,35 +113,34 @@
         </div>
     </div>
 
-    <!-- Topic Chains Table -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5><i class="fas fa-list me-2"></i>Цепочки тем</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table id="topicChainsTable" class="table table-striped table-hover">
-                            <thead>
-                            <tr>
-                                <th>ID цепочки</th>
-                                <th>Источник</th>
-                                <th>Анализов</th>
-                                <th>Период</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                            </thead>
-                            <tbody id="topicChainsTableBody">
-                            <!-- Данные будут загружены через JS -->
-                            </tbody>
-                        </table>
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-list me-2"></i>Цепочки тем</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table id="topicChainsTable" class="table table-striped table-hover">
+                                        <thead>
+                                        <tr>
+                                            <th>ID цепочки</th>
+                                            <th>Источник</th>
+                                            <th>Анализов</th>
+                                            <th>Период</th>
+                                            <th>Статус</th>
+                                            <th>Действия</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody id="topicChainsTableBody">
+                                        <!-- Данные будут загружены через JS -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Topic Evolution Chart -->
     <div class="row mb-4">
@@ -164,7 +163,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Детали цепочки тем</h5>
+                    <h5 class="modal-title">${chainDetails.title || chainDetails.chain_id}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="topicDetailsContent">
@@ -262,13 +261,14 @@
             const row = document.createElement("tr")
             row.innerHTML = `
                     <td><code>${chain.chain_id}</code></td>
-                    <td>${chain.source_id}</td>
+                    <td>${chain.source ? chain.source.name : chain.source_id}</td>
                     <td>${chain.analyses_count}</td>
                     <td>${formatDate(chain.first_date)} - ${formatDate(chain.last_date)}</td>
                     <td><span class="badge bg-success">Active</span></td>
                     <td>
-                        <button class="btn btn-sm btn-outline-primary" onclick="viewTopicChain('${chain.chain_id}')">
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewTopicChain('${chain.chain_id}')" title="${chain.title || chain.chain_id}">
                             <i class="fas fa-eye me-1"></i>View
+                            <span class="visually-hidden">${chain.title || chain.chain_id}</span>
                         </button>
                     </td>
                 `
@@ -340,7 +340,7 @@
                     <div class="col-md-6">
                         <h6>Chain Information</h6>
                         <p><strong>ID:</strong> ${chainDetails.chain_id}</p>
-                        <p><strong>Source:</strong> ${chainDetails.source_info.name}</p>
+                        <p><strong>Source:</strong> ${chainDetails.source_info ? chainDetails.source_info.name : 'Unknown'}</p>
                         <p><strong>Total Analyses:</strong> ${chainDetails.total_analyses}</p>
                     </div>
                     <div class="col-md-6">
@@ -383,13 +383,17 @@
         const timelineBody = document.getElementById("timelineBody")
         chainDetails.chain_data.evolution.forEach(analysis => {
             const row = document.createElement("tr")
-            const topics = analysis.topics.slice(0, 3).map(t => `<span class="topic-tag">${t.topic}</span>`).join("")
+            // Исправляем отображение тем - проверяем тип данных
+            const topics = analysis.topics.slice(0, 3).map(t => {
+                const topicName = typeof t === 'object' && t.topic ? t.topic : String(t)
+                return `<span class="topic-tag">${topicName}</span>`
+            }).join("")
             row.innerHTML = `
                     <td>${formatDate(analysis.date)}</td>
                     <td>${topics}</td>
                     <td>
                         Posts: ${analysis.metrics.total_posts}<br>
-                        Sentiment: ${analysis.metrics.sentiment_score.toFixed(2)}
+                        Sentiment: ${analysis.metrics.sentiment_score ? analysis.metrics.sentiment_score.toFixed(2) : 'N/A'}
                     </td>
                 `
             timelineBody.appendChild(row)
@@ -421,9 +425,11 @@
 
         evolutionData.forEach(analysis => {
             analysis.topics.forEach(topic => {
-                if (!topicGroups[topic.topic]) {
-                    topicGroups[topic.topic] = {
-                        label: topic.topic,
+                // Исправляем получение названия темы
+                const topicName = typeof topic === 'object' && topic.topic ? topic.topic : String(topic)
+                if (!topicGroups[topicName]) {
+                    topicGroups[topicName] = {
+                        label: topicName,
                         data: new Array(dates.length).fill(0),
                         borderColor: getRandomColor(),
                         backgroundColor: "transparent",
@@ -436,8 +442,11 @@
         // Fill data
         evolutionData.forEach((analysis, index) => {
             analysis.topics.forEach(topic => {
-                if (topicGroups[topic.topic]) {
-                    topicGroups[topic.topic].data[index] = topic.prevalence
+                // Исправляем получение названия и prevalence темы
+                const topicName = typeof topic === 'object' && topic.topic ? topic.topic : String(topic)
+                const prevalence = typeof topic === 'object' && topic.prevalence ? topic.prevalence : 0.5
+                if (topicGroups[topicName]) {
+                    topicGroups[topicName].data[index] = prevalence
                 }
             })
         })
@@ -490,9 +499,11 @@
         const topicGroups = {}
         evolutionData.forEach(analysis => {
             analysis.topics.forEach(topic => {
-                if (!topicGroups[topic.topic]) {
-                    topicGroups[topic.topic] = {
-                        label: topic.topic,
+                // Исправляем получение названия темы
+                const topicName = typeof topic === 'object' && topic.topic ? topic.topic : String(topic)
+                if (!topicGroups[topicName]) {
+                    topicGroups[topicName] = {
+                        label: topicName,
                         data: new Array(dates.length).fill(0),
                         borderColor: getRandomColor(),
                         backgroundColor: "transparent",
@@ -505,8 +516,11 @@
         // Fill data
         evolutionData.forEach((analysis, index) => {
             analysis.topics.forEach(topic => {
-                if (topicGroups[topic.topic]) {
-                    topicGroups[topic.topic].data[index] = topic.prevalence
+                // Исправляем получение названия и prevalence темы
+                const topicName = typeof topic === 'object' && topic.topic ? topic.topic : String(topic)
+                const prevalence = typeof topic === 'object' && topic.prevalence ? topic.prevalence : 0.5
+                if (topicGroups[topicName]) {
+                    topicGroups[topicName].data[index] = prevalence
                 }
             })
         })

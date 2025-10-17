@@ -25,15 +25,15 @@ class ContentClassifier:
 			Dictionary with keys: MediaType values, each containing relevant items
 		"""
 		classified = {
-			MediaType.TEXT.value: [],
-			MediaType.IMAGE.value: [],
-			MediaType.VIDEO.value: []
+			MediaType.TEXT.db_value: [],
+			MediaType.IMAGE.db_value: [],
+			MediaType.VIDEO.db_value: []
 		}
 		
 		for item in content:
 			# All items have text component
 			if item.get('text'):
-				classified[MediaType.TEXT.value].append(item)
+				classified[MediaType.TEXT.db_value].append(item)
 			
 			# Check for media attachments
 			attachments = item.get('attachments', [])
@@ -42,21 +42,21 @@ class ContentClassifier:
 				media_type = attachment.get('type', '').lower()
 				
 				if media_type in ['photo', 'image']:
-					classified[MediaType.IMAGE.value].append({
+					classified[MediaType.IMAGE.db_value].append({
 						**item,
 						'media_url': attachment.get('url'),
-						'media_type': MediaType.IMAGE.value
+						'media_type': MediaType.IMAGE.db_value
 					})
 				elif media_type in ['video', 'video_file']:
-					classified[MediaType.VIDEO.value].append({
+					classified[MediaType.VIDEO.db_value].append({
 						**item,
 						'media_url': attachment.get('url'),
-						'media_type': MediaType.VIDEO.value
+						'media_type': MediaType.VIDEO.db_value
 					})
 		
 		logger.info(
-			f"Classified content: {len(classified[MediaType.TEXT.value])} text items, "
-			f"{len(classified[MediaType.IMAGE.value])} images, {len(classified[MediaType.VIDEO.value])} videos"
+			f"Classified content: {len(classified[MediaType.TEXT.db_value])} text items, "
+			f"{len(classified[MediaType.IMAGE.db_value])} images, {len(classified[MediaType.VIDEO.db_value])} videos"
 		)
 		
 		return classified

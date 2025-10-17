@@ -4,7 +4,7 @@ from .commands import roles
 
 app = typer.Typer(
 	name="SMM Admin CLI",
-	help="Social Media Manager Administration CLI",
+	help="Social Media Manager CLI",
 	no_args_is_help=True,
 )
 

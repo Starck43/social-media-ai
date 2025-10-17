@@ -13,14 +13,14 @@ def get_all_presets():
             "name": "Анализ настроений аудитории",
             "icon": "😊",
             "description": "Отслеживание эмоциональной тональности постов и комментариев",
-            "content_types": [ContentType.POSTS.value, ContentType.COMMENTS.value],
-            "analysis_types": [AnalysisType.SENTIMENT.value, AnalysisType.KEYWORDS.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
+            "analysis_types": [AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
             "scope": {
-                "sentiment_config": {
+                "sentiment": {
                     "detect_sarcasm": True,
                     "emotion_analysis": True,
                 },
-                "keywords_config": {
+                "keywords": {
                     "max_keywords": 15,
                     "extract_entities": True,
                 }
@@ -44,23 +44,23 @@ def get_all_presets():
             "name": "Отслеживание трендов",
             "icon": "📈",
             "description": "Выявление растущих тем и вирусного контента",
-            "content_types": [ContentType.POSTS.value, ContentType.REACTIONS.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.REACTIONS.db_value],
             "analysis_types": [
-                AnalysisType.TRENDS.value,
-                AnalysisType.VIRAL_DETECTION.value,
-                AnalysisType.HASHTAG_ANALYSIS.value
+                AnalysisType.TRENDS.db_value,
+                AnalysisType.VIRAL_DETECTION.db_value,
+                AnalysisType.HASHTAG_ANALYSIS.db_value
             ],
             "scope": {
-                "trends_config": {
+                "trends": {
                     "min_mentions": 10,
                     "time_window_hours": 48,
                     "track_growth": True,
                 },
-                "viral_detection_config": {
+                "viral_detection": {
                     "viral_threshold": 5000,
                     "growth_rate_threshold": 3.0,
                 },
-                "hashtag_analysis_config": {
+                "hashtag_analysis": {
                     "track_trending": True,
                     "analyze_related": True,
                 }
@@ -84,16 +84,16 @@ def get_all_presets():
             "name": "Мониторинг негатива и токсичности",
             "icon": "🛡️",
             "description": "Автоматическое выявление негативного и токсичного контента",
-            "content_types": [ContentType.COMMENTS.value, ContentType.POSTS.value],
-            "analysis_types": [AnalysisType.TOXICITY.value, AnalysisType.SENTIMENT.value],
+            "content_types": [ContentType.COMMENTS.db_value, ContentType.POSTS.db_value],
+            "analysis_types": [AnalysisType.TOXICITY.db_value, AnalysisType.SENTIMENT.db_value],
             "scope": {
-                "toxicity_config": {
+                "toxicity": {
                     "threshold": 0.6,
                     "detect_harassment": True,
                     "detect_hate_speech": True,
                     "detect_threats": True,
                 },
-                "sentiment_config": {
+                "sentiment": {
                     "confidence_threshold": 0.75,
                 }
             },
@@ -117,10 +117,10 @@ def get_all_presets():
             "name": "Анализ вовлечённости",
             "icon": "🎯",
             "description": "Метрики engagement и эффективности контента",
-            "content_types": [ContentType.POSTS.value, ContentType.REACTIONS.value, ContentType.COMMENTS.value],
-            "analysis_types": [AnalysisType.ENGAGEMENT.value, AnalysisType.VIRAL_DETECTION.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.REACTIONS.db_value, ContentType.COMMENTS.db_value],
+            "analysis_types": [AnalysisType.ENGAGEMENT.db_value, AnalysisType.VIRAL_DETECTION.db_value],
             "scope": {
-                "engagement_config": {
+                "engagement": {
                     "calculate_rate": True,
                     "detect_viral": True,
                     "viral_threshold": 1000,
@@ -145,14 +145,14 @@ def get_all_presets():
             "name": "Мониторинг конкурентов",
             "icon": "🔍",
             "description": "Отслеживание активности и стратегии конкурентов",
-            "content_types": [ContentType.POSTS.value, ContentType.COMMENTS.value],
-            "analysis_types": [AnalysisType.COMPETITOR_TRACKING.value, AnalysisType.TOPICS.value, AnalysisType.ENGAGEMENT.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
+            "analysis_types": [AnalysisType.COMPETITOR_TRACKING.db_value, AnalysisType.TOPICS.db_value, AnalysisType.ENGAGEMENT.db_value],
             "scope": {
-                "competitor_config": {
+                "competitor_tracking": {
                     "track_content_strategy": True,
                     "compare_metrics": True,
                 },
-                "topics_config": {
+                "topics": {
                     "max_topics": 7,
                     "identify_emerging": True,
                 }
@@ -177,17 +177,17 @@ def get_all_presets():
             "name": "Поиск упоминаний бренда",
             "icon": "🏷️",
             "description": "Отслеживание упоминаний бренда и продуктов",
-            "content_types": [ContentType.POSTS.value, ContentType.COMMENTS.value, ContentType.MENTIONS.value],
-            "analysis_types": [AnalysisType.BRAND_MENTIONS.value, AnalysisType.SENTIMENT.value, AnalysisType.KEYWORDS.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value, ContentType.MENTIONS.db_value],
+            "analysis_types": [AnalysisType.BRAND_MENTIONS.db_value, AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
             "scope": {
-                "brand_mentions_config": {
+                "brand_mentions": {
                     "track_sentiment": True,
                     "track_reach": True,
                 },
-                "sentiment_config": {
+                "sentiment": {
                     "confidence_threshold": 0.7,
                 },
-                "keywords_config": {
+                "keywords": {
                     "extract_entities": True,
                 }
             },
@@ -210,13 +210,13 @@ def get_all_presets():
             "name": "Анализ намерений клиентов",
             "icon": "💡",
             "description": "Выявление намерений: покупка, вопрос, жалоба, отзыв",
-            "content_types": [ContentType.COMMENTS.value, ContentType.POSTS.value],
-            "analysis_types": [AnalysisType.CUSTOMER_INTENT.value, AnalysisType.SENTIMENT.value, AnalysisType.KEYWORDS.value],
+            "content_types": [ContentType.COMMENTS.db_value, ContentType.POSTS.db_value],
+            "analysis_types": [AnalysisType.CUSTOMER_INTENT.db_value, AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
             "scope": {
-                "intent_config": {
+                "customer_intent": {
                     "confidence_threshold": 0.65,
                 },
-                "sentiment_config": {
+                "sentiment": {
                     "emotion_analysis": True,
                 }
             },
@@ -239,15 +239,15 @@ def get_all_presets():
             "name": "Мониторинг влиятельных лиц",
             "icon": "⭐",
             "description": "Отслеживание активности инфлюенсеров и лидеров мнений",
-            "content_types": [ContentType.POSTS.value, ContentType.COMMENTS.value],
-            "analysis_types": [AnalysisType.INFLUENCER_ACTIVITY.value, AnalysisType.TOPICS.value, AnalysisType.ENGAGEMENT.value],
+            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
+            "analysis_types": [AnalysisType.INFLUENCER_ACTIVITY.db_value, AnalysisType.TOPICS.db_value, AnalysisType.ENGAGEMENT.db_value],
             "scope": {
-                "influencer_config": {
+                "influencer_activity": {
                     "min_followers": 5000,
                     "track_engagement_rate": True,
                     "analyze_content_themes": True,
                 },
-                "topics_config": {
+                "topics": {
                     "max_topics": 5,
                 }
             },

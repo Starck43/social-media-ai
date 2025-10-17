@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 
 from app.core.llm_presets import LLMProviderMetadata
 from app.types import LLMProviderType
+from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class LLMMetadataHelper:
 					models.append({
 						'id': model_info.model_id,
 						'name': model_info.name,
-						'capabilities': list(model_info.capabilities),
+						'capabilities': [get_enum_value(cap) for cap in model_info.capabilities],
 					})
 				
 				metadata[provider_value] = {

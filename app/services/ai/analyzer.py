@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC
-from typing import Optional, Any, Dict
+from typing import Optional, Any
 
 from app.models import Source, AIAnalytics, BotScenario, LLMProvider
 from app.services.ai.content_classifier import ContentClassifier
@@ -8,6 +8,7 @@ from app.services.ai.llm_client import LLMClientFactory
 from app.services.ai.prompts import PromptBuilder
 from app.types import PeriodType
 from app.types.enums.llm_types import MediaType
+from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class AIAnalyzer:
 	"""
 	AI Analyzer with multi-LLM support.
-	
+
 	This service handles:
 	— Classification of content by media type (text, image, video)
 	— Selection of appropriate LLM providers for each content type
@@ -65,15 +66,15 @@ class AIAnalyzer:
 
 		# Classify content by media type
 		classified = ContentClassifier.classify_content(content)
-		
+
 		try:
 			# Analyze each content type with appropriate LLM
 			analysis_results = {}
-			
+
 			# Text analysis
-			if classified[MediaType.TEXT.value]:
+			if classified[MediaType.TEXT.db_value]:
 				text_result = await self._analyze_text(
-					classified[MediaType.TEXT.value],
+					classified[MediaType.TEXT.db_value],
 					bot_scenario,
 					content_stats,
 					platform_name,
@@ -81,21 +82,21 @@ class AIAnalyzer:
 				)
 				if text_result:
 					analysis_results['text_analysis'] = text_result
-			
+
 			# Image analysis
-			if classified['images']:
+			if classified[MediaType.IMAGE.db_value]:
 				image_result = await self._analyze_images(
-					classified['images'],
+					classified[MediaType.IMAGE.db_value],
 					bot_scenario,
 					platform_name
 				)
 				if image_result:
 					analysis_results['image_analysis'] = image_result
-			
+
 			# Video analysis
-			if classified['videos']:
+			if classified[MediaType.VIDEO.db_value]:
 				video_result = await self._analyze_videos(
-					classified['videos'],
+					classified[MediaType.VIDEO.db_value],
 					bot_scenario,
 					platform_name
 				)
@@ -142,31 +143,26 @@ class AIAnalyzer:
 			# Prepare text content
 			text_content = ContentClassifier.prepare_text_content(text_items)
 			
-			# Build prompt
-			if bot_scenario and bot_scenario.ai_prompt:
-				from app.services.ai.scenario import ScenarioPromptBuilder
-				from app.utils.enum_helpers import get_enum_value
-				
-				context = {
-					'platform': platform_name,
-					'source_type': get_enum_value(source.source_type),
-					'total_posts': len(text_items),
-					'content': text_content,
-					'date_range': content_stats.get('date_range'),
-				}
-				prompt = ScenarioPromptBuilder.build_prompt(bot_scenario, context)
-			else:
-				source_type = getattr(source, "source_type", None)
-				stype = get_enum_value(source_type) if source_type else ""
-				prompt = PromptBuilder.build_text_prompt(text_content, content_stats, platform_name, stype)
-			
+			# Build prompt using new unified system
+			source_type = getattr(source, "source_type", None)
+			stype = get_enum_value(source_type) if source_type else ""
+
+			prompt = PromptBuilder.get_prompt(
+				MediaType.TEXT,
+				scenario=bot_scenario,
+				text=text_content,
+				stats=content_stats,
+				platform_name=platform_name,
+				source_type=stype
+			)
+
 			# Create LLM client and analyze
 			client = LLMClientFactory.create(provider)
 			result = await client.analyze(prompt)
-			
+
 			logger.info(f"Text analysis completed using {provider.name}")
 			return result
-			
+
 		except Exception as e:
 			logger.error(f"Error in text analysis: {e}", exc_info=True)
 			return None
@@ -184,22 +180,27 @@ class AIAnalyzer:
 			if not provider:
 				logger.warning("No image LLM provider configured, skipping image analysis")
 				return None
-			
+
 			# Extract image URLs
 			media_urls = ContentClassifier.get_media_urls(image_items)
 			if not media_urls:
 				return None
-			
-			# Build prompt
-			prompt = PromptBuilder.build_image_prompt(len(media_urls), platform_name)
-			
+
+			# Build prompt using new unified system
+			prompt = PromptBuilder.get_prompt(
+				MediaType.IMAGE,
+				scenario=bot_scenario,
+				count=len(media_urls),
+				platform_name=platform_name
+			)
+
 			# Create LLM client and analyze
 			client = LLMClientFactory.create(provider)
 			result = await client.analyze(prompt, media_urls=media_urls)
-			
+
 			logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
 			return result
-			
+
 		except Exception as e:
 			logger.error(f"Error in image analysis: {e}", exc_info=True)
 			return None
@@ -217,22 +218,27 @@ class AIAnalyzer:
 			if not provider:
 				logger.warning("No video LLM provider configured, skipping video analysis")
 				return None
-			
+
 			# Extract video URLs
 			media_urls = ContentClassifier.get_media_urls(video_items)
 			if not media_urls:
 				return None
-			
-			# Build prompt
-			prompt = PromptBuilder.build_video_prompt(len(media_urls), platform_name)
-			
+
+			# Build prompt using new unified system
+			prompt = PromptBuilder.get_prompt(
+				MediaType.VIDEO,
+				scenario=bot_scenario,
+				count=len(media_urls),
+				platform_name=platform_name
+			)
+
 			# Create LLM client and analyze
 			client = LLMClientFactory.create(provider)
 			result = await client.analyze(prompt, media_urls=media_urls)
-			
+
 			logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
 			return result
-			
+
 		except Exception as e:
 			logger.error(f"Error in video analysis: {e}", exc_info=True)
 			return None
@@ -244,31 +250,32 @@ class AIAnalyzer:
 	) -> Optional[dict[str, Any]]:
 		"""
 		Create unified summary from multiple analysis results.
-		
+
 		This combines insights from text, image, and video analyses into
 		a single coherent summary with actionable insights.
 		"""
 		if len(analysis_results) <= 1:
 			# Only one type of analysis, no need to unify
 			return None
-		
+
 		try:
 			# Get default text provider for summary creation
 			provider = await self._get_llm_provider(bot_scenario, MediaType.TEXT)
 			if not provider:
 				logger.warning("No text LLM provider for unified summary")
 				return None
-			
+
 			# Extract parsed results
 			text_analysis = analysis_results.get('text_analysis', {}).get('parsed', {})
 			image_analysis = analysis_results.get('image_analysis', {}).get('parsed', {})
 			video_analysis = analysis_results.get('video_analysis', {}).get('parsed', {})
-			
-			# Build unification prompt
-			prompt = PromptBuilder.build_unified_summary_prompt(
+
+			# Build unification prompt using new unified system
+			prompt = PromptBuilder.get_unified_summary_prompt(
 				text_analysis,
 				image_analysis,
-				video_analysis
+				video_analysis,
+				scenario=bot_scenario
 			)
 			
 			# Create summary
@@ -357,7 +364,7 @@ class AIAnalyzer:
 					
 					# Get provider for this media type
 					if media_type in resolved:
-						provider_id = resolved[media_type].provider_id
+						provider_id = resolved[media_type.value].provider_id
 						provider = await LLMProvider.objects.get(id=provider_id)
 						logger.info(
 							f"✅ Auto-resolved provider {provider.name} for {media_type} "
@@ -370,7 +377,9 @@ class AIAnalyzer:
 		
 		# Priority 3: Fall back to default provider for media type
 		try:
-			provider = await LLMProvider.objects.get_default_for_media_type(media_type)
+			# Use get_enum_value to ensure we pass a string, not tuple
+			media_type_str = get_enum_value(media_type)
+			provider = await LLMProvider.objects.get_default_for_media_type(media_type_str)
 			if provider:
 				logger.info(f"✅ Using default fallback provider {provider.name} for {media_type}")
 				return provider
@@ -413,6 +422,26 @@ class AIAnalyzer:
 			"date_range": {"first": min(dates) if dates else None, "last": max(dates) if dates else None},
 		}
 
+	def _make_json_serializable(self, obj):
+		"""Recursively convert non-JSON serializable objects to strings/primitives."""
+		from datetime import date, datetime
+		from enum import Enum
+
+		if isinstance(obj, (datetime, date)):
+			return obj.isoformat()
+
+		if isinstance(obj, Enum):
+			# return the database value or name; str(obj) also works if consistent
+			return getattr(obj, "value", obj.name)
+
+		if isinstance(obj, dict):
+			return {k: self._make_json_serializable(v) for k, v in obj.items()}
+
+		if isinstance(obj, (list, tuple, set)):
+			return [self._make_json_serializable(v) for v in obj]
+
+		return obj
+
 	async def _save_analysis(
 			self,
 			analysis_results: dict[str, Any],
@@ -432,11 +461,38 @@ class AIAnalyzer:
 		prompt_text = None
 		response_payload = {}
 		
+		# Track cost metrics for aggregation
+		total_request_tokens = 0
+		total_response_tokens = 0
+		total_cost = 0
+		providers_used = set()
+		media_types_analyzed = set()
+		
 		for analysis_type, result in analysis_results.items():
 			if result and isinstance(result, dict):
 				llm_model = result.get('request', {}).get('model')
 				prompt_text = result.get('request', {}).get('prompt')
 				response_payload[analysis_type] = result.get('response', {})
+				
+				# Extract token usage from response
+				response = result.get('response', {})
+				usage = response.get('usage', {})
+				
+				total_request_tokens += usage.get('prompt_tokens', 0)
+				total_response_tokens += usage.get('completion_tokens', 0)
+				
+				# Extract provider from request
+				provider = result.get('request', {}).get('provider')
+				if provider:
+					providers_used.add(provider)
+				
+				# Track media type
+				if 'text' in analysis_type:
+					media_types_analyzed.add('text')
+				elif 'image' in analysis_type:
+					media_types_analyzed.add('image')
+				elif 'video' in analysis_type:
+					media_types_analyzed.add('video')
 
 		# Safe enum/string handling for source_type
 		st = getattr(source, "source_type", None)
@@ -450,7 +506,7 @@ class AIAnalyzer:
 				"video_analysis": analysis_results.get('video_analysis', {}).get('parsed', {}),
 			},
 			"unified_summary": unified_summary.get('parsed', {}) if unified_summary else {},
-			"content_statistics": content_stats,
+			"content_statistics": self._make_json_serializable(content_stats),
 			"source_metadata": {
 				"source_type": st_val,
 				"platform": platform_name,
@@ -473,17 +529,63 @@ class AIAnalyzer:
 				"content_types": bot_scenario.content_types,
 			}
 
+		# Estimate cost (simple estimation, can be refined)
+		# Assuming average $0.01 per 1000 tokens (varies by provider)
+		total_tokens = total_request_tokens + total_response_tokens
+		# Use max(1, ...) to ensure at least 1 cent if tokens were used
+		estimated_cost_cents = max(1, int((total_tokens / 1000) * 100)) if total_tokens > 0 else 0
+		
+		# Primary provider (most used)
+		primary_provider = list(providers_used)[0] if providers_used else None
+		
+		# Check if analysis already exists for today
+		existing_analysis = await AIAnalytics.objects.filter(
+			source_id=source.id,
+			analysis_date=date.today(),
+			period_type=PeriodType.DAILY
+		).first()
+
+		if existing_analysis:
+			# Update existing analysis using manager
+			updated_analysis = await AIAnalytics.objects.update_by_id(
+				existing_analysis.id,
+				summary_data=comprehensive_data,
+				llm_model=llm_model or "multi-llm",
+				prompt_text=prompt_text,
+				response_payload=self._make_json_serializable(response_payload) if response_payload else None,
+				topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,  # Preserve existing chain_id or set new one
+				parent_analysis_id=parent_analysis_id,
+				request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+				response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+				estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+				provider_type=primary_provider,
+				media_types=list(media_types_analyzed) if media_types_analyzed else None,
+			)
+
+			scenario_info = f" using scenario '{bot_scenario.name}'" if bot_scenario else ""
+			logger.info(
+				f"Multi-LLM analysis updated for source {source.id}{scenario_info} "
+				f"(analytics_id: {existing_analysis.id}, providers: {len(analysis_results)})"
+			)
+			return updated_analysis
+
 		# Create analytics record
 		analytics = await AIAnalytics.objects.create(
 			source_id=source.id,
 			summary_data=comprehensive_data,
 			llm_model=llm_model or "multi-llm",
 			prompt_text=prompt_text,
-			response_payload=response_payload,
+			response_payload=self._make_json_serializable(response_payload) if response_payload else None,
 			analysis_date=date.today(),
 			period_type=PeriodType.DAILY,
 			topic_chain_id=topic_chain_id,
 			parent_analysis_id=parent_analysis_id,
+			# Cost tracking fields
+			request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+			response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+			estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+			provider_type=primary_provider,
+			media_types=list(media_types_analyzed) if media_types_analyzed else None,
 		)
 
 		scenario_info = f" using scenario '{bot_scenario.name}'" if bot_scenario else ""

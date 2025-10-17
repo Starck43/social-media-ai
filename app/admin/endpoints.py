@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 import sqladmin
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Request, Form, HTTPException, Depends
 from fastapi.params import Body
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from slowapi import Limiter
@@ -354,3 +354,103 @@ async def verify_current_password(
 	except Exception as e:
 		logger.error(f"Error verifying password: {str(e)}", exc_info=True)
 		return {"valid": False, "error": "An error occurred while verifying password"}
+
+
+@router.get("/dashboard", response_class=HTMLResponse, name="analytics_dashboard")
+async def analytics_dashboard(request: Request):
+	"""
+	Analytics Dashboard - главная страница с агрегированной аналитикой.
+	
+	Требует аутентификации через session (из админки).
+	Если не залогинен - редиректит на /admin/login
+	
+	Отображает:
+	- Тренды тональности
+	- Топ темы
+	- LLM статистику и затраты
+	- Контент-микс
+	- Метрики вовлеченности
+	"""
+	# Check session authentication
+	token = request.session.get("token")
+	
+	if not token:
+		# Redirect to admin login with next parameter
+		return RedirectResponse(
+			url=f"/admin/login?next=/dashboard",
+			status_code=status.HTTP_303_SEE_OTHER
+		)
+	
+	try:
+		# Get user from session token
+		current_user = await get_authenticated_user(token=token, token_type="access")
+		
+		if not current_user or not current_user.is_active:
+			request.session.clear()
+			return RedirectResponse(
+				url=f"/admin/login?next=/dashboard",
+				status_code=status.HTTP_303_SEE_OTHER
+			)
+		
+		logger.info(f"User {current_user.username} accessing analytics dashboard")
+		
+		return templates.TemplateResponse(
+			"analytics_dashboard.html",
+			{"request": request, "user": current_user}
+		)
+		
+	except Exception as e:
+		logger.error(f"Dashboard authentication error: {e}")
+		request.session.clear()
+		return RedirectResponse(
+			url=f"/admin/login?next=/dashboard",
+			status_code=status.HTTP_303_SEE_OTHER
+		)
+
+
+@router.get("/dashboard/topic-chains", response_class=HTMLResponse, name="topic_chains_dashboard")
+async def topic_chains_dashboard(request: Request):
+	"""
+	Topic Chains Dashboard - просмотр цепочек тем с эволюцией.
+	
+	Требует аутентификации через session (из админки).
+	
+	Отображает:
+	- Список цепочек тем
+	- Эволюцию тем во времени
+	- Ссылки на источники в соцсетях
+	- Временную шкалу анализов
+	"""
+	# Check session authentication
+	token = request.session.get("token")
+	
+	if not token:
+		return RedirectResponse(
+			url=f"/admin/login?next=/dashboard/topic-chains",
+			status_code=status.HTTP_303_SEE_OTHER
+		)
+	
+	try:
+		current_user = await get_authenticated_user(token=token, token_type="access")
+		
+		if not current_user or not current_user.is_active:
+			request.session.clear()
+			return RedirectResponse(
+				url=f"/admin/login?next=/dashboard/topic-chains",
+				status_code=status.HTTP_303_SEE_OTHER
+			)
+		
+		logger.info(f"User {current_user.username} accessing topic chains dashboard")
+		
+		return templates.TemplateResponse(
+			"topic_chains_dashboard.html",
+			{"request": request, "user": current_user}
+		)
+		
+	except Exception as e:
+		logger.error(f"Topic chains dashboard authentication error: {e}")
+		request.session.clear()
+		return RedirectResponse(
+			url=f"/admin/login?next=/dashboard/topic-chains",
+			status_code=status.HTTP_303_SEE_OTHER
+		)

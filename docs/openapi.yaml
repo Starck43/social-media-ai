@@ -1,10 +1,10 @@
 openapi: 3.0.0
 info:
-  title: Social Media AI Manager API
+  title: API менеджера аналитики соцсетей (AI)
   description: |
-    API for managing social media accounts, analyzing content with AI, and user management.
-    This API provides endpoints for authentication, user management, social media integration,
-    and AI-powered content analysis.
+    API для управления источниками в соцсетях, AI‑анализа контента и управления пользователями.
+    Содержит эндпоинты аутентификации, управления пользователями, интеграций с соцсетями
+    и аналитики на базе LLM.
   version: 1.0.0
   contact:
     name: API Support
@@ -42,6 +42,181 @@ components:
         created_at:
           type: string
           format: date-time
+
+    SentimentTrendItem:
+      type: object
+      description: Элемент тренда тональности за день/неделю
+      properties:
+        date:
+          type: string
+          format: date
+        avg_sentiment_score:
+          type: number
+          format: float
+        distribution:
+          type: object
+          properties:
+            positive:
+              type: integer
+            neutral:
+              type: integer
+            negative:
+              type: integer
+        total_analyses:
+          type: integer
+
+    TopTopicItem:
+      type: object
+      description: Тема с частотой и средней тональностью
+      properties:
+        topic:
+          type: string
+        count:
+          type: integer
+        avg_sentiment:
+          type: number
+          format: float
+
+    LLMProviderStats:
+      type: object
+      description: Статистика по LLM провайдеру
+      properties:
+        requests:
+          type: integer
+        total_tokens:
+          type: integer
+        avg_tokens_per_request:
+          type: number
+          format: float
+        estimated_cost_usd:
+          type: number
+          format: float
+
+    LLMStatsResponse:
+      type: object
+      properties:
+        providers:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              requests:
+                type: integer
+              total_tokens:
+                type: integer
+              avg_tokens_per_request:
+                type: number
+                format: float
+              estimated_cost_usd:
+                type: number
+                format: float
+        summary:
+          type: object
+          properties:
+            total_cost_usd:
+              type: number
+              format: float
+            total_requests:
+              type: integer
+
+    ContentMixResponse:
+      type: object
+      properties:
+        media_types:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              count:
+                type: integer
+              percentage:
+                type: number
+                format: float
+
+    EngagementMetricsResponse:
+      type: object
+      properties:
+        avg_reactions_per_post:
+          type: number
+          format: float
+        avg_comments_per_post:
+          type: number
+          format: float
+        total_reactions:
+          type: integer
+        total_comments:
+          type: integer
+
+    TopicChainListItem:
+      type: object
+      properties:
+        chain_id:
+          type: string
+        source_id:
+          type: integer
+        analyses_count:
+          type: integer
+        first_date:
+          type: string
+          format: date
+          nullable: true
+        last_date:
+          type: string
+          format: date
+          nullable: true
+        topics_count:
+          type: integer
+        topics:
+          type: array
+          items:
+            type: string
+        source:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            platform: { type: string }
+            platform_type: { type: string }
+            external_id: { type: string }
+            base_url: { type: string }
+
+    TopicChainDetail:
+      type: object
+      properties:
+        chain_id: { type: string }
+        source_info:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            platform: { type: string }
+            platform_type: { type: string }
+            external_id: { type: string }
+            base_url: { type: string }
+        chain_data:
+          type: object
+          description: Полные данные цепочки (структура зависит от сервиса)
+        topic_statistics:
+          type: object
+          description: Агрегированная статистика по темам цепочки
+        total_analyses: { type: integer }
+
+    TopicChainEvolutionItem:
+      type: object
+      properties:
+        analysis_date:
+          type: string
+          format: date
+        topics:
+          type: array
+          items: { type: string }
+        sentiment_score:
+          type: number
+          format: float
+        post_url:
+          type: string
+          nullable: true
     
     Token:
       type: object
@@ -115,7 +290,7 @@ components:
     skip:
       name: skip
       in: query
-      description: Number of records to skip
+      description: Количество записей для пропуска
       required: false
       schema:
         type: integer
@@ -125,7 +300,7 @@ components:
     limit:
       name: limit
       in: query
-      description: Maximum number of records to return
+      description: Максимальное количество записей в ответе
       required: false
       schema:
         type: integer
@@ -140,7 +315,7 @@ paths:
   /auth/register:
     post:
       tags: [auth]
-      summary: Register a new user
+      summary: Регистрация нового пользователя
       requestBody:
         required: true
         content:
@@ -163,13 +338,315 @@ paths:
                   minLength: 8
       responses:
         '200':
-          description: Successful registration
+          description: Регистрация успешна
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenWithRefresh'
         '400':
-          description: Bad request
+          description: Неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ===================== DASHBOARD: АГРЕГАЦИЯ =====================
+  /dashboard/analytics/aggregate/sentiment-trends:
+    get:
+      tags: [dashboard]
+      summary: Агрегированные тренды тональности
+      description: Возвращает дневные/недельные значения средней тональности и распределение по меткам.
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+          description: Фильтр по источнику
+        - in: query
+          name: scenario_id
+          schema: { type: integer }
+          required: false
+          description: Фильтр по сценарию
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+          description: Количество дней для анализа
+        - in: query
+          name: group_by
+          schema: { type: string, enum: [day, week], default: day }
+          description: Группировка по дню или неделе
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trends:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SentimentTrendItem'
+                  period_days:
+                    type: integer
+                  group_by:
+                    type: string
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    trends:
+                      - date: "2025-10-10"
+                        avg_sentiment_score: 0.23
+                        distribution: { positive: 12, neutral: 5, negative: 3 }
+                        total_analyses: 20
+                    period_days: 7
+                    group_by: day
+
+  /dashboard/analytics/aggregate/top-topics:
+    get:
+      tags: [dashboard]
+      summary: Топ темы/ключевые слова
+      description: Возвращает наиболее часто встречающиеся темы с усреднённой тональностью.
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: scenario_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TopTopicItem'
+                  period_days:
+                    type: integer
+                  total_topics:
+                    type: integer
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    topics:
+                      - topic: "AI"
+                        count: 42
+                        avg_sentiment: 0.35
+                    period_days: 7
+                    total_topics: 1
+
+  /dashboard/analytics/aggregate/llm-stats:
+    get:
+      tags: [dashboard]
+      summary: Статистика LLM провайдеров
+      description: Разбивка по провайдерам — запросы, токены, оценочная стоимость.
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: scenario_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMStatsResponse'
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    providers:
+                      openai:
+                        requests: 120
+                        total_tokens: 154000
+                        avg_tokens_per_request: 1283.3
+                        estimated_cost_usd: 12.45
+                    summary:
+                      total_cost_usd: 23.1
+                      total_requests: 220
+
+  /dashboard/analytics/aggregate/content-mix:
+    get:
+      tags: [dashboard]
+      summary: Контент-микс по типам медиа
+      description: Процентное распределение анализируемых типов медиа (текст/изображение/видео и т.д.).
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: scenario_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentMixResponse'
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    media_types:
+                      text: { count: 80, percentage: 72.7 }
+                      image: { count: 20, percentage: 18.2 }
+                      video: { count: 10, percentage: 9.1 }
+
+  /dashboard/analytics/aggregate/engagement:
+    get:
+      tags: [dashboard]
+      summary: Метрики вовлечённости
+      description: Средние реакции/комментарии на пост, а также суммарные значения.
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: scenario_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementMetricsResponse'
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    avg_reactions_per_post: 3.2
+                    avg_comments_per_post: 1.1
+                    total_reactions: 256
+                    total_comments: 84
+
+  # ===================== DASHBOARD: ЦЕПОЧКИ ТЕМ =====================
+  /dashboard/topic-chains:
+    get:
+      tags: [dashboard]
+      summary: Список цепочек тем
+      description: Возвращает цепочки с базовой статистикой и данными источника.
+      parameters:
+        - in: query
+          name: source_id
+          schema: { type: integer }
+          required: false
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicChainListItem'
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    - chain_id: "CHAIN_123"
+                      source_id: 1
+                      analyses_count: 5
+                      first_date: "2025-10-01"
+                      last_date: "2025-10-10"
+                      topics_count: 3
+                      topics: ["economy", "inflation", "ruble"]
+                      source:
+                        id: 1
+                        name: "VK Group 1"
+                        platform: "VK"
+                        platform_type: "vk"
+                        external_id: "group1"
+                        base_url: "https://vk.com"
+
+  /dashboard/topic-chains/{chain_id}:
+    get:
+      tags: [dashboard]
+      summary: Детали цепочки тем
+      parameters:
+        - in: path
+          name: chain_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicChainDetail'
+        '404':
+          description: Цепочка не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dashboard/topic-chains/{chain_id}/evolution:
+    get:
+      tags: [dashboard]
+      summary: Эволюция цепочки тем
+      parameters:
+        - in: path
+          name: chain_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicChainEvolutionItem'
+              examples:
+                demo:
+                  summary: Пример ответа
+                  value:
+                    - analysis_date: "2025-10-10"
+                      topics: ["deepseek", "openai"]
+                      sentiment_score: 0.2
+                      post_url: null
+        '404':
+          description: Цепочка не найдена
           content:
             application/json:
               schema:
@@ -178,7 +655,7 @@ paths:
   /auth/login:
     post:
       tags: [auth]
-      summary: Login with username/email and password
+      summary: Вход по логину/почте и паролю
       requestBody:
         required: true
         content:
@@ -196,13 +673,13 @@ paths:
                   format: password
       responses:
         '200':
-          description: Successful login
+          description: Успешный вход
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenWithRefresh'
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:
@@ -211,18 +688,18 @@ paths:
   /users/me:
     get:
       tags: [user]
-      summary: Get current user information
+      summary: Получить информацию о текущем пользователе
       security:
         - OAuth2PasswordBearer: []
       responses:
         '200':
-          description: User information retrieved successfully
+          description: Информация о пользователе
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:
@@ -231,7 +708,7 @@ paths:
   /users/roles:
     get:
       tags: [user]
-      summary: Get paginated list of all roles with permissions
+      summary: Получить список ролей с правами (пагинация)
       security:
         - OAuth2PasswordBearer: []
       parameters:
@@ -239,7 +716,7 @@ paths:
         - $ref: '#/components/parameters/limit'
       responses:
         '200':
-          description: List of roles retrieved successfully
+          description: Список ролей
           content:
             application/json:
               schema:
@@ -256,7 +733,7 @@ paths:
                   size:
                     type: integer
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:
@@ -265,7 +742,7 @@ paths:
   /social/accounts:
     get:
       tags: [social]
-      summary: Get user's social media accounts
+      summary: Получить аккаунты пользователя в соцсетях
       security:
         - OAuth2PasswordBearer: []
       parameters:
@@ -273,7 +750,7 @@ paths:
         - $ref: '#/components/parameters/limit'
       responses:
         '200':
-          description: List of social media accounts
+          description: Список аккаунтов
           content:
             application/json:
               schema:
@@ -281,7 +758,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/SocialAccount'
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:
@@ -289,7 +766,7 @@ paths:
 
     post:
       tags: [social]
-      summary: Add a new social media account
+      summary: Добавить аккаунт соцсети
       security:
         - OAuth2PasswordBearer: []
       requestBody:
@@ -311,19 +788,19 @@ paths:
                   default: true
       responses:
         '200':
-          description: Social account created successfully
+          description: Аккаунт создан
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SocialAccount'
         '400':
-          description: Bad request
+          description: Неверный запрос
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:
@@ -332,7 +809,7 @@ paths:
   /ai/analyze/sentiment:
     post:
       tags: [ai]
-      summary: Analyze sentiment of text content
+      summary: Анализ тональности текста
       security:
         - OAuth2PasswordBearer: []
       requestBody:
@@ -343,19 +820,19 @@ paths:
               $ref: '#/components/schemas/AIAnalysisRequest'
       responses:
         '200':
-          description: Sentiment analysis completed
+          description: Анализ выполнен
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SentimentAnalysisResult'
         '400':
-          description: Bad request
+          description: Неверный запрос
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '401':
-          description: Unauthorized
+          description: Неавторизовано
           content:
             application/json:
               schema:

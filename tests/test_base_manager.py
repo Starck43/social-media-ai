@@ -3,15 +3,14 @@
 """
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, func
 
 from app.models.base import Base
-from app.models.user import User
-from app.models.role import Role
-from app.models.source import Source, SourceUserRelationship
-from app.models.platform import Platform
 from app.models.managers.base_manager import prefetch
-from app.types import SourceType
+from app.models.platform import Platform
+from app.models.role import Role
+from app.models.source import Source
+from app.models.user import User
+from app.types import SourceType, PlatformType, UserRoleType
 
 
 # Фикстура для создания тестовой БД в памяти
@@ -42,8 +41,8 @@ async def async_session():
 async def sample_data(async_session: AsyncSession):
     """Создание тестовых данных"""
     # Создаем роли
-    admin_role = Role(id=1, name="Admin", codename="ADMIN")
-    user_role = Role(id=2, name="User", codename="USER")
+    admin_role = Role(id=1, name="Admin", codename=UserRoleType.ADMIN)
+    user_role = Role(id=2, name="User", codename=UserRoleType.VIEWER)
     async_session.add_all([admin_role, user_role])
     
     # Создаем пользователей
@@ -54,10 +53,24 @@ async def sample_data(async_session: AsyncSession):
     ]
     async_session.add_all(users)
     
-    # Создаем платформы
+    # Создаем платформы (с учетом актуальной схемы модели)
     platforms = [
-        Platform(id=1, name="VK", base_url="https://vk.com", api_key="key1", is_active=True),
-        Platform(id=2, name="Telegram", base_url="https://t.me", api_key="key2", is_active=True),
+        Platform(
+            id=1,
+            name="VK",
+            platform_type=PlatformType.VK.value,  # хранится как db value через Enum столбец
+            base_url="https://vk.com",
+            params={},
+            is_active=True,
+        ),
+        Platform(
+            id=2,
+            name="Telegram",
+            platform_type=PlatformType.TELEGRAM.value,
+            base_url="https://t.me",
+            params={},
+            is_active=True,
+        ),
     ]
     async_session.add_all(platforms)
     

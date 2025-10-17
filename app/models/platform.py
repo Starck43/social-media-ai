@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Dict, Any
+from typing import TYPE_CHECKING, ClassVar, Any
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum, JSON, text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column, validates
 
 from .base import Base
@@ -30,9 +30,8 @@ class Platform(Base):
 	params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 	# {
 	#     "api_base_url": "https://api.vk.com/method",
-	#     "api_version": "5.131",
+	#     "api_version": "5.199",
 	#     "auth_type": "oauth",
-	#     "rate_limit_per_hour": 1000
 	# }
 	is_active: Mapped[bool] = Column(Boolean, default=True, server_default=text('true'))
 	rate_limit_remaining: Mapped[int] = Column(Integer, nullable=True)

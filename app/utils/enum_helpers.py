@@ -1,7 +1,6 @@
 """
 Helper functions for working with enums.
 """
-from enum import Enum
 from typing import Any
 
 
@@ -47,7 +46,7 @@ def get_enum_label(enum_val: Any) -> str:
 	Get display label from enum with emoji.
 	
 	For tuple enums with label property, returns label.
-	Otherwise returns display_name or string value.
+	Otherwise, returns display_name or string value.
 	
 	Args:
 		enum_val: Enum value

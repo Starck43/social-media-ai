@@ -275,8 +275,81 @@
         </div>
     </fieldset>
 
-    <!-- Поле action_type рендерится автоматически SQLAdmin после наших кастомных секций -->
-    <!-- action_type отображается автоматически sqladmin -->
+    <!-- Секция 4: Триггер -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-bolt"></i>
+            Условие срабатывания (Trigger)
+        </div>
+        <div class="form-section-desc">
+            Выберите когда сценарий должен запускаться
+        </div>
+
+        <div class="choice-grid">
+            {% if form.trigger_types_enum %}
+                {% for trigger in form.trigger_types_enum %}
+                    <div class="choice-item">
+                        <input
+                            type="radio"
+                            name="trigger_type_radio"
+                            value="{{ trigger.name }}"
+                            data-db-value="{{ trigger.db_value }}"
+                            id="trigger_{{ trigger.name }}"
+                            class="trigger-type-input">
+                        <label for="trigger_{{ trigger.name }}" class="choice-label">
+                            <span class="choice-emoji">{{ trigger.emoji }}</span>
+                            <span class="choice-text">{{ trigger.display_name }}</span>
+                        </label>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <label for="trigger-config-json" style="margin-top: 20px;">Настройки триггера (JSON)</label>
+        <textarea class="scope-json" id="trigger-config-json" rows="8"></textarea>
+        <div class="help-text">
+            Конфигурация автоматически заполняется при выборе триггера. Можно редактировать вручную.
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="formatTriggerConfig()">
+                <i class="fa fa-indent"></i> Форматировать
+            </button>
+            <button type="button" class="btn btn-sm btn-info" onclick="resetTriggerConfig()">
+                <i class="fa fa-refresh"></i> Сбросить к дефолту
+            </button>
+        </div>
+    </fieldset>
+
+    <!-- Секция 5: Действие -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-play-circle"></i>
+            Действие после анализа
+        </div>
+        <div class="form-section-desc">
+            Что делать когда триггер сработал
+        </div>
+
+        <div class="choice-grid">
+            {% if form.action_types_enum %}
+                {% for action in form.action_types_enum %}
+                    <div class="choice-item">
+                        <input
+                            type="radio"
+                            name="action_type_radio"
+                            value="{{ action.name }}"
+                            id="action_{{ action.name }}"
+                            class="action-type-input">
+                        <label for="action_{{ action.name }}" class="choice-label">
+                            <span class="choice-emoji">{{ action.emoji }}</span>
+                            <span class="choice-text">{{ action.display_name }}</span>
+                        </label>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+    </fieldset>
 
 {% endblock %}
 
@@ -291,6 +364,9 @@
         
         // All possible analysis types for cleanup
         window.allAnalysisTypes = {{ form.all_analysis_types|tojson if form.all_analysis_types else '[]' }};
+        
+        // Trigger defaults for auto-population
+        window.triggerDefaults = {{ form.trigger_defaults|tojson if form.trigger_defaults else '{}' }};
         
         // Flag to prevent auto-adding configs on initial load
         window.isInitialLoad = true;
@@ -362,6 +438,89 @@
                 syncScopeToForm()
             } catch (e) {
                 alert("Ошибка: " + e.message)
+            }
+        }
+
+        // Trigger functions
+        function syncTriggerToForm() {
+            const selected = document.querySelector(".trigger-type-input:checked");
+            const triggerName = selected ? selected.value : null;  // NAME (KEYWORD_MATCH)
+            const triggerDbValue = selected ? selected.dataset.dbValue : null;  // db_value (keyword_match)
+            
+            // Auto-fill trigger_config if new trigger selected (use db_value for defaults lookup)
+            if (triggerDbValue && window.triggerDefaults && window.triggerDefaults[triggerDbValue]) {
+                const configTextarea = document.getElementById("trigger-config-json");
+                
+                // Auto-fill only if empty or changed from another trigger
+                const currentConfig = configTextarea.value.trim();
+                if (!currentConfig || currentConfig === "{}") {
+                    const defaultConfig = window.triggerDefaults[triggerDbValue];
+                    configTextarea.value = JSON.stringify(defaultConfig, null, 2);
+                    console.log(`[BotScenario] Auto-filled trigger_config for: ${triggerDbValue} (NAME: ${triggerName})`);
+                }
+            }
+            
+            // Create or update hidden field for trigger_type (use NAME for store_as_name=True)
+            let triggerField = document.querySelector("input[name='trigger_type']");
+            if (!triggerField) {
+                const form = document.querySelector("form");
+                if (!form) {
+                    console.error("ERROR: Form not found when creating trigger_type field!");
+                    return;
+                }
+                triggerField = document.createElement("input");
+                triggerField.type = "hidden";
+                triggerField.name = "trigger_type";
+                form.appendChild(triggerField);
+            }
+            triggerField.value = triggerName || "";  // Save NAME
+            console.log(`[BotScenario] trigger_type set to: ${triggerName}`);
+        }
+        
+        function syncActionToForm() {
+            const selected = document.querySelector(".action-type-input:checked");
+            const actionName = selected ? selected.value : null;  // NAME (COMMENT)
+            
+            // Create or update hidden field for action_type (use NAME for store_as_name=True)
+            let actionField = document.querySelector("input[name='action_type']");
+            if (!actionField) {
+                const form = document.querySelector("form");
+                if (!form) {
+                    console.error("ERROR: Form not found when creating action_type field!");
+                    return;
+                }
+                actionField = document.createElement("input");
+                actionField.type = "hidden";
+                actionField.name = "action_type";
+                form.appendChild(actionField);
+            }
+            actionField.value = actionName || "";  // Save NAME
+            console.log(`[BotScenario] action_type set to: ${actionName}`);
+        }
+        
+        function formatTriggerConfig() {
+            const textarea = document.getElementById("trigger-config-json");
+            try {
+                const obj = JSON.parse(textarea.value);
+                textarea.value = JSON.stringify(obj, null, 2);
+            } catch (e) {
+                alert("Ошибка форматирования JSON: " + e.message);
+            }
+        }
+        
+        function resetTriggerConfig() {
+            const selected = document.querySelector(".trigger-type-input:checked");
+            if (selected) {
+                const triggerDbValue = selected.dataset.dbValue;
+                if (window.triggerDefaults && window.triggerDefaults[triggerDbValue]) {
+                    const textarea = document.getElementById("trigger-config-json");
+                    textarea.value = JSON.stringify(window.triggerDefaults[triggerDbValue], null, 2);
+                    alert("Конфигурация сброшена к дефолтным значениям");
+                } else {
+                    alert("Нет дефолтной конфигурации для этого триггера");
+                }
+            } else {
+                alert("Выберите триггер сначала");
             }
         }
 
@@ -499,6 +658,16 @@
             document.querySelectorAll(".analysis-type-input").forEach(cb => {
                 cb.addEventListener("change", syncScopeToForm)
             })
+            
+            // Add radio listeners for trigger type
+            document.querySelectorAll(".trigger-type-input").forEach(radio => {
+                radio.addEventListener("change", syncTriggerToForm)
+            })
+            
+            // Add radio listeners for action type
+            document.querySelectorAll(".action-type-input").forEach(radio => {
+                radio.addEventListener("change", syncActionToForm)
+            })
 
             // Sync scope on manual change
             const scopeJson = document.getElementById("scope-json")
@@ -525,6 +694,33 @@
                     const checkbox = document.getElementById(`analysis_${type}`)
                     if (checkbox) checkbox.checked = true
                 })
+            }
+            
+            // Trigger type (edit mode) - use NAME because store_as_name=True
+            const initialTriggerType = {{ (obj.trigger_type.name if obj and obj.trigger_type else '')|tojson }};
+            if (initialTriggerType) {
+                const radio = document.getElementById(`trigger_${initialTriggerType}`);
+                if (radio) {
+                    radio.checked = true;
+                    console.log(`[BotScenario] Loaded trigger_type NAME: ${initialTriggerType}`);
+                }
+            }
+            
+            // Trigger config (edit mode)
+            const initialTriggerConfig = {{ obj.trigger_config|tojson if obj and obj.trigger_config else '{}' }};
+            const triggerConfigTextarea = document.getElementById("trigger-config-json");
+            if (triggerConfigTextarea && initialTriggerConfig && Object.keys(initialTriggerConfig).length > 0) {
+                triggerConfigTextarea.value = JSON.stringify(initialTriggerConfig, null, 2);
+            }
+            
+            // Action type (edit mode) - use NAME because store_as_name=True
+            const initialActionType = {{ (obj.action_type.name if obj and obj.action_type else '')|tojson }};
+            if (initialActionType) {
+                const radio = document.getElementById(`action_${initialActionType}`);
+                if (radio) {
+                    radio.checked = true;
+                    console.log(`[BotScenario] Loaded action_type NAME: ${initialActionType}`);
+                }
             }
 
             // Scope (БЕЗ analysis_types - они теперь в отдельном поле)
@@ -577,6 +773,8 @@
                     // Sync data before submit
                     syncContentTypesToForm()
                     syncScopeToForm()
+                    syncTriggerToForm()
+                    syncActionToForm()
                     
                     // Check if all required fields exist
                     const contentTypesField = document.querySelector("input[name='content_types']")
@@ -596,6 +794,8 @@
             // Initial sync to create hidden fields
             syncContentTypesToForm()
             syncScopeToForm()  // Синхронизируем checkboxes и scope при загрузке
+            syncTriggerToForm()  // Синхронизируем trigger
+            syncActionToForm()  // Синхронизируем action
             
             // После первоначальной загрузки - разрешаем автодобавление
             window.isInitialLoad = false;

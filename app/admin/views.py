@@ -549,6 +549,9 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		                        "content_types",
 		                        "analysis_types",
 		                        "scope",
+		                        "trigger_type",
+		                        "action_type",
+		                        "trigger_config",
 	                        ] + BaseAdmin.form_excluded_columns
 	form_overrides = {
 		'llm_strategy': SelectField,
@@ -652,11 +655,14 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		from app.core.scenario_presets import get_all_presets
 		from app.core.trigger_hints import TRIGGER_HINTS, SCOPE_HINTS
 		from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
+		from app.core.trigger_constants import TRIGGER_CONFIG_DEFAULTS
 
 		form = await super().scaffold_form(rules)
 
 		form.content_types_enum = list(ContentType)
 		form.analysis_types_enum = list(AnalysisType)
+		form.trigger_types_enum = list(BotTriggerType)
+		form.action_types_enum = list(BotActionType)
 		form.trigger_hints = TRIGGER_HINTS
 		form.scope_hints = SCOPE_HINTS
 
@@ -667,6 +673,9 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		# Provide analysis defaults and all types for JavaScript
 		form.analysis_defaults = ANALYSIS_TYPE_DEFAULTS
 		form.all_analysis_types = [at.db_value for at in AnalysisType]
+		
+		# Provide trigger defaults for JavaScript
+		form.trigger_defaults = TRIGGER_CONFIG_DEFAULTS
 
 		return form
 
@@ -705,9 +714,32 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		form_data = await request.form()
 
 		# Add excluded fields back to data
-		for field in ["content_types", "analysis_types", "scope"]:
+		for field in ["content_types", "analysis_types", "scope", "trigger_config"]:
 			if field in form_data:
 				data[field] = form_data.get(field)
+		
+		# Add trigger_type and action_type from hidden fields (they send NAME strings)
+		if "trigger_type" in form_data:
+			trigger_value = form_data.get("trigger_type")
+			if trigger_value:
+				# Convert NAME string to enum object
+				try:
+					data["trigger_type"] = BotTriggerType[trigger_value]
+				except (KeyError, TypeError):
+					data["trigger_type"] = None
+			else:
+				data["trigger_type"] = None
+		
+		if "action_type" in form_data:
+			action_value = form_data.get("action_type")
+			if action_value:
+				# Convert NAME string to enum object
+				try:
+					data["action_type"] = BotActionType[action_value]
+				except (KeyError, TypeError):
+					data["action_type"] = None
+			else:
+				data["action_type"] = None
 
 		# Parse JSON strings to Python objects
 		self._parse_json_fields(data)

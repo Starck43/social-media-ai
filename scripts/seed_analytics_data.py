@@ -7,10 +7,10 @@
 - Реалистичные AI аналитики за последние 30 дней
 """
 import asyncio
-import sys
-from pathlib import Path
-from datetime import datetime, timedelta, date
 import random
+import sys
+from datetime import timedelta, date
+from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -18,8 +18,7 @@ sys.path.insert(0, str(project_root))
 
 from app.core.database import init_db, async_session_maker
 from app.models import Platform, Source, BotScenario, AIAnalytics
-from app.types import SourceType, PlatformType, MediaType
-
+from app.types import SourceType, PlatformType
 
 # Realistic topics for different scenarios
 TECH_TOPICS = [

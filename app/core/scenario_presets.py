@@ -97,6 +97,12 @@ def get_all_presets():
                     "confidence_threshold": 0.75,
                 }
             },
+            "trigger_type": "SENTIMENT_THRESHOLD",
+            "trigger_config": {
+                "threshold": 0.3,
+                "direction": "below"
+            },
+            "action_type": "NOTIFICATION",
             "ai_prompt": """Проверь следующий контент на токсичность и негатив.
 
 Контент: {content}
@@ -126,6 +132,12 @@ def get_all_presets():
                     "viral_threshold": 1000,
                 },
             },
+            "trigger_type": "ACTIVITY_SPIKE",
+            "trigger_config": {
+                "baseline_period_hours": 24,
+                "spike_multiplier": 3.0
+            },
+            "action_type": "NOTIFICATION",
             "ai_prompt": """Проанализируй вовлечённость аудитории.
 
 Всего постов: {total_posts}
@@ -191,6 +203,13 @@ def get_all_presets():
                     "extract_entities": True,
                 }
             },
+            "trigger_type": "KEYWORD_MATCH",
+            "trigger_config": {
+                "keywords": ["@mybrand", "мой_бренд"],
+                "mode": "any",
+                "case_sensitive": False
+            },
+            "action_type": "NOTIFICATION",
             "ai_prompt": """Найди и проанализируй упоминания бренда.
 
 Контент: {content}
@@ -220,6 +239,13 @@ def get_all_presets():
                     "emotion_analysis": True,
                 }
             },
+            "trigger_type": "KEYWORD_MATCH",
+            "trigger_config": {
+                "keywords": ["помощь", "поддержка", "вопрос", "как", "проблема"],
+                "mode": "any",
+                "case_sensitive": False
+            },
+            "action_type": "NOTIFICATION",
             "ai_prompt": """Определи намерения клиентов в сообщениях.
 
 Контент: {content}

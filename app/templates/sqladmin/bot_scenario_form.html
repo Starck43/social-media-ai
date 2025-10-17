@@ -158,14 +158,36 @@
 {% block form_content %}
     {{ super() }}
 
-    <!-- Секция 1: Типы анализа -->
+    <!-- Секция 1: Готовые настройки (Presets) -->
+    <fieldset class="form-fieldset form-section">
+        <div class="form-section-title">
+            <i class="fa fa-magic"></i>
+            Готовые шаблоны сценариев
+        </div>
+        <div class="form-section-desc">
+            Выберите готовый шаблон для быстрой настройки
+        </div>
+
+        <div class="scope-preset">
+            {% if form.presets %}
+                {% for preset_key, preset_data in form.presets.items() %}
+                    <button type="button" class="preset-btn choice-text" data-preset="{{ preset_key }}"
+                            onclick="loadPreset('{{ preset_key }}')">
+                        <span style="font-size: 1.2em;">{{ preset_data.icon }}</span> {{ preset_data.name }}
+                    </button>
+                {% endfor %}
+            {% endif %}
+        </div>
+    </fieldset>
+
+    <!-- Секция 2: Типы AI анализа -->
     <fieldset class="form-fieldset form-section">
         <div class="form-section-title">
             <i class="fa fa-brain"></i>
             Типы AI анализа
         </div>
         <div class="form-section-desc">
-            Выберите один или несколько типов анализа (сохраняются в scope.analysis_types)
+            Выберите один или несколько типов анализа для контента
         </div>
 
         <div class="choice-grid">
@@ -194,9 +216,24 @@
                 <i class="fa fa-square-o"></i> Очистить
             </button>
         </div>
+
+        <label for="scope-json" style="margin-top: 20px;">Настройки переменных анализа (JSON)</label>
+        <textarea class="scope-json" id="scope-json" name="scope" rows="10"></textarea>
+        <div class="help-text">
+            Конфиги автоматически добавляются при выборе типов анализа. Можно добавлять кастомные переменные.
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="formatScopeJSON()">
+                <i class="fa fa-indent"></i> Форматировать
+            </button>
+            <button type="button" class="btn btn-sm btn-info" onclick="addVariable()">
+                <i class="fa fa-plus"></i> Добавить переменную
+            </button>
+        </div>
     </fieldset>
 
-    <!-- Секция 2: Типы контента -->
+    <!-- Секция 3: Типы контента -->
     <fieldset class="form-fieldset form-section">
         <div class="form-section-title">
             <i class="fa fa-list"></i>
@@ -237,44 +274,6 @@
         </div>
     </fieldset>
 
-    <!-- Секция 3: Настройка Scope -->
-    <fieldset class="form-fieldset form-section">
-        <div class="form-section-title">
-            <i class="fa fa-code"></i>
-            Условия срабатывания (Scope)
-        </div>
-        <div class="form-section-desc">
-            Выберите пресет или создайте собственные условия в JSON формате
-        </div>
-
-        <div class="scope-preset">
-            {% if form.presets %}
-                {% for preset_key, preset_data in form.presets.items() %}
-                    <button type="button" class="preset-btn choice-text" data-preset="{{ preset_key }}"
-                            onclick="loadPreset('{{ preset_key }}')">
-                        <span style="font-size: 1.2em;">{{ preset_data.icon }}</span> {{ preset_data.name }}
-                    </button>
-                {% endfor %}
-            {% endif %}
-        </div>
-
-        <label for="scope-json">JSON (Переменные)</label>
-        <textarea class="scope-json" id="scope-json" name="scope" rows="10"></textarea>
-        <div class="help-text">
-            Переменные используются в промпте как {<b>variable_name</b>}. <b>Пример</b>: <i>{"topics": ["политика",
-            "экономика"]}</i>
-        </div>
-
-        <div class="quick-actions">
-            <button type="button" class="btn btn-sm btn-secondary" onclick="formatScopeJSON()">
-                <i class="fa fa-indent"></i> Форматировать
-            </button>
-            <button type="button" class="btn btn-sm btn-info" onclick="addVariable()">
-                <i class="fa fa-plus"></i> Добавить переменную
-            </button>
-        </div>
-    </fieldset>
-
     <!-- Секция 4: Триггер -->
     <fieldset class="form-fieldset form-section">
         <div class="form-section-title">
@@ -306,7 +305,7 @@
         </div>
 
         <label for="trigger-config-json" style="margin-top: 20px;">Настройки триггера (JSON)</label>
-        <textarea class="scope-json" id="trigger-config-json" rows="8"></textarea>
+        <textarea class="scope-json" id="trigger-config-json" name="trigger_config" rows="8"></textarea>
         <div class="help-text">
             Конфигурация автоматически заполняется при выборе триггера. Можно редактировать вручную.
         </div>
@@ -317,6 +316,9 @@
             </button>
             <button type="button" class="btn btn-sm btn-info" onclick="resetTriggerConfig()">
                 <i class="fa fa-refresh"></i> Сбросить к дефолту
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearTriggerSelection()">
+                <i class="fa fa-times"></i> Очистить выбор
             </button>
         </div>
     </fieldset>
@@ -348,6 +350,12 @@
                     </div>
                 {% endfor %}
             {% endif %}
+        </div>
+
+        <div class="quick-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearActionSelection()">
+                <i class="fa fa-times"></i> Очистить выбор
+            </button>
         </div>
     </fieldset>
 
@@ -397,6 +405,37 @@
                 })
             }
 
+            // Load trigger_type (если есть в пресете)
+            clearTriggerSelection()  // Сначала очищаем
+            if (preset.trigger_type) {
+                // trigger_type в пресете - это NAME (SENTIMENT_THRESHOLD)
+                const radio = document.getElementById(`trigger_${preset.trigger_type}`)
+                if (radio) {
+                    radio.checked = true
+                    lastSelectedTrigger = radio  // Для отслеживания deselection
+                    console.log(`[Preset] Loaded trigger_type: ${preset.trigger_type}`)
+                }
+            }
+
+            // Load trigger_config (если есть в пресете)
+            if (preset.trigger_config) {
+                const textarea = document.getElementById("trigger-config-json")
+                textarea.value = JSON.stringify(preset.trigger_config, null, 2)
+                console.log(`[Preset] Loaded trigger_config`)
+            }
+
+            // Load action_type (если есть в пресете)
+            clearActionSelection()  // Сначала очищаем
+            if (preset.action_type) {
+                // action_type в пресете - это NAME (NOTIFICATION)
+                const radio = document.getElementById(`action_${preset.action_type}`)
+                if (radio) {
+                    radio.checked = true
+                    lastSelectedAction = radio  // Для отслеживания deselection
+                    console.log(`[Preset] Loaded action_type: ${preset.action_type}`)
+                }
+            }
+
             // Update UI
             document.querySelectorAll(".preset-btn").forEach(btn => btn.classList.remove("active"))
             const presetBtn = document.querySelector(`.preset-btn[data-preset="${presetName}"]`)
@@ -405,6 +444,8 @@
             // Sync to form
             syncContentTypesToForm()
             syncScopeToForm()
+            syncTriggerToForm()
+            syncActionToForm()
         }
 
         // Format JSON
@@ -522,6 +563,34 @@
             } else {
                 alert("Выберите триггер сначала");
             }
+        }
+        
+        function clearTriggerSelection() {
+            // Uncheck all trigger radio buttons
+            document.querySelectorAll(".trigger-type-input").forEach(radio => {
+                radio.checked = false;
+            });
+            
+            // Clear trigger_config textarea
+            const textarea = document.getElementById("trigger-config-json");
+            textarea.value = "";
+            
+            // Sync to form (will set hidden field to empty)
+            syncTriggerToForm();
+            
+            console.log("[BotScenario] Trigger selection cleared");
+        }
+        
+        function clearActionSelection() {
+            // Uncheck all action radio buttons
+            document.querySelectorAll(".action-type-input").forEach(radio => {
+                radio.checked = false;
+            });
+            
+            // Sync to form (will set hidden field to empty)
+            syncActionToForm();
+            
+            console.log("[BotScenario] Action selection cleared");
         }
 
         // Analysis types functions
@@ -660,14 +729,50 @@
             })
             
             // Add radio listeners for trigger type
+            // Allow deselection by clicking on selected radio
+            let lastSelectedTrigger = null;
             document.querySelectorAll(".trigger-type-input").forEach(radio => {
-                radio.addEventListener("change", syncTriggerToForm)
-            })
+                radio.addEventListener("change", syncTriggerToForm);
+                
+                // Allow deselection on second click
+                radio.addEventListener("click", function() {
+                    if (lastSelectedTrigger === this) {
+                        // Clicked on already selected radio - deselect it
+                        this.checked = false;
+                        lastSelectedTrigger = null;
+                        
+                        // Clear trigger_config
+                        const textarea = document.getElementById("trigger-config-json");
+                        textarea.value = "";
+                        
+                        syncTriggerToForm();
+                        console.log("[BotScenario] Trigger deselected by double-click");
+                    } else {
+                        lastSelectedTrigger = this;
+                    }
+                });
+            });
             
             // Add radio listeners for action type
+            // Allow deselection by clicking on selected radio
+            let lastSelectedAction = null;
             document.querySelectorAll(".action-type-input").forEach(radio => {
-                radio.addEventListener("change", syncActionToForm)
-            })
+                radio.addEventListener("change", syncActionToForm);
+                
+                // Allow deselection on second click
+                radio.addEventListener("click", function() {
+                    if (lastSelectedAction === this) {
+                        // Clicked on already selected radio - deselect it
+                        this.checked = false;
+                        lastSelectedAction = null;
+                        
+                        syncActionToForm();
+                        console.log("[BotScenario] Action deselected by double-click");
+                    } else {
+                        lastSelectedAction = this;
+                    }
+                });
+            });
 
             // Sync scope on manual change
             const scopeJson = document.getElementById("scope-json")
@@ -702,6 +807,7 @@
                 const radio = document.getElementById(`trigger_${initialTriggerType}`);
                 if (radio) {
                     radio.checked = true;
+                    lastSelectedTrigger = radio;  // Set for deselection tracking
                     console.log(`[BotScenario] Loaded trigger_type NAME: ${initialTriggerType}`);
                 }
             }
@@ -719,6 +825,7 @@
                 const radio = document.getElementById(`action_${initialActionType}`);
                 if (radio) {
                     radio.checked = true;
+                    lastSelectedAction = radio;  // Set for deselection tracking
                     console.log(`[BotScenario] Loaded action_type NAME: ${initialActionType}`);
                 }
             }

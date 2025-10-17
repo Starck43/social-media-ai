@@ -542,21 +542,19 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"llm_strategy": "Стратегия выбора модели"
 	}, **BaseAdmin.column_labels)
 
-	form_excluded_columns = [
-		                        "sources",
-		                        "llm_mapping",
-		                        # Exclude these fields - we handle them manually in custom template
-		                        "content_types",
-		                        "analysis_types",
-		                        "scope",
-		                        "trigger_type",
-		                        "action_type",
-		                        "trigger_config",
-	                        ] + BaseAdmin.form_excluded_columns
+	form_excluded_columns = BaseAdmin.form_excluded_columns + [
+		"sources",
+		"llm_mapping",
+		# Exclude these fields — we handle them manually in custom template
+		"content_types",
+		"analysis_types",
+		"scope",
+		"trigger_type",
+		"action_type",
+		"trigger_config",
+	]
 	form_overrides = {
 		'llm_strategy': SelectField,
-		'action_type': SelectField,
-		'trigger_type': SelectField,
 		**BaseAdmin.form_overrides
 	}
 	form_args = {
@@ -564,38 +562,34 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 			'choices': LLMStrategyType.choices(),
 			'coerce': str
 		},
-		'trigger_type': {
-			'choices': [('', '— Не выбрано —')] + [(t.name, t.label) for t in BotTriggerType],
-			'coerce': lambda x: x if isinstance(x, BotTriggerType) else (BotTriggerType[x] if x else None),
-			'validators': [Optional()],
-			'description': 'Условие когда запускать анализ (по ключевым словам, тональности, активности и т.д.)'
-		},
-		'action_type': {
-			'choices': [('', '— Не выбрано —')] + [(a.name, a.label) for a in BotActionType],
-			'coerce': lambda x: x if isinstance(x, BotActionType) else (BotActionType[x] if x else None),
-			'validators': [Optional()],
-			'description': 'Действие которое будет выполнено после анализа (комментарий, реакция, перепост и т.д.)'
-		},
-		'trigger_config': {
-			'description': 'JSON конфигурация для триггера. Например: {"keywords": ["жалоба", "проблема"], "mode": "any"}'
-		},
-		'scope': {
-			'description': 'JSON параметры для выбранных типов анализа + кастомные переменные для промптов. Конфиги автоматически добавляются при выборе чекбоксов выше.'
-		},
 		'text_prompt': {
-			'description': 'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
+			'description': (
+				'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. '
+				'Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
+			)
 		},
 		'image_prompt': {
-			'description': 'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+			'description': (
+				'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. '
+				'Переменные: {count}, {platform}'
+			)
 		},
 		'video_prompt': {
-			'description': 'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+			'description': (
+				'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. '
+				'Переменные: {count}, {platform}'
+			)
 		},
 		'audio_prompt': {
-			'description': 'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. Переменные: {count}, {platform}'
+			'description': (
+				'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. '
+				'Переменные: {count}, {platform}'
+			)
 		},
 		'unified_summary_prompt': {
-			'description': 'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+			'description': (
+				'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+			)
 		},
 		**BaseAdmin.form_args
 	}
@@ -618,23 +612,41 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		# Media prompts with placeholders
 		"text_prompt": {
 			"rows": 10,
-			"placeholder": "Проанализируй следующий текстовый контент из {platform}.\n\nКонтент: {text}\nВсего постов: {total_posts}\n\nОпредели основные темы, тональность и ключевые моменты."
+			"placeholder": (
+				"Проанализируй следующий текстовый контент из {platform}.\n\n"
+				"Контент: {text}\n"
+				"Всего постов: {total_posts}\n\n"
+				"Определи основные темы, тональность и ключевые моменты."
+			)
 		},
 		"image_prompt": {
 			"rows": 10,
-			"placeholder": "Проанализируй {count} изображений из {platform}.\n\nОпиши визуальные элементы, стиль, основные объекты и общую тематику."
+			"placeholder": (
+				"Проанализируй {count} изображений из {platform}.\n\n"
+				"Опиши визуальные элементы, стиль, основные объекты и общую тематику."
+			)
 		},
 		"video_prompt": {
 			"rows": 10,
-			"placeholder": "Проанализируй {count} видео из {platform}.\n\nОпиши контент видео, основные темы, стиль подачи."
+			"placeholder": (
+				"Проанализируй {count} видео из {platform}.\n\n"
+				"Опиши контент видео, основные темы, стиль подачи."
+			)
 		},
 		"audio_prompt": {
 			"rows": 10,
-			"placeholder": "Проанализируй {count} аудиозаписей из {platform}.\n\nОпредели темы обсуждения, тональность речи, ключевые моменты."
+			"placeholder": (
+				"Проанализируй {count} аудиозаписей из {platform}.\n\n"
+				"Определи темы обсуждения, тональность речи, ключевые моменты."
+			)
 		},
 		"unified_summary_prompt": {
 			"rows": 10,
-			"placeholder": "Создай единое резюме на основе следующих анализов:\n\nТекст: {text_analysis}\nИзображения: {image_analysis}\nВидео: {video_analysis}\n\nВыдели общие темы и ключевые инсайты."
+			"placeholder": (
+				"Создай единое резюме на основе следующих анализов:\n\n"
+				"Текст: {text_analysis}\nИзображения: {image_analysis}\n"
+				"Видео: {video_analysis}\n\nВыдели общие темы и ключевые инсайты."
+			)
 		},
 		"description": {"rows": 2},
 		"trigger_config": {
@@ -673,7 +685,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		# Provide analysis defaults and all types for JavaScript
 		form.analysis_defaults = ANALYSIS_TYPE_DEFAULTS
 		form.all_analysis_types = [at.db_value for at in AnalysisType]
-		
+
 		# Provide trigger defaults for JavaScript
 		form.trigger_defaults = TRIGGER_CONFIG_DEFAULTS
 
@@ -681,28 +693,28 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 
 	def _parse_json_fields(self, data: dict) -> None:
 		"""Parse JSON fields from form data (hidden inputs and textareas)."""
-		# Parse content_types from hidden field (JSON string)
+		# Parse content_types from a hidden field (JSON string)
 		if "content_types" in data and isinstance(data["content_types"], str):
 			try:
 				data["content_types"] = json.loads(data["content_types"])
 			except (json.JSONDecodeError, TypeError):
 				data["content_types"] = []
 
-		# Parse analysis_types from hidden field (JSON string)
+		# Parse analysis_types from a hidden field (JSON string)
 		if "analysis_types" in data and isinstance(data["analysis_types"], str):
 			try:
 				data["analysis_types"] = json.loads(data["analysis_types"])
 			except (json.JSONDecodeError, TypeError):
 				data["analysis_types"] = []
 
-		# Parse scope from textarea (JSON string)
+		# Parse scope from a textarea (JSON string)
 		if "scope" in data and isinstance(data["scope"], str):
 			try:
 				data["scope"] = json.loads(data["scope"]) if data["scope"].strip() else {}
 			except (json.JSONDecodeError, TypeError):
 				data["scope"] = {}
 
-		# Parse trigger_config from textarea (JSON string)
+		# Parse trigger_config from a textarea (JSON string)
 		if "trigger_config" in data and isinstance(data["trigger_config"], str):
 			try:
 				data["trigger_config"] = json.loads(data["trigger_config"]) if data["trigger_config"].strip() else {}
@@ -717,7 +729,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		for field in ["content_types", "analysis_types", "scope", "trigger_config"]:
 			if field in form_data:
 				data[field] = form_data.get(field)
-		
+
 		# Add trigger_type and action_type from hidden fields (they send NAME strings)
 		if "trigger_type" in form_data:
 			trigger_value = form_data.get("trigger_type")
@@ -729,7 +741,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 					data["trigger_type"] = None
 			else:
 				data["trigger_type"] = None
-		
+
 		if "action_type" in form_data:
 			action_value = form_data.get("action_type")
 			if action_value:
@@ -859,12 +871,56 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		]
 		templates = Jinja2Templates(directory=template_dirs)
 
+		# Prepare scope and trigger_config for display
+		scope_display = {}
+		if scenario.scope:
+			# Separate analysis type configs from custom variables
+			analysis_configs = {}
+			custom_vars = {}
+			
+			for key, value in scenario.scope.items():
+				if scenario.analysis_types and key in scenario.analysis_types:
+					analysis_configs[key] = value
+				else:
+					custom_vars[key] = value
+			
+			scope_display = {
+				'analysis_configs': analysis_configs,
+				'custom_variables': custom_vars,
+				'all': scenario.scope
+			}
+		
+		# Pre-format JSON strings with ensure_ascii=False for proper Unicode display
+		import json
+		
+		# Format analysis configs as JSON strings
+		analysis_configs_json = {}
+		if scope_display.get('analysis_configs'):
+			for key, value in scope_display['analysis_configs'].items():
+				analysis_configs_json[key] = json.dumps(value, indent=2, ensure_ascii=False)
+		
+		# Format custom variables as JSON strings
+		custom_vars_json = {}
+		if scope_display.get('custom_variables'):
+			for key, value in scope_display['custom_variables'].items():
+				custom_vars_json[key] = json.dumps(value, ensure_ascii=False)
+		
+		# Format trigger_config as JSON string
+		trigger_config_json = ""
+		if scenario.trigger_config:
+			trigger_config_json = json.dumps(scenario.trigger_config, indent=2, ensure_ascii=False)
+		
 		return templates.TemplateResponse(
 			"sqladmin/scenario_prompts.html",
 			{
 				"request": request,
 				"scenario": scenario,
 				"prompts": prompts_data,
+				"scope_display": scope_display,
+				"analysis_configs_json": analysis_configs_json,
+				"custom_vars_json": custom_vars_json,
+				"trigger_config": scenario.trigger_config if scenario.trigger_config else {},
+				"trigger_config_json": trigger_config_json,
 			}
 		)
 

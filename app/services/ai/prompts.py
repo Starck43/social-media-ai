@@ -74,8 +74,8 @@ class PromptBuilder:
 
 		# Use custom prompt if available
 		if custom_prompt:
-			# Prepare variables based on media type
-			variables = PromptBuilder._prepare_variables(media_type, **context)
+			# Prepare variables based on media type (includes scope and trigger_config)
+			variables = PromptBuilder._prepare_variables(media_type, scenario=scenario, **context)
 			prompt = PromptSubstitution.substitute(custom_prompt, variables)
 
 			# Auto-append JSON instruction if not present (with scenario for dynamic schema)
@@ -121,36 +121,59 @@ class PromptBuilder:
 		)
 
 	@staticmethod
-	def _prepare_variables(media_type: MediaType, **context) -> dict[str, Any]:
-		"""Prepare variables for substitution based on media type."""
+	def _prepare_variables(media_type: MediaType, scenario: Optional['BotScenario'] = None, **context) -> dict[str, Any]:
+		"""
+		Prepare variables for substitution based on media type.
+		
+		This method merges:
+		1. Standard variables (text, platform, stats, count, etc.)
+		2. Custom variables from scenario.scope
+		3. Trigger configuration from scenario.trigger_config
+		4. Analysis type configs from scope (topics, sentiment, etc.)
+		"""
 		from app.utils.enum_helpers import get_enum_value
 
 		media_value = get_enum_value(media_type)
 
+		# Get standard variables based on media type
 		if media_value == 'text':
-			return PromptSubstitution.prepare_text_variables(
+			variables = PromptSubstitution.prepare_text_variables(
 				text=context.get('text', ''),
 				stats=context.get('stats', {}),
 				platform_name=context.get('platform_name', ''),
 				source_type=context.get('source_type', '')
 			)
 		elif media_value == 'image':
-			return PromptSubstitution.prepare_image_variables(
+			variables = PromptSubstitution.prepare_image_variables(
 				count=context.get('count', 0),
 				platform_name=context.get('platform_name', '')
 			)
 		elif media_value == 'video':
-			return PromptSubstitution.prepare_video_variables(
+			variables = PromptSubstitution.prepare_video_variables(
 				count=context.get('count', 0),
 				platform_name=context.get('platform_name', '')
 			)
 		elif media_value == 'audio':
-			return PromptSubstitution.prepare_audio_variables(
+			variables = PromptSubstitution.prepare_audio_variables(
 				count=context.get('count', 0),
 				platform_name=context.get('platform_name', '')
 			)
+		else:
+			variables = context
 
-		return context
+		# Add custom variables from scenario.scope (if present)
+		if scenario and scenario.scope:
+			# Merge scope variables (brand_name, competitors, etc.)
+			for key, value in scenario.scope.items():
+				# Skip analysis type configs (they're handled separately)
+				if key not in variables:
+					variables[key] = value
+
+		# Add trigger_config as a separate object (if present)
+		if scenario and scenario.trigger_config:
+			variables['trigger_config'] = scenario.trigger_config
+
+		return variables
 
 	@staticmethod
 	def _ensure_json_instruction(

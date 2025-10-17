@@ -160,7 +160,7 @@
 <div class="container">
 <div class="prompt-container">
 	<div class="back-btn">
-		<a href="{{ request.url_for('admin:details', identity='bot-scenarios', pk=scenario.id) }}" class="btn btn-secondary">
+		<a href="{{ request.url_for('admin:details', identity='bot-scenario', pk=scenario.id) }}" class="btn btn-secondary">
 			<i class="fa fa-arrow-left"></i> Назад к сценарию
 		</a>
 	</div>
@@ -173,6 +173,64 @@
 			Если у сценария есть кастомный промпт, он показан отдельно. JSON инструкции добавляются автоматически.
 		</p>
 	</div>
+	
+	<!-- Scope Variables Display -->
+	{% if custom_vars_json or analysis_configs_json %}
+	<div class="prompt-card">
+		<div class="prompt-header">
+			<span class="prompt-title">🔧 Доступные переменные</span>
+		</div>
+		
+		{% if custom_vars_json %}
+		<div class="prompt-section">
+			<div class="section-title">Кастомные переменные (из scope):</div>
+			<div class="prompt-box">
+{% for key, value_json in custom_vars_json.items() %}{{ "{" + key + "}" }}: {{ value_json }}
+{% endfor %}
+			</div>
+			<div class="alert alert-success" style="font-size: 13px; padding: 8px; margin-top: 10px;">
+				<i class="fa fa-check-circle"></i> 
+				Эти переменные доступны в кастомных промптах. Например: <code>{brand_name}</code>, <code>{competitors}</code>
+			</div>
+		</div>
+		{% endif %}
+		
+		{% if analysis_configs_json %}
+		<div class="prompt-section">
+			<div class="section-title">Конфигурации типов анализа:</div>
+			<div class="prompt-box">
+{% for key, value_json in analysis_configs_json.items() %}{{ key }}: {{ value_json }}
+
+{% endfor %}
+			</div>
+		</div>
+		{% endif %}
+	</div>
+	{% endif %}
+	
+	<!-- Trigger Config Display -->
+	{% if trigger_config %}
+	<div class="prompt-card">
+		<div class="prompt-header">
+			<span class="prompt-title">⚡ Конфигурация триггера</span>
+		</div>
+		<div class="prompt-section">
+			{% if trigger_config_json %}
+			<div class="prompt-box">{{ trigger_config_json }}</div>
+			<div class="alert alert-info" style="font-size: 13px; padding: 8px; margin-top: 10px;">
+				<i class="fa fa-info-circle"></i> 
+				Доступна в промптах как <code>{trigger_config.параметр}</code>. 
+				Например: <code>{trigger_config.threshold}</code>, <code>{trigger_config.keywords}</code>
+			</div>
+			{% else %}
+			<div class="alert alert-warning" style="font-size: 13px; padding: 8px;">
+				<i class="fa fa-exclamation-triangle"></i> 
+				Конфигурация триггера не задана. Выберите тип триггера и заполните конфигурацию в форме редактирования.
+			</div>
+			{% endif %}
+		</div>
+	</div>
+	{% endif %}
 	
 	<ul class="nav nav-tabs" role="tablist">
 		<li class="nav-item">

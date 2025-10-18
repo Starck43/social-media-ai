@@ -153,13 +153,50 @@ class VKClient(BaseClient):
 			# Parse owner_id from external_id
 			owner_id = self._parse_owner_id(source.external_id, source.source_type)
 
-			base_params.update({
+			params_dict = {
 				'owner_id': owner_id,
 				'count': source_params.get('count', 100),  # Max 100 posts
 				'offset': source_params.get('offset', 0),
 				'extended': source_params.get('extended', 1),  # Include additional fields
 				'filter': source_params.get('filter', 'all'),  # all, owner, others, suggests
-			})
+			}
+			
+			# DATE RANGE FILTERING
+			# Priority: date_from/date_to (explicit) > last_checked (checkpoint) > no filter
+			
+			date_from = source_params.get('date_from')  # From params
+			date_to = source_params.get('date_to')      # From params
+			
+			# Parse and apply date_from (start boundary)
+			if date_from:
+				if isinstance(date_from, str):
+					from datetime import datetime
+					try:
+						date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+						start_time = int(date_from_dt.timestamp())
+						params_dict['start_time'] = start_time
+						logger.info(f"VK date_from filter: {date_from_dt.isoformat()} (ts: {start_time})")
+					except Exception as e:
+						logger.warning(f"Failed to parse date_from '{date_from}': {e}")
+			# Fallback to checkpoint if date_from not set
+			elif source.last_checked:
+				start_time = int(source.last_checked.timestamp())
+				params_dict['start_time'] = start_time
+				logger.info(f"VK checkpoint: collecting posts after {source.last_checked.isoformat()} (ts: {start_time})")
+			
+			# Parse and apply date_to (end boundary)
+			if date_to:
+				if isinstance(date_to, str):
+					from datetime import datetime
+					try:
+						date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+						end_time = int(date_to_dt.timestamp())
+						params_dict['end_time'] = end_time
+						logger.info(f"VK date_to filter: {date_to_dt.isoformat()} (ts: {end_time})")
+					except Exception as e:
+						logger.warning(f"Failed to parse date_to '{date_to}': {e}")
+			
+			base_params.update(params_dict)
 
 		elif method == 'users.get':
 			# User info request

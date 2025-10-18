@@ -107,32 +107,11 @@ class AIAnalyzer:
 			# Create unified summary if multiple analyses
 			unified_summary = await self._create_unified_summary(analysis_results, bot_scenario)
 			
-			# Auto-detect continuing topics if topic_chain_id not provided
+			# Auto-generate topic_chain_id if not provided
+			# NEW LOGIC: One source + one scenario = one chain (timeline by dates)
 			if not topic_chain_id:
-				# Extract current topics from analysis results
-				current_topics = []
-				
-				# Try to get topics from text analysis
-				text_parsed = analysis_results.get('text_analysis', {}).get('parsed', {})
-				if 'main_topics' in text_parsed:
-					current_topics.extend(text_parsed['main_topics'])
-				
-				# Try to get topics from unified summary
-				if unified_summary and 'parsed' in unified_summary:
-					unified_parsed = unified_summary['parsed']
-					if 'main_themes' in unified_parsed:
-						current_topics.extend(unified_parsed['main_themes'])
-				
-				# Search for matching existing chain
-				if current_topics:
-					matched_chain = await self._find_matching_topic_chain(source, current_topics)
-					if matched_chain:
-						topic_chain_id = matched_chain
-						logger.info(f"Matched existing topic chain: {topic_chain_id}")
-					else:
-						# Generate new chain ID
-						topic_chain_id = self._generate_topic_chain_id(source, current_topics, datetime.now(UTC))
-						logger.info(f"Created new topic chain: {topic_chain_id}")
+				topic_chain_id = self._generate_topic_chain_id(source, bot_scenario)
+				logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
 			
 			# Save comprehensive analysis
 			analysis = await self._save_analysis(
@@ -431,14 +410,40 @@ class AIAnalyzer:
 		return obj.name
 
 	def _calculate_content_stats(self, content: list[dict]) -> dict[str, Any]:
-		"""Calculate content statistics."""
+		"""Calculate content statistics including actual post date range."""
 		if not content:
 			return {}
+		
+		from datetime import datetime, timezone
 
 		texts = [item.get("text", "") for item in content]
 		dates = [item.get("date") for item in content if item.get("date")]
 		reactions = [item.get("reactions", 0) for item in content]
 		comments = [item.get("comments", 0) for item in content]
+		
+		# Extract actual post dates (published_at, date, created_at)
+		post_dates = []
+		for item in content:
+			pub_date = item.get('published_at') or item.get('date') or item.get('created_at')
+			if pub_date:
+				if isinstance(pub_date, int):  # Unix timestamp (VK)
+					post_dates.append(datetime.fromtimestamp(pub_date, tz=timezone.utc))
+				elif isinstance(pub_date, datetime):
+					post_dates.append(pub_date)
+				elif isinstance(pub_date, str):
+					try:
+						post_dates.append(datetime.fromisoformat(pub_date.replace('Z', '+00:00')))
+					except:
+						pass
+		
+		# Build content_date_range for dashboard display
+		content_date_range = {}
+		if post_dates:
+			content_date_range = {
+				'earliest': min(post_dates).isoformat(),
+				'latest': max(post_dates).isoformat(),
+				'span_days': (max(post_dates) - min(post_dates)).days
+			}
 
 		return {
 			"total_posts": len(content),
@@ -448,6 +453,7 @@ class AIAnalyzer:
 			"avg_reactions_per_post": sum(reactions) / len(content) if content else 0,
 			"avg_comments_per_post": sum(comments) / len(content) if content else 0,
 			"date_range": {"first": min(dates) if dates else None, "last": max(dates) if dates else None},
+			"content_date_range": content_date_range,  # NEW: Actual post dates for dashboard
 		}
 
 	def _make_json_serializable(self, obj):
@@ -543,26 +549,26 @@ class AIAnalyzer:
 		
 		return None
 	
-	def _generate_topic_chain_id(self, source: Source, topics: List[str], timestamp: datetime) -> str:
+	def _generate_topic_chain_id(self, source: Source, bot_scenario: Optional['BotScenario'] = None) -> str:
 		"""
-		Generate unique topic chain ID based on source, main topic, and timestamp.
+		Generate topic chain ID for source.
+		
+		NEW LOGIC: One source + one scenario = one chain (timeline by dates).
+		All analyses for this source+scenario go into the same chain.
 		
 		Args:
 			source: Source being analyzed
-			topics: List of topics from analysis
-			timestamp: Analysis timestamp
+			bot_scenario: Bot scenario (optional)
 		
 		Returns:
-			Unique chain ID string
+			Chain ID string: "source_{id}" or "source_{id}_scenario_{id}"
 		"""
-		# Use first topic as primary identifier
-		primary_topic = topics[0] if topics else "general"
-		
-		# Create hash from source ID + primary topic + date
-		hash_input = f"{source.id}_{primary_topic}_{timestamp.date()}"
-		hash_short = hashlib.md5(hash_input.encode()).hexdigest()[:8]
-		
-		return f"chain_{source.id}_{hash_short}"
+		if bot_scenario and bot_scenario.id:
+			# Include scenario in chain ID
+			return f"source_{source.id}_scenario_{bot_scenario.id}"
+		else:
+			# Simple source-based chain
+			return f"source_{source.id}"
 	
 	async def _save_analysis(
 			self,

@@ -438,6 +438,12 @@ const TopicChainUtils = {
         
         // Use AI-generated title if available, otherwise fallback
         const displayTitle = chain.analysis_title || chain.title || `Цепочка #${chain.chain_id}`
+        
+        // Use content dates (actual posts) if available, fallback to analysis dates
+        const hasContentDates = chain.content_earliest_date && chain.content_latest_date
+        const dateStart = hasContentDates ? chain.content_earliest_date : chain.first_date
+        const dateEnd = hasContentDates ? chain.content_latest_date : chain.last_date
+        const dateLabel = hasContentDates ? 'Период постов' : 'Период анализа'
 
         return `
             <div class="chain-item fade-in" id="chain-${chain.chain_id}">
@@ -447,8 +453,13 @@ const TopicChainUtils = {
                         ${displayTitle}
                     </div>
                     <div class="chain-meta">
-                        <span><i class="fas fa-calendar me-1"></i> ${DashboardUtils.formatDate(chain.first_date)} - ${DashboardUtils.formatDate(chain.last_date)}</span>
-                        <span><i class="fas fa-chart-bar me-1"></i> ${chain.analyses_count} ${chain.analyses_count === 1 ? 'анализ' : 'анализов'}</span>
+                        <span title="${dateLabel}"><i class="fas fa-calendar me-1"></i> ${DashboardUtils.formatDate(dateStart)} - ${DashboardUtils.formatDate(dateEnd)}</span>
+                        <span title="Количество анализов"><i class="fas fa-chart-bar me-1"></i> ${chain.analyses_count} ${chain.analyses_count === 1 ? 'анализ' : 'анализов'}</span>
+                        ${source?.last_checked ? `
+                        <span title="Последняя проверка источника" class="text-muted" style="font-size: 0.85rem;">
+                            <i class="fas fa-sync me-1"></i> ${DashboardUtils.formatDateTime(source.last_checked)}
+                        </span>
+                        ` : ''}
                     </div>
                 </div>
                 
@@ -474,23 +485,28 @@ const TopicChainUtils = {
         }).join("") : ""}
                 </div>
                 
+                ${chain.analyses_count > 1 ? `
                 <div class="mt-3">
                     <button class="btn btn-sm btn-outline-primary collapse-toggle" 
                             data-bs-toggle="collapse" 
                             data-bs-target="#evolution-${chain.chain_id}"
-                            aria-expanded="false">
+                            aria-expanded="false"
+                            data-chain-id="${chain.chain_id}">
                         <i class="fas fa-chevron-right me-1"></i>
                         Показать эволюцию тем
                     </button>
                 </div>
+                ` : ''}
                 
-                <div class="collapse chain-evolution" id="evolution-${chain.chain_id}">
+                <div class="collapse chain-evolution ${chain.analyses_count === 1 ? 'show' : ''}" id="evolution-${chain.chain_id}">
                     <div class="analysis-timeline" id="timeline-${chain.chain_id}">
+                        ${chain.analyses_count === 1 ? '' : `
                         <div class="text-center py-3">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Загрузка...</span>
                             </div>
                         </div>
+                        `}
                     </div>
                 </div>
             </div>

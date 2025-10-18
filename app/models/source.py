@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, Any
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, UniqueConstraint, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, UniqueConstraint, Index, event
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from .base import Base, TimestampMixin
 from ..core.config import settings
@@ -85,12 +85,27 @@ class Source(Base, TimestampMixin):
 	def __str__(self) -> str:
 		return f"{self.name} ({self.external_id})"
 
+	def _clean_external_id(self, external_id: str) -> str:
+		"""Extract username/ID from URL.
+		"""
+		if not external_id:
+			return external_id
+
+		# Remove everything before the last slash
+		return external_id.rstrip('/').split('/')[-1]
+
+	@validates('external_id')
+	def validate_external_id(self, key: str, external_id: str) -> str:
+		"""Clean up external_id before validation."""
+		return self._clean_external_id(external_id)
+
 	@property
 	def platform_url(self) -> str:
 		return f"{self.platform.base_url}/{self.external_id}"
 
 
 from .managers.source_manager import SourceManager  # noqa: E402
+
 Source.objects = SourceManager()
 
 
@@ -133,4 +148,5 @@ class SourceUserRelationship(Base):
 
 
 from .managers.base_manager import BaseManager  # noqa: E402
+
 SourceUserRelationship.objects = BaseManager()

@@ -146,23 +146,28 @@
     <!-- Navigation -->
     <nav class="navbar navbar-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/dashboard">
-                <i class="fas fa-chart-line me-2"></i>
-                Analytics Dashboard
-            </a>
-            <div class="d-flex align-items-center">
-                <span class="text-white me-3" id="last-update">
-                    Обновлено: <span id="update-time">--:--</span>
-                </span>
-                {% if user %}
-                <span class="text-white me-3">
-                    <i class="fas fa-user me-1"></i> {{ user.username }}
-                </span>
-                {% endif %}
-                <a href="/admin" class="btn btn-outline-light btn-sm me-2">
-                    <i class="fas fa-cog me-1"></i> Админка
+            <div class="d-flex flex-column">
+                <a class="navbar-brand mb-0" href="/dashboard">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Analytics Dashboard
                 </a>
-                <a href="/admin/logout" class="btn btn-outline-light btn-sm">
+                <small class="text-white-50 ms-4 ps-1" id="last-update" style="font-size: 0.75rem;">
+                    Обновлено: <span id="update-time">--:--</span>
+                </small>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <a class="nav-link text-white" href="/dashboard">
+                    <i class="fas fa-chart-line me-1"></i> Общая информация
+                </a>
+                <a class="nav-link text-white" href="/dashboard/topic-chains">
+                    <i class="fas fa-project-diagram me-1"></i> Обзор источников
+                </a>
+                {% if user %}
+                <a class="nav-link text-white" href="/admin">
+                    <i class="fas fa-user me-1"></i> {{ user.username }}
+                </a>
+                {% endif %}
+                <a class="nav-link text-white" href="/admin/logout">
                     <i class="fas fa-sign-out-alt me-1"></i> Выйти
                 </a>
             </div>
@@ -170,23 +175,6 @@
     </nav>
 
     <div class="container-fluid px-4">
-        <!-- Dashboard Navigation -->
-        <div class="dashboard-nav">
-            <ul class="nav nav-pills">
-                <li class="nav-item">
-                    <a class="nav-link active" href="/dashboard">
-                        <i class="fas fa-chart-line"></i>
-                        Аналитика
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/dashboard/topic-chains">
-                        <i class="fas fa-project-diagram"></i>
-                        Цепочки тем
-                    </a>
-                </li>
-            </ul>
-        </div>
 
         <!-- Filters -->
         <div class="filter-section">

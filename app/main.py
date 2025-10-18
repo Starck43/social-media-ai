@@ -92,14 +92,8 @@ def create_application() -> FastAPI:
 
 app = create_application()
 
-
-@app.get("/dashboard/topic-chains", tags=["Dashboard"])
-async def topic_chains_dashboard(request: Request):
-	"""
-	Дашборд для визуализации цепочек тем.
-	Отображает цепочки тем из данных аналитики.
-	"""
-	return templates.TemplateResponse("dashboard_topic_chains.html", {"request": request})
+# Dashboard routes moved to admin/endpoints.py
+# @app.get("/dashboard/topic-chains") - REMOVED: duplicates admin route
 
 
 @app.get("/", tags=["Root"])

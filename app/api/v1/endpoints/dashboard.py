@@ -369,6 +369,8 @@ async def get_topic_chains(
 					"analyses_count": 0,
 					"first_date": None,
 					"last_date": None,
+					"content_earliest_date": None,  # NEW: earliest post date
+					"content_latest_date": None,    # NEW: latest post date
 					"topics_count": 0,
 					"topics": []
 				}
@@ -376,11 +378,28 @@ async def get_topic_chains(
 			
 			chains[chain_id]["analyses_count"] += 1
 			
-			# Обновить даты
+			# Обновить даты анализа
 			if not chains[chain_id]["first_date"] or a.analysis_date < chains[chain_id]["first_date"]:
 				chains[chain_id]["first_date"] = a.analysis_date
 			if not chains[chain_id]["last_date"] or a.analysis_date > chains[chain_id]["last_date"]:
 				chains[chain_id]["last_date"] = a.analysis_date
+			
+			# Extract content date range from actual posts
+			if hasattr(a, 'summary_data') and a.summary_data:
+				content_stats = a.summary_data.get('content_statistics', {})
+				content_range = content_stats.get('content_date_range', {})
+				
+				if content_range:
+					earliest = content_range.get('earliest')
+					latest = content_range.get('latest')
+					
+					if earliest:
+						if not chains[chain_id]["content_earliest_date"] or earliest < chains[chain_id]["content_earliest_date"]:
+							chains[chain_id]["content_earliest_date"] = earliest
+					
+					if latest:
+						if not chains[chain_id]["content_latest_date"] or latest > chains[chain_id]["content_latest_date"]:
+							chains[chain_id]["content_latest_date"] = latest
 			
 			# Добавить темы из summary_data или response_payload аналитики
 			all_chain_topics = set()
@@ -447,7 +466,8 @@ async def get_topic_chains(
 				"platform": source.platform.name if source.platform else "unknown",
 				"platform_type": source.platform.platform_type.db_value if source.platform else "unknown",
 				"external_id": source.external_id,
-				"base_url": source.platform.base_url if source.platform else ""
+				"base_url": source.platform.base_url if source.platform else "",
+				"last_checked": source.last_checked.isoformat() if source.last_checked else None  # NEW
 			}
 	
 	# Добавить информацию об источниках к цепочкам

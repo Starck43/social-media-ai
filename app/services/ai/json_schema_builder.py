@@ -8,6 +8,12 @@ from typing import Dict, List, Any, Optional
 class JSONSchemaBuilder:
 	"""Build dynamic JSON schemas for LLM prompts."""
 	
+	# Common fields that are ALWAYS included
+	COMMON_FIELDS = {
+		'analysis_title': 'краткий заголовок анализа (3-7 слов), отражающий главную тему',
+		'analysis_summary': 'развернутое описание ситуации (2-4 предложения): что происходит, кого/что ищут, какие требования выделяют, какие паттерны видны',
+	}
+	
 	SCHEMA_FIELDS = {
 		'sentiment': {
 			'sentiment_score': 'число от 0.0 (негатив) до 1.0 (позитив)',
@@ -38,12 +44,30 @@ class JSONSchemaBuilder:
 			'viral_potential': 'одно из: {potential_levels}',  # Will be replaced
 			'growth_rate': 'множитель роста',
 		},
+		'user_intent': {
+			'primary_intent': 'основное намерение пользователей: "информация", "жалоба", "вопрос", "обсуждение", "развлечение"',
+			'secondary_intents': 'список дополнительных намерений',
+			'call_to_action': 'есть ли призыв к действию (true/false)',
+		},
+		'conversation_context': {
+			'context_type': 'тип контекста: "личное общение", "публичное обсуждение", "бизнес-коммуникация", "развлекательный контент"',
+			'formality_level': 'уровень формальности от 0.0 (неформальный) до 1.0 (формальный)',
+			'emotional_intensity': 'эмоциональная интенсивность от 0.0 (нейтральный) до 1.0 (очень эмоциональный)',
+		},
+		'engagement_quality': {
+			'discussion_depth': 'глубина обсуждения: "поверхностный", "средний", "глубокий"',
+			'audience_participation': 'уровень участия аудитории: "низкий", "средний", "высокий"',
+			'content_value': 'ценность контента: "низкая", "средняя", "высокая"',
+		},
 	}
 	
 	@classmethod
 	def build_schema(cls, analysis_types: List[str], scope: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
 		schema = {}
 		scope = scope or {}
+		
+		# ALWAYS include common fields first
+		schema.update(cls.COMMON_FIELDS)
 		
 		for analysis_type in analysis_types:
 			if analysis_type not in cls.SCHEMA_FIELDS:

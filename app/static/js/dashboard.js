@@ -435,17 +435,20 @@ const TopicChainUtils = {
         const sentimentClass = DashboardUtils.getSentimentClass(chain.avg_sentiment || 0)
         const platformIcon = DashboardUtils.getPlatformIcon(source?.platform)
         const sourceUrl = source ? DashboardUtils.buildSourceUrl(source) : "#"
+        
+        // Use AI-generated title if available, otherwise fallback
+        const displayTitle = chain.analysis_title || chain.title || `Цепочка #${chain.chain_id}`
 
         return `
             <div class="chain-item fade-in" id="chain-${chain.chain_id}">
                 <div class="chain-header">
                     <div class="chain-title">
-                        <i class="fas fa-link me-2"></i>
-                        Цепочка #${chain.chain_id}
+                        <i class="fas fa-sparkles me-2 text-primary"></i>
+                        ${displayTitle}
                     </div>
                     <div class="chain-meta">
                         <span><i class="fas fa-calendar me-1"></i> ${DashboardUtils.formatDate(chain.first_date)} - ${DashboardUtils.formatDate(chain.last_date)}</span>
-                        <span><i class="fas fa-chart-bar me-1"></i> ${chain.analyses_count} анализов</span>
+                        <span><i class="fas fa-chart-bar me-1"></i> ${chain.analyses_count} ${chain.analyses_count === 1 ? 'анализ' : 'анализов'}</span>
                     </div>
                 </div>
                 
@@ -504,6 +507,14 @@ const TopicChainUtils = {
 
         return evolution.map(item => {
             const sentimentClass = DashboardUtils.getSentimentClass(item.sentiment_score)
+            const sentimentLabel = item.sentiment_label || DashboardUtils.getSentimentLabel(item.sentiment_score)
+            
+            // Toxicity warning
+            const toxicityWarning = item.toxicity_score > 0.6 ? `
+                <span class="badge bg-danger ms-2" title="Токсичность: ${(item.toxicity_score * 100).toFixed(0)}%">
+                    <i class="fas fa-exclamation-triangle"></i> ${item.toxicity_category || 'Токсично'}
+                </span>
+            ` : ''
 
             return `
                 <div class="timeline-item">
@@ -511,20 +522,46 @@ const TopicChainUtils = {
                         ${DashboardUtils.formatDateTime(item.analysis_date)}
                     </div>
                     <div class="timeline-content">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <strong>Темы:</strong>
-                            <span class="badge ${sentimentClass}">
-                                ${DashboardUtils.getSentimentEmoji(item.sentiment_score)}
-                                ${item.sentiment_score.toFixed(2)}
-                            </span>
+                        ${item.analysis_summary ? `
+                        <div class="alert alert-info mb-3" style="font-size: 0.95rem; padding: 12px;">
+                            <strong><i class="fas fa-lightbulb me-2"></i>Описание</strong>
+                            <p class="mb-0 mt-2">${item.analysis_summary}</p>
                         </div>
+                        ` : ''}
+                        
+                        <!-- Metrics Row -->
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            <span class="badge ${sentimentClass}" style="font-size: 0.85rem; padding: 6px 12px;">
+                                ${DashboardUtils.getSentimentEmoji(item.sentiment_score)} ${sentimentLabel}
+                            </span>
+                            ${toxicityWarning}
+                            ${item.total_posts ? `
+                            <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 6px 12px;">
+                                <i class="fas fa-file-alt me-1"></i> ${item.total_posts} ${item.total_posts === 1 ? 'пост' : 'постов'}
+                            </span>
+                            ` : ''}
+                            ${item.total_reactions ? `
+                            <span class="badge bg-info" style="font-size: 0.85rem; padding: 6px 12px;">
+                                <i class="fas fa-heart me-1"></i> ${item.total_reactions} реакций
+                            </span>
+                            ` : ''}
+                            ${item.avg_reactions > 0 ? `
+                            <span class="badge bg-success" style="font-size: 0.85rem; padding: 6px 12px;">
+                                <i class="fas fa-chart-line me-1"></i> ${item.avg_reactions.toFixed(1)} реакций/пост
+                            </span>
+                            ` : ''}
+                        </div>
+                        
+                        <!-- Topics -->
+                        ${item.topics && item.topics.length > 0 ? `
                         <div class="evolution-topics">
                             ${item.topics.map(topic => {
-                // Извлекаем название темы из объекта или используем как строку
                 const topicName = typeof topic === "object" && topic.topic ? topic.topic : String(topic)
                 return `<span class="topic-badge">${topicName}</span>`
             }).join("")}
                         </div>
+                        ` : ''}
+                        
                         ${item.post_url ? `
                             <div class="mt-2">
                                 <a href="${item.post_url}" target="_blank" class="btn btn-sm btn-outline-primary">

@@ -152,16 +152,35 @@ class TopicChainService:
 				# Метрики из summary_data аналитики
 				summary = getattr(analytics, 'summary_data', {})
 				content_stats = summary.get("content_statistics", {})
+				
+				# Extract AI-generated title and summary
+				analysis_title = summary.get("analysis_title")
+				analysis_summary = summary.get("analysis_summary")
+				
+				# Extract sentiment and toxicity from multi_llm_analysis
+				multi_llm = summary.get("multi_llm_analysis", {})
+				text_analysis = multi_llm.get("text_analysis", {})
+				
+				sentiment_score = text_analysis.get("sentiment_score", 0.0)
+				sentiment_label = text_analysis.get("sentiment_label", "Нейтральный")
+				toxicity_score = text_analysis.get("toxicity_score", 0.0)
+				toxicity_category = text_analysis.get("toxicity_category", "Нормальный")
 
 				chain_evolution.append({
 					"date": analytics.analysis_date.isoformat()
 					if hasattr(analytics.analysis_date, 'isoformat')
 					else str(analytics.analysis_date),
+					"analysis_title": analysis_title,
+					"analysis_summary": analysis_summary,
 					"topics": topics,
 					"metrics": {
 						"total_posts": content_stats.get("total_posts", 0),
-						"sentiment_score": self._extract_sentiment_score(summary),
-						"engagement_rate": content_stats.get("avg_reactions_per_post", 0)
+						"total_reactions": content_stats.get("total_reactions", 0),
+						"avg_reactions_per_post": content_stats.get("avg_reactions_per_post", 0),
+						"sentiment_score": sentiment_score,
+						"sentiment_label": sentiment_label,
+						"toxicity_score": toxicity_score,
+						"toxicity_category": toxicity_category
 					},
 					"source_info": {
 						"source_id": getattr(analytics, 'source_id', None),
@@ -184,9 +203,18 @@ class TopicChainService:
 	def _extract_sentiment_score(self, summary_data: dict[str, Any]) -> float:
 		"""Извлечь общий score тональности из summary_data."""
 		try:
+			# Try new structure first (multi_llm_analysis)
+			multi_llm = summary_data.get("multi_llm_analysis", {})
+			text_analysis = multi_llm.get("text_analysis", {})
+			sentiment = text_analysis.get("sentiment_score")
+			
+			if sentiment is not None:
+				return float(sentiment)
+			
+			# Fallback to old structure
 			ai_analysis = summary_data.get("ai_analysis", {})
-			sentiment = ai_analysis.get("sentiment_analysis", {})
-			return sentiment.get("sentiment_score", 0.0)
+			sentiment_analysis = ai_analysis.get("sentiment_analysis", {})
+			return sentiment_analysis.get("sentiment_score", 0.0)
 		except:
 			return 0.0
 

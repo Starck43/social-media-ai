@@ -456,38 +456,55 @@ async def get_topic_chains(
 		chain["source"] = sources_map.get(chain["source_id"])
 		chain["topics_count"] = len(chain["topics"])
 
-		# Добавить красивое название цепочки на основе топ-тем
-		top_topics = []
-		if chain.get("topics"):
-			# Подсчет частоты тем
-			topic_freq = {}
-			for topic in chain["topics"]:
-				# Тема может быть строкой или объектом
-				if isinstance(topic, dict):
-					topic_name = topic.get("topic", "")
-				else:
-					topic_name = str(topic)
-				topic_freq[topic_name] = topic_freq.get(topic_name, 0) + 1
-
-			# Взять топ-3 темы
-			sorted_topics = sorted(topic_freq.items(), key=lambda x: x[1], reverse=True)
-			top_topics = [topic[0] for topic in sorted_topics[:3]]
-
-		# Сгенерировать название
-		if len(top_topics) == 1:
-			title = f"Тема: {top_topics[0]}"
-		elif len(top_topics) == 2:
-			title = f"Темы: {top_topics[0]} и {top_topics[1]}"
-		elif len(top_topics) >= 3:
-			title = f"Темы: {', '.join(top_topics[:2])} и другие"
+		# Get AI-generated analysis_title from most recent analysis
+		analysis_title = None
+		recent_analytics = await AIAnalytics.objects.filter(
+			topic_chain_id=chain["chain_id"]
+		).order_by(AIAnalytics.analysis_date.desc()).limit(1)
+		
+		if recent_analytics:
+			recent = recent_analytics[0]
+			if hasattr(recent, 'summary_data') and recent.summary_data:
+				analysis_title = recent.summary_data.get('analysis_title')
+		
+		# Use AI-generated title if available, otherwise fallback to auto-generated
+		if analysis_title:
+			chain["analysis_title"] = analysis_title
+			chain["title"] = analysis_title
 		else:
-			title = f"Цепочка {chain['chain_id']}"
+			# Добавить красивое название цепочки на основе топ-тем (fallback)
+			top_topics = []
+			if chain.get("topics"):
+				# Подсчет частоты тем
+				topic_freq = {}
+				for topic in chain["topics"]:
+					# Тема может быть строкой или объектом
+					if isinstance(topic, dict):
+						topic_name = topic.get("topic", "")
+					else:
+						topic_name = str(topic)
+					topic_freq[topic_name] = topic_freq.get(topic_name, 0) + 1
 
-		# Добавить количество анализов если много
-		if chain["analyses_count"] > 5:
-			title += f" ({chain['analyses_count']} анализов)"
+				# Взять топ-3 темы
+				sorted_topics = sorted(topic_freq.items(), key=lambda x: x[1], reverse=True)
+				top_topics = [topic[0] for topic in sorted_topics[:3]]
 
-		chain["title"] = title
+			# Сгенерировать название
+			if len(top_topics) == 1:
+				title = f"Тема: {top_topics[0]}"
+			elif len(top_topics) == 2:
+				title = f"Темы: {top_topics[0]} и {top_topics[1]}"
+			elif len(top_topics) >= 3:
+				title = f"Темы: {', '.join(top_topics[:2])} и другие"
+			else:
+				title = f"Цепочка {chain['chain_id']}"
+
+			# Добавить количество анализов если много
+			if chain["analyses_count"] > 5:
+				title += f" ({chain['analyses_count']} анализов)"
+
+			chain["analysis_title"] = title
+			chain["title"] = title
 
 		result.append(chain)
 	
@@ -630,10 +647,21 @@ async def get_topic_chain_evolution(
 						sentiment_score = sum(sentiments) / len(sentiments)
 						logger.info(f"Calculated sentiment from topics: {sentiment_score}")
 
+				# Extract metrics from analysis
+				metrics = analysis.get("metrics", {})
+				
 				evolution_data.append({
 					"analysis_date": analysis.get("date", ""),
+					"analysis_title": analysis.get("analysis_title"),
+					"analysis_summary": analysis.get("analysis_summary"),
 					"topics": topics_data,  # Возвращаем полные объекты тем, а не только названия
-					"sentiment_score": sentiment_score,
+					"sentiment_score": metrics.get("sentiment_score", sentiment_score),
+					"sentiment_label": metrics.get("sentiment_label", ""),
+					"toxicity_score": metrics.get("toxicity_score", 0.0),
+					"toxicity_category": metrics.get("toxicity_category", ""),
+					"total_posts": metrics.get("total_posts", 0),
+					"total_reactions": metrics.get("total_reactions", 0),
+					"avg_reactions": metrics.get("avg_reactions_per_post", 0),
 					"post_url": None  # TODO: Add post URL if available
 				})
 

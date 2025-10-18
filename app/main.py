@@ -99,10 +99,7 @@ async def topic_chains_dashboard(request: Request):
 	Дашборд для визуализации цепочек тем.
 	Отображает цепочки тем из данных аналитики.
 	"""
-	return templates.TemplateResponse(
-		"dashboard_topic_chains.html",
-		{"request": request}
-	)
+	return templates.TemplateResponse("dashboard_topic_chains.html", {"request": request})
 
 
 @app.get("/", tags=["Root"])

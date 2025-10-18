@@ -1,6 +1,7 @@
 import logging
-from datetime import UTC
-from typing import Optional, Any
+import hashlib
+from datetime import UTC, datetime, date, timedelta
+from typing import Optional, Any, List
 
 from app.models import Source, AIAnalytics, BotScenario, LLMProvider
 from app.services.ai.content_classifier import ContentClassifier
@@ -105,6 +106,33 @@ class AIAnalyzer:
 			
 			# Create unified summary if multiple analyses
 			unified_summary = await self._create_unified_summary(analysis_results, bot_scenario)
+			
+			# Auto-detect continuing topics if topic_chain_id not provided
+			if not topic_chain_id:
+				# Extract current topics from analysis results
+				current_topics = []
+				
+				# Try to get topics from text analysis
+				text_parsed = analysis_results.get('text_analysis', {}).get('parsed', {})
+				if 'main_topics' in text_parsed:
+					current_topics.extend(text_parsed['main_topics'])
+				
+				# Try to get topics from unified summary
+				if unified_summary and 'parsed' in unified_summary:
+					unified_parsed = unified_summary['parsed']
+					if 'main_themes' in unified_parsed:
+						current_topics.extend(unified_parsed['main_themes'])
+				
+				# Search for matching existing chain
+				if current_topics:
+					matched_chain = await self._find_matching_topic_chain(source, current_topics)
+					if matched_chain:
+						topic_chain_id = matched_chain
+						logger.info(f"Matched existing topic chain: {topic_chain_id}")
+					else:
+						# Generate new chain ID
+						topic_chain_id = self._generate_topic_chain_id(source, current_topics, datetime.now(UTC))
+						logger.info(f"Created new topic chain: {topic_chain_id}")
 			
 			# Save comprehensive analysis
 			analysis = await self._save_analysis(
@@ -442,6 +470,100 @@ class AIAnalyzer:
 
 		return obj
 
+	async def _find_matching_topic_chain(
+			self,
+			source: Source,
+			current_topics: List[str],
+			lookback_days: int = 7
+	) -> Optional[str]:
+		"""
+		Find existing topic chain that matches current analysis topics.
+		
+		This enables continuing topics detection across multiple analysis runs.
+		Uses simple string matching to find topics that appear in recent analyses.
+		
+		Args:
+			source: Source being analyzed
+			current_topics: List of topics from current analysis
+			lookback_days: How many days back to search for matching topics
+		
+		Returns:
+			Existing topic_chain_id if match found, None otherwise
+		"""
+		if not current_topics:
+			return None
+		
+		# Get recent analyses for this source
+		cutoff_date = date.today() - timedelta(days=lookback_days)
+		recent_analyses = await AIAnalytics.objects.filter(
+			source_id=source.id,
+			analysis_date__gte=cutoff_date
+		).order_by(AIAnalytics.analysis_date.desc()).limit(10)
+		
+		if not recent_analyses:
+			return None
+		
+		# Normalize current topics for comparison
+		current_topics_normalized = [t.lower().strip() for t in current_topics if t]
+		
+		# Check each recent analysis for matching topics
+		for analysis in recent_analyses:
+			if not analysis.topic_chain_id or not analysis.summary_data:
+				continue
+			
+			# Extract topics from previous analysis
+			prev_topics = []
+			multi_llm = analysis.summary_data.get('multi_llm_analysis', {})
+			text_analysis = multi_llm.get('text_analysis', {})
+			
+			if 'main_topics' in text_analysis:
+				prev_topics.extend(text_analysis['main_topics'])
+			
+			# Also check unified summary
+			unified = analysis.summary_data.get('unified_summary', {})
+			if 'main_themes' in unified:
+				prev_topics.extend(unified['main_themes'])
+			
+			if not prev_topics:
+				continue
+			
+			# Normalize previous topics
+			prev_topics_normalized = [t.lower().strip() for t in prev_topics if t]
+			
+			# Check for matches (at least 50% overlap)
+			matches = sum(1 for topic in current_topics_normalized if topic in prev_topics_normalized)
+			match_ratio = matches / len(current_topics_normalized) if current_topics_normalized else 0
+			
+			if match_ratio >= 0.5:  # 50% of current topics match previous topics
+				logger.info(
+					f"Found matching topic chain: {analysis.topic_chain_id} "
+					f"(match ratio: {match_ratio:.2f}, source: {source.id})"
+				)
+				return analysis.topic_chain_id
+		
+		return None
+	
+	def _generate_topic_chain_id(self, source: Source, topics: List[str], timestamp: datetime) -> str:
+		"""
+		Generate unique topic chain ID based on source, main topic, and timestamp.
+		
+		Args:
+			source: Source being analyzed
+			topics: List of topics from analysis
+			timestamp: Analysis timestamp
+		
+		Returns:
+			Unique chain ID string
+		"""
+		# Use first topic as primary identifier
+		primary_topic = topics[0] if topics else "general"
+		
+		# Create hash from source ID + primary topic + date
+		hash_input = f"{source.id}_{primary_topic}_{timestamp.date()}"
+		hash_short = hashlib.md5(hash_input.encode()).hexdigest()[:8]
+		
+		return f"chain_{source.id}_{hash_short}"
+	
 	async def _save_analysis(
 			self,
 			analysis_results: dict[str, Any],
@@ -498,8 +620,36 @@ class AIAnalyzer:
 		st = getattr(source, "source_type", None)
 		st_val = get_enum_value(st) if st is not None else ""
 
+		# Extract analysis_title and analysis_summary from AI responses (prefer unified, fallback to text)
+		analysis_title = None
+		analysis_summary = None
+		
+		if unified_summary and unified_summary.get('parsed', {}):
+			parsed = unified_summary['parsed']
+			if parsed.get('analysis_title'):
+				analysis_title = parsed['analysis_title']
+			if parsed.get('analysis_summary'):
+				analysis_summary = parsed['analysis_summary']
+		
+		# Fallback to text_analysis
+		if not analysis_title or not analysis_summary:
+			text_parsed = analysis_results.get('text_analysis', {}).get('parsed', {})
+			if not analysis_title and text_parsed.get('analysis_title'):
+				analysis_title = text_parsed['analysis_title']
+			if not analysis_summary and text_parsed.get('analysis_summary'):
+				analysis_summary = text_parsed['analysis_summary']
+		
+		# Fallback to image/video
+		if not analysis_title:
+			if analysis_results.get('image_analysis', {}).get('parsed', {}).get('analysis_title'):
+				analysis_title = analysis_results['image_analysis']['parsed']['analysis_title']
+			elif analysis_results.get('video_analysis', {}).get('parsed', {}).get('analysis_title'):
+				analysis_title = analysis_results['video_analysis']['parsed']['analysis_title']
+		
 		# Build comprehensive data structure
 		comprehensive_data = {
+			"analysis_title": analysis_title,  # AI-generated title for dashboard display
+			"analysis_summary": analysis_summary,  # AI-generated summary for details display
 			"multi_llm_analysis": {
 				"text_analysis": analysis_results.get('text_analysis', {}).get('parsed', {}),
 				"image_analysis": analysis_results.get('image_analysis', {}).get('parsed', {}),

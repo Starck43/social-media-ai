@@ -78,7 +78,9 @@ class Settings(BaseSettings):
 	VK_APP_ID: str
 	VK_SERVICE_ACCESS_TOKEN: str
 	TELEGRAM_BOT_TOKEN: str
-	TELEGRAM_ADMIN_CHAT_ID: str # Chat ID for admin notifications
+	TELEGRAM_ADMIN_CHAT_ID: str  # Chat ID for admin notifications
+
+	LLM_REQUEST_DELAY = 1000  # delay between requests in milliseconds
 
 
 settings = Settings()

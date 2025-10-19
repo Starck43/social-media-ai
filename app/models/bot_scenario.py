@@ -91,7 +91,10 @@ class BotScenario(Base, TimestampMixin):
 	collection_interval_hours: Mapped[int] = Column(Integer, nullable=False, default=1, server_default='1')
 
 	# LLM providers for different content types
-	# LEGACY: Individual FK fields (kept for backward compatibility)
+	# 
+	# RECOMMENDED: Use llm_strategy (below) for automatic provider selection.
+	# LEGACY: Individual FK fields (kept for backward compatibility).
+	# If set, these explicit providers override llm_strategy.
 	text_llm_provider_id: Mapped[int | None] = Column(
 		Integer,
 		ForeignKey("social_manager.llm_providers.id", ondelete="SET NULL"),

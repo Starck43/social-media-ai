@@ -2,12 +2,19 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 import json
+import asyncio
 
 import httpx
 
+from app.core import config
 from app.models import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Global rate limiter to avoid 429 errors
+# Track last request time per provider
+_last_request_time: Dict[str, float] = {}
+_rate_limit_delay = config.LLM_REQUEST_DELAY / 1000  # seconds between requests
 
 
 class LLMClient(ABC):
@@ -44,6 +51,22 @@ class LLMClient(ABC):
 			# Fallback to provider name
 			return self.provider.name.lower().replace(' ', '_')
 		return provider_type
+	
+	async def _apply_rate_limit(self):
+		"""Apply rate limiting to avoid 429 errors."""
+		global _last_request_time
+		
+		provider_key = self._get_provider_name()
+		current_time = asyncio.get_event_loop().time()
+		
+		if provider_key in _last_request_time:
+			elapsed = current_time - _last_request_time[provider_key]
+			if elapsed < _rate_limit_delay:
+				delay = _rate_limit_delay - elapsed
+				logger.debug(f"Rate limiting: waiting {delay:.2f}s for {provider_key}")
+				await asyncio.sleep(delay)
+		
+		_last_request_time[provider_key] = asyncio.get_event_loop().time()
 	
 	@abstractmethod
 	async def analyze(
@@ -125,6 +148,9 @@ class DeepSeekClient(LLMClient):
 		if not self.api_key:
 			raise ValueError(f"API key not configured for {self.provider.name}")
 		
+		# Apply rate limiting
+		await self._apply_rate_limit()
+		
 		payload = self._prepare_request(prompt, **kwargs)
 		
 		async with httpx.AsyncClient() as client:
@@ -200,6 +226,9 @@ class OpenAIClient(LLMClient):
 		"""
 		if not self.api_key:
 			raise ValueError(f"API key not configured for {self.provider.name}")
+		
+		# Apply rate limiting
+		await self._apply_rate_limit()
 		
 		payload = self._prepare_request(prompt, media_urls, **kwargs)
 		

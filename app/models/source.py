@@ -41,6 +41,14 @@ class Source(Base, TimestampMixin):
 	params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 	is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 	last_checked: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+	
+	# Time range for data collection (optional boundaries)
+	# If both are NULL, collect data for all time
+	# If only date_from is set, collect from that date onwards
+	# If only date_to is set, collect up to that date
+	# If both are set, collect within the specified range
+	date_from: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True, comment="Start date for data collection (inclusive)")
+	date_to: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True, comment="End date for data collection (inclusive)")
 
 	# Relationships
 	platform: Mapped["Platform"] = relationship("Platform", back_populates="sources")

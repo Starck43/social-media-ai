@@ -26,12 +26,91 @@ class AIAnalyzer:
 	— Full LLM tracing for debugging and monitoring
 	"""
 
+	async def analyze_content_by_days(
+			self,
+			content: list[dict],
+			source: Source,
+	) -> list[AIAnalytics]:
+		"""
+		Group content by days and analyze each day separately.
+		
+		This is useful for event-based scenarios where you want to track
+		activity over time and see evolution day by day.
+		
+		Args:
+			content: List of normalized content items
+			source: Source being analyzed
+		
+		Returns:
+			List of AIAnalytics records (one per day with activity)
+		"""
+		from collections import defaultdict
+		
+		if not content:
+			logger.warning(f"No content to analyze for source {source.id}")
+			return []
+		
+		# Group content by day
+		content_by_day = defaultdict(list)
+		
+		for item in content:
+			# Extract publication date
+			pub_date = item.get('published_at') or item.get('date') or item.get('created_at')
+			
+			# Convert to datetime
+			if isinstance(pub_date, int):
+				pub_date = datetime.fromtimestamp(pub_date, tz=UTC)
+			elif isinstance(pub_date, str):
+				try:
+					pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+				except:
+					pub_date = None
+			
+			# Group by date
+			if pub_date:
+				day = pub_date.date()
+			else:
+				day = date.today()
+			
+			content_by_day[day].append(item)
+		
+		logger.info(f"Grouped {len(content)} items into {len(content_by_day)} days for source {source.id}")
+		
+		# Analyze each day
+		analytics_list = []
+		
+		for day, day_content in sorted(content_by_day.items()):
+			logger.info(f"Analyzing {len(day_content)} items for source {source.id} on {day}")
+			
+			try:
+				# Analyze content for this day
+				analytics = await self.analyze_content(
+					content=day_content,
+					source=source,
+					analysis_date=day
+				)
+				
+				# Only add non-empty analytics
+				if analytics:
+					analytics_list.append(analytics)
+				else:
+					logger.warning(f"Skipping empty analytics for day {day}, source {source.id}")
+				
+			except Exception as e:
+				logger.error(f"Error analyzing day {day} for source {source.id}: {e}")
+				continue
+		
+		logger.info(f"Created {len(analytics_list)} analytics records for source {source.id} (analyzed {len(content_by_day)} days)")
+		
+		return analytics_list
+
 	async def analyze_content(
 			self,
 			content: list[dict],
 			source: Source,
 			topic_chain_id: Optional[str] = None,
 			parent_analysis_id: Optional[int] = None,
+			analysis_date: Optional[date] = None,
 	) -> Optional[AIAnalytics]:
 		"""
 		Comprehensive analysis of collected content using multiple LLM providers.
@@ -41,6 +120,7 @@ class AIAnalyzer:
 			source: Source from which content was collected
 			topic_chain_id: Optional chain ID for ongoing topics
 			parent_analysis_id: Optional parent analysis ID for threaded analysis
+			analysis_date: Optional date to use for this analysis (defaults to today)
 
 		Returns:
 			AIAnalytics object with complete analysis results or None if failed
@@ -62,7 +142,7 @@ class AIAnalyzer:
 				logger.warning(f"Failed to load bot scenario {source.bot_scenario_id}: {e}")
 
 		# Prepare metadata
-		content_stats = self._calculate_content_stats(content)
+		content_stats = self._calculate_content_stats(content, analysis_date)
 		platform_name = await self._get_platform_name(source)
 
 		# Classify content by media type
@@ -104,6 +184,17 @@ class AIAnalyzer:
 				if video_result:
 					analysis_results['video_analysis'] = video_result
 			
+			# Check if we have any meaningful analysis results
+			has_results = False
+			for result in analysis_results.values():
+				if result and result.get('parsed'):
+					has_results = True
+					break
+			
+			if not has_results:
+				logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
+				return None
+			
 			# Create unified summary if multiple analyses
 			unified_summary = await self._create_unified_summary(analysis_results, bot_scenario)
 			
@@ -123,6 +214,7 @@ class AIAnalyzer:
 				bot_scenario,
 				topic_chain_id,
 				parent_analysis_id,
+				analysis_date,
 			)
 			
 			return analysis
@@ -409,8 +501,14 @@ class AIAnalyzer:
 		obj = await Platform.objects.get(id=source.platform_id)
 		return obj.name
 
-	def _calculate_content_stats(self, content: list[dict]) -> dict[str, Any]:
-		"""Calculate content statistics including actual post date range."""
+	def _calculate_content_stats(self, content: list[dict], analysis_date: Optional[date] = None) -> dict[str, Any]:
+		"""
+		Calculate content statistics including actual post date range.
+		
+		Args:
+			content: List of content items
+			analysis_date: Optional analysis date for event-based mode (to set correct date_range)
+		"""
 		if not content:
 			return {}
 		
@@ -444,6 +542,21 @@ class AIAnalyzer:
 				'latest': max(post_dates).isoformat(),
 				'span_days': (max(post_dates) - min(post_dates)).days
 			}
+		
+		# For event-based analysis with specific date, use that date for date_range
+		# This ensures LLM prompt shows correct single-day context
+		if analysis_date and post_dates:
+			# For event-based mode: use analysis_date as both first and last
+			date_range_dict = {
+				"first": analysis_date.isoformat(),
+				"last": analysis_date.isoformat()
+			}
+		else:
+			# For aggregated mode: use actual min/max from content
+			date_range_dict = {
+				"first": min(dates) if dates else None,
+				"last": max(dates) if dates else None
+			}
 
 		return {
 			"total_posts": len(content),
@@ -452,8 +565,8 @@ class AIAnalyzer:
 			"total_comments": sum(comments),
 			"avg_reactions_per_post": sum(reactions) / len(content) if content else 0,
 			"avg_comments_per_post": sum(comments) / len(content) if content else 0,
-			"date_range": {"first": min(dates) if dates else None, "last": max(dates) if dates else None},
-			"content_date_range": content_date_range,  # NEW: Actual post dates for dashboard
+			"date_range": date_range_dict,  # Context-aware: single date for event-based, range for aggregated
+			"content_date_range": content_date_range,  # Always actual post dates for dashboard
 		}
 
 	def _make_json_serializable(self, obj):
@@ -580,9 +693,14 @@ class AIAnalyzer:
 			bot_scenario: Optional['BotScenario'] = None,
 			topic_chain_id: Optional[str] = None,
 			parent_analysis_id: Optional[int] = None,
+			analysis_date: Optional[date] = None,
 	) -> AIAnalytics:
 		"""Save comprehensive analysis results to database."""
-		from datetime import date, datetime
+		from datetime import date as date_class, datetime
+		
+		# Use provided date or default to today
+		if analysis_date is None:
+			analysis_date = date_class.today()
 
 		# Extract LLM tracing info from first available analysis
 		llm_model = None
@@ -652,6 +770,34 @@ class AIAnalyzer:
 			elif analysis_results.get('video_analysis', {}).get('parsed', {}).get('analysis_title'):
 				analysis_title = analysis_results['video_analysis']['parsed']['analysis_title']
 		
+		# Post-process analysis_title: ensure it contains date for event-based analysis
+		if analysis_date and analysis_title:
+			# Format date in human-readable Russian format
+			import locale
+			try:
+				# Try to set Russian locale for proper month names
+				locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
+			except:
+				pass  # Fallback to default if Russian locale not available
+			
+			date_str = analysis_date.strftime('%d %B %Y')  # e.g., "17 октября 2025"
+			
+			# Check if title already contains date in various formats
+			has_date = any([
+				str(analysis_date.year) in analysis_title,
+				str(analysis_date.day) in analysis_title,
+				date_str.lower() in analysis_title.lower(),
+				'за день' in analysis_title.lower() or 'за дату' in analysis_title.lower()
+			])
+			
+			if not has_date:
+				# Prepend or append date to title
+				if 'активность' in analysis_title.lower():
+					analysis_title = f"Активность за {date_str}"
+				else:
+					analysis_title = f"{analysis_title} ({date_str})"
+				logger.info(f"Enhanced analysis_title with date: {analysis_title}")
+		
 		# Build comprehensive data structure
 		comprehensive_data = {
 			"analysis_title": analysis_title,  # AI-generated title for dashboard display
@@ -694,10 +840,10 @@ class AIAnalyzer:
 		# Primary provider (most used)
 		primary_provider = list(providers_used)[0] if providers_used else None
 		
-		# Check if analysis already exists for today
+		# Check if analysis already exists for this date
 		existing_analysis = await AIAnalytics.objects.filter(
 			source_id=source.id,
-			analysis_date=date.today(),
+			analysis_date=analysis_date,
 			period_type=PeriodType.DAILY
 		).first()
 
@@ -732,7 +878,7 @@ class AIAnalyzer:
 			llm_model=llm_model or "multi-llm",
 			prompt_text=prompt_text,
 			response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-			analysis_date=date.today(),
+			analysis_date=analysis_date,
 			period_type=PeriodType.DAILY,
 			topic_chain_id=topic_chain_id,
 			parent_analysis_id=parent_analysis_id,

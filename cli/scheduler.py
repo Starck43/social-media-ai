@@ -6,8 +6,12 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
+from datetime import datetime, timezone, timedelta, date
+from typing import Optional, Dict, Any, List, Union
+from dateutil.parser import parse as parse_date
+
 from app.models import Source
-from app.services.ai.analyzer import AIAnalyzer
+from app.services.ai import AIAnalyzer
 
 # Initialize Rich console
 console = Console()
@@ -15,6 +19,7 @@ console = Console()
 
 class CLIContentScheduler:
 	"""
+{{ ... }}
 	CLI version of ContentScheduler with rich output.
 	"""
 
@@ -23,10 +28,43 @@ class CLIContentScheduler:
 		self.analyzer = AIAnalyzer()
 		self.optimizer = None  # We'll keep the original optimizer logic
 
-	async def run_collection_cycle(self) -> dict:
+	async def run_collection_cycle(
+			self,
+			source_id: Optional[int] = None,
+			source_url: Optional[str] = None,
+			start_date: Optional[Union[str, date]] = None,
+			end_date: Optional[Union[str, date]] = None,
+			force_refresh: bool = False
+	) -> dict:
 		"""
 		Run one collection cycle with rich CLI output.
+		
+		Args:
+			source_id: Optional source ID to collect from (deprecated, use source_url instead)
+			source_url: Optional source URL (platform_url) to collect from. If None, collects from all active sources.
+			start_date: Optional start date for collection (YYYY-MM-DD or date object).
+			end_date: Optional end date for collection (YYYY-MM-DD or date object).
+			force_refresh: If True, reset last_checked to force re-analysis of all data
 		"""
+		# Parse date strings if provided
+		if isinstance(start_date, str):
+			try:
+				start_date = parse_date(start_date).date()
+			except (ValueError, TypeError) as e:
+				console.print(f"[red]Invalid start date format: {e}. Use YYYY-MM-DD[/red]")
+				start_date = None
+
+		if isinstance(end_date, str):
+			try:
+				end_date = parse_date(end_date).date()
+			except (ValueError, TypeError) as e:
+				console.print(f"[red]Invalid end date format: {e}. Use YYYY-MM-DD[/red]")
+				end_date = None
+
+		# Validate date range
+		if start_date and end_date and start_date > end_date:
+			console.print("[yellow]Warning: Start date is after end date, swapping values[/yellow]")
+			start_date, end_date = end_date, start_date
 		console.print()
 		console.print(Panel.fit(
 			"[bold cyan]🚀 STARTING COLLECTION CYCLE[/bold cyan]",
@@ -42,11 +80,51 @@ class CLIContentScheduler:
 
 		# Get all active sources
 		try:
-			sources = await (
-				Source.objects
-				.select_related('platform', 'bot_scenario')
-				.filter(is_active=True)
-			)
+			query = Source.objects.select_related('platform', 'bot_scenario')
+
+			# Find source by URL or ID
+			if source_url:
+				# Parse URL to extract external_id
+				external_id = source_url.rstrip('/').split('/')[-1]
+				console.print(f"[dim]Looking for source with external_id: {external_id}[/dim]")
+				sources = await query.filter(external_id=external_id, is_active=True)
+				if not sources:
+					console.print(f"[red]Error: Active source with URL {source_url} (external_id: {external_id}) not found[/red]")
+					return {
+						'collected': 0, 'skipped': 0, 'failed': 1,
+						'total_sources': 0, 'total_content': 0, 'total_cost': 0.0,
+						'start_date': start_date, 'end_date': end_date
+					}
+			elif source_id:
+				# Legacy support for source_id
+				sources = [await query.get(id=source_id, is_active=True)]
+				if not sources[0]:
+					console.print(f"[red]Error: Active source with ID {source_id} not found[/red]")
+					return {
+						'collected': 0, 'skipped': 0, 'failed': 1,
+						'total_sources': 0, 'total_content': 0, 'total_cost': 0.0,
+						'start_date': start_date, 'end_date': end_date
+					}
+			else:
+				sources = await query.filter(is_active=True)
+
+			# Reset last_checked if force_refresh is enabled
+			if force_refresh and sources:
+				console.print(f"[yellow]🔄 Force refresh enabled - resetting last_checked for {len(sources)} source(s)[/yellow]")
+				for source in sources:
+					await Source.objects.update_by_id(source.id, last_checked=None)
+
+			# Store date range in stats
+			stats = {
+				'collected': 0,
+				'skipped': 0,
+				'failed': 0,
+				'total_sources': len(sources),
+				'total_content': 0,
+				'total_cost': 0.0,
+				'start_date': start_date,
+				'end_date': end_date
+			}
 			total_sources = len(sources)
 			console.print(f"[dim]📋 Found {total_sources} active sources[/dim]")
 
@@ -166,37 +244,67 @@ class CLIContentScheduler:
 					console.print(f"\n[dim]💭 Sample content being analyzed:[/dim]")
 					console.print(f"[dim]{text_content[:200]}{'...' if len(text_content) > 200 else ''}[/dim]")
 
-			analysis = await self.analyzer.analyze_content(
-				content=content,
-				source=source,
-				topic_chain_id=f"source_{source.id}_chain",  # Generate chain ID for this source
-			)
-
-			if analysis:
-				console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
-				console.print(f"[dim]📊 Analysis ID: {analysis.id}[/dim]")
-
-				# Show detailed analysis results if available
-				if hasattr(analysis, 'summary_data') and analysis.summary_data:
-					# Convert JSON to dict if needed
-					summary_dict = analysis.summary_data
-					if hasattr(summary_dict, 'items'):  # Check if it's already a dict-like object
-						pass  # It's already a dict
-					else:
-						# Try to convert from JSON string or other format
-						try:
-							import json
-							if isinstance(summary_dict, str):
-								summary_dict = json.loads(summary_dict)
-							else:
-								summary_dict = dict(summary_dict) if summary_dict else {}
-						except:
-							summary_dict = {}
-
-					self._display_analysis_details(summary_dict, source.name)
+			# Check if we should use day-by-day analysis
+			bot_scenario = source.bot_scenario if hasattr(source, 'bot_scenario') else None
+			is_event_based = False
+			if bot_scenario and bot_scenario.scope:
+				is_event_based = bot_scenario.scope.get('event_based', False)
+			
+			if is_event_based:
+				console.print(f"[dim]📅 Event-based analysis: grouping by days[/dim]")
+				analytics_list = await self.analyzer.analyze_content_by_days(
+					content=content,
+					source=source,
+				)
+				
+				if analytics_list:
+					console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
+					console.print(f"[dim]📊 Created {len(analytics_list)} analytics records (one per day)[/dim]")
+					
+					# Show details for each day
+					for analysis in analytics_list[:3]:  # Show first 3 days
+						console.print(f"[dim]  - {analysis.analysis_date}: ID={analysis.id}[/dim]")
+					if len(analytics_list) > 3:
+						console.print(f"[dim]  ... and {len(analytics_list) - 3} more[/dim]")
+					
+					# Use first analysis for detailed display
+					analysis = analytics_list[0] if analytics_list else None
+				else:
+					console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
+					return None
 			else:
-				console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
-				return None
+				# Regular aggregated analysis
+				analysis = await self.analyzer.analyze_content(
+					content=content,
+					source=source,
+					topic_chain_id=f"source_{source.id}_chain",  # Generate chain ID for this source
+				)
+				
+				if analysis:
+					console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
+					console.print(f"[dim]📊 Analysis ID: {analysis.id}[/dim]")
+				else:
+					console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
+					return None
+
+			# Show detailed analysis results if available
+			if analysis and hasattr(analysis, 'summary_data') and analysis.summary_data:
+				# Convert JSON to dict if needed
+				summary_dict = analysis.summary_data
+				if hasattr(summary_dict, 'items'):  # Check if it's already a dict-like object
+					pass  # It's already a dict
+				else:
+					# Try to convert from JSON string or other format
+					try:
+						import json
+						if isinstance(summary_dict, str):
+							summary_dict = json.loads(summary_dict)
+						else:
+							summary_dict = dict(summary_dict) if summary_dict else {}
+					except:
+						summary_dict = {}
+
+				self._display_analysis_details(summary_dict, source.name)
 
 			# Save checkpoint on success
 			result = CollectionResult(
@@ -445,23 +553,52 @@ def scheduler_cli():
 @scheduler_cli.command("run")
 @click.option("--interval", "-i", default=60, help="Collection interval in minutes (default: 60)")
 @click.option("--once", is_flag=True, help="Run one collection cycle and exit")
-def run_scheduler(interval: int, once: bool):
+@click.option("--source-id", type=int, help="(Deprecated) Collect from specific source ID")
+@click.option("--source-url", help="Collect from specific source by URL (e.g., https://vk.com/username)")
+@click.option("--start-date", help="Start date for collection (YYYY-MM-DD)")
+@click.option("--end-date", help="End date for collection (YYYY-MM-DD, defaults to today)")
+@click.option("--force-refresh", is_flag=True, help="Force re-analysis by resetting last_checked")
+def run_scheduler(interval: int, once: bool, source_id: int, source_url: str, start_date: str, end_date: str, force_refresh: bool):
 	"""
 	Start content collection scheduler.
 	
 	Examples:
-		cli scheduler run                    # Run every hour
-		cli scheduler run -i 30              # Run every 30 minutes
-		cli scheduler run --once             # Run once and exit
+		python -m cli.scheduler run                                    # Run all sources every hour
+		python -m cli.scheduler run -i 30                              # Run every 30 minutes
+		python -m cli.scheduler run --once                             # Run once and exit
+		python -m cli.scheduler run --source-url https://vk.com/user1  # Collect from specific source
+		python -m cli.scheduler run --source-id 1 --force-refresh      # Force refresh specific source
 	"""
 	click.echo("=" * 60)
 	click.echo("CONTENT COLLECTION SCHEDULER")
 	click.echo("=" * 60)
 	click.echo()
 
-	if once:
-		click.echo("Running one collection cycle...")
-		stats = asyncio.run(cli_scheduler.run_collection_cycle())
+	if once or source_id or source_url or start_date or end_date or force_refresh:
+		if source_url:
+			click.echo(f"Running collection for source URL {source_url}...")
+		elif source_id:
+			click.echo(f"Running collection for source ID {source_id} (consider using --source-url instead)...")
+		else:
+			click.echo("Running one collection cycle...")
+		
+		if force_refresh:
+			click.echo("⚠️  Force refresh enabled - will reset last_checked")
+
+		# Set default end date to today if not provided
+		if start_date and not end_date:
+			end_date = date.today().isoformat()
+
+		if start_date:
+			click.echo(f"Date range: {start_date} to {end_date or 'now'}")
+
+		stats = asyncio.run(cli_scheduler.run_collection_cycle(
+			source_id=source_id,
+			source_url=source_url,
+			start_date=start_date,
+			end_date=end_date,
+			force_refresh=force_refresh
+		))
 
 		click.echo()
 		click.echo("✅ Collection cycle complete!")
@@ -469,6 +606,8 @@ def run_scheduler(interval: int, once: bool):
 		click.echo(f"   Skipped: {stats['skipped']} | Failed: {stats['failed']}")
 		click.echo(f"   Total items: {stats['total_content']}")
 		click.echo(f"   Total cost: ${stats['total_cost']:.4f}")
+		if stats.get('start_date') or stats.get('end_date'):
+			click.echo(f"   Date range: {stats.get('start_date') or 'start'} to {stats.get('end_date') or 'now'}")
 	else:
 		click.echo(f"Starting scheduler (interval: {interval} minutes)")
 		click.echo("Press Ctrl+C to stop")

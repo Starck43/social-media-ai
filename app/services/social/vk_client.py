@@ -162,22 +162,27 @@ class VKClient(BaseClient):
 			}
 			
 			# DATE RANGE FILTERING
-			# Priority: date_from/date_to (explicit) > last_checked (checkpoint) > no filter
+			# Priority: source.date_from/date_to (model fields) > params > last_checked (checkpoint) > no filter
 			
-			date_from = source_params.get('date_from')  # From params
-			date_to = source_params.get('date_to')      # From params
+			# Get date_from from model fields first, then fallback to params
+			date_from = source.date_from if hasattr(source, 'date_from') and source.date_from else source_params.get('date_from')
+			date_to = source.date_to if hasattr(source, 'date_to') and source.date_to else source_params.get('date_to')
 			
 			# Parse and apply date_from (start boundary)
 			if date_from:
-				if isinstance(date_from, str):
-					from datetime import datetime
-					try:
+				from datetime import datetime
+				try:
+					# Handle both string and datetime objects
+					if isinstance(date_from, str):
 						date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
-						start_time = int(date_from_dt.timestamp())
-						params_dict['start_time'] = start_time
-						logger.info(f"VK date_from filter: {date_from_dt.isoformat()} (ts: {start_time})")
-					except Exception as e:
-						logger.warning(f"Failed to parse date_from '{date_from}': {e}")
+					else:
+						date_from_dt = date_from
+					
+					start_time = int(date_from_dt.timestamp())
+					params_dict['start_time'] = start_time
+					logger.info(f"VK date_from filter: {date_from_dt.isoformat()} (ts: {start_time})")
+				except Exception as e:
+					logger.warning(f"Failed to parse date_from '{date_from}': {e}")
 			# Fallback to checkpoint if date_from not set
 			elif source.last_checked:
 				start_time = int(source.last_checked.timestamp())
@@ -186,15 +191,19 @@ class VKClient(BaseClient):
 			
 			# Parse and apply date_to (end boundary)
 			if date_to:
-				if isinstance(date_to, str):
-					from datetime import datetime
-					try:
+				from datetime import datetime
+				try:
+					# Handle both string and datetime objects
+					if isinstance(date_to, str):
 						date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
-						end_time = int(date_to_dt.timestamp())
-						params_dict['end_time'] = end_time
-						logger.info(f"VK date_to filter: {date_to_dt.isoformat()} (ts: {end_time})")
-					except Exception as e:
-						logger.warning(f"Failed to parse date_to '{date_to}': {e}")
+					else:
+						date_to_dt = date_to
+					
+					end_time = int(date_to_dt.timestamp())
+					params_dict['end_time'] = end_time
+					logger.info(f"VK date_to filter: {date_to_dt.isoformat()} (ts: {end_time})")
+				except Exception as e:
+					logger.warning(f"Failed to parse date_to '{date_to}': {e}")
 			
 			base_params.update(params_dict)
 

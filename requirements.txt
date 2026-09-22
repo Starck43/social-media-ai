@@ -1,79 +1,47 @@
-# FastAPI и веб-фреймворки
-fastapi
-uvicorn
-python-multipart
-fastapi-pagination
-slowapi
+# FastAPI stack
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn==0.53.0
+python-multipart==0.0.32
+fastapi-pagination==0.16.0
+slowapi==0.1.10
 
-# База данных и ORM
-sqlalchemy
-asyncpg
-alembic
-psycopg2-binary
-starlette
-typer
-sqladmin
-itsdangerous
+# Database
+sqlalchemy==2.0.54
+alembic==1.20.0
+asyncpg==0.31.0
+psycopg2-binary==2.9.13
 
-redis
-celery
+# Authentication
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==4.0.1  # 5.x is incompatible with passlib 1.7.4
 
-# Scheduler (cron expressions for app/scheduler)
-croniter
+# CLI
+typer==0.27.2
+rich==15.0.0
 
-# HTTP клиенты для DeepSeek API
-httpx
-aiohttp
-requests
+# Utilities
+python-dotenv==1.2.3
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+itsdangerous==2.2.0
+croniter==6.2.4
 
-# JWT
-python-jose
-passlib
+# Redis / Celery (frozen — kept for backward compatibility)
+redis==8.1.0
+celery==5.6.3
 
-# AI и ML утилиты
-numpy
-pandas
-scikit-learn
+# Admin UI
+sqladmin==0.32.0
 
-# Фронтенд и визуализация
-rich
-streamlit
-plotly
-matplotlib
+# Testing and development
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+black==26.5.1
+isort==9.0.1
+flake8==7.3.0
+mypy==2.3.1
 
-# Социальные сети API
-vk-api
-python-telegram-bot
-telethon
-tweepy
-
-# Утилиты и обработка данных
-python-dotenv
-pydantic
-pydantic-settings
-loguru
-python-dateutil
-beautifulsoup4
-lxml
-pillow
-
-# Безопасность
-cryptography
-bcrypt
-python-decouple
-
-# Тестирование и разработка
-pytest
-pytest-asyncio
-pytest-cov
-requests-mock
-black
-isort
-flake8
-mypy
-
-WTForms
-
-MarkupSafe
-
-click

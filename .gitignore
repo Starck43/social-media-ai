@@ -6,7 +6,9 @@ __pycache__/
 *.pyc
 
 # Project
-/migrations/
+# NOTE: /migrations/ used to be ignored here. Alembic revisions are the only
+# source of the DB schema, so they must be tracked — a fresh clone/VPS deploy
+# would otherwise create an empty database.
 build/
 dist/
 *.egg-info/

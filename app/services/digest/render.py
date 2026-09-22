@@ -20,9 +20,10 @@ def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
     data keys: title, period_start, period_end, stats (dict), sentiment (dict),
     topics (list[dict]), engagement (dict|None), content_mix (dict|None), llm (dict|None)
     """
-    parts: list[str] = []
-    parts.append(f"<b>{escape(data.get('title', 'Digest'))}</b>")
-    parts.append(f"<i>{escape(str(data['period_start']))} — {escape(str(data['period_end']))}</i>")
+    parts: list[str] = [
+        f"<b>{escape(data.get('title', 'Digest'))}</b>",
+        f"<i>{escape(str(data['period_start']))} — {escape(str(data['period_end']))}</i>",
+    ]
 
     stats = data.get("stats") or {}
     if stats:

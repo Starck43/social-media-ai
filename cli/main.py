@@ -143,10 +143,14 @@ def digest_send_now(
         rprint("[red]period must be 'day' or 'week'[/red]")
         raise typer.Exit(1)
 
-    from app.services.digest.builder import build_and_publish
+    from app.services.digest.builder import DigestDeliveryError, build_and_publish
 
     async def _run():
-        result = await build_and_publish(period=period)
+        try:
+            result = await build_and_publish(period=period)
+        except DigestDeliveryError as e:
+            rprint(f"[red]Delivery failed: {e}[/red]")
+            raise typer.Exit(1)
         if result.get("text"):
             rich.print(result["text"])
         rprint(f"\n[bold]Status:[/bold] {result.get('status')}")

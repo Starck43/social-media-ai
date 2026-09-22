@@ -1,4 +1,5 @@
 """Channel abstraction: outbound messaging + inbound polling for messengers."""
+
 from __future__ import annotations
 
 import logging

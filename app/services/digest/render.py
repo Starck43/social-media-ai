@@ -1,4 +1,5 @@
 """HTML rendering for digests (Telegram HTML / MAX html)."""
+
 from __future__ import annotations
 
 import html as html_escape
@@ -32,11 +33,7 @@ def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
     if sentiment:
         dist = sentiment.get("distribution") or {}
         emoji = {"positive": "🟢", "neutral": "⚪", "negative": "🔴"}
-        lines = [
-            f"{emoji.get(k, '•')} {escape(str(k))}: {escape(str(v))}"
-            for k, v in dist.items()
-            if v
-        ]
+        lines = [f"{emoji.get(k, '•')} {escape(str(k))}: {escape(str(v))}" for k, v in dist.items() if v]
         if lines:
             parts.append("<b>Sentiment</b>\n" + "\n".join(lines))
 

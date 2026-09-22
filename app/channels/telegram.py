@@ -3,6 +3,7 @@
 Docs: https://core.telegram.org/bots/api
 Limits: text up to 4096 chars; ~30 messages/sec globally; 429 → retry_after.
 """
+
 from __future__ import annotations
 
 import asyncio

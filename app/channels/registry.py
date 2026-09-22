@@ -1,4 +1,5 @@
 """Channel registry: enabled channels by config + digest broadcast."""
+
 from __future__ import annotations
 
 import logging

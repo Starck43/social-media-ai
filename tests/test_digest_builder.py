@@ -66,7 +66,7 @@ async def test_sent_and_idempotent(monkeypatch):
     assert len(sent_calls) == 2
 
 
-async def test_failed_delivery_recorded(monkeypatch):
+async def test_failed_delivery_recorded_and_retryable(monkeypatch):
     async def fake_broadcast(text):
         return {"telegram": {"success": False, "error": "boom"}}
 
@@ -76,10 +76,52 @@ async def test_failed_delivery_recorded(monkeypatch):
     monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
     monkeypatch.setattr(builder, "_summarize", fake_summarize)
 
-    result = await builder.build_and_publish(period="day")
-    assert result["status"] == "failed"
+    # Delivery failure is retryable: it raises so the job queue re-runs it.
+    with pytest.raises(builder.DigestDeliveryError) as exc:
+        await builder.build_and_publish(period="day")
+    assert "boom" in str(exc.value)
+
     run = (await DigestRun.objects.filter())[-1]
     assert run.status == "failed" and "boom" in (run.error or "")
+
+
+async def test_scheduled_retry_reuses_run_row(monkeypatch):
+    """A second attempt for the same schedule+period must not violate the unique index."""
+    attempts = []
+
+    async def fake_broadcast(text):
+        attempts.append(text)
+        if len(attempts) == 1:
+            return {"telegram": {"success": False, "error": "503"}}
+        return {"telegram": {"success": True, "message_id": 7}}
+
+    async def fake_summarize(data):
+        return "ok", {"model": "test-model"}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+
+    schedule = await Schedule.objects.create(
+        name="it-digest-2",
+        cron_expr="0 9 * * *",
+        timezone="UTC",
+        job_type="digest",
+        payload={"period": "day"},
+        is_active=True,
+    )
+
+    with pytest.raises(builder.DigestDeliveryError):
+        await builder.build_and_publish(period="day", schedule_id=schedule.id)
+
+    result = await builder.build_and_publish(period="day", schedule_id=schedule.id)
+    assert result["status"] == "sent"
+
+    rows = await DigestRun.objects.filter(schedule_id=schedule.id)
+    assert len(rows) == 1  # one row per (schedule, period), updated in place
+    assert rows[0].status == "sent" and rows[0].message_id == "7"
+
+    # And after success the period is locked in
+    assert (await builder.build_and_publish(period="day", schedule_id=schedule.id))["reason"] == "already_sent"
 
 
 async def test_aggregate_shape():

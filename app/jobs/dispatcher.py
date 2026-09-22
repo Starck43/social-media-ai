@@ -14,8 +14,13 @@ jobs = JobManager()
 
 async def execute_job(job: Any, handler: Callable) -> None:
     """Run a claimed job and record the outcome (done / retry / failed)."""
+    # Job context travels in columns, not in payload. Handlers that need it
+    # (digest idempotency is keyed on schedule_id) get it merged in here.
+    payload = dict(job.payload or {})
+    payload.setdefault("schedule_id", job.schedule_id)
+    payload.setdefault("job_id", job.id)
     try:
-        result = await handler(job.payload or {})
+        result = await handler(payload)
         await jobs.mark_done(job.id, result=result)
         logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
     except Exception as e:

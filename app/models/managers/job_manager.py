@@ -74,7 +74,7 @@ class JobManager(BaseManager["Job"]):
 
     async def mark_failed(self, job_id: int, error: str) -> bool:
         """
-        Record failure. Re-schedule with backoff if attempts remain, else mark failed.
+        Record failure. Re-schedule with backoff if attempts to remain, else mark failed.
         Returns True if the job will be retried.
         """
         from app.core.config import settings

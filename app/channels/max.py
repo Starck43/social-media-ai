@@ -4,6 +4,7 @@ Docs: https://dev.max.ru (use platform-api2.max.ru).
 Limits: text up to 4000 chars; max 2 messages/sec per chat; auth via
 `Authorization: <access_token>` header.
 """
+
 from __future__ import annotations
 
 import asyncio

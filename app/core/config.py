@@ -1,3 +1,5 @@
+from typing import Optional
+
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -63,13 +65,50 @@ class Settings(BaseSettings):
 	SCRF_TOKEN_LENGTH: int = 32
 
 	POSTGRES_URL: str
-	REDIS_URL: str
+	REDIS_URL: str = "redis://localhost:6379/0"  # Optional: only needed by frozen Celery/sqladmin storage
 	DB_SCHEMA: str = "social_manager"
 
-	VK_APP_ID: str
-	VK_SERVICE_ACCESS_TOKEN: str
-	TELEGRAM_BOT_TOKEN: str
-	TELEGRAM_ADMIN_CHAT_ID: str  # Chat ID for admin notifications
+	# External platform credentials (optional — integrations are enabled based on presence)
+	VK_APP_ID: Optional[str] = None
+	VK_SERVICE_ACCESS_TOKEN: Optional[str] = None
+	TELEGRAM_BOT_TOKEN: Optional[str] = None
+	TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Legacy: default chat for admin notifications
+
+	# --- Channels / owner allowlist ---
+	TELEGRAM_OWNER_IDS: str = ""  # comma-separated Telegram user ids allowed to talk to the agent
+	TELEGRAM_DIGEST_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
+
+	# MAX messenger (Bot API: https://dev.max.ru)
+	MAX_BOT_TOKEN: Optional[str] = None
+	MAX_API_BASE: str = "https://platform-api2.max.ru"
+	MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
+	MAX_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
+
+	# --- Scheduler ---
+	SCHEDULER_ENABLED: bool = True
+	SCHEDULER_POLL_SECONDS: int = 30
+	SCHEDULER_TIMEZONE: str = "Europe/Moscow"
+
+	# --- Agent ---
+	AGENT_MODEL: Optional[str] = None  # explicit LLMModel name; auto-resolved when empty
+	AGENT_HISTORY_LIMIT: int = 20  # messages kept in agent context per session
+	AGENT_MAX_ITERATIONS: int = 6  # max tool-call rounds per user message
+	AGENT_DAILY_COST_LIMIT: float = 5.0  # USD cap across agent + digests per day
+
+	# --- Background jobs ---
+	JOB_MAX_ATTEMPTS: int = 3
+	JOB_RETRY_BACKOFF_SECONDS: int = 300
+
+	LOG_LEVEL: str = "INFO"
+
+	def telegram_owner_ids(self) -> list[int]:
+		"""Parse TELEGRAM_OWNER_IDS ('1, 2, 3') into a list of ints."""
+		return [int(x) for x in self.TELEGRAM_OWNER_IDS.replace(" ", "").split(",") if x]
+
+	def max_owner_ids(self) -> list[int]:
+		"""Parse MAX_OWNER_ID ('1, 2') into a list of ints."""
+		return [int(x) for x in self.MAX_OWNER_ID.replace(" ", "").split(",") if x]
+
 
 	# LLM rate limiting
 	LLM_REQUEST_DELAY: int = 3000  # Default rate limit delay in milliseconds

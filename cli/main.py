@@ -125,6 +125,40 @@ def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(
 
 
 app.add_typer(schedule_app, name="schedule")
+
+digest_app = typer.Typer(help="Digest operations")
+
+
+@digest_app.command("send-now")
+def digest_send_now(
+    period: str = typer.Argument("day", help="Period: day | week"),
+):
+    """Build and publish a digest right now (manual run, not idempotent)."""
+    import asyncio
+
+    import rich
+    from rich import print as rprint
+
+    if period not in ("day", "week"):
+        rprint("[red]period must be 'day' or 'week'[/red]")
+        raise typer.Exit(1)
+
+    from app.services.digest.builder import build_and_publish
+
+    async def _run():
+        result = await build_and_publish(period=period)
+        if result.get("text"):
+            rich.print(result["text"])
+        rprint(f"\n[bold]Status:[/bold] {result.get('status')}")
+        if result.get("results"):
+            for channel, res in result["results"].items():
+                mark = "[green]ok[/green]" if res.get("success") else f"[red]{res.get('error')}[/red]"
+                rprint(f"  {channel}: {mark}")
+
+    asyncio.run(_run())
+
+
+app.add_typer(digest_app, name="digest")
 # app.add_typer(permissions.app, name="permissions", help="Manage permissions")
 
 

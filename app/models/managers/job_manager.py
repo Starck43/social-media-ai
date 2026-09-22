@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from ..job import Job
 
 
-class JobManager(BaseManager):
+class JobManager(BaseManager["Job"]):
     """Manager for the Job queue: enqueue, atomic claim, retries."""
 
     def __init__(self):
@@ -37,7 +37,8 @@ class JobManager(BaseManager):
             max_attempts=max_attempts or settings.JOB_MAX_ATTEMPTS,
         )
 
-    async def claim_next(self, now: Optional[datetime] = None) -> Optional["Job"]:
+    @staticmethod
+    async def claim_next(now: Optional[datetime] = None) -> Optional["Job"]:
         """
         Atomically claim the oldest due pending job (FOR UPDATE SKIP LOCKED)
         and mark it running. Safe for multiple workers.

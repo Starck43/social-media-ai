@@ -10,63 +10,58 @@ This package contains all data models for the application, including:
 
 from __future__ import annotations
 
-# Core models
-from .base import Base, TimestampMixin
-from .model_type import ModelType
-
-# Import all models to ensure they are registered with SQLAlchemy
-from .permission import Permission
-from .role import Role
-from .user import User
-
-# Social monitoring models
-from .platform import Platform
-from .source import Source, SourceUserRelationship
-from .bot_scenario import BotScenario
-
-# AI models
-from .llm_provider import LLMProvider
-from .llm_model import LLMModel
-
 # Analytics models
 from .ai_analytics import AIAnalytics
 
-# Scheduler / jobs
-from .schedule import Schedule
+# Core models
+from .base import Base, TimestampMixin
+from .bot_scenario import BotScenario
+from .digest_run import DigestRun
 from .job import Job
+from .llm_model import LLMModel
+
+# AI models
+from .llm_provider import LLMProvider
+from .model_type import ModelType
 
 # Notification models
 from .notification import Notification
 
+# Import all models to ensure they are registered with SQLAlchemy
+from .permission import Permission
+
+# Social monitoring models
+from .platform import Platform
+from .role import Role
+
+# Scheduler / jobs
+from .schedule import Schedule
+from .source import Source, SourceUserRelationship
+from .user import User
 
 __all__ = [
     # Base classes
-    'Base',
-    'TimestampMixin',
-
+    "Base",
+    "TimestampMixin",
     # Core models
-    'ModelType',
-    'Permission',
-    'Role',
-    'User',
-
+    "ModelType",
+    "Permission",
+    "Role",
+    "User",
     # Social monitoring models
-    'Platform',
-    'Source',
-    'SourceUserRelationship',
-    'BotScenario',
-
+    "Platform",
+    "Source",
+    "SourceUserRelationship",
+    "BotScenario",
     # AI models
-    'LLMProvider',
-    'LLMModel',
-
+    "LLMProvider",
+    "LLMModel",
     # Analytics models
-    'AIAnalytics',
-
+    "AIAnalytics",
     # Scheduler / jobs
-    'Schedule',
-    'Job',
-
+    "Schedule",
+    "Job",
+    "DigestRun",
     # Notification models
-    'Notification',
+    "Notification",
 ]

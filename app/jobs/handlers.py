@@ -44,9 +44,18 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
-    """Build and send a digest to configured channels. Implemented in M2 (channels+digest)."""
-    logger.info(f"digest job payload={payload} (handler lands in M2)")
-    return {"status": "skipped", "reason": "digest handler arrives in M2"}
+    """Build a digest and publish it to configured channels.
+
+    Payload:
+        period: 'day' | 'week' (default 'day')
+        schedule_id: int | None — set when triggered by a schedule (idempotency)
+    """
+    from app.services.digest.builder import build_and_publish
+
+    period = payload.get("period", "day")
+    if period not in ("day", "week"):
+        return {"status": "failed", "error": f"Invalid period: {period}"}
+    return await build_and_publish(period=period, schedule_id=payload.get("schedule_id"))
 
 
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:

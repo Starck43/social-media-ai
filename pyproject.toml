@@ -79,6 +79,11 @@ line_length = 120
 testpaths = ["tests"]
 python_files = "test_*.py"
 asyncio_mode = "auto"
+# All async tests/fixtures share a single event loop. The SQLAlchemy async
+# engine pool keeps connections bound to the loop that created them, so a
+# per-test loop makes the next test fail with "Event loop is closed".
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 addopts = "-v --cov=app --cov-report=term-missing"
 
 [project.urls]

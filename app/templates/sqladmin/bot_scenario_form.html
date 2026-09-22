@@ -384,8 +384,15 @@
             const preset = presets[presetName]
             if (!preset) return
 
-            // Load scope (includes analysis_types)
-            document.getElementById("scope-json").value = JSON.stringify(preset.scope, null, 2)
+            // Create unified config for easier editing
+            const unifiedConfig = {
+                analysis: preset.scope || {},
+                response_format: preset.response_format || {},
+                display: preset.output_display || {}
+            }
+
+            // Load unified config into scope textarea
+            document.getElementById("scope-json").value = JSON.stringify(unifiedConfig, null, 2)
 
             // Load content_types checkboxes
             clearAllContentTypes()

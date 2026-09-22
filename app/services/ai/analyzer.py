@@ -1,14 +1,16 @@
 import logging
-import hashlib
-from datetime import UTC, datetime, date, timedelta
-from typing import Optional, Any, List
+from datetime import UTC, date, timedelta
+from typing import Optional, Any
 
-from app.models import Source, AIAnalytics, BotScenario, LLMProvider
+from app.models import Source, AIAnalytics, BotScenario, LLMProvider, LLMModel
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.llm_client import LLMClientFactory
+from app.services.ai.llm_provider_resolver import LLMProviderResolver
 from app.services.ai.prompts import PromptBuilder
+from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
 from app.types.enums.llm_types import MediaType
+from app.utils.date_parsing import universal_date_parser
 from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
@@ -26,85 +28,29 @@ class AIAnalyzer:
 	— Full LLM tracing for debugging and monitoring
 	"""
 
-	async def analyze_content_by_days(
-			self,
-			content: list[dict],
-			source: Source,
-	) -> list[AIAnalytics]:
+	def __init__(self):
+		self.theme_matcher = ThemeMatcher()
+
+	async def analyze_content(self, content: list[dict], source: Source, analyze_by: str = None) -> list[AIAnalytics]:
 		"""
-		Group content by days and analyze each day separately.
-		
-		This is useful for event-based scenarios where you want to track
-		activity over time and see evolution day by day.
-		
+		Analyze content based on analyze_by mode.
+
 		Args:
-			content: List of normalized content items
+			content: List of content items
 			source: Source being analyzed
-		
+			analyze_by: Analysis mode: "days" or "themes"
+
 		Returns:
 			List of AIAnalytics records (one per day with activity)
 		"""
-		from collections import defaultdict
-		
-		if not content:
-			logger.warning(f"No content to analyze for source {source.id}")
-			return []
-		
-		# Group content by day
-		content_by_day = defaultdict(list)
-		
-		for item in content:
-			# Extract publication date
-			pub_date = item.get('published_at') or item.get('date') or item.get('created_at')
-			
-			# Convert to datetime
-			if isinstance(pub_date, int):
-				pub_date = datetime.fromtimestamp(pub_date, tz=UTC)
-			elif isinstance(pub_date, str):
-				try:
-					pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
-				except:
-					pub_date = None
-			
-			# Group by date
-			if pub_date:
-				day = pub_date.date()
-			else:
-				day = date.today()
-			
-			content_by_day[day].append(item)
-		
-		logger.info(f"Grouped {len(content)} items into {len(content_by_day)} days for source {source.id}")
-		
-		# Analyze each day
-		analytics_list = []
-		
-		for day, day_content in sorted(content_by_day.items()):
-			logger.info(f"Analyzing {len(day_content)} items for source {source.id} on {day}")
-			
-			try:
-				# Analyze content for this day
-				analytics = await self.analyze_content(
-					content=day_content,
-					source=source,
-					analysis_date=day
-				)
-				
-				# Only add non-empty analytics
-				if analytics:
-					analytics_list.append(analytics)
-				else:
-					logger.warning(f"Skipping empty analytics for day {day}, source {source.id}")
-				
-			except Exception as e:
-				logger.error(f"Error analyzing day {day} for source {source.id}: {e}")
-				continue
-		
-		logger.info(f"Created {len(analytics_list)} analytics records for source {source.id} (analyzed {len(content_by_day)} days)")
-		
-		return analytics_list
+		analyze_by = analyze_by or source.bot_scenario.analyze_type
 
-	async def analyze_content(
+		if analyze_by == "themes":
+			return await self._analyze_content_by_themes(content, source)
+		else:
+			return await self._analyze_content_by_days(content, source)
+
+	async def base_analyze_content(
 			self,
 			content: list[dict],
 			source: Source,
@@ -183,27 +129,27 @@ class AIAnalyzer:
 				)
 				if video_result:
 					analysis_results['video_analysis'] = video_result
-			
+
 			# Check if we have any meaningful analysis results
 			has_results = False
 			for result in analysis_results.values():
 				if result and result.get('parsed'):
 					has_results = True
 					break
-			
+
 			if not has_results:
 				logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
 				return None
-			
+
 			# Create unified summary if multiple analyses
 			unified_summary = await self._create_unified_summary(analysis_results, bot_scenario)
-			
+
 			# Auto-generate topic_chain_id if not provided
 			# NEW LOGIC: One source + one scenario = one chain (timeline by dates)
 			if not topic_chain_id:
 				topic_chain_id = self._generate_topic_chain_id(source, bot_scenario)
 				logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
-			
+
 			# Save comprehensive analysis
 			analysis = await self._save_analysis(
 				analysis_results,
@@ -216,32 +162,191 @@ class AIAnalyzer:
 				parent_analysis_id,
 				analysis_date,
 			)
-			
+
 			return analysis
 
 		except Exception as e:
 			logger.error(f"Error analyzing content for source {source.id}: {e}", exc_info=True)
 			return None
 
+	async def _analyze_content_by_days(self, content: list[dict], source: Source) -> list[AIAnalytics]:
+		"""
+		Group content by days and analyze each day separately.
+
+		Args:
+			content: List of content items
+			source: Source being analyzed
+
+		Returns:
+			List of AIAnalytics records (one per day with activity)
+		"""
+		from collections import defaultdict
+
+		if not content:
+			logger.warning(f"No content to analyze for source {source.id}")
+			return []
+
+		# Group content by day
+		content_by_day = defaultdict(list)
+
+		for item in content:
+			# Extract publication date
+			pub_date = item.get('published_at') or item.get('date') or item.get('created_at')
+
+			# Convert to datetime
+			pub_date = universal_date_parser(pub_date)
+
+			# Group by date
+			if pub_date:
+				day = pub_date.date()
+			else:
+				day = date.today()
+
+			content_by_day[day].append(item)
+
+		logger.info(f"Grouped {len(content)} items into {len(content_by_day)} days for source {source.id}")
+
+		# Analyze each day using base analysis
+		analytics_list = []
+
+		for day, day_content in sorted(content_by_day.items()):
+			logger.info(f"Analyzing {len(day_content)} items for source {source.id} on {day}")
+
+			try:
+				# Use base analysis for each day
+				analytics = await self.base_analyze_content(
+					content=day_content,
+					source=source,
+					analysis_date=day
+				)
+
+				# Only add non-empty analytics
+				if analytics:
+					analytics_list.append(analytics)
+				else:
+					logger.warning(f"Skipping empty analytics for day {day}, source {source.id}")
+
+			except Exception as e:
+				logger.error(f"Error analyzing day {day} for source {source.id}: {e}")
+				continue
+
+		logger.info(
+			f"Created {len(analytics_list)} analytics records for source {source.id} "
+			f"(analyzed {len(content_by_day)} days)"
+		)
+
+		return analytics_list
+
+	async def _analyze_content_by_themes(self, content: list[dict], source: Source) -> list[AIAnalytics]:
+		"""
+		Analyze content with automatic theme detection and linking.
+
+		Args:
+			content: List of content items
+			source: Source being analyzed
+
+		Returns:
+			List of AIAnalytics records (typically one record with theme linking)
+		"""
+		if not content:
+			logger.warning(f"No content to analyze for source {source.id}")
+			return []
+
+		# Use base analysis for all content
+		analysis = await self.base_analyze_content(content, source)
+		if not analysis:
+			return []
+
+		# Apply theme linking
+		await self._auto_link_to_existing_theme(analysis, source)
+
+		return [analysis]
+
+	async def _auto_link_to_existing_theme(self, analysis: AIAnalytics, source: Source):
+		"""
+		Automatically link analysis to existing theme if topics match.
+
+		Args:
+			analysis: Newly created AIAnalytics record
+			source: Source being analyzed
+		"""
+		try:
+			# Safely convert JSON field to dict
+			summary_dict = analysis.summary_data or {}
+
+			# Extract main_topics from analysis results
+			main_topics = self._extract_main_topics(summary_dict)
+
+			if not main_topics:
+				logger.debug(f"No main_topics found for analysis {analysis.id}")
+				return
+
+			# Update analysis with main_topics for future matching
+			await AIAnalytics.objects.update_by_id(
+				analysis.id,
+				main_topics=main_topics
+			)
+
+			# Find similar existing analytics using pre-initialized matcher
+			similar_analytics = await self.theme_matcher.find_similar_analytics(
+				main_topics, source.id
+			)
+
+			if similar_analytics and similar_analytics.topic_chain_id:
+				# Link to existing theme chain
+				await AIAnalytics.objects.update_by_id(
+					analysis.id,
+					topic_chain_id=similar_analytics.topic_chain_id
+				)
+				logger.info(
+					f"Auto-linked analysis {analysis.id} to existing theme chain: "
+					f"{similar_analytics.topic_chain_id}"
+				)
+
+		except Exception as e:
+			logger.error(f"Error in auto theme linking: {e}")
+
+	def _extract_main_topics(self, summary_data: dict) -> list[str]:
+		"""
+		Extract main_topics from analysis summary data.
+		"""
+		try:
+			# Try text analysis first
+			text_analysis = summary_data.get('multi_llm_analysis', {}).get('text_analysis', {})
+			if text_analysis and 'main_topics' in text_analysis:
+				return text_analysis['main_topics']
+
+			# Try unified summary
+			unified_summary = summary_data.get('unified_summary', {})
+			if unified_summary and 'main_topics' in unified_summary:
+				return unified_summary['main_topics']
+
+			# Fallback to empty list
+			return []
+
+		except Exception as e:
+			logger.warning(f"Error extracting main_topics: {e}")
+			return []
+
 	async def _analyze_text(
-		self,
-		text_items: list[dict],
-		bot_scenario: Optional[BotScenario],
-		content_stats: dict[str, Any],
-		platform_name: str,
-		source: Source
+			self,
+			text_items: list[dict],
+			bot_scenario: Optional[BotScenario],
+			content_stats: dict[str, Any],
+			platform_name: str,
+			source: Source
 	) -> Optional[dict[str, Any]]:
 		"""Analyze text content using text LLM provider."""
 		try:
 			# Get LLM provider for text
-			provider = await self._get_llm_provider(bot_scenario, MediaType.TEXT)
-			if not provider:
+			model = await self._get_llm_model(bot_scenario, MediaType.TEXT)
+			if not model:
 				logger.warning("No text LLM provider configured, skipping text analysis")
 				return None
-			
+
 			# Prepare text content
 			text_content = ContentClassifier.prepare_text_content(text_items)
-			
+
 			# Build prompt using new unified system
 			source_type = getattr(source, "source_type", None)
 			stype = get_enum_value(source_type) if source_type else ""
@@ -256,10 +361,10 @@ class AIAnalyzer:
 			)
 
 			# Create LLM client and analyze
-			client = LLMClientFactory.create(provider)
+			client = await LLMClientFactory.create(model)
 			result = await client.analyze(prompt)
 
-			logger.info(f"Text analysis completed using {provider.name}")
+			logger.info(f"Text analysis completed using {model.name}")
 			return result
 
 		except Exception as e:
@@ -267,15 +372,15 @@ class AIAnalyzer:
 			return None
 
 	async def _analyze_images(
-		self,
-		image_items: list[dict],
-		bot_scenario: Optional[BotScenario],
-		platform_name: str
+			self,
+			image_items: list[dict],
+			bot_scenario: Optional[BotScenario],
+			platform_name: str
 	) -> Optional[dict[str, Any]]:
 		"""Analyze images using image LLM provider."""
 		try:
 			# Get LLM provider for images
-			provider = await self._get_llm_provider(bot_scenario, MediaType.IMAGE)
+			provider = await self._get_llm_model(bot_scenario, MediaType.IMAGE)
 			if not provider:
 				logger.warning("No image LLM provider configured, skipping image analysis")
 				return None
@@ -294,7 +399,7 @@ class AIAnalyzer:
 			)
 
 			# Create LLM client and analyze
-			client = LLMClientFactory.create(provider)
+			client = await LLMClientFactory.create(provider)
 			result = await client.analyze(prompt, media_urls=media_urls)
 
 			logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
@@ -305,15 +410,15 @@ class AIAnalyzer:
 			return None
 
 	async def _analyze_videos(
-		self,
-		video_items: list[dict],
-		bot_scenario: Optional[BotScenario],
-		platform_name: str
+			self,
+			video_items: list[dict],
+			bot_scenario: Optional[BotScenario],
+			platform_name: str
 	) -> Optional[dict[str, Any]]:
 		"""Analyze videos using video LLM provider."""
 		try:
 			# Get LLM provider for videos
-			provider = await self._get_llm_provider(bot_scenario, MediaType.VIDEO)
+			provider = await self._get_llm_model(bot_scenario, MediaType.VIDEO)
 			if not provider:
 				logger.warning("No video LLM provider configured, skipping video analysis")
 				return None
@@ -332,7 +437,7 @@ class AIAnalyzer:
 			)
 
 			# Create LLM client and analyze
-			client = LLMClientFactory.create(provider)
+			client = await LLMClientFactory.create(provider)
 			result = await client.analyze(prompt, media_urls=media_urls)
 
 			logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
@@ -343,9 +448,9 @@ class AIAnalyzer:
 			return None
 
 	async def _create_unified_summary(
-		self,
-		analysis_results: dict[str, Any],
-		bot_scenario: Optional[BotScenario]
+			self,
+			analysis_results: dict[str, Any],
+			bot_scenario: Optional[BotScenario]
 	) -> Optional[dict[str, Any]]:
 		"""
 		Create unified summary from multiple analysis results.
@@ -359,8 +464,8 @@ class AIAnalyzer:
 
 		try:
 			# Get default text provider for summary creation
-			provider = await self._get_llm_provider(bot_scenario, MediaType.TEXT)
-			if not provider:
+			model = await self._get_llm_model(bot_scenario, MediaType.TEXT)
+			if not model:
 				logger.warning("No text LLM provider for unified summary")
 				return None
 
@@ -376,117 +481,167 @@ class AIAnalyzer:
 				video_analysis,
 				scenario=bot_scenario
 			)
-			
+
 			# Create summary
-			client = LLMClientFactory.create(provider)
+			client = await LLMClientFactory.create(model)
 			result = await client.analyze(prompt)
-			
+
 			logger.info("Unified summary created successfully")
 			return result
-			
+
 		except Exception as e:
 			logger.error(f"Error creating unified summary: {e}", exc_info=True)
 			return None
 
-	async def _get_llm_provider(
-		self,
-		bot_scenario: Optional[BotScenario],
-		media_type: MediaType | str
-	) -> Optional[LLMProvider]:
+	async def _get_llm_model(
+			self,
+			bot_scenario: Optional[BotScenario],
+			media_type: MediaType | str
+	) -> Optional[LLMModel]:
 		"""
-		Get appropriate LLM provider for media type.
-		
+		Get appropriate LLM model for media type.
+
 		Priority:
-		1. Explicit FK override (text_llm_provider_id, etc.)
+		1. Get model by media type from scenario
 		2. Auto-resolve by llm_strategy (fallback)
-		
-		Args:
-			bot_scenario: Bot scenario with provider configuration
-			media_type: Type of media (MediaType enum or string)
-			
+		3. Fall back to default model for media type
+
 		Returns:
-			LLMProvider instance or None
-		"""
+			LLMModel instance or None
+	"""
+
 		# Convert string to MediaType if needed
 		if isinstance(media_type, str):
 			media_type = MediaType(media_type)
-		
-		provider_id = None
-		
-		# Priority 1: Try explicit FK override from scenario
+
+		# Priority 1: Get model by media type from scenario, then provider from model
 		if bot_scenario:
-			if media_type == MediaType.TEXT:
-				provider_id = bot_scenario.text_llm_provider_id
-			elif media_type == MediaType.IMAGE:
-				provider_id = bot_scenario.image_llm_provider_id
-			elif media_type == MediaType.VIDEO:
-				provider_id = bot_scenario.video_llm_provider_id
-		
-		# Load explicit provider if configured
-		if provider_id:
-			try:
-				provider = await LLMProvider.objects.get(id=provider_id)
-				if provider.is_active:
-					logger.info(f"✅ Using explicit provider {provider.name} for {media_type}")
-					return provider
-				logger.warning(f"Provider {provider_id} is inactive, trying fallback")
-			except Exception as e:
-				logger.warning(f"Failed to load provider {provider_id}: {e}, trying fallback")
-		
+			model_id = None
+
+			if media_type == MediaType.TEXT and bot_scenario.text_llm_model_id:
+				model_id = bot_scenario.text_llm_model_id
+			elif media_type == MediaType.IMAGE and bot_scenario.image_llm_model_id:
+				model_id = bot_scenario.image_llm_model_id
+			elif media_type == MediaType.VIDEO and bot_scenario.video_llm_model_id:
+				model_id = bot_scenario.video_llm_model_id
+
+			# Load model and get its provider
+			if model_id:
+				try:
+					# Load model with provider relationship to avoid session issues
+					model = await LLMModel.objects.select_related('provider').get(id=model_id)
+					if model.is_active and model.provider.is_active:
+						logger.info(f"✅ Select model {model.name} (provider: {model.provider.name}) for {media_type}")
+						return model
+
+				except Exception as e:
+					logger.warning(f"Failed to load model {model_id}: {e}, trying fallback")
+
 		# Priority 2: Auto-resolve by llm_strategy (fallback)
 		if bot_scenario and bot_scenario.llm_strategy:
 			try:
-				from .llm_provider_resolver import LLMProviderResolver
-				
-				# Get all active providers
-				all_providers = await LLMProvider.objects.filter(is_active=True)
-				
-				# Build available providers dict for resolver
-				available = {
-					p.id: (
-						get_enum_value(p.provider_type),
-						p.model_name,
-						p.capabilities or []
-					)
-					for p in all_providers
-				}
-				
-				if not available:
-					logger.error("No active providers available for auto-resolve")
-				else:
-					# Resolve by strategy
-					resolved = LLMProviderResolver.resolve_for_content_types(
-						content_types=bot_scenario.content_types or [],
-						available_providers=available,
-						strategy=bot_scenario.llm_strategy.value
-					)
-					
-					# Get provider for this media type
-					if media_type in resolved:
-						provider_id = resolved[media_type.value].provider_id
-						provider = await LLMProvider.objects.get(id=provider_id)
-						logger.info(
-							f"✅ Auto-resolved provider {provider.name} for {media_type} "
-							f"using strategy '{bot_scenario.llm_strategy}'"
-						)
-						return provider
-					
+				model = await self._auto_resolve_model(bot_scenario, media_type)
+				if model:
+					return model
+
 			except Exception as e:
-				logger.error(f"Failed to auto-resolve provider: {e}")
-		
+				logger.warning(f"Failed to auto-resolve model: {e}")
+
 		# Priority 3: Fall back to default provider for media type
 		try:
 			# Use get_enum_value to ensure we pass a string, not tuple
 			media_type_str = get_enum_value(media_type)
-			provider = await LLMProvider.objects.get_default_for_media_type(media_type_str)
-			if provider:
-				logger.info(f"✅ Using default fallback provider {provider.name} for {media_type}")
-				return provider
+			model = await LLMModel.objects.get_model_for_capability(media_type_str)
+			if model:
+				logger.info(f"✅ Select default fallback model {model.name} for {media_type}")
+				return model
+
 		except Exception as e:
-			logger.error(f"Failed to get default provider: {e}")
-		
-		logger.error(f"❌ No provider found for {media_type}")
+			logger.error(f"❌ No model found for {media_type}. {e}")
+
 		return None
+
+	async def _auto_resolve_model(
+			self,
+			bot_scenario: BotScenario,
+			media_type: MediaType
+	) -> Optional[LLMModel]:
+		"""Auto-resolve provider using strategy-based approach."""
+
+		# Get all active providers and their models
+		all_providers = await LLMProvider.objects.filter(is_active=True)
+		all_models = await LLMModel.objects.filter(provider__is_active=True, is_active=True)
+
+		# Group models by provider and find best model for each provider
+		provider_best_models = {}
+		for model in all_models:
+			provider_id = model.provider_id
+			if provider_id not in provider_best_models:
+				provider_best_models[provider_id] = model
+			else:
+				# Keep model with most capabilities (prioritize multimodal models)
+				current = provider_best_models[provider_id]
+				if len(model.capabilities) > len(current.capabilities):
+					provider_best_models[provider_id] = model
+
+		# Build available providers dict for a resolver - simplified without rigid provider typing
+		available = {}
+		for provider in all_providers:
+			if provider.id not in provider_best_models:
+				continue
+
+			model = provider_best_models[provider.id]
+
+			# Use generic provider type based on capabilities instead of rigid URL parsing
+			provider_type = self._get_generic_provider_type(model.capabilities)
+
+			available[provider.id] = (
+				provider_type,
+				model.name,
+				model.capabilities or []
+			)
+
+		if not available:
+			logger.error("No active providers available for auto-resolve")
+			return None
+
+		# Resolve by strategy
+		resolved = LLMProviderResolver.resolve_for_content_types(
+			content_types=bot_scenario.content_types or [],
+			available_providers=available,
+			strategy=str(bot_scenario.llm_strategy)
+		)
+
+		# Get provider for this media type
+		media_type_str = media_type.value if hasattr(media_type, 'value') else str(media_type)
+		if media_type_str in resolved:
+			provider_config = resolved[media_type_str]
+			provider_id = provider_config['provider_id']
+			provider = await LLMProvider.objects.get(id=provider_id)
+			logger.info(
+				f"✅ Auto-resolved provider {provider.name} for {media_type} "
+				f"using strategy '{bot_scenario.llm_strategy}'"
+			)
+			return provider
+
+		return None
+
+	def _get_generic_provider_type(self, capabilities: list[str]) -> str:
+		"""Get generic provider type based on capabilities instead of rigid URL parsing."""
+		if not capabilities:
+			return 'text'  # Default fallback
+
+		# Determine primary capability for categorization
+		if 'video' in capabilities:
+			return 'multimodal'  # Video usually implies multimodal capabilities
+		elif 'image' in capabilities and 'text' in capabilities:
+			return 'multimodal'
+		elif 'image' in capabilities:
+			return 'vision'
+		elif 'text' in capabilities:
+			return 'text'
+		else:
+			return 'specialized'
 
 	async def _get_platform_name(self, source: Source) -> str:
 		"""Get platform name safely."""
@@ -504,69 +659,64 @@ class AIAnalyzer:
 	def _calculate_content_stats(self, content: list[dict], analysis_date: Optional[date] = None) -> dict[str, Any]:
 		"""
 		Calculate content statistics including actual post date range.
-		
+
 		Args:
 			content: List of content items
-			analysis_date: Optional analysis date for event-based mode (to set correct date_range)
+			analysis_date: Optional analysis date for event-based mode
 		"""
 		if not content:
 			return {}
-		
-		from datetime import datetime, timezone
 
+		# Extract basic data
 		texts = [item.get("text", "") for item in content]
-		dates = [item.get("date") for item in content if item.get("date")]
 		reactions = [item.get("reactions", 0) for item in content]
 		comments = [item.get("comments", 0) for item in content]
-		
-		# Extract actual post dates (published_at, date, created_at)
+
+		# Extract and parse post dates using existing utility
 		post_dates = []
 		for item in content:
 			pub_date = item.get('published_at') or item.get('date') or item.get('created_at')
-			if pub_date:
-				if isinstance(pub_date, int):  # Unix timestamp (VK)
-					post_dates.append(datetime.fromtimestamp(pub_date, tz=timezone.utc))
-				elif isinstance(pub_date, datetime):
-					post_dates.append(pub_date)
-				elif isinstance(pub_date, str):
-					try:
-						post_dates.append(datetime.fromisoformat(pub_date.replace('Z', '+00:00')))
-					except:
-						pass
-		
-		# Build content_date_range for dashboard display
+			if parsed_date := universal_date_parser(pub_date):
+				post_dates.append(parsed_date)
+
+		# Calculate content date range
 		content_date_range = {}
 		if post_dates:
+			min_date, max_date = min(post_dates), max(post_dates)
 			content_date_range = {
-				'earliest': min(post_dates).isoformat(),
-				'latest': max(post_dates).isoformat(),
-				'span_days': (max(post_dates) - min(post_dates)).days
+				'earliest': min_date.isoformat(),
+				'latest': max_date.isoformat(),
+				'span_days': (max_date - min_date).days
 			}
-		
-		# For event-based analysis with specific date, use that date for date_range
-		# This ensures LLM prompt shows correct single-day context
+
+		# Determine date range for context
 		if analysis_date and post_dates:
-			# For event-based mode: use analysis_date as both first and last
 			date_range_dict = {
 				"first": analysis_date.isoformat(),
 				"last": analysis_date.isoformat()
 			}
 		else:
-			# For aggregated mode: use actual min/max from content
+			# Use actual dates from content (fallback to None if no dates)
+			dates = [item.get("date") for item in content if item.get("date")]
 			date_range_dict = {
 				"first": min(dates) if dates else None,
 				"last": max(dates) if dates else None
 			}
 
+		# Calculate all statistics
+		total_posts = len(content)
+		total_reactions = sum(reactions)
+		total_comments = sum(comments)
+
 		return {
-			"total_posts": len(content),
-			"avg_text_length": sum(len(t) for t in texts) / len(texts) if texts else 0,
-			"total_reactions": sum(reactions),
-			"total_comments": sum(comments),
-			"avg_reactions_per_post": sum(reactions) / len(content) if content else 0,
-			"avg_comments_per_post": sum(comments) / len(content) if content else 0,
-			"date_range": date_range_dict,  # Context-aware: single date for event-based, range for aggregated
-			"content_date_range": content_date_range,  # Always actual post dates for dashboard
+			"total_posts": total_posts,
+			"avg_text_length": sum(len(t) for t in texts) / total_posts if texts else 0,
+			"total_reactions": total_reactions,
+			"total_comments": total_comments,
+			"avg_reactions_per_post": total_reactions / total_posts if total_posts else 0,
+			"avg_comments_per_post": total_comments / total_posts if total_posts else 0,
+			"date_range": date_range_dict,  # Context-aware date range
+			"content_date_range": content_date_range,  # Actual post dates
 		}
 
 	def _make_json_serializable(self, obj):
@@ -592,7 +742,7 @@ class AIAnalyzer:
 	async def _find_matching_topic_chain(
 			self,
 			source: Source,
-			current_topics: List[str],
+			current_topics: list[str],
 			lookback_days: int = 7
 	) -> Optional[str]:
 		"""
@@ -611,58 +761,62 @@ class AIAnalyzer:
 		"""
 		if not current_topics:
 			return None
-		
+
 		# Get recent analyses for this source
 		cutoff_date = date.today() - timedelta(days=lookback_days)
 		recent_analyses = await AIAnalytics.objects.filter(
 			source_id=source.id,
 			analysis_date__gte=cutoff_date
 		).order_by(AIAnalytics.analysis_date.desc()).limit(10)
-		
+
 		if not recent_analyses:
 			return None
-		
+
 		# Normalize current topics for comparison
 		current_topics_normalized = [t.lower().strip() for t in current_topics if t]
-		
+
 		# Check each recent analysis for matching topics
 		for analysis in recent_analyses:
 			if not analysis.topic_chain_id or not analysis.summary_data:
 				continue
-			
+
 			# Extract topics from previous analysis
 			prev_topics = []
 			multi_llm = analysis.summary_data.get('multi_llm_analysis', {})
 			text_analysis = multi_llm.get('text_analysis', {})
-			
+
 			if 'main_topics' in text_analysis:
 				prev_topics.extend(text_analysis['main_topics'])
-			
+
 			# Also check unified summary
 			unified = analysis.summary_data.get('unified_summary', {})
 			if 'main_themes' in unified:
 				prev_topics.extend(unified['main_themes'])
-			
+
 			if not prev_topics:
 				continue
-			
+
 			# Normalize previous topics
 			prev_topics_normalized = [t.lower().strip() for t in prev_topics if t]
-			
+
 			# Check for matches (at least 50% overlap)
 			matches = sum(1 for topic in current_topics_normalized if topic in prev_topics_normalized)
 			match_ratio = matches / len(current_topics_normalized) if current_topics_normalized else 0
-			
+
 			if match_ratio >= 0.5:  # 50% of current topics match previous topics
 				logger.info(
 					f"Found matching topic chain: {analysis.topic_chain_id} "
 					f"(match ratio: {match_ratio:.2f}, source: {source.id})"
 				)
 				return analysis.topic_chain_id
-		
+
 		return None
-	
-	def _generate_topic_chain_id(self, source: Source, bot_scenario: Optional['BotScenario'] = None) -> str:
+
+	def _generate_topic_chain_id(
+			self, source: Source,
+			main_topics: list[str],
+			bot_scenario: BotScenario = None
+	):
 		"""
 		Generate topic chain ID for source.
 		
@@ -670,19 +824,21 @@ class AIAnalyzer:
 		All analyses for this source+scenario go into the same chain.
 		
 		Args:
-			source: Source being analyzed
+			source: Source being analysed
+			main_topics: List of main topics from analysis
 			bot_scenario: Bot scenario (optional)
 		
 		Returns:
 			Chain ID string: "source_{id}" or "source_{id}_scenario_{id}"
 		"""
+		top_topic = main_topics[0] if main_topics else "general"
+		normalized_topic = "".join(c for c in top_topic.lower() if c.isalnum())[:20]
+
 		if bot_scenario and bot_scenario.id:
-			# Include scenario in chain ID
-			return f"source_{source.id}_scenario_{bot_scenario.id}"
+			return f"src_{source.id}_scn_{bot_scenario.id}_{normalized_topic}"
 		else:
-			# Simple source-based chain
-			return f"source_{source.id}"
-	
+			return f"src_{source.id}_{normalized_topic}"
+
 	async def _save_analysis(
 			self,
 			analysis_results: dict[str, Any],
@@ -697,7 +853,7 @@ class AIAnalyzer:
 	) -> AIAnalytics:
 		"""Save comprehensive analysis results to database."""
 		from datetime import date as date_class, datetime
-		
+
 		# Use provided date or default to today
 		if analysis_date is None:
 			analysis_date = date_class.today()
@@ -706,32 +862,32 @@ class AIAnalyzer:
 		llm_model = None
 		prompt_text = None
 		response_payload = {}
-		
+
 		# Track cost metrics for aggregation
 		total_request_tokens = 0
 		total_response_tokens = 0
 		total_cost = 0
 		providers_used = set()
 		media_types_analyzed = set()
-		
+
 		for analysis_type, result in analysis_results.items():
 			if result and isinstance(result, dict):
 				llm_model = result.get('request', {}).get('model')
 				prompt_text = result.get('request', {}).get('prompt')
 				response_payload[analysis_type] = result.get('response', {})
-				
+
 				# Extract token usage from response
 				response = result.get('response', {})
 				usage = response.get('usage', {})
-				
+
 				total_request_tokens += usage.get('prompt_tokens', 0)
 				total_response_tokens += usage.get('completion_tokens', 0)
-				
+
 				# Extract provider from request
 				provider = result.get('request', {}).get('provider')
 				if provider:
 					providers_used.add(provider)
-				
+
 				# Track media type
 				if 'text' in analysis_type:
 					media_types_analyzed.add('text')
@@ -747,14 +903,14 @@ class AIAnalyzer:
 		# Extract analysis_title and analysis_summary from AI responses (prefer unified, fallback to text)
 		analysis_title = None
 		analysis_summary = None
-		
+
 		if unified_summary and unified_summary.get('parsed', {}):
 			parsed = unified_summary['parsed']
 			if parsed.get('analysis_title'):
 				analysis_title = parsed['analysis_title']
 			if parsed.get('analysis_summary'):
 				analysis_summary = parsed['analysis_summary']
-		
+
 		# Fallback to text_analysis
 		if not analysis_title or not analysis_summary:
 			text_parsed = analysis_results.get('text_analysis', {}).get('parsed', {})
@@ -762,14 +918,14 @@ class AIAnalyzer:
 				analysis_title = text_parsed['analysis_title']
 			if not analysis_summary and text_parsed.get('analysis_summary'):
 				analysis_summary = text_parsed['analysis_summary']
-		
+
 		# Fallback to image/video
 		if not analysis_title:
 			if analysis_results.get('image_analysis', {}).get('parsed', {}).get('analysis_title'):
 				analysis_title = analysis_results['image_analysis']['parsed']['analysis_title']
 			elif analysis_results.get('video_analysis', {}).get('parsed', {}).get('analysis_title'):
 				analysis_title = analysis_results['video_analysis']['parsed']['analysis_title']
-		
+
 		# Post-process analysis_title: ensure it contains date for event-based analysis
 		if analysis_date and analysis_title:
 			# Format date in human-readable Russian format
@@ -779,9 +935,9 @@ class AIAnalyzer:
 				locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 			except:
 				pass  # Fallback to default if Russian locale not available
-			
+
 			date_str = analysis_date.strftime('%d %B %Y')  # e.g., "17 октября 2025"
-			
+
 			# Check if title already contains date in various formats
 			has_date = any([
 				str(analysis_date.year) in analysis_title,
@@ -789,7 +945,7 @@ class AIAnalyzer:
 				date_str.lower() in analysis_title.lower(),
 				'за день' in analysis_title.lower() or 'за дату' in analysis_title.lower()
 			])
-			
+
 			if not has_date:
 				# Prepend or append date to title
 				if 'активность' in analysis_title.lower():
@@ -797,7 +953,7 @@ class AIAnalyzer:
 				else:
 					analysis_title = f"{analysis_title} ({date_str})"
 				logger.info(f"Enhanced analysis_title with date: {analysis_title}")
-		
+
 		# Build comprehensive data structure
 		comprehensive_data = {
 			"analysis_title": analysis_title,  # AI-generated title for dashboard display
@@ -836,10 +992,10 @@ class AIAnalyzer:
 		total_tokens = total_request_tokens + total_response_tokens
 		# Use max(1, ...) to ensure at least 1 cent if tokens were used
 		estimated_cost_cents = max(1, int((total_tokens / 1000) * 100)) if total_tokens > 0 else 0
-		
+
 		# Primary provider (most used)
 		primary_provider = list(providers_used)[0] if providers_used else None
-		
+
 		# Check if analysis already exists for this date
 		existing_analysis = await AIAnalytics.objects.filter(
 			source_id=source.id,
@@ -855,7 +1011,8 @@ class AIAnalyzer:
 				llm_model=llm_model or "multi-llm",
 				prompt_text=prompt_text,
 				response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-				topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,  # Preserve existing chain_id or set new one
+				topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
+				# Preserve existing chain_id or set new one
 				parent_analysis_id=parent_analysis_id,
 				request_tokens=total_request_tokens if total_request_tokens > 0 else None,
 				response_tokens=total_response_tokens if total_response_tokens > 0 else None,

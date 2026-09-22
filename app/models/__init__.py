@@ -26,6 +26,7 @@ from .bot_scenario import BotScenario
 
 # AI models
 from .llm_provider import LLMProvider
+from .llm_model import LLMModel
 
 # Analytics models
 from .ai_analytics import AIAnalytics
@@ -53,6 +54,7 @@ __all__ = [
 
     # AI models
     'LLMProvider',
+    'LLMModel',
 
     # Analytics models
     'AIAnalytics',

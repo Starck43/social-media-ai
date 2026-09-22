@@ -6,10 +6,12 @@ from starlette.staticfiles import StaticFiles
 from app.admin.csrf import CSRFTokenManager
 from app.core.config import settings
 from app.core.database import async_engine
+from app.templates.filters import register_template_filters
+
 from .auth import AdminAuthBackend
 from .views import (
 	UserAdmin, RoleAdmin, PermissionAdmin, NotificationAdmin, PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
-	BotScenarioAdmin, AIAnalyticsAdmin, LLMProviderAdmin
+	BotScenarioAdmin, AIAnalyticsAdmin, LLMProviderAdmin, LLMModelAdmin
 )
 
 # Get the project root directory
@@ -47,15 +49,20 @@ def setup_admin(app):
 		templates_dir=str(PROJECT_ROOT / "app" / "templates")
 	)
 
-	app.state.admin = admin
-
 	admin.templates.env.globals.update({
 		"csrf_token": lambda: csrf_manager.generate_token(),
 		"settings": settings,
 		"debug": settings.DEBUG,
 	})
 
+	if admin.templates.env is not None:
+		register_template_filters(admin.templates.env)
+
 	app.mount("/static", StaticFiles(directory="app/static"), name="static")
+	app.state.admin = admin
+	if not hasattr(app, 'extra'):
+		app.extra = {}
+	app.extra['admin'] = admin
 
 	# --- Views configs ---
 	view_configs = [
@@ -66,10 +73,13 @@ def setup_admin(app):
 		SourceAdmin,
 		SourceUserRelationshipAdmin,
 		BotScenarioAdmin,
-		LLMProviderAdmin,
 		AIAnalyticsAdmin,
 		NotificationAdmin,
+		LLMProviderAdmin,
+		LLMModelAdmin,
 	]
 
 	for view_class in view_configs:
 		admin.add_view(view_class)
+
+	return admin

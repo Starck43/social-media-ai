@@ -133,3 +133,10 @@ class BotTriggerType(Enum):
 			return cls[name]
 		except KeyError:
 			return None
+
+
+@database_enum
+class AnalyzeType(Enum):
+	THEMES = "themes"
+	DAYS = "days"
+

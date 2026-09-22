@@ -129,9 +129,6 @@ async def get_sources_summary(
 	— has_scenario: Filter sources with/without bot scenario
 	— limit/offset: Pagination
 	"""
-	logger.info(
-		f"Requesting sources summary (platform={platform_id}, type={source_type}, active={is_active})"
-	)
 
 	# Build query
 	query = Source.objects.filter()
@@ -209,10 +206,6 @@ async def get_analytics_summary(
 	— since: Show analytics created after this date
 	— limit/offset: Pagination
 	"""
-	logger.info(
-		f"User {current_user.username} requesting analytics summary "
-		f"(source={source_id}, period={period_type}, since={since})"
-	)
 
 	# Build query
 	query = AIAnalytics.objects.filter()
@@ -259,10 +252,6 @@ async def get_source_trends(
 
 	Tracks selected metric over time.
 	"""
-	logger.info(
-		f"User {current_user.username} requesting trends for source {source_id} "
-		f"(days={days}, metric={metric})"
-	)
 
 	# Verify source exists
 	source = await Source.objects.get(id=source_id)
@@ -276,7 +265,6 @@ async def get_source_trends(
 	).order_by(AIAnalytics.analysis_date.asc())
 
 	if not analytics:
-		logger.info(f"No analytics data found for source {source_id}")
 		return []
 
 	# Extract trend data based on metric
@@ -322,8 +310,6 @@ async def get_recent_notifications(
 		current_user: 'User' = Depends(get_authenticated_user),
 ):
 	"""Get recent notifications for dashboard display."""
-	logger.info(f"User {current_user.username} requesting recent notifications")
-
 	return await (
 		Notification.objects.filter()
 		.order_by(Notification.created_at.desc())
@@ -594,12 +580,8 @@ async def get_topic_chain_evolution(
 	"""
 
 	try:
-		logger.info(f"Getting evolution for chain_id: {chain_id}")
-
 		# Получить все аналитики для цепочки
 		analytics = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date.asc())
-
-		logger.info(f"Found {len(analytics)} analytics for chain {chain_id}")
 
 		if not analytics:
 			logger.warning(f"No analytics found for chain_id: {chain_id}")
@@ -608,8 +590,6 @@ async def get_topic_chain_evolution(
 		# Получить данные цепочки через сервис
 		chain_data = topic_chain_service.build_topic_chain(analytics)
 
-		logger.info(f"Chain data built, chain_id in chain_data: {chain_id in chain_data}")
-
 		if chain_id not in chain_data:
 			logger.error(f"Chain {chain_id} not found in chain_data: {list(chain_data.keys())}")
 			raise HTTPException(status_code=404, detail="Chain data not found")
@@ -617,17 +597,11 @@ async def get_topic_chain_evolution(
 		evolution_data = []
 		chain_evolution = chain_data.get(chain_id, {}).get("evolution", [])
 
-		logger.info(f"Chain evolution data: {len(chain_evolution)} items")
-
 		for i, analysis in enumerate(chain_evolution):
 			try:
-				logger.info(f"Processing evolution item {i}: {analysis.get('date', 'no_date')}")
-
 				# Extract topics as simple strings for UI
 				topic_names = []
 				topics_data = analysis.get("topics", [])
-
-				logger.info(f"Processing analysis with topics: {topics_data}")
 
 				for topic in topics_data:
 					if isinstance(topic, dict):
@@ -637,15 +611,12 @@ async def get_topic_chain_evolution(
 					elif isinstance(topic, str):
 						topic_names.append(topic)
 
-				logger.info(f"Extracted topic names: {topic_names}")
-
 				# Get sentiment score from metrics or calculate from topics
 				sentiment_score = 0.0
 				metrics = analysis.get("metrics", {})
 
 				if "sentiment_score" in metrics:
 					sentiment_score = metrics.get("sentiment_score", 0.0)
-					logger.info(f"Using sentiment from metrics: {sentiment_score}")
 				else:
 					# Calculate average sentiment from topics
 					sentiments = []
@@ -665,7 +636,6 @@ async def get_topic_chain_evolution(
 
 					if sentiments:
 						sentiment_score = sum(sentiments) / len(sentiments)
-						logger.info(f"Calculated sentiment from topics: {sentiment_score}")
 
 				# Extract metrics from analysis
 				metrics = analysis.get("metrics", {})
@@ -685,14 +655,11 @@ async def get_topic_chain_evolution(
 					"post_url": None  # TODO: Add post URL if available
 				})
 
-				logger.info(f"Evolution item {i}: date={analysis.get('date')}, topics_count={len(topics_data)}, sentiment={sentiment_score}")
-
 			except Exception as e:
 				logger.error(f"Error processing analysis evolution item {i}: {e}")
 				logger.error(f"Problematic analysis data: {analysis}")
 				continue
 
-		logger.info(f"Returning {len(evolution_data)} evolution items")
 		return evolution_data
 
 	except Exception as e:
@@ -790,9 +757,6 @@ async def get_sentiment_trends_aggregate(
 	
 	Returns daily/weekly sentiment averages with distribution.
 	"""
-	logger.info(
-		f"Requesting sentiment trends (source={source_id}, scenario={scenario_id}, days={days})"
-	)
 	
 	aggregator = ReportAggregator(session=session)
 	trends = await aggregator.get_sentiment_trends(
@@ -822,9 +786,6 @@ async def get_top_topics_aggregate(
 	
 	Returns most mentioned topics with average sentiment scores.
 	"""
-	logger.info(
-		f"Requesting top topics (source={source_id}, scenario={scenario_id}, days={days})"
-	)
 	
 	aggregator = ReportAggregator(session=session)
 	topics = await aggregator.get_top_topics(
@@ -853,9 +814,6 @@ async def get_llm_provider_stats_aggregate(
 	
 	Returns provider breakdown with token usage and estimated costs.
 	"""
-	logger.info(
-		f"Requesting LLM stats (source={source_id}, scenario={scenario_id}, days={days})"
-	)
 	
 	aggregator = ReportAggregator(session=session)
 	stats = await aggregator.get_llm_provider_stats(
@@ -879,9 +837,6 @@ async def get_content_mix_aggregate(
 	
 	Returns percentage breakdown of analyzed media types.
 	"""
-	logger.info(
-		f"Requesting content mix (source={source_id}, scenario={scenario_id}, days={days})"
-	)
 	
 	aggregator = ReportAggregator(session=session)
 	mix = await aggregator.get_content_mix(
@@ -905,9 +860,6 @@ async def get_engagement_metrics_aggregate(
 	
 	Returns average engagement rates per post.
 	"""
-	logger.info(
-		f"Requesting engagement metrics (source={source_id}, scenario={scenario_id}, days={days})"
-	)
 	
 	aggregator = ReportAggregator(session=session)
 	metrics = await aggregator.get_engagement_metrics(

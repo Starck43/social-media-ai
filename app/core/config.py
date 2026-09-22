@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 	HOST: str = "0.0.0.0"
 	PORT: int = 8000
 	SECRET_KEY: str
-	DEBUG: bool = True
+	DEBUG: bool = False
 
 	# Admin settings
 	ADMIN_ENABLED: bool = True
@@ -66,21 +66,17 @@ class Settings(BaseSettings):
 	REDIS_URL: str
 	DB_SCHEMA: str = "social_manager"
 
-	# Legacy LLM settings (deprecated, use LLMProvider model instead)
-	DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
-	DEEPSEEK_API_KEY: str = ""
-	
-	# Additional LLM provider API keys (stored in env)
-	OPENAI_API_KEY: str = ""
-	ANTHROPIC_API_KEY: str = ""
-	GOOGLE_API_KEY: str = ""
-	
 	VK_APP_ID: str
 	VK_SERVICE_ACCESS_TOKEN: str
 	TELEGRAM_BOT_TOKEN: str
 	TELEGRAM_ADMIN_CHAT_ID: str  # Chat ID for admin notifications
 
-	LLM_REQUEST_DELAY = 1000  # delay between requests in milliseconds
+	# LLM rate limiting
+	LLM_REQUEST_DELAY: int = 3000  # Default rate limit delay in milliseconds
+	LLM_DEFAULT_TEMPERATURE: float = 0.3  # Conservative temperature for analysis tasks
+	LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
+	LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing
+	LLM_DEFAULT_TIMEOUT: float = 90.0  # Request timeout in seconds
 
 
 settings = Settings()

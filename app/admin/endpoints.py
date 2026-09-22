@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 import sqladmin
-from fastapi import APIRouter, Request, Form, HTTPException, Depends
+from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.params import Body
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from slowapi import Limiter

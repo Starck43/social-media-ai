@@ -9,6 +9,7 @@ from .base import Base, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import BotActionType, BotTriggerType, LLMStrategyType
+from ..types.enums.bot_types import AnalyzeType
 
 
 @app_label("social")
@@ -21,11 +22,19 @@ class BotScenario(Base, TimestampMixin):
 	description: Mapped[str] = Column(Text, nullable=True)
 	
 	# What content to collect
-	content_types: Mapped[list[str]] = Column(JSON, nullable=False, default=list)
+	content_types: Mapped[list[str]] = Column(JSON, nullable=True, default=list)
 	# Which analysis types to apply
-	analysis_types: Mapped[list[str]] = Column(JSON, nullable=False, default=list)
+	analysis_types: Mapped[list[str]] = Column(JSON, nullable=True, default=list)
 	# Configuration parameters for analysis (no analysis_types here!)
 	scope: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
+	
+	# JSON Schema configuration for LLM response format
+	analyze_type: Mapped[BotTriggerType] = AnalyzeType.sa_column(
+		type_name='analyze_type',
+		nullable=True,
+		store_as_name=False,
+		default=AnalyzeType.THEMES.value
+	)
 	
 	# Media-specific AI prompt templates with variable substitution support
 	# Variables: {text}, {platform}, {source_type}, {stats}, {count}, etc.
@@ -90,25 +99,27 @@ class BotScenario(Base, TimestampMixin):
 	# Minimum: 1 hour (don't collect more frequently)
 	collection_interval_hours: Mapped[int] = Column(Integer, nullable=False, default=1, server_default='1')
 
-	# LLM providers for different content types
+	# LLM models for different content types
 	# 
-	# RECOMMENDED: Use llm_strategy (below) for automatic provider selection.
-	# LEGACY: Individual FK fields (kept for backward compatibility).
-	# If set, these explicit providers override llm_strategy.
-	text_llm_provider_id: Mapped[int | None] = Column(
+	# RECOMMENDED: Use llm_strategy (below) for automatic model selection.
+	# If set, these explicit models override llm_strategy.
+	text_llm_model_id: Mapped[int | None] = Column(
 		Integer,
-		ForeignKey("social_manager.llm_providers.id", ondelete="SET NULL"),
-		nullable=True
+		ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+		nullable=True,
+		comment="Specific LLM model for text analysis"
 	)
-	image_llm_provider_id: Mapped[int | None] = Column(
+	image_llm_model_id: Mapped[int | None] = Column(
 		Integer,
-		ForeignKey("social_manager.llm_providers.id", ondelete="SET NULL"),
-		nullable=True
+		ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+		nullable=True,
+		comment="Specific LLM model for image analysis"
 	)
-	video_llm_provider_id: Mapped[int | None] = Column(
+	video_llm_model_id: Mapped[int | None] = Column(
 		Integer,
-		ForeignKey("social_manager.llm_providers.id", ondelete="SET NULL"),
-		nullable=True
+		ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+		nullable=True,
+		comment="Specific LLM model for video analysis"
 	)
 	
 	# LLM resolution strategy: "cost_efficient", “quality”, “multimodal”
@@ -119,21 +130,21 @@ class BotScenario(Base, TimestampMixin):
 		default=LLMStrategyType.COST_EFFICIENT
 	)
 
-	# Relationships to LLM providers
-	text_llm_provider: Mapped["LLMProvider | None"] = relationship(
-		"LLMProvider",
+	# Relationships to LLM models
+	text_llm_model: Mapped["LLMModel | None"] = relationship(
+		"LLMModel",
 		back_populates="text_scenarios",
-		foreign_keys="BotScenario.text_llm_provider_id"
+		foreign_keys=[text_llm_model_id]
 	)
-	image_llm_provider: Mapped["LLMProvider | None"] = relationship(
-		"LLMProvider",
+	image_llm_model: Mapped["LLMModel | None"] = relationship(
+		"LLMModel",
 		back_populates="image_scenarios",
-		foreign_keys="BotScenario.image_llm_provider_id"
+		foreign_keys=[image_llm_model_id]
 	)
-	video_llm_provider: Mapped["LLMProvider | None"] = relationship(
-		"LLMProvider",
+	video_llm_model: Mapped["LLMModel | None"] = relationship(
+		"LLMModel",
 		back_populates="video_scenarios",
-		foreign_keys="BotScenario.video_llm_provider_id"
+		foreign_keys=[video_llm_model_id]
 	)
 
 	# Reverse FK relation: one scenario can be reused by many sources

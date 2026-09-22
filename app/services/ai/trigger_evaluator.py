@@ -9,7 +9,6 @@ This service handles:
 import logging
 import re
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 from app.models import BotScenario, AIAnalytics
 from app.types import BotTriggerType
@@ -278,9 +277,9 @@ class TriggerEvaluator:
 			
 			# Calculate average content count
 			# Assuming analytics has content_count or similar field
-			# If not available, use number of analytics entries as proxy
+			# If not available, use amount analytics entries as proxy
 			total_count = len(analytics)
-			avg_count = total_count / max(1, hours / scenario.collection_interval_hours)
+			avg_count = total_count / max(1, int(hours / scenario.collection_interval_hours))
 			
 			return avg_count
 			

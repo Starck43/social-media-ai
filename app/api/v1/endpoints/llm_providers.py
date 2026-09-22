@@ -27,7 +27,6 @@ async def create_llm_provider(
 	current_user: User = Depends(get_authenticated_user)
 ):
 	"""
-	Create a new LLM provider configuration.
 	
 	Requires: Admin access
 	"""
@@ -41,7 +40,7 @@ async def create_llm_provider(
 			api_url=request.api_url,
 			api_key_env=request.api_key_env,
 			model_name=request.model_name,
-			capabilities=request.capabilities,
+			# capabilities removed - now stored in LLMModel
 			config=request.config,
 			is_active=request.is_active
 		)
@@ -56,7 +55,7 @@ async def create_llm_provider(
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,
-			capabilities=provider.capabilities,
+			# capabilities removed - now stored in LLMModel
 			config=provider.config or {},
 			is_active=provider.is_active,
 			created_at=provider.created_at.isoformat() if provider.created_at else "",
@@ -88,7 +87,7 @@ async def list_llm_providers(
 	"""
 	try:
 		if capability:
-			providers = await LLMProvider.objects.get_by_capability(capability, is_active=is_active if is_active is not None else True)
+			providers = await LLMProvider.objects.filter(is_active=is_active if is_active is not None else True)
 		elif is_active is not None:
 			providers = await LLMProvider.objects.filter(is_active=is_active)
 		else:
@@ -104,7 +103,7 @@ async def list_llm_providers(
 				api_url=provider.api_url,
 				api_key_env=provider.api_key_env,
 				model_name=provider.model_name,
-				capabilities=provider.capabilities,
+				# capabilities removed - now stored in LLMModel
 				config=provider.config or {},
 				is_active=provider.is_active,
 				created_at=provider.created_at.isoformat() if provider.created_at else "",
@@ -148,7 +147,7 @@ async def get_llm_provider(
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,
-			capabilities=provider.capabilities,
+			# capabilities removed - now stored in LLMModel
 			config=provider.config or {},
 			is_active=provider.is_active,
 			created_at=provider.created_at.isoformat() if provider.created_at else "",
@@ -207,7 +206,7 @@ async def update_llm_provider(
 			api_url=provider.api_url,
 			api_key_env=provider.api_key_env,
 			model_name=provider.model_name,
-			capabilities=provider.capabilities,
+			# capabilities removed - now stored in LLMModel
 			config=provider.config or {},
 			is_active=provider.is_active,
 			created_at=provider.created_at.isoformat() if provider.created_at else "",

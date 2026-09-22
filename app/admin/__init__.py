@@ -1,9 +1,8 @@
 from .auth import AdminAuthBackend
 from .setup import setup_admin
 from .views import (
-	UserAdmin, RoleAdmin, PermissionAdmin,
-	PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
-	BotScenarioAdmin, AIAnalyticsAdmin, NotificationAdmin
+	UserAdmin, RoleAdmin, PermissionAdmin, PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
+	BotScenarioAdmin, AIAnalyticsAdmin, NotificationAdmin, LLMProviderAdmin, LLMModelAdmin
 )
 
 __all__ = [
@@ -20,4 +19,6 @@ __all__ = [
 	'BotScenarioAdmin',
 	'AIAnalyticsAdmin',
 	'NotificationAdmin',
+	'LLMProviderAdmin',
+	'LLMModelAdmin',
 ]

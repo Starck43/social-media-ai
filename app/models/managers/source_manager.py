@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, UTC
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 
 from .base_manager import BaseManager
 
@@ -25,21 +25,60 @@ class SourceManager(BaseManager):
         from ..source import Source
         super().__init__(Source)
 
-    async def get_by_platform(
-        self,
-        platform_id: int,
-    ) -> list["Source"]:
+    async def get_source_with_platform(
+            self,
+            source_id: Optional[int] = None,
+            external_id: Optional[str] = None,
+    ) -> tuple["Source", dict[str, Any]]:
         """
-        Get sources by platform ID.
+        Get source with its platform data in a single query using the ORM.
 
         Args:
-                platform_id: ID of the platform
+            source_id: ID of the source to fetch
+            external_id: External ID of the source (requires platform_id)
 
         Returns:
-                List of Source objects
+            A tuple of (Source instance, platform_data_dict)
         """
-        return await self.filter(platform_id=platform_id, is_active=True)
+        if not source_id and not external_id:
+            raise ValueError("Either source_id or external_id must be provided")
 
+        # Build the base query
+        query = self.filter(is_active=True)
+
+        if source_id:
+            query = query.filter(id=source_id)
+        elif external_id:
+            query = query.filter(external_id=external_id)
+
+        # Execute the query with platform eager loading
+        source = await query.select_related('platform', 'bot_scenario').first()
+
+        if not source:
+            identifier = f"ID {source_id}" if source_id else f"external_id '{external_id}'"
+            raise ValueError(f"Active source with {identifier} not found")
+
+        # Extract platform data - only include fields that exist on Platform model
+        platform = source.platform
+        platform_data = {
+            'id': platform.id,
+            'name': platform.name,
+            'platform_type': (
+                platform.platform_type.value
+                if hasattr(platform.platform_type, 'value')
+                else str(platform.platform_type)
+            ),
+            'is_active': platform.is_active,
+        }
+
+        # Add optional fields if they exist
+        if hasattr(platform, 'rate_limit_remaining'):
+            platform_data['rate_limit_remaining'] = platform.rate_limit_remaining
+        if hasattr(platform, 'rate_limit_reset_at'):
+            platform_data['rate_limit_reset_at'] = platform.rate_limit_reset_at
+
+        return source, platform_data
+            
     async def get_active_sources(
         self, platform_id: Optional[int] = None, source_type: Optional["SourceType"] = None
     ) -> list["Source"]:
@@ -88,27 +127,7 @@ class SourceManager(BaseManager):
 
         return [s for s in sources if s.last_checked is None or s.last_checked <= cutoff_time]
 
-    async def update_last_checked(self, source_id: int, timestamp: Optional[datetime] = None) -> Optional["Source"]:
-        """
-        Update last_checked timestamp for a source.
-
-        Args:
-                source_id: ID of the source to update
-                timestamp: An optional timestamp (defaults to now UTC)
-
-        Returns:
-                Updated Source object or None if not found
-        """
-        if timestamp is None:
-            # Ensure timezone-aware datetime
-            timestamp = datetime.now(UTC)
-        elif timestamp.tzinfo is None:
-            # Add UTC timezone if naive
-            timestamp = timestamp.replace(tzinfo=UTC)
-
-        return await self.update_by_id(source_id, last_checked=timestamp)
-
-    async def get_by_external_id(self, platform_id: int, external_id: str) -> Optional["Source"]:
+    async def get_source_by_platform(self, platform_id: int, external_id: str) -> Optional["Source"]:
         """
         Get source by a platform and external ID.
 
@@ -148,7 +167,7 @@ class SourceManager(BaseManager):
                 ValueError: If source already exists
         """
         # Check if source already exists
-        existing = await self.get_by_external_id(platform_id, external_id)
+        existing = await self.get_source_by_platform(platform_id, external_id)
         if existing:
             raise ValueError(f"Source with platform_id={platform_id} and external_id='{external_id}' already exists")
 
@@ -276,6 +295,26 @@ class SourceManager(BaseManager):
                 Updated Source object or None if not found
         """
         return await self.update_by_id(source_id, bot_scenario_id=scenario_id)
+
+    async def update_last_checked(self, source_id: int, timestamp: Optional[datetime] = None) -> Optional["Source"]:
+        """
+        Update last_checked timestamp for a source.
+
+        Args:
+                source_id: ID of the source to update
+                timestamp: An optional timestamp (defaults to now UTC)
+
+        Returns:
+                Updated Source object or None if not found
+        """
+        if timestamp is None:
+            # Ensure timezone-aware datetime
+            timestamp = datetime.now(UTC)
+        elif timestamp.tzinfo is None:
+            # Add UTC timezone if naive
+            timestamp = timestamp.replace(tzinfo=UTC)
+
+        return await self.update_by_id(source_id, last_checked=timestamp)
 
     async def get_stats(self) -> dict:
         """

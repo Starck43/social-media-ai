@@ -92,10 +92,6 @@ def create_application() -> FastAPI:
 
 app = create_application()
 
-# Dashboard routes moved to admin/endpoints.py
-# @app.get("/dashboard/topic-chains") - REMOVED: duplicates admin route
-
-
 @app.get("/", tags=["Root"])
 async def root():
 	return {

@@ -1,296 +1,275 @@
 """
-Preset bot scenarios for quick configuration.
-Provides 8 real-world monitoring scenarios with Russian prompts.
+Preset configurations for bot scenarios.
+Used in admin UI to provide quick setup via radiobuttons.
+
+Presets include:
+- analysis_types: which types of analysis to run
+- content_types: which media to monitor
+- trigger_type: when to trigger
+- scope: analysis parameters
 """
 
-from app.types import ContentType, AnalysisType
+from typing import Any
+from app.types import AnalysisType, ContentType, BotTriggerType
+
+# ============================================================
+# RESPONSE FORMAT PRESETS
+# ============================================================
+
+EVENT_BASED_FORMAT = {
+	"mode": "themes",
+	"group_by": "date",
+	"include_metadata": True,
+	"format": "structured"
+}
+
+TOPIC_BASED_FORMAT = {
+	"mode": "topics",
+	"group_by": "theme",
+	"detect_emerging": True,
+	"min_topic_weight": 0.1,
+	"max_topics": 10,
+	"link_related": True,
+	"format": "structured"
+}
+
+RESPONSE_FORMAT_PRESETS = {
+	"event_based": {
+		"name": "📅 Анализ по событиям/датам",
+		"description": "Группировка по дням, каждая дата = отдельная запись",
+		"config": EVENT_BASED_FORMAT,
+		"use_cases": "Мониторинг активности, анализ динамики, отслеживание изменений"
+	},
+	"topic_based": {
+		"name": "🎯 Анализ по темам",
+		"description": "ИИ автоматически определяет темы и группирует контент",
+		"config": TOPIC_BASED_FORMAT,
+		"use_cases": "Поиск трендов, анализ обсуждений, кластеризация контента"
+	}
+}
+
+# ============================================================
+# OUTPUT DISPLAY PRESETS
+# ============================================================
+
+MINIMAL_DISPLAY = {
+	"show_sentiment_emoji": False,
+	"show_keywords": False,
+	"show_source_links": False,
+	"show_trigger_reason": False,
+	"show_content_annotations": False,
+	"compact_mode": True
+}
+
+STANDARD_DISPLAY = {
+	"show_sentiment_emoji": True,
+	"show_keywords": True,
+	"show_source_links": True,
+	"show_trigger_reason": False,
+	"show_content_annotations": False,
+	"compact_mode": False
+}
+
+DETAILED_DISPLAY = {
+	"show_sentiment_emoji": True,
+	"show_keywords": True,
+	"show_source_links": True,
+	"show_trigger_reason": True,
+	"show_content_annotations": True,
+	"show_stats": True,
+	"show_metadata": True,
+	"compact_mode": False
+}
+
+OUTPUT_DISPLAY_PRESETS = {
+	"minimal": {
+		"name": "📋 Минимальный",
+		"description": "Только основная информация, компактный вид",
+		"config": MINIMAL_DISPLAY
+	},
+	"standard": {
+		"name": "📊 Стандартный",
+		"description": "Сбалансированное отображение с ключевыми элементами",
+		"config": STANDARD_DISPLAY
+	},
+	"detailed": {
+		"name": "📈 Детальный",
+		"description": "Полная информация: эмодзи, ключевые слова, ссылки, триггеры, метаданные",
+		"config": DETAILED_DISPLAY
+	}
+}
+
+# ============================================================
+# SCOPE PRESETS (event_based flag + analysis_types params)
+# ============================================================
+
+EVENT_MONITORING_SCOPE = {
+	"event_based": True,
+	"max_events_per_analysis": 50,
+	"sentiment": {
+		"categories": ["Позитивный", "Нейтральный", "Негативный"],
+		"detect_sarcasm": True
+	},
+	"keywords": {
+		"entity_types": ["Персоны", "Организации", "Продукты"],
+		"max_keywords": 10
+	}
+}
+
+TOPIC_DETECTION_SCOPE = {
+	"event_based": False,
+	"min_topic_mentions": 5,
+	"topics": {
+		"categories": ["Политика", "Технологии", "Экономика", "Общество", "Культура"],
+		"max_topics": 5,
+		"identify_emerging": True
+	},
+	"trends": {
+		"trend_types": ["Восходящий тренд", "Вирусный", "Стабильный"],
+		"min_mentions": 10
+	}
+}
+
+ENGAGEMENT_TRACKING_SCOPE = {
+	"event_based": True,
+	"max_events_per_analysis": 100,
+	"engagement": {
+		"levels": ["Высокий", "Средний", "Низкий"],
+		"detect_viral": True,
+		"viral_threshold": 1000
+	},
+	"sentiment": {
+		"categories": ["Позитивный", "Нейтральный", "Негативный"]
+	}
+}
+
+SCOPE_PRESETS = {
+	"event_monitoring": {
+		"name": "📅 Мониторинг событий",
+		"description": "Анализ по дням с sentiment и keywords",
+		"config": EVENT_MONITORING_SCOPE,
+		"recommended_format": "event_based"
+	},
+	"topic_detection": {
+		"name": "🎯 Поиск тем",
+		"description": "ИИ находит темы, тренды и группирует контент",
+		"config": TOPIC_DETECTION_SCOPE,
+		"recommended_format": "topic_based"
+	},
+	"engagement_tracking": {
+		"name": "📊 Отслеживание вовлечённости",
+		"description": "Анализ вирусности и engagement по событиям",
+		"config": ENGAGEMENT_TRACKING_SCOPE,
+		"recommended_format": "event_based"
+	}
+}
 
 
-def get_all_presets():
-    """Get all available scenario presets."""
-    return [
-        {
-            "name": "Анализ настроений аудитории",
-            "icon": "😊",
-            "description": "Отслеживание эмоциональной тональности постов и комментариев",
-            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
-            "analysis_types": [AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
-            "scope": {
-                "sentiment": {
-                    "detect_sarcasm": True,
-                    "emotion_analysis": True,
-                },
-                "keywords": {
-                    "max_keywords": 15,
-                    "extract_entities": True,
-                }
-            },
-            "ai_prompt": """Проанализируй тональность следующего контента из соцсетей.
+def get_scope_preset(preset_key: str) -> dict[str, Any]:
+	"""Get scope configuration by preset key."""
+	preset = SCOPE_PRESETS.get(preset_key)
+	return preset["config"] if preset else EVENT_MONITORING_SCOPE
 
-Контент: {content}
-Платформа: {platform}
-Период: {date_range}
 
-Определи:
-1. Общую эмоциональную тональность (позитив/негатив/нейтрал)
-2. Ключевые темы и слова
-3. Упоминания брендов или продуктов
-4. Наличие сарказма или иронии
+# Complete scenario presets with all settings
+SCENARIO_PRESETS = {
+	"basic_monitoring": {
+		"id": "basic_monitoring",
+		"name": "📊 Базовый мониторинг",
+		"description": "Простой мониторинг с sentiment и keywords по расписанию",
+		"analysis_types": ["sentiment", "keywords"],
+		"content_types": ["text"],
+		"trigger_type": "TIME_BASED",  # Enum NAME, not db_value
+		"trigger_config": {},
+		"scope": EVENT_MONITORING_SCOPE,
+	},
+	"negative_tracking": {
+		"id": "negative_tracking",
+		"name": "⚠️ Отслеживание негатива",
+		"description": "Мониторинг негативных отзывов и токсичности",
+		"analysis_types": ["sentiment", "toxicity", "keywords"],
+		"content_types": ["text"],
+		"trigger_type": "SENTIMENT_THRESHOLD",  # Enum NAME
+		"trigger_config": {
+			"threshold": 0.3,
+			"direction": "below"
+		},
+		"scope": {
+			"event_based": True,
+			"sentiment": {
+				"categories": ["Позитивный", "Нейтральный", "Негативный"],
+				"detect_sarcasm": True
+			},
+			"toxicity": {
+				"threshold": 0.7,
+				"detect_hate_speech": True
+			},
+			"keywords": {
+				"max_keywords": 15
+			}
+		},
+	},
+	"viral_detection": {
+		"id": "viral_detection",
+		"name": "🔥 Детектор вирусного контента",
+		"description": "Отслеживание вирусного потенциала и всплесков активности",
+		"analysis_types": ["engagement", "viral_detection", "trends"],
+		"content_types": ["text", "image", "video"],
+		"trigger_type": "ACTIVITY_SPIKE",  # Enum NAME
+		"trigger_config": {
+			"baseline_period_hours": 24,
+			"spike_multiplier": 3.0
+		},
+		"scope": ENGAGEMENT_TRACKING_SCOPE,
+	},
+	"topic_research": {
+		"id": "topic_research",
+		"name": "🎯 Исследование тем",
+		"description": "Глубокий анализ тем, трендов и обсуждений",
+		"analysis_types": ["topics", "trends", "keywords", "sentiment"],
+		"content_types": ["text"],
+		"trigger_type": "TIME_BASED",  # Enum NAME
+		"trigger_config": {},
+		"scope": TOPIC_DETECTION_SCOPE,
+	},
+	"brand_mentions": {
+		"id": "brand_mentions",
+		"name": "🏷️ Мониторинг бренда",
+		"description": "Отслеживание упоминаний бренда и реакций",
+		"analysis_types": ["brand_mentions", "sentiment", "keywords"],
+		"content_types": ["text"],
+		"trigger_type": "KEYWORD_MATCH",  # Enum NAME
+		"trigger_config": {
+			"keywords": ["бренд", "компания", "@brand"],
+			"mode": "any",
+			"case_sensitive": False
+		},
+		"scope": {
+			"event_based": True,
+			"brand_mentions": {
+				"brand_names": [],
+				"track_sentiment": True,
+				"track_reach": True
+			},
+			"sentiment": {
+				"categories": ["Позитивный", "Нейтральный", "Негативный"]
+			},
+			"keywords": {
+				"max_keywords": 10
+			}
+		},
+	}
+}
 
-Верни результат в формате JSON."""
-        },
 
-        {
-            "name": "Отслеживание трендов",
-            "icon": "📈",
-            "description": "Выявление растущих тем и вирусного контента",
-            "content_types": [ContentType.POSTS.db_value, ContentType.REACTIONS.db_value],
-            "analysis_types": [
-                AnalysisType.TRENDS.db_value,
-                AnalysisType.VIRAL_DETECTION.db_value,
-                AnalysisType.HASHTAG_ANALYSIS.db_value
-            ],
-            "scope": {
-                "trends": {
-                    "min_mentions": 10,
-                    "time_window_hours": 48,
-                    "track_growth": True,
-                },
-                "viral_detection": {
-                    "viral_threshold": 5000,
-                    "growth_rate_threshold": 3.0,
-                },
-                "hashtag_analysis": {
-                    "track_trending": True,
-                    "analyze_related": True,
-                }
-            },
-            "ai_prompt": """Проанализируй тренды в следующих постах.
+def get_all_presets() -> list[dict[str, Any]]:
+	"""
+	Get all presets for admin UI.
+	Returns list of dicts with preset information for radiobutton display.
+	"""
+	return list(SCENARIO_PRESETS.values())
 
-Данные: {total_posts} постов
-Период: {date_range}
-Контент: {content}
 
-Выяви:
-1. Наиболее обсуждаемые темы (минимум {trends_config.min_mentions} упоминаний)
-2. Растущие хэштеги и их динамику
-3. Потенциально вирусный контент
-4. Новые тренды за последние {trends_config.time_window_hours} часов
-
-Верни в JSON с рейтингом трендов."""
-        },
-
-        {
-            "name": "Мониторинг негатива и токсичности",
-            "icon": "🛡️",
-            "description": "Автоматическое выявление негативного и токсичного контента",
-            "content_types": [ContentType.COMMENTS.db_value, ContentType.POSTS.db_value],
-            "analysis_types": [AnalysisType.TOXICITY.db_value, AnalysisType.SENTIMENT.db_value],
-            "scope": {
-                "toxicity": {
-                    "threshold": 0.6,
-                    "detect_harassment": True,
-                    "detect_hate_speech": True,
-                    "detect_threats": True,
-                },
-                "sentiment": {
-                    "confidence_threshold": 0.75,
-                }
-            },
-            "trigger_type": "SENTIMENT_THRESHOLD",
-            "trigger_config": {
-                "threshold": 0.3,
-                "direction": "below"
-            },
-            "action_type": "NOTIFICATION",
-            "ai_prompt": """Проверь следующий контент на токсичность и негатив.
-
-Контент: {content}
-Источник: {platform} / {source_type}
-
-Определи:
-1. Уровень токсичности (0.0-1.0)
-2. Типы негатива: оскорбления, угрозы, hate speech
-3. Конкретные токсичные фразы
-4. Рекомендации по модерации
-
-Порог токсичности: {toxicity_config.threshold}
-
-Верни детальный анализ в JSON."""
-        },
-
-        {
-            "name": "Анализ вовлечённости",
-            "icon": "🎯",
-            "description": "Метрики engagement и эффективности контента",
-            "content_types": [ContentType.POSTS.db_value, ContentType.REACTIONS.db_value, ContentType.COMMENTS.db_value],
-            "analysis_types": [AnalysisType.ENGAGEMENT.db_value, AnalysisType.VIRAL_DETECTION.db_value],
-            "scope": {
-                "engagement": {
-                    "calculate_rate": True,
-                    "detect_viral": True,
-                    "viral_threshold": 1000,
-                },
-            },
-            "trigger_type": "ACTIVITY_SPIKE",
-            "trigger_config": {
-                "baseline_period_hours": 24,
-                "spike_multiplier": 3.0
-            },
-            "action_type": "NOTIFICATION",
-            "ai_prompt": """Проанализируй вовлечённость аудитории.
-
-Всего постов: {total_posts}
-Данные: {content}
-
-Рассчитай:
-1. Engagement rate по каждому типу контента
-2. Лучшие и худшие по вовлечённости посты
-3. Оптимальное время публикации
-4. Типы контента с максимальной реакцией
-5. Потенциально вирусный контент (порог: {engagement_config.viral_threshold})
-
-Предоставь рекомендации в JSON."""
-        },
-
-        {
-            "name": "Мониторинг конкурентов",
-            "icon": "🔍",
-            "description": "Отслеживание активности и стратегии конкурентов",
-            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
-            "analysis_types": [AnalysisType.COMPETITOR_TRACKING.db_value, AnalysisType.TOPICS.db_value, AnalysisType.ENGAGEMENT.db_value],
-            "scope": {
-                "competitor_tracking": {
-                    "track_content_strategy": True,
-                    "compare_metrics": True,
-                },
-                "topics": {
-                    "max_topics": 7,
-                    "identify_emerging": True,
-                }
-            },
-            "ai_prompt": """Проанализируй контент конкурента.
-
-Источник: {source_type}
-Контент: {content}
-Период: {date_range}
-
-Выяви:
-1. Основные темы и стратегию контента
-2. Частоту публикаций и её динамику
-3. Engagement конкурента (лайки, комментарии, репосты)
-4. Успешные форматы контента
-5. Новые направления активности
-
-Сравни с нашими показателями и предложи insights."""
-        },
-
-        {
-            "name": "Поиск упоминаний бренда",
-            "icon": "🏷️",
-            "description": "Отслеживание упоминаний бренда и продуктов",
-            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value, ContentType.MENTIONS.db_value],
-            "analysis_types": [AnalysisType.BRAND_MENTIONS.db_value, AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
-            "scope": {
-                "brand_mentions": {
-                    "track_sentiment": True,
-                    "track_reach": True,
-                },
-                "sentiment": {
-                    "confidence_threshold": 0.7,
-                },
-                "keywords": {
-                    "extract_entities": True,
-                }
-            },
-            "trigger_type": "KEYWORD_MATCH",
-            "trigger_config": {
-                "keywords": ["@mybrand", "мой_бренд"],
-                "mode": "any",
-                "case_sensitive": False
-            },
-            "action_type": "NOTIFICATION",
-            "ai_prompt": """Найди и проанализируй упоминания бренда.
-
-Контент: {content}
-Всего сообщений: {total_posts}
-
-Определи:
-1. Все упоминания бренда и продуктов
-2. Тональность каждого упоминания
-3. Контекст упоминания (отзыв, вопрос, жалоба, похвала)
-4. Охват аудитории
-5. Ключевые инфлюенсеры, упомянувшие бренд
-
-Верни структурированный отчёт в JSON."""
-        },
-
-        {
-            "name": "Анализ намерений клиентов",
-            "icon": "💡",
-            "description": "Выявление намерений: покупка, вопрос, жалоба, отзыв",
-            "content_types": [ContentType.COMMENTS.db_value, ContentType.POSTS.db_value],
-            "analysis_types": [AnalysisType.CUSTOMER_INTENT.db_value, AnalysisType.SENTIMENT.db_value, AnalysisType.KEYWORDS.db_value],
-            "scope": {
-                "customer_intent": {
-                    "confidence_threshold": 0.65,
-                },
-                "sentiment": {
-                    "emotion_analysis": True,
-                }
-            },
-            "trigger_type": "KEYWORD_MATCH",
-            "trigger_config": {
-                "keywords": ["помощь", "поддержка", "вопрос", "как", "проблема"],
-                "mode": "any",
-                "case_sensitive": False
-            },
-            "action_type": "NOTIFICATION",
-            "ai_prompt": """Определи намерения клиентов в сообщениях.
-
-Контент: {content}
-Источник: {platform}
-
-Для каждого сообщения определи:
-1. Тип намерения: покупка, запрос информации, жалоба, отзыв, общение
-2. Уровень срочности (низкий/средний/высокий)
-3. Требуется ли ответ службы поддержки
-4. Эмоциональное состояние клиента
-5. Ключевые запросы или проблемы
-
-Приоритизируй для обработки. Верни JSON."""
-        },
-
-        {
-            "name": "Мониторинг влиятельных лиц",
-            "icon": "⭐",
-            "description": "Отслеживание активности инфлюенсеров и лидеров мнений",
-            "content_types": [ContentType.POSTS.db_value, ContentType.COMMENTS.db_value],
-            "analysis_types": [AnalysisType.INFLUENCER_ACTIVITY.db_value, AnalysisType.TOPICS.db_value, AnalysisType.ENGAGEMENT.db_value],
-            "scope": {
-                "influencer_activity": {
-                    "min_followers": 5000,
-                    "track_engagement_rate": True,
-                    "analyze_content_themes": True,
-                },
-                "topics": {
-                    "max_topics": 5,
-                }
-            },
-            "ai_prompt": """Проанализируй активность инфлюенсера.
-
-Контент: {content}
-Тип источника: {source_type}
-
-Определи:
-1. Основные темы контента инфлюенсера
-2. Engagement rate постов
-3. Реакцию аудитории (sentiment анализ комментариев)
-4. Частоту и регулярность публикаций
-5. Потенциал для коллаборации
-
-Минимальный порог подписчиков: {influencer_config.min_followers}
-
-Предоставь инсайты в JSON."""
-        },
-    ]
+def get_preset(preset_id: str) -> dict[str, Any] | None:
+	"""Get specific preset by ID."""
+	return SCENARIO_PRESETS.get(preset_id)

@@ -23,7 +23,6 @@ from .enums import (
 	BotTriggerType,
 
 	# LLM
-	LLMProviderType,
 	LLMStrategyType,
 
 	# Notifications
@@ -43,7 +42,6 @@ __all__ = [
 	"PeriodType",
 	"BotActionType",
 	"BotTriggerType",
-	"LLMProviderType",
 	"LLMStrategyType",
 	"NotificationType",
 ]

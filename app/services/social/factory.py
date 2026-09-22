@@ -1,40 +1,28 @@
-from app.models import Platform
 from app.services.social.base import BaseClient
-from app.services.social.vk_client import VKClient
 from app.services.social.tg_client import TelegramClient
-from app.types import PlatformType
+from app.services.social.vk_client import VKClient
 
 
-def get_social_client(platform: Platform) -> BaseClient:
+def get_social_client(platform) -> BaseClient:
 	"""
-	Factory function to get the appropriate social media client based on platform type.
-	
+	Factory function to get the appropriate social media client.
+
 	Args:
-		platform: Platform instance with type and configuration
-		
+		platform: Platform model instance (with .params, .platform_type, etc.)
+
 	Returns:
-		BaseClient: Appropriate client instance (VKClient, TelegramClient, etc.)
-		
-	Raises:
-		ValueError: If platform type is not supported
+		BaseClient: Appropriate client instance
 	"""
+
 	# Map using enum values for comparison (platform_type might be string or enum)
 	client_map = {
 		'vk': VKClient,
 		'telegram': TelegramClient,
 	}
-	
-	# Get platform type value (works with both enum and string)
-	# For tuple enum, use db_value; for simple enum use value; for string use as-is
-	if hasattr(platform.platform_type, 'db_value'):
-		platform_value = platform.platform_type.db_value
-	elif hasattr(platform.platform_type, 'value'):
-		platform_value = platform.platform_type.value
-	else:
-		platform_value = str(platform.platform_type)
-	
-	client_class = client_map.get(platform_value)
+
+	platform_type = platform.platform_type.db_value
+	client_class = client_map.get(platform_type)
 	if not client_class:
-		raise ValueError(f"Unsupported platform type: {platform_value}")
-	
+		raise ValueError(f"Unsupported platform type: {platform.platform_type}")
+
 	return client_class(platform)

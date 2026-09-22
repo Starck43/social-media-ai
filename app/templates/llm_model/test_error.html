@@ -1,0 +1,99 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block title %}Ошибка тестирования: {{ model.name }}{% endblock %}
+
+{% block content %}
+<div class="col-12">
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h3 class="card-title mb-0">
+                <i class="fa fa-exclamation-triangle"></i>
+                Ошибка тестирования модели: {{ model.name }}
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <strong>Модель:</strong> {{ model.name }}
+                </div>
+                <div class="col-md-6">
+                    <strong>Провайдер:</strong> {{ provider.name }}
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <strong>Время ошибки:</strong> {{ error_time.strftime('%d.%m.%Y %H:%M:%S') }}
+                </div>
+            </div>
+
+            <div class="alert alert-danger" role="alert">
+                <h5 class="alert-heading">
+                    <i class="fa fa-times-circle"></i>
+                    Произошла ошибка:
+                </h5>
+                <p class="mb-0">{{ error_message }}</p>
+            </div>
+
+            {% if prompt %}
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="card-title mb-0">
+                                <i class="fa fa-question-circle"></i>
+                                Запрос, который вызвал ошибку
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <pre class="p-3 rounded border"><code>{{ prompt }}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card border-info">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fa fa-info-circle"></i>
+                                Возможные причины
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>API ключ провайдера не настроен или неверный</li>
+                                <li>Модель неактивна или недоступна</li>
+                                <li>Проблемы с сетевым подключением</li>
+                                <li>Недостаточно средств на аккаунте провайдера</li>
+                                <li>Неверные настройки модели</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="d-flex gap-2">
+                        <form method="get" action="/admin/llm-model/action/test-model/">
+                            <input type="hidden" name="pks" value="{{ model.id }}">
+                            {% if prompt %}
+                            <input type="hidden" name="prompt" value="{{ prompt }}">
+                            {% endif %}
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fa fa-redo"></i>
+                                Попробовать снова
+                            </button>
+                        </form>
+                        <a href="{{ url_for('admin:list', identity='llm-model') }}" class="btn btn-secondary">
+                            <i class="fa fa-arrow-left"></i>
+                            Назад к списку моделей
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

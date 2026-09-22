@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from .base_manager import BaseManager
 
@@ -16,7 +16,7 @@ class LLMProviderManager(BaseManager):
 		from ..llm_provider import LLMProvider
 		super().__init__(LLMProvider)
 
-	async def get_by_capability(self, capability: str, is_active: bool = True) -> list['LLMProvider']:
+	async def _get_by_capability(self, capability: str, is_active: bool = True) -> list['LLMProvider']:
 		"""
 		Get all LLM providers that support a specific capability.
 
@@ -27,56 +27,29 @@ class LLMProviderManager(BaseManager):
 		Returns:
 			List of LLMProvider objects
 		"""
+		from ..llm_model import LLMModel
+
 		# Get all active providers
 		if is_active:
-			all_providers = await self.filter(is_active=True)
+			providers = await self.filter(is_active=True)
 		else:
-			all_providers = await self.all()
-		
-		# Filter by capability in Python (since JSON contains is problematic)
-		providers = [
-			p for p in all_providers 
-			if p.capabilities and capability in p.capabilities
-		]
-		return providers
+			providers = await self.all()
 
-	async def get_active_providers(self) -> List:
+		# Get all active models
+		models = await LLMModel.objects.filter(is_active=True)
+
+		# Find providers that have models with the required capability
+		providers_with_capability = []
+		for provider in providers:
+			# Check if provider has any active models with this capability
+			provider_models = [m for m in models if m.provider_id == provider.id and capability in m.capabilities]
+			if provider_models:
+				providers_with_capability.append(provider)
+
+		return providers_with_capability
+
+	async def get_active_providers(self) -> list['LLMProvider']:
 		"""Get all active LLM providers."""
 		return await self.filter(is_active=True)
 
-	async def get_by_type(self, provider_type: str, is_active: bool = True) -> List:
-		"""
-		Get all LLM providers by type.
 
-		Args:
-			provider_type: Provider type (deepseek, openai, etc.)
-			is_active: Filter by active status
-
-		Returns:
-			List of LLMProvider objects
-		"""
-		filters = {"provider_type": provider_type}
-		if is_active:
-			filters["is_active"] = True
-
-		return await self.filter(**filters)
-
-	async def get_default_for_media_type(self, media_type: str) -> Optional:
-		"""
-		Get the default LLM provider for a specific media type.
-		Selects the first active provider that supports the capability.
-
-		Args:
-			media_type: Media type (text, image, video)
-
-		Returns:
-			LLMProvider object or None
-		"""
-		providers = await self.get_by_capability(media_type, is_active=True)
-
-		if providers:
-			logger.info(f"Using default LLM provider for {media_type}: {providers[0].name}")
-			return providers[0]
-
-		logger.warning(f"No active LLM provider found for {media_type}")
-		return None

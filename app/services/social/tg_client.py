@@ -7,7 +7,7 @@ Official documentation: https://docs.telethon.dev/
 
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any
 
 from app.models import Source
 from app.services.social.base import BaseClient
@@ -62,8 +62,8 @@ class TelegramClient(BaseClient):
 		Build Telegram API request parameters for Telethon.
 		
 		Parameters:
-		- entity: Chat ID, username, or channel link
-		- limit: Number of messages to retrieve
+		- entity: Chat ID, username or channel link
+		- limit: Amount messages to retrieve
 		- offset_id: Message ID for pagination
 		- min_id: Minimum message ID
 		- max_id: Maximum message ID
@@ -85,11 +85,38 @@ class TelegramClient(BaseClient):
 		# Method-specific parameters
 		if method == 'get_messages':
 			base_params.update({
-				'limit': source_params.get('limit', 100),
+				'limit': source_params.get('limit', 10),
 				'offset_id': source_params.get('offset_id', 0),
 				'reverse': source_params.get('reverse', False),
 			})
-		
+
+			# TELEGRAM DATE FILTERING
+			# Similar priority logic as VK client
+			date_from = None
+			date_to = None
+
+			# Check CLI dates
+			cli_dates = source.params.get('cli_dates', {}) if source.params else {}
+
+			# Priority: last_checked > CLI dates > source model dates
+			if source.last_checked and not cli_dates.get('force_full_collection'):
+				date_from = source.last_checked
+			elif cli_dates:
+				date_from = cli_dates.get('start_date')
+				date_to = cli_dates.get('end_date')
+			else:
+				date_from = source.date_from if hasattr(source, 'date_from') and source.date_from else None
+				date_to = source.date_to if hasattr(source, 'date_to') and source.date_to else None
+
+			# Apply date filters for Telegram
+			if date_from:
+				try:
+					date_from_dt = self._convert_to_datetime(date_from)
+					base_params['offset_date'] = date_from_dt
+					logger.info(f"Telegram date_from filter: {date_from_dt.isoformat()}")
+				except Exception as e:
+					logger.warning(f"Failed to parse Telegram date_from: {e}")
+
 		# Merge with custom source parameters
 		return {**base_params, **source_params}
 

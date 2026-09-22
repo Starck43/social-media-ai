@@ -4,17 +4,16 @@ Content collection scheduler.
 Automatically collects and analyzes content from active sources
 using checkpoint system to avoid duplicates and minimize LLM costs.
 """
-import logging
 import asyncio
+import logging
 from datetime import datetime, timezone
-from typing import List
 
 from app.models import Source
-from app.services.checkpoint_manager import CheckpointManager, CollectionResult
 from app.services.ai.analyzer import AIAnalyzer
-from app.services.social.factory import get_social_client
 from app.services.ai.optimizer import LLMOptimizer
 from app.services.ai.trigger_evaluator import trigger_evaluator
+from app.services.checkpoint_manager import CheckpointManager, CollectionResult
+from app.services.social.factory import get_social_client
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +51,10 @@ class ContentScheduler:
 		
 		This method:
 		1. Gets all active sources
-		2. Checks which ones need collection (via checkpoint)
+		2. Checks, which ones need collection (via checkpoint)
 		3. Collects new content from each
 		4. Analyzes with LLM (optimized)
-		5. Saves checkpoints
+		5. Saves checkpoints.
 		
 		Returns:
 			Dict with collection statistics:
@@ -135,7 +134,7 @@ class ContentScheduler:
 		
 		Args:
 			source: Source to collect from
-			
+
 		Returns:
 			Dict with collection result or None if skipped
 		"""
@@ -144,8 +143,7 @@ class ContentScheduler:
 		# Check if collection needed (via checkpoint)
 		if not CheckpointManager.should_collect(source):
 			logger.info(
-				f"Source {source.id} collected recently "
-				f"(last: {source.last_checked}), skipping"
+				f"Source '{source.platform_url}' collected recently (last checked: {source.last_checked}), skipping"
 			)
 			return None
 
@@ -188,26 +186,15 @@ class ContentScheduler:
 					content=content,
 					scenario=source.bot_scenario
 				)
-
-				if len(filtered_content) < len(content):
-					logger.info(
-						f"Trigger filter: {len(filtered_content)}/{len(content)} items "
-						f"({len(content) - len(filtered_content)} skipped, saved tokens!)"
-					)
-
 				content = filtered_content
 
 			if not content:
-				logger.info(f"No content passed trigger filter for source {source.id}")
 				return None
 
-			# Analyze with LLM (optimized) - only filtered content
-			analysis = await self.analyzer.analyze_content(
-				content=content,
-				source=source
-			)
+			# Analyze with LLM based on analyze_by parameter
+			analysis_records = await self.analyzer.analyze_content(content, source)
 
-			if not analysis:
+			if not analysis_records:
 				logger.error(f"Analysis failed for source {source.id}")
 				return None
 
@@ -219,13 +206,12 @@ class ContentScheduler:
 			)
 			await result.save_checkpoint()
 
-			logger.info(f"✅ Successfully processed source {source.id}")
-
 			return {
 				"source_id": source.id,
 				"content_count": len(content),
-				"analysis_id": analysis.id,
-				"cost": 0.0  # Cost tracked by optimizer
+				"analysis_ids": [a.id for a in analysis_records],  # ← all IDs
+				"analytics_count": len(analysis_records),
+				"cost": 0.0
 			}
 
 		except Exception as e:
@@ -253,8 +239,9 @@ class ContentScheduler:
 
 		# Delegate to platform client as done in admin check_source_action:
 		# temporarily merge checkpoint into source.params['collection'] and call client.collect_data()
+		original_params = source.params.copy() if source.params else {}
+
 		try:
-			original_params = source.params.copy() if source.params else {}
 			if not source.params:
 				source.params = {}
 			if 'collection' not in source.params:
@@ -281,8 +268,8 @@ class ContentScheduler:
 	async def run_forever(self, interval_minutes: int = 60):
 		"""
 		Run scheduler in continuous loop.
-		
-{{ ... }}
+
+		Args:
 			interval_minutes: Interval between collection cycles (default: 60)
 		"""
 		logger.info(f"Starting scheduler with {interval_minutes}min interval")
@@ -304,10 +291,6 @@ class ContentScheduler:
 				await asyncio.sleep(60)
 
 
-# Scheduler instance
-scheduler = ContentScheduler()
-
-
 async def start_scheduler(interval_minutes: int = 60):
 	"""
 	Start content collection scheduler.
@@ -326,3 +309,8 @@ if __name__ == "__main__":
 
 	logger.info(f"Starting content scheduler (interval: {interval}min)")
 	asyncio.run(start_scheduler(interval))
+
+
+# Scheduler instance
+scheduler = ContentScheduler()
+

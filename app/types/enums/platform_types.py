@@ -32,14 +32,6 @@ class PlatformType(Enum):
 	def label(self):
 		"""Get label with emoji."""
 		return f"{self._emoji} {self._display_name}"
-
-	def get_client_class(self):
-		"""Get client class name for the platform."""
-		clients = {
-			"vk": "VKClient",
-			"telegram": "TelegramClient",
-		}
-		return clients.get(self.db_value)
 	
 	@classmethod
 	def choices(cls, use_db_value: bool = True):

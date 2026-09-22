@@ -14,7 +14,7 @@ T = TypeVar('T')
 # Создание async engine
 async_engine = create_async_engine(
 	settings.POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://'),
-	echo=True,
+	echo=settings.DEBUG,
 	pool_pre_ping=True,
 	pool_recycle=3600  # Пересоздавать соединения каждые 60 минут
 )
@@ -22,7 +22,7 @@ async_engine = create_async_engine(
 # Создание синхронного engine
 engine = create_engine(
 	settings.POSTGRES_URL,
-	echo=True,
+	echo=settings.DEBUG,
 	pool_pre_ping=True,
 	pool_recycle=3600
 )

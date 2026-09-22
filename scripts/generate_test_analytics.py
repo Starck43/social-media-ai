@@ -162,10 +162,10 @@ async def create_test_analytics_data():
 						"analysis_date": current_date,
 						"period_type": "DAILY",
 						"topic_chain_id": chain_id,
-						"summary_data": json.dumps(summary_data),
+						"summary_data": json.dumps(summary_data, ensure_ascii=False),
 						"llm_model": random.choice(["gpt-4", "claude-3", "deepseek-chat"]),
 						"prompt_text": f"Анализ контента за {current_date}",
-						"response_payload": json.dumps(response_payload),
+						"response_payload": json.dumps(response_payload, ensure_ascii=False),
 						"created_at": datetime.now(),
 						"updated_at": datetime.now()
 					}

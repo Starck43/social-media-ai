@@ -1,0 +1,552 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title m-auto font-weight-bold">
+                    <i class="fa fa-vial"></i>
+                    Тестирование модели: {{ model.name }}
+                </h2>
+            </div>
+            <div class="card-body">
+                <!-- Информация о модели (всегда показываем) -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card border-primary mb-3">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="card-title mb-0">
+                                    <i class="fa fa-info-circle"></i>
+                                    Информация о модели
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <strong>Модель:</strong> {{ model.name }}
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Провайдер:</strong> {{ provider.name }}
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Контекстное окно:</strong> {{ model.context_window }} токенов
+                                </div>
+                                <div class="mb-0">
+                                    <strong>Возможности:</strong>
+                                    {% if model.capabilities %}
+                                        {{ model.capabilities|join(', ') }}
+                                    {% else %}
+                                        Нет
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card border-warning mb-3">
+                            <div class="card-header bg-warning text-dark">
+                                <h5 class="card-title mb-0">
+                                    <i class="fa fa-calculator"></i>
+                                    Стоимость
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <strong>Входные токены:</strong> ${{ "%.4f"|format(model.input_cost) }}/1M
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Выходные токены:</strong> ${{ "%.4f"|format(model.output_cost) }}/1M
+                                </div>
+                                <div class="mb-0">
+                                    <strong>Статус:</strong>
+                                    {% if model.is_active %}
+                                        <span class="badge bg-success">Активна</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Неактивна</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ФОРМА ДЛЯ ТЕСТИРОВАНИЯ (всегда показываем) -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card border-info">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="card-title mb-0">
+                                    <i class="fa fa-edit"></i>
+                                    Тестирование модели
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <!-- ОДНА ФОРМА С ДВУМЯ КНОПКАМИ -->
+                                <form method="get" action="/admin/llm-model/action/test-model/" id="test_form">
+                                    <input type="hidden" name="pks" value="{{ model.id }}">
+                                    <input type="hidden" name="test_type" id="test_type_field" value="mock">
+                                    <input type="hidden" id="image_data_hidden" name="image_data" value="">
+
+                                    <div class="row">
+                                        <div class="col-12 col-md-8">
+                                            <label for="real_prompt" class="form-label">Запрос</label>
+                                            <textarea
+                                                id="real_prompt"
+                                                name="prompt"
+                                                class="form-control"
+                                                rows="4"
+                                                placeholder="Введите запрос для тестирования модели..."
+                                                required
+                                            >{{ prompt }}</textarea>
+
+                                            <!-- Блок для загрузки фото -->
+                                            {% if 'image' in model.capabilities %}
+                                                <div class="form-group mb-3 mt-3">
+                                                    <label class="form-label">
+                                                        <i class="fa fa-image"></i>
+                                                        Изображение (опционально)
+                                                    </label>
+                                                    <div class="input-group">
+                                                        <input type="file"
+                                                               id="image_input"
+                                                               class="form-control"
+                                                               accept="image/*"
+                                                               onchange="handleImageSelect(event)">
+                                                        <button type="button" class="btn btn-outline-secondary"
+                                                                onclick="clearImage()">
+                                                            <i class="fa fa-times"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div class="form-text">
+                                                        Модель поддерживает анализ изображений. Вы можете загрузить
+                                                        фото.
+                                                    </div>
+                                                    <div id="image_preview" class="mt-2" style="display: none;">
+                                                        <img id="preview_img" src="#" alt="Preview"
+                                                             class="img-thumbnail"
+                                                             style="max-height: 150px;">
+                                                        <small class="d-block mt-1 text-muted" id="image_info"></small>
+                                                    </div>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                        <div class="col-12 col-md-4 d-flex flex-column">
+                                            <label class="form-label">&nbsp;</label>
+                                            <div class="d-grid gap-2 h-100">
+                                                <button type="submit"
+                                                        class="btn btn-success h-100 d-flex align-items-center justify-content-center"
+                                                        onclick="this.form.test_type_field.value = 'real'"
+                                                >
+                                                    <i class="fa fa-rocket me-2"></i>
+                                                    Реальный запрос
+                                                </button>
+
+                                                <button type="submit"
+                                                        class="btn btn-info h-100 d-flex align-items-center justify-content-center"
+                                                        onclick="this.form.test_type_field.value = 'mock'"
+                                                >
+
+                                                    <i class="fa fa-sync-alt me-2"></i>
+                                                    Mock тест
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- РЕЗУЛЬТАТЫ ТЕСТА (показываем только если был выполнен тест) -->
+                {% if raw_response.response_received.status != "ready_for_testing" %}
+                    <!-- Конфигурация клиента -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card border-secondary">
+                                <div class="card-header bg-secondary text-white">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fa fa-cog"></i>
+                                        Конфигурация клиента
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3 mb-md-0">
+                                            <h6 class="border-bottom pb-2 mb-3">
+                                                <i class="fa fa-wrench me-2"></i>Информация о клиенте
+                                            </h6>
+                                            <ul class="list-unstyled">
+                                                <li class="mb-2">
+                                                    <strong>Тип клиента:</strong>
+                                                    <span class="badge bg-primary">
+                                        {% if raw_response.client_info and raw_response.client_info.provider %}
+                                            {{ raw_response.client_info.provider|title }}Client
+                                        {% else %}
+                                            UnknownClient
+                                        {% endif %}
+                                    </span>
+                                                </li>
+                                                <li class="mb-2">
+                                                    <strong>Модель:</strong>
+                                                    <code>
+                                                        {% if raw_response.client_info and raw_response.client_info.model_name %}
+                                                            {{ raw_response.client_info.model_name }}
+                                                        {% else %}
+                                                            unknown-model
+                                                        {% endif %}
+                                                    </code>
+                                                </li>
+                                                <li class="mb-2">
+                                                    <strong>API URL:</strong>
+                                                    <small class="text-muted">
+                                                        {% if raw_response.client_info and raw_response.client_info.api_url %}
+                                                            {{ raw_response.client_info.api_url }}
+                                                        {% else %}
+                                                            Not configured
+                                                        {% endif %}
+                                                    </small>
+                                                </li>
+                                                <li class="mb-0">
+                                                    <strong>API ключ:</strong>
+                                                    {% if raw_response.client_info and raw_response.client_info.api_key_configured %}
+                                                        <span class="badge bg-success">✅ Настроен</span>
+                                                    {% else %}
+                                                        <span class="badge bg-danger">❌ Отсутствует</span>
+                                                    {% endif %}
+                                                </li>
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="border-bottom pb-2 mb-3">
+                                                <i class="fa fa-sliders me-2"></i>Конфигурация
+                                            </h6>
+                                            <div>
+                                                <pre class="mb-0">
+                                                    {%- if raw_response.client_info and raw_response.client_info.config -%}
+                                                        {{ raw_response.client_info.config|tojson(indent=2) }}
+                                                    {% else %}
+                                                        {}
+                                                    {%- endif -%}
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Структурированные данные -->
+                    <div class="row gap-4">
+                        <div class="col-12">
+                            <div class="card border-info">
+                                <div class="card-header bg-info text-white">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fa fa-database"></i>
+                                        Структурированные данные запроса/ответа
+                                        <button class="btn btn-sm btn-outline-light float-end mx-2" type="button"
+                                                data-bs-toggle="collapse" data-bs-target="#rawResponse"
+                                                aria-expanded="false">
+                                            Показать/скрыть
+                                        </button>
+                                    </h5>
+                                </div>
+                                <div class="collapse" id="rawResponse">
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-12 col-md-6 h-full">
+                                                <h6 class="text-primary">📤 Request Payload</h6>
+                                                <pre class="p-3 rounded border small"><code>{{ request_payload }}</code></pre>
+                                            </div>
+                                            <div class="col-12 col-md-6 h-full">
+                                                <h6 class="text-success">🔧 Client Info</h6>
+                                                <pre class="p-3 rounded border small"><code>
+                                                    {{ raw_response.client_info|tojson(indent=2)|trim }}
+                                                </code></pre>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-12 h-full">
+                                                <h6 class="text-info">📋 Full Response</h6>
+                                                <pre class="p-3 rounded border small">
+                                                    <code>{{ full_response_json }}</code>
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card {% if is_real_response %}border-success{% else %}border-info{% endif %}">
+                                <div
+                                    class="card-header {% if is_real_response %}bg-success{% else %}bg-info{% endif %} text-white">
+                                    <h5 class="card-title mb-0">
+                                        {% if is_real_response %}
+                                            <i class="fa fa-rocket me-2"></i>Реальный ответ от API
+                                        {% else %}
+                                            <i class="fa fa-sync-alt me-2"></i>Тестовые данные (Mock)
+                                        {% endif %}
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <small class="text-muted">Тип запроса:</small>
+                                            <div class="p-2 rounded border small mt-1">
+                                                {% if is_real_response %}
+                                                    <span class="badge bg-success me-2">✅ Реальный API запрос</span>
+                                                {% else %}
+                                                    <span class="badge bg-info me-2">🔄 Mock тест</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <small class="text-muted">Статус:</small>
+                                            <div class="p-2 rounded border small mt-1">
+                                                {% if raw_response.response_received %}
+                                                    {{ raw_response.response_received.status }}
+                                                {% else %}
+                                                    unknown
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <small class="text-muted">Время ответа:</small>
+                                            <div class="p-2 rounded border small mt-1">
+                                                {{ request_time.strftime('%d.%m.%Y %H:%M:%S') }}
+                                                {% if raw_response.response_received and raw_response.response_received.duration_seconds %}
+                                                    <span> ({{ "%.2f"|format(raw_response.response_received.duration_seconds) }} сек)
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <small class="text-muted">Содержание ответа:</small>
+                                        <div class="p-3 rounded border response-content bg-light mt-1">
+                                        <pre class="mb-0">
+                                            {%- if raw_response.response_received and raw_response.response_received.content -%}
+                                                {{ raw_response.response_received.content }}
+                                            {% else %}
+                                                No content available
+                                            {%- endif -%}
+                                        </pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <!-- Кнопки навигации -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a href="/admin/llm-model/details/{{ model.id }}" class="btn btn-primary">
+                                <i class="fa fa-arrow-left me-2"></i>
+                                Назад к модели
+                            </a>
+                            <a href="{{ url_for('admin:list', identity='llm-model') }}" class="btn btn-secondary">
+                                <i class="fa fa-list me-2"></i>
+                                К списку моделей
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_css %}
+    <style>
+		.response-content {
+			max-height: 400px;
+			overflow-y: auto;
+			background-color: var(--tblr-bg-surface) !important;
+			border-color: var(--tblr-border-color) !important;
+		}
+
+		.response-content pre {
+			white-space: pre-wrap;
+			word-wrap: break-word;
+			color: var(--tblr-body-color);
+			background-color: transparent;
+		}
+
+		.bg-light {
+			background-color: rgba(var(--tblr-bg-surface-rgb), 0.3) !important;
+		}
+
+		.bg-dark {
+			background-color: rgba(0, 0, 0, 0.8) !important;
+		}
+
+		.card {
+			height: 100%;
+			box-shadow: var(--box-shadow) !important;
+			border: 1px solid var(--tblr-border-color) !important;
+			background-color: rgba(var(--tblr-bg-surface-rgb), 0.3) !important;
+		}
+
+		.card-header {
+			border-bottom: 1px solid var(--tblr-border-color);
+		}
+
+		.badge {
+			font-size: 0.75em;
+		}
+
+		.form-label {
+			font-weight: bold;
+			color: var(--tblr-body-color);
+		}
+
+		.text-muted {
+			color: var(--tblr-secondary) !important;
+		}
+
+		.border {
+			border-color: var(--tblr-border-color) !important;
+		}
+
+		code {
+			color: var(--tblr-primary);
+			background-color: rgba(var(--tblr-primary-rgb), 0.1);
+			padding: 2px 4px;
+			border-radius: 3px;
+		}
+
+		.bg-dark code {
+			background-color: transparent;
+			color: var(--tblr-success);
+		}
+
+		.d-flex > div {
+			flex: 0;
+		}
+
+		.input-group {
+			width: 100%;
+		}
+
+		.img-thumbnail {
+			max-width: 200px;
+			border: 1px solid var(--tblr-border-color);
+		}
+    </style>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const currentTestType = new URLSearchParams(window.location.search).get("test_type")
+            if (currentTestType) {
+                document.getElementById("test_type_field").value = currentTestType
+            }
+        })
+
+        // ПРОСТОЙ И РАБОЧИЙ ОБРАБОТЧИК ФОРМЫ
+        const testForm = document.getElementById("test_form")
+        if (testForm) {
+            let clickedTestType = "mock" // значение по умолчанию
+
+            // Запоминаем какая кнопка нажата
+            document.querySelectorAll("#test_form button[type=\"submit\"]").forEach(button => {
+                button.addEventListener("click", function() {
+                    if (this.onclick && this.onclick.toString().includes("'real'")) {
+                        clickedTestType = "real"
+                    } else {
+                        clickedTestType = "mock"
+                    }
+                })
+            })
+
+            testForm.addEventListener("submit", function(e) {
+                const prompt = document.getElementById("real_prompt").value
+                if (!prompt.trim()) {
+                    alert("Введите запрос для тестирования")
+                    e.preventDefault()
+                    return
+                }
+
+                const hasImage = document.getElementById("image_data_hidden").value !== ""
+
+                if (clickedTestType === "real") {
+                    let confirmMessage = "Вы уверены, что хотите отправить реальный запрос к API? Это может привести к списанию средств."
+                    if (hasImage) {
+                        confirmMessage += "\n\nЗапрос включает анализ изображения."
+                    }
+
+                    if (!confirm(confirmMessage)) {
+                        e.preventDefault()
+                        return
+                    }
+                }
+
+                // Устанавливаем test_type в скрытое поле
+                document.getElementById("test_type_field").value = clickedTestType
+
+                // Блокируем кнопки
+                const buttons = this.querySelectorAll("button[type=\"submit\"]")
+                buttons.forEach(btn => {
+                    btn.disabled = true
+                    const isClickedButton = (btn.onclick && btn.onclick.toString().includes(`'${clickedTestType}'`))
+
+                    if (isClickedButton) {
+                        if (clickedTestType === "real") {
+                            btn.innerHTML = "<i class=\"fa fa-spinner fa-spin me-2\"></i>Отправка реального запроса..."
+                        } else {
+                            btn.innerHTML = "<i class=\"fa fa-spinner fa-spin me-2\"></i>Подготовка mock теста..."
+                        }
+                    } else {
+                        btn.classList.add("btn-outline-secondary")
+                    }
+                })
+            })
+        }
+
+        // Функции для работы с изображениями
+        function handleImageSelect(event) {
+            const file = event.target.files[0]
+            if (!file) return
+
+            if (!file.type.startsWith("image/")) {
+                alert("Пожалуйста, выберите файл изображения")
+                event.target.value = ""
+                return
+            }
+
+            if (file.size > 5 * 1024 * 1024) {
+                alert("Размер файла не должен превышать 5MB")
+                event.target.value = ""
+                return
+            }
+
+            const reader = new FileReader()
+            reader.onload = function(e) {
+                const preview = document.getElementById("image_preview")
+                const previewImg = document.getElementById("preview_img")
+                const imageInfo = document.getElementById("image_info")
+
+                previewImg.src = e.target.result
+                imageInfo.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`
+                preview.style.display = "block"
+
+                document.getElementById("image_data_hidden").value = e.target.result
+            }
+            reader.readAsDataURL(file)
+        }
+
+        function clearImage() {
+            document.getElementById("image_input").value = ""
+            document.getElementById("image_preview").style.display = "none"
+            document.getElementById("image_data_hidden").value = ""
+        }
+    </script>
+{% endblock %}

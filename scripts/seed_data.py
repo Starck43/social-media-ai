@@ -22,7 +22,6 @@ async def seed_llm_providers():
         {
             "name": "DeepSeek Chat",
             "description": "DeepSeek LLM для текстового анализа. Быстрый и доступный по цене.",
-            "provider_type": "deepseek",
             "api_url": "https://api.deepseek.com/v1/chat/completions",
             "api_key_env": "DEEPSEEK_API_KEY",
             "model_name": "deepseek-chat",
@@ -33,7 +32,6 @@ async def seed_llm_providers():
         {
             "name": "OpenAI GPT-3.5 Turbo",
             "description": "OpenAI GPT-3.5 Turbo для быстрого анализа текста. Доступная цена.",
-            "provider_type": "openai",
             "api_url": "https://api.openai.com/v1/chat/completions",
             "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-3.5-turbo",
@@ -44,7 +42,6 @@ async def seed_llm_providers():
         {
             "name": "OpenAI GPT-4 Turbo",
             "description": "OpenAI GPT-4 Turbo для комплексного анализа текста. Высокое качество.",
-            "provider_type": "openai",
             "api_url": "https://api.openai.com/v1/chat/completions",
             "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-4-turbo-preview",
@@ -55,7 +52,6 @@ async def seed_llm_providers():
         {
             "name": "OpenAI GPT-4 Vision",
             "description": "OpenAI GPT-4 с поддержкой анализа изображений и видео.",
-            "provider_type": "openai",
             "api_url": "https://api.openai.com/v1/chat/completions",
             "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-4-vision-preview",
@@ -66,7 +62,6 @@ async def seed_llm_providers():
         {
             "name": "Anthropic Claude 3",
             "description": "Anthropic Claude 3 для анализа текста. Хорошо понимает контекст.",
-            "provider_type": "anthropic",
             "api_url": "https://api.anthropic.com/v1/messages",
             "api_key_env": "ANTHROPIC_API_KEY",
             "model_name": "claude-3-opus-20240229",

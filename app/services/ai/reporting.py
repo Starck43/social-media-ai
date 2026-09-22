@@ -134,8 +134,8 @@ class ReportAggregator:
 		Args:
 			source_id: Filter by specific source
 			scenario_id: Filter by scenario
-			days: Number of days to look back
-			limit: Max number of topics to return
+			days: Amount days to look back
+			limit: Max amount topics to return
 		
 		Returns:
 			List of topics with counts, sentiment, example posts

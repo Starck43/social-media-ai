@@ -8,7 +8,7 @@ from datetime import datetime, date
 from typing import Any, Generic, TypeVar, Type, Optional, Sequence, cast
 
 from fastapi import HTTPException
-from sqlalchemy import ColumnElement, func
+from sqlalchemy import ColumnElement, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload, QueryableAttribute, InstrumentedAttribute
 from sqlalchemy.sql import and_, exists, select, Select
@@ -37,91 +37,6 @@ def prefetch(
 ) -> Prefetch:
 	"""Helper to create Prefetch descriptors with optional filters/criteria."""
 	return Prefetch(path=path, queryset=queryset, filters=filters, criteria=criteria or tuple())
-
-
-class LookupCompiler:
-	"""Компилятор lookup-выражений в SQLAlchemy условия."""
-
-	@staticmethod
-	def compile_lookup(model: Type[M], key: str, value: Any) -> ColumnElement[bool]:
-		"""
-		Компилирует lookup выражение в SQLAlchemy условие.
-		
-		Поддерживаемые lookups:
-		- field (равенство)
-		- field__in (вхождение в список)
-		- field__isnull (проверка на NULL)
-		- field__contains (подстрока)
-		- field__icontains (подстрока без учета регистра)
-		- field__startswith (начинается с)
-		- field__endswith (заканчивается на)
-		- field__gt (больше)
-		- field__gte (больше или равно)
-		- field__lt (меньше)
-		- field__lte (меньше или равно)
-		- field__ne (не равно)
-		"""
-		if '__' in key:
-			field_name, lookup = key.rsplit('__', 1)
-			f = getattr(model, field_name, None)
-			if f is None:
-				raise AttributeError(f"Model {model.__name__} has no attribute '{field_name}'")
-
-			return LookupCompiler._apply_lookup(f, lookup, value)
-		else:
-			f = getattr(model, key, None)
-			if f is None:
-				raise AttributeError(f"Model {model.__name__} has no attribute '{key}'")
-			return cast(ColumnElement[bool], f == value)
-
-	@staticmethod
-	def _apply_lookup(f: Any, lookup: str, value: Any) -> ColumnElement[bool]:
-		"""Применяет конкретный lookup к полю."""
-		if lookup == 'in':
-			if not isinstance(value, (list, tuple, set)):
-				raise ValueError(f"'in' lookup requires list, tuple or set, got {type(value).__name__}")
-			return cast(ColumnElement[bool], f.in_(value))
-
-		elif lookup == 'isnull':
-			return cast(ColumnElement[bool], f.is_(None) if value else f.is_not(None))
-
-		elif lookup == 'contains':
-			return cast(ColumnElement[bool], f.contains(str(value)))
-
-		elif lookup == 'icontains':
-			return cast(ColumnElement[bool], f.ilike(f'%{value}%'))
-
-		elif lookup == 'startswith':
-			return cast(ColumnElement[bool], f.startswith(str(value)))
-
-		elif lookup == 'endswith':
-			return cast(ColumnElement[bool], f.endswith(str(value)))
-
-		elif lookup == 'gt':
-			return cast(ColumnElement[bool], f > value)
-
-		elif lookup == 'gte':
-			return cast(ColumnElement[bool], f >= value)
-
-		elif lookup == 'lt':
-			return cast(ColumnElement[bool], f < value)
-
-		elif lookup == 'lte':
-			return cast(ColumnElement[bool], f <= value)
-
-		elif lookup == 'ne':
-			return cast(ColumnElement[bool], f != value)
-
-		else:
-			raise ValueError(f"Unsupported lookup: {lookup}")
-
-	@staticmethod
-	def compile_filters(model: Type[M], filters: dict[str, Any]) -> list[ColumnElement[bool]]:
-		"""Компилирует словарь фильтров в список условий."""
-		return [
-			LookupCompiler.compile_lookup(model, key, value)
-			for key, value in filters.items()
-		]
 
 
 class QuerySet(Generic[M]):
@@ -260,97 +175,6 @@ class QuerySet(Generic[M]):
 		new_prefetch = list(self._prefetch_loads) + list(relations)
 		return self._clone(prefetch_loads=new_prefetch)
 
-	@asynccontextmanager
-	async def _get_session(self):
-		"""Get session from an instance or create a new one."""
-		if self._session is not None:
-			yield self._session
-		else:
-			async with async_session_maker() as session:
-				try:
-					yield session
-					await session.commit()
-				except Exception:
-					await session.rollback()
-					raise
-
-	def _build_statement_sync(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
-		"""
-		Build the SQLAlchemy Select statement from accumulated parameters (sync version).
-		
-		This is a synchronous version for use in admin views where async is not supported.
-		"""
-		stmt = select(self._manager.model)
-
-		# Apply a criterion (expressions)
-		if self._criterion:
-			stmt = stmt.where(and_(*self._criterion))
-
-		# Apply keyword filters
-		if self._kw_filters:
-			conditions = LookupCompiler.compile_filters(self._manager.model, self._kw_filters)
-			if conditions:
-				stmt = stmt.where(and_(*conditions))
-
-		# Apply eager loading (joinedload)
-		if self._eager_loads:
-			for rel in self._eager_loads:
-				if isinstance(rel, str):
-					# Support nested relationships with '__' syntax (Django-style)
-					# e.g., "source__platform" → joinedload(Model.source).joinedload(Source.platform)
-					if '__' in rel:
-						parts = rel.split('__')
-						current_model = self._manager.model
-						option = None
-
-						for part in parts:
-							rel_attr = getattr(current_model, part, None)
-							if rel_attr is None:
-								break
-
-							if option is None:
-								option = joinedload(rel_attr)
-							else:
-								option = option.joinedload(rel_attr)
-
-							# Get the related model for the next iteration
-							if hasattr(rel_attr.property, 'mapper'):
-								current_model = rel_attr.property.mapper.class_
-
-						if option is not None:
-							stmt = stmt.options(option)
-					else:
-						# Simple relationship name
-						rel_attr = getattr(self._manager.model, rel, None)
-						if rel_attr is not None:
-							stmt = stmt.options(joinedload(rel_attr))
-				elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
-					stmt = stmt.options(joinedload(rel))
-
-		# Apply prefetch loading (selectinload)
-		if self._prefetch_loads:
-			for rel in self._prefetch_loads:
-				option = self._manager._build_prefetch_option(rel)
-				if option is not None:
-					stmt = stmt.options(option)
-
-		# Apply ordering
-		if self._orderings:
-			stmt = stmt.order_by(*self._orderings)
-
-		# Apply pagination
-		if apply_pagination:
-			if self._offset_value is not None:
-				stmt = stmt.offset(self._offset_value)
-			if self._limit_value is not None:
-				stmt = stmt.limit(self._limit_value)
-
-		return stmt
-
-	async def _build_statement(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
-		"""Build the SQLAlchemy Select statement (async version for compatibility)."""
-		return self._build_statement_sync(apply_pagination=apply_pagination)
-
 	def to_select(self) -> Select[tuple[M]]:
 		"""
 		Convert QuerySet to SQLAlchemy Select statement.
@@ -379,10 +203,6 @@ class QuerySet(Generic[M]):
 		async with self._get_session() as session:
 			result = await session.execute(stmt)
 			return result.scalars().unique().all()
-
-	def __await__(self):
-		"""Allow awaiting QuerySet directly."""
-		return self.all().__await__()
 
 	async def first(self) -> Optional[M]:
 		"""Execute a query and return first result or None."""
@@ -465,6 +285,204 @@ class QuerySet(Generic[M]):
 			per_page=per_page,
 			pages=pages
 		)
+
+	async def delete(self) -> int:
+		"""
+		Delete all objects matching the current filters.
+
+		Returns the amount deleted objects.
+
+		Examples:
+			# Delete inactive users
+			count = await User.objects.filter(is_active=False).delete()
+
+			# Delete by IDs
+			count = await AIAnalytics.objects.filter(id__in=analytics_ids).delete()
+
+			# Delete with complex conditions
+			count = await User.objects.filter(
+				created_at__lt=datetime.now() - timedelta(days=365)
+			).delete()
+		"""
+		from sqlalchemy import delete
+
+		# Build WHERE conditions from current filters
+		conditions = []
+
+		# Add criterion conditions
+		if self._criterion:
+			conditions.extend(self._criterion)
+
+		# Add keyword filter conditions
+		if self._kw_filters:
+			conditions.extend(LookupCompiler.compile_filters(self._manager.model, self._kw_filters))
+
+		# Create DELETE statement
+		if conditions:
+			stmt = delete(self._manager.model).where(and_(*conditions))
+		else:
+			# If no filters, delete all records (be careful!)
+			stmt = delete(self._manager.model)
+
+		# Execute deletion
+		async with self._get_session() as session:
+			result = await session.execute(stmt)
+			await session.commit()
+			return result.rowcount or 0
+
+	async def raw_sql(self, sql: str, params: list[Any] | None = None) -> Sequence[M]:
+		"""
+		Execute raw SQL query and return model instances.
+
+		This method allows executing custom SQL queries while still returning properly
+		mapped SQLAlchemy model instances. The SQL should select columns that match
+		the model's table structure.
+
+		Args:
+			sql: Raw SQL query string with parameter placeholders
+			params: List of parameters to substitute in the query
+
+		Returns:
+			Sequence of model instances
+
+		Examples:
+			# Basic raw SQL with parameters
+			users = await User.objects.raw_sql(
+				"SELECT * FROM users WHERE is_active = %s AND created_at > %s",
+				[True, '2024-01-01']
+			)
+
+			# PostgreSQL array operations
+			analytics = await AIAnalytics.objects.raw_sql('''
+				SELECT *
+				FROM ai_analytics
+				WHERE source_id = %s
+				AND main_topics && %s
+				AND main_topics IS NOT NULL
+				LIMIT 1
+			''', [source_id, topics])
+
+		Note:
+			— Use %s as parameter placeholders (works with both PostgreSQL and MySQL)
+			— The query should return all columns needed to populate model instances
+			— For complex queries that can't be expressed with the QuerySet API
+		"""
+		if params is None:
+			params = []
+
+		# Convert to dictionary parameters for SQLAlchemy
+		# Assuming params are positional, convert to named parameters: %s -> :param_0, :param_1, etc.
+		param_dict = {f'param_{i}': value for i, value in enumerate(params)}
+
+		# Replace %s with named parameters
+		formatted_sql = sql
+		for i in range(len(params)):
+			formatted_sql = formatted_sql.replace('%s', f':param_{i}', 1)
+
+		# Use current session or create temporary one
+		if self._session is not None:
+			result = await self._session.execute(text(formatted_sql), param_dict)
+			return result.scalars().all()
+		else:
+			async with async_session_maker() as session:
+				result = await session.execute(text(formatted_sql), param_dict)
+				await session.commit()
+				return result.scalars().all()
+
+	@asynccontextmanager
+	async def _get_session(self):
+		"""Get session from an instance or create a new one."""
+		if self._session is not None:
+			yield self._session
+		else:
+			async with async_session_maker() as session:
+				try:
+					yield session
+					await session.commit()
+				except Exception:
+					await session.rollback()
+					raise
+
+	def __await__(self):
+		"""Allow awaiting QuerySet directly."""
+		return self.all().__await__()
+
+	def _build_statement_sync(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
+		"""
+		Build the SQLAlchemy Select statement from accumulated parameters (sync version).
+
+		This is a synchronous version for use in admin views where async is not supported.
+		"""
+		stmt = select(self._manager.model)
+
+		# Apply a criterion (expressions)
+		if self._criterion:
+			stmt = stmt.where(and_(*self._criterion))
+
+		# Apply keyword filters
+		if self._kw_filters:
+			conditions = LookupCompiler.compile_filters(self._manager.model, self._kw_filters)
+			if conditions:
+				stmt = stmt.where(and_(*conditions))
+
+		# Apply eager loading (joinedload)
+		if self._eager_loads:
+			for rel in self._eager_loads:
+				if isinstance(rel, str):
+					# Support nested relationships with '__' syntax (Django-style)
+					# e.g., "source__platform" → joinedload(Model.source).joinedload(Source.platform)
+					if '__' in rel:
+						parts = rel.split('__')
+						current_model = self._manager.model
+						option = None
+
+						for part in parts:
+							rel_attr = getattr(current_model, part, None)
+							if rel_attr is None:
+								break
+
+							if option is None:
+								option = joinedload(rel_attr)
+							else:
+								option = option.joinedload(rel_attr)
+
+							# Get the related model for the next iteration
+							if hasattr(rel_attr.property, 'mapper'):
+								current_model = rel_attr.property.mapper.class_
+
+						if option is not None:
+							stmt = stmt.options(option)
+					else:
+						# Simple relationship name
+						rel_attr = getattr(self._manager.model, rel, None)
+						if rel_attr is not None:
+							stmt = stmt.options(joinedload(rel_attr))
+				elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
+					stmt = stmt.options(joinedload(rel))
+
+		# Apply prefetch loading (selectinload)
+		if self._prefetch_loads:
+			for rel in self._prefetch_loads:
+				option = self._manager._build_prefetch_option(rel)
+				if option is not None:
+					stmt = stmt.options(option)
+
+		# Apply ordering
+		if self._orderings:
+			stmt = stmt.order_by(*self._orderings)
+
+		# Apply pagination
+		if apply_pagination:
+			if self._offset_value is not None:
+				stmt = stmt.offset(self._offset_value)
+			if self._limit_value is not None:
+				stmt = stmt.limit(self._limit_value)
+
+		return stmt
+
+	async def _build_statement(self, *, apply_pagination: bool = True) -> Select[tuple[M]]:
+		"""Build the SQLAlchemy Select statement (async version for compatibility)."""
+		return self._build_statement_sync(apply_pagination=apply_pagination)
 
 
 class BaseManager(Generic[M]):
@@ -677,6 +695,19 @@ class BaseManager(Generic[M]):
 
 		return len(instances)
 
+	async def delete(self, session: AsyncSession | None = None, **filters: Any) -> int:
+		"""
+		Delete objects matching the given filters.
+
+		Examples:
+			# Delete by filters
+			count = await User.objects.delete(is_active=False)
+
+			# Delete all (be careful!)
+			count = await User.objects.delete()
+		"""
+		return await self.get_queryset(session).filter(**filters).delete()
+
 	@with_db_session
 	async def update_by_id(self, instance_id: int, session: AsyncSession, **kwargs: Any) -> Optional[M]:
 		"""
@@ -780,8 +811,18 @@ class BaseManager(Generic[M]):
 		"""
 		return await self.get_queryset(session).filter(**filters).paginate(page=page, per_page=per_page)
 
-	# Helper methods for building queries
+	async def raw_sql(
+			self,
+			sql: str,
+			params: list[Any] | None = None,
+			session: AsyncSession | None = None
+	) -> Sequence[M]:
+		"""
+		Execute raw SQL query from manager.
+		"""
+		return await self.get_queryset(session).raw_sql(sql, params)
 
+	# Helper methods for building queries
 	def _build_prefetch_option(self, relation: str | QueryableAttribute | InstrumentedAttribute | Prefetch):
 		"""Create selectinload option for a relation or Prefetch descriptor."""
 		if isinstance(relation, Prefetch):
@@ -866,3 +907,88 @@ class BaseManager(Generic[M]):
 			current_cls = next_attr.property.mapper.class_
 
 		return option
+
+
+class LookupCompiler:
+	"""Компилятор lookup-выражений в SQLAlchemy условия."""
+
+	@staticmethod
+	def compile_lookup(model: Type[M], key: str, value: Any) -> ColumnElement[bool]:
+		"""
+		Компилирует lookup выражение в SQLAlchemy условие.
+
+		Поддерживаемые lookups:
+		- field (равенство)
+		- field__in (вхождение в список)
+		- field__isnull (проверка на NULL)
+		- field__contains (подстрока)
+		- field__icontains (подстрока без учета регистра)
+		- field__startswith (начинается с)
+		- field__endswith (заканчивается на)
+		- field__gt (больше)
+		- field__gte (больше или равно)
+		- field__lt (меньше)
+		- field__lte (меньше или равно)
+		- field__ne (не равно)
+		"""
+		if '__' in key:
+			field_name, lookup = key.rsplit('__', 1)
+			f = getattr(model, field_name, None)
+			if f is None:
+				raise AttributeError(f"Model {model.__name__} has no attribute '{field_name}'")
+
+			return LookupCompiler._apply_lookup(f, lookup, value)
+		else:
+			f = getattr(model, key, None)
+			if f is None:
+				raise AttributeError(f"Model {model.__name__} has no attribute '{key}'")
+			return cast(ColumnElement[bool], f == value)
+
+	@staticmethod
+	def _apply_lookup(f: Any, lookup: str, value: Any) -> ColumnElement[bool]:
+		"""Применяет конкретный lookup к полю."""
+		if lookup == 'in':
+			if not isinstance(value, (list, tuple, set)):
+				raise ValueError(f"'in' lookup requires list, tuple or set, got {type(value).__name__}")
+			return cast(ColumnElement[bool], f.in_(value))
+
+		elif lookup == 'isnull':
+			return cast(ColumnElement[bool], f.is_(None) if value else f.is_not(None))
+
+		elif lookup == 'contains':
+			return cast(ColumnElement[bool], f.contains(str(value)))
+
+		elif lookup == 'icontains':
+			return cast(ColumnElement[bool], f.ilike(f'%{value}%'))
+
+		elif lookup == 'startswith':
+			return cast(ColumnElement[bool], f.startswith(str(value)))
+
+		elif lookup == 'endswith':
+			return cast(ColumnElement[bool], f.endswith(str(value)))
+
+		elif lookup == 'gt':
+			return cast(ColumnElement[bool], f > value)
+
+		elif lookup == 'gte':
+			return cast(ColumnElement[bool], f >= value)
+
+		elif lookup == 'lt':
+			return cast(ColumnElement[bool], f < value)
+
+		elif lookup == 'lte':
+			return cast(ColumnElement[bool], f <= value)
+
+		elif lookup == 'ne':
+			return cast(ColumnElement[bool], f != value)
+
+		else:
+			raise ValueError(f"Unsupported lookup: {lookup}")
+
+	@staticmethod
+	def compile_filters(model: Type[M], filters: dict[str, Any]) -> list[ColumnElement[bool]]:
+		"""Компилирует словарь фильтров в список условий."""
+		return [
+			LookupCompiler.compile_lookup(model, key, value)
+			for key, value in filters.items()
+		]

@@ -60,9 +60,13 @@ class AIAnalytics(Base, TimestampMixin):
 		server_default=text("'{}'::jsonb")
 	)
 	response_payload: Mapped[JSON] = Column(JSON, nullable=True)
-
-	llm_model: Mapped[str | None] = Column(String(100), nullable=True)
+	main_topics: Mapped[list[str] | None] = Column(
+		JSON,
+		nullable=True,
+		comment="Main topics extracted from AI analysis for theme matching"
+	)
 	prompt_text: Mapped[str | None] = Column(Text, nullable=True)
+	llm_model: Mapped[str | None] = Column(String(100), nullable=True)
 	provider_type: Mapped[str | None] = Column(String(100), nullable=True)
 	media_types: Mapped[list[str] | None] = Column(JSON, nullable=True)
 	request_tokens: Mapped[int | None] = Column(Integer, nullable=True)

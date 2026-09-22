@@ -473,18 +473,6 @@ const TopicChainUtils = {
                 </div>
                 ` : ""}
                 
-                <div class="chain-topics">
-                    ${chain.topics ? chain.topics.map(topic => {
-            // Извлекаем название темы из объекта или используем как строку
-            const topicName = typeof topic === "object" && topic.topic ? topic.topic : String(topic)
-            return `
-                            <span class="topic-badge ${sentimentClass}">
-                                ${topicName}
-                            </span>
-                        `
-        }).join("") : ""}
-                </div>
-                
                 ${chain.analyses_count > 1 ? `
                 <div class="mt-3">
                     <button class="btn btn-sm btn-outline-primary collapse-toggle" 

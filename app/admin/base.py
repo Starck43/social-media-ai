@@ -26,11 +26,16 @@ class BaseAdmin(ModelView):
     }
 
     form_overrides = {
-        'is_active': SelectField
+        'is_active': SelectField,
+        'is_default': SelectField,
     }
 
     form_args = {
         'is_active': {
+            'choices': [(True, 'Да'), (False, 'Нет')],
+            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
+        },
+        'is_default': {
             'choices': [(True, 'Да'), (False, 'Нет')],
             'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
         }

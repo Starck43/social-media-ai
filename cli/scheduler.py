@@ -1,545 +1,340 @@
 import asyncio
+import logging
+import sys
+from datetime import date, datetime
+from typing import Optional
 
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 
-from datetime import datetime, timezone, timedelta, date
-from typing import Optional, Dict, Any, List, Union
-from dateutil.parser import parse as parse_date
-
-from app.models import Source
+from app.models import AIAnalytics, Source, Platform
 from app.services.ai import AIAnalyzer
+from app.services.checkpoint_manager import CheckpointManager
+from app.services.monitoring import ContentCollector
+
+logging.basicConfig(
+	level=logging.INFO,
+	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+	handlers=[
+		logging.StreamHandler(sys.stdout),
+		logging.FileHandler(f'scheduler.log')
+	]
+)
+
+# Установите уровень логирования для ваших модулей
+logging.getLogger('app.services.monitoring.collector').setLevel(logging.INFO)
+logging.getLogger('app.services.ai.analyzer').setLevel(logging.INFO)
+logging.getLogger('app.services.social').setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
 
 # Initialize Rich console
 console = Console()
 
 
-class CLIContentScheduler:
+# Rich CLI Analyzer for beautiful console output
+class RichCLIAnalyzer(AIAnalyzer):
 	"""
-{{ ... }}
-	CLI version of ContentScheduler with rich output.
+	AIAnalyzer with Rich console output for CLI.
+	Only overrides specific methods for UI enhancement.
 	"""
 
 	def __init__(self):
-		"""Initialize scheduler with CLI analyzer."""
-		self.analyzer = AIAnalyzer()
-		self.optimizer = None  # We'll keep the original optimizer logic
+		"""Initialize with Rich console."""
+		super().__init__()
 
-	async def run_collection_cycle(
-			self,
-			source_id: Optional[int] = None,
-			source_url: Optional[str] = None,
-			start_date: Optional[Union[str, date]] = None,
-			end_date: Optional[Union[str, date]] = None,
-			force_refresh: bool = False
-	) -> dict:
+	async def _analyze_content_by_themes(self, content: list[dict], source: Source) -> list[AIAnalytics]:
 		"""
-		Run one collection cycle with rich CLI output.
-		
-		Args:
-			source_id: Optional source ID to collect from (deprecated, use source_url instead)
-			source_url: Optional source URL (platform_url) to collect from. If None, collects from all active sources.
-			start_date: Optional start date for collection (YYYY-MM-DD or date object).
-			end_date: Optional end date for collection (YYYY-MM-DD or date object).
-			force_refresh: If True, reset last_checked to force re-analysis of all data
+		Analyze content by themes with CLI progress display.
 		"""
-		# Parse date strings if provided
-		if isinstance(start_date, str):
-			try:
-				start_date = parse_date(start_date).date()
-			except (ValueError, TypeError) as e:
-				console.print(f"[red]Invalid start date format: {e}. Use YYYY-MM-DD[/red]")
-				start_date = None
+		if not content:
+			console.print(f"[yellow]⚠️ No content to analyze for source {source.id}[/yellow]")
+			return []
 
-		if isinstance(end_date, str):
-			try:
-				end_date = parse_date(end_date).date()
-			except (ValueError, TypeError) as e:
-				console.print(f"[red]Invalid end date format: {e}. Use YYYY-MM-DD[/red]")
-				end_date = None
+		console.print(f"[dim]🎯 Theme-based analysis with automatic linking[/dim]")
 
-		# Validate date range
-		if start_date and end_date and start_date > end_date:
-			console.print("[yellow]Warning: Start date is after end date, swapping values[/yellow]")
-			start_date, end_date = end_date, start_date
-		console.print()
-		console.print(Panel.fit(
-			"[bold cyan]🚀 STARTING COLLECTION CYCLE[/bold cyan]",
-			title="[bold]Content Collection[/bold]",
-			border_style="cyan"
-		))
+		# Call parent theme analysis
+		analytics_list = await super()._analyze_content_by_themes(content, source)
 
-		# Import here to avoid circular imports
-		from app.services.scheduler import ContentScheduler
+		if analytics_list:
+			console.print(f"\n[bold green]✅ Theme analysis completed[/bold green]")
+			# Show theme linking info if available
+			if len(analytics_list) == 1 and analytics_list[0].topic_chain_id:
+				console.print(f"[dim]🔗 Linked to theme chain: {analytics_list[0].topic_chain_id}[/dim]")
 
-		# Create original scheduler to reuse collection logic
-		original_scheduler = ContentScheduler()
+		return analytics_list
 
-		# Get all active sources
+	async def _analyze_content_by_days(self, content: list[dict], source: Source, **kwargs) -> list[AIAnalytics]:
+		"""
+		Analyze content by days with CLI progress display.
+		"""
+		if not content:
+			console.print(f"[yellow]⚠️ No content to analyze for source {source.id}[/yellow]")
+			return []
+
+		console.print(f"[dim]📅 Event-based analysis: grouping by days[/dim]")
+
+		# Call parent analysis
+		analytics_list = await super()._analyze_content_by_days(content, source)
+
+		if analytics_list:
+			console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
+			console.print(f"[dim]📊 Created {len(analytics_list)} analytics records (one per day)[/dim]")
+
+			# Show details for each day
+			for analysis in analytics_list[:3]:  # Show first 3 days
+				console.print(f"[dim]  - {analysis.analysis_date}: ID={analysis.id}[/dim]")
+			if len(analytics_list) > 3:
+				console.print(f"[dim]  ... and {len(analytics_list) - 3} more[/dim]")
+		else:
+			console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
+
+		return analytics_list
+
+
+async def run_collection_with_cli(
+		source_id: Optional[int] = None,
+		source_url: Optional[str] = None,
+		platform_id: Optional[int] = None,
+		start_date: Optional[str] = None,
+		end_date: Optional[str] = None,
+		force_refresh: bool = False,
+		show_details: bool = True
+) -> dict:
+	"""
+	Run collection with CLI output.
+	"""
+
+	console.print()
+	console.print(Panel.fit(
+		"[bold cyan]🚀 STARTING CONTENT COLLECTION[/bold cyan]",
+		border_style="cyan"
+	))
+
+	# Parse dates from DD-MM-YYYY format
+	parsed_start_date: date | None = None
+	parsed_end_date: date | None = None
+
+	if start_date:
 		try:
-			query = Source.objects.select_related('platform', 'bot_scenario')
+			parsed_start_date = datetime.strptime(start_date, '%d-%m-%Y').date()
+		except ValueError:
+			console.print(f"[red]❌ Invalid start date: {start_date}. Use DD-MM-YYYY[/red]")
+			return {'error': 'Invalid start date format'}
 
-			# Find source by URL or ID
-			if source_url:
-				# Parse URL to extract external_id
-				external_id = source_url.rstrip('/').split('/')[-1]
-				console.print(f"[dim]Looking for source with external_id: {external_id}[/dim]")
-				sources = await query.filter(external_id=external_id, is_active=True)
-				if not sources:
-					console.print(f"[red]Error: Active source with URL {source_url} (external_id: {external_id}) not found[/red]")
-					return {
-						'collected': 0, 'skipped': 0, 'failed': 1,
-						'total_sources': 0, 'total_content': 0, 'total_cost': 0.0,
-						'start_date': start_date, 'end_date': end_date
-					}
-			elif source_id:
-				# Legacy support for source_id
-				sources = [await query.get(id=source_id, is_active=True)]
-				if not sources[0]:
-					console.print(f"[red]Error: Active source with ID {source_id} not found[/red]")
-					return {
-						'collected': 0, 'skipped': 0, 'failed': 1,
-						'total_sources': 0, 'total_content': 0, 'total_cost': 0.0,
-						'start_date': start_date, 'end_date': end_date
-					}
-			else:
-				sources = await query.filter(is_active=True)
+	if end_date:
+		try:
+			parsed_end_date = datetime.strptime(end_date, '%d-%m-%Y').date()
+		except ValueError:
+			console.print(f"[red]❌ Invalid end date: {end_date}. Use DD-MM-YYYY[/red]")
+			return {'error': 'Invalid end date format'}
 
-			# Reset last_checked if force_refresh is enabled
-			if force_refresh and sources:
-				console.print(f"[yellow]🔄 Force refresh enabled - resetting last_checked for {len(sources)} source(s)[/yellow]")
-				for source in sources:
-					await Source.objects.update_by_id(source.id, last_checked=None)
+	collector = ContentCollector()
 
-			# Store date range in stats
-			stats = {
-				'collected': 0,
-				'skipped': 0,
-				'failed': 0,
-				'total_sources': len(sources),
-				'total_content': 0,
-				'total_cost': 0.0,
-				'start_date': start_date,
-				'end_date': end_date
-			}
-			total_sources = len(sources)
-			console.print(f"[dim]📋 Found {total_sources} active sources[/dim]")
+	try:
+		# Force refresh: delete old analytics and reset last_checked
+		if force_refresh:
+			try:
+				deleted_count = await delete_analytics_and_reset(
+					source_id=source_id,
+					platform_id=platform_id,
+					source_url=source_url,
+					start_date=parsed_start_date,
+					end_date=parsed_end_date
+				)
+				console.print(f"[yellow]🔄 Force refresh: deleted {deleted_count} analytics records[/yellow]")
+			except Exception as e:
+				console.print(f"[red]❌ Error during force refresh: {e}[/red]")
+				return {'error': str(e)}
 
-			if total_sources == 0:
-				console.print("[yellow]⚠️  No active sources found[/yellow]")
-				return {
-					"total_sources": 0,
-					"collected": 0,
-					"skipped": 0,
-					"failed": 0,
-					"total_content": 0,
-					"total_cost": 0.0,
+		# Single source collection
+		if source_id or source_url:
+			try:
+				if source_url:
+					external_id = source_url.rstrip('/').split('/')[-1]
+					source, platform_data = await Source.objects.get_source_with_platform(external_id=external_id)
+				else:
+					source, platform_data = await Source.objects.get_source_with_platform(source_id=source_id)
+
+				# Now you have both source and platform_data available
+				console.print(f"[green]Found source: {source.name} (Platform: {platform_data['name']})[/green]")
+
+			except ValueError as e:
+				error_msg = f"Source not found: {e}"
+				console.print(f"[red]Error: {error_msg}[/red]")
+				return {'error': error_msg}
+
+			console.print(f"[dim]🎯 Source: {source.name} ({source.platform.name})[/dim]")
+
+			if show_details:
+				# Show analysis type from bot_scenario
+				analyze_type = source.bot_scenario.analyze_type if source.bot_scenario else "themes"
+				console.print(
+					f"[dim]🎚️ Scenario: {source.bot_scenario.name if source.bot_scenario else 'None'} "
+					f"(analyze by: {analyze_type})[/dim]"
+				)
+
+			console.print(f"[dim]📊 Last checked: {source.last_checked}[/dim]")
+
+			# Apply date parameters for API collection
+			if parsed_start_date or parsed_end_date:
+				if not source.params:
+					source.params = {}
+
+				source.params['cli_dates'] = {
+					'start_date': parsed_start_date,
+					'end_date': parsed_end_date
 				}
+				source.params['force_refresh'] = force_refresh
 
-			stats = {
-				"total_sources": total_sources,
-				"collected": 0,
-				"skipped": 0,
-				"failed": 0,
-				"total_content": 0,
-				"total_cost": 0.0,
-			}
+				if show_details:
+					console.print(f"[dim]📅 Date range: {parsed_start_date} to {parsed_end_date or 'today'}[/dim]")
 
-			# Process each source with CLI feedback
-			with console.status("[bold green]Processing sources...", spinner="dots") as status:
-				for i, source in enumerate(sources, 1):
-					status.update(f"[bold green]Processing source {i}/{total_sources}: {source.name}")
+			# Single collection call - API handles pagination and date range
+			source = await CheckpointManager.prepare_for_full_collection(source)
+			result = await collector.collect_from_source(source)
 
-					try:
-						# Use original collection logic but with CLI analyzer
-						result = await self._collect_source_with_display(source)
+			if result and show_details:
+				console.print(f"[dim]✅ Collected {result['content_count']} items[/dim]")
+				if result.get('analytics_count'):
+					console.print(f"[dim]📈 Created {result['analytics_count']} analytics records[/dim]")
 
-						if result:
-							stats["collected"] += 1
-							stats["total_content"] += result.get("content_count", 0)
-						else:
-							stats["skipped"] += 1
+			return process_single_result(result, source.name)
 
-					except Exception as e:
-						console.print(f"[red]❌ Failed to collect source {source.id}: {e}[/red]")
-						stats["failed"] += 1
+		# Platform collection
+		elif platform_id:
+			if show_details:
+				platform = await Platform.objects.get(id=platform_id)
+				platform_name = platform.name if platform else f"ID:{platform_id}"
+				console.print(f"[dim]🏢 Platform: {platform_name}[/dim]")
 
-			# Display final statistics
-			self._display_collection_stats(stats)
-
+			stats = await collector.collect_from_platform(platform_id=platform_id)
 			return stats
 
-		except Exception as e:
-			console.print(f"[red]❌ Collection cycle failed: {e}[/red]")
-			return {
-				"total_sources": 0,
-				"collected": 0,
-				"skipped": 0,
-				"failed": 0,
-				"total_content": 0,
-				"total_cost": 0.0,
-				"error": str(e)
-			}
+		# Full collection (all platforms)
+		else:
+			console.print(f"[dim]🌍 Collecting from ALL platforms[/dim]")
 
-	async def _collect_source_with_display(self, source: Source) -> dict | None:
-		"""
-		Collect and analyze content from single source with CLI display.
-		"""
-		console.print(f"\n[dim]🔍 Processing source: {source.name}[/dim]")
+			platforms = await Platform.objects.filter(is_active=True)
+			total_stats = {"platforms": 0, "sources": 0, "items": 0}
 
-		# Import here to avoid circular imports
-		from app.services.checkpoint_manager import CheckpointManager, CollectionResult
-		from app.services.social.factory import get_social_client
+			for platform in platforms:
+				if show_details:
+					console.print(f"[dim]🔄 Processing {platform.name}...[/dim]")
 
-		# Check if collection needed (via checkpoint)
-		if not CheckpointManager.should_collect(source):
-			console.print(f"[dim]⏭️  Source {source.id} collected recently, skipping[/dim]")
-			return None
+				platform_stats = await collector.collect_from_platform(platform_id=platform.id)
+				total_stats["platforms"] += 1
+				total_stats["sources"] += platform_stats.get("successful", 0)
+				total_stats["items"] += platform_stats.get("total_items", 0)
 
-		console.print(f"[dim]📥 Source {source.id} needs collection[/dim]")
+			return total_stats
 
-		try:
-			# Get platform client
-			client = get_social_client(source.platform)
-			if not client:
-				console.print(f"[red]❌ No client for platform {source.platform.name}[/red]")
-				return None
-
-			# Get checkpoint for incremental collection
-			checkpoint = await CheckpointManager.get_checkpoint(source)
-
-			# Collect new content
-			content = await self._collect_platform_content(
-				client=client,
-				source=source,
-				checkpoint=checkpoint
-			)
-
-			if not content:
-				console.print(f"[dim]📭 No new content for source {source.id}[/dim]")
-				# Update checkpoint anyway
-				result = CollectionResult(
-					source_id=source.id,
-					content_count=0,
-					has_new_content=False
-				)
-				await result.save_checkpoint()
-				return None
-
-			console.print(f"[green]✅ Collected {len(content)} items from source {source.id}[/green]")
-
-			# Analyze with LLM (with CLI display)
-			console.print(f"\n[bold yellow]🔄 Starting AI Analysis for source: {source.name}[/bold yellow]")
-			console.print(f"[dim]📝 Analyzing {len(content)} content items[/dim]")
-
-			# Show sample prompt for text analysis (first 200 chars)
-			if content and any(item.get('text') for item in content):
-				text_items = [item for item in content if item.get('text')]
-				if text_items:
-					from app.services.ai.content_classifier import ContentClassifier
-					text_content = ContentClassifier.prepare_text_content(text_items[:3])  # Show first 3 items
-					console.print(f"\n[dim]💭 Sample content being analyzed:[/dim]")
-					console.print(f"[dim]{text_content[:200]}{'...' if len(text_content) > 200 else ''}[/dim]")
-
-			# Check if we should use day-by-day analysis
-			bot_scenario = source.bot_scenario if hasattr(source, 'bot_scenario') else None
-			is_event_based = False
-			if bot_scenario and bot_scenario.scope:
-				is_event_based = bot_scenario.scope.get('event_based', False)
-			
-			if is_event_based:
-				console.print(f"[dim]📅 Event-based analysis: grouping by days[/dim]")
-				analytics_list = await self.analyzer.analyze_content_by_days(
-					content=content,
-					source=source,
-				)
-				
-				if analytics_list:
-					console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
-					console.print(f"[dim]📊 Created {len(analytics_list)} analytics records (one per day)[/dim]")
-					
-					# Show details for each day
-					for analysis in analytics_list[:3]:  # Show first 3 days
-						console.print(f"[dim]  - {analysis.analysis_date}: ID={analysis.id}[/dim]")
-					if len(analytics_list) > 3:
-						console.print(f"[dim]  ... and {len(analytics_list) - 3} more[/dim]")
-					
-					# Use first analysis for detailed display
-					analysis = analytics_list[0] if analytics_list else None
-				else:
-					console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
-					return None
-			else:
-				# Regular aggregated analysis
-				analysis = await self.analyzer.analyze_content(
-					content=content,
-					source=source,
-					topic_chain_id=f"source_{source.id}_chain",  # Generate chain ID for this source
-				)
-				
-				if analysis:
-					console.print(f"\n[bold green]✅ Analysis completed successfully[/bold green]")
-					console.print(f"[dim]📊 Analysis ID: {analysis.id}[/dim]")
-				else:
-					console.print(f"\n[bold red]❌ Analysis failed[/bold red]")
-					return None
-
-			# Show detailed analysis results if available
-			if analysis and hasattr(analysis, 'summary_data') and analysis.summary_data:
-				# Convert JSON to dict if needed
-				summary_dict = analysis.summary_data
-				if hasattr(summary_dict, 'items'):  # Check if it's already a dict-like object
-					pass  # It's already a dict
-				else:
-					# Try to convert from JSON string or other format
-					try:
-						import json
-						if isinstance(summary_dict, str):
-							summary_dict = json.loads(summary_dict)
-						else:
-							summary_dict = dict(summary_dict) if summary_dict else {}
-					except:
-						summary_dict = {}
-
-				self._display_analysis_details(summary_dict, source.name)
-
-			# Save checkpoint on success
-			result = CollectionResult(
-				source_id=source.id,
-				content_count=len(content),
-				has_new_content=True
-			)
-			await result.save_checkpoint()
-
-			console.print(f"[green]✅ Successfully processed source {source.id}[/green]")
-
-			return {
-				"source_id": source.id,
-				"content_count": len(content),
-				"analysis_id": analysis.id,
-			}
-
-		except Exception as e:
-			console.print(f"[red]❌ Failed to collect source {source.id}: {e}[/red]")
-			return None
-
-	async def _collect_platform_content(
-			self,
-			client,
-			source: Source,
-			checkpoint: dict
-	) -> list[dict]:
-		"""
-		Collect content from platform using checkpoint.
-		"""
-		last_checked = checkpoint.get("last_checked")
-
-		original_params = None
-		try:
-			original_params = source.params.copy() if source.params else {}
-			if not source.params:
-				source.params = {}
-			if 'collection' not in source.params:
-				source.params['collection'] = {}
-
-			# Merge checkpoint params and since timestamp
-			cp_params = checkpoint.get('params', {}) or {}
-			source.params['collection'].update(cp_params)
-			if last_checked:
-				source.params['collection']['since'] = last_checked
-
-			# Let the concrete client handle request building and normalization
-			content = await client.collect_data(source=source, content_type="posts")
-			return content or []
-
-		except Exception as e:
-			console.print(f"[red]❌ Platform collection failed: {e}[/red]")
-			return []
-		finally:
-			# Restore original params to avoid side effects
-			if original_params is not None:
-				source.params = original_params
-
-	def _display_collection_stats(self, stats: dict):
-		"""Display collection statistics in a beautiful format."""
-		console.print()
-		console.print(Panel.fit(
-			"[bold green]📊 COLLECTION CYCLE COMPLETE[/bold green]",
-			title="[bold]Final Statistics[/bold]",
-			border_style="green"
-		))
-
-		# Create statistics table
-		table = Table(show_header=True, header_style="bold blue")
-		table.add_column("Metric", style="cyan", width=20)
-		table.add_column("Value", style="white", width=15)
-
-		table.add_row("Total Sources", str(stats["total_sources"]))
-		table.add_row("Collected", str(stats["collected"]))
-		table.add_row("Skipped", str(stats["skipped"]))
-		table.add_row("Failed", str(stats["failed"]))
-		table.add_row("Total Content", str(stats["total_content"]))
-		table.add_row("Total Cost", f"${stats['total_cost']:.4f}")
-
-		console.print(table)
-
-		# Show success rate
-		if stats["total_sources"] > 0:
-			success_rate = (stats["collected"] / stats["total_sources"]) * 100
-			console.print(f"\n[bold]Success Rate: {success_rate:.1f}%[/bold]")
-
-	def _display_analysis_details(self, summary_data: dict, source_name: str):
-		"""Display detailed analysis results in a beautiful format."""
-		console.print()
-		console.print(Panel.fit(
-			f"[bold green]📊 DETAILED ANALYSIS RESULTS[/bold green]\n"
-			f"[dim]Source: {source_name}[/dim]",
-			title="[bold]AI Analysis Summary[/bold]",
-			border_style="green"
-		))
-
-		# Create summary table
-		table = Table(title="Analysis Summary", show_header=True, header_style="bold magenta")
-		table.add_column("Metric", style="cyan", width=25)
-		table.add_column("Value", style="white", width=50)
-
-		# Extract and display key metrics from summary_data
-		multi_llm = summary_data.get('multi_llm_analysis', {})
-		content_stats = summary_data.get('content_statistics', {})
-		source_meta = summary_data.get('source_metadata', {})
-		analysis_meta = summary_data.get('analysis_metadata', {})
-
-		# Content statistics
-		if content_stats:
-			table.add_row("Total Posts", str(content_stats.get('total_posts', 0)))
-			avg_text_length = content_stats.get('avg_text_length', 0)
-			if isinstance(avg_text_length, (int, float)):
-				table.add_row("Avg Text Length", f"{avg_text_length:.1f} chars")
-			else:
-				table.add_row("Avg Text Length", f"{avg_text_length} chars")
-			table.add_row("Total Reactions", str(content_stats.get('total_reactions', 0)))
-			table.add_row("Total Comments", str(content_stats.get('total_comments', 0)))
-
-		# Source info
-		if source_meta:
-			table.add_row("Platform", source_meta.get('platform', 'Unknown'))
-			table.add_row("Source Type", source_meta.get('source_type', 'Unknown'))
-
-		# Analysis metadata
-		if analysis_meta:
-			table.add_row("LLM Providers", str(analysis_meta.get('llm_providers_used', 0)))
-			table.add_row("Content Samples", str(analysis_meta.get('content_samples_analyzed', 0)))
-
-		# Text analysis results
-		text_analysis = multi_llm.get('text_analysis', {})
-		if text_analysis:
-			if 'main_topics' in text_analysis:
-				topics = text_analysis['main_topics']
-				if isinstance(topics, list) and topics:
-					table.add_row("Main Topics", f"{len(topics)} found")
-					for i, topic in enumerate(topics[:3]):
-						table.add_row(f"  Topic {i + 1}", str(topic))
-				else:
-					table.add_row("Main Topics", str(topics))
-
-			if 'sentiment_score' in text_analysis:
-				score = text_analysis['sentiment_score']
-				try:
-					score_num = float(score) if score is not None else 0.0
-					sentiment = "Positive" if score_num > 0.6 else "Negative" if score_num < 0.4 else "Neutral"
-					table.add_row("Sentiment", f"{sentiment} ({score})")
-				except (ValueError, TypeError):
-					table.add_row("Sentiment", f"Unknown ({score})")
-
-			if 'overall_mood' in text_analysis:
-				table.add_row("Overall Mood", str(text_analysis['overall_mood']))
-
-		console.print(table)
-
-		# Show scenario info if available
-		scenario_meta = summary_data.get('scenario_metadata')
-		if scenario_meta:
-			console.print(f"\n[bold]🎯 Bot Scenario:[/bold] {scenario_meta.get('scenario_name', 'Unknown')}")
-			console.print(f"[dim]Analysis Types: {', '.join(scenario_meta.get('analysis_types', []))}[/dim]")
+	except Exception as e:
+		console.print(f"[red]❌ Collection failed: {e}[/red]")
+		return {'error': str(e)}
 
 
-# CLI Scheduler instance
-cli_scheduler = CLIContentScheduler()
+def process_single_result(result: Optional[dict], source_name: str) -> dict:
+	"""
+	Process single source collection result for consistent output.
+	"""
+
+	if result:
+		return {
+			'total_sources': 1,
+			'successful': 1,
+			'failed': 0,
+			'total_items': result.get('content_count', 0),
+			'analytics_count': result.get('analytics_count', 0),
+			'source_name': source_name
+		}
+	else:
+		return {
+			'total_sources': 1,
+			'successful': 0,
+			'failed': 1,
+			'total_items': 0,
+			'analytics_count': 0,
+			'source_name': source_name
+		}
 
 
-def display_prompt(prompt: str, media_type: str, source_name: str):
-	"""Display the prompt that will be sent to LLM in a beautiful format."""
+async def delete_analytics_and_reset(
+		source_id: Optional[int] = None,
+		platform_id: Optional[int] = None,
+		source_url: Optional[str] = None,
+		start_date: Optional[date] = None,
+		end_date: Optional[date] = None
+) -> int:
+	"""
+	Delete analytics records and reset last_checked for force refresh.
+	"""
+
+	if source_id:
+		source = await Source.objects.get(id=source_id)
+		sources = [source] if source else []
+	elif source_url:
+		external_id = source_url.rstrip('/').split('/')[-1]
+		sources = await Source.objects.filter(external_id=external_id, is_active=True)
+	elif platform_id:
+		sources = await Source.objects.filter(platform_id=platform_id, is_active=True)
+	else:
+		sources = await Source.objects.filter(is_active=True)
+
+	deleted_count = 0
+
+	for source in sources:
+		if source:
+			# Build filters with DATE objects
+			filters = {"source_id": source.id}
+			if start_date:
+				filters["analysis_date__gte"] = start_date
+			if end_date:
+				filters["analysis_date__lte"] = end_date
+
+			# Get and count analytics to delete
+			analytics_to_delete = await AIAnalytics.objects.filter(**filters)
+			deleted_count += len(analytics_to_delete)
+
+			# Delete analytics
+			if analytics_to_delete:
+				analytics_ids = [a.id for a in analytics_to_delete]
+				await AIAnalytics.objects.filter(id__in=analytics_ids).delete()
+
+			await Source.objects.update_by_id(source.id, last_checked=start_date)
+
+	return deleted_count
+
+
+def display_collection_stats(stats: dict):
+	"""Display collection statistics in beautiful format."""
 	console.print()
 	console.print(Panel.fit(
-		f"[bold blue]🔍 PROMPT FOR {media_type.upper()} ANALYSIS[/bold blue]\n"
-		f"[dim]Source: {source_name}[/dim]",
-		title="[bold]AI Analysis Prompt[/bold]",
-		border_style="blue"
-	))
-
-	# Show prompt in a syntax-highlighted box
-	console.print(Syntax(
-		prompt,
-		"markdown",
-		theme="monokai",
-		word_wrap=True,
-		padding=(1, 2)
-	))
-
-
-def display_analysis_results(results: dict, source_name: str):
-	"""Display analysis results in a beautiful summary format."""
-	console.print()
-	console.print(Panel.fit(
-		f"[bold green]✅ ANALYSIS COMPLETE[/bold green]\n"
-		f"[dim]Source: {source_name}[/dim]",
-		title="[bold]AI Analysis Results[/bold]",
+		"[bold green]📊 COLLECTION COMPLETE[/bold green]",
+		title="[bold]Results[/bold]",
 		border_style="green"
 	))
 
-	# Create summary table
-	table = Table(title="Analysis Summary", show_header=True, header_style="bold magenta")
+	table = Table(show_header=True, header_style="bold blue")
 	table.add_column("Metric", style="cyan", width=20)
-	table.add_column("Value", style="white", width=40)
+	table.add_column("Value", style="white", width=15)
 
-	# Add key metrics from results
-	if results.get('parsed'):
-		parsed = results['parsed']
-
-		if 'main_topics' in parsed:
-			topics = parsed['main_topics']
-			if isinstance(topics, list):
-				table.add_row("Main Topics", f"{len(topics)} topics found")
-				for i, topic in enumerate(topics[:3]):  # Show first 3
-					table.add_row(f"  Topic {i + 1}", str(topic))
-			else:
-				table.add_row("Main Topics", str(topics))
-
-		if 'sentiment_score' in parsed:
-			score = parsed['sentiment_score']
-			sentiment = "Positive" if score > 0.6 else "Negative" if score < 0.4 else "Neutral"
-			table.add_row("Sentiment", f"{sentiment} ({score})")
-
-		if 'overall_mood' in parsed:
-			table.add_row("Overall Mood", str(parsed['overall_mood']))
-
-	# Add technical details
-	if results.get('request'):
-		req = results['request']
-		if 'model' in req:
-			table.add_row("LLM Model", str(req['model']))
-		if 'provider' in req:
-			table.add_row("Provider", str(req['provider']))
-
-	if results.get('response', {}).get('usage'):
-		usage = results['response']['usage']
-		prompt_tokens = usage.get('prompt_tokens', 0)
-		completion_tokens = usage.get('completion_tokens', 0)
-		total_tokens = prompt_tokens + completion_tokens
-		table.add_row("Tokens Used", f"{total_tokens} ({prompt_tokens} + {completion_tokens})")
+	if 'platforms' in stats:
+		table.add_row("Platforms", str(stats["platforms"]))
+	if 'sources' in stats:
+		table.add_row("Sources", str(stats["sources"]))
+	if 'total_sources' in stats:
+		table.add_row("Total Sources", str(stats["total_sources"]))
+		table.add_row("Successful", str(stats["successful"]))
+		table.add_row("Failed", str(stats["failed"]))
+	if 'items' in stats:
+		table.add_row("Items Collected", str(stats["items"]))
+	if 'total_items' in stats:
+		table.add_row("Items Collected", str(stats["total_items"]))
+	if 'source_name' in stats:
+		table.add_row("Source", stats['source_name'])
 
 	console.print(table)
 
@@ -551,84 +346,44 @@ def scheduler_cli():
 
 
 @scheduler_cli.command("run")
-@click.option("--interval", "-i", default=60, help="Collection interval in minutes (default: 60)")
-@click.option("--once", is_flag=True, help="Run one collection cycle and exit")
-@click.option("--source-id", type=int, help="(Deprecated) Collect from specific source ID")
-@click.option("--source-url", help="Collect from specific source by URL (e.g., https://vk.com/username)")
-@click.option("--start-date", help="Start date for collection (YYYY-MM-DD)")
-@click.option("--end-date", help="End date for collection (YYYY-MM-DD, defaults to today)")
-@click.option("--force-refresh", is_flag=True, help="Force re-analysis by resetting last_checked")
-def run_scheduler(interval: int, once: bool, source_id: int, source_url: str, start_date: str, end_date: str, force_refresh: bool):
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed collection process")
+@click.option("--source-id", type=int, help="Collect from specific source ID")
+@click.option("--source-url", help="Collect from specific source by URL")
+@click.option("--platform-id", type=int, help="Collect from specific platform ID")
+@click.option("--start-date", help="Start date for collection (DD-MM-YYYY)")
+@click.option("--end-date", help="End date for collection (DD-MM-YYYY)")
+@click.option("--force-refresh", is_flag=True, help="Delete old analytics and reset last_checked")
+def run_scheduler(
+		verbose: bool,
+		source_id: int,
+		source_url: str,
+		platform_id: int,
+		start_date: str,
+		end_date: str,
+		force_refresh: bool
+):
 	"""
-	Start content collection scheduler.
-	
+	Run content collection (for debugging and manual runs).
+
 	Examples:
-		python -m cli.scheduler run                                    # Run all sources every hour
-		python -m cli.scheduler run -i 30                              # Run every 30 minutes
-		python -m cli.scheduler run --once                             # Run once and exit
-		python -m cli.scheduler run --source-url https://vk.com/user1  # Collect from specific source
-		python -m cli.scheduler run --source-id 1 --force-refresh      # Force refresh specific source
+		python -m cli.scheduler run --verbose                                   # Test all with details
+		python -m cli.scheduler run --source-id 1 --verbose                     # Test source with details
+		python -m cli.scheduler run --source-id 1 --force-refresh               # Re-analyze source
+		python -m cli.scheduler run --force-refresh --start-date 2024-01-01     # Full re-analysis
 	"""
-	click.echo("=" * 60)
-	click.echo("CONTENT COLLECTION SCHEDULER")
-	click.echo("=" * 60)
-	click.echo()
 
-	if once or source_id or source_url or start_date or end_date or force_refresh:
-		if source_url:
-			click.echo(f"Running collection for source URL {source_url}...")
-		elif source_id:
-			click.echo(f"Running collection for source ID {source_id} (consider using --source-url instead)...")
-		else:
-			click.echo("Running one collection cycle...")
-		
-		if force_refresh:
-			click.echo("⚠️  Force refresh enabled - will reset last_checked")
+	stats = asyncio.run(run_collection_with_cli(
+		source_id=source_id,
+		source_url=source_url,
+		platform_id=platform_id,
+		start_date=start_date,
+		end_date=end_date,
+		force_refresh=force_refresh,
+		show_details=verbose
+	))
 
-		# Set default end date to today if not provided
-		if start_date and not end_date:
-			end_date = date.today().isoformat()
-
-		if start_date:
-			click.echo(f"Date range: {start_date} to {end_date or 'now'}")
-
-		stats = asyncio.run(cli_scheduler.run_collection_cycle(
-			source_id=source_id,
-			source_url=source_url,
-			start_date=start_date,
-			end_date=end_date,
-			force_refresh=force_refresh
-		))
-
-		click.echo()
-		click.echo("✅ Collection cycle complete!")
-		click.echo(f"   Collected: {stats['collected']}/{stats['total_sources']}")
-		click.echo(f"   Skipped: {stats['skipped']} | Failed: {stats['failed']}")
-		click.echo(f"   Total items: {stats['total_content']}")
-		click.echo(f"   Total cost: ${stats['total_cost']:.4f}")
-		if stats.get('start_date') or stats.get('end_date'):
-			click.echo(f"   Date range: {stats.get('start_date') or 'start'} to {stats.get('end_date') or 'now'}")
-	else:
-		click.echo(f"Starting scheduler (interval: {interval} minutes)")
-		click.echo("Press Ctrl+C to stop")
-		click.echo()
-
-		# For continuous mode, we'll still use the original scheduler for now
-		# as the CLI version doesn't have run_forever implemented
-		from app.services.scheduler import scheduler
-		try:
-			asyncio.run(scheduler.run_forever(interval))
-		except KeyboardInterrupt:
-			click.echo()
-			click.echo("⏹️  Scheduler stopped by user")
-
-
-@scheduler_cli.command("status")
-def scheduler_status():
-	"""Show scheduler status and statistics."""
-	click.echo("Scheduler Status:")
-	click.echo("  Status: Not implemented yet")
-	click.echo("  Use 'cli scheduler run --once' to test collection")
+	# Display summary
+	display_collection_stats(stats)
 
 
 if __name__ == "__main__":

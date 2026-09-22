@@ -1,6 +1,5 @@
-import logging
 import json
-
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -11,9 +10,8 @@ from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms.fields.choices import SelectMultipleField
-from wtforms.validators import Optional
 
-from app.admin.actions import LLMProviderActions
+from app.admin.actions import LLMModelActions
 from app.models import (
 	User,
 	Role,
@@ -23,16 +21,17 @@ from app.models import (
 	Source,
 	SourceUserRelationship,
 	BotScenario,
-	AIAnalytics, LLMProvider,
+	AIAnalytics,
+	LLMProvider,
+	LLMModel,
 )
 from app.models.managers.base_manager import prefetch
-from app.services.ai.llm_metadata import LLMMetadataHelper
 from app.types import (
 	SourceType, ContentType, AnalysisType, LLMStrategyType, BotActionType, BotTriggerType, NotificationType
 )
 from app.types.enums.llm_types import MediaType
 from .base import BaseAdmin
-from ..core.hashing import pwd_context
+from .widgets import EuropeanDateField
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +65,16 @@ class UserAdmin(BaseAdmin, model=User):
 		"hashed_password": {"type": "password"}
 	}
 
-	async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-		"""Handle password hashing on user creation."""
-		if is_created:
-			data["hashed_password"] = pwd_context.hash(data["hashed_password"])
-		await super().on_model_change(data, model, is_created)
+	def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
+		"""Handle datetime conversion for form display."""
+		# Convert datetime objects to strings for date fields in forms
+		if not is_created and model:  # Only for editing existing models
+			if hasattr(model, 'date_from') and model.date_from:
+				data['date_from'] = model.date_from.strftime('%Y-%m-%d')
+			if hasattr(model, 'date_to') and model.date_to:
+				data['date_to'] = model.date_to.strftime('%Y-%m-%d')
+
+		super().on_model_change(data, model, is_created, request)
 
 	async def insert_model(self, request, data: dict) -> Any:
 		"""Ensure a password is set on user creation."""
@@ -196,6 +200,8 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"bot_scenario",
 		"is_active",
 		"last_checked",
+		"date_from",
+		"date_to",
 	]
 	column_searchable_list = ["name", "external_id"]
 	column_sortable_list = ["name", "is_active", "last_checked"]
@@ -210,6 +216,8 @@ class SourceAdmin(BaseAdmin, model=Source):
 			"params": "Параметры",
 			"bot_scenario": "Сценарий бота",
 			"last_checked": "Последняя проверка",
+			"date_from": "Дата начала сбора",
+			"date_to": "Дата окончания сбора",
 			"analytics": "Аналитика",
 			"monitored_users": "Отслеживаемые пользователи",
 			"tracked_in_sources": "Отслеживается в источниках",
@@ -227,14 +235,34 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"params",
 		"is_active",
 		"monitored_users",
+		"date_from",
+		"date_to",
 	]
 	form_widget_args = {
 		"last_checked": {
 			"readonly": True,
 		},
+		"date_from": {"placeholder": "ДД-ММ-ГГГГ"},
+		"date_to": {"placeholder": "ДД-ММ-ГГГГ"},
+	}
+	form_overrides = {
+		"date_from": EuropeanDateField,
+		"date_to": EuropeanDateField,
+	}
+	form_args = {
+		"date_from": {
+			"label": "Дата начала сбора",
+			"description": "Дата начала мониторинга источника",
+		},
+		"date_to": {
+			"label": "Дата окончания сбора",
+			"description": "Дата окончания мониторинга источника. Оставьте пустым для бессрочного мониторинга",
+		},
 	}
 	column_formatters = {
 		"last_checked": lambda m, a: m.last_checked.strftime("%d.%m.%Y %H:%M") if m.last_checked else "",
+		"date_from": lambda m, a: m.date_from.strftime("%d.%m.%Y") if m.date_from else "—",
+		"date_to": lambda m, a: m.date_to.strftime("%d.%m.%Y") if m.date_to else "—",
 	}
 
 	# Use custom templates for create/edit/details to inject per-view JS
@@ -533,9 +561,9 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"scope": "Дополнительные параметры",
 		"collection_interval_hours": "Интервал сбора (часы)",
 		"sources": "Источники",
-		"text_llm_provider": "Модель для текста",
-		"image_llm_provider": "Модель для изображений",
-		"video_llm_provider": "Модель для видео",
+		"text_llm_model": "Модель для текста",
+		"image_llm_model": "Модель для изображений",
+		"video_llm_model": "Модель для видео",
 		"text_llm_provider_id": "ID модели для текста",
 		"image_llm_provider_id": "ID модели для изображений",
 		"video_llm_provider_id": "ID модели для видео",
@@ -589,6 +617,16 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		'unified_summary_prompt': {
 			'description': (
 				'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+			)
+		},
+		'scope': {
+			'description': (
+				'Дополнительные параметры для анализа. '
+				'event_based: true - анализ по дням (для мониторинга активности), '
+				'event_based: false - анализ по темам (ИИ сам определяет темы). '
+				'Также может содержать конфигурацию для analysis_types (sentiment, keywords и др.). '
+				'Пример: '
+				'{"event_based": true, "sentiment": {"categories": ["Позитивный", "Негативный"]}, "max_events_per_analysis": 50}'
 			)
 		},
 		**BaseAdmin.form_args
@@ -655,8 +693,8 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		},
 		"scope": {
 			"rows": 8,
-			"placeholder": '{\n  "brand_name": "Мой бренд",\n  "competitors": ["Конкурент 1", "Конкурент 2"]\n}'
-		}
+			"placeholder": '{\n  "event_based": true,\n  "sentiment": {\n    "categories": ["Позитивный", "Негативный", "Нейтральный"]\n  },\n  "keywords": {\n    "max_keywords": 20\n  }\n}'
+		},
 	}
 
 	create_template = "sqladmin/bot_scenario_create.html"
@@ -708,9 +746,17 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 				data["analysis_types"] = []
 
 		# Parse scope from a textarea (JSON string)
+		# Scope now supports unified format: {analysis: {...}, response_format: {...}, display: {...}}
 		if "scope" in data and isinstance(data["scope"], str):
 			try:
-				data["scope"] = json.loads(data["scope"]) if data["scope"].strip() else {}
+				scope_data = json.loads(data["scope"]) if data["scope"].strip() else {}
+
+				# Check if unified format
+				if "analysis" in scope_data:
+					# Split unified config into separate fields
+					data["scope"] = scope_data.get("analysis", {})
+				else:
+					data["scope"] = scope_data
 			except (json.JSONDecodeError, TypeError):
 				data["scope"] = {}
 
@@ -877,39 +923,39 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 			# Separate analysis type configs from custom variables
 			analysis_configs = {}
 			custom_vars = {}
-			
+
 			for key, value in scenario.scope.items():
 				if scenario.analysis_types and key in scenario.analysis_types:
 					analysis_configs[key] = value
 				else:
 					custom_vars[key] = value
-			
+
 			scope_display = {
 				'analysis_configs': analysis_configs,
 				'custom_variables': custom_vars,
 				'all': scenario.scope
 			}
-		
+
 		# Pre-format JSON strings with ensure_ascii=False for proper Unicode display
 		import json
-		
+
 		# Format analysis configs as JSON strings
 		analysis_configs_json = {}
 		if scope_display.get('analysis_configs'):
 			for key, value in scope_display['analysis_configs'].items():
 				analysis_configs_json[key] = json.dumps(value, indent=2, ensure_ascii=False)
-		
+
 		# Format custom variables as JSON strings
 		custom_vars_json = {}
 		if scope_display.get('custom_variables'):
 			for key, value in scope_display['custom_variables'].items():
 				custom_vars_json[key] = json.dumps(value, ensure_ascii=False)
-		
+
 		# Format trigger_config as JSON string
 		trigger_config_json = ""
 		if scenario.trigger_config:
 			trigger_config_json = json.dumps(scenario.trigger_config, indent=2, ensure_ascii=False)
-		
+
 		return templates.TemplateResponse(
 			"sqladmin/scenario_prompts.html",
 			{
@@ -966,6 +1012,7 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 		"source_id": "ID источника",
 		"analysis_date": "Дата анализа",
 		"summary_data": "Данные анализа",
+		"main_topics": "Основные темы",
 		"period_type": "Период",
 		"topic_chain_id": "Цепочка",
 		"llm_model": "Модель ИИ",
@@ -1125,115 +1172,154 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 	"""
-	Admin for LLM Providers with autofill functionality.
+	Admin for LLM Providers.
 
-	Features:
-	— Auto-fill: JavaScript auto-completion when provider is selected
-	— Multi-select: Capabilities field for multiple media types
-	— Actions: Test connection, toggle active status
+	Note: Models are managed separately in LLMModelAdmin.
 	"""
 
-	name = "Провайдер"
+	name = "Провайдер LLM"
 	name_plural = "Провайдеры LLM"
-	icon = "fa fa-brain"
+	icon = "fa fa-server"
 
-	# Column configuration
-	column_list = ["id", "name", "provider_type", "model_name", "capabilities", "is_active"]
-	column_searchable_list = ["name", "model_name", "provider_type"]
-	column_sortable_list = ["name", "provider_type", "is_active"]
+	# Column configuration - only provider info, no models
+	column_list = ["id", "name", "api_url", "is_active"]
+	column_searchable_list = ["name", "api_url"]
+	column_sortable_list = ["name", "is_active"]
 
 	column_labels = dict({
 		"id": "ID",
 		"name": "Название",
 		"description": "Описание",
-		"model_name": "Название модели",
-		"provider_type": "Тип провайдера",
 		"api_url": "API URL",
 		"api_key_env": "Переменная окружения для API ключа",
-		"config": "Параметры (JSON)",
-		"capabilities": "Возможности",
-		"text_scenarios": "Сценарии (текст)",
-		"image_scenarios": "Сценарии (изображения)",
-		"video_scenarios": "Сценарии (видео)",
+		"config": "Дополнительные параметры (JSON)",
 		"is_active": "Активен",
 	}, **BaseAdmin.column_labels)
 
-	# Form configuration
-	form_excluded_columns = [
-		                        "text_scenarios",
-		                        "image_scenarios",
-		                        "video_scenarios"
-	                        ] + BaseAdmin.form_excluded_columns
+	form_excluded_columns = BaseAdmin.form_excluded_columns + [
+		"models",  # Managed in LLMModelAdmin
+	]
 
-	form_overrides = {
-		"capabilities": SelectMultipleField,
-		**BaseAdmin.form_overrides
-	}
-
-	# Form arguments with choices from MediaType enum
+	# Form arguments
 	form_args = {
-		"provider_type": {
-			"label": "Тип провайдера",
-			"description": "Выберите провайдера. Поля будут заполнены автоматически."
+		"name": {
+			"label": "Название",
+			"description": "Например: OpenAI, DeepSeek, SambaNova"
 		},
-		"capabilities": {
-			"label": "Возможности",
-			"description": (
-				"Выберите возможности модели. "
-				"Значения берутся из MediaType enum."
-			),
-			'choices': MediaType.choices(),  # Use MediaType enum
-			"coerce": str,
+		"api_url": {
+			"label": "API URL",
+			"description": "Базовый URL для API провайдера. Например: https://api.openai.com/v1"
+		},
+		"api_key_env": {
+			"label": "Переменная окружения для API ключа",
+			"description": "Название переменной окружения с API ключом. Например: OPENAI_API_KEY"
+		},
+		"config": {
+			"label": "Дополнительные настройки",
+			"description": "JSON с дополнительными параметрами провайдера (rate limits, timeout и т.д.)"
 		},
 		**BaseAdmin.form_args
 	}
 
 	# Column formatters
 	column_formatters = {
-		"provider_type": lambda m, a: (
-			m.provider_type.label if hasattr(m.provider_type, 'label')
-			else str(m.provider_type) if m.provider_type else ""
-		),
-		"capabilities": lambda m, a: ", ".join(m.capabilities) if m.capabilities else "—",
 	}
 
 	# Custom templates with JS injection
 	create_template = "llm_provider/create.html"
 	edit_template = "llm_provider/edit.html"
 
-	# Actions
-	@action(
-		name="test_connection",
-		label="Тест соединения",
-		confirmation_message="Проверить подключение к API провайдера?",
-		add_in_list=True,
-		add_in_detail=True
-	)
-	async def test_connection(self, request: Request):
-		"""Test API connection for selected providers."""
-		pks = request.query_params.get("pks", "")
-		return await LLMProviderActions.test_connection(request, pks, self.identity)
 
-	@action(
-		name="toggle_active",
-		label="Включить/Выключить",
-		confirmation_message="Изменить статус выбранных провайдеров?",
-		add_in_list=True
-	)
-	async def toggle_active(self, request: Request):
-		"""Toggle active status for selected providers."""
-		pks = request.query_params.get("pks", "")
-		return await LLMProviderActions.toggle_active(request, pks, self.identity)
+class LLMModelAdmin(BaseAdmin, model=LLMModel):
+	"""
+	Admin for LLM Models.
+	
+	Each provider can have multiple models with different capabilities and costs.
+	"""
 
-	async def scaffold_form(self, rules=None):
-		"""Add metadata JSON to form context for auto-fill functionality."""
-		form_class = await super().scaffold_form(rules)
+	name = "Модель LLM"
+	name_plural = "Модели LLM"
+	icon = "fa fa-microchip"
 
-		# Add metadata for JavaScript auto-fill
-		metadata = LLMMetadataHelper.get_metadata_for_js()
-		form_class.llm_metadata_json = json.dumps(metadata, ensure_ascii=False)
+	column_list = ["id", "name", "provider", "capabilities", "input_cost", "output_cost", "is_active", "is_default"]
+	column_searchable_list = ["name", "description"]
+	column_sortable_list = ["name", "input_cost", "output_cost", "is_active", "is_default"]
 
-		return form_class
+	column_labels = dict({
+		"id": "ID",
+		"name": "Название модели",
+		"description": "Описание",
+		"provider_id": "Провайдер",
+		"provider": "Провайдер",
+		"input_cost": "Цена входа ($/1M токенов)",
+		"output_cost": "Цена выхода ($/1M токенов)",
+		"capabilities": "Возможности",
+		"config": "Настройки (JSON)",
+		"is_active": "Активна",
+		"is_default": "По умолчанию для провайдера",
+	}, **BaseAdmin.column_labels)
+
+	# Form configuration
+	form_excluded_columns = BaseAdmin.form_excluded_columns + [
+		"text_scenarios",
+		"image_scenarios",
+		"video_scenarios",
+	]
+
+	form_overrides = {
+		"capabilities": SelectMultipleField,
+		**BaseAdmin.form_overrides
+	}
+
+	form_args = {
+		"provider_id": {
+			"label": "Провайдер",
+			"description": "Выберите провайдера для этой модели"
+		},
+		"name": {
+			"label": "Название модели",
+			"description": "Например: gpt-4-turbo, deepseek-chat, llama-3.1-70b"
+		},
+		"description": {
+			"label": "Описание",
+			"description": "Краткое описание модели и её особенностей"
+		},
+		"capabilities": {
+			"label": "Возможности",
+			"description": "Выберите типы контента, которые может обрабатывать модель",
+			"choices": MediaType.choices(),
+			"coerce": str,
+		},
+		"input_cost": {
+			"label": "Цена входящих токенов",
+			"description": "Стоимость в долларах за 1 миллион входящих токенов"
+		},
+		"output_cost": {
+			"label": "Цена исходящих токенов",
+			"description": "Стоимость в долларах за 1 миллион исходящих токенов"
+		},
+		"config": {
+			"label": "Настройки модели",
+			"description": "JSON с параметрами: temperature, max_tokens, top_p и т.д."
+		},
+		"is_active": {
+			"label": "Активна",
+			"description": "Доступна ли модель для использования"
+		},
+		"is_default": {
+			"label": "По умолчанию",
+			"description": "Использовать эту модель по умолчанию для текущего провайдера"
+		},
+		**BaseAdmin.form_args
+	}
+
+	# Column formatters
+	column_formatters = {
+		"provider": lambda m, a: m.provider.name if m.provider else "—",
+		"capabilities": lambda m, a: ", ".join(m.capabilities) if m.capabilities else "—",
+		"input_cost": lambda m, a: f"${m.input_cost:.2f}",
+		"output_cost": lambda m, a: f"${m.output_cost:.2f}",
+	}
 
 	async def insert_model(self, request: Request, data: dict) -> Any:
 		"""Ensure capabilities is always a list."""
@@ -1252,3 +1338,56 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 			data["capabilities"] = [c for c in data["capabilities"] if c]
 
 		return await super().update_model(request, pk, data)
+
+	async def scaffold_form(self, rules=None):
+		form = await super().scaffold_form(rules)
+
+		# Загрузка провайдеров для выпадающего списка
+		providers = await LLMProvider.objects.all().order_by("name")
+
+		# Используем правильное имя поля формы (может быть provider_id или provider)
+		if hasattr(form, 'provider_id'):
+			field_name = 'provider_id'
+		elif hasattr(form, 'provider'):
+			field_name = 'provider'
+		else:
+			# Если ни одно не найдено, пропускаем настройку
+			return form
+
+		getattr(form, field_name).kwargs.update({
+			"data": [(str(p.id), p) for p in providers],
+			"get_label": lambda obj: obj.name,
+		})
+
+		return form
+
+	async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
+		"""Ensure only one model can be default at a time."""
+		await super().after_model_change(data, model, is_created, request)
+
+		# Если модель установлена как по умолчанию
+		if model.is_default:
+			# Сбросить флаг is_default для всех других моделей
+			objects_to_update = await LLMModel.objects.filter(provider_id=model.provider_id).exclude(id=model.id).all()
+			for obj in objects_to_update:
+				obj.is_default = False
+				obj.save()
+
+	@action(
+		name="test-model",
+		label="🧪 Тестировать модель",
+		add_in_list=True,
+		add_in_detail=True
+	)
+	async def test_model_action(self, request: Request):
+		"""Test the selected LLM model."""
+		pks = request.query_params.get("pks", "")
+
+		if not pks:
+			request.session["admin_message"] = {
+				"type": "error",
+				"message": "Не выбрана модель для тестирования"
+			}
+			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+		return await LLMModelActions.test_model(self, request, pks, self.identity)

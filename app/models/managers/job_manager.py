@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import text as sa_text
-
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
@@ -44,6 +42,8 @@ class JobManager(BaseManager):
         Atomically claim the oldest due pending job (FOR UPDATE SKIP LOCKED)
         and mark it running. Safe for multiple workers.
         """
+        from sqlalchemy import select
+
         from app.core.database import async_session_maker
 
         from ..job import Job as JobModel
@@ -51,21 +51,16 @@ class JobManager(BaseManager):
         now = now or datetime.now(timezone.utc)
         async with async_session_maker() as session:
             async with session.begin():
-                result = await session.execute(
-                    sa_text(
-                        """
-                        SELECT id FROM social_manager.jobs
-                        WHERE status = 'pending' AND run_at <= :now
-                        ORDER BY run_at ASC
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                    """
-                    ).bindparams(now=now),
+                stmt = (
+                    select(JobModel)
+                    .where(JobModel.status == "pending", JobModel.run_at <= now)
+                    .order_by(JobModel.run_at.asc())
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
                 )
-                row = result.first()
-                if not row:
+                job = (await session.execute(stmt)).scalar_one_or_none()
+                if not job:
                     return None
-                job = await session.get(JobModel, row[0], with_for_update=True)
                 job.status = "running"
                 job.locked_at = now
                 job.attempts = (job.attempts or 0) + 1

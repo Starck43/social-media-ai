@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
@@ -32,13 +32,13 @@ class Job(Base, TimestampMixin):
     )
     # 'collect' | 'digest' | 'prune'
     job_type: Mapped[str] = Column(String(20), nullable=False)
-    payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False)
+    payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     # 'pending' | 'running' | 'done' | 'failed'
-    status: Mapped[str] = Column(String(20), default="pending", nullable=False)
+    status: Mapped[str] = Column(String(20), default="pending", nullable=False, server_default="pending")
     run_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=False)
     locked_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=True)
-    attempts: Mapped[int] = Column(Integer, default=0, nullable=False)
-    max_attempts: Mapped[int] = Column(Integer, default=settings.JOB_MAX_ATTEMPTS, nullable=False)
+    attempts: Mapped[int] = Column(Integer, default=0, nullable=False, server_default="0")
+    max_attempts: Mapped[int] = Column(Integer, default=settings.JOB_MAX_ATTEMPTS, nullable=False, server_default="3")
     result: Mapped[dict[str, Any]] = Column(JSON, nullable=True)
     error: Mapped[str] = Column(Text, nullable=True)
 

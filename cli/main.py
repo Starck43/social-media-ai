@@ -1,4 +1,3 @@
-# cli/main.py
 import typer
 
 from .commands import roles
@@ -19,13 +18,14 @@ def schedule_list():
     """List all schedules."""
     import asyncio
 
-    import rich
+    from rich import print as rprint
+    from rich.table import Table
 
     from app.models import Schedule
 
     async def _run():
         rows = await Schedule.objects.order_by(Schedule.id)
-        table = rich.table.Table(title="Schedules")
+        table = Table(title="Schedules")
         for col in ("id", "name", "cron", "job", "active", "next_run_at", "last_status"):
             table.add_column(col)
         for s in rows:
@@ -38,7 +38,7 @@ def schedule_list():
                 s.next_run_at.strftime("%Y-%m-%d %H:%M") if s.next_run_at else "—",
                 s.last_status or "—",
             )
-        rich.print(table)
+        rprint(table)
 
     asyncio.run(_run())
 
@@ -54,7 +54,7 @@ def schedule_add(
     import asyncio
     import json as _json
 
-    import rich
+    from rich import print as rprint
 
     from app.core.config import settings
     from app.models import Schedule
@@ -63,16 +63,16 @@ def schedule_add(
 
     sm = ScheduleManager()
     if not sm.validate_cron(cron):
-        rich.print(f"[red]Invalid cron expression: {cron}[/red]")
+        rprint(f"[red]Invalid cron expression: {cron}[/red]")
         raise typer.Exit(1)
     if job_type not in ("collect", "digest", "prune"):
-        rich.print("[red]job_type must be one of: collect, digest, prune[/red]")
+        rprint("[red]job_type must be one of: collect, digest, prune[/red]")
         raise typer.Exit(1)
 
     async def _run():
         existing = await Schedule.objects.get(name=name)
         if existing:
-            rich.print(f"[red]Schedule '{name}' already exists[/red]")
+            rprint(f"[red]Schedule '{name}' already exists[/red]")
             raise typer.Exit(1)
         await sm.create(
             name=name,
@@ -83,7 +83,7 @@ def schedule_add(
             is_active=True,
             next_run_at=next_run_at(cron, settings.SCHEDULER_TIMEZONE),
         )
-        rich.print(f"[green]Schedule '{name}' created ({cron}, {job_type})[/green]")
+        rprint(f"[green]Schedule '{name}' created ({cron}, {job_type})[/green]")
 
     asyncio.run(_run())
 
@@ -93,13 +93,13 @@ def schedule_remove(name: str = typer.Argument(...)):
     """Remove a schedule by name."""
     import asyncio
 
-    import rich
+    from rich import print as rprint
 
     from app.models import Schedule
 
     async def _run():
         deleted = await Schedule.objects.delete(name=name)
-        rich.print(f"[green]Deleted {deleted} schedule(s)[/green]" if deleted else "[yellow]Not found[/yellow]")
+        rprint(f"[green]Deleted {deleted} schedule(s)[/green]" if deleted else "[yellow]Not found[/yellow]")
 
     asyncio.run(_run())
 
@@ -109,17 +109,17 @@ def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(
     """Pause (or --resume) a schedule."""
     import asyncio
 
-    import rich
+    from rich import print as rprint
 
     from app.models import Schedule
 
     async def _run():
         s = await Schedule.objects.get(name=name)
         if not s:
-            rich.print("[yellow]Not found[/yellow]")
+            rprint("[yellow]Not found[/yellow]")
             raise typer.Exit(1)
         await Schedule.objects.update_by_id(s.id, is_active=resume)
-        rich.print(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green]")
+        rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green]")
 
     asyncio.run(_run())
 

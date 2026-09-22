@@ -20,7 +20,7 @@ class Platform(Base):
     __tablename__ = "platforms"
     __table_args__ = {"schema": settings.DB_SCHEMA}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # 'vk', 'telegram'
     platform_type: Mapped[PlatformType] = PlatformType.sa_column(
         type_name="platform_type", nullable=False, store_as_name=False  # Хранить как значения ('vk', 'telegram')
@@ -32,9 +32,9 @@ class Platform(Base):
     #     "api_version": "5.199",
     #     "auth_type": "oauth",
     # }
-    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=True)
-    rate_limit_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rate_limit_reset_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool | None] = mapped_column(default=True, server_default=text("true"), nullable=True)
+    rate_limit_remaining: Mapped[int | None] = mapped_column(nullable=True)
+    rate_limit_reset_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Relationships
     sources: Mapped[list["Source"]] = relationship(

@@ -5,7 +5,6 @@ import logging
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.models import Schedule
 from app.models.managers.job_manager import JobManager
 from app.models.managers.schedule_manager import ScheduleManager
 from app.scheduler.cron import next_run_at

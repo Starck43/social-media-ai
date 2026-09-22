@@ -1,27 +1,36 @@
-# Этап сборки
-FROM python:3.12-slim AS builder
+# Build context: repository root (docker-compose `build.context: ..`).
+FROM python:3.12-slim
 
-WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=Europe/Moscow
 
-RUN apt-get update && apt-get install -y \
+WORKDIR /srv/app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка Python зависимостей
-COPY requirements.txt .
+# Dependencies first for better layer caching
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем зависимости из builder
-COPY --from=builder /root/.local /root/.local
+# Application code (migrations and alembic.ini are required for `alembic upgrade head`)
+COPY alembic.ini ./
+COPY app ./app
+COPY cli ./cli
+COPY migrations ./migrations
+COPY scripts ./scripts
+COPY pyproject.toml ./
 
-COPY app/ .
+RUN useradd --create-home appuser \
+    && chown -R appuser:appuser /srv/app
+USER appuser
 
-# Добавляем .local в PATH
-ENV PATH=/root/.local/bin:$PATH
-
-# Открытие портов
 EXPOSE 8000
 
-# Команда по умолчанию
+# Default entrypoint: API (the agent runtime is started via
+# `python -m app.runtime`, the worker via `python -m app.worker`)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

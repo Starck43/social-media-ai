@@ -31,6 +31,10 @@ from .llm_model import LLMModel
 # Analytics models
 from .ai_analytics import AIAnalytics
 
+# Scheduler / jobs
+from .schedule import Schedule
+from .job import Job
+
 # Notification models
 from .notification import Notification
 
@@ -58,6 +62,10 @@ __all__ = [
 
     # Analytics models
     'AIAnalytics',
+
+    # Scheduler / jobs
+    'Schedule',
+    'Job',
 
     # Notification models
     'Notification',

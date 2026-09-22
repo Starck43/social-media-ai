@@ -18,6 +18,9 @@ itsdangerous
 redis
 celery
 
+# Scheduler (cron expressions for app/scheduler)
+croniter
+
 # HTTP клиенты для DeepSeek API
 httpx
 aiohttp

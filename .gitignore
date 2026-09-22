@@ -44,3 +44,9 @@ ENV/
 logs/
 *.log
 
+# Agent workspace (local-only, never commit)
+.agent/
+
+# Backup artifacts
+*.backup
+

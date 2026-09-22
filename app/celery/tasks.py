@@ -1,8 +1,9 @@
 """
 Celery tasks for background processing.
 
-NOTE: Celery configuration and broker (Redis) setup required.
-This is a placeholder for future implementation.
+FROZEN — superseded by `app/jobs` (DB-backed queue) and `app/scheduler`.
+Not started by any entrypoint; `app.celery.config` requires a Redis broker.
+Do not extend: add a handler in `app/jobs/handlers.py` instead.
 """
 import logging
 

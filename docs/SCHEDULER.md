@@ -5,7 +5,7 @@ or Redis. Two processes consume the same tables:
 
 | Process | Entrypoint | Responsibility |
 | --- | --- | --- |
-| runtime | `python -m app.runtime` | `scheduler/runner.py` tick loop, channel polling, agent chat |
+| runtime | `python -m app.runtime` | `scheduler/runner.py` tick loop, `jobs` worker, and `channels/listener.py` agent chat loop |
 | worker | `python -m app.worker` | claim and execute jobs |
 
 The process split matters: heavy collection runs in `worker`, so a chat reply

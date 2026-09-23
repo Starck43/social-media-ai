@@ -1,4 +1,4 @@
-"""Unified runtime entrypoint: scheduler + worker + channels (M2) in one process.
+"""Unified runtime entrypoint: scheduler + worker + agent chat listener.
 
 Run: python -m app.runtime
 """
@@ -16,21 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
+    from app.channels.listener import listen_forever
     from app.jobs.dispatcher import worker_forever
     from app.scheduler.bootstrap import ensure_default_schedules
     from app.scheduler.runner import run_forever
 
     await ensure_default_schedules()
 
+    tasks = [listen_forever()]
     if not settings.SCHEDULER_ENABLED:
         logger.info("Scheduler disabled via SCHEDULER_ENABLED=false")
-        await worker_forever()
-        return
-
-    await asyncio.gather(
-        run_forever(),
-        worker_forever(),
-    )
+    else:
+        tasks.append(run_forever())
+    tasks.append(worker_forever())
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":

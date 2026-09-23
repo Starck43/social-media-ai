@@ -57,9 +57,10 @@ class AgentSession(Base, TimestampMixin):
         return (self.state or {}).get("update_offset")
 
     @property
-    def pending_action(self) -> dict[str, Any] | None:
-        """Write-tool call awaiting the owner's confirmation."""
-        return (self.state or {}).get("pending_action")
+    def pending_confirmation(self) -> dict[str, Any] | None:
+        """Write-tool call awaiting the owner's confirmation (see agent/runtime)."""
+        value = (self.state or {}).get("pending_confirmation")
+        return value if isinstance(value, dict) else None
 
     async def save_state(self, state: dict[str, Any]) -> None:
         """Persist the volatile per-chat state dict."""

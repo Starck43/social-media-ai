@@ -1,9 +1,16 @@
-"""Job dispatcher: claim → execute → mark done/failed with retries."""
+"""Job dispatcher: claim → execute → mark done/failed with retries.
+
+Tenancy: the queue itself is process-wide (any worker may claim any tenant's
+job), but every handler runs inside the owning tenant's scope, taken from
+`job.tenant_id`. Handlers therefore never receive a tenant and never filter by
+it — the queryset guard in `BaseManager` applies it.
+"""
 
 import asyncio
 import logging
 from typing import Any, Callable
 
+from app.core.tenant_context import tenant_scope
 from app.jobs.handlers import HANDLERS
 from app.models.managers.job_manager import JobManager
 
@@ -19,21 +26,31 @@ async def execute_job(job: Any, handler: Callable) -> None:
     payload = dict(job.payload or {})
     payload.setdefault("schedule_id", job.schedule_id)
     payload.setdefault("job_id", job.id)
-    try:
-        result = await handler(payload)
-        await jobs.mark_done(job.id, result=result)
-        logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
-    except Exception as e:
-        will_retry = await jobs.mark_failed(job.id, error=str(e))
-        if will_retry:
-            logger.warning(f"Job {job.id} failed (will retry): {e}")
-        else:
-            logger.error(f"Job {job.id} failed permanently: {e}", exc_info=True)
+    # Everything below — the handler AND the bookkeeping writes — must see the
+    # job's workspace, otherwise mark_done() cannot even find the row.
+    with tenant_scope(job.tenant_id):
+        try:
+            result = await handler(payload)
+            await jobs.mark_done(job.id, result=result)
+            logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
+        except Exception as e:
+            will_retry = await jobs.mark_failed(job.id, error=str(e))
+            if will_retry:
+                logger.warning(f"Job {job.id} failed (will retry): {e}")
+            else:
+                logger.error(f"Job {job.id} failed permanently: {e}", exc_info=True)
 
 
 async def run_pending_once() -> int:
-    """Claim and execute one due job. Returns number of jobs processed (0 or 1)."""
-    await jobs.reap_stale()
+    """Claim and execute one due job. Returns number of jobs processed (0 or 1).
+
+    `claim_next` deliberately runs without a tenant: a worker must be able to
+    pick up any workspace's job (it is a raw cross-tenant SELECT ... SKIP
+    LOCKED).
+    """
+    # Queue maintenance is cross-tenant by nature: reap stragglers everywhere.
+    with tenant_scope(bypass=True):
+        await jobs.reap_stale()
 
     job = await jobs.claim_next()
     if not job:
@@ -41,7 +58,8 @@ async def run_pending_once() -> int:
 
     handler = HANDLERS.get(job.job_type)
     if not handler:
-        await jobs.mark_failed(job.id, error=f"Unknown job type: {job.job_type}")
+        with tenant_scope(job.tenant_id):
+            await jobs.mark_failed(job.id, error=f"Unknown job type: {job.job_type}")
         return 1
 
     await execute_job(job, handler)

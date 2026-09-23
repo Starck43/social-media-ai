@@ -1,13 +1,21 @@
-"""Scheduler runner: poll schedules, enqueue due jobs, advance next_run_at."""
+"""Scheduler runner: poll schedules, enqueue due jobs, advance next_run_at.
+
+Tenancy: `schedules`/`jobs` rows are tenant-owned, so the tick is run once per
+active workspace inside its tenant scope. The queryset guard in `BaseManager`
+then makes each pass see exactly one workspace's schedules — there is no
+"filter by tenant_id" to forget here.
+"""
 
 import asyncio
 import logging
 from datetime import datetime, timezone
 
 from app.core.config import settings
+from app.core.tenant_context import tenant_scope
 from app.models.managers.job_manager import JobManager
 from app.models.managers.schedule_manager import ScheduleManager
-from app.scheduler.cron import next_run_at
+
+from .cron import next_run_at
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +23,9 @@ schedules = ScheduleManager()
 jobs = JobManager()
 
 
-async def tick() -> dict:
-    """
-    One scheduler pass: enqueue jobs for due schedules.
-    Returns stats: {"due": int, "enqueued": int, "failed": int}
-    """
-    now = datetime.now(timezone.utc)
+async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
+    """One pass for a single workspace. Must be called inside its tenant scope."""
+    now = now or datetime.now(timezone.utc)
     stats = {"due": 0, "enqueued": 0, "failed": 0}
 
     due = await schedules.get_due(now)
@@ -46,6 +51,34 @@ async def tick() -> dict:
         logger.info(f"Enqueued {schedule.job_type} job for schedule {schedule.name!r}, next run {nxt.isoformat()}")
 
     return stats
+
+
+async def tick() -> dict:
+    """
+    One scheduler pass across all workspaces.
+
+    Returns stats: {"tenants": int, "due": int, "enqueued": int, "failed": int}
+
+    A failing workspace is logged and skipped: one tenant's bad cron must not
+    stop the others' digests.
+    """
+    from app.models import Tenant
+
+    # Tenant rows are global (not tenant-scoped), so this read needs no context.
+    tenants = await Tenant.objects.filter(is_active=True)
+    totals = {"tenants": len(tenants), "due": 0, "enqueued": 0, "failed": 0}
+
+    for tenant in tenants:
+        try:
+            with tenant_scope(tenant.id):
+                stats = await tick_tenant(tenant.id)
+        except Exception:  # noqa: BLE001
+            logger.exception(f"Scheduler tick failed for tenant {tenant.slug} (id={tenant.id})")
+            continue
+        for key in ("due", "enqueued", "failed"):
+            totals[key] += stats[key]
+
+    return totals
 
 
 async def run_forever(poll_seconds: int | None = None) -> None:

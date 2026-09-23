@@ -10,13 +10,28 @@ app = typer.Typer(
 
 app.add_typer(roles.app, name="roles", help="Manage roles and permissions")
 
+
+def _run_platform(coro):
+    """Run an async command as the platform owner (bootstrap workspace).
+
+    The CLI is the operator's tool: it administers the owner workspace and, with
+    an explicit `--tenant`, a client one. Tenant-scoped rows cannot be read or
+    written without a scope, so every command goes through here.
+    """
+    import asyncio
+
+    from app.core.tenant_context import tenant_scope
+
+    with tenant_scope(bypass=True):
+        return asyncio.run(coro)
+
+
 schedule_app = typer.Typer(help="Manage cron schedules")
 
 
 @schedule_app.command("list")
 def schedule_list():
     """List all schedules."""
-    import asyncio
 
     from rich import print as rprint
     from rich.table import Table
@@ -40,7 +55,7 @@ def schedule_list():
             )
         rprint(table)
 
-    asyncio.run(_run())
+    _run_platform(_run())
 
 
 @schedule_app.command("add")
@@ -51,7 +66,6 @@ def schedule_add(
     payload: str = typer.Option("{}", "--payload", "-p", help="JSON payload, e.g. '{\"source_ids\": [1] }'"),
 ):
     """Add a schedule."""
-    import asyncio
     import json as _json
 
     from rich import print as rprint
@@ -85,13 +99,12 @@ def schedule_add(
         )
         rprint(f"[green]Schedule '{name}' created ({cron}, {job_type})[/green]")
 
-    asyncio.run(_run())
+    _run_platform(_run())
 
 
 @schedule_app.command("remove")
 def schedule_remove(name: str = typer.Argument(...)):
     """Remove a schedule by name."""
-    import asyncio
 
     from rich import print as rprint
 
@@ -101,13 +114,12 @@ def schedule_remove(name: str = typer.Argument(...)):
         deleted = await Schedule.objects.delete(name=name)
         rprint(f"[green]Deleted {deleted} schedule(s)[/green]" if deleted else "[yellow]Not found[/yellow]")
 
-    asyncio.run(_run())
+    _run_platform(_run())
 
 
 @schedule_app.command("pause")
 def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(False, "--resume")):
     """Pause (or --resume) a schedule."""
-    import asyncio
 
     from rich import print as rprint
 
@@ -121,7 +133,7 @@ def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(
         await Schedule.objects.update_by_id(s.id, is_active=resume)
         rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green]")
 
-    asyncio.run(_run())
+    _run_platform(_run())
 
 
 app.add_typer(schedule_app, name="schedule")
@@ -134,7 +146,6 @@ def digest_send_now(
     period: str = typer.Argument("day", help="Period: day | week"),
 ):
     """Build and publish a digest right now (manual run, not idempotent)."""
-    import asyncio
 
     import rich
     from rich import print as rprint
@@ -159,10 +170,12 @@ def digest_send_now(
                 mark = "[green]ok[/green]" if res.get("success") else f"[red]{res.get('error')}[/red]"
                 rprint(f"  {channel}: {mark}")
 
-    asyncio.run(_run())
+    _run_platform(_run())
 
 
 app.add_typer(digest_app, name="digest")
+
+
 # app.add_typer(permissions.app, name="permissions", help="Manage permissions")
 
 

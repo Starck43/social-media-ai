@@ -8,7 +8,8 @@ Flow:
   append tool results, ask again - bounded by AGENT_MAX_ITERATIONS.
   5. Persist all messages + cost, reply through the channel.
 
-Guards: owner allowlist, per-message iteration cap, daily cost cap.
+Guards: chat→tenant routing, membership, per-message iteration cap, per-tenant
+daily cost cap.
 """
 
 import json
@@ -19,23 +20,15 @@ from typing import Any, Optional
 from app.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, tool_specs
 from app.core.config import settings
+from app.core.tenant_context import tenant_scope
+from app.services.tenancy.resolver import is_platform_owner, resolve_inbound, tenant_daily_cost_limit
 
 logger = logging.getLogger(__name__)
 
 
 def is_owner(inbound: Any) -> bool:
-    """Owner allowlist check: never run the agent for strangers."""
-
-    uid = str(getattr(inbound, "user_id", "") or "")
-    if not uid:
-        return False
-    if inbound.channel == "telegram":
-        allowed = {str(x) for x in (settings.TELEGRAM_OWNER_IDS or [])}
-    elif inbound.channel == "max":
-        allowed = {str(x) for x in (settings.MAX_OWNER_IDS or [])}
-    else:
-        allowed = set()
-    return uid in allowed
+    """Platform owner allowlist (env ids), independent of workspace membership."""
+    return is_platform_owner(getattr(inbound, "channel", ""), getattr(inbound, "user_id", ""))
 
 
 def _pending_confirmation(session: Any) -> Optional[dict]:
@@ -87,13 +80,34 @@ async def handle_inbound(inbound: Any) -> Optional[str]:
     """
     if not getattr(inbound, "text", None):
         return None
-    if not is_owner(inbound):
-        logger.info(f"Ignoring non-owner message from {inbound.channel}:{inbound.user_id}")
+
+    resolution = await resolve_inbound(inbound)
+    if resolution is None:
+        logger.info(f"Ignoring unbound message from {inbound.channel}:{inbound.user_id}")
         return None
 
+    # Everything below runs as the workspace that owns this chat: managers
+    # filter by tenant_id, writes are stamped with it, tools see only its data.
+    with tenant_scope(resolution.tenant_id):
+        return await _handle_in_tenant(inbound, resolution)
+
+
+async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
+    """Agent turn inside an already resolved workspace."""
     text = inbound.text.strip()
 
-    if settings.AGENT_DAILY_COST_LIMIT and await _cost_today() >= settings.AGENT_DAILY_COST_LIMIT:
+    if resolution.onboarded:
+        from app.models.managers.tenant_manager import tenants
+
+        tenant = await tenants.get(id=resolution.tenant_id)
+        name = getattr(tenant, "name", "workspace")
+        return (
+            f"Готово! Этот чат привязан к рабочему пространству «{name}». "
+            f"Роль: {resolution.role}. Спросите что-нибудь или напишите /help."
+        )
+
+    limit = await tenant_daily_cost_limit(resolution.tenant_id)
+    if limit and await _cost_today() >= limit:
         return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
 
     from app.models.managers.agent_session_manager import agent_sessions
@@ -102,11 +116,18 @@ async def handle_inbound(inbound: Any) -> Optional[str]:
         channel=inbound.channel,
         chat_id=str(inbound.chat_id),
         kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-        is_owner=True,
+        is_owner=resolution.is_owner,
     )
     if session is None:
         logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
         return "Не удалось открыть сессию агента."
+
+    if text.split()[0].split("@")[0].lower() == "/stop":
+        from app.models.managers.agent_message_manager import agent_messages
+
+        await agent_messages.clear(session.id)
+        await _clear_pending(session)
+        return "История диалога очищена."
 
     # 1) Confirmation flow first (before touching the model)
     pending = _pending_confirmation(session)
@@ -142,7 +163,7 @@ async def handle_inbound(inbound: Any) -> Optional[str]:
 
     reply: Optional[str] = None
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
-        if settings.AGENT_DAILY_COST_LIMIT and await _cost_today() >= settings.AGENT_DAILY_COST_LIMIT:
+        if limit and await _cost_today() >= limit:
             reply = "Дневной лимит расходов исчерпан во время обработки запроса."
             break
 

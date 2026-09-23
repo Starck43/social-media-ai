@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     from app.channels.listener import listen_forever
     from app.jobs.dispatcher import worker_forever
-    from app.scheduler.bootstrap import ensure_default_schedules
+    from app.scheduler.bootstrap import ensure_all_default_schedules
     from app.scheduler.runner import run_forever
 
-    await ensure_default_schedules()
+    # Default schedules are tenant-owned: seed every active workspace once.
+    await ensure_all_default_schedules()
 
     tasks = [listen_forever()]
     if not settings.SCHEDULER_ENABLED:

@@ -129,6 +129,14 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         await _clear_pending(session)
         return "История диалога очищена."
 
+    if text.split()[0].split("@")[0].lower() == "/help":
+        from app.agent.prompts import AGENT_HELP_TEXT
+
+        await session.append("user", text)
+        await session.append("assistant", AGENT_HELP_TEXT)
+        await session.touch()
+        return AGENT_HELP_TEXT
+
     # 1) Confirmation flow first (before touching the model)
     pending = _pending_confirmation(session)
     if pending:
@@ -244,7 +252,12 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
 
     model = await resolve_model()
     client = await LLMClient.create(model)
-    return await client.chat(messages, tools=specs)
+    return await client.chat(
+        messages,
+        tools=specs,
+        max_tokens=settings.AGENT_MAX_TOKENS,
+        temperature=settings.AGENT_TEMPERATURE,
+    )
 
 
 async def _cost_today() -> float:

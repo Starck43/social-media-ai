@@ -185,3 +185,51 @@ async def test_listener_skips_none_reply(monkeypatch):
     monkeypatch.setattr(listener_module, "_handle_safely", lambda inbound: fake_handle(inbound))
     await listener_module._consume_channel(FakeChannel())
     assert sent == []
+
+
+async def test_help_command(_clean_sessions, monkeypatch):
+    """/help returns the help text without ever calling the model."""
+    _set_owner(monkeypatch)
+
+    async def boom(messages, specs):  # must never run
+        raise AssertionError("model must not be called for /help")
+
+    monkeypatch.setattr(agent_runtime, "_chat", boom)
+    monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+    from app.agent.prompts import AGENT_HELP_TEXT
+
+    reply = await agent_runtime.handle_inbound(_inbound("/help"))
+    assert reply == AGENT_HELP_TEXT
+    assert "/stop" in reply
+
+
+async def test_chat_uses_agent_limits(_clean_sessions, monkeypatch):
+    """_chat passes AGENT_MAX_TOKENS/AGENT_TEMPERATURE to the LLM client."""
+    captured = {}
+
+    class _FakeClient:
+        async def chat(self, messages, tools=None, **kwargs):
+            captured.update(kwargs)
+            return {"content": "ok", "tool_calls": [], "usage": {}}
+
+    class _LLMClientStub:
+        @staticmethod
+        async def create(model):
+            return _FakeClient()
+
+    monkeypatch.setattr("app.services.digest.builder.resolve_model", _noop_async)
+    monkeypatch.setattr("app.services.ai.llm_client.LLMClient", _LLMClientStub)
+    monkeypatch.setattr(agent_runtime.settings, "AGENT_MAX_TOKENS", 2048)
+    monkeypatch.setattr(agent_runtime.settings, "AGENT_TEMPERATURE", 0.5)
+    _set_owner(monkeypatch)
+    monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+    first = await agent_runtime.handle_inbound(_inbound("привет", user_id="7"))
+    assert first == "ok"
+    assert captured.get("max_tokens") == 2048
+    assert captured.get("temperature") == 0.5
+
+
+async def _noop_async(*args, **kwargs):
+    return object()

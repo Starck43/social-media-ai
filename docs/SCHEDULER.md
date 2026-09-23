@@ -61,9 +61,18 @@ strings, so no migration is needed.
 
 ## Default schedules
 
-`app/scheduler/bootstrap.py` creates `hourly-collect` and `daily-prune` on the
-first runtime start if they are missing. It only inserts, never overwrites — so
+`app/scheduler/bootstrap.py::ensure_all_default_schedules()` seeds every active
+workspace at startup with `hourly-collect` and `daily-prune`. On new tenant
+creation the caller must call `ensure_default_schedules(tenant_id)` separately
+(it is **not** automatic). The bootstrap only inserts, never overwrites — so
 editing or pausing them in the database survives restarts.
+
+> **Tenancy note:** schedules and jobs are tenant-owned (`TenantScopedMixin`).
+> The runner loops over every active `Tenant` and calls `tick_tenant()` inside
+> `tenant_scope(tenant_id)` — one tenant's broken cron won't block others.
+> `claim_next()` runs cross-tenant (`bypass`) to pick up any workspace's job,
+> but the handler body runs scoped to `job.tenant_id`. See
+> [TENANCY.md](./TENANCY.md).
 
 ## Tuning
 

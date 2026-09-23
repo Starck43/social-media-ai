@@ -19,10 +19,43 @@
 - **Мониторинг активности** в VK и Telegram по выбранным источникам (пользователи, группы, чаты, каналы)
 - **AI-анализ контента** - определение тем, настроения, активности без хранения сырых данных
 - **Автоматическое комментирование** через AI-бота в чатах/группах где есть права модератора
-- **Ежедневные отчеты** - краткая выжимка активности с рассылкой на email/telegram
-- **Единый интерфейс** для просмотра аналитики всех подключенных соцсетей
+- **Ежедневные отчеты** - краткая выжимка активности с рассылкой на email или в свой канал в telegram/max
+- **Единый интерфейс** для просмотра статистики и аналитики
 
 ## 🏗️ Архитектура
+
+┌─────────────────┐
+│   Scheduler     │ ← Планировщик (Celery Beat/APScheduler)
+└────────┬────────┘
+         │ запускает по расписанию
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│  Collectors     │────▶│  VK/Telegram    │
+│  (парсеры)      │     │  API            │
+└────────┬────────┘     └─────────────────┘
+         │ сырой контент
+         ▼
+┌─────────────────┐
+│  AI Analyzer    │────▶ DeepSeek/GPT API
+│  (анализ)       │
+└────────┬────────┘
+         │ метаданные, темы, sentiment
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│  PostgreSQL     │     │  Bot Executor   │────▶ Комментирование
+│  (аналитика)    │     │  (автоответы)   │
+└────────┬────────┘     └─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Reporter       │────▶ Email/Telegram
+│  (отчеты)       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Streamlit UI   │────▶ Пользователь
+└─────────────────┘
 
 ```mermaid
 graph TB
@@ -36,7 +69,7 @@ graph TB
     G --> C
 ```
 
-For a detailed description of the architecture and project structure, please refer to the [Architecture Documentation](./docs/architecture.md).
+For a detailed description of the architecture and project structure, please refer to the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## 🛠️ Technology Stack
 
@@ -68,7 +101,7 @@ For a detailed description of the architecture and project structure, please ref
 - `bot_scenarios` - сценарии для автоматического комментирования
 - `notifications` - системные уведомления для администраторов
 
-For a complete list of technologies and dependencies, see the [Architecture Documentation](./docs/architecture.md).
+For a complete list of technologies and dependencies, see the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## ⚡ Quick Start
 
@@ -95,7 +128,7 @@ docker-compose up --build
 
 ### Development
 
-For detailed development setup, testing and migration instructions, please refer to the [Development Guide](./docs/architecture.md#development) in our architecture documentation.
+For detailed development setup, testing and migration instructions, please refer to the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## 🔧 Configuration
 
@@ -118,7 +151,7 @@ For detailed development setup, testing and migration instructions, please refer
 
 ### Environment Variables
 
-For a complete list of configuration options and their descriptions, see the [Configuration Section](./docs/architecture.md#configuration) in the architecture documentation.
+For a complete list of configuration options and their descriptions, see the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ### Social Media Setup
 
@@ -137,17 +170,17 @@ For a complete list of configuration options and their descriptions, see the [Co
 
 ## 🚀 Usage
 
-For detailed API documentation and usage examples, please refer to the [API Documentation](./docs/architecture.md#api-endpoints) in our architecture guide.
+For detailed API documentation and usage examples, please refer to the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## 🧪 Development
 
 ### Local Development Setup
 
-For setting up a local development environment, running tests, and contributing to the project, please see the [Development Guide](./docs/architecture.md#development) in our architecture documentation.
+For setting up a local development environment, running tests, and contributing to the project, please see the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## 📁 Project Structure
 
-For a detailed breakdown of the project structure, please refer to the [Project Structure](./docs/architecture.md#project-structure) section in the architecture documentation.
+For a detailed breakdown of the project structure, please refer to the [Documentation Index](./docs/DOCS_INDEX.md).
 
 ## 🤝 Contributing
 

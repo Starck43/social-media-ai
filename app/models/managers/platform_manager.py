@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 
 from .base_manager import BaseManager
+
+from app.utils.enum_helpers import get_enum_value
 
 if TYPE_CHECKING:
 	from ..platform import Platform
@@ -67,7 +69,7 @@ class PlatformManager(BaseManager['Platform']):
 		if platform_type:
 			qs = qs.filter(platform_type=platform_type)
 		
-		return await qs
+		return list(await qs)
 
 	async def get_by_type(
 		self,
@@ -89,7 +91,7 @@ class PlatformManager(BaseManager['Platform']):
 		if is_active is not None:
 			qs = qs.filter(is_active=is_active)
 		
-		return await qs
+		return list(await qs)
 
 	async def update_rate_limit(
 		self,
@@ -214,16 +216,14 @@ class PlatformManager(BaseManager['Platform']):
 		# Get all platforms (including inactive for complete stats)
 		all_platforms = await self.filter()
 		
-		stats = {
+		stats: dict[str, Any] = {
 			'total': len(all_platforms),
 			'active': len([p for p in all_platforms if p.is_active]),
 			'inactive': len([p for p in all_platforms if not p.is_active]),
 			'by_type': {},
 			'sources_per_platform': {}
 		}
-		
-		from app.utils.enum_helpers import get_enum_value
-		
+
 		for platform in all_platforms:
 			# Count by type
 			type_name = get_enum_value(platform.platform_type)
@@ -252,9 +252,9 @@ class PlatformManager(BaseManager['Platform']):
 		"""
 		# Get platforms with optional active filter
 		if is_active is not None:
-			platforms = await self.filter(is_active=is_active)
+			platforms = list(await self.filter(is_active=is_active))
 		else:
-			platforms = await self.filter()
+			platforms = list(await self.filter())
 		
 		# Filter by name in memory
 		if query:

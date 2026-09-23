@@ -27,7 +27,7 @@ longer depends on them.
 - `migrations/` — Alembic; table creation is Alembic-only, run `alembic upgrade head`
 - `scripts/` — seed-скрипты и утилиты
 - `tests/` — pytest
-- `docs/` — project documentation (committed); index: `docs/DOCS_INDEX.md`, architecture: `docs/architecture.md`, scheduler: `docs/SCHEDULER.md`, digest: `docs/DIGEST.md`
+- `docs/` — project documentation (committed); index: `docs/DOCS_INDEX.md`, scheduler: `docs/SCHEDULER.md`, digest: `docs/DIGEST.md`
 
 ## Conventions
 - Formatting: black + isort, line-length 120 (config in `pyproject.toml`)

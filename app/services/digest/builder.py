@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 
 from app.core.config import settings
 from app.services.ai.llm_client import LLMClientFactory
@@ -45,9 +45,10 @@ def period_bounds(period: str, today: date | None = None) -> tuple[date, date]:
     return start, today
 
 
-async def _resolve_model():
-    """Pick LLM model for the digest: AGENT_MODEL by name, else first active text model."""
+async def resolve_model():
+    """Pick LLM model for agent chat + digests: AGENT_MODEL by name, else first active text model."""
     from app.models import LLMModel
+    from app.models.managers.llm_model_manager import LLMModelManager
 
     if settings.AGENT_MODEL:
         model = await LLMModel.objects.select_related("provider").get(name=settings.AGENT_MODEL)
@@ -55,10 +56,14 @@ async def _resolve_model():
             return model
         logger.warning(f"AGENT_MODEL {settings.AGENT_MODEL!r} not found, falling back to any active model")
     try:
-        return await LLMModel.objects.get_model_for_capability("text")
+        return await cast(LLMModelManager, LLMModel.objects).get_model_for_capability("text")
     except Exception as e:
-        logger.error(f"No LLM model available for digest: {e}")
+        logger.error(f"No LLM model available: {e}")
         return None
+
+
+# Backwards-compatible alias for internal callers
+_resolve_model = resolve_model
 
 
 async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
@@ -122,7 +127,7 @@ async def build_and_publish(period: str = "day", schedule_id: int | None = None)
     """
     Build digest for the period and publish to configured digest channels.
 
-    Idempotent per (schedule_id, period) — a sent digest won't be re-sent for
+    Idempotent per (schedule_id, period) — sent digest won't be re-sent for
     the same schedule+period. Manual runs (schedule_id=None) always send.
 
     Raises DigestDeliveryError when the digest was built but not delivered
@@ -146,6 +151,8 @@ async def build_and_publish(period: str = "day", schedule_id: int | None = None)
         period_end=end,
         channel=channel,
     )
+    if run is None:
+        return {"status": "failed", "error": "Could not create digest run"}
 
     try:
         data, _start, _end = await aggregate(period)
@@ -155,7 +162,6 @@ async def build_and_publish(period: str = "day", schedule_id: int | None = None)
 
         results = await broadcast_digest(text)
         if not results:
-            # Config problem, not a transient failure — retrying won't help.
             await runs.update_by_id(run.id, status="skipped", content=text, error="No digest channels configured")
             return {"status": "skipped", "reason": "no_channels", "text": text}
 
@@ -163,13 +169,16 @@ async def build_and_publish(period: str = "day", schedule_id: int | None = None)
         message_id = next((str(r.get("message_id")) for r in results.values() if r.get("message_id")), None)
         errors = [f"{k}: {r.get('error')}" for k, r in results.items() if not r.get("success")]
 
-        run = await runs.update_by_id(
+        updated = await runs.update_by_id(
             run.id,
             status="sent" if ok else "failed",
             message_id=message_id,
             content=text,
             error="\n".join(errors) or None,
         )
+        if not updated:
+            return {"status": "failed", "error": "Digest run not found after update"}
+        run = updated
     except DigestDeliveryError:
         raise
     except Exception as e:

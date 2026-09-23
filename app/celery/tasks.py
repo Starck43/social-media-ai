@@ -70,7 +70,7 @@ async def analyze_source_content(source_id: int):
 	source = await Source.objects.get(id=source_id)
 	if not source:
 		logger.error(f"Source {source_id} not found")
-		return
+		return None
 
 	collector = ContentCollector()
 

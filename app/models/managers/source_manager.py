@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, UTC
-from typing import Optional, TYPE_CHECKING, Any
+from datetime import datetime, timedelta, timezone
+from typing import Optional, TYPE_CHECKING, Any, cast
 
-from .base_manager import BaseManager
+from .base_manager import BaseManager, QuerySet
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.utils.enum_helpers import get_enum_value
 
 if TYPE_CHECKING:
     from ..source import Source, SourceUserRelationship
     from app.types import SourceType
 
 
-class SourceManager(BaseManager):
+class SourceManager(BaseManager["Source"]):
     """
     Manager for Source model with specialized methods for social media monitoring.
 
@@ -60,14 +63,10 @@ class SourceManager(BaseManager):
 
         # Extract platform data - only include fields that exist on Platform model
         platform = source.platform
-        platform_data = {
+        platform_data: dict[str, Any] = {
             'id': platform.id,
             'name': platform.name,
-            'platform_type': (
-                platform.platform_type.value
-                if hasattr(platform.platform_type, 'value')
-                else str(platform.platform_type)
-            ),
+            'platform_type': get_enum_value(platform.platform_type),
             'is_active': platform.is_active,
         }
 
@@ -78,7 +77,7 @@ class SourceManager(BaseManager):
             platform_data['rate_limit_reset_at'] = platform.rate_limit_reset_at
 
         return source, platform_data
-            
+
     async def get_active_sources(
         self, platform_id: Optional[int] = None, source_type: Optional["SourceType"] = None
     ) -> list["Source"]:
@@ -100,7 +99,7 @@ class SourceManager(BaseManager):
         if source_type:
             qs = qs.filter(source_type=source_type)
 
-        return await qs
+        return list(await qs)
 
     async def get_sources_for_monitoring(
         self, hours_since_check: int = 24, platform_id: Optional[int] = None
@@ -115,7 +114,7 @@ class SourceManager(BaseManager):
         Returns:
                 List of Source objects needing monitoring
         """
-        cutoff_time = datetime.now(UTC) - timedelta(hours=hours_since_check)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_since_check)
 
         qs = self.filter(is_active=True)
 
@@ -125,7 +124,7 @@ class SourceManager(BaseManager):
         # Get sources that were never checked or checked before cutoff
         sources = await qs
 
-        return [s for s in sources if s.last_checked is None or s.last_checked <= cutoff_time]
+        return [s for s in sources if s.last_checked is None or cast(datetime, s.last_checked) <= cutoff_time]
 
     async def get_source_by_platform(self, platform_id: int, external_id: str) -> Optional["Source"]:
         """
@@ -200,7 +199,7 @@ class SourceManager(BaseManager):
 
         # Apply text search
         if query:
-            sources = await qs
+            sources = list(await qs)
             # Filter in memory for now (can be optimized with database LIKE)
             sources = [
                 s
@@ -208,7 +207,7 @@ class SourceManager(BaseManager):
                 if query.lower() in (s.name or "").lower() or query.lower() in (s.external_id or "").lower()
             ]
         else:
-            sources = await qs
+            sources = list(await qs)
 
         # Apply filters
         if platform_id:
@@ -239,7 +238,7 @@ class SourceManager(BaseManager):
         if platform_id:
             qs = qs.filter(platform_id=platform_id)
 
-        return await qs
+        return list(await qs)
 
     async def get_with_monitored_users(self, source_id: int) -> Optional["Source"]:
         """
@@ -281,7 +280,7 @@ class SourceManager(BaseManager):
         if is_active is not None:
             qs = qs.filter(is_active=is_active)
 
-        return await qs
+        return list(await qs)
 
     async def assign_scenario(self, source_id: int, scenario_id: Optional[int]) -> Optional["Source"]:
         """
@@ -309,10 +308,10 @@ class SourceManager(BaseManager):
         """
         if timestamp is None:
             # Ensure timezone-aware datetime
-            timestamp = datetime.now(UTC)
+            timestamp = datetime.now(timezone.utc)
         elif timestamp.tzinfo is None:
             # Add UTC timezone if naive
-            timestamp = timestamp.replace(tzinfo=UTC)
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
 
         return await self.update_by_id(source_id, last_checked=timestamp)
 
@@ -325,7 +324,7 @@ class SourceManager(BaseManager):
         """
         all_sources = await self.filter()
 
-        stats = {
+        stats: dict[str, Any] = {
             "total": len(all_sources),
             "active": len([s for s in all_sources if s.is_active]),
             "inactive": len([s for s in all_sources if not s.is_active]),
@@ -335,9 +334,6 @@ class SourceManager(BaseManager):
             "with_scenario": len([s for s in all_sources if s.bot_scenario_id is not None]),
         }
 
-        # Count by source type
-        from app.utils.enum_helpers import get_enum_value
-        
         for source in all_sources:
             type_name = get_enum_value(source.source_type)
             stats["by_type"][type_name] = stats["by_type"].get(type_name, 0) + 1
@@ -346,15 +342,19 @@ class SourceManager(BaseManager):
         return stats
 
 
-class SourceUserRelationshipManager(BaseManager):
+class SourceUserRelationshipManager(BaseManager["SourceUserRelationship"]):
     """
     Manager for SourceUserRelationship model.
     Handles relationships between sources and users for monitoring.
     """
 
-    def get_queryset(self):
+    def __init__(self):
+        from ..source import SourceUserRelationship
+        super().__init__(SourceUserRelationship)
+
+    def get_queryset(self, session: AsyncSession | None = None) -> QuerySet["SourceUserRelationship"]:
         """Return base queryset for SourceUserRelationship."""
-        return super().get_queryset()
+        return super().get_queryset(session)
 
     async def get_by_source_and_user(self, source_id: int, user_id: int) -> "SourceUserRelationship | None":
         """Get relationship by source and user IDs."""
@@ -362,8 +362,8 @@ class SourceUserRelationshipManager(BaseManager):
 
     async def get_monitored_users_for_source(self, source_id: int) -> list["SourceUserRelationship"]:
         """Get all users monitored by a specific source."""
-        return await self.get_queryset().filter(source_id=source_id).all()
+        return list(await self.get_queryset().filter(source_id=source_id).all())
 
     async def get_sources_tracking_user(self, user_id: int) -> list["SourceUserRelationship"]:
         """Get all sources that track a specific user."""
-        return await self.get_queryset().filter(user_id=user_id).all()
+        return list(await self.get_queryset().filter(user_id=user_id).all())

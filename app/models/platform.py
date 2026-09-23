@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, text
+from sqlalchemy import JSON, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from .base import Base
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import PlatformType
-from .base import Base
 
 if TYPE_CHECKING:
     from . import Source

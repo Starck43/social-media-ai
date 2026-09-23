@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from ..digest_run import DigestRun
 
 
-class DigestRunManager(BaseManager):
+class DigestRunManager(BaseManager["DigestRun"]):
     """Manager for digest runs: idempotency per (schedule, period)."""
 
     def __init__(self):
@@ -39,7 +39,7 @@ class DigestRunManager(BaseManager):
         period_start: date,
         period_end: date,
         channel: str = "auto",
-    ) -> "DigestRun":
+    ) -> Optional["DigestRun"]:
         """Return the run row for (schedule, period), creating it when missing.
 
         Reusing the row instead of inserting a new one keeps the unique
@@ -56,7 +56,11 @@ class DigestRunManager(BaseManager):
             )
             if existing is not None:
                 return await self.update_by_id(
-                    existing.id, status="pending", channel=channel, message_id=None, error=None
+                    existing.id,
+                    status="pending",
+                    channel=channel,
+                    message_id=None,
+                    error=None
                 )
 
         return await self.create(

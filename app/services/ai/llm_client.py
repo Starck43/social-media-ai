@@ -88,8 +88,7 @@ class LLMClient(ABC):
 					model_config = {}
 			merged.update(model_config)
 
-		# Clean string values and remove None values
-		cleaned_config = {}
+		cleaned_config: dict[str, Any] = {}
 		for k, v in merged.items():
 			if v is None:
 				continue
@@ -198,6 +197,30 @@ class LLMClient(ABC):
 		"""
 		pass
 
+	async def chat(
+			self,
+			messages: list[dict[str, Any]],
+			tools: Optional[list[dict[str, Any]]] = None,
+			**kwargs
+	) -> dict[str, Any]:
+		"""
+		Multi-turn chat completion with optional tool calling.
+
+		Distinct from `analyze()`: no JSON-mode forcing, plain conversation in,
+		and the model may answer with tool calls instead of text.
+
+		Args:
+			messages: OpenAI-style messages ([{role, content}, ...])
+			tools: OpenAI-style function/tool schemas the model may call
+			**kwargs: provider-specific overrides (temperature, max_tokens, ...)
+
+		Returns:
+			{"content": str | None,
+			"tool_calls": [{"id", "name", "arguments": dict}],
+			"usage": {...}, "raw": {...}}
+		"""
+		raise NotImplementedError(f"chat() is not supported by {type(self).__name__}")
+
 
 class OpenAIClient(LLMClient):
 	"""LLM client for OpenAI API (GPT-4 Vision, etc.)."""
@@ -218,7 +241,7 @@ class OpenAIClient(LLMClient):
 
 		payload = self._prepare_request(prompt, media_urls, **kwargs)
 
-		# Уменьшаем таймаут для избежания долгих ожиданий
+		# Уменьшаем тайм-аут для избежания долгих ожиданий
 		timeout = min(self.config.get("timeout", 90.0), 60.0)  # Максимум 60 секунд
 
 		safe_payload = {
@@ -284,6 +307,94 @@ class OpenAIClient(LLMClient):
 				"parsed": {"analysis": f"Error: {str(e)}"}
 			}
 
+	async def chat(
+			self,
+			messages: list[dict[str, Any]],
+			tools: Optional[list[dict[str, Any]]] = None,
+			**kwargs
+	) -> dict[str, Any]:
+		"""
+		Multi-turn chat completion with optional tool calling (OpenAI-style).
+
+		Unlike `analyze()` there is no JSON-mode forcing and no system prompt
+		injection — the caller owns the full message history.
+
+		Args:
+			messages: OpenAI-style messages ([{role, content}, ...])
+			tools: OpenAI-style function/tool schemas the model may call
+			**kwargs: payload overrides (temperature, max_tokens, ...)
+
+		Returns:
+			{"content": str | None,
+			"tool_calls": [{"id", "name", "arguments": dict}],
+			"usage": dict, "raw": dict}
+		"""
+		if not self.api_key:
+			raise ValueError(f"API key not configured for {self.provider.name}")
+
+		await self._apply_rate_limit()
+
+		payload: dict[str, Any] = {
+			"model": self.model_name,
+			"messages": messages,
+			"temperature": float(kwargs.pop("temperature", self.config.get("temperature", 0.3))),
+			"max_tokens": int(kwargs.pop("max_tokens", self.config.get("max_tokens", 400))),
+			"stream": False,
+			"timeout": float(self.config.get("timeout", 60.0)),
+		}
+		# Only attach tools when present: some providers reject an empty list.
+		if tools:
+			payload["tools"] = tools
+			payload["tool_choice"] = kwargs.pop("tool_choice", "auto")
+		payload.update(kwargs)
+
+		timeout = min(float(payload.get("timeout", 60.0)), 60.0)
+
+		async with httpx.AsyncClient() as client:
+			response = await client.post(
+				self.api_url,
+				headers={
+					"Authorization": f"Bearer {self.api_key}",
+					"Content-Type": "application/json",
+				},
+				json=payload,
+				timeout=timeout,
+			)
+			if response.status_code != 200:
+				error_detail = f"API returned status {response.status_code}: {response.text}"
+				logger.error(f"chat() API error for {self.provider.name}: {error_detail}")
+				raise httpx.HTTPStatusError(error_detail, request=response.request, response=response)
+
+			data = response.json()
+
+		choice = (data.get("choices") or [{}])[0]
+		message = choice.get("message") or {}
+
+		tool_calls: list[dict[str, Any]] = []
+		for tc in message.get("tool_calls") or []:
+			fn = tc.get("function") or {}
+			raw_args: Any = fn.get("arguments") or "{}"
+			try:
+				arguments: Any = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+			except json.JSONDecodeError:
+				arguments = {"_raw": raw_args}
+			tool_calls.append(
+				{"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": arguments}
+			)
+
+		usage = data.get("usage") or {}
+		return {
+			"content": message.get("content"),
+			"tool_calls": tool_calls,
+			"usage": {
+				"prompt_tokens": usage.get("prompt_tokens", 0),
+				"completion_tokens": usage.get("completion_tokens", 0),
+				"total_tokens": usage.get("total_tokens", 0),
+			},
+			"finish_reason": choice.get("finish_reason"),
+			"raw": data,
+		}
+
 	def _prepare_request(
 			self,
 			prompt: str,
@@ -303,35 +414,22 @@ class OpenAIClient(LLMClient):
 		Returns:
 			Request payload dictionary ready for API call
 		"""
-		messages = []
-		content = prompt
+		messages: list[dict[str, Any]] = []
+		content: str | list[dict[str, Any]] = prompt
 
-		# Add system prompt for consistent behavior
 		system_prompt = self._get_system_prompt(media_urls)
 		messages.append({"role": "system", "content": system_prompt})
 
-		# Build messages array based on content type
 		if media_urls:
-			# Multimodal request with images — construct complex content array
-			content = [{"type": "text", "text": prompt}]
+			media_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
 			for media in media_urls:
-				if media.startswith('data:image/'):
-					# Handle base64-encoded image data
-					content.append({
-						"type": "image_url",
-						"image_url": {"url": media}
-					})
-				else:
-					# Handle regular image URLs
-					content.append({
-						"type": "image_url",
-						"image_url": {"url": media}
-					})
+				media_content.append({"type": "image_url", "image_url": {"url": media}})
+			content = media_content
 
 		messages.append({"role": "user", "content": content})
 
 		# Build final request data with proper type conversion
-		request_data = {
+		request_data: dict[str, Any] = {
 			"model": self.model_name,
 			"messages": messages,
 			"temperature": float(self.config.get("temperature", 0.3)),
@@ -409,15 +507,11 @@ class LLMClientFactory:
 		"sambanova": OpenAIClient,
 	}
 
-	# Unique providers with custom implementations
-	_unique_providers_map = {
-		# "claude": ClaudeNativeClient,  # If using native API
-		# "bedrock": BedrockClient,      # AWS Bedrock
-		# "vertexai": VertexAIClient,    # Google Vertex AI
+	_unique_providers_map: dict[str, type[LLMClient]] = {
 	}
 
 	@classmethod
-	async def create(cls, model: LLMModel = None) -> 'LLMClient':
+	async def create(cls, model: Optional[LLMModel] = None) -> 'LLMClient':
 		"""
 		Factory method to create appropriate client for provider.
 		Detects client type by API URL.
@@ -428,6 +522,9 @@ class LLMClientFactory:
 		Returns:
 			Specific LLMClient implementation
 		"""
+		if model is None:
+			raise ValueError("LLMModel is required")
+		
 		provider = model.provider
 		provider_key = provider.name.lower()
 

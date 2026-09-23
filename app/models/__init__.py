@@ -20,6 +20,11 @@ from .digest_run import DigestRun
 from .job import Job
 from .llm_model import LLMModel
 
+# Agent runtime (import after Base: these modules do `from . import Base`)
+from .agent_memory import AgentMemory
+from .agent_message import AgentMessage
+from .agent_session import AgentSession
+
 # AI models
 from .llm_provider import LLMProvider
 from .model_type import ModelType
@@ -62,6 +67,10 @@ __all__ = [
     "Schedule",
     "Job",
     "DigestRun",
+    # Agent runtime
+    "AgentSession",
+    "AgentMessage",
+    "AgentMemory",
     # Notification models
     "Notification",
 ]

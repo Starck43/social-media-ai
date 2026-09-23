@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     AGENT_HISTORY_LIMIT: int = 20  # messages kept in agent context per session
     AGENT_MAX_ITERATIONS: int = 6  # max tool-call rounds per user message
     AGENT_DAILY_COST_LIMIT: float = 5.0  # USD cap across agent + digests per day
+    AGENT_MAX_TOKENS: int = 1024  # reply size cap for chat (analysis uses LLM_DEFAULT_MAX_TOKENS)
+    AGENT_TEMPERATURE: float = 0.4
 
     # --- Background jobs ---
     JOB_MAX_ATTEMPTS: int = 3

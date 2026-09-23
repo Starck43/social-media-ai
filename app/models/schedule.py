@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text, text
@@ -34,8 +35,8 @@ class Schedule(Base, TimestampMixin):
     # Job payload: {"source_ids": [...], "period": "week", "channel": "telegram", ...}
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
-    next_run_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=True)
-    last_run_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=True)
+    next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str] = Column(String(20), nullable=True)  # ok | failed | skipped
     last_error: Mapped[str] = Column(Text, nullable=True)
 

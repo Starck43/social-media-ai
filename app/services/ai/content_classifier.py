@@ -24,7 +24,7 @@ class ContentClassifier:
 		Returns:
 			Dictionary with keys: MediaType values, each containing relevant items
 		"""
-		classified = {
+		classified: dict[str, list[Any]] = {
 			MediaType.TEXT.db_value: [],
 			MediaType.IMAGE.db_value: [],
 			MediaType.VIDEO.db_value: []
@@ -92,7 +92,7 @@ class ContentClassifier:
 		Returns:
 			Formatted text string
 		"""
-		texts = []
+		texts: list[str] = []
 		step = max(1, len(items) // sample_size)
 		
 		for i in range(0, len(items), step):

@@ -60,7 +60,7 @@ class LLMProviderResolver:
                 "video": ["videos", "reels"]
             }
         """
-        requirements = {
+        requirements: dict[str, list[str]] = {
             "text": [],
             "image": [],
             "video": [],

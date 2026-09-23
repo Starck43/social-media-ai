@@ -24,7 +24,7 @@ def schedule_list():
     from app.models import Schedule
 
     async def _run():
-        rows = await Schedule.objects.order_by(Schedule.id)
+        rows: list[Schedule] = await Schedule.objects.order_by(Schedule.id)  # type: ignore[misc]
         table = Table(title="Schedules")
         for col in ("id", "name", "cron", "job", "active", "next_run_at", "last_status"):
             table.add_column(col)
@@ -114,7 +114,7 @@ def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(
     from app.models import Schedule
 
     async def _run():
-        s = await Schedule.objects.get(name=name)
+        s: Schedule | None = await Schedule.objects.get(name=name)
         if not s:
             rprint("[yellow]Not found[/yellow]")
             raise typer.Exit(1)

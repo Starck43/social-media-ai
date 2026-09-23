@@ -3,19 +3,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.agent_session_manager import AgentSessionManager
 
 
 @app_label("social")
-class AgentSession(Base, TimestampMixin):
+class AgentSession(Base, TenantScopedMixin, TimestampMixin):
     """One conversation with the agent (a private chat or a channel feed).
 
     `state` holds volatile per-chat bookkeeping — most importantly the Telegram
@@ -25,6 +25,7 @@ class AgentSession(Base, TimestampMixin):
     __tablename__ = "agent_sessions"
     __table_args__ = (
         UniqueConstraint("channel", "chat_id", name="uq_agent_session_chat"),
+        Index("ix_agent_sessions_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )
 

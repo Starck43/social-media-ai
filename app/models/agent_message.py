@@ -7,14 +7,14 @@ from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.agent_message_manager import AgentMessageManager
 
 
 @app_label("social")
-class AgentMessage(Base, TimestampMixin):
+class AgentMessage(Base, TenantScopedMixin, TimestampMixin):
     """One turn in an agent conversation: user input, assistant reply, tool result.
 
     Tokens are counted separately per call so cost reporting can tell how much
@@ -26,6 +26,7 @@ class AgentMessage(Base, TimestampMixin):
         # Explicit name: the column-level index=True autogenerates a
         # schema-prefixed name, which would diverge from the migration.
         Index("ix_agent_messages_session_id", "session_id"),
+        Index("ix_agent_messages_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )
 

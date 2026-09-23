@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.agent_memory_manager import AgentMemoryManager
 
 
 @app_label("social")
-class AgentMemory(Base, TimestampMixin):
+class AgentMemory(Base, TenantScopedMixin, TimestampMixin):
     """Small key/value scratchpad for the agent (the SOUL.md analogue).
 
     Deliberately not a vector store: the agent needs a handful of durable
@@ -23,7 +23,10 @@ class AgentMemory(Base, TimestampMixin):
 
     __tablename__ = "agent_memory"
     __table_args__ = (
-        UniqueConstraint("scope", "key", name="uq_agent_memory_scope_key"),
+        # Scoped by tenant: two workspaces may both store "digest_tone", and
+        # `scope` only groups facts inside one workspace.
+        UniqueConstraint("tenant_id", "scope", "key", name="uq_agent_memory_tenant_scope_key"),
+        Index("ix_agent_memory_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )
 

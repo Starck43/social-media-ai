@@ -7,18 +7,19 @@ from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.job_manager import JobManager
 
 
 @app_label("social")
-class Job(Base, TimestampMixin):
+class Job(Base, TenantScopedMixin, TimestampMixin):
     """Queued background job claimed by the worker (DB-backed queue, no Redis)."""
 
     __tablename__ = "jobs"
     __table_args__ = (
+        Index("ix_jobs_tenant_id", "tenant_id"),
         Index("idx_jobs_status_run_at", "status", "run_at"),
         Index("idx_jobs_schedule_id", "schedule_id"),
         {"schema": settings.DB_SCHEMA},

@@ -3,24 +3,25 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.digest_run_manager import DigestRunManager
 
 
 @app_label("social")
-class DigestRun(Base, TimestampMixin):
+class DigestRun(Base, TenantScopedMixin, TimestampMixin):
     """One digest build+delivery attempt (audit + idempotency per period)."""
 
     __tablename__ = "digest_runs"
     __table_args__ = (
         UniqueConstraint("schedule_id", "period_start", "period_end", name="uq_digest_schedule_period"),
+        Index("ix_digest_runs_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )
 

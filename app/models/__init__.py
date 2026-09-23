@@ -14,7 +14,7 @@ from __future__ import annotations
 from .ai_analytics import AIAnalytics
 
 # Core models
-from .base import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 from .bot_scenario import BotScenario
 from .digest_run import DigestRun
 from .job import Job
@@ -35,6 +35,15 @@ from .notification import Notification
 # Import all models to ensure they are registered with SQLAlchemy
 from .permission import Permission
 
+# Multi-tenant core
+from .tenant import (
+    Tenant,
+    TenantChannel,
+    TenantCredential,
+    TenantInvite,
+    TenantUser,
+)
+
 # Social monitoring models
 from .platform import Platform
 from .role import Role
@@ -48,11 +57,18 @@ __all__ = [
     # Base classes
     "Base",
     "TimestampMixin",
+    "TenantScopedMixin",
     # Core models
     "ModelType",
     "Permission",
     "Role",
     "User",
+    # Multi-tenant
+    "Tenant",
+    "TenantUser",
+    "TenantInvite",
+    "TenantChannel",
+    "TenantCredential",
     # Social monitoring models
     "Platform",
     "Source",

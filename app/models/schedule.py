@@ -3,29 +3,32 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from . import Base, TimestampMixin
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.schedule_manager import ScheduleManager
 
 
 @app_label("social")
-class Schedule(Base, TimestampMixin):
+class Schedule(Base, TenantScopedMixin, TimestampMixin):
     """Cron-based schedule that enqueues background jobs (M1: collect/prune/digest stubs)."""
 
     __tablename__ = "schedules"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_schedule_tenant_name"),
+        Index("ix_schedules_tenant_id", "tenant_id"),
         Index("idx_schedules_next_run_at", "next_run_at"),
         {"schema": settings.DB_SCHEMA},
     )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
-    name: Mapped[str] = Column(String(100), unique=True, nullable=False)
+    name: Mapped[str] = Column(String(100), nullable=False)
+
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
     timezone: Mapped[str] = Column(
         String(64), nullable=False, default=settings.SCHEDULER_TIMEZONE, server_default="Europe/Moscow"

@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
     MAX_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
 
+    # --- Tenancy ---
+    # Shared bot model: clients bind their chats via invite codes
+    # (/start <code>); chats are resolved to tenants from the DB.
+    CREDENTIALS_KEY: Optional[str] = None  # Fernet key for tenant secrets
+    DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
+
     # --- Scheduler ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30

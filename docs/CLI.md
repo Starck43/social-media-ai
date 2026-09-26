@@ -16,39 +16,40 @@ Tenant-scoped rows cannot be read or written without a scope.
 
 | Command | Description |
 |---|---|
-| `schedule` | Manage cron schedules |
+| `task` | Manage agent tasks (cron) |
 | `digest` | Digest operations |
 | `credentials` | Manage platform credentials (tenant vault) |
 | `roles` | Manage roles and permissions |
-| `scenarios` | Manage bot scenarios |
+| `scenarios` | Manage agent scenarios |
 
 ---
 
-## Schedule
+## Task
 
-Manage cron schedules that drive the scheduler runner.
+Manage the cron tasks that drive the scheduler runner. Tasks are rows in the
+`agent_tasks` table.
 
-### List Schedules
+### List Tasks
 
 ```bash
-python -m cli.main schedule list
+python -m cli.main task list
 ```
 
-Displays all schedules in a table: `id`, `name`, `cron`, `job`, `active`,
+Displays all tasks in a table: `id`, `name`, `cron`, `job`, `active`,
 `next_run_at`, `last_status`.
 
-### Add Schedule
+### Add Task
 
 ```bash
-python -m cli.main schedule add <name> <cron_expr> <job_type> [options]
+python -m cli.main task add <name> <cron_expr> <job_type> [options]
 ```
 
 **Arguments:**
 | Arg | Description |
 |---|---|
-| `name` | Unique schedule name |
+| `name` | Unique task name |
 | `cron` | Cron expression, e.g. `0 9 * * *` |
-| `job_type` | One of: `collect`, `digest`, `prune` — the CLI validates against this list. `analyze`, `learn` and `reflect` are registered handlers (`app/jobs/handlers.py`) but are not accepted here yet, so their schedules have to be inserted into `schedules` directly |
+| `job_type` | One of the registered handlers in `app/jobs/handlers.py::HANDLERS`: `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` — the CLI validates against this list |
 
 **Options:**
 | Option | Default | Description |
@@ -58,29 +59,29 @@ python -m cli.main schedule add <name> <cron_expr> <job_type> [options]
 **Examples:**
 ```bash
 # Hourly collection
-python -m cli.main schedule add hourly-collect "0 * * * *" collect
+python -m cli.main task add hourly-collect "0 * * * *" collect
 
 # Daily digest at 9 AM
-python -m cli.main schedule add daily-digest "0 9 * * *" digest
+python -m cli.main task add daily-digest "0 9 * * *" digest
 
 # Weekly digest on Mondays
-python -m cli.main schedule add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
+python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 
-# Analyze (writes to bot_actions ledger) — not accepted by the CLI yet;
-# insert the row into `schedules` directly until the allowlist is widened.
+# Analyze (writes to bot_actions ledger)
+python -m cli.main task add daily-analyze "0 2 * * *" analyze
 ```
 
-### Remove Schedule
+### Remove Task
 
 ```bash
-python -m cli.main schedule remove <name>
+python -m cli.main task remove <name>
 ```
 
-### Pause / Resume Schedule
+### Pause / Resume Task
 
 ```bash
-python -m cli.main schedule pause <name>       # pause
-python -m cli.main schedule pause <name> --resume  # resume
+python -m cli.main task pause <name>       # pause
+python -m cli.main task pause <name> --resume  # resume
 ```
 
 ---
@@ -110,7 +111,7 @@ python -m cli.main digest send-now week
 ```
 
 Manual runs are **not idempotent** — useful for testing channel setup without
-waiting for a schedule.
+waiting for a task.
 
 ---
 
@@ -328,7 +329,7 @@ Every CLI command goes through `_run_platform()`, which wraps execution in
 `tenant_scope(bypass=True)`. This means:
 
 1. The CLI always has superuser-level access to all tenant data.
-2. Tenant-scoped operations (credentials, schedules, etc.) work without
+2. Tenant-scoped operations (credentials, agent tasks, etc.) work without
    explicitly setting a tenant context.
 3. The `--tenant` option is used to scope operations to a specific workspace
    when needed.

@@ -6,11 +6,11 @@ for every channel; channels differ only in transport rules.
 
 ## Pipeline
 
-`app/services/digest/builder.py::build_and_publish(period, schedule_id)`
+`app/services/digest/builder.py::build_and_publish(period, agent_task_id)`
 
 1. `period_bounds(period)` → inclusive `(start, end)` dates ending today.
 2. Idempotency short-circuit: if a `digest_runs` row for the same
-   `(schedule_id, period_start, period_end)` already has status `sent`, return
+   `(agent_task_id, period_start, period_end)` already has status `sent`, return
    `{"status": "skipped", "reason": "already_sent"}`.
 3. `aggregate()` extracts sentiment distribution, top topics, content mix,
    engagement and LLM cost from `ReportAggregator`.
@@ -23,12 +23,12 @@ for every channel; channels differ only in transport rules.
 ## Idempotency
 
 `digest_runs` has a unique index on
-`(schedule_id, period_start, period_end)`, so a scheduled digest is sent **once
+`(agent_task_id, period_start, period_end)`, so a scheduled digest is sent **once
 per period**. Two consequences worth knowing:
 
 - Retries reuse the existing row (`DigestRunManager.start_run()`) instead of
   inserting a duplicate — a re-attempt cannot violate the unique index.
-- `schedule_id IS NULL` rows (manual `digest send-now`) never collide, so manual
+- `agent_task_id IS NULL` rows (manual `digest send-now`) never collide, so manual
   runs are unlimited and each is kept as separate history.
 
 ## Delivery failures are retryable

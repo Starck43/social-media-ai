@@ -70,7 +70,7 @@
 
 Ключевые решения:
 
-- **Без Celery и Redis в runtime.** Очередь задач и cron реализованы на PostgreSQL (`schedules` + `jobs` +
+- **Без Celery и Redis в runtime.** Очередь задач и cron реализованы на PostgreSQL (`agent_tasks` + `jobs` +
   `SELECT ... FOR UPDATE SKIP LOCKED`). Один VPS, один оператор — лишние сущности не нужны.
 - **Long polling для мессенджеров.** Публичный URL, домен и TLS-сертификат не требуются — бот опрашивает `getUpdates` /
   `GET /updates`.
@@ -116,7 +116,7 @@
 |----------------------------------------------------|-------------------------------------------|
 | `tenants`, `tenant_users`, `tenant_channels`       | workspace-ы и привязка чатов              |
 | `sources`                                          | источники мониторинга (tenant-scoped)     |
-| `schedules`, `jobs`                                | cron-расписания и очередь задач           |
+| `agent_tasks`, `jobs`                              | cron-расписания и очередь задач           |
 | `ai_analytics`                                     | результаты AI-анализа + токены/стоимость  |
 | `agent_sessions`, `agent_messages`, `agent_memory` | диалог и память агента                    |
 | `digest_runs`                                      | идемпотентная история отправок дайджестов |
@@ -196,7 +196,7 @@ python -m app.runtime
 
 ```bash
 python -m cli.main digest send-now day     # разовая отправка
-python -m cli.main schedule add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
+python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 ```
 
 Или настроить через чат с агентом (он подтвердит опасные действия).
@@ -237,15 +237,15 @@ python -m cli.main schedule add weekly-digest "0 9 * * 1" digest -p '{"period": 
 
 - `/help` — список команд
 - `/stop` — очистить историю диалога
-- Обычные сообщения — агент использует инструменты: `sources_list`, `schedule_add`, `collect_now`, `report_period`, `memory_set`/`memory_get`, `digest_send_now` и др.
+- Обычные сообщения — агент использует инструменты: `sources_list`, `task_add`, `collect_now`, `report_period`, `memory_set`/`memory_get`, `digest_send_now` и др.
 - Опасные действия — складываются в `pending_confirmation`, ждут явного «да»/«нет».
 
 ### CLI
 
 ```bash
-python -m cli.main schedule list
-python -m cli.main schedule add hourly-collect "0 * * * *" collect -p '{"source_id": 1}'
-python -m cli.main schedule pause weekly-digest
+python -m cli.main task list
+python -m cli.main task add hourly-collect "0 * * * *" collect -p '{"source_id": 1}'
+python -m cli.main task pause weekly-digest
 python -m cli.main digest send-now day
 ```
 

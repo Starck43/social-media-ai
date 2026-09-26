@@ -25,7 +25,7 @@ messenger message
 | `app/agent/learning.py` | `run_learn` (факты из чата, watermark), `run_reflect` (гигиена памяти) |
 | `app/agent/session.py` | Загрузка/нормализация истории для LLM |
 | `app/agent/tools.py` | Реестр инструментов, OpenAI-схемы, диспетчеризация |
-| `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `schedule`, `reports`, `tasks`, `actions`, `scenarios` |
+| `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `tasks`, `reports`, `actions`, `scenarios` |
 | `app/models/agent_session.py` | Одна строка на (channel, chat_id); volatile `state` |
 | `app/models/agent_message.py` | Транскрипт диалога (user/assistant/tool) + токены/стоимость |
 | `app/models/agent_feedback.py` | Оценки `/good`,`/bad` (vote, note, сообщение-основание) |
@@ -37,12 +37,12 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-Запись/отправка (`confirm=True`): `schedule_add/remove/pause`, `source_add/disable`,
-`digest_send_now`, `task_run`, `action_send`, `task_prompt_set`, `scenario_assign`. Их модель не
+Запись/отправка (`confirm=True`): `task_add/remove/pause`, `source_add/disable`,
+`digest_send_now`, `action_send`, `scenario_assign`. Их модель не
 выполняет сама — runtime кладёт вызов в `session.state['pending_confirmation']`
 и ждёт явного «да»/«нет» от владельца.
 
-Чтение/эйфемерные: `collect_now`, `sources_list`, `schedule_list`,
+Чтение/эфемерные: `collect_now`, `sources_list`, `scenario_list`,
 `report_period`, `system_status`, `memory_get/set`, `task_list`, `actions_log`.
 
 ## Команды чата
@@ -72,17 +72,18 @@ OpenAI function calling.
   накопилось `min_messages` (default 8) новых user-реплик — иначе дешёвый skip.
 - `reflect` (`run_reflect`) — еженедельная гигиена: сливает
   дубли, чистит устаревшее, понижает `confidence` спорного; из `/bad`-заметок
-  готовит **предложение** правки промптов (`prompt_advice`), но сам
-  `task_templates` не трогает.
+  готовит **предложение** правки промптов (`prompt_advice`) — применяется
+  вручную, автоматической точки правки нет.
 
 Дефолтные cron для обоих заданы в `app/scheduler/bootstrap.py`
-(`DEFAULT_SCHEDULES`) — там и смотреть актуальные значения.
+(`DEFAULT_TASKS`) — там и смотреть актуальные значения.
 
-`task_prompt_set` (confirm-gated инструмент) — единственная точка правки
-промпта задачи: глобальный шаблон копируется в workspace и получает
-`revision += 1` (аудит). Изменения применяются со следующего `task_run`.
-
-Эволюция промптов **не происходит** автоматически: только через подтверждение владельца.
+Промпты агента живут в `AgentScenario` (`text_prompt` и модальные варианты
+`image/video/audio/unified_summary_prompt`). Правка — через
+`PUT /api/v1/ai/scenarios/{id}` или админку (`AgentScenarioAdmin`);
+изменение подхватывается со следующего запуска задачи (сценарий читается
+на каждый run). Автоматическая эволюция промптов **не происходит**:
+`prompt_advice` из `reflect` владелец применяет сам.
 
 ## Лимиты и стоимость
 

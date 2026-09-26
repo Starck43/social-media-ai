@@ -7,7 +7,7 @@
 ## Справочники
 
 - **[API Reference](./API.md)** - Все REST endpoints, схемы запросов/ответов, аутентификация
-- **[CLI Reference](./CLI.md)** - Все команды CLI (schedule, digest, credentials, roles)
+- **[CLI Reference](./CLI.md)** - Все команды CLI (task, digest, credentials, roles)
 - **[Admin Panel](./ADMIN.md)** - sqladmin страницы, кастомные actions, auth, CSRF
 - **[Data Models](./MODELS.md)** - Все таблицы, поля, связи, ER-диаграмма
 - **[Configuration](./CONFIGURATION.md)** - Полный список env vars, .env.example, генерация ключей

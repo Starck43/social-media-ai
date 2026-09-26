@@ -33,7 +33,7 @@ prompt = PromptBuilder.get_unified_summary_prompt(
 ```
 
 ## Custom prompts in Admin
-`BotScenarioAdmin` fields (see `app/admin/views.py`) include specific per-media prompt fields:
+`AgentScenarioAdmin` fields (see `app/admin/views.py`) include specific per-media prompt fields:
 - `text_prompt`, `image_prompt`, `video_prompt`, `audio_prompt`, `unified_summary_prompt`
 Each has help text and textarea sizing via `form_widget_args`.
 

@@ -854,9 +854,8 @@ The sqladmin panel provides a web UI for managing all database entities.
 
 **Base URL:** `http://localhost:8000/admin`
 
-**Pages:** User, Role, Permission, Source, BotScenario, Schedule, Job,
-DigestRun, AIAnalytics, LLMProvider, LLMModel, Tenant, TenantChannel,
-AgentSession, AgentMessage, AgentMemory, AgentFeedback, Notification, and more.
+**Pages:** User, Role, Permission, Platform, Source, AgentScenario, BotAction,
+AIAnalytics, Notification, LLMProvider, LLMModel, and TenantCredential.
 
 ### Password Reset
 

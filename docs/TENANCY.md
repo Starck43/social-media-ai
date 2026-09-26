@@ -27,18 +27,11 @@ client workspace. A chat is bound to exactly one tenant, and every data row
 | `tenant_invites` | global | Invite codes (hashed); `redeem()` checks expiry/uses. |
 | `tenant_channels` | global | Chat→tenant binding; unique per `(channel, chat_id)`. |
 | `tenant_credentials` | global | Per-tenant secrets, encrypted at rest with Fernet. |
-| `sources`, `schedules`, `jobs`, `digest_runs`, `ai_analytics`, `bot_scenarios`, `bot_actions`, `notifications`, `agent_sessions`, `agent_messages`, `agent_feedback`, `agent_memory` | tenant | Every `TenantScopedMixin` model. |
+| `sources`, `agent_tasks`, `jobs`, `digest_runs`, `ai_analytics`, `agent_scenarios`, `bot_actions`, `notifications`, `agent_sessions`, `agent_messages`, `agent_feedback`, `agent_memory` | tenant | Every `TenantScopedMixin` model. |
 
 **Global tables** (never tenant-scoped): `Platform`, `LLMProvider`, `LLMModel`,
 `ModelType`, `Permission`, `Role`, `User` — plus the tenancy tables themselves
 (because they are resolved *before* a tenant context exists).
-
-**One deliberate exception**: `task_templates` is a hybrid — `tenant_id` is
-nullable, and `TaskTemplateManager.resolve()` walks workspace template → global
-template → code default. The admin UI edits the shared contract; a workspace
-may shadow it by slug. That is why this model does *not* use
-`TenantScopedMixin`: the scope is an explicit argument, not the ambient
-context (see `docs/AGENT.md`).
 
 ## Routing
 

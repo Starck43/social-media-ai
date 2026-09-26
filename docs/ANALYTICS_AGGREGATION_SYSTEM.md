@@ -41,7 +41,7 @@
 │  - GET /analytics/aggregate/engagement                     │
 │                                                             │
 │ Admin Widgets (TODO):                                      │
-│  - Sentiment trends cards на BotScenario/Source pages     │
+│  - Sentiment trends cards на AgentScenario/Source pages   │
 │  - Top topics списки                                        │
 │  - LLM cost dashboard                                      │
 └─────────────────────────────────────────────────────────────┘
@@ -327,10 +327,10 @@ engagement = await aggregator.get_engagement_metrics(source_id=1, days=7)
 
 ### 1. Admin Widgets (TODO)
 
-**BotScenarioAdmin:**
+**AgentScenarioAdmin:**
 ```python
 # В app/admin/views.py
-class BotScenarioAdmin(BaseAdmin):
+class AgentScenarioAdmin(BaseAdmin):
     # Добавить виджеты на detail page:
     # - Sentiment trend chart (last 7 days)
     # - Top 5 topics table

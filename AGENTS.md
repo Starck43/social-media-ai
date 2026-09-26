@@ -130,7 +130,7 @@ rolls this up per provider/model for the digest and the dashboard. See
 - Run runtime: `python -m app.runtime` (from repo root — `app.main` uses cwd-relative paths)
 - Run worker only: `python -m app.worker`
 - Run API (optional): `uvicorn app.main:app`
-- Schedules: `python -m cli.main schedule list|add|remove|pause`
+- Agent tasks: `python -m cli.main task list|add|remove|pause`
 - Digest now: `python -m cli.main digest send-now day|week`
 - Credentials: `python -m cli.main credentials set|list|test|disable`
 - Tests: `pytest` (from project root)

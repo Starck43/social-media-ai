@@ -353,7 +353,7 @@ journalctl -u smm-ai -f
 docker compose logs -f app
 
 # Check scheduler status
-python -m cli.main schedule list
+python -m cli.main task list
 
 # Check job queue
 # Query jobs table directly
@@ -415,8 +415,8 @@ psql "$POSTGRES_URL" -c "SELECT 1"
 # Check if scheduler is enabled
 grep SCHEDULER_ENABLED .env
 
-# Check schedules
-python -m cli.main schedule list
+# Check tasks
+python -m cli.main task list
 
 # Check job queue
 # Query: SELECT * FROM jobs WHERE status = 'pending' ORDER BY run_at;
@@ -464,7 +464,7 @@ curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
 - [ ] Admin user created
 - [ ] Platform credentials set up (`credentials set`)
 - [ ] Sources configured
-- [ ] Schedules created (`schedule add`)
+- [ ] Tasks created (`task add`)
 - [ ] Service started (systemd or docker compose)
 - [ ] Health check passes
 - [ ] First digest sent successfully (`digest send-now day`)

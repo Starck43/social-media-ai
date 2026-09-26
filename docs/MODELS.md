@@ -296,28 +296,18 @@ Content sources (VK groups, Telegram channels, etc.).
 | `last_item_id` | `String(100)` | Watermark for push-based sources (Telegram) |
 | `date_from` | `DateTime` | Collection start date |
 | `date_to` | `DateTime` | Collection end date |
-| `bot_scenario_id` | `Integer` FK → `bot_scenarios` | Assigned scenario |
+| `user_id` | `Integer` FK → `users` | Owner user (nullable) |
+| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Assigned scenario |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
-**Unique constraint:** `(tenant_id, platform_id, external_id)`
+**Unique constraint:** `(tenant_id, user_id, platform_id, external_id)`
 
-**Relationships:** `platform`, `bot_scenario`, `analytics` (one-to-many), `monitored_users` (self-M2M via `source_user_relationships`)
-
----
-
-### `source_user_relationships`
-
-Many-to-many: sources tracking other user-type sources.
-
-| Column | Type | Description |
-|---|---|---|
-| `source_id` | `Integer` PK, FK | Source doing the tracking |
-| `user_id` | `Integer` PK, FK | Source being tracked |
+**Relationships:** `user` (owner), `platform`, `agent_scenario`, `analytics` (one-to-many)
 
 ---
 
-### `bot_scenarios`
+### `agent_scenarios`
 
 AI analysis contracts per source.
 
@@ -384,19 +374,19 @@ AI analysis results.
 
 ---
 
-### `schedules`
+### `agent_tasks`
 
-Cron schedule definitions.
+Agent cron task definitions.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
-| `name` | `String(100)` | Unique schedule name |
+| `name` | `String(100)` | Unique task name |
 | `cron_expr` | `String(50)` | Cron expression |
-| `timezone` | `String(50)` | Schedule timezone |
+| `timezone` | `String(50)` | Task timezone |
 | `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | Schedule-specific parameters |
+| `payload` | `JSON` | Task-specific parameters |
 | `is_active` | `Boolean` | Active flag |
 | `next_run_at` | `DateTime` | Next scheduled run (UTC) |
 | `last_run_at` | `DateTime` | Last run timestamp |
@@ -417,8 +407,8 @@ Background job queue.
 |---|---|---|
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
-| `schedule_id` | `Integer` FK → `schedules` | Source schedule (nullable for manual) |
-| `job_type` | `String(20)` | Same values as schedules |
+| `agent_task_id` | `Integer` FK → `agent_tasks` | Source agent task (nullable for manual) |
+| `job_type` | `String(20)` | Same values as agent_tasks |
 | `payload` | `JSON` | Job parameters |
 | `status` | `Enum` | `pending`, `running`, `done`, `failed` |
 | `run_at` | `DateTime` | When to run (UTC) |
@@ -442,7 +432,7 @@ Digest delivery history.
 |---|---|---|
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
-| `schedule_id` | `Integer` FK → `schedules` | |
+| `agent_task_id` | `Integer` FK → `agent_tasks` | |
 | `period_start` | `DateTime` | Start of the digest period |
 | `period_end` | `DateTime` | End of the digest period |
 | `status` | `Enum` | `pending`, `sent`, `failed`, `skipped` |
@@ -450,7 +440,7 @@ Digest delivery history.
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
-**Unique constraint:** `(schedule_id, period_start, period_end)`
+**Unique constraint:** `(agent_task_id, period_start, period_end)`
 
 ---
 
@@ -468,30 +458,6 @@ System notifications.
 | `is_read` | `Boolean` | Read status |
 | `related_entity_type` | `String(50)` | Related entity type |
 | `related_entity_id` | `Integer` | Related entity ID |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
----
-
-### `task_templates`
-
-Agent task templates (per-goal contracts).
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `slug` | `String(100)` | Unique task identifier |
-| `purpose` | `String(255)` | Task purpose |
-| `system_prompt` | `Text` | System prompt template |
-| `user_prompt_template` | `Text` | User prompt template |
-| `output_schema` | `JSON` | Expected output schema |
-| `model` | `String(100)` | Preferred LLM model |
-| `temperature` | `Float` | Model temperature |
-| `max_tokens` | `Integer` | Max output tokens |
-| `tools` | `JSON` | Tool allowlist |
-| `requires_confirmation` | `Boolean` | Requires owner approval |
-| `cron_expr` | `String(50)` | Optional cron schedule |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
@@ -586,7 +552,7 @@ Action ledger (audit trail for automated actions).
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
 | `source_id` | `Integer` FK → `sources` | Source that triggered the action |
-| `scenario_id` | `Integer` FK → `bot_scenarios` | Scenario that defined the action |
+| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Scenario that defined the action |
 | `action_type` | `Enum` | Type of action performed |
 | `payload` | `JSON` | Action payload |
 | `status` | `Enum` | `pending`, `sent`, `failed`, `dry_run` |
@@ -608,10 +574,10 @@ Action ledger (audit trail for automated actions).
                │  permissions    │    │ sources  │──┐
                └─────────────────┘    └────┬─────┘  │
                                           │        │
-               ┌──────────────────┐       │  ┌─────┴──────────┐
-               │  bot_scenarios   │<──────┘  │  source_user_  │
-               └────────┬─────────┘          │  relationships │
-                        │                    └────────────────┘
+               ┌──────────────────┐       │
+               │  agent_scenarios │<──────┘
+               └────────┬─────────┘
+                        │
                ┌────────┴─────────┐
                │  ai_analytics    │
                └──────────────────┘
@@ -624,17 +590,16 @@ Action ledger (audit trail for automated actions).
      │     └──────────────────┘     └──────────────────┘
      │
      ├────< sources
-     ├────< bot_scenarios
+     ├────< agent_scenarios
      ├────< ai_analytics
-     ├────< schedules
+     ├────< agent_tasks
      ├────< jobs
      ├────< digest_runs
      ├────< notifications
-     ├────< task_templates
      ├────< agent_sessions
      ├────< agent_messages
      ├────< agent_memory
-     └────< agent_feedback
+     ├────< agent_feedback
      └────< bot_actions
 ```
 

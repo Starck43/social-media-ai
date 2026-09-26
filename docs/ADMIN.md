@@ -75,14 +75,12 @@ The following model pages are available (all under `/admin/<identity>`):
 | Разрешения | `Permission` | 🔑 | Permission entries |
 | Платформа | `Platform` | 🌐 | VK, Telegram, MAX platforms |
 | Источник | `Source` | 📡 | Content sources |
-| Отслеживание пользователя | `SourceUserRelationship` | 👤➜ | User tracking relationships |
-| Сценарий бота | `BotScenario` | 🤖 | AI analysis scenarios |
+| Сценарий агента | `AgentScenario` | 🤖 | AI analysis scenarios |
 | AI Аналитика | `AIAnalytics` | 📊 | AI analysis results |
 | Уведомление | `Notification` | 🔔 | System notifications |
 | Провайдер LLM | `LLMProvider` | 🖥️ | LLM provider config |
 | Модель LLM | `LLMModel` | 💾 | LLM model definitions |
 | Креды платформ | `TenantCredential` | 🔐 | Platform credentials vault |
-| Task Template | `TaskTemplate` | 📋 | Agent task templates |
 
 ---
 
@@ -108,7 +106,7 @@ Each admin page has custom actions available in list and detail views.
 |---|---|
 | **Проверить сейчас** | Collects content from this source in real-time and displays results with stats (likes, comments, views) and pagination. Handles VK privacy errors gracefully. |
 
-### BotScenario
+### AgentScenario
 
 | Action | Description |
 |---|---|

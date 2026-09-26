@@ -24,9 +24,22 @@ async def _cleanup():
         await Job.objects.delete(job_type="digest")
         await AgentTask.objects.delete(name=SCHEDULE_NAME)
 
+    # The suite runs against the real database, so before each test we park
+    # every foreign schedule and clear undrained jobs: otherwise a cron task
+    # that came due while the runtime is down gets counted by runner.tick()
+    # (stats["enqueued"] == 2) and its job is actually executed by drain().
+    foreign = [t.id for t in await AgentTask.objects.all() if t.name != SCHEDULE_NAME and t.is_active]
+    for task_id in foreign:
+        await AgentTask.objects.update_by_id(task_id, is_active=False)
+    await Job.objects.delete(status="pending")
+
     await wipe()
-    yield
-    await wipe()
+    try:
+        yield
+    finally:
+        await wipe()
+        for task_id in foreign:
+            await AgentTask.objects.update_by_id(task_id, is_active=True)
 
 
 async def test_dispatcher_passes_agent_task_id_to_handler(monkeypatch):

@@ -83,7 +83,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     3. Run TriggerEvaluator.should_act on already-stored analysis result
     4. If action needed, check guards and create BotAction (dry_run=True by default)
     """
-    from app.models import AIAnalytics, AgentScenario, BotAction, Source
+    from app.models import AgentScenario, AIAnalytics, BotAction, Source
     from app.services.ai.trigger_evaluator import trigger_evaluator
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
@@ -116,18 +116,8 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 scenario = None
 
             if not scenario or not scenario.is_active:
-                # Fallback: try tenant's default scenario
-                from sqlalchemy import select
-
-                async with AgentScenario.objects._session_factory() as db:
-                    result = await db.execute(
-                        select(AgentScenario).where(
-                            AgentScenario.tenant_id == source.tenant_id,
-                            AgentScenario.is_default == True,
-                            AgentScenario.is_active == True,
-                        )
-                    )
-                    scenario = result.scalars().first()
+                # Fallback: tenant's default scenario
+                scenario = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
 
             if not scenario or not scenario.is_active:
                 stats["skipped"] += 1

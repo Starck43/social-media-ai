@@ -6,6 +6,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped
 
+from app.core.database import new_session
+
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
@@ -24,14 +26,27 @@ class AgentScenarioManager(BaseManager):
 
         super().__init__(B)
 
-    async def get_default_scenario(self, db: AsyncSession) -> Optional[AgentScenario]:
+    async def get_default_scenario(
+        self, db: AsyncSession | None = None, *, tenant_id: int | None = None
+    ) -> Optional[AgentScenario]:
         """
-        Retrieve the default scenario for the current tenant.
+        Retrieve the default scenario for the given tenant.
 
         Returns the active scenario marked is_default=True, or None if none exists.
+        Pass ``db`` inside an open session, or ``tenant_id`` to let the method
+        open its own session (callers that do not hold one).
         """
-        result = await db.execute(select(self.model).where(self.model.is_default == True, self.model.is_active == True))
-        return result.scalars().first()
+        stmt = select(self.model).where(self.model.is_default == True, self.model.is_active == True)
+        if tenant_id is not None:
+            stmt = stmt.where(self.model.tenant_id == tenant_id)
+
+        if db is not None:
+            result = await db.execute(stmt)
+            return result.scalars().first()
+
+        async with new_session() as session:
+            result = await session.execute(stmt)
+            return result.scalars().first()
 
     async def get_active_scenarios(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> Sequence[AgentScenario]:
         """

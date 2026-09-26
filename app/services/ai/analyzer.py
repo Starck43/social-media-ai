@@ -101,17 +101,7 @@ class AIAnalyzer:
 
         if not agent_scenario:
             try:
-                from sqlalchemy import select
-
-                async with AgentScenario.objects._session_factory() as db:
-                    result = await db.execute(
-                        select(AgentScenario).where(
-                            AgentScenario.tenant_id == source.tenant_id,
-                            AgentScenario.is_default == True,
-                            AgentScenario.is_active == True,
-                        )
-                    )
-                    default_sc = result.scalars().first()
+                default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
                 if default_sc:
                     agent_scenario = default_sc
                     logger.info(f"No scenario on source {source.id}, using tenant default: {agent_scenario.name}")

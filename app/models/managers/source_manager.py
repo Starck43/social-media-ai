@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
-from .base_manager import BaseManager, QuerySet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.enum_helpers import get_enum_value
 
+from .base_manager import BaseManager, QuerySet
+
 if TYPE_CHECKING:
-    from ..source import Source
     from app.types import SourceType
+
+    from ..source import Source
 
 
 class SourceManager(BaseManager["Source"]):
@@ -26,12 +28,13 @@ class SourceManager(BaseManager["Source"]):
 
     def __init__(self):
         from ..source import Source
+
         super().__init__(Source)
 
     async def get_source_with_platform(
-            self,
-            source_id: Optional[int] = None,
-            external_id: Optional[str] = None,
+        self,
+        source_id: Optional[int] = None,
+        external_id: Optional[str] = None,
     ) -> tuple["Source", dict[str, Any]]:
         """
         Get source with its platform data in a single query using the ORM.
@@ -55,7 +58,7 @@ class SourceManager(BaseManager["Source"]):
             query = query.filter(external_id=external_id)
 
         # Execute the query with platform eager loading
-        source = await query.select_related('platform', 'agent_scenario').first()
+        source = await query.select_related("platform", "agent_scenario").first()
 
         if not source:
             identifier = f"ID {source_id}" if source_id else f"external_id '{external_id}'"
@@ -64,10 +67,10 @@ class SourceManager(BaseManager["Source"]):
         # Extract platform data - only include fields that exist on Platform model
         platform = source.platform
         platform_data: dict[str, Any] = {
-            'id': platform.id,
-            'name': platform.name,
-            'platform_type': get_enum_value(platform.platform_type),
-            'is_active': platform.is_active,
+            "id": platform.id,
+            "name": platform.name,
+            "platform_type": get_enum_value(platform.platform_type),
+            "is_active": platform.is_active,
         }
 
         return source, platform_data
@@ -234,21 +237,6 @@ class SourceManager(BaseManager["Source"]):
 
         return list(await qs)
 
-    async def get_with_monitored_users(self, source_id: int) -> Optional["Source"]:
-        """
-        Get source with monitored_users read from params.
-
-        Args:
-                source_id: Source ID
-
-        Returns:
-                Source object with _monitored_usernames attribute
-        """
-        source = await self.filter(id=source_id).first()
-        if source:
-            source._monitored_usernames = source.params.get("monitored_users", [])
-        return source
-
     async def get_with_scenario(self, source_id: int) -> Optional["Source"]:
         """
         Get source with prefetched agent_scenario relationship.
@@ -337,6 +325,3 @@ class SourceManager(BaseManager["Source"]):
             stats["by_platform"][source.platform_id] = stats["by_platform"].get(source.platform_id, 0) + 1
 
         return stats
-
-
-

@@ -75,19 +75,7 @@ async def scenario_assign(source_id: int, scenario_id: int | None = None) -> dic
         }
 
     # scenario_id=None → use default scenario for the tenant
-    from sqlalchemy import select
-
-    from app.core.database import new_session
-
-    async with new_session() as db:
-        result = await db.execute(
-            select(AgentScenario).where(
-                AgentScenario.tenant_id == source.tenant_id,
-                AgentScenario.is_default == True,
-                AgentScenario.is_active == True,
-            )
-        )
-        default_scenario = result.scalars().first()
+    default_scenario = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
 
     await Source.objects.update_by_id(source.id, agent_scenario_id=None)
     if default_scenario:

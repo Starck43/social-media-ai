@@ -8,16 +8,16 @@ from croniter import croniter
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..schedule import Schedule
+    from ..agent_task import AgentTask
 
 
-class ScheduleManager(BaseManager):
-    """Manager for Schedule model: cron validation and next-run computation."""
+class AgentTaskManager(BaseManager):
+    """Manager for AgentTask model: cron validation and next-run computation."""
 
     def __init__(self):
-        from ..schedule import Schedule
+        from ..agent_task import AgentTask
 
-        super().__init__(Schedule)
+        super().__init__(AgentTask)
 
     @staticmethod
     def validate_cron(cron_expr: str) -> bool:
@@ -40,25 +40,25 @@ class ScheduleManager(BaseManager):
         nxt = itr.get_next(datetime)
         return nxt.astimezone(timezone.utc)
 
-    async def get_active(self) -> list["Schedule"]:
-        """All active schedules."""
+    async def get_active(self) -> list["AgentTask"]:
+        """All active tasks."""
         return await self.filter(is_active=True)
 
-    async def get_due(self, now: Optional[datetime] = None) -> list["Schedule"]:
-        """Schedules that are active and due for enqueueing (next_run_at stored in UTC)."""
+    async def get_due(self, now: Optional[datetime] = None) -> list["AgentTask"]:
+        """AgentTasks that are active and due for enqueueing (next_run_at stored in UTC)."""
         now = now or datetime.now(timezone.utc)
         return await self.filter(is_active=True, next_run_at__lte=now)
 
     async def mark_triggered(
         self,
-        schedule_id: int,
+        task_id: int,
         next_run_at: datetime,
         status: str = "ok",
         error: Optional[str] = None,
     ) -> None:
         """Record a trigger: set last_run_at/last_status and advance next_run_at."""
         await self.update_by_id(
-            schedule_id,
+            task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,
             last_error=error,

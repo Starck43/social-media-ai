@@ -1,46 +1,56 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import (
-	Column,
+	JSON,
+	Boolean,
+	DateTime,
+	ForeignKey,
+	Index,
 	Integer,
 	String,
-	DateTime,
-	Boolean,
-	ForeignKey,
-	JSON,
 	UniqueConstraint,
-	Index,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from .base import Base, TenantScopedMixin, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import SourceType
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-	from . import Platform, AIAnalytics, BotScenario
-	from .managers.base_manager import BaseManager
+	from . import AIAnalytics, AgentScenario, Platform
 	from .managers.source_manager import SourceManager
 
 
 @app_label("social")
 class Source(Base, TenantScopedMixin, TimestampMixin):
 	__tablename__ = "sources"
+	if TYPE_CHECKING:
+		from . import User
+
+	# User who owns this source (user-scoped, not just tenant-scoped)
+	user_id: Mapped[int | None] = mapped_column(
+		ForeignKey("social_manager.users.id", ondelete="CASCADE"),
+		nullable=True,
+	)
+	user: Mapped["User | None"] = relationship("User", back_populates="sources")
+
 	__table_args__ = (
 		UniqueConstraint(
 			"tenant_id",
+			"user_id",
 			"platform_id",
 			"external_id",
-			name="uq_source_tenant_platform_external",
+			name="uq_source_tenant_user_platform_external",
 		),
 		Index("ix_sources_tenant_id", "tenant_id"),
 		Index("idx_sources_platform_id", "platform_id"),
 		Index("idx_sources_external_id", "external_id"),
 		Index("idx_sources_last_checked", "last_checked"),
+		Index("idx_sources_user_id", "user_id"),
 		{"schema": settings.DB_SCHEMA},
 	)
 
@@ -57,6 +67,12 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 	params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 	is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 	last_checked: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+	# High-water mark of the newest ingested item for push-based sources
+	# (Telegram Bot API): lets ingest skip replayed updates after a restart.
+	last_item_id: Mapped[str | None] = mapped_column(
+		String(100), nullable=True,
+		comment="Watermark of the newest ingested item for push-based sources (Telegram Bot API)",
+	)
 
 	# Time range for data collection (optional boundaries)
 	date_from: Mapped[datetime | None] = mapped_column(
@@ -73,25 +89,14 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 	# Relationships
 	platform: Mapped["Platform"] = relationship("Platform", back_populates="sources")
 
-	# Many-to-many self relation: sources can track specific user-typed sources
-	monitored_users: Mapped[list["Source"]] = relationship(
-		"Source",
-		secondary="social_manager.source_user_relationships",
-		primaryjoin="Source.id == SourceUserRelationship.source_id",
-		secondaryjoin="Source.id == SourceUserRelationship.user_id",
-		backref="tracked_in_sources",
-		cascade="all, delete",
-		passive_deletes=True,
-	)
-
 	# Assign reusable scenario per source
-	bot_scenario_id: Mapped[int | None] = mapped_column(
-		ForeignKey("social_manager.bot_scenarios.id", ondelete="SET NULL"),
+	agent_scenario_id: Mapped[int | None] = mapped_column(
+		ForeignKey("social_manager.agent_scenarios.id", ondelete="SET NULL"),
 		nullable=True,
 	)
-	# Link to reusable bot scenario; scenario is preserved on source deletion
-	bot_scenario: Mapped["BotScenario | None"] = relationship(
-		"BotScenario",
+	# Link to reusable agent scenario; scenario is preserved on source deletion
+	agent_scenario: Mapped["AgentScenario | None"] = relationship(
+		"AgentScenario",
 		back_populates="sources",
 	)
 	# Reverse relation for analytics entries created for this source
@@ -104,7 +109,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 
 	# Manager will be set after class definition
 	if TYPE_CHECKING:
-		objects: ClassVar[SourceManager | BaseManager]
+		objects: ClassVar[SourceManager]
 	else:
 		objects: ClassVar = None
 
@@ -133,45 +138,3 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 from .managers.source_manager import SourceManager  # noqa: E402
 
 Source.objects = SourceManager()
-
-
-class SourceUserRelationship(Base):
-	__tablename__ = "source_user_relationships"
-	__table_args__ = {"schema": settings.DB_SCHEMA}
-
-	source_id: Mapped[int] = Column(
-		Integer,
-		ForeignKey("social_manager.sources.id", ondelete="CASCADE"),
-		primary_key=True,
-	)
-	user_id: Mapped[int] = Column(
-		Integer,
-		ForeignKey("social_manager.sources.id", ondelete="CASCADE"),
-		primary_key=True,
-	)
-
-	# Relationships to related Source rows for admin display
-	source: Mapped["Source"] = relationship(
-		"Source",
-		foreign_keys="SourceUserRelationship.source_id",
-		lazy="select",
-		overlaps="monitored_users,tracked_in_sources",
-	)
-
-	user: Mapped["Source"] = relationship(
-		"Source",
-		foreign_keys="SourceUserRelationship.user_id",
-		lazy="select",
-		overlaps="monitored_users,tracked_in_sources",
-	)
-
-	# Manager
-	if TYPE_CHECKING:
-		objects: ClassVar[BaseManager]
-	else:
-		objects: ClassVar = None
-
-
-from .managers.base_manager import BaseManager  # noqa: E402
-
-SourceUserRelationship.objects = BaseManager()

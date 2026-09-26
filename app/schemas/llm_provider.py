@@ -1,55 +1,45 @@
-"""
-Schemas for LLM Provider management.
-"""
-
+"""Schemas for LLM Provider management."""
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
 
 class LLMProviderCreate(BaseModel):
-	"""Schema for creating a new LLM provider."""
-	name: str = Field(..., min_length=1, max_length=255, description="Provider name")
-	description: Optional[str] = Field(None, description="Provider description")
-	api_url: str = Field(..., description="API endpoint URL")
-	api_key_env: str = Field(..., description="Environment variable name for API key")
-	model_name: str = Field(..., description="Model name to use")
-	# capabilities removed - now stored in LLMModel
-	config: Optional[dict[str, Any]] = Field(default_factory=dict, description="Additional configuration")
-	is_active: bool = Field(default=True, description="Whether provider is active")
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    api_format: str = Field(default="openai", description="openai | anthropic")
+    base_url: str = Field(..., description="Base API URL, e.g. https://api.openai.com/v1")
+    auth_header: Optional[str] = Field(None, description='Custom auth header, e.g. "x-api-key: {key}"')
+    is_active: bool = Field(default=True)
+    is_default: bool = Field(default=False)
 
 
 class LLMProviderUpdate(BaseModel):
-	"""Schema for updating an LLM provider."""
-	name: Optional[str] = Field(None, min_length=1, max_length=255)
-	description: Optional[str] = None
-	api_url: Optional[str] = None
-	api_key_env: Optional[str] = None
-	model_name: Optional[str] = None
-	# capabilities removed - now stored in LLMModel
-	config: Optional[dict[str, Any]] = None
-	is_active: Optional[bool] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    api_format: Optional[str] = None
+    base_url: Optional[str] = None
+    auth_header: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
 
 
 class LLMProviderResponse(BaseModel):
-	"""Schema for LLM provider response."""
-	id: int
-	name: str
-	description: Optional[str]
-	api_url: str
-	api_key_env: str
-	model_name: str
-	# capabilities removed - now stored in LLMModel
-	config: dict[str, Any]
-	is_active: bool
-	created_at: str
-	updated_at: str
+    id: int
+    name: str
+    description: Optional[str]
+    api_format: str
+    base_url: str
+    auth_header: Optional[str]
+    is_active: bool
+    is_default: bool
+    created_at: str
+    updated_at: str
 
-	class Config:
-		from_attributes = True
+    class Config:
+        from_attributes = True
 
 
 class LLMProviderList(BaseModel):
-	"""Schema for list of LLM providers."""
-	providers: list[LLMProviderResponse]
-	total: int
+    providers: list[LLMProviderResponse]
+    total: int

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
@@ -34,6 +34,22 @@ class AgentMemory(Base, TenantScopedMixin, TimestampMixin):
     scope: Mapped[str] = Column(String(20), default="global", nullable=False, server_default="global")
     key: Mapped[str] = Column(String(100), nullable=False)
     value: Mapped[str | None] = Column(Text, nullable=True)
+
+    # Provenance: where the fact came from and how much we trust it.
+    source: Mapped[str] = Column(
+        String(20),
+        nullable=False,
+        default="manual",
+        server_default="manual",
+        comment="manual (memory_set) | learn (extracted from chat) | reflect (post-dedup)",
+    )
+    confidence: Mapped[float] = Column(Float, nullable=False, default=1.0, server_default="1.0")
+    evidence_message_id: Mapped[int | None] = Column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.agent_messages.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Chat message this fact was learned from (FK is SET NULL: messages can be cleared)",
+    )
 
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager

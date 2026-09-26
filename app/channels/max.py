@@ -48,7 +48,7 @@ class MaxChannel:
 
     def __init__(self, token: Optional[str] = None, api_base: Optional[str] = None):
         self.token = token or settings.MAX_BOT_TOKEN
-        self.api_base = (api_base or settings.MAX_API_BASE or DEFAULT_API_BASE).rstrip("/")
+        self.api_base = (api_base or settings.MAX_API_URL or DEFAULT_API_BASE).rstrip("/")
 
     @property
     def enabled(self) -> bool:

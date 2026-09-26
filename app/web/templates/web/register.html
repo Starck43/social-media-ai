@@ -1,0 +1,39 @@
+{% extends "web/auth_base.html" %}
+{% block title %}Регистрация — AI Monitor{% endblock %}
+{% block heading %}Создать аккаунт и workspace{% endblock %}
+{% block lead %}Саморегистрация создаёт новый workspace, где вы — владелец.{% endblock %}
+{% block card %}
+    {% set form = form if form is defined and form else {} %}
+    <form method="post" action="/app/register" class="mt-5 space-y-4">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <div>
+            <label for="username" class="mb-1 block text-sm text-slate-300">Имя пользователя</label>
+            <input id="username" name="username" required minlength="3" maxlength="50" autofocus
+                   value="{{ form.get('username', '') }}"
+                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+        </div>
+        <div>
+            <label for="email" class="mb-1 block text-sm text-slate-300">E-mail</label>
+            <input id="email" type="email" name="email" required autocomplete="email"
+                   value="{{ form.get('email', '') }}"
+                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+        </div>
+        <div>
+            <label for="password" class="mb-1 block text-sm text-slate-300">Пароль</label>
+            <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password"
+                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+        </div>
+        <div>
+            <label for="workspace" class="mb-1 block text-sm text-slate-300">Название workspace</label>
+            <input id="workspace" name="workspace" maxlength="100" placeholder="Мой мониторинг"
+                   value="{{ form.get('workspace', '') }}"
+                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+        </div>
+        <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+            Создать
+        </button>
+    </form>
+{% endblock %}
+{% block footnote %}
+    Уже есть аккаунт? <a href="/app/login" class="text-cyan-400 hover:underline">Войти</a>
+{% endblock %}

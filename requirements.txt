@@ -36,10 +36,14 @@ celery==5.6.3
 # Admin UI
 sqladmin==0.32.0
 
+# Telegram MTProto (L2 collection; imported lazily — the app boots without it)
+telethon==1.45.0
+
 # Testing and development
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
+aiosqlite==0.21.0
 black==26.5.1
 isort==9.0.1
 flake8==7.3.0

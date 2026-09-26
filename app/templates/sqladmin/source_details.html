@@ -13,7 +13,7 @@
 
             <div class="card-body border-bottom py-3">
                 <div class="table-responsive">
-                    <table class="table card-table table-vcenter text-nowrap table-hover table-bordered">
+                    <table class="table card-table table-vcenter table-hover table-bordered">
                         <thead>
                         <tr>
                             <th class="w-1">Наименование</th>
@@ -21,38 +21,32 @@
                         </tr>
                         </thead>
                         <tbody>
-                        {% set raw_source_type = model.source_type.name if model.source_type.name is defined else model.source_type %}
-                        {% set normalized_source_type = (raw_source_type|string).lower() %}
-                        {% set show_tracked_only = normalized_source_type == 'user' %}
                         {% for name in model_view._details_prop_names %}
-                            {% set skip_row = (show_tracked_only and name == 'monitored_users') or (not show_tracked_only and name == 'tracked_in_sources') %}
-                            {% if not skip_row %}
-                                {% set label = model_view._column_labels.get(name, name) %}
-                                {% set value, formatted_value = model_view.get_detail_value(model, name) %}
-                                <tr>
-                                    <td>{{ label }}</td>
-                                    {% if name in model_view._relation_names %}
-                                        {% if is_list(value) %}
-                                            <td>
-                                                {% for elem, formatted_elem in zip(value, formatted_value) %}
-                                                    {% if model_view.show_compact_lists %}
-                                                        <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">({{ formatted_elem }})</a>
-                                                    {% else %}
-                                                        <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">{{ formatted_elem }}</a>
-                                                        <br />
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </td>
-                                        {% else %}
-                                            <td><a
-                                                href="{{ model_view._url_for_details_with_prop(request, model, name) }}">{{ formatted_value }}</a>
-                                            </td>
-                                        {% endif %}
+                            {% set label = model_view._column_labels.get(name, name) %}
+                            {% set value, formatted_value = model_view.get_detail_value(model, name) %}
+                            <tr>
+                                <td>{{ label }}</td>
+                                {% if name in model_view._relation_names %}
+                                    {% if is_list(value) %}
+                                        <td>
+                                            {% for elem, formatted_elem in zip(value, formatted_value) %}
+                                                {% if model_view.show_compact_lists %}
+                                                    <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">({{ formatted_elem }})</a>
+                                                {% else %}
+                                                    <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">{{ formatted_elem }}</a>
+                                                    <br />
+                                                {% endif %}
+                                            {% endfor %}
+                                        </td>
                                     {% else %}
-                                        <td>{{ formatted_value }}</td>
+                                        <td><a
+                                            href="{{ model_view._url_for_details_with_prop(request, model, name) }}">{{ formatted_value }}</a>
+                                        </td>
                                     {% endif %}
-                                </tr>
-                            {% endif %}
+                                {% else %}
+                                    <td>{{ formatted_value }}</td>
+                                {% endif %}
+                            </tr>
                         {% endfor %}
                         </tbody>
                     </table>

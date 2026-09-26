@@ -21,14 +21,14 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_jobs_tenant_id", "tenant_id"),
         Index("idx_jobs_status_run_at", "status", "run_at"),
-        Index("idx_jobs_schedule_id", "schedule_id"),
+        Index("idx_jobs_agent_task_id", "agent_task_id"),
         {"schema": settings.DB_SCHEMA},
     )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
-    schedule_id: Mapped[int | None] = Column(
+    agent_task_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.schedules.id", ondelete="SET NULL"),
+        ForeignKey("social_manager.agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
     # 'collect' | 'digest' | 'prune'

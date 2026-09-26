@@ -1,8 +1,8 @@
-"""Scheduler runner: poll schedules, enqueue due jobs, advance next_run_at.
+"""Scheduler runner: poll agent tasks, enqueue due jobs, advance next_run_at.
 
-Tenancy: `schedules`/`jobs` rows are tenant-owned, so the tick is run once per
+Tenancy: `agent_tasks`/`jobs` rows are tenant-owned, so the tick is run once per
 active workspace inside its tenant scope. The queryset guard in `BaseManager`
-then makes each pass see exactly one workspace's schedules — there is no
+then makes each pass see exactly one workspace's tasks — there is no
 "filter by tenant_id" to forget here.
 """
 
@@ -12,14 +12,14 @@ from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.tenant_context import tenant_scope
+from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.job_manager import JobManager
-from app.models.managers.schedule_manager import ScheduleManager
 
 from .cron import next_run_at
 
 logger = logging.getLogger(__name__)
 
-schedules = ScheduleManager()
+tasks = AgentTaskManager()
 jobs = JobManager()
 
 
@@ -28,27 +28,27 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     stats = {"due": 0, "enqueued": 0, "failed": 0}
 
-    due = await schedules.get_due(now)
+    due = await tasks.get_due(now)
     stats["due"] = len(due)
 
-    for schedule in due:
+    for task in due:
         try:
-            nxt = next_run_at(schedule.cron_expr, schedule.timezone, after=now)
+            nxt = next_run_at(task.cron_expr, task.timezone, after=now)
         except (ValueError, KeyError) as e:
-            logger.error(f"Schedule {schedule.name}: invalid cron {schedule.cron_expr!r}: {e}")
-            await schedules.mark_triggered(schedule.id, now, status="failed", error=str(e))
+            logger.error(f"AgentTask {task.name}: invalid cron {task.cron_expr!r}: {e}")
+            await tasks.mark_triggered(task.id, now, status="failed", error=str(e))
             stats["failed"] += 1
             continue
 
         await jobs.enqueue(
-            job_type=schedule.job_type,
-            payload=schedule.payload or {},
-            schedule_id=schedule.id,
+            job_type=task.job_type,
+            payload=task.payload or {},
+            agent_task_id=task.id,
             run_at=now,
         )
-        await schedules.mark_triggered(schedule.id, nxt, status="ok")
+        await tasks.mark_triggered(task.id, nxt, status="ok")
         stats["enqueued"] += 1
-        logger.info(f"Enqueued {schedule.job_type} job for schedule {schedule.name!r}, next run {nxt.isoformat()}")
+        logger.info(f"Enqueued {task.job_type} job for task {task.name!r}, next run {nxt.isoformat()}")
 
     return stats
 
@@ -82,7 +82,7 @@ async def tick() -> dict:
 
 
 async def run_forever(poll_seconds: int | None = None) -> None:
-    """Continuously run ticks. Dedupe: schedules are marked immediately, so re-ticks skip them."""
+    """Continuously run ticks. Dedupe: tasks are marked immediately, so re-ticks skip them."""
     poll = poll_seconds or settings.SCHEDULER_POLL_SECONDS
     logger.info(f"Scheduler started (poll every {poll}s, tz={settings.SCHEDULER_TIMEZONE})")
     while True:

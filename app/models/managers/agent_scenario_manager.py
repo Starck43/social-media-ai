@@ -1,30 +1,39 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Sequence
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped
 
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..bot_scenario import BotScenario
+    from ..agent_scenario import AgentScenario
 else:
     # Use string literals to avoid circular imports
-    BotScenario = "BotScenario"
+    AgentScenario = "AgentScenario"
 
 
-class BotScenarioManager(BaseManager):
+class AgentScenarioManager(BaseManager):
     """Manager for bot scenario operations."""
 
     def __init__(self):
         # Use string literal to avoid circular import
-        from ..bot_scenario import BotScenario as B
+        from ..agent_scenario import AgentScenario as B
 
         super().__init__(B)
 
-    async def get_active_scenarios(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> Sequence[BotScenario]:
+    async def get_default_scenario(self, db: AsyncSession) -> Optional[AgentScenario]:
+        """
+        Retrieve the default scenario for the current tenant.
+
+        Returns the active scenario marked is_default=True, or None if none exists.
+        """
+        result = await db.execute(select(self.model).where(self.model.is_default == True, self.model.is_active == True))
+        return result.scalars().first()
+
+    async def get_active_scenarios(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> Sequence[AgentScenario]:
         """
         Retrieve all active bot scenarios with pagination.
 
@@ -34,12 +43,12 @@ class BotScenarioManager(BaseManager):
                 limit: Maximum amount records to return
 
         Returns:
-                List of active BotScenario objects
+                List of active AgentScenario objects
         """
         result = await db.execute(select(self.model).where(self.model.is_active).offset(skip).limit(limit))
         return result.scalars().all()
 
-    async def get_by_name(self, db: AsyncSession, name: Mapped[str]) -> Optional[BotScenario]:
+    async def get_by_name(self, db: AsyncSession, name: Mapped[str]) -> Optional[AgentScenario]:
         """
         Retrieve bot scenario by exact name match.
 
@@ -48,12 +57,12 @@ class BotScenarioManager(BaseManager):
                 name: Scenario name to search for
 
         Returns:
-                BotScenario object if found, None otherwise
+                AgentScenario object if found, None otherwise
         """
         result = await db.execute(select(self.model).where(self.model.name == name))
         return result.scalars().first()
 
-    async def get_scenarios_by_content_type(self, db: AsyncSession, content_type: str) -> Sequence[BotScenario]:
+    async def get_scenarios_by_content_type(self, db: AsyncSession, content_type: str) -> Sequence[AgentScenario]:
         """
         Retrieve scenarios that work with specific content type.
 
@@ -62,7 +71,7 @@ class BotScenarioManager(BaseManager):
                 content_type: Type of content (e.g., 'posts', 'comments', 'videos')
 
         Returns:
-                List of matching BotScenario objects
+                List of matching AgentScenario objects
         """
         query = select(self.model).where(self.model.is_active)
 
@@ -73,7 +82,7 @@ class BotScenarioManager(BaseManager):
         result = await db.execute(query)
         return result.scalars().all()
 
-    async def get_scenarios_by_scope(self, db: AsyncSession, scope_filter: dict) -> Sequence[BotScenario]:
+    async def get_scenarios_by_scope(self, db: AsyncSession, scope_filter: dict) -> Sequence[AgentScenario]:
         """
         Retrieve scenarios that match specific scope conditions.
 
@@ -82,7 +91,7 @@ class BotScenarioManager(BaseManager):
                 scope_filter: Dictionary with scope conditions to match
 
         Returns:
-                List of BotScenario objects that match the scope
+                List of AgentScenario objects that match the scope
         """
         if not scope_filter:
             return await self.get_active_scenarios(db)
@@ -115,10 +124,10 @@ class BotScenarioManager(BaseManager):
         action_type: Optional[str] = None,
         content_types: Optional[list] = None,
         is_active: bool = True,
-        cooldown_minutes: int = 30,
-    ) -> BotScenario:
+        is_default: bool = False,
+    ) -> AgentScenario:
         """
-        Create a new bot scenario with validation.
+        Create a new agent scenario with validation.
 
         Args:
                 db: Database session
@@ -128,12 +137,11 @@ class BotScenarioManager(BaseManager):
                 action_type: Action type bot performs (or None for analysis-only)
                 content_types: List of content types to monitor
                 is_active: Whether the scenario is active
-                cooldown_minutes: Cooldown period between triggers
+                is_default: Whether this is the tenant's default scenario
 
         Returns:
-                Created BotScenario object
+                Created AgentScenario object
         """
-        # Check if scenario with same name already exists
         existing = await self.get_by_name(db, name)
         if existing:
             raise ValueError(f"Scenario with name '{name}' already exists")
@@ -145,7 +153,7 @@ class BotScenarioManager(BaseManager):
             action_type=action_type,
             content_types=content_types or [],
             is_active=is_active,
-            collection_interval_hours=collection_interval_hours,
+            is_default=is_default,
         )
 
         db.add(scenario)
@@ -155,7 +163,7 @@ class BotScenarioManager(BaseManager):
 
     async def update_scenario_activity(
         self, db: AsyncSession, scenario_id: int, is_active: bool
-    ) -> Optional[BotScenario]:
+    ) -> Optional[AgentScenario]:
         """
         Update scenario active status.
 
@@ -165,7 +173,7 @@ class BotScenarioManager(BaseManager):
                 is_active: New active status
 
         Returns:
-                Updated BotScenario object if found, None otherwise
+                Updated AgentScenario object if found, None otherwise
         """
         scenario = await self.get(scenario_id)
         if scenario:
@@ -176,7 +184,7 @@ class BotScenarioManager(BaseManager):
 
     async def get_scenarios_by_action_type(
         self, db: AsyncSession, action_type: Optional[str] = None
-    ) -> Sequence[BotScenario]:
+    ) -> Sequence[AgentScenario]:
         """
         Retrieve scenarios filtered by action type.
 
@@ -185,7 +193,7 @@ class BotScenarioManager(BaseManager):
                 action_type: Action type to filter by (None for analysis-only scenarios)
 
         Returns:
-                List of BotScenario objects
+                List of AgentScenario objects
         """
         query = select(self.model).where(self.model.is_active)
 
@@ -201,7 +209,7 @@ class BotScenarioManager(BaseManager):
 
     async def get_scenarios_with_cooldown(
         self, db: AsyncSession, recently_used_scenario_ids: list[int]
-    ) -> Sequence[BotScenario]:
+    ) -> Sequence[AgentScenario]:
         """
         Get active scenarios excluding those in a cooldown.
 
@@ -210,7 +218,7 @@ class BotScenarioManager(BaseManager):
                 recently_used_scenario_ids: List of scenario IDs that are in cooldown
 
         Returns:
-                List of available BotScenario objects
+                List of available AgentScenario objects
         """
         if not recently_used_scenario_ids:
             return await self.get_active_scenarios(db)

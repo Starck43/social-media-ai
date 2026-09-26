@@ -3,21 +3,22 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Awaitable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from fastapi_pagination import add_pagination
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response
 from starlette.websockets import WebSocket
 
+from app.admin.csrf import CSRFTokenManager
 from app.api.v1 import entry
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.tenant_context import PlatformScopeMiddleware
-
-from fastapi import Request
-from fastapi.templating import Jinja2Templates
+from app.web import web_router
+from app.web.middleware import TenantUIMiddleware
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,8 +58,20 @@ def create_application() -> FastAPI:
     # Include API routes with rate limiting
     application.include_router(entry.router, prefix="/api/v1")
 
+    # Client-facing UI (docs/design/ui.md): pages under /app, tenant-scoped.
+    # Kept out of OpenAPI docs — it is HTML, not a machine API.
+    application.include_router(web_router, include_in_schema=False)
+
+    # CSRF token issuer shared by the web UI and sqladmin forms.
+    application.state.csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)
+
+    # Registered before PlatformScopeMiddleware on purpose: `add_middleware`
+    # puts the newest entry outermost, so TenantUIMiddleware ends up INSIDE
+    # the platform bypass and owns the tenant context for every /app request.
+    application.add_middleware(TenantUIMiddleware)
+
     # HTTP surfaces are the operator console: they run as the platform owner.
-    # See app/core/tenant_context.PlatformScopeMiddleware.
+    # See app/core/tenant_context.PlatformScopeMiddleware (/app/* is excluded).
     application.add_middleware(PlatformScopeMiddleware)
 
     # Set up CORS
@@ -66,10 +79,10 @@ def create_application() -> FastAPI:
 
     # Add SessionMiddleware with a secret key
     application.add_middleware(
-        SessionMiddleware,   # type: ignore[arg-type]
+        SessionMiddleware,  # type: ignore[arg-type]
         secret_key=settings.SECRET_KEY,
         session_cookie="session",
-        max_age=3600 * 24
+        max_age=3600 * 24,
     )
 
     if settings.BACKEND_CORS_ORIGINS:
@@ -97,14 +110,7 @@ app = create_application()
 
 @app.get("/", tags=["Root"])
 async def root():
-    return {
-        "message": "Social Media AI Manager API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "health": "/health",
-        "dashboard": "/dashboard/topic-chains",
-        "environment": settings.ENVIRONMENT,
-    }
+    return RedirectResponse("/app/")
 
 
 @app.get("/health", tags=["Health"])

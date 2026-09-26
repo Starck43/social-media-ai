@@ -137,6 +137,13 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         await session.touch()
         return AGENT_HELP_TEXT
 
+    command = text.split()[0].split("@")[0].lower()
+    if command in ("/good", "/bad"):
+        return await _handle_feedback(session, inbound, command, text)
+
+    if command == "/memory":
+        return await _handle_memory_command(session, resolution, text)
+
     # 1) Confirmation flow first (before touching the model)
     pending = _pending_confirmation(session)
     if pending:
@@ -239,20 +246,92 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     return reply
 
 
+async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) -> str:
+    """Record /good or /bad <note> against the last assistant reply."""
+    from app.models import AgentMessage
+    from app.models.managers.agent_feedback_manager import agent_feedback
+
+    rated = (
+        await AgentMessage.objects.filter(session_id=session.id, role="assistant")
+        .order_by(AgentMessage.id.desc())
+        .first()
+    )
+    if rated is None:
+        return "Оценивать пока нечего — я ещё ничего не отвечал в этом чате."
+
+    note = text[len(command) :].strip() or None
+    if command == "/bad" and not note:
+        note = "без заметки"
+    await agent_feedback.create(
+        session_id=session.id,
+        message_id=rated.id,
+        vote="good" if command == "/good" else "bad",
+        note=note,
+        voter_channel=getattr(inbound, "channel", None),
+        voter_external_id=str(getattr(inbound, "user_id", "") or "") or None,
+    )
+    reply = "Спасибо, учту." if command == "/good" else f"Принято, учту: {note}"
+    await session.append("user", text)
+    await session.append("assistant", reply)
+    await session.touch()
+    return reply
+
+
+async def _handle_memory_command(session: Any, resolution: Any, text: str) -> str:
+    """/memory clear — drop learned facts (owner only). Watermarks survive."""
+    parts = text.split(None, 1)
+    sub = parts[1].strip().lower() if len(parts) > 1 else ""
+    if sub != "clear":
+        return "Использование: /memory clear — стереть выученные факты о себе."
+    if not getattr(resolution, "is_owner", False):
+        return "Память может очищать только владелец рабочего пространства."
+
+    from app.models.managers.agent_memory_manager import agent_memory
+
+    removed = await agent_memory.clear_facts()
+    await session.append("user", text)
+    reply = f"Память очищена: удалено фактов — {removed}."
+    await session.append("assistant", reply)
+    await session.touch()
+    return reply
+
+
 async def _build_messages(session: Any) -> list[dict]:
-    """System prompt + session history as OpenAI-style messages."""
+    """System prompt (+ style and learned memory) and session history."""
     history = await session.history()
-    return [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + history
+    return [{"role": "system", "content": await build_system_prompt()}] + history
+
+
+async def build_system_prompt() -> str:
+    """AGENT_SYSTEM_PROMPT + tenant's agent_style contract + learned facts."""
+    from app.agent.prompts import render_style_block
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.agent_memory_manager import agent_memory
+    from app.models.managers.tenant_manager import tenants
+
+    sections = [AGENT_SYSTEM_PROMPT]
+
+    tenant = None
+    tid = current_tenant_id()
+    if tid is not None:
+        tenant = await tenants.get(id=tid)
+    style_block = render_style_block(getattr(tenant, "agent_style", None) if tenant else None)
+    if style_block:
+        sections.append(style_block)
+
+    facts = await agent_memory.snapshot(limit=20)
+    if facts:
+        lines = "\n".join(f"- {f.key}: {f.value}" for f in facts)
+        sections.append(f"Что я знаю о владельце (выучено из общения, может устареть):\n{lines}")
+
+    return "\n\n".join(sections)
 
 
 async def _chat(messages: list[dict], specs: list[dict]) -> dict:
-    """Call the LLM with tool specs; returns {content, tool_calls, usage}."""
-    from app.services.ai.llm_client import LLMClient
-    from app.services.digest.builder import resolve_model
+    """Call the LLM with tool specs + provider fallback; returns {content, tool_calls, usage}."""
+    from app.services.ai.llm_client import chat_with_fallback
 
-    model = await resolve_model()
-    client = await LLMClient.create(model)
-    return await client.chat(
+    return await chat_with_fallback(
         messages,
         tools=specs,
         max_tokens=settings.AGENT_MAX_TOKENS,

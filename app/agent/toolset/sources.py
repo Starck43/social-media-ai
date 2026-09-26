@@ -16,6 +16,20 @@ _TYPE_ALIASES = {
     "chat": "CHAT",
 }
 
+# Friendly names → Platform.platform_type db value. Platform rows are named per
+# deployment ("ВКонтакте", "Телеграм"), so the type column is the stable key.
+_PLATFORM_ALIASES = {
+    "vk": "vk",
+    "vkontakte": "vk",
+    "вк": "vk",
+    "вконтакте": "vk",
+    "telegram": "telegram",
+    "tg": "telegram",
+    "телеграм": "telegram",
+    "max": "max",
+    "макс": "max",
+}
+
 
 @tool(
     name="sources_list",
@@ -71,9 +85,13 @@ async def source_add(platform: str, source_type: str, external_id: str, name: st
     from app.models.managers.source_manager import SourceManager
     from app.types import SourceType
 
-    plat = await Platform.objects.get(name=platform.lower())
+    platform_key = _PLATFORM_ALIASES.get(platform.strip().lower())
+    if platform_key is None:
+        return {"error": f"Unknown platform: {platform}. Available: vk, telegram, max"}
+
+    plat = await Platform.objects.filter(platform_type=platform_key).first()
     if plat is None:
-        return {"error": f"Unknown platform: {platform}. Available: vk, telegram"}
+        return {"error": f"Platform {platform_key} is not configured in this deployment"}
 
     member_name = _TYPE_ALIASES.get(source_type.strip().lower(), source_type.strip().upper())
     try:

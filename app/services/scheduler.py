@@ -34,7 +34,6 @@ class ContentScheduler:
 	
 	Features:
 	- Checkpoint-based collection (only new content)
-	- Respects collection_interval_hours from BotScenario
 	- LLM optimization (rate limiting, batching, cost tracking)
 	- Error handling and retry logic
 	- Comprehensive logging
@@ -85,7 +84,7 @@ class ContentScheduler:
 			# Get all active sources with required relations preloaded to avoid DetachedInstanceError
 			sources = await (
 				Source.objects
-				.select_related('platform', 'bot_scenario')
+				.select_related('platform', 'agent_scenario')
 				.filter(is_active=True)
 			)
 			stats["total_sources"] = len(sources)
@@ -181,10 +180,10 @@ class ContentScheduler:
 			logger.info(f"Collected {len(content)} items from source {source.id}")
 
 			# 🆕 Apply trigger filtering BEFORE LLM analysis
-			if source.bot_scenario:
+			if source.agent_scenario:
 				filtered_content = await trigger_evaluator.should_analyze(
 					content=content,
-					scenario=source.bot_scenario
+					scenario=source.agent_scenario
 				)
 				content = filtered_content
 

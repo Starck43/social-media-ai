@@ -15,7 +15,7 @@ async def test_get_source_analytics_returns_new_fields():
     # Arrange
     platform = await Platform.objects.create(
         name=f"tg_test_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.TELEGRAM.value,
+        platform_type=PlatformType.TELEGRAM.db_value,
         base_url="https://t.me",
         params={}
     )

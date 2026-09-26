@@ -17,14 +17,14 @@ class DigestRunManager(BaseManager["DigestRun"]):
 
         super().__init__(DigestRun)
 
-    async def already_sent(self, schedule_id: Optional[int], period_start: date, period_end: date) -> bool:
+    async def already_sent(self, agent_task_id: Optional[int], period_start: date, period_end: date) -> bool:
         """True if a digest for this schedule+period was already sent successfully.
 
-        Note: NULL schedule_id never collides in Postgres unique constraints,
+        Note: NULL agent_task_id never collides in Postgres unique constraints,
         so manual `send-now` runs are never blocked.
         """
         existing = await self.get(
-            schedule_id=schedule_id,
+            agent_task_id=agent_task_id,
             period_start=period_start,
             period_end=period_end,
             status="sent",
@@ -34,7 +34,7 @@ class DigestRunManager(BaseManager["DigestRun"]):
     async def start_run(
         self,
         *,
-        schedule_id: Optional[int],
+        agent_task_id: Optional[int],
         period: str,
         period_start: date,
         period_end: date,
@@ -43,14 +43,14 @@ class DigestRunManager(BaseManager["DigestRun"]):
         """Return the run row for (schedule, period), creating it when missing.
 
         Reusing the row instead of inserting a new one keeps the unique
-        constraint on (schedule_id, period_start, period_end) satisfiable when
+        constraint on (agent_task_id, period_start, period_end) satisfiable when
         the same digest is re-attempted after a failure or a skip.
-        Manual runs (schedule_id=None) always get a fresh row — NULLs do not
+        Manual runs (agent_task_id=None) always get a fresh row — NULLs do not
         collide, and each manual send is separate history.
         """
-        if schedule_id is not None:
+        if agent_task_id is not None:
             existing = await self.get(
-                schedule_id=schedule_id,
+                agent_task_id=agent_task_id,
                 period_start=period_start,
                 period_end=period_end,
             )
@@ -64,7 +64,7 @@ class DigestRunManager(BaseManager["DigestRun"]):
                 )
 
         return await self.create(
-            schedule_id=schedule_id,
+            agent_task_id=agent_task_id,
             period=period,
             period_start=period_start,
             period_end=period_end,

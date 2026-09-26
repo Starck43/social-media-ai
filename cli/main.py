@@ -1,6 +1,6 @@
 import typer
 
-from .commands import roles
+from .commands import credentials, roles, scenarios
 
 app = typer.Typer(
     name="SMM Admin CLI",
@@ -9,6 +9,8 @@ app = typer.Typer(
 )
 
 app.add_typer(roles.app, name="roles", help="Manage roles and permissions")
+app.add_typer(credentials.app, name="credentials", help="Manage platform credentials (tenant vault)")
+app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
 
 
 def _run_platform(coro):
@@ -26,21 +28,21 @@ def _run_platform(coro):
         return asyncio.run(coro)
 
 
-schedule_app = typer.Typer(help="Manage cron schedules")
+task_app = typer.Typer(help="Manage agent tasks")
 
 
-@schedule_app.command("list")
-def schedule_list():
-    """List all schedules."""
+@task_app.command("list")
+def task_list():
+    """List all tasks."""
 
     from rich import print as rprint
     from rich.table import Table
 
-    from app.models import Schedule
+    from app.models import AgentTask
 
     async def _run():
-        rows: list[Schedule] = await Schedule.objects.order_by(Schedule.id)  # type: ignore[misc]
-        table = Table(title="Schedules")
+        rows: list[AgentTask] = await AgentTask.objects.order_by(AgentTask.id)  # type: ignore[misc]
+        table = Table(title="AgentTasks")
         for col in ("id", "name", "cron", "job", "active", "next_run_at", "last_status"):
             table.add_column(col)
         for s in rows:
@@ -58,35 +60,37 @@ def schedule_list():
     _run_platform(_run())
 
 
-@schedule_app.command("add")
-def schedule_add(
-    name: str = typer.Argument(..., help="Unique schedule name"),
+@task_app.command("add")
+def task_add(
+    name: str = typer.Argument(..., help="Unique task name"),
     cron: str = typer.Argument(..., help="Cron expression, e.g. '0 9 * * *'"),
     job_type: str = typer.Argument(..., help="Job type: collect | digest | prune"),
     payload: str = typer.Option("{}", "--payload", "-p", help="JSON payload, e.g. '{\"source_ids\": [1] }'"),
 ):
-    """Add a schedule."""
+    """Add a task."""
     import json as _json
 
     from rich import print as rprint
 
     from app.core.config import settings
-    from app.models import Schedule
-    from app.models.managers.schedule_manager import ScheduleManager
+    from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
     from app.scheduler.cron import next_run_at
 
-    sm = ScheduleManager()
+    sm = AgentTaskManager()
     if not sm.validate_cron(cron):
         rprint(f"[red]Invalid cron expression: {cron}[/red]")
         raise typer.Exit(1)
-    if job_type not in ("collect", "digest", "prune"):
-        rprint("[red]job_type must be one of: collect, digest, prune[/red]")
+    from app.jobs.handlers import HANDLERS
+
+    if job_type not in HANDLERS:
+        rprint(f"[red]job_type must be one of: {', '.join(HANDLERS.keys())}[/red]")
         raise typer.Exit(1)
 
     async def _run():
-        existing = await Schedule.objects.get(name=name)
+        existing = await AgentTask.objects.get(name=name)
         if existing:
-            rprint(f"[red]Schedule '{name}' already exists[/red]")
+            rprint(f"[red]AgentTask '{name}' already exists[/red]")
             raise typer.Exit(1)
         await sm.create(
             name=name,
@@ -97,46 +101,46 @@ def schedule_add(
             is_active=True,
             next_run_at=next_run_at(cron, settings.SCHEDULER_TIMEZONE),
         )
-        rprint(f"[green]Schedule '{name}' created ({cron}, {job_type})[/green]")
+        rprint(f"[green]AgentTask '{name}' created ({cron}, {job_type})[/green]")
 
     _run_platform(_run())
 
 
-@schedule_app.command("remove")
-def schedule_remove(name: str = typer.Argument(...)):
-    """Remove a schedule by name."""
+@task_app.command("remove")
+def task_remove(name: str = typer.Argument(...)):
+    """Remove a task by name."""
 
     from rich import print as rprint
 
-    from app.models import Schedule
+    from app.models import AgentTask
 
     async def _run():
-        deleted = await Schedule.objects.delete(name=name)
-        rprint(f"[green]Deleted {deleted} schedule(s)[/green]" if deleted else "[yellow]Not found[/yellow]")
+        deleted = await AgentTask.objects.delete(name=name)
+        rprint(f"[green]Deleted {deleted} task(s)[/green]" if deleted else "[yellow]Not found[/yellow]")
 
     _run_platform(_run())
 
 
-@schedule_app.command("pause")
-def schedule_pause(name: str = typer.Argument(...), resume: bool = typer.Option(False, "--resume")):
-    """Pause (or --resume) a schedule."""
+@task_app.command("pause")
+def task_pause(name: str = typer.Argument(...), resume: bool = typer.Option(False, "--resume")):
+    """Pause (or --resume) a task."""
 
     from rich import print as rprint
 
-    from app.models import Schedule
+    from app.models import AgentTask
 
     async def _run():
-        s: Schedule | None = await Schedule.objects.get(name=name)
+        s: AgentTask | None = await AgentTask.objects.get(name=name)
         if not s:
             rprint("[yellow]Not found[/yellow]")
             raise typer.Exit(1)
-        await Schedule.objects.update_by_id(s.id, is_active=resume)
+        await AgentTask.objects.update_by_id(s.id, is_active=resume)
         rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green]")
 
     _run_platform(_run())
 
 
-app.add_typer(schedule_app, name="schedule")
+app.add_typer(task_app, name="task")
 
 digest_app = typer.Typer(help="Digest operations")
 

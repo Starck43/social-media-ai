@@ -38,10 +38,10 @@
     --transition-normal: 0.3s ease;
 }
 
-/* Dark Theme */
+/* Dark Theme — same slate scale as /app/ (slate-950 bg, slate-900 cards) */
 [data-theme="dark"] {
-    --dashboard-bg: #1a1a2e;
-    --card-bg: #25213e;
+    --dashboard-bg: #020617;
+    --card-bg: #0f172a;
     --card-shadow: 0 2px 8px rgba(0,0,0,0.3);
     --text-primary: #d3d3d6;
     --text-secondary: #a0a0a0;

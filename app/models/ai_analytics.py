@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Integer, Date, ForeignKey, JSON, UniqueConstraint, Index, text, String, Text
+from sqlalchemy import JSON, Column, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, relationship
 
-from .base import Base, TenantScopedMixin, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import PeriodType
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from . import Source
@@ -24,6 +24,7 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
         Index("idx_ai_analytics_source", "source_id"),
         Index("idx_ai_analytics_date", "analysis_date"),
         Index("idx_ai_analytics_topic_chain", "topic_chain_id"),
+        Index("idx_ai_analytics_source_content_hash", "source_id", "content_hash"),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -35,6 +36,11 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     # Store as PostgreSQL enum matching existing DB type social_manager.analysis_period_type
     period_type: Mapped[PeriodType] = PeriodType.sa_column(
         type_name="analysis_period_type", nullable=False, default=PeriodType.DAILY, store_as_name=True
+    )
+    content_hash: Mapped[str | None] = Column(
+        String(64),
+        nullable=True,
+        comment="SHA256 hex digest of the analyzed content payload for deduplication",
     )
 
     # Chain tracking for ongoing topics/threads
@@ -71,8 +77,8 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
 
     # Manager will be set after class definition
     if TYPE_CHECKING:
-        from .managers.base_manager import BaseManager
         from .managers.ai_analytics_manager import AIAnalyticsManager
+        from .managers.base_manager import BaseManager
 
         objects: ClassVar[AIAnalyticsManager | BaseManager]
     else:

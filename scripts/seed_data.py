@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.models import LLMProvider, BotScenario
+from app.models import LLMProvider, AgentScenario
 
 
 async def seed_llm_providers():
@@ -23,7 +23,6 @@ async def seed_llm_providers():
             "name": "DeepSeek Chat",
             "description": "DeepSeek LLM для текстового анализа. Быстрый и доступный по цене.",
             "api_url": "https://api.deepseek.com/v1/chat/completions",
-            "api_key_env": "DEEPSEEK_API_KEY",
             "model_name": "deepseek-chat",
             "capabilities": ["text"],
             "config": {"temperature": 0.2, "max_tokens": 2000},
@@ -33,7 +32,6 @@ async def seed_llm_providers():
             "name": "OpenAI GPT-3.5 Turbo",
             "description": "OpenAI GPT-3.5 Turbo для быстрого анализа текста. Доступная цена.",
             "api_url": "https://api.openai.com/v1/chat/completions",
-            "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-3.5-turbo",
             "capabilities": ["text"],
             "config": {"temperature": 0.3, "max_tokens": 2000},
@@ -43,7 +41,6 @@ async def seed_llm_providers():
             "name": "OpenAI GPT-4 Turbo",
             "description": "OpenAI GPT-4 Turbo для комплексного анализа текста. Высокое качество.",
             "api_url": "https://api.openai.com/v1/chat/completions",
-            "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-4-turbo-preview",
             "capabilities": ["text"],
             "config": {"temperature": 0.2, "max_tokens": 3000},
@@ -53,7 +50,6 @@ async def seed_llm_providers():
             "name": "OpenAI GPT-4 Vision",
             "description": "OpenAI GPT-4 с поддержкой анализа изображений и видео.",
             "api_url": "https://api.openai.com/v1/chat/completions",
-            "api_key_env": "OPENAI_API_KEY",
             "model_name": "gpt-4-vision-preview",
             "capabilities": ["text", "image", "video"],
             "config": {"temperature": 0.1, "max_tokens": 3000},
@@ -63,7 +59,6 @@ async def seed_llm_providers():
             "name": "Anthropic Claude 3",
             "description": "Anthropic Claude 3 для анализа текста. Хорошо понимает контекст.",
             "api_url": "https://api.anthropic.com/v1/messages",
-            "api_key_env": "ANTHROPIC_API_KEY",
             "model_name": "claude-3-opus-20240229",
             "capabilities": ["text"],
             "config": {"temperature": 0.2, "max_tokens": 2000},
@@ -90,7 +85,7 @@ async def seed_llm_providers():
     return created_providers
 
 
-async def seed_bot_scenarios(providers):
+async def seed_agent_scenarios(providers):
     """Создание сценариев бота."""
     print("\n🤖 Создание сценариев бота...")
     
@@ -263,11 +258,11 @@ async def seed_bot_scenarios(providers):
     for scenario_data in scenarios:
         try:
             # Проверяем существование
-            existing = await BotScenario.objects.filter(name=scenario_data["name"])
+            existing = await AgentScenario.objects.filter(name=scenario_data["name"])
             if existing:
                 print(f"  ⚠️  Сценарий '{scenario_data['name']}' уже существует")
             else:
-                scenario = await BotScenario.objects.create(**scenario_data)
+                scenario = await AgentScenario.objects.create(**scenario_data)
                 print(f"  ✅ Создан сценарий: {scenario.name}")
         except Exception as e:
             print(f"  ❌ Ошибка создания сценария {scenario_data['name']}: {e}")
@@ -285,7 +280,7 @@ async def main():
         providers = await seed_llm_providers()
         
         # Создаем сценарии
-        await seed_bot_scenarios(providers)
+        await seed_agent_scenarios(providers)
         
         print("\n" + "="*70)
         print("✅ ДАННЫЕ УСПЕШНО ДОБАВЛЕНЫ!")

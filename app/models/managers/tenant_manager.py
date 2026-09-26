@@ -24,6 +24,9 @@ def hash_invite_code(code: str) -> str:
     return hashlib.sha256(code.strip().encode()).hexdigest()
 
 
+WEB_CHANNEL = "web"
+
+
 def generate_invite_code() -> str:
     """Human-typable code: 4+4 uppercase alphanumerics, no ambiguous chars."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -80,6 +83,21 @@ class TenantUserManager(BaseManager["TenantUser"]):
         return await self.create(
             tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role=role
         )
+
+    async def add_web_member(self, *, tenant_id: int, user_id: int, role: str = "owner") -> "TenantUser | None":
+        """Web membership: same row, but bound to the `users` table via user_id."""
+        existing = await self.get(tenant_id=tenant_id, user_id=user_id)
+        if existing is not None:
+            if not existing.is_active or existing.role != role:
+                return await self.update_by_id(existing.id, is_active=True, role=role)
+            return existing
+        return await self.create(
+            tenant_id=tenant_id, channel=WEB_CHANNEL, external_user_id=str(user_id), user_id=user_id, role=role
+        )
+
+    async def web_memberships(self, user_id: int) -> list["TenantUser"]:
+        rows = await self.filter(user_id=user_id, channel=WEB_CHANNEL, is_active=True)
+        return sorted(rows, key=lambda m: m.id)
 
 
 class TenantInviteManager(BaseManager["TenantInvite"]):
@@ -142,6 +160,24 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
         await TenantChannelManager().bind(
             tenant_id=invite.tenant_id, channel=channel, chat_id=str(chat_id), kind="private"
         )
+        await self.update_by_id(invite.id, used_count=invite.used_count + 1)
+        return {"status": "bound", "tenant_id": invite.tenant_id, "role": invite.role}
+
+    async def redeem_web(self, *, code: str, user_id: int) -> dict[str, Any]:
+        """Attach a logged-in web user to an invited tenant (no messenger chat).
+
+        Idempotent per membership: an existing (even re-activated) member does
+        not burn another use of the code.
+        """
+        invite = await self._valid_invite(code)
+        if invite is None:
+            return {"status": "invalid", "reason": "unknown, expired or exhausted code"}
+
+        member = await TenantUserManager().get(tenant_id=invite.tenant_id, user_id=user_id)
+        if member is not None and member.is_active:
+            return {"status": "already", "tenant_id": invite.tenant_id}
+
+        await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role=invite.role)
         await self.update_by_id(invite.id, used_count=invite.used_count + 1)
         return {"status": "bound", "tenant_id": invite.tenant_id, "role": invite.role}
 

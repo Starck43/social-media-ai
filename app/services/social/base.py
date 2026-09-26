@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
+from app.core.config import settings
 from app.models import Source
 from app.types import SourceType
 
@@ -50,8 +51,8 @@ class BaseClient(ABC):
 		"""
 		all_items = []
 		offset = 0
-		page_size = 50
-		max_pages = 20
+		page_size = settings.SOCIAL_PAGE_SIZE
+		max_pages = settings.SOCIAL_MAX_PAGES
 
 		# Get date filters from source
 		force_refresh = source.params.get('force_refresh', False)
@@ -170,12 +171,24 @@ class BaseClient(ABC):
 		Raises:
 			HTTPError: If the request fails
 		"""
-		api_base_url = self.platform.params.get('api_base_url')
+		api_base_url = (self.platform.params or {}).get('api_base_url')
+		if not api_base_url:
+			platform_type = getattr(self.platform, "platform_type", None)
+			from app.utils.enum_helpers import get_enum_value
+			pt_val = get_enum_value(platform_type)
+			if pt_val == "vk":
+				api_base_url = settings.VK_API_BASE_URL
+			elif pt_val == "telegram":
+				api_base_url = settings.TELEGRAM_API_BASE_URL
+			else:
+				api_base_url = ""
+
+		timeout = getattr(settings, "VK_REQUEST_TIMEOUT", settings.SOCIAL_REQUEST_TIMEOUT)
 		async with httpx.AsyncClient() as client:
 			response = await client.get(
 				f"{api_base_url}/{method}",
 				params=params,
-				timeout=30.0
+				timeout=timeout
 			)
 			response.raise_for_status()
 			return response.json()

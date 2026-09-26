@@ -90,23 +90,12 @@ class LLMModelManager(BaseManager):
         """
         Get default model for a specific capability (without provider restriction).
 
-        Args:
-                capability: Capability to filter by (text, image, video)
-
-        Returns:
-                LLMModel object or None
+        Priority: provider.is_default → model.is_default → model.id (lowest first).
         """
-        default_models = await self._get_by_capability(capability, is_active=True)
-        default_models = [m for m in default_models if m.is_default]
-
-        if default_models:
-            logger.info(f"Found default model for {capability}: {default_models[0].name}")
-            return default_models[0]
-
-        fallback_models = await self._get_by_capability(capability, is_active=True)
-        if fallback_models:
-            logger.info(f"Using fallback model for {capability}: {fallback_models[0].name}")
-            return fallback_models[0]
-
-        logger.warning(f"No active LLM model found for {capability}")
-        return None
+        models = await self._get_by_capability(capability, is_active=True)
+        if not models:
+            logger.warning(f"No active LLM model found for {capability}")
+            return None
+        models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))
+        logger.info(f"Resolved model for {capability}: {models[0].provider.name}/{models[0].model_id}")
+        return models[0]

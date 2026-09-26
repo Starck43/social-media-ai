@@ -62,7 +62,7 @@ TRIGGER_HINTS = {
 	},
 	
 	BotTriggerType.TIME_BASED: {
-		"description": "Запуск по расписанию (уже реализовано через collection_interval_hours)",
+		"description": "Запуск по расписанию (cron-задача в AgentTask)",
 		"config_example": {},
 		"use_cases": [
 			"Регулярная аналитика",

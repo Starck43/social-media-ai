@@ -11,18 +11,18 @@ from ..core.decorators import app_label
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-    from .managers.schedule_manager import ScheduleManager
+    from .managers.agent_task_manager import AgentTaskManager
 
 
 @app_label("social")
-class Schedule(Base, TenantScopedMixin, TimestampMixin):
-    """Cron-based schedule that enqueues background jobs (M1: collect/prune/digest stubs)."""
+class AgentTask(Base, TenantScopedMixin, TimestampMixin):
+    """Cron-based task that enqueues background jobs (collect/prune/digest/analyze/learn/reflect)."""
 
-    __tablename__ = "schedules"
+    __tablename__ = "agent_tasks"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_schedule_tenant_name"),
-        Index("ix_schedules_tenant_id", "tenant_id"),
-        Index("idx_schedules_next_run_at", "next_run_at"),
+        UniqueConstraint("tenant_id", "name", name="uq_agent_task_tenant_name"),
+        Index("ix_agent_tasks_tenant_id", "tenant_id"),
+        Index("idx_agent_tasks_next_run_at", "next_run_at"),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -33,9 +33,9 @@ class Schedule(Base, TenantScopedMixin, TimestampMixin):
     timezone: Mapped[str] = Column(
         String(64), nullable=False, default=settings.SCHEDULER_TIMEZONE, server_default="Europe/Moscow"
     )
-    # Job type to enqueue: 'collect' | 'digest' | 'prune'
+    # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
     job_type: Mapped[str] = Column(String(20), nullable=False)
-    # Job payload: {"source_ids": [...], "period": "week", "channel": "telegram", ...}
+    # Job payload: {"source_ids": [...], "scenario_id": 5, "period": "week", ...}
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
     next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
@@ -46,7 +46,7 @@ class Schedule(Base, TenantScopedMixin, TimestampMixin):
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager
 
-        objects: ClassVar[ScheduleManager | BaseManager]
+        objects: ClassVar[AgentTaskManager | BaseManager]
     else:
         objects: ClassVar = None
 
@@ -54,6 +54,6 @@ class Schedule(Base, TenantScopedMixin, TimestampMixin):
         return f"{self.name} ({self.cron_expr})"
 
 
-from .managers.schedule_manager import ScheduleManager  # noqa: E402
+from .managers.agent_task_manager import AgentTaskManager  # noqa: E402
 
-Schedule.objects = ScheduleManager()
+AgentTask.objects = AgentTaskManager()

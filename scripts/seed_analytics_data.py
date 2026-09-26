@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.core.database import init_db, async_session_maker
-from app.models import Platform, Source, BotScenario, AIAnalytics
+from app.models import Platform, Source, AgentScenario, AIAnalytics
 from app.types import SourceType, PlatformType
 
 # Realistic topics for different scenarios
@@ -66,7 +66,7 @@ async def create_test_data():
         # 2. Get or use existing scenarios
         print("\n2️⃣  Getting scenarios...")
         
-        scenarios_list = await BotScenario.objects.filter(is_active=True).limit(2)
+        scenarios_list = await AgentScenario.objects.filter(is_active=True).limit(2)
         
         if len(scenarios_list) < 2:
             print(f"   ⚠️  Found only {len(scenarios_list)} scenarios, need at least 2")
@@ -92,11 +92,11 @@ async def create_test_data():
                 external_id="tech_news_daily",
                 params={"description": "Технологические новости каждый день"},
                 is_active=True,
-                bot_scenario_id=tech_scenario.id
+                agent_scenario_id=tech_scenario.id
             )
             print(f"   ✅ Created source: {tech_source.name}")
         else:
-            tech_source.bot_scenario_id = tech_scenario.id
+            tech_source.agent_scenario_id = tech_scenario.id
             await tech_source.save()
             print(f"   ✅ Found source: {tech_source.name}")
         
@@ -109,11 +109,11 @@ async def create_test_data():
                 external_id="business_insights",
                 params={"description": "Бизнес инсайты и кейсы"},
                 is_active=True,
-                bot_scenario_id=business_scenario.id
+                agent_scenario_id=business_scenario.id
             )
             print(f"   ✅ Created source: {business_source.name}")
         else:
-            business_source.bot_scenario_id = business_scenario.id
+            business_source.agent_scenario_id = business_scenario.id
             await business_source.save()
             print(f"   ✅ Found source: {business_source.name}")
         

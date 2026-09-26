@@ -17,7 +17,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-API_BASE = "https://api.telegram.org"
+API_BASE = settings.TELEGRAM_API_BASE_URL.rstrip("/")
 MAX_TEXT_LEN = 4096
 
 

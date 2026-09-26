@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, JSON, ForeignKey, Index
+from sqlalchemy import JSON, Boolean, Column, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
-from .base import Base, TenantScopedMixin, TimestampMixin
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import BotActionType, BotTriggerType, LLMStrategyType
 from ..types.enums.bot_types import AnalyzeType
+from .base import Base, TenantScopedMixin, TimestampMixin
 
 
 @app_label("social")
-class BotScenario(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "bot_scenarios"
-    __table_args__ = (Index("ix_bot_scenarios_tenant_id", "tenant_id"), {"schema": settings.DB_SCHEMA})
+class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "agent_scenarios"
+    __table_args__ = (Index("ix_agent_scenarios_tenant_id", "tenant_id"), {"schema": settings.DB_SCHEMA})
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     name: Mapped[str] = Column(String(255), nullable=False)
@@ -62,17 +62,11 @@ class BotScenario(Base, TenantScopedMixin, TimestampMixin):
         """Legacy setter for backward compatibility."""
         self.text_prompt = value
 
-    # 🆕 Trigger conditions for when to analyze/act
-    # Trigger type: when to analyze content or perform action
+    # Trigger conditions for when to analyze/act
     trigger_type: Mapped[BotTriggerType] = BotTriggerType.sa_column(
         type_name="bot_trigger_type", nullable=True, store_as_name=True
     )
     # Trigger configuration: parameters for trigger evaluation
-    # Examples:
-    # - KEYWORD_MATCH: {"keywords": ["жалоба", "проблема"], "mode": "any"}
-    # - SENTIMENT_THRESHOLD: {"threshold": 0.3, "direction": "below"}
-    # - ACTIVITY_SPIKE: {"baseline_period_hours": 24, "spike_multiplier": 3.0}
-    # - USER_MENTION: {"usernames": ["@brand", "@support"]}
     trigger_config: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
 
     # Action to perform after analysis
@@ -80,17 +74,38 @@ class BotScenario(Base, TenantScopedMixin, TimestampMixin):
         type_name="bot_action_type", nullable=True, store_as_name=True
     )
 
-    is_active: Mapped[bool] = Column(Boolean, default=True)
+    # Guards for action safety
+    rate_limit_per_hour: Mapped[int | None] = Column(
+        Integer, nullable=True, comment="Max actions per hour for this scenario"
+    )
+    cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
+    requires_approval: Mapped[bool] = Column(
+        Boolean, nullable=False, default=True, server_default="true", comment="Require owner approval before execution"
+    )
+    blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
+    whitelist: Mapped[list[str] | None] = Column(
+        JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"
+    )
 
-    # Collection interval in hours (how often to check and collect content)
-    # Used by CheckpointManager to determine if collection is needed
-    # Minimum: 1 hour (don't collect more frequently)
-    collection_interval_hours: Mapped[int] = Column(Integer, nullable=False, default=1, server_default="1")
+    # LLM constraints
+    max_tokens: Mapped[int | None] = Column(
+        Integer, nullable=True, comment="Max tokens for LLM responses in this scenario"
+    )
+    # JSON Schema for structured output; lazily generated from analysis_types when empty
+    output_schema: Mapped[dict[str, Any] | None] = Column(
+        JSON, nullable=True, comment="JSON Schema for structured LLM output (lazily generated from analysis_types)"
+    )
+
+    is_active: Mapped[bool] = Column(Boolean, default=True)
+    is_default: Mapped[bool] = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+        comment="Default scenario for the tenant when a source has none assigned",
+    )
 
     # LLM models for different content types
-    #
-    # RECOMMENDED: Use llm_strategy (below) for automatic model selection.
-    # If set, these explicit models override llm_strategy.
     text_llm_model_id: Mapped[int | None] = Column(
         Integer,
         ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
@@ -110,10 +125,11 @@ class BotScenario(Base, TenantScopedMixin, TimestampMixin):
         comment="Specific LLM model for video analysis",
     )
 
-    # LLM resolution strategy: "cost_efficient", “quality”, “multimodal”
-    # Used for auto-resolve when explicit FK is not set
+    # LLM resolution strategy: "cost_efficient", "quality", "multimodal"
     llm_strategy: Mapped[LLMStrategyType] = LLMStrategyType.sa_column(
-        type_name="llm_strategy_type", nullable=True, default=LLMStrategyType.COST_EFFICIENT
+        type_name="llm_strategy_type",
+        nullable=True,
+        default=LLMStrategyType.COST_EFFICIENT.value,
     )
 
     # Relationships to LLM models
@@ -128,14 +144,14 @@ class BotScenario(Base, TenantScopedMixin, TimestampMixin):
     )
 
     # Reverse FK relation: one scenario can be reused by many sources
-    sources = relationship("Source", back_populates="bot_scenario")
+    sources = relationship("Source", back_populates="agent_scenario")
 
     # Manager will be set after class definition
     if TYPE_CHECKING:
+        from .managers.agent_scenario_manager import AgentScenarioManager
         from .managers.base_manager import BaseManager
-        from .managers.bot_scenario_manager import BotScenarioManager
 
-        objects: ClassVar[BotScenarioManager | BaseManager]
+        objects: ClassVar[AgentScenarioManager | BaseManager]
     else:
         objects: ClassVar = None
 
@@ -143,6 +159,6 @@ class BotScenario(Base, TenantScopedMixin, TimestampMixin):
         return f"{self.name} ({'active' if self.is_active else 'inactive'})"
 
 
-from .managers.bot_scenario_manager import BotScenarioManager  # noqa: E402
+from .managers.agent_scenario_manager import AgentScenarioManager  # noqa: E402
 
-BotScenario.objects = BotScenarioManager()
+AgentScenario.objects = AgentScenarioManager()

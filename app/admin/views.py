@@ -9,7 +9,7 @@ from sqladmin.fields import SelectField
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms.fields.choices import SelectMultipleField
+from wtforms import validators
 
 from app.admin.actions import LLMModelActions
 from app.models import (
@@ -19,19 +19,32 @@ from app.models import (
 	Notification,
 	Platform,
 	Source,
-	SourceUserRelationship,
-	BotScenario,
+	AgentScenario,
+	BotAction,
+	TenantCredential,
 	AIAnalytics,
 	LLMProvider,
 	LLMModel,
 )
-from app.models.managers.base_manager import prefetch
+from app.services.social.credentials import SETTABLE_KINDS
 from app.types import (
-	SourceType, ContentType, AnalysisType, LLMStrategyType, BotActionType, BotTriggerType, NotificationType
+	SourceType,
+	PlatformType,
+	PeriodType,
+	UserRoleType,
+	ActionType,
+	ContentType,
+	AnalysisType,
+	LLMStrategyType,
+	BotActionType,
+	BotActionStatus,
+	BotTriggerType,
+	NotificationType,
 )
-from app.types.enums.llm_types import MediaType
+from app.types.enums.llm_types import APIFormatType
 from .base import BaseAdmin
 from .widgets import EuropeanDateField
+from ..services.ai.llm_client import LLMClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +76,30 @@ class UserAdmin(BaseAdmin, model=User):
 
 	form_widget_args = {
 		"hashed_password": {"type": "password"}
+	}
+
+	form_args = {
+		"username": {
+			"label": "Имя пользователя",
+			"description": "Логин для входа в /app и /admin",
+		},
+		"email": {
+			"label": "Email",
+			"description": "Используется для идентификации и восстановления доступа",
+		},
+		"hashed_password": {
+			"label": "Пароль",
+			"description": "Задаётся при создании пользователя; для смены используйте действие «Изменить пароль»",
+		},
+		"role": {
+			"label": "Роль",
+			"description": "Определяет набор разрешений пользователя — см. раздел «Роли»",
+		},
+		"is_superuser": {
+			"label": "Администратор",
+			"description": "Полный доступ независимо от роли",
+		},
+		**BaseAdmin.form_args,
 	}
 
 	def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
@@ -116,6 +153,40 @@ class RoleAdmin(BaseAdmin, model=Role):
 		"permissions": "Разрешения",
 	}, **BaseAdmin.column_labels)
 
+	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw enum names)
+		"codename": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
+	form_args = {
+		"name": {
+			"label": "Название",
+			"description": "Отображаемое имя роли, например «Модератор сообщества»",
+		},
+		"codename": {
+			"label": "Кодовое наименование",
+			"description": "Системный уровень роли из общего enum; определяет место в иерархии прав",
+			"choices": UserRoleType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in UserRoleType.choices()])],
+		},
+		"description": {
+			"label": "Описание",
+			"description": "Для справки: кто и зачем получает эту роль",
+		},
+		"permissions": {
+			"label": "Разрешения",
+			"description": "Набор прав роли; суперпользователь игнорирует этот список",
+		},
+		**BaseAdmin.form_args,
+	}
+
+	column_formatters_detail = {
+		"codename": lambda m, a: m.codename.label if hasattr(m.codename, "label") else "—",
+	}
+
 
 class PermissionAdmin(BaseAdmin, model=Permission):
 	name = "Разрешение"
@@ -138,6 +209,45 @@ class PermissionAdmin(BaseAdmin, model=Permission):
 
 	form_excluded_columns = ["model_type_id", "codename"] + BaseAdmin.form_excluded_columns
 
+	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw enum names)
+		"action_type": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
+	form_args = {
+		"name": {
+			"label": "Название",
+			"description": "Человекочитаемое описание права, например «Просмотр источников»",
+		},
+		"action_type": {
+			"label": "Вид разрешения",
+			"description": "Какое действие разрешает право; кодовое имя строится как приложение.таблица.действие",
+			"choices": ActionType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in ActionType.choices()])],
+		},
+		"description": {
+			"label": "Описание",
+			"description": "Для справки: что именно разрешает право",
+		},
+		"roles": {
+			"label": "Роли",
+			"description": "Роли, которым выдано это право",
+		},
+		**BaseAdmin.form_args,
+	}
+
+	column_formatters = {
+		"action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
+		"action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
+	}
+
 
 class PlatformAdmin(BaseAdmin, model=Platform):
 	name = "Платформа"
@@ -145,46 +255,68 @@ class PlatformAdmin(BaseAdmin, model=Platform):
 	icon = "fa fa-globe"
 	column_list = ["id", "name", "platform_type", "is_active"]
 	column_searchable_list = ["name"]
-	column_sortable_list = ["name", "is_active", "last_sync"]
-	column_labels = {
-		"id": "ID",
-		"name": "Название",
-		"platform_type": "Тип платформы",
-		"is_active": "Активна",
-		"base_url": "УРЛ платформы",
-		"params": "Настройки API запросов",
-		"rate_limit_remaining": "Остаток лимитов",
-		"rate_limit_reset_at": "Сброс лимитов",
-		"sources": "Источники",
+	column_sortable_list = ["name", "is_active"]
+	column_labels = dict(
+		{
+			"id": "ID",
+			"name": "Название",
+			"platform_type": "Тип платформы",
+			"is_active": "Активна",
+			"base_url": "УРЛ платформы",
+			"params": "Настройки API запросов",
+			"sources": "Источники",
+		},
+		**BaseAdmin.column_labels,
+	)
+
+	column_formatters = {
+		# Show the localized label from the shared enum instead of the raw DB value
+		"platform_type": lambda m, a: m.platform_type.label if m.platform_type is not None else "—",
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
+		"platform_type": lambda m, a: m.platform_type.label if m.platform_type is not None else "—",
 	}
 
 	form_excluded_columns = ["sources"] + BaseAdmin.form_excluded_columns
 	form_widget_args = {
-		"rate_limit_remaining": {
-			"readonly": True,
-		},
-		"rate_limit_reset_at": {
-			"readonly": True,
-		},
+		"params": {"rows": 6},
 	}
 
-	@action(
-		name="sync_platform",
-		label="Синхронизировать",
-		add_in_list=True,
-		add_in_detail=True,
-	)
-	async def sync_platform_action(self, request: Request):
-		"""Trigger platform synchronization."""
-		pks = request.query_params.get("pks", "")
-		if not pks:
-			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw DB values)
+		"platform_type": SelectField,
+		**BaseAdmin.form_overrides,
+	}
 
-		# TODO: Implement platform synchronization logic
-		return RedirectResponse(
-			url=request.url_for("admin:list", identity=self.identity),
-			status_code=303,
-		)
+	form_args = {
+		"name": {
+			"label": "Название",
+			"description": "Системное имя платформы (vk, telegram, max) — используется в коде, логах и кредах",
+		},
+		"platform_type": {
+			"label": "Тип платформы",
+			"description": "Определяет, какой API-клиент и какие типы источников доступны",
+			"choices": PlatformType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in PlatformType.choices()])],
+		},
+		"base_url": {
+			"label": "УРЛ платформы",
+			"description": "Публичный адрес для ссылок, например https://vk.com (без завершающего слеша)",
+		},
+		"params": {
+			"label": "Настройки API запросов",
+			"description": (
+				"JSON. api_base_url — базовый URL метода (пусто = значение из настроек приложения); "
+				"api_version — версия API (VK); auth_type — тип авторизации. "
+				'Пример: {"api_base_url": "https://api.vk.com/method", "api_version": "5.199", "auth_type": "oauth"}'
+			),
+		},
+		**BaseAdmin.form_args,
+	}
 
 
 class SourceAdmin(BaseAdmin, model=Source):
@@ -193,48 +325,48 @@ class SourceAdmin(BaseAdmin, model=Source):
 	icon = "fa fa-rss"
 	column_list = [
 		"id",
+		"user",
 		"platform",
 		"name",
 		"source_type",
 		"external_id",
-		"bot_scenario",
+		"agent_scenario",
 		"is_active",
 		"last_checked",
 		"date_from",
 		"date_to",
 	]
-	column_searchable_list = ["name", "external_id"]
+	column_searchable_list = ["name", "external_id", "user.username"]
 	column_sortable_list = ["name", "is_active", "last_checked"]
 	column_labels = dict(
 		{
 			"id": "ID",
+			"user": "Пользователь",
 			"platform": "Платформа",
 			"name": "Название",
 			"platform_id": "ID платформы",
 			"source_type": "Тип источника",
 			"external_id": "Внешний ID источника",
 			"params": "Параметры",
-			"bot_scenario": "Сценарий бота",
+			"agent_scenario": "Сценарий бота",
 			"last_checked": "Последняя проверка",
 			"date_from": "Дата начала сбора",
 			"date_to": "Дата окончания сбора",
 			"analytics": "Аналитика",
-			"monitored_users": "Отслеживаемые пользователи",
-			"tracked_in_sources": "Отслеживается в источниках",
 		},
 		**BaseAdmin.column_labels,
 	)
-	column_details_exclude_list = ["platform_id", "bot_scenario_id"]
+	column_details_exclude_list = ["platform_id", "agent_scenario_id"]
 
 	form_columns = [
+		"user",
 		"platform",
 		"name",
 		"source_type",
 		"external_id",
-		"bot_scenario",
+		"agent_scenario",
 		"params",
 		"is_active",
-		"monitored_users",
 		"date_from",
 		"date_to",
 	]
@@ -246,10 +378,51 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"date_to": {"placeholder": "ДД-ММ-ГГГГ"},
 	}
 	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw DB values)
+		"source_type": SelectField,
 		"date_from": EuropeanDateField,
 		"date_to": EuropeanDateField,
+		**BaseAdmin.form_overrides,
 	}
 	form_args = {
+		"user": {
+			"label": "Пользователь",
+			"description": "Владелец источника; рабочее пространство наследуется от владельца",
+		},
+		"platform": {
+			"label": "Платформа",
+			"description": "Определяет API-клиент и источник токенов для сбора",
+		},
+		"name": {
+			"label": "Название",
+			"description": "Отображаемое имя; если пусто, в списках используется внешний ID",
+		},
+		"source_type": {
+			"label": "Тип источника",
+			"description": "Личный профиль, сообщество, канал или чат — тип определяет доступные методы API",
+			"choices": SourceType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in SourceType.choices()])],
+		},
+		"external_id": {
+			"label": "Внешний ID источника",
+			"description": "Идентификатор на платформе: короткое имя (screen_name) или числовой id",
+		},
+		"agent_scenario": {
+			"label": "Сценарий бота",
+			"description": "Сценарий анализа и реакции; пусто — используется сценарий по умолчанию",
+		},
+		"params": {
+			"label": "Параметры",
+			"description": (
+				"JSON. mode — api (Bot API, по умолчанию) | user (MTProto-сессия) | browser (план); "
+				"monitored_users — список username для отслеживания; "
+				"incremental_mode — собирать только новое; collection.count / collection.limit — размер "
+				"страницы и лимит за прогон; collection.filter — фильтр стены VK; "
+				"force_refresh и cli_dates — разовые переопределения дат"
+			),
+		},
 		"date_from": {
 			"label": "Дата начала сбора",
 			"description": "Дата начала мониторинга источника",
@@ -258,11 +431,19 @@ class SourceAdmin(BaseAdmin, model=Source):
 			"label": "Дата окончания сбора",
 			"description": "Дата окончания мониторинга источника. Оставьте пустым для бессрочного мониторинга",
 		},
+		**BaseAdmin.form_args,
 	}
 	column_formatters = {
+		# Localized labels come from the shared enums (never duplicated as string maps)
+		"source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
 		"last_checked": lambda m, a: m.last_checked.strftime("%d.%m.%Y %H:%M") if m.last_checked else "",
 		"date_from": lambda m, a: m.date_from.strftime("%d.%m.%Y") if m.date_from else "—",
 		"date_to": lambda m, a: m.date_to.strftime("%d.%m.%Y") if m.date_to else "—",
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
+		"source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
 	}
 
 	# Use custom templates for create/edit/details to inject per-view JS
@@ -271,75 +452,19 @@ class SourceAdmin(BaseAdmin, model=Source):
 	details_template = "sqladmin/source_details.html"
 
 	def list_query(self, request: Request) -> Select:
-		return Source.objects.prefetch_related(
-			"monitored_users",
-			"tracked_in_sources",
-		).to_select()
+		return Source.objects.filter().to_select()
 
 	def details_query(self, request: Request) -> Select:
 		pk = int(request.path_params["pk"])
 
-		monitored_prefetch = prefetch("monitored_users", queryset=Source.objects.exclude(id=pk))
-		# monitored_prefetch = prefetch("monitored_users", filters={"id__ne": pk})
-
 		return (
 			Source.objects.prefetch_related(
-				monitored_prefetch,
-				"tracked_in_sources",
 				"analytics",
 				"platform",
 			)
 			.filter(id=pk)
 			.to_select()
 		)
-
-	async def scaffold_form(self, rules=None):
-		"""
-		Configure create/edit form.
-
-		For monitored_users field:
-		— Show only USER sources
-		— Filter by current source platform (when editing)
-		— Always exclude a current source from the list
-		"""
-		form_class = await super().scaffold_form(rules)
-
-		if hasattr(form_class, "monitored_users"):
-			current_platform_id = None
-			current_source_id = None
-
-			try:
-				if hasattr(self, "request") and self.request:
-					current_source_id = self.request.path_params.get("pk")
-
-				if not current_source_id and hasattr(self, "model_id"):
-					current_source_id = self.model_id
-
-				if current_source_id:
-					current_source = await Source.objects.get(id=int(current_source_id))
-					if current_source:
-						current_platform_id = current_source.platform_id
-			except (ValueError, KeyError, AttributeError, TypeError):
-				pass
-
-			qs = Source.objects.filter(source_type=SourceType.USER.name)
-
-			if current_platform_id:
-				qs = qs.filter(platform_id=current_platform_id)
-
-			if current_source_id:
-				qs = qs.exclude(id=int(current_source_id))
-
-			sources = await qs.order_by(Source.name, Source.id)
-
-			form_class.monitored_users.kwargs.update(
-				{
-					"data": [(str(source.id), source) for source in sources],
-					"get_label": lambda obj: obj.name or obj.external_id or f"Источник #{obj.id}",
-				}
-			)
-
-		return form_class
 
 	@action(name="check_source", label="Проверить сейчас", add_in_list=True, add_in_detail=True)
 	async def check_source_action(self, request: Request):
@@ -458,89 +583,13 @@ class SourceAdmin(BaseAdmin, model=Source):
 			)
 
 
-class SourceUserRelationshipAdmin(BaseAdmin, model=SourceUserRelationship):
-	name = "Отслеживание пользователя"
-	name_plural = "Отслеживание пользователей"
-	icon = "fa fa-user-plus"
-
-	column_list = ["source_info", "user_info", "source.is_active", "source.updated_at"]
-
-	column_labels = dict(
-		{
-			"source_info": "Источник",
-			"user_info": "Пользователь",
-			"source.platform_url": "Источник отслеживания",
-			"user": "Пользователь",
-			"source.is_active": "Активен",
-			"source.updated_at": "Дата обновления"
-		},
-		**BaseAdmin.column_labels,
-	)
-
-	column_details_list = ["source.platform_url", "user", "source.is_active", "source.updated_at"]
-
-	column_formatters = {
-		"source_info": lambda m, a: (
-			f"{m.source.name}"
-			if getattr(m, "source", None) and getattr(m.source, "platform", None)
-			else f"Источник #{m.source_id}"
-		),
-		"user_info": lambda m, a: (
-			f"{m.user.name} • {m.user.platform_url}"
-			if getattr(m, "user", None) and getattr(m.user, "platform", None)
-			else f"Пользователь #{m.user_id}"
-		),
-		"source.updated_at": lambda m, a: (
-			m.source.updated_at.strftime("%d.%m.%Y") if getattr(getattr(m, "source", None), "updated_at", None) else "—"
-		),
-	}
-
-	def list_query(self, request: Request) -> Select:
-		# Load all FK relationships including nested ones to avoid DetachedInstanceError
-		# Use '__' syntax for nested relationships (Django-style)
-		return SourceUserRelationship.objects.select_related("source__platform", "user__platform").to_select()
-
-	def details_query(self, request: Request) -> Select:
-		return self.list_query(request)
-
-	async def scaffold_form(self, rules=None):
-		form_class = await super().scaffold_form(rules)
-
-		if hasattr(form_class, "source_id"):
-			sources = await Source.objects.exclude(source_type=SourceType.USER.name).order_by(Source.name, Source.id)
-
-			form_class.source_id.kwargs.update(
-				{
-					"data": [(str(s.id), s) for s in sources],
-					"get_label": lambda obj: (
-						f"{obj.name} • {obj.platform.name}" if obj.name else f"{obj.external_id} • {obj.platform.name}"
-					),
-				}
-			)
-
-		# Users for "user_id": только USER источники
-		if hasattr(form_class, "user_id"):
-			users = await Source.objects.filter(source_type=SourceType.USER.name).order_by(Source.name, Source.id)
-
-			form_class.user_id.kwargs.update(
-				{
-					"data": [(str(u.id), u) for u in users],
-					"get_label": lambda obj: (
-						f"{obj.name} • {obj.platform.name}" if obj.name else f"{obj.external_id} • {obj.platform.name}"
-					),
-				}
-			)
-
-		return form_class
-
-
-class BotScenarioAdmin(BaseAdmin, model=BotScenario):
+class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 	name = "Сценарий бота"
 	name_plural = "Сценарии ботов"
 	icon = "fa fa-robot"
-	column_list = ["id", "name", "description", "is_active", "collection_interval_hours"]
+	column_list = ["id", "name", "description", "is_active", "max_tokens"]
 	column_searchable_list = ["name", "description"]
-	column_sortable_list = ["name", "is_active", "collection_interval_hours"]
+	column_sortable_list = ["name", "is_active", "max_tokens"]
 	column_labels = dict({
 		"id": "ID",
 		"name": "Название",
@@ -559,7 +608,6 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		"analysis_types": "Типы анализа",
 		"content_types": "Типы контента",
 		"scope": "Дополнительные параметры",
-		"collection_interval_hours": "Интервал сбора (часы)",
 		"sources": "Источники",
 		"text_llm_model": "Модель для текста",
 		"image_llm_model": "Модель для изображений",
@@ -587,8 +635,22 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 	}
 	form_args = {
 		'llm_strategy': {
+			'label': 'Стратегия выбора модели',
+			'description': (
+				'Как подбирается модель, если конкретная не задана: '
+				'cost_efficient — дешевле, quality — качественнее, multimodal — с поддержкой медиа'
+			),
 			'choices': LLMStrategyType.choices(),
-			'coerce': str
+			'coerce': str,
+			'validators': [validators.AnyOf([value for value, _ in LLMStrategyType.choices()])],
+		},
+		'description': {
+			'label': 'Описание сценария',
+			'description': 'Для справки: что делает сценарий и на каких источниках применяется',
+		},
+		'name': {
+			'label': 'Название',
+			'description': 'Короткое понятное имя сценария, например «Комментарии к постам VK»',
 		},
 		'text_prompt': {
 			'description': (
@@ -697,8 +759,8 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 		},
 	}
 
-	create_template = "sqladmin/bot_scenario_create.html"
-	edit_template = "sqladmin/bot_scenario_edit.html"
+	create_template = "sqladmin/agent_scenario_create.html"
+	edit_template = "sqladmin/agent_scenario_edit.html"
 
 	async def scaffold_form(self, rules=None):
 		"""Provide enum types and presets to template."""
@@ -835,7 +897,7 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 
 		# Load scenario
 		try:
-			scenario = await BotScenario.objects.get(id=scenario_id)
+			scenario = await AgentScenario.objects.get(id=scenario_id)
 		except Exception:
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
@@ -984,10 +1046,10 @@ class BotScenarioAdmin(BaseAdmin, model=BotScenario):
 
 		for pk in pks.split(","):
 			try:
-				scenario = await BotScenario.objects.get(id=int(pk))
+				scenario = await AgentScenario.objects.get(id=int(pk))
 				if scenario:
 					new_status = not scenario.is_active
-					await BotScenario.objects.update_by_id(int(pk), is_active=new_status)
+					await AgentScenario.objects.update_by_id(int(pk), is_active=new_status)
 					logger.info(f"Scenario {pk} status changed to {new_status}")
 			except Exception as e:
 				logger.error(f"Error toggling scenario {pk}: {e}")
@@ -1016,6 +1078,15 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 		"period_type": "Период",
 		"topic_chain_id": "Цепочка",
 		"llm_model": "Модель ИИ",
+		"content_hash": "Хэш контента",
+		"prompt_text": "Промпт",
+		"provider_type": "Провайдер",
+		"request_tokens": "Токенов на вход",
+		"response_tokens": "Токенов на выход",
+		"estimated_cost": "Стоимость, ¢",
+		"parent_analysis_id": "Родительский анализ",
+		"parent": "Родительский анализ",
+		"children": "Дочерние анализы",
 	}, **BaseAdmin.column_labels)
 
 	form_excluded_columns = ["summary_data"] + BaseAdmin.form_excluded_columns
@@ -1023,10 +1094,78 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 		"analysis_date": {
 			"readonly": True,
 		},
+		"prompt_text": {"rows": 6},
+	}
+
+	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw DB values)
+		"period_type": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
+	form_args = {
+		"analysis_date": {
+			"label": "Дата анализа",
+			"description": "Заполняется автоматически при создании записи",
+		},
+		"period_type": {
+			"label": "Период",
+			"description": "За какой интервал агрегирован анализ: день, неделя, месяц",
+			"choices": PeriodType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in PeriodType.choices()])],
+		},
+		"main_topics": {
+			"label": "Основные темы",
+			"description": "Список тем, выделенных моделью; заполняется автоматически",
+		},
+		"topic_chain_id": {
+			"label": "Цепочка",
+			"description": "ID связанной цепочки тем — объединяет анализы по одной теме",
+		},
+		"llm_model": {
+			"label": "Модель ИИ",
+			"description": "Модель, которой выполнен анализ; влияет на тарификацию",
+		},
+		"content_hash": {
+			"label": "Хэш контента",
+			"description": "SHA256-отпечаток проанализированного контента; защищает от повторной оплаты LLM",
+		},
+		"prompt_text": {
+			"label": "Промпт",
+			"description": "Полный текст промпта, отправленного модели; для разбора расхождений",
+		},
+		"provider_type": {
+			"label": "Провайдер",
+			"description": "API-формат провайдера (openai / anthropic), которым выполнен запрос",
+		},
+		"request_tokens": {
+			"label": "Токенов на вход",
+			"description": "Сколько токенов промпта списано провайдером",
+		},
+		"response_tokens": {
+			"label": "Токенов на выход",
+			"description": "Сколько токенов ответа сгенерировала модель",
+		},
+		"estimated_cost": {
+			"label": "Стоимость, ¢",
+			"description": "Оценка стоимости запроса в центах; суммируется в отчётах по провайдерам",
+		},
+		**BaseAdmin.form_args,
 	}
 
 	column_formatters = {
 		"analysis_date": lambda m, a: m.analysis_date.strftime("%d.%m.%Y %H:%M") if hasattr(m, 'analysis_date') else "",
+		"period_type": lambda m, a: (
+			m.period_type.label
+			if m.period_type and hasattr(m.period_type, 'label')
+			else str(m.period_type) if m.period_type else "—"
+		),
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
 		"period_type": lambda m, a: (
 			m.period_type.label
 			if m.period_type and hasattr(m.period_type, 'label')
@@ -1094,11 +1233,36 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 	# Form arguments with choices from MediaType enum
 	form_args = {
+		"title": {
+			"label": "Заголовок",
+			"description": "Краткая суть уведомления, показывается в списке",
+		},
+		"message": {
+			"label": "Сообщение",
+			"description": "Полный текст уведомления для пользователя",
+		},
 		"notification_type": {
+			"label": "Тип уведомления",
+			"description": "Определяет иконку и категорию; значения берутся из общего enum",
 			'choices': NotificationType.choices(),  # Use MediaType enum
 			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in NotificationType.choices()])],
+		},
+		"related_entity_type": {
+			"label": "Тип сущности",
+			"description": "Тип объекта, к которому относится уведомление: source, platform, analysis",
+		},
+		"related_entity_id": {
+			"label": "ID сущности",
+			"description": "ID объекта указанного типа; служит для перехода из уведомления",
+		},
+		"tenant_id": {
+			"label": "Рабочее пространство",
+			"description": "Пусто — уведомление видно всем рабочим пространствам",
 		},
 		'is_read': {
+			'label': "Прочитано",
+			'description': "Снятая галочка означает, что уведомление ещё не просмотрено пользователем",
 			'choices': [(True, 'Да'), (False, 'Нет')],
 			'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
 		},
@@ -1171,223 +1335,393 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
-	"""
-	Admin for LLM Providers.
-
-	Note: Models are managed separately in LLMModelAdmin.
-	"""
-
 	name = "Провайдер LLM"
 	name_plural = "Провайдеры LLM"
 	icon = "fa fa-server"
 
-	# Column configuration - only provider info, no models
-	column_list = ["id", "name", "api_url", "is_active"]
-	column_searchable_list = ["name", "api_url"]
-	column_sortable_list = ["name", "is_active"]
+	column_list = ["id", "name", "api_format", "base_url", "is_default", "is_active"]
+	column_searchable_list = ["name", "base_url"]
+	column_sortable_list = ["name", "api_format", "is_default", "is_active"]
 
-	column_labels = dict({
-		"id": "ID",
-		"name": "Название",
-		"description": "Описание",
-		"api_url": "API URL",
-		"api_key_env": "Переменная окружения для API ключа",
-		"config": "Дополнительные параметры (JSON)",
-		"is_active": "Активен",
-	}, **BaseAdmin.column_labels)
+	def details_query(self, request: Request) -> Select:
+		# `LLMModel.__str__` renders the provider name, so the related models must
+		# arrive with their `provider` already loaded — the session is closed
+		# before the template renders, and a lazy load there raises
+		# DetachedInstanceError.
+		return (
+			LLMProvider.objects.select_related("models__provider").filter(id=int(request.path_params["pk"])).to_select()
+		)
 
-	form_excluded_columns = BaseAdmin.form_excluded_columns + [
-		"models",  # Managed in LLMModelAdmin
-	]
+	column_labels = dict(
+		{
+			"id": "ID",
+			"name": "Название",
+			"description": "Описание",
+			"api_format": "Формат API",
+			"base_url": "Базовый URL",
+			"auth_header": "Заголовок авторизации",
+			"encrypted_api_key": "API ключ (зашифрован)",
+			"is_active": "Активен",
+			"is_default": "По умолчанию",
+		},
+		**BaseAdmin.column_labels,
+	)
 
-	# Form arguments
+	form_excluded_columns = BaseAdmin.form_excluded_columns + ["models"]
+
+	form_overrides = {
+		"api_format": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
 	form_args = {
-		"name": {
-			"label": "Название",
-			"description": "Например: OpenAI, DeepSeek, SambaNova"
+		"name": {"label": "Название", "description": "Например: OpenAI, DeepSeek, Anthropic"},
+		"description": {"label": "Описание", "description": "Для справки"},
+		"api_format": {
+			"label": "Формат API",
+			"description": "'openai' для OpenAI-совместимых, 'anthropic' для Anthropic Messages API",
+			"choices": APIFormatType.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf(APIFormatType.values(), message="Выберите формат API из списка")],
 		},
-		"api_url": {
-			"label": "API URL",
-			"description": "Базовый URL для API провайдера. Например: https://api.openai.com/v1"
+		"base_url": {
+			"label": "Базовый URL",
+			"description": "Например: https://api.openai.com/v1 или https://api.anthropic.com/v1",
 		},
-		"api_key_env": {
-			"label": "Переменная окружения для API ключа",
-			"description": "Название переменной окружения с API ключом. Например: OPENAI_API_KEY"
+		"auth_header": {
+			"label": "Заголовок",
+			"description": "Оставьте пустым для Authorization: Bearer. Для кастомных: 'x-api-key: {key}'",
 		},
-		"config": {
-			"label": "Дополнительные настройки",
-			"description": "JSON с дополнительными параметрами провайдера (rate limits, timeout и т.д.)"
+		"encrypted_api_key": {
+			"label": "API ключ",
+			"description": "Ключ будет зашифрован перед сохранением в БД",
 		},
-		**BaseAdmin.form_args
+		"is_default": {
+			"label": "По умолчанию",
+			"description": "Этот провайдер будет в приоритете при авто-выборе",
+		},
+		"is_active": {"label": "Активен"},
+		**BaseAdmin.form_args,
 	}
 
-	# Column formatters
-	column_formatters = {
-	}
+	@action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
+	async def test_connection_action(self, request: Request):
+		pks = request.query_params.get("pks", "")
+		if not pks:
+			request.session["admin_message"] = {"type": "error", "message": "Не выбран провайдер"}
+			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+		provider_id = int(pks.split(",")[0])
+		provider = await LLMProvider.objects.get(id=provider_id)
+		models = await LLMModel.objects.filter(provider_id=provider_id, is_active=True).all()
+		if not models:
+			request.session["admin_message"] = {"type": "error", "message": "Нет активных моделей у провайдера"}
+			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+		client = LLMClientFactory.create(models[0])
+		try:
+			import time
 
-	# Custom templates with JS injection
-	create_template = "llm_provider/create.html"
-	edit_template = "llm_provider/edit.html"
+			t0 = time.monotonic()
+			result = await client.analyze("Say 'ok' and nothing else.", max_tokens=10)
+			elapsed = time.monotonic() - t0
+			content = str(result.get("parsed", {}))
+			request.session["admin_message"] = {
+				"type": "success",
+				"message": f"✅ {provider.name} ({provider.api_format}): {elapsed:.2f}s — {content}",
+			}
+		except Exception as e:
+			logger.error(f"Connection test for {provider.name} failed: {e}")
+			request.session["admin_message"] = {"type": "error", "message": f"❌ {provider.name}: {e}"}
+		return RedirectResponse(request.url_for("admin:list", identity=self.identity))
+
+	async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+		if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
+			from app.utils.crypto import encrypt_secret
+
+			model.encrypted_api_key = encrypt_secret(model.encrypted_api_key)
+			await LLMProvider.objects.update_by_id(model.id, encrypted_api_key=model.encrypted_api_key)
+		await super().after_model_change(data, model, is_created, request)
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
-	"""
-	Admin for LLM Models.
-	
-	Each provider can have multiple models with different capabilities and costs.
-	"""
-
 	name = "Модель LLM"
 	name_plural = "Модели LLM"
 	icon = "fa fa-microchip"
 
-	column_list = ["id", "name", "provider", "capabilities", "input_cost", "output_cost", "is_active", "is_default"]
-	column_searchable_list = ["name", "description"]
-	column_sortable_list = ["name", "input_cost", "output_cost", "is_active", "is_default"]
-
-	column_labels = dict({
-		"id": "ID",
-		"name": "Название модели",
-		"description": "Описание",
-		"provider_id": "Провайдер",
-		"provider": "Провайдер",
-		"input_cost": "Цена входа ($/1M токенов)",
-		"output_cost": "Цена выхода ($/1M токенов)",
-		"capabilities": "Возможности",
-		"config": "Настройки (JSON)",
-		"is_active": "Активна",
-		"is_default": "По умолчанию для провайдера",
-	}, **BaseAdmin.column_labels)
-
-	# Form configuration
-	form_excluded_columns = BaseAdmin.form_excluded_columns + [
-		"text_scenarios",
-		"image_scenarios",
-		"video_scenarios",
+	column_list = [
+		"id",
+		"name",
+		"model_id",
+		"provider",
+		"model_type",
+		"max_tokens",
+		"input_cost_per_1k",
+		"output_cost_per_1k",
+		"is_default",
+		"is_active",
+	]
+	column_searchable_list = ["name", "model_id", "description"]
+	column_sortable_list = [
+		"name",
+		"model_type",
+		"max_tokens",
+		"input_cost_per_1k",
+		"output_cost_per_1k",
+		"is_default",
+		"is_active",
 	]
 
+	column_labels = dict(
+		{
+			"id": "ID",
+			"name": "Название",
+			"model_id": "API модель",
+			"description": "Описание",
+			"provider_id": "Провайдер",
+			"provider": "Провайдер",
+			"model_type": "Тип модели",
+			"input_cost_per_1k": "Вход $/1K",
+			"output_cost_per_1k": "Выход $/1K",
+			"max_tokens": "Max токенов",
+			"default_temperature": "Температура",
+			"is_active": "Активна",
+			"is_default": "По умолчанию",
+		},
+		**BaseAdmin.column_labels,
+	)
+
+	form_excluded_columns = BaseAdmin.form_excluded_columns + ["text_scenarios", "image_scenarios", "video_scenarios"]
+
 	form_overrides = {
-		"capabilities": SelectMultipleField,
-		**BaseAdmin.form_overrides
+		"model_type": SelectField,
+		**BaseAdmin.form_overrides,
 	}
 
 	form_args = {
-		"provider_id": {
-			"label": "Провайдер",
-			"description": "Выберите провайдера для этой модели"
-		},
-		"name": {
-			"label": "Название модели",
-			"description": "Например: gpt-4-turbo, deepseek-chat, llama-3.1-70b"
+		"provider_id": {"label": "Провайдер", "description": "Выберите провайдера"},
+		"name": {"label": "Название", "description": "Например: GPT-4 Turbo"},
+		"model_id": {
+			"label": "API модель",
+			"description": "Идентификатор в API провайдера: gpt-4-turbo, claude-3-opus-20240229",
 		},
 		"description": {
 			"label": "Описание",
-			"description": "Краткое описание модели и её особенностей"
+			"description": "Для справки оператора: чем эта модель отличается от других",
 		},
-		"capabilities": {
-			"label": "Возможности",
-			"description": "Выберите типы контента, которые может обрабатывать модель",
-			"choices": MediaType.choices(),
+		"model_type": {
+			"label": "Тип модели",
+			"description": "text — текст, image — текст+изображения, embedding — эмбеддинги",
+			"choices": [("text", "text — текст"), ("image", "image — текст+изображения"), ("embedding", "embedding — эмбеддинги")],
 			"coerce": str,
 		},
-		"input_cost": {
-			"label": "Цена входящих токенов",
-			"description": "Стоимость в долларах за 1 миллион входящих токенов"
+		"input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
+		"output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
+		"max_tokens": {"label": "Max токенов", "description": "Лимит контекстного окна модели"},
+		"default_temperature": {"label": "Температура", "description": "По умолчанию 0.3"},
+		"is_active": {"label": "Активна"},
+		"is_default": {"label": "По умолчанию", "description": "Приоритетная модель для этого провайдера"},
+		"last_request_cost": {
+			"label": "Стоимость последнего запроса",
+			"description": "Заполняется автоматически после теста модели",
 		},
-		"output_cost": {
-			"label": "Цена исходящих токенов",
-			"description": "Стоимость в долларах за 1 миллион исходящих токенов"
+		"last_request_cost_at": {
+			"label": "Когда был последний запрос",
+			"description": "Заполняется автоматически после теста модели",
 		},
-		"config": {
-			"label": "Настройки модели",
-			"description": "JSON с параметрами: temperature, max_tokens, top_p и т.д."
-		},
-		"is_active": {
-			"label": "Активна",
-			"description": "Доступна ли модель для использования"
-		},
-		"is_default": {
-			"label": "По умолчанию",
-			"description": "Использовать эту модель по умолчанию для текущего провайдера"
-		},
-		**BaseAdmin.form_args
+		**BaseAdmin.form_args,
 	}
 
-	# Column formatters
 	column_formatters = {
 		"provider": lambda m, a: m.provider.name if m.provider else "—",
-		"capabilities": lambda m, a: ", ".join(m.capabilities) if m.capabilities else "—",
-		"input_cost": lambda m, a: f"${m.input_cost:.2f}",
-		"output_cost": lambda m, a: f"${m.output_cost:.2f}",
+		"model_type": lambda m, a: m.model_type if m.model_type else "—",
+		"input_cost_per_1k": lambda m, a: f"${m.input_cost_per_1k:.4f}",
+		"output_cost_per_1k": lambda m, a: f"${m.output_cost_per_1k:.4f}",
+		**BaseAdmin.column_formatters,
 	}
-
-	async def insert_model(self, request: Request, data: dict) -> Any:
-		"""Ensure capabilities is always a list."""
-		if "capabilities" in data:
-			if not isinstance(data["capabilities"], list):
-				data["capabilities"] = [data["capabilities"]] if data["capabilities"] else []
-			data["capabilities"] = [c for c in data["capabilities"] if c]
-
-		return await super().insert_model(request, data)
-
-	async def update_model(self, request: Request, pk: Any, data: dict) -> Any:
-		"""Ensure capabilities is always a list."""
-		if "capabilities" in data:
-			if not isinstance(data["capabilities"], list):
-				data["capabilities"] = [data["capabilities"]] if data["capabilities"] else []
-			data["capabilities"] = [c for c in data["capabilities"] if c]
-
-		return await super().update_model(request, pk, data)
 
 	async def scaffold_form(self, rules=None):
 		form = await super().scaffold_form(rules)
 
-		# Загрузка провайдеров для выпадающего списка
 		providers = await LLMProvider.objects.all().order_by("name")
 
-		# Используем правильное имя поля формы (может быть provider_id или provider)
-		if hasattr(form, 'provider_id'):
-			field_name = 'provider_id'
-		elif hasattr(form, 'provider'):
-			field_name = 'provider'
+		if hasattr(form, "provider_id"):
+			field_name = "provider_id"
+		elif hasattr(form, "provider"):
+			field_name = "provider"
 		else:
-			# Если ни одно не найдено, пропускаем настройку
 			return form
 
-		getattr(form, field_name).kwargs.update({
-			"data": [(str(p.id), p) for p in providers],
-			"get_label": lambda obj: obj.name,
-		})
+		getattr(form, field_name).kwargs.update(
+			{
+				"data": [(str(p.id), p) for p in providers],
+				"get_label": lambda obj: obj.name,
+			}
+		)
 
 		return form
 
 	async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
-		"""Ensure only one model can be default at a time."""
 		await super().after_model_change(data, model, is_created, request)
 
-		# Если модель установлена как по умолчанию
 		if model.is_default:
-			# Сбросить флаг is_default для всех других моделей
 			objects_to_update = await LLMModel.objects.filter(provider_id=model.provider_id).exclude(id=model.id).all()
 			for obj in objects_to_update:
 				obj.is_default = False
 				obj.save()
 
-	@action(
-		name="test-model",
-		label="🧪 Тестировать модель",
-		add_in_list=True,
-		add_in_detail=True
-	)
+	@action(name="test-model", label="🧪 Тестировать модель", add_in_list=True, add_in_detail=True)
 	async def test_model_action(self, request: Request):
-		"""Test the selected LLM model."""
 		pks = request.query_params.get("pks", "")
 
 		if not pks:
-			request.session["admin_message"] = {
-				"type": "error",
-				"message": "Не выбрана модель для тестирования"
-			}
+			request.session["admin_message"] = {"type": "error", "message": "Не выбрана модель для тестирования"}
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
 		return await LLMModelActions.test_model(self, request, pks, self.identity)
+
+
+class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
+	"""
+	Per-tenant platform credentials (the vault).
+
+	The form accepts the secret in plaintext and encrypts it before saving, so an
+	operator never sees ciphertext. Secrets themselves are resolved by
+	`app.services.social.credentials` and are never displayed here.
+	"""
+
+	name = "Креды платформы"
+	name_plural = "Креды платформ"
+	icon = "fa fa-key"
+
+	column_list = ["id", "tenant_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
+	column_searchable_list = ["platform", "kind", "label"]
+	column_sortable_list = ["platform", "kind", "expires_at", "is_active"]
+	column_default_sort = [("updated_at", True)]
+	column_details_exclude_list = ["secret_encrypted", "meta"]
+
+	form_excluded_columns = BaseAdmin.form_excluded_columns + ["meta"]
+
+	form_overrides = {
+		"platform": SelectField,
+		"kind": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
+	_kind_choices = sorted({k for kinds in SETTABLE_KINDS.values() for k in kinds})
+
+	column_labels = dict(
+		{
+			"id": "ID",
+			"tenant_id": "Рабочее пространство",
+			"platform": "Платформа",
+			"kind": "Тип секрета",
+			"label": "Метка",
+			"secret_encrypted": "Секрет (зашифрован)",
+			"expires_at": "Действует до",
+			"meta": "Метаданные",
+		},
+		**BaseAdmin.column_labels,
+	)
+
+	form_args = {
+		"tenant_id": {"label": "Рабочее пространство", "description": "ID из таблицы tenants"},
+		"platform": {
+			"label": "Платформа",
+			"description": "vk | telegram | max",
+			"choices": sorted(SETTABLE_KINDS),
+			"coerce": str,
+		},
+		"kind": {
+			"label": "Тип секрета",
+			"description": "vk: user_token (видит больше) | service_token; telegram/max: bot_token; telegram L2: api_id | api_hash | session",
+			"choices": _kind_choices,
+			"coerce": str,
+		},
+		"label": {"label": "Метка", "description": "Для справки, например «user token владельца»"},
+		"secret_encrypted": {
+			"label": "Секрет",
+			"description": "Вставьте токен открытым текстом — он будет зашифрован перед сохранением",
+		},
+		"expires_at": {"label": "Действует до", "description": "Оставьте пустым, если срок неизвестен"},
+		**BaseAdmin.form_args,
+	}
+
+	async def after_model_change(self, data: dict, model: TenantCredential, is_created: bool, request=None) -> None:
+		if model.secret_encrypted and not model.secret_encrypted.startswith("gAAAAA"):
+			from app.utils.crypto import encrypt_secret
+
+			model.secret_encrypted = encrypt_secret(model.secret_encrypted)
+			await TenantCredential.objects.update_by_id(model.id, secret_encrypted=model.secret_encrypted)
+		await super().after_model_change(data, model, is_created, request)
+
+
+class BotActionAdmin(BaseAdmin, model=BotAction):
+	"""
+	Ledger of bot actions, written by the analyze job and action_send.
+
+	Read + delete in admin; only the status can be adjusted manually (e.g. to
+	cancel a stale PENDING row). payload/result/confirmed_* stay untouched.
+	"""
+
+	name = "Действие бота"
+	name_plural = "Действия ботов"
+	icon = "fa fa-bolt"
+	can_create = False
+	form_columns = ["status"]
+
+	column_list = ["id", "agent_scenario_id", "source_id", "action_type", "status", "dry_run", "created_at"]
+	column_searchable_list = ["status", "action_type"]
+	column_sortable_list = ["created_at", "status"]
+	column_default_sort = [("created_at", True)]
+
+	column_labels = dict(
+		{
+			"id": "ID",
+			"agent_scenario_id": "Сценарий",
+			"source_id": "Источник",
+			"analytics_id": "Аналитика",
+			"action_type": "Тип действия",
+			"status": "Статус",
+			"payload": "Payload",
+			"result": "Результат",
+			"error": "Ошибка",
+			"dry_run": "Dry run",
+			"confirmed_by": "Подтверждено пользователем",
+			"confirmed_at": "Время подтверждения",
+			"attempts": "Попытки",
+		},
+		**BaseAdmin.column_labels,
+	)
+
+	form_widget_args = {
+		"status": {"readonly": False},
+	}
+
+	form_overrides = {
+		# SelectField override keeps the choices from form_args below (the default
+		# enum converter would replace them with raw enum names)
+		"status": SelectField,
+		**BaseAdmin.form_overrides,
+	}
+
+	form_args = {
+		"status": {
+			"label": "Статус",
+			"description": "Можно поправить вручную, например отменить зависшую запись PENDING",
+			"choices": BotActionStatus.choices(),
+			"coerce": str,
+			"validators": [validators.AnyOf([value for value, _ in BotActionStatus.choices()])],
+		},
+		**BaseAdmin.form_args,
+	}
+
+	column_formatters = {
+		"dry_run": lambda m, a: "✅ Да" if m.dry_run else "❌ Нет",
+		"action_type": lambda m, a: m.action_type.label if m.action_type is not None else "—",
+		"status": lambda m, a: m.status.label if m.status is not None else "—",
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
+		"action_type": lambda m, a: m.action_type.label if m.action_type is not None else "—",
+		"status": lambda m, a: m.status.label if m.status is not None else "—",
+	}

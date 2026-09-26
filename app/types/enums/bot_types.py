@@ -142,3 +142,41 @@ class BotTriggerType(DatabaseEnum, Enum):
 class AnalyzeType(DatabaseEnum, Enum):
     THEMES = "themes"
     DAYS = "days"
+
+
+@database_enum
+class BotActionStatus(DatabaseEnum, Enum):
+    """Status of a bot action in the ledger."""
+
+    PENDING = ("pending", "Ожидает", "⏳")
+    APPROVED = ("approved", "Одобрено", "✅")
+    REJECTED = ("rejected", "Отклонено", "❌")
+    EXECUTED = ("executed", "Выполнено", "🚀")
+    FAILED = ("failed", "Ошибка", "⚠️")
+
+    def __init__(self, db_value, display_name, emoji):
+        self._db_value = db_value
+        self._display_name = display_name
+        self._emoji = emoji
+
+    @property
+    def db_value(self):
+        return self._db_value
+
+    @property
+    def display_name(self):
+        return self._display_name
+
+    @property
+    def emoji(self):
+        return self._emoji
+
+    @property
+    def label(self):
+        return f"{self._emoji} {self._display_name}"
+
+    @classmethod
+    def choices(cls, use_db_value: bool = False):
+        if use_db_value:
+            return [(status.db_value, status.label) for status in cls]
+        return [(status.name, status.label) for status in cls]

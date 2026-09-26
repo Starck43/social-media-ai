@@ -169,10 +169,10 @@ async def run_collection_with_cli(
 			console.print(f"[dim]🎯 Source: {source.name} ({source.platform.name})[/dim]")
 
 			if show_details:
-				# Show analysis type from bot_scenario
-				analyze_type = source.bot_scenario.analyze_type if source.bot_scenario else "themes"
+				# Show analysis type from agent_scenario
+				analyze_type = source.agent_scenario.analyze_type if source.agent_scenario else "themes"
 				console.print(
-					f"[dim]🎚️ Scenario: {source.bot_scenario.name if source.bot_scenario else 'None'} "
+					f"[dim]🎚️ Scenario: {source.agent_scenario.name if source.agent_scenario else 'None'} "
 					f"(analyze by: {analyze_type})[/dim]"
 				)
 

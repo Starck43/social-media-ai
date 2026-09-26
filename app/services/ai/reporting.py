@@ -18,7 +18,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import new_session
-from app.models import AIAnalytics, BotScenario, Source
+from app.models import AIAnalytics, AgentScenario, Source
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -68,7 +68,7 @@ class ReportAggregator:
 
             if scenario_id:
                 # Join with Source to filter by scenario
-                query = query.join(Source).where(Source.bot_scenario_id == scenario_id)
+                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
 
             # Order by date
             query = query.order_by(AIAnalytics.analysis_date.asc())
@@ -143,7 +143,7 @@ class ReportAggregator:
                 query = query.where(AIAnalytics.source_id == source_id)
 
             if scenario_id:
-                query = query.join(Source).where(Source.bot_scenario_id == scenario_id)
+                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
 
             # Execute
             result = await session.execute(query)
@@ -219,7 +219,7 @@ class ReportAggregator:
                 query = query.where(AIAnalytics.source_id == source_id)
 
             if scenario_id:
-                query = query.join(Source).where(Source.bot_scenario_id == scenario_id)
+                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
 
             # Execute
             result = await session.execute(query)
@@ -311,7 +311,7 @@ class ReportAggregator:
                 query = query.where(AIAnalytics.source_id == source_id)
 
             if scenario_id:
-                query = query.join(Source).where(Source.bot_scenario_id == scenario_id)
+                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
 
             # Execute
             result = await session.execute(query)
@@ -366,7 +366,7 @@ class ReportAggregator:
                 query = query.where(AIAnalytics.source_id == source_id)
 
             if scenario_id:
-                query = query.join(Source).where(Source.bot_scenario_id == scenario_id)
+                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
 
             # Execute
             result = await session.execute(query)

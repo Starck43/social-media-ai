@@ -20,15 +20,15 @@ class DigestRun(Base, TenantScopedMixin, TimestampMixin):
 
     __tablename__ = "digest_runs"
     __table_args__ = (
-        UniqueConstraint("schedule_id", "period_start", "period_end", name="uq_digest_schedule_period"),
+        UniqueConstraint("agent_task_id", "period_start", "period_end", name="uq_digest_agent_task_period"),
         Index("ix_digest_runs_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
-    schedule_id: Mapped[int | None] = Column(
+    agent_task_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.schedules.id", ondelete="SET NULL"),
+        ForeignKey("social_manager.agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
     period: Mapped[str] = Column(String(10), nullable=False)  # 'day' | 'week'

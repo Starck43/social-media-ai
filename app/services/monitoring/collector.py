@@ -2,15 +2,15 @@ import asyncio
 import logging
 from typing import Optional
 
-from app.models import Source, Platform
+from app.models import Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.services.social.factory import get_social_client
-from app.types import SourceType, NotificationType
+from app.types import NotificationType, SourceType
 
 # Try to import notification service
 try:
-	from app.services.notifications.service import notify
 	from app.services.notifications.messenger import messenger_service
+	from app.services.notifications.service import notify
 
 	NOTIFICATIONS_AVAILABLE = True
 except ImportError:
@@ -36,13 +36,13 @@ class ContentCollector:
 		Collect content from a single source.
 
 		Args:
-				source: Source to collect from
-				content_type: Type of content to collect (posts, comments, etc.)
-				analyze: Whether to run AI analysis on collected content
-				analyze_by: Analysis method - "days" (group by days) or "themes" (theme-based analysis)
+			source: Source to collect from
+			content_type: Type of content to collect (posts, comments, etc.)
+			analyze: Whether to run AI analysis on collected content
+			analyze_by: Analysis method - "days" (group by days) or "themes" (theme-based analysis)
 
 		Returns:
-				Dict with collection results or None if failed
+			Dict with collection results or None if failed
 		"""
 		try:
 			# If source.source_type is string, convert to SourceType
@@ -78,7 +78,7 @@ class ContentCollector:
 			if analyze and content:
 				analytics = await self.analyzer.analyze_content(content, source)
 
-			await Source.objects.update_last_checked(source.id)
+			await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
 			return {
 				"source_id": source.id,
@@ -117,12 +117,12 @@ class ContentCollector:
 		Collect content from all active sources on a platform.
 
 		Args:
-				platform_id: Platform ID
-				source_types: Optional list of source types to filter by
-				analyze: Whether to run AI analysis
+			platform_id: Platform ID
+			source_types: Optional list of source types to filter by
+			analyze: Whether to run AI analysis
 
 		Returns:
-				Dict with collection statistics
+			Dict with collection statistics
 		"""
 		# Build query
 		query = Source.objects.filter(platform_id=platform_id, is_active=True)
@@ -167,32 +167,46 @@ class ContentCollector:
 		"""
 		Collect content from monitored users of a source.
 
-		This is for sources that track specific users (e.g., a GROUP tracking USER posts).
+		Monitored users are stored in source.params["monitored_users"] as a list
+		of username strings. Each username is resolved to a Source by matching
+		external_id on the same platform.
 
 		Args:
-				source: Source with monitored_users relationship
-				analyze: Whether to run AI analysis
+			source: Source with monitored_users in params
+			analyze: Whether to run AI analysis
 
 		Returns:
-				Dict with collection statistics
+			Dict with collection statistics
 		"""
-		# Load monitored users
-		source_with_users = await Source.objects.prefetch_related("monitored_users").get(id=source.id)
-
-		if not source_with_users.monitored_users:
+		monitored_usernames = source.params.get("monitored_users", []) or []
+		if not monitored_usernames:
 			logger.info(f"Source {source.id} has no monitored users")
 			return {"total_users": 0, "successful": 0, "failed": 0}
 
-		logger.info(f"Collecting from {len(source_with_users.monitored_users)} monitored users")
+		# Resolve usernames to Source objects
+		monitored_sources = []
+		for username in monitored_usernames:
+			clean = username.lstrip("@")
+			user_source = await Source.objects.filter(
+				platform_id=source.platform_id,
+				external_id=clean,
+				source_type=SourceType.USER.name,
+			).first()
+			if user_source:
+				monitored_sources.append(user_source)
+			else:
+				logger.warning(f"Monitored user '{username}' not found on platform {source.platform_id}")
+
+		logger.info(f"Collecting from {len(monitored_sources)} monitored users")
 
 		results = {
-			"total_users": len(source_with_users.monitored_users),
+			"total_users": len(monitored_usernames),
 			"successful": 0,
 			"failed": 0,
 			"total_items": 0,
 		}
 
-		for user in source_with_users.monitored_users:
+		for user in monitored_sources:
 			result = await self.collect_from_source(user, analyze=analyze)
 			if result:
 				results["successful"] += 1

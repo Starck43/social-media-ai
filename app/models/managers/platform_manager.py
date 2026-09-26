@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING, Any
 
 from .base_manager import BaseManager
@@ -92,36 +91,6 @@ class PlatformManager(BaseManager['Platform']):
 			qs = qs.filter(is_active=is_active)
 		
 		return list(await qs)
-
-	async def update_rate_limit(
-		self,
-		platform_id: int,
-		remaining: Optional[int] = None,
-		reset_at: Optional[datetime] = None
-	) -> Optional['Platform']:
-		"""
-		Update rate limit information for a platform.
-
-		Args:
-			platform_id: ID of the platform
-			remaining: Remaining rate limit count
-			reset_at: Rate limit reset timestamp
-
-		Returns:
-			Updated Platform object or None if not found
-		"""
-		update_data = {}
-		
-		if remaining is not None:
-			update_data['rate_limit_remaining'] = remaining
-		
-		if reset_at is not None:
-			update_data['rate_limit_reset_at'] = reset_at
-		
-		if update_data:
-			return await self.update_by_id(platform_id, **update_data)
-		
-		return await self.get(id=platform_id)
 
 	async def create_platform(
 		self,

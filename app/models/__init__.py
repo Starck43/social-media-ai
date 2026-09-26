@@ -10,20 +10,22 @@ This package contains all data models for the application, including:
 
 from __future__ import annotations
 
+# Agent runtime (import after Base: these modules do `from . import Base`)
+from .agent_feedback import AgentFeedback
+from .agent_memory import AgentMemory
+from .agent_message import AgentMessage
+from .agent_session import AgentSession
+
 # Analytics models
 from .ai_analytics import AIAnalytics
 
 # Core models
 from .base import Base, TenantScopedMixin, TimestampMixin
-from .bot_scenario import BotScenario
+from .agent_scenario import AgentScenario
+from .bot_action import BotAction
 from .digest_run import DigestRun
 from .job import Job
 from .llm_model import LLMModel
-
-# Agent runtime (import after Base: these modules do `from . import Base`)
-from .agent_memory import AgentMemory
-from .agent_message import AgentMessage
-from .agent_session import AgentSession
 
 # AI models
 from .llm_provider import LLMProvider
@@ -35,6 +37,14 @@ from .notification import Notification
 # Import all models to ensure they are registered with SQLAlchemy
 from .permission import Permission
 
+# Social monitoring models
+from .platform import Platform
+from .role import Role
+
+# Scheduler / jobs
+from .agent_task import AgentTask
+from .source import Source
+
 # Multi-tenant core
 from .tenant import (
     Tenant,
@@ -43,14 +53,6 @@ from .tenant import (
     TenantInvite,
     TenantUser,
 )
-
-# Social monitoring models
-from .platform import Platform
-from .role import Role
-
-# Scheduler / jobs
-from .schedule import Schedule
-from .source import Source, SourceUserRelationship
 from .user import User
 
 __all__ = [
@@ -72,21 +74,22 @@ __all__ = [
     # Social monitoring models
     "Platform",
     "Source",
-    "SourceUserRelationship",
-    "BotScenario",
+    "AgentScenario",
+    "BotAction",
     # AI models
     "LLMProvider",
     "LLMModel",
     # Analytics models
     "AIAnalytics",
     # Scheduler / jobs
-    "Schedule",
+    "AgentTask",
     "Job",
     "DigestRun",
     # Agent runtime
     "AgentSession",
     "AgentMessage",
     "AgentMemory",
+    "AgentFeedback",
     # Notification models
     "Notification",
 ]

@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Any, Coroutine
+from typing import Any, Optional
 
 import httpx
 
@@ -11,536 +11,491 @@ from app.models import LLMModel
 
 logger = logging.getLogger(__name__)
 
-# Global rate limiter to avoid 429 errors
-# Track last request time per provider
 _last_request_time: dict[str, float] = {}
+MINUTE = 60
+
+
+def _cap_text(m: LLMModel) -> bool:
+    return m.model_type in ("text", "image")  # image-capable models also handle text
+
+
+# ──────────────────────────────────────────────────────────────
+# Base client
+# ──────────────────────────────────────────────────────────────
 
 
 class LLMClient(ABC):
-	"""
-	Abstract base class for LLM clients.
-	
-	Provides a unified interface for different LLM providers (DeepSeek, OpenAI, etc.)
-	Each implementation handles provider-specific API calls and response formatting.
-	"""
-
-	@classmethod
-	def create(cls, model: LLMModel) -> Coroutine[Any, Any, 'LLMClient']:
-		"""Factory method — delegates to LLMClientFactory."""
-		return LLMClientFactory.create(model)
-
-	def __init__(self, model: LLMModel):
-		"""
-		Initialize LLM client with provider configuration.
-		
-		Args:
-			model: Model instance
-		"""
-		self.provider = model.provider
-		self.api_key = model.provider.get_api_key()
-		self.api_url = model.provider.api_url
-		self.config = self._merge_configs(model.provider.config, model.config if model else {})
-		self.model_name = model.name
-
-	@staticmethod
-	def _merge_configs(provider_config: dict, model_config: dict) -> dict:
-		"""
-		Merge configurations with proper priority handling.
-
-		Priority order (highest to lowest):
-		1. Model-specific config (highest priority)
-		2. Provider config
-		3. Default settings from app.core.config (lowest priority)
-
-		Args:
-			provider_config: Configuration from LLMProvider
-			model_config: Configuration from LLMModel
-
-		Returns:
-			Merged configuration dictionary
-		"""
-		# Start with default settings from app.core.config
-		merged = {
-			"temperature": getattr(settings, 'LLM_DEFAULT_TEMPERATURE', 0.3),
-			"max_tokens": getattr(settings, 'LLM_DEFAULT_MAX_TOKENS', 400),
-			"stream": getattr(settings, 'LLM_DEFAULT_STREAM', False),
-			"timeout": getattr(settings, 'LLM_DEFAULT_TIMEOUT', 90.0),
-			"rate_limit_delay": getattr(settings, 'LLM_REQUEST_DELAY', 2000),  # Safe fallback to 2000ms
-		}
-
-		# Apply provider configuration (medium priority)
-		if provider_config:
-			if isinstance(provider_config, str):
-				try:
-					provider_config = json.loads(provider_config)
-				except json.JSONDecodeError:
-					logger.warning(f"Failed to parse provider config as JSON: {provider_config}")
-					provider_config = {}
-			merged.update(provider_config)
-
-		# Apply model configuration (highest priority)
-		if model_config:
-			if isinstance(model_config, str):
-				try:
-					model_config = json.loads(model_config)
-				except json.JSONDecodeError:
-					logger.warning(f"Failed to parse model config as JSON: {model_config}")
-					model_config = {}
-			merged.update(model_config)
-
-		cleaned_config: dict[str, Any] = {}
-		for k, v in merged.items():
-			if v is None:
-				continue
-			if isinstance(v, str):
-				cleaned_config[k.strip()] = v.strip()
-			else:
-				cleaned_config[k] = v
-
-		return cleaned_config
-
-	@staticmethod
-	def _get_system_prompt(media_urls: Optional[list[str]] = None) -> str:
-		"""Return system prompt based on content type."""
-
-		if media_urls:
-			return (
-				"Ты - аналитик социальных сетей. Анализируй изображения и текст. "
-				"Давай краткую аннотацию: что изображено, основная тема, эмоциональная окраска. "
-				"Будь точным и объективным."
-			)
-		else:
-			return (
-				"Ты - аналитик социальных сетей. Анализируй посты и давай краткую аннотацию: "
-				"основная тема, эмоциональная окраска, ключевые моменты. "
-				"Будь точным и объективным. Отвечай в формате JSON."
-			)
-
-	async def _apply_rate_limit(self):
-		"""
-		Apply rate limiting to avoid API throttling and 429 errors.
-
-		Uses rate_limit_delay from merged config with safe fallback to 2000ms.
-		Tracks request timing per provider to maintain proper intervals.
-		"""
-		global _last_request_time
-
-		provider_key = self.provider.name.lower()
-		current_time = asyncio.get_event_loop().time()
-
-		# Get rate limit delay from merged config with safe fallback
-		rate_limit_delay = float(self.config.get("rate_limit_delay", 2000)) / 1000.0
-
-		# Apply rate limiting if this provider has made recent requests
-		if provider_key in _last_request_time:
-			elapsed = current_time - _last_request_time[provider_key]
-			if elapsed < rate_limit_delay:
-				delay = rate_limit_delay - elapsed
-				logger.debug(
-					f"Rate limiting {provider_key}: waiting {delay:.2f}s (configured: {rate_limit_delay}s)"
-				)
-				await asyncio.sleep(delay)
-
-		# Update last request time for this provider
-		_last_request_time[provider_key] = asyncio.get_event_loop().time()
-
-	@abstractmethod
-	async def analyze(
-			self,
-			prompt: str,
-			media_urls: Optional[list[str]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""
-		Analyze content using the LLM.
-		
-		Args:
-			prompt: Text prompt for analysis
-			media_urls: Optional list of media URLs (images, videos) to analyze
-			**kwargs: Additional provider-specific parameters
-			
-		Returns:
-			Dictionary with analysis results
-		"""
-		pass
-
-	@abstractmethod
-	def _prepare_request(
-			self,
-			prompt: str,
-			media_urls: Optional[list[str]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""
-		Prepare API request payload for the specific provider.
-		
-		Args:
-			prompt: Text prompt
-			media_urls: Optional media URLs
-			**kwargs: Additional parameters
-			
-		Returns:
-			Request payload dictionary
-		"""
-		pass
-
-	@abstractmethod
-	def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
-		"""
-		Parse provider-specific response into a unified format.
-		
-		Args:
-			response: Raw API response
-			
-		Returns:
-			Parsed analysis results
-		"""
-		pass
-
-	async def chat(
-			self,
-			messages: list[dict[str, Any]],
-			tools: Optional[list[dict[str, Any]]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""
-		Multi-turn chat completion with optional tool calling.
-
-		Distinct from `analyze()`: no JSON-mode forcing, plain conversation in,
-		and the model may answer with tool calls instead of text.
-
-		Args:
-			messages: OpenAI-style messages ([{role, content}, ...])
-			tools: OpenAI-style function/tool schemas the model may call
-			**kwargs: provider-specific overrides (temperature, max_tokens, ...)
-
-		Returns:
-			{"content": str | None,
-			"tool_calls": [{"id", "name", "arguments": dict}],
-			"usage": {...}, "raw": {...}}
-		"""
-		raise NotImplementedError(f"chat() is not supported by {type(self).__name__}")
-
-
-class OpenAIClient(LLMClient):
-	"""LLM client for OpenAI API (GPT-4 Vision, etc.)."""
-
-	async def analyze(
-			self,
-			prompt: str,
-			media_urls: Optional[list[str]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""Analyze content with enhanced error handling and logging."""
-
-		if not self.api_key:
-			raise ValueError(f"API key not configured for {self.provider.name}")
-
-		# Apply rate limiting
-		await self._apply_rate_limit()
-
-		payload = self._prepare_request(prompt, media_urls, **kwargs)
-
-		# Уменьшаем тайм-аут для избежания долгих ожиданий
-		timeout = min(self.config.get("timeout", 90.0), 60.0)  # Максимум 60 секунд
-
-		safe_payload = {
-			'model': payload.get('model'),
-			'message_count': len(payload.get('messages', [])),
-			'media_count': len(media_urls) if media_urls else 0,
-			'temperature': payload.get('temperature'),
-			'max_tokens': payload.get('max_tokens'),
-			'timeout': timeout
-		}
-
-		logger.info(f"Making request to {self.provider.name} with timeout {timeout}s: {safe_payload}")
-
-		try:
-			async with httpx.AsyncClient() as client:
-				response = await client.post(
-					self.api_url,
-					headers={
-						"Authorization": f"Bearer {self.api_key}",
-						"Content-Type": "application/json"
-					},
-					json=payload,
-					timeout=timeout,
-				)
-
-				if response.status_code != 200:
-					error_detail = f"API returned status {response.status_code}: {response.text}"
-					logger.error(f"API Error for {self.provider.name}: {error_detail}")
-					raise httpx.HTTPStatusError(error_detail, request=response.request, response=response)
-
-				response_data = response.json()
-				result = self._parse_response(response_data)
-
-				usage = response_data.get('usage', {})
-				logger.info(
-					f"✅ Request successful - Tokens: {usage.get('total_tokens', 'N/A')}"
-				)
-
-				return {
-					"request": {
-						"model": self.model_name,
-						"prompt": prompt,
-						"media_count": len(media_urls) if media_urls else 0,
-						"provider": self.provider.name.lower(),
-						"config": safe_payload
-					},
-					"response": response_data,
-					"parsed": result
-				}
-
-		except httpx.TimeoutException:
-			logger.error(f"Timeout for {self.provider.name} after {timeout}s")
-			return {
-				"request": safe_payload,
-				"response": {"error": "timeout"},
-				"parsed": {"analysis": "Timeout - analysis skipped"}
-			}
-		except Exception as e:
-			logger.error(f"Unexpected error for {self.provider.name}: {str(e)}")
-			return {
-				"request": safe_payload,
-				"response": {"error": str(e)},
-				"parsed": {"analysis": f"Error: {str(e)}"}
-			}
-
-	async def chat(
-			self,
-			messages: list[dict[str, Any]],
-			tools: Optional[list[dict[str, Any]]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""
-		Multi-turn chat completion with optional tool calling (OpenAI-style).
-
-		Unlike `analyze()` there is no JSON-mode forcing and no system prompt
-		injection — the caller owns the full message history.
-
-		Args:
-			messages: OpenAI-style messages ([{role, content}, ...])
-			tools: OpenAI-style function/tool schemas the model may call
-			**kwargs: payload overrides (temperature, max_tokens, ...)
-
-		Returns:
-			{"content": str | None,
-			"tool_calls": [{"id", "name", "arguments": dict}],
-			"usage": dict, "raw": dict}
-		"""
-		if not self.api_key:
-			raise ValueError(f"API key not configured for {self.provider.name}")
-
-		await self._apply_rate_limit()
-
-		payload: dict[str, Any] = {
-			"model": self.model_name,
-			"messages": messages,
-			"temperature": float(kwargs.pop("temperature", self.config.get("temperature", 0.3))),
-			"max_tokens": int(kwargs.pop("max_tokens", self.config.get("max_tokens", 400))),
-			"stream": False,
-			"timeout": float(self.config.get("timeout", 60.0)),
-		}
-		# Only attach tools when present: some providers reject an empty list.
-		if tools:
-			payload["tools"] = tools
-			payload["tool_choice"] = kwargs.pop("tool_choice", "auto")
-		payload.update(kwargs)
-
-		timeout = min(float(payload.get("timeout", 60.0)), 60.0)
-
-		async with httpx.AsyncClient() as client:
-			response = await client.post(
-				self.api_url,
-				headers={
-					"Authorization": f"Bearer {self.api_key}",
-					"Content-Type": "application/json",
-				},
-				json=payload,
-				timeout=timeout,
-			)
-			if response.status_code != 200:
-				error_detail = f"API returned status {response.status_code}: {response.text}"
-				logger.error(f"chat() API error for {self.provider.name}: {error_detail}")
-				raise httpx.HTTPStatusError(error_detail, request=response.request, response=response)
-
-			data = response.json()
-
-		choice = (data.get("choices") or [{}])[0]
-		message = choice.get("message") or {}
-
-		tool_calls: list[dict[str, Any]] = []
-		for tc in message.get("tool_calls") or []:
-			fn = tc.get("function") or {}
-			raw_args: Any = fn.get("arguments") or "{}"
-			try:
-				arguments: Any = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
-			except json.JSONDecodeError:
-				arguments = {"_raw": raw_args}
-			tool_calls.append(
-				{"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": arguments}
-			)
-
-		usage = data.get("usage") or {}
-		return {
-			"content": message.get("content"),
-			"tool_calls": tool_calls,
-			"usage": {
-				"prompt_tokens": usage.get("prompt_tokens", 0),
-				"completion_tokens": usage.get("completion_tokens", 0),
-				"total_tokens": usage.get("total_tokens", 0),
-			},
-			"finish_reason": choice.get("finish_reason"),
-			"raw": data,
-		}
-
-	def _prepare_request(
-			self,
-			prompt: str,
-			media_urls: Optional[list[str]] = None,
-			**kwargs
-	) -> dict[str, Any]:
-		"""
-		Prepare API request payload with optimized defaults for content analysis.
-
-		Uses merged configuration from defaults → provider → model with proper type handling.
-
-		Args:
-			prompt: Text prompt for analysis
-			media_urls: Optional media URLs for multimodal analysis
-			**kwargs: Additional parameters that override all other configs
-
-		Returns:
-			Request payload dictionary ready for API call
-		"""
-		messages: list[dict[str, Any]] = []
-		content: str | list[dict[str, Any]] = prompt
-
-		system_prompt = self._get_system_prompt(media_urls)
-		messages.append({"role": "system", "content": system_prompt})
-
-		if media_urls:
-			media_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-			for media in media_urls:
-				media_content.append({"type": "image_url", "image_url": {"url": media}})
-			content = media_content
-
-		messages.append({"role": "user", "content": content})
-
-		# Build final request data with proper type conversion
-		request_data: dict[str, Any] = {
-			"model": self.model_name,
-			"messages": messages,
-			"temperature": float(self.config.get("temperature", 0.3)),
-			"max_tokens": int(self.config.get("max_tokens", 400)),
-			"stream": bool(self.config.get("stream", False)),
-			"timeout": float(self.config.get("timeout", 60.0)),
-		}
-
-		# Add optional parameters if they exist in config
-		optional_params = ["top_p", "frequency_penalty", "presence_penalty", "stop", "seed"]
-		for param in optional_params:
-			if param in self.config:
-				request_data[param] = self.config[param]
-
-		# Apply any kwargs (highest priority overrides)
-		request_data.update(kwargs)
-
-		# Set response format to JSON for text-only non-streaming requests
-		if not media_urls and not request_data.get("stream"):
-			request_data["response_format"] = {"type": "json_object"}
-
-		return request_data
-
-	def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
-		"""Common response parsing for OpenAI-compatible providers."""
-
-		try:
-			if "choices" in response:
-				content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-			elif "completion" in response:
-				content = response.get("completion", "{}")  # if some providers use different field names
-			else:
-				content = "{}"
-
-			# Try to parse as JSON, fall back to raw text
-			try:
-				return json.loads(content)
-			except json.JSONDecodeError:
-				return {"analysis": content}
-
-		except (KeyError, IndexError) as e:
-			logger.warning(f"Failed to parse {self.provider.name} response: {e}")
-			return {"raw_response": str(response), "parse_error": str(e)}
-
-
-class AnthropicClient(OpenAIClient):
-	pass
-
-
-class GoogleAIClient(OpenAIClient):
-	pass
-
-
-class MistralClient:
-	pass
-
-
-class GroqClient:
-	pass
+    def __init__(self, model: LLMModel):
+        self.provider = model.provider
+        self.model = model
+        self.api_key = model.provider.get_api_key()
+        self.base_url = model.provider.base_url.rstrip("/")
+        self.model_name = model.model_id
+        self.max_tokens = model.max_tokens
+        self.default_temperature = model.default_temperature
+        self.timeout = float(getattr(settings, "LLM_DEFAULT_TIMEOUT", 60.0))
+
+    @classmethod
+    def create(cls, model: LLMModel) -> "LLMClient":
+        return LLMClientFactory.create(model)
+
+    @abstractmethod
+    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]: ...
+
+    @abstractmethod
+    async def chat(
+        self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+    ) -> dict[str, Any]: ...
+
+    async def _rate_limit(self):
+        key = self.provider.name.lower()
+        now = asyncio.get_event_loop().time()
+        delay = float(getattr(settings, "LLM_REQUEST_DELAY", 2000)) / 1000.0
+        if key in _last_request_time:
+            elapsed = now - _last_request_time[key]
+            if elapsed < delay:
+                await asyncio.sleep(delay - elapsed)
+        _last_request_time[key] = asyncio.get_event_loop().time()
+
+
+# ──────────────────────────────────────────────────────────────
+# OpenAI-compatible client
+# ──────────────────────────────────────────────────────────────
+
+
+class OpenAICompatibleClient(LLMClient):
+    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+
+        payload = self._prepare_analyze(prompt, media_urls, **kwargs)
+        timeout = min(self.timeout, 60.0)
+
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
+        except httpx.TimeoutException:
+            logger.error(f"Timeout for {self.provider.name} after {timeout}s")
+            return {"request": payload, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
+        except Exception as e:
+            logger.error(f"Unexpected error for {self.provider.name}: {e}")
+            return {"request": payload, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+
+        return {
+            "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
+            "response": data,
+            "parsed": self._parse_response(data),
+        }
+
+    async def chat(
+        self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+    ) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": float(kwargs.pop("temperature", self.default_temperature)),
+            "max_tokens": int(kwargs.pop("max_tokens", self.max_tokens)),
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = kwargs.pop("tool_choice", "auto")
+        payload.update(kwargs)
+
+        timeout = min(float(payload.get("timeout", self.timeout)), 60.0)
+
+        async with httpx.AsyncClient() as c:
+            r = await c.post(
+                f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
+            )
+            if r.status_code != 200:
+                raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+            data = r.json()
+
+        return self._parse_chat(data)
+
+    # ── internal helpers ─────────────────────────────────────
+
+    def _headers(self) -> dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
+        if "{key}" in header_name:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            k, _, v = header_name.partition(": ")
+            h[k] = v.format(key=self.api_key) if "{key}" in v else v
+        return h
+
+    def _prepare_analyze(self, prompt: str, media_urls: Optional[list[str]], **kwargs) -> dict[str, Any]:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": _system_prompt(bool(media_urls))},
+        ]
+        if media_urls:
+            content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+            content += [{"type": "image_url", "image_url": {"url": u}} for u in media_urls]
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": float(kwargs.pop("temperature", self.default_temperature)),
+            "max_tokens": int(kwargs.pop("max_tokens", self.max_tokens)),
+            "stream": False,
+        }
+        if not media_urls:
+            payload["response_format"] = {"type": "json_object"}
+        payload.update(kwargs)
+        return payload
+
+    def _parse_response(self, response: dict) -> dict[str, Any]:
+        try:
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            return json.loads(content)
+        except (json.JSONDecodeError, KeyError, IndexError):
+            return {"analysis": content}
+
+    def _parse_chat(self, data: dict) -> dict[str, Any]:
+        choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        tool_calls: list[dict[str, Any]] = []
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            args = fn.get("arguments") or "{}"
+            try:
+                parsed = json.loads(args) if isinstance(args, str) else dict(args)
+            except json.JSONDecodeError:
+                parsed = {"_raw": args}
+            tool_calls.append(
+                {"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": parsed}
+            )
+        usage = data.get("usage") or {}
+        return {
+            "content": msg.get("content"),
+            "tool_calls": tool_calls,
+            "usage": {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            },
+            "finish_reason": choice.get("finish_reason"),
+            "raw": data,
+        }
+
+
+# ──────────────────────────────────────────────────────────────
+# Anthropic client (real implementation)
+# ──────────────────────────────────────────────────────────────
+
+
+class AnthropicClient(LLMClient):
+    ANTHROPIC_VERSION = "2023-06-01"
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "x-api-key": self.api_key,
+            "anthropic-version": self.ANTHROPIC_VERSION,
+            "Content-Type": "application/json",
+        }
+
+    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+        system = _system_prompt(bool(media_urls))
+        content = prompt
+        if media_urls:
+            blocks: list[dict] = [{"type": "text", "text": prompt}]
+            blocks += [{"type": "image", "source": {"type": "url", "url": u}} for u in media_urls]
+            content = blocks
+
+        payload = {
+            "model": self.model_name,
+            "max_tokens": int(kwargs.pop("max_tokens", self.max_tokens)),
+            "temperature": float(kwargs.pop("temperature", self.default_temperature)),
+            "system": system,
+            "messages": [{"role": "user", "content": content}],
+        }
+        timeout = min(self.timeout, 60.0)
+        request_meta = {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()}
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
+        except httpx.TimeoutException:
+            logger.error(f"Anthropic timeout after {timeout}s")
+            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
+        except Exception as e:
+            logger.error(f"Anthropic error: {e}")
+            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+
+        text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+        return {
+            "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
+            "response": data,
+            "parsed": _try_json(text),
+        }
+
+    async def chat(
+        self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+    ) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+
+        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+        chat_msgs = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
+
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": chat_msgs,
+            "max_tokens": int(kwargs.pop("max_tokens", self.max_tokens)),
+            "temperature": float(kwargs.pop("temperature", self.default_temperature)),
+            "stream": False,
+        }
+        if system:
+            payload["system"] = system
+        if tools:
+            payload["tools"] = [
+                {
+                    "name": t["function"]["name"],
+                    "description": t["function"].get("description", ""),
+                    "input_schema": t["function"]["parameters"],
+                }
+                for t in tools
+            ]
+
+        timeout = min(self.timeout, 60.0)
+        async with httpx.AsyncClient() as c:
+            r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+            if r.status_code != 200:
+                raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+            data = r.json()
+
+        content_parts: list[str] = []
+        tool_calls: list[dict[str, Any]] = []
+        for block in data.get("content") or []:
+            if block.get("type") == "text":
+                content_parts.append(block["text"])
+            elif block.get("type") == "tool_use":
+                tool_calls.append({"id": block["id"], "name": block["name"], "arguments": block.get("input", {})})
+
+        usage = data.get("usage") or {}
+        return {
+            "content": "\n".join(content_parts) or None,
+            "tool_calls": tool_calls,
+            "usage": {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+            },
+            "finish_reason": data.get("stop_reason"),
+            "raw": data,
+        }
+
+
+# ──────────────────────────────────────────────────────────────
+# Factory
+# ──────────────────────────────────────────────────────────────
 
 
 class LLMClientFactory:
-	"""Factory for creating appropriate LLM clients based on provider type."""
+    _clients: dict[str, type[LLMClient]] = {"openai": OpenAICompatibleClient, "anthropic": AnthropicClient}
 
-	# OpenAI-compatible providers mapping
-	_openai_compatible_map = {
-		"openai": OpenAIClient,
-		"deepseek": OpenAIClient,
-		"anthropic": AnthropicClient,
-		"google": GoogleAIClient,
-		"mistral": MistralClient,
-		"groq": GroqClient,
-		"together": OpenAIClient,
-		"cohere": OpenAIClient,
-		"sambanova": OpenAIClient,
-	}
+    @classmethod
+    def create(cls, model: LLMModel) -> LLMClient:
+        if model is None:
+            raise ValueError("LLMModel is required")
+        fmt = model.provider.api_format.lower()
+        client_cls = cls._clients.get(fmt)
+        if client_cls is None:
+            logger.warning(f"Unknown api_format '{fmt}' for provider '{model.provider.name}', using OpenAI-compatible")
+            client_cls = OpenAICompatibleClient
+        return client_cls(model)
 
-	_unique_providers_map: dict[str, type[LLMClient]] = {
-	}
 
-	@classmethod
-	async def create(cls, model: Optional[LLMModel] = None) -> 'LLMClient':
-		"""
-		Factory method to create appropriate client for provider.
-		Detects client type by API URL.
-		
-		Args:
-			model: LLMModel instance (required)
-			
-		Returns:
-			Specific LLMClient implementation
-		"""
-		if model is None:
-			raise ValueError("LLMModel is required")
-		
-		provider = model.provider
-		provider_key = provider.name.lower()
+# ──────────────────────────────────────────────────────────────
+# Fallback chain
+# ──────────────────────────────────────────────────────────────
 
-		# Check unique providers first
-		if provider_key in cls._unique_providers_map:
-			client_class = cls._unique_providers_map[provider_key]
 
-		# Check OpenAI-compatible providers
-		elif provider_key in cls._openai_compatible_map:
-			client_class = cls._openai_compatible_map[provider_key]
-		else:
-			# Fallback to base OpenAI client for unknown providers
-			logger.warning(f"No specific client for {provider_key}, using OpenAIClient as fallback")
-			client_class = OpenAIClient
+async def chat_with_fallback(
+    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+) -> dict[str, Any]:
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
-		logger.info(
-			f"Creating {client_class.__name__} for {provider.name}, model: {model.name if model else 'default'}"
-		)
-		return client_class(model)
+    from app.core.database import new_session
+
+    async with new_session() as db:
+        r = await db.execute(
+            select(LLMModel)
+            .options(selectinload(LLMModel.provider))
+            .where(LLMModel.is_active == True)
+            .order_by(LLMModel.id)
+        )
+        models = r.scalars().unique().all()
+
+    text_models = [m for m in models if _cap_text(m)]
+    text_models.sort(key=lambda m: (not m.provider.is_default, m.id))
+
+    last_err: Optional[Exception] = None
+    for model in text_models:
+        try:
+            client = LLMClientFactory.create(model)
+            return await client.chat(messages, tools=tools, **kwargs)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500:
+                raise
+            last_err = e
+            logger.warning(f"{model.provider.name}/{model.model_id} failed ({e.response.status_code}), trying next")
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            last_err = e
+            logger.warning(f"{model.provider.name}/{model.model_id} timeout/transport, trying next")
+    raise last_err or RuntimeError("No LLM models available")
+
+
+async def resolve_model() -> Optional[LLMModel]:
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.core.database import new_session
+
+    async with new_session() as db:
+        if settings.AGENT_MODEL:
+            r = await db.execute(
+                select(LLMModel).options(selectinload(LLMModel.provider)).where(LLMModel.name == settings.AGENT_MODEL)
+            )
+            m = r.scalar_one_or_none()
+            if m:
+                return m
+            logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
+
+        r = await db.execute(
+            select(LLMModel)
+            .options(selectinload(LLMModel.provider))
+            .where(LLMModel.is_active == True)
+            .order_by(LLMModel.is_default.desc(), LLMModel.id)
+        )
+        models = r.scalars().unique().all()
+        for m in models:
+            if _cap_text(m):
+                return m
+        logger.error("No active text LLM model available")
+        return None
+
+
+# ──────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────
+
+
+def _system_prompt(has_media: bool) -> str:
+    if has_media:
+        return "Ты - аналитик социальных сетей. Анализируй изображения и текст. Дай краткую аннотацию."
+    return "Ты - аналитик социальных сетей. Анализируй посты. Отвечай в формате JSON."
+
+
+def _try_json(text: str) -> dict[str, Any]:
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return {"analysis": text}
+
+
+def _num(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        s = value.strip().replace("$", "").replace("USD", "").strip().lower()
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return None
+
+
+def extract_cost_info(raw_response: Any) -> dict[str, Any]:
+    """Extract token usage and reported dollar costs from a raw LLM API response.
+
+    Understands OpenAI/Anthropic usage plus common provider cost extensions
+    (OpenRouter `cost`, LiteLLM proxy `prompt_cost`/`completion_cost`/`total_cost`).
+
+    Returns:
+        tokens:      {"input": int, "output": int, "total": int}
+        cost:        {"input": float|None, "output": float|None, "total": float|None}
+        price_per_1k: {"input": float|None, "output": float|None}  (derived from cost/tokens)
+        has_cost_report: bool
+    """
+    empty = {
+        "tokens": {"input": 0, "output": 0, "total": 0},
+        "cost": {"input": None, "output": None, "total": None},
+        "price_per_1k": {"input": None, "output": None},
+        "has_cost_report": False,
+    }
+    if not isinstance(raw_response, dict):
+        return empty
+
+    usage = raw_response.get("usage")
+    if not isinstance(usage, dict) or not usage:
+        # Some providers report cost at the top level of the response
+        if _num(raw_response.get("total_cost")) is not None or _num(raw_response.get("cost")) is not None:
+            return {
+                "tokens": {"input": 0, "output": 0, "total": 0},
+                "cost": {
+                    "input": None,
+                    "output": None,
+                    "total": _num(raw_response.get("total_cost") or raw_response.get("cost")),
+                },
+                "price_per_1k": {"input": None, "output": None},
+                "has_cost_report": True,
+            }
+        return empty
+
+    input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+
+    input_cost = _num(usage.get("prompt_cost") or usage.get("input_cost"))
+    output_cost = _num(usage.get("completion_cost") or usage.get("output_cost"))
+    total_cost = _num(usage.get("total_cost") or usage.get("cost"))
+    if total_cost is None:
+        total_cost = _num(raw_response.get("total_cost") or raw_response.get("cost"))
+
+    has_report = any(v is not None for v in (input_cost, output_cost, total_cost))
+
+    def per_1k(cost: Optional[float], tokens: int) -> Optional[float]:
+        if cost is None or tokens <= 0:
+            return None
+        return round(cost / tokens * 1000, 10)
+
+    return {
+        "tokens": {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        },
+        "cost": {"input": input_cost, "output": output_cost, "total": total_cost},
+        "price_per_1k": {
+            "input": per_1k(input_cost, input_tokens),
+            "output": per_1k(output_cost, output_tokens),
+        },
+        "has_cost_report": has_report,
+    }

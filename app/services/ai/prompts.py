@@ -10,7 +10,7 @@ from app.types import MediaType
 from app.services.ai.prompt_variables import PromptSubstitution
 
 if TYPE_CHECKING:
-	from app.models import BotScenario
+	from app.models import AgentScenario
 
 
 class PromptBuilder:
@@ -19,7 +19,7 @@ class PromptBuilder:
 	@staticmethod
 	def get_prompt(
 			media_type: MediaType,
-			scenario: Optional['BotScenario'] = None,
+			scenario: Optional['AgentScenario'] = None,
 			**context
 	) -> str:
 		"""
@@ -33,7 +33,7 @@ class PromptBuilder:
 		
 		Args:
 			media_type: Type of media (TEXT, IMAGE, VIDEO, AUDIO)
-			scenario: Optional BotScenario with custom prompts
+			scenario: Optional AgentScenario with custom prompts
 			**context: Context variables for prompt (text, platform, stats, count, etc.)
 		
 		Returns:
@@ -90,7 +90,7 @@ class PromptBuilder:
 			text_analysis: Dict[str, Any],
 			image_analysis: Dict[str, Any],
 			video_analysis: Dict[str, Any],
-			scenario: Optional['BotScenario'] = None
+			scenario: Optional['AgentScenario'] = None
 	) -> str:
 		"""
 		Get prompt for unified summary, using custom or default.
@@ -99,7 +99,7 @@ class PromptBuilder:
 			text_analysis: Results from text analysis
 			image_analysis: Results from image analysis
 			video_analysis: Results from video analysis
-			scenario: Optional BotScenario with custom unified_summary_prompt
+			scenario: Optional AgentScenario with custom unified_summary_prompt
 		
 		Returns:
 			Complete prompt for unified summary
@@ -121,7 +121,7 @@ class PromptBuilder:
 		)
 
 	@staticmethod
-	def _prepare_variables(media_type: MediaType, scenario: Optional['BotScenario'] = None, **context) -> dict[str, Any]:
+	def _prepare_variables(media_type: MediaType, scenario: Optional['AgentScenario'] = None, **context) -> dict[str, Any]:
 		"""
 		Prepare variables for substitution based on media type.
 		
@@ -179,7 +179,7 @@ class PromptBuilder:
 	def _ensure_json_instruction(
 		prompt: str,
 		media_type: MediaType,
-		scenario: Optional['BotScenario'] = None
+		scenario: Optional['AgentScenario'] = None
 	) -> str:
 		"""
 		Ensure prompt has JSON format instruction appended if not present.
@@ -187,7 +187,7 @@ class PromptBuilder:
 		Args:
 			prompt: Original prompt text
 			media_type: Type of media being analyzed
-			scenario: BotScenario with analysis_types and scope
+			scenario: AgentScenario with analysis_types and scope
 		
 		Returns:
 			Prompt with JSON instruction appended if needed

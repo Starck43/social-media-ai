@@ -10,8 +10,18 @@ from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
 from .views import (
-	UserAdmin, RoleAdmin, PermissionAdmin, NotificationAdmin, PlatformAdmin, SourceAdmin, SourceUserRelationshipAdmin,
-	BotScenarioAdmin, AIAnalyticsAdmin, LLMProviderAdmin, LLMModelAdmin
+    AIAnalyticsAdmin,
+    BotActionAdmin,
+    AgentScenarioAdmin,
+    LLMModelAdmin,
+    LLMProviderAdmin,
+    NotificationAdmin,
+    PermissionAdmin,
+    PlatformAdmin,
+    RoleAdmin,
+    SourceAdmin,
+    TenantCredentialAdmin,
+    UserAdmin,
 )
 
 # Get the project root directory
@@ -23,63 +33,64 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 def setup_admin(app):
-	"""Initialize SQLAdmin with all views."""
+    """Initialize SQLAdmin with all views."""
 
-	# --- CSRF ---
-	csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)
-	app.state.csrf_manager = csrf_manager
+    # --- CSRF ---
+    csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)
+    app.state.csrf_manager = csrf_manager
 
-	from .endpoints import router as admin_router
-	app.include_router(admin_router)
+    from .endpoints import router as admin_router
 
-	# --- AdminAuthBackend ---
-	authentication_backend = AdminAuthBackend(
-		secret_key=settings.SECRET_KEY,
-		csrf_manager=app.state.csrf_manager
-	)
+    app.include_router(admin_router)
 
-	# --- SQLAdmin instance ---
-	admin = Admin(
-		app=app,
-		engine=async_engine,
-		authentication_backend=authentication_backend,
-		base_url="/admin",
-		title="Social Media AI Admin",
-		logo_url="/static/logo.png",
-		templates_dir=str(PROJECT_ROOT / "app" / "templates")
-	)
+    # --- AdminAuthBackend ---
+    authentication_backend = AdminAuthBackend(secret_key=settings.SECRET_KEY, csrf_manager=app.state.csrf_manager)
 
-	admin.templates.env.globals.update({
-		"csrf_token": lambda: csrf_manager.generate_token(),
-		"settings": settings,
-		"debug": settings.DEBUG,
-	})
+    # --- SQLAdmin instance ---
+    admin = Admin(
+        app=app,
+        engine=async_engine,
+        authentication_backend=authentication_backend,
+        base_url="/admin",
+        title="Social Media AI Admin",
+        logo_url="/static/logo.png",
+        templates_dir=str(PROJECT_ROOT / "app" / "templates"),
+    )
 
-	if admin.templates.env is not None:
-		register_template_filters(admin.templates.env)
+    admin.templates.env.globals.update(
+        {
+            "csrf_token": lambda: csrf_manager.generate_token(),
+            "settings": settings,
+            "debug": settings.DEBUG,
+        }
+    )
 
-	app.mount("/static", StaticFiles(directory="app/static"), name="static")
-	app.state.admin = admin
-	if not hasattr(app, 'extra'):
-		app.extra = {}
-	app.extra['admin'] = admin
+    if admin.templates.env is not None:
+        register_template_filters(admin.templates.env)
 
-	# --- Views configs ---
-	view_configs = [
-		UserAdmin,
-		RoleAdmin,
-		PermissionAdmin,
-		PlatformAdmin,
-		SourceAdmin,
-		SourceUserRelationshipAdmin,
-		BotScenarioAdmin,
-		AIAnalyticsAdmin,
-		NotificationAdmin,
-		LLMProviderAdmin,
-		LLMModelAdmin,
-	]
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    app.state.admin = admin
+    if not hasattr(app, "extra"):
+        app.extra = {}
+    app.extra["admin"] = admin
 
-	for view_class in view_configs:
-		admin.add_view(view_class)
+    # --- Views configs ---
+    view_configs = [
+        UserAdmin,
+        RoleAdmin,
+        PermissionAdmin,
+        PlatformAdmin,
+        SourceAdmin,
+        AgentScenarioAdmin,
+        BotActionAdmin,
+        AIAnalyticsAdmin,
+        NotificationAdmin,
+        LLMProviderAdmin,
+        LLMModelAdmin,
+        TenantCredentialAdmin,
+    ]
 
-	return admin
+    for view_class in view_configs:
+        admin.add_view(view_class)
+
+    return admin

@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped
 
@@ -58,6 +59,11 @@ class Tenant(Base, TimestampMixin):
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
     daily_cost_limit: Mapped[float] = Column(Float, nullable=False, default=5.0, server_default="5.0")
     max_sources: Mapped[int] = Column(Integer, nullable=False, default=20, server_default="20")
+    agent_style: Mapped[dict[str, Any] | None] = Column(
+        JSON,
+        nullable=True,
+        comment="Owner's reply style contract: {tone, length, language, quiet_hours}; rendered into the system prompt",
+    )
 
     if TYPE_CHECKING:
         objects: ClassVar[TenantManager | BaseManager]
@@ -70,12 +76,20 @@ class Tenant(Base, TimestampMixin):
 
 @app_label("account")
 class TenantUser(Base, TimestampMixin):
-    """Membership: a messenger identity belongs to a tenant with a role."""
+    """Membership: a messenger identity (channel+external id) or a web user."""
 
     __tablename__ = "tenant_users"
     __table_args__ = (
         UniqueConstraint("tenant_id", "channel", "external_user_id", name="uq_tenant_user_identity"),
         Index("ix_tenant_users_tenant_id", "tenant_id"),
+        Index("ix_tenant_users_user_id", "user_id"),
+        Index(
+            "uq_tenant_users_web_membership",
+            "tenant_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -83,8 +97,11 @@ class TenantUser(Base, TimestampMixin):
     tenant_id: Mapped[int] = Column(
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.tenants.id", ondelete="CASCADE"), nullable=False
     )
-    channel: Mapped[str] = Column(String(20), nullable=False)
+    channel: Mapped[str] = Column(String(20), nullable=False)  # 'telegram' | 'max' | 'web'
     external_user_id: Mapped[str] = Column(String(100), nullable=False)
+    user_id: Mapped[int | None] = Column(
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"), nullable=True
+    )
     role: Mapped[str] = Column(String(20), nullable=False, default="owner", server_default="owner")
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
 

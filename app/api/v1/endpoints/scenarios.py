@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.models import User, BotScenario
+from app.models import AgentScenario, User
 from app.schemas.scenario import (
     ScenarioCreate,
     ScenarioUpdate,
@@ -67,7 +67,8 @@ async def create_scenario(
         trigger_config=request.trigger_config,
         action_type=request.action_type,
         is_active=request.is_active,
-        collection_interval_hours=request.collection_interval_hours,
+        max_tokens=request.max_tokens,
+        output_schema=request.output_schema,
     )
 
     return ScenarioResponse(
@@ -80,7 +81,8 @@ async def create_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        collection_interval_hours=scenario.collection_interval_hours,
+        max_tokens=scenario.max_tokens,
+        output_schema=scenario.output_schema,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )
@@ -101,10 +103,10 @@ async def list_scenarios(
     if is_active is True:
         scenarios = await scenario_service.get_active_scenarios()
     elif is_active is False:
-        all_scenarios = await BotScenario.objects.filter()
+        all_scenarios = await AgentScenario.objects.filter()
         scenarios = [s for s in all_scenarios if not s.is_active]
     else:
-        scenarios = await BotScenario.objects.filter()
+        scenarios = await AgentScenario.objects.filter()
 
     return [
         ScenarioResponse(
@@ -117,7 +119,8 @@ async def list_scenarios(
             ai_prompt=s.ai_prompt,
             action_type=s.action_type,
             is_active=s.is_active,
-            collection_interval_hours=s.collection_interval_hours,
+            max_tokens=s.max_tokens,
+            output_schema=s.output_schema,
             created_at=s.created_at.isoformat() if s.created_at else "",
             updated_at=s.updated_at.isoformat() if s.updated_at else "",
         )
@@ -151,7 +154,8 @@ async def get_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        collection_interval_hours=scenario.collection_interval_hours,
+        max_tokens=scenario.max_tokens,
+        output_schema=scenario.output_schema,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )
@@ -206,8 +210,10 @@ async def update_scenario(
         updates["action_type"] = request.action_type
     if request.is_active is not None:
         updates["is_active"] = request.is_active
-    if request.collection_interval_hours is not None:
-        updates["collection_interval_hours"] = request.collection_interval_hours
+    if request.max_tokens is not None:
+        updates["max_tokens"] = request.max_tokens
+    if request.output_schema is not None:
+        updates["output_schema"] = request.output_schema
 
     scenario = await scenario_service.update_scenario(scenario_id, **updates)
 
@@ -224,7 +230,8 @@ async def update_scenario(
         ai_prompt=scenario.ai_prompt,
         action_type=scenario.action_type,
         is_active=scenario.is_active,
-        collection_interval_hours=scenario.collection_interval_hours,
+        max_tokens=scenario.max_tokens,
+        output_schema=scenario.output_schema,
         created_at=scenario.created_at.isoformat() if scenario.created_at else "",
         updated_at=scenario.updated_at.isoformat() if scenario.updated_at else "",
     )
@@ -238,7 +245,7 @@ async def delete_scenario(
     """
     Delete a bot scenario.
     
-    Note: Sources using this scenario will have their bot_scenario_id set to NULL
+    Note: Sources using this scenario will have their agent_scenario_id set to NULL
     (preserved by CASCADE behavior defined in the database).
     
     Admin access required.

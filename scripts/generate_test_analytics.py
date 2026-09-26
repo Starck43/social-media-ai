@@ -36,7 +36,7 @@ async def create_test_analytics_data():
 
 		# Получить сценарии для разнообразия
 		scenarios = await conn.run_sync(lambda sync_conn: sync_conn.execute(
-			text("SELECT id, name FROM social_manager.bot_scenarios LIMIT 3")
+			text("SELECT id, name FROM social_manager.agent_scenarios LIMIT 3")
 		).fetchall())
 
 		print(f"📊 Создаю тестовые данные для {len(sources)} источников...")

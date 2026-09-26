@@ -22,9 +22,9 @@ jobs = JobManager()
 async def execute_job(job: Any, handler: Callable) -> None:
     """Run a claimed job and record the outcome (done / retry / failed)."""
     # Job context travels in columns, not in payload. Handlers that need it
-    # (digest idempotency is keyed on schedule_id) get it merged in here.
+    # (digest idempotency is keyed on agent_task_id) get it merged in here.
     payload = dict(job.payload or {})
-    payload.setdefault("schedule_id", job.schedule_id)
+    payload.setdefault("agent_task_id", job.agent_task_id)
     payload.setdefault("job_id", job.id)
     # Everything below — the handler AND the bookkeeping writes — must see the
     # job's workspace, otherwise mark_done() cannot even find the row.

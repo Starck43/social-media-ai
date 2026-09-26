@@ -165,7 +165,8 @@ SCOPE_PRESETS = {
 }
 
 
-def get_scope_preset(preset_key: str) -> dict[str, Any]:
+def get_scope_preset(preset_key: str) -> str | dict[
+	str, bool | int | dict[str, list[str] | bool] | dict[str, list[str] | int]]:
 	"""Get scope configuration by preset key."""
 	preset = SCOPE_PRESETS.get(preset_key)
 	return preset["config"] if preset else EVENT_MONITORING_SCOPE

@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block body %}
-<main data-theme="light">
+<main data-theme="dark">
     {% block main %}
     <div class="wrapper">
         <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md">
@@ -30,6 +30,13 @@
                     </button>
                     <div class="collapse navbar-collapse" id="navbarSupportedContent">
                         {{ display_menu(admin._menu, request) }}
+                        <div class="navbar-nav">
+                            <a href="/app/" target="_blank" rel="noopener" class="nav-link btn-icon">
+                                <i class="fa fa-home"></i>
+                                <span>Дашборд</span>
+                                <span class="badge bg-secondary-lt ms-auto">↗</span>
+                            </a>
+                        </div>
                         {% if admin.authentication_backend %}
                         <div class="navbar-nav">
                             <a href="{{ request.url_for('admin:logout') }}" class="nav-link btn-icon">
@@ -63,6 +70,32 @@
                     </div>
                 </div>
             </div>
+
+            {% with admin_msg = request.session.pop('admin_message', None) %}
+            {% if admin_msg %}
+            <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                <div class="toast admin-toast text-bg-{{ 'danger' if admin_msg.type == 'error' else 'success' }}"
+                     role="alert" aria-live="assertive" aria-atomic="true" data-bs-toggle="toast">
+                    <div class="d-flex">
+                        <div class="toast-body">{{ admin_msg.message }}</div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                                aria-label="Close"></button>
+                    </div>
+                </div>
+            </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", function () {
+                    const toastEl = document.querySelector('.admin-toast');
+                    if (toastEl && window.tabler && window.tabler.bootstrap) {
+                        window.tabler.bootstrap.Toast.getOrCreateInstance(toastEl).show();
+                    } else if (toastEl) {
+                        toastEl.classList.add('show');
+                        setTimeout(() => toastEl.classList.remove('show'), 6000);
+                    }
+                });
+            </script>
+            {% endif %}
+            {% endwith %}
         </div>
     </div>
     {% endblock %}

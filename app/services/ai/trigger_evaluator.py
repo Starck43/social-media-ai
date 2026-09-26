@@ -10,7 +10,7 @@ import logging
 import re
 from datetime import datetime, timezone, timedelta
 
-from app.models import BotScenario, AIAnalytics
+from app.models import AgentScenario, AIAnalytics
 from app.types import BotTriggerType
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class TriggerEvaluator:
 	async def should_analyze(
 		self,
 		content: list[dict],
-		scenario: BotScenario
+		scenario: AgentScenario
 	) -> list[dict]:
 		"""
 		Pre-filter content based on triggers BEFORE LLM analysis.
@@ -83,7 +83,7 @@ class TriggerEvaluator:
 	async def should_act(
 		self,
 		analysis_result: dict,
-		scenario: BotScenario
+		scenario: AgentScenario
 	) -> bool:
 		"""
 		Post-filter: check if action should be performed AFTER LLM analysis.
@@ -206,7 +206,7 @@ class TriggerEvaluator:
 	async def _detect_activity_spike(
 		self,
 		content: list[dict],
-		scenario: BotScenario,
+		scenario: AgentScenario,
 		config: dict
 	) -> bool:
 		"""
@@ -248,7 +248,7 @@ class TriggerEvaluator:
 	
 	async def _get_baseline_content_count(
 		self,
-		scenario: BotScenario,
+		scenario: AgentScenario,
 		hours: int
 	) -> float:
 		"""
@@ -279,7 +279,7 @@ class TriggerEvaluator:
 			# Assuming analytics has content_count or similar field
 			# If not available, use amount analytics entries as proxy
 			total_count = len(analytics)
-			avg_count = total_count / max(1, int(hours / scenario.collection_interval_hours))
+			avg_count = total_count / max(1, hours)
 			
 			return avg_count
 			

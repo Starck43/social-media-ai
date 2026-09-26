@@ -22,7 +22,7 @@ TRIGGER_CONFIG_DEFAULTS = {
         "usernames": ["@brand", "@support"],
         "mode": "any"  # "any" = любое упоминание
     },
-    "time_based": {},  # Пустой, используется collection_interval_hours
+    "time_based": {},  # Пустой, расписание задаётся cron-задачей (AgentTask)
     "manual": {}  # Пустой, без автозапуска
 }
 

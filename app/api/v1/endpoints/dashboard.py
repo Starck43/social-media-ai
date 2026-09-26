@@ -157,13 +157,13 @@ async def get_sources_summary(
 		sources = [
 			s
 			for s in sources
-			if (s.bot_scenario_id is not None) == has_scenario
+			if (s.agent_scenario_id is not None) == has_scenario
 		]
 
 	# Get bot scenarios
-	from app.models import BotScenario
+	from app.models import AgentScenario
 
-	scenarios = await BotScenario.objects.filter()
+	scenarios = await AgentScenario.objects.filter()
 	scenario_map = {s.id: s.name for s in scenarios}
 
 	result = []
@@ -179,8 +179,8 @@ async def get_sources_summary(
 				if source.last_checked
 				else None,
 				analytics_count=analytics_count.get(source.id, 0),
-				bot_scenario_name=scenario_map.get(source.bot_scenario_id)
-				if source.bot_scenario_id
+				agent_scenario_name=scenario_map.get(source.agent_scenario_id)
+				if source.agent_scenario_id
 				else None,
 			)
 		)
@@ -879,9 +879,9 @@ async def get_scenarios_list():
 	Returns:
 		List of scenarios with id and name
 	"""
-	from app.models import BotScenario
+	from app.models import AgentScenario
 	
-	scenarios = await BotScenario.objects.filter(is_active=True).order_by(BotScenario.name.asc())
+	scenarios = await AgentScenario.objects.filter(is_active=True).order_by(AgentScenario.name.asc())
 	
 	return [
 		{

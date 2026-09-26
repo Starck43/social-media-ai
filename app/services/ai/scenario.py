@@ -1,10 +1,40 @@
 import logging
 from typing import Optional
 
-from app.models import BotScenario, Source
+from app.models import AgentScenario, Source
 from app.types import BotActionType
 
 logger = logging.getLogger(__name__)
+
+
+def build_output_schema(analysis_types: Optional[list[str]] = None) -> dict:
+    """Generate a JSON Schema for structured LLM output from analysis_types.
+
+    Used lazily at runtime: when a scenario has no explicit output_schema, it is
+    derived from the configured analysis types so the LLM returns a parseable shape.
+    """
+    analysis_types = analysis_types or []
+    properties = {"summary": {"type": "string", "description": "Краткое резюме анализа"}}
+    for at in analysis_types:
+        if at == "sentiment":
+            properties["sentiment"] = {
+                "type": "object",
+                "properties": {"label": {"type": "string"}, "score": {"type": "number"}},
+            }
+        elif at == "keywords":
+            properties["keywords"] = {"type": "array", "items": {"type": "string"}}
+        elif at == "topics":
+            properties["topics"] = {"type": "array", "items": {"type": "string"}}
+        elif at == "themes":
+            properties["themes"] = {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}, "weight": {"type": "number"}},
+                },
+            }
+    return {"type": "object", "properties": properties, "required": list(properties.keys())}
+
 
 
 class ScenarioPromptBuilder:
@@ -18,12 +48,12 @@ class ScenarioPromptBuilder:
     """
 
     @staticmethod
-    def build_prompt(scenario: BotScenario, context: dict) -> str:
+    def build_prompt(scenario: AgentScenario, context: dict) -> str:
         """
         Build AI prompt from a scenario with runtime context injection.
 
         Args:
-            scenario: BotScenario instance with analysis_types and scope
+            scenario: AgentScenario instance with analysis_types and scope
             context: Runtime context (platform, source_type, content, etc.)
 
         Returns:
@@ -143,11 +173,15 @@ class ScenarioService:
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
         action_type: Optional[BotActionType] = None,
+        trigger_type: Optional[str] = None,
+        trigger_config: Optional[dict] = None,
+        max_tokens: Optional[int] = None,
+        output_schema: Optional[dict] = None,
         is_active: bool = True,
-        cooldown_minutes: int = 30,
-    ) -> BotScenario:
+        is_default: bool = False,
+    ) -> AgentScenario:
         """
-        Create a new bot scenario.
+        Create a new agent scenario.
 
         Args:
             name: Scenario name
@@ -157,13 +191,17 @@ class ScenarioService:
             scope: Configuration parameters for analysis (no analysis_types here!)
             ai_prompt: AI prompt template with variables
             action_type: Action to perform after analysis
+            trigger_type: Trigger condition for when to analyze/act
+            trigger_config: Configuration for trigger evaluation
+            max_tokens: Max tokens for LLM responses
+            output_schema: JSON Schema for structured output
             is_active: Whether scenario is active
-            cooldown_minutes: Cooldown period between triggers.
+            is_default: Whether this is the tenant's default scenario
 
         Returns:
-            Created BotScenario object
+            Created AgentScenario object
         """
-        scenario = await BotScenario.objects.create(
+        scenario = await AgentScenario.objects.create(
             name=name,
             description=description,
             analysis_types=analysis_types or [],
@@ -173,8 +211,10 @@ class ScenarioService:
             trigger_type=trigger_type,
             trigger_config=trigger_config or {},
             action_type=action_type,
+            max_tokens=max_tokens,
+            output_schema=output_schema,
             is_active=is_active,
-            collection_interval_hours=collection_interval_hours,
+            is_default=is_default,
         )
 
         logger.info(
@@ -216,11 +256,11 @@ class ScenarioService:
         """
         return await Source.objects.get_by_scenario(scenario_id, is_active)
 
-    async def get_scenario_by_id(self, scenario_id: int) -> Optional[BotScenario]:
+    async def get_scenario_by_id(self, scenario_id: int) -> Optional[AgentScenario]:
         """Get scenario by ID."""
-        return await BotScenario.objects.get(id=scenario_id)
+        return await AgentScenario.objects.get(id=scenario_id)
 
-    async def update_scenario(self, scenario_id: int, **updates) -> Optional[BotScenario]:
+    async def update_scenario(self, scenario_id: int, **updates) -> Optional[AgentScenario]:
         """
         Update a bot scenario.
 
@@ -229,9 +269,9 @@ class ScenarioService:
                 **updates: Fields to update
 
         Returns:
-                Updated BotScenario object or None if not found
+                Updated AgentScenario object or None if not found
         """
-        scenario = await BotScenario.objects.update_by_id(scenario_id, **updates)
+        scenario = await AgentScenario.objects.update_by_id(scenario_id, **updates)
 
         if scenario:
             logger.info(f"Updated bot scenario {scenario_id}")
@@ -250,21 +290,21 @@ class ScenarioService:
         Returns:
                 True if deleted, False if not found
         """
-        scenario = await BotScenario.objects.get(id=scenario_id)
+        scenario = await AgentScenario.objects.get(id=scenario_id)
 
         if scenario:
-            await BotScenario.objects.delete(scenario.id)
+            await AgentScenario.objects.delete(scenario.id)
             logger.info(f"Deleted bot scenario {scenario_id}")
             return True
 
         logger.warning(f"Scenario {scenario_id} not found")
         return False
 
-    async def get_active_scenarios(self) -> list[BotScenario]:
+    async def get_active_scenarios(self) -> list[AgentScenario]:
         """Get all active scenarios."""
-        return await BotScenario.objects.filter(is_active=True)
+        return await AgentScenario.objects.filter(is_active=True)
 
-    async def toggle_scenario_status(self, scenario_id: int, is_active: bool) -> Optional[BotScenario]:
+    async def toggle_scenario_status(self, scenario_id: int, is_active: bool) -> Optional[AgentScenario]:
         """
         Toggle scenario active status.
 
@@ -273,7 +313,7 @@ class ScenarioService:
                 is_active: New active status
 
         Returns:
-                Updated BotScenario object or None if not found
+                Updated AgentScenario object or None if not found
         """
         return await self.update_scenario(scenario_id, is_active=is_active)
 

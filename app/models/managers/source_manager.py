@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.enum_helpers import get_enum_value
 
 if TYPE_CHECKING:
-    from ..source import Source, SourceUserRelationship
+    from ..source import Source
     from app.types import SourceType
 
 
@@ -55,7 +55,7 @@ class SourceManager(BaseManager["Source"]):
             query = query.filter(external_id=external_id)
 
         # Execute the query with platform eager loading
-        source = await query.select_related('platform', 'bot_scenario').first()
+        source = await query.select_related('platform', 'agent_scenario').first()
 
         if not source:
             identifier = f"ID {source_id}" if source_id else f"external_id '{external_id}'"
@@ -69,12 +69,6 @@ class SourceManager(BaseManager["Source"]):
             'platform_type': get_enum_value(platform.platform_type),
             'is_active': platform.is_active,
         }
-
-        # Add optional fields if they exist
-        if hasattr(platform, 'rate_limit_remaining'):
-            platform_data['rate_limit_remaining'] = platform.rate_limit_remaining
-        if hasattr(platform, 'rate_limit_reset_at'):
-            platform_data['rate_limit_reset_at'] = platform.rate_limit_reset_at
 
         return source, platform_data
 
@@ -242,27 +236,30 @@ class SourceManager(BaseManager["Source"]):
 
     async def get_with_monitored_users(self, source_id: int) -> Optional["Source"]:
         """
-        Get source with prefetched monitored_users relationship.
+        Get source with monitored_users read from params.
 
         Args:
                 source_id: Source ID
 
         Returns:
-                Source object with monitored_users loaded
+                Source object with _monitored_usernames attribute
         """
-        return await self.filter(id=source_id).prefetch_related("monitored_users").first()
+        source = await self.filter(id=source_id).first()
+        if source:
+            source._monitored_usernames = source.params.get("monitored_users", [])
+        return source
 
     async def get_with_scenario(self, source_id: int) -> Optional["Source"]:
         """
-        Get source with prefetched bot_scenario relationship.
+        Get source with prefetched agent_scenario relationship.
 
         Args:
                 source_id: Source ID
 
         Returns:
-                Source object with bot_scenario loaded
+                Source object with agent_scenario loaded
         """
-        return await self.filter(id=source_id).prefetch_related("bot_scenario").first()
+        return await self.filter(id=source_id).prefetch_related("agent_scenario").first()
 
     async def get_by_scenario(self, scenario_id: int, is_active: Optional[bool] = True) -> list["Source"]:
         """
@@ -275,7 +272,7 @@ class SourceManager(BaseManager["Source"]):
         Returns:
                 List of Source objects using the scenario
         """
-        qs = self.filter(bot_scenario_id=scenario_id)
+        qs = self.filter(agent_scenario_id=scenario_id)
 
         if is_active is not None:
             qs = qs.filter(is_active=is_active)
@@ -293,7 +290,7 @@ class SourceManager(BaseManager["Source"]):
         Returns:
                 Updated Source object or None if not found
         """
-        return await self.update_by_id(source_id, bot_scenario_id=scenario_id)
+        return await self.update_by_id(source_id, agent_scenario_id=scenario_id)
 
     async def update_last_checked(self, source_id: int, timestamp: Optional[datetime] = None) -> Optional["Source"]:
         """
@@ -331,7 +328,7 @@ class SourceManager(BaseManager["Source"]):
             "by_type": {},
             "by_platform": {},
             "never_checked": len([s for s in all_sources if s.last_checked is None]),
-            "with_scenario": len([s for s in all_sources if s.bot_scenario_id is not None]),
+            "with_scenario": len([s for s in all_sources if s.agent_scenario_id is not None]),
         }
 
         for source in all_sources:
@@ -342,28 +339,4 @@ class SourceManager(BaseManager["Source"]):
         return stats
 
 
-class SourceUserRelationshipManager(BaseManager["SourceUserRelationship"]):
-    """
-    Manager for SourceUserRelationship model.
-    Handles relationships between sources and users for monitoring.
-    """
 
-    def __init__(self):
-        from ..source import SourceUserRelationship
-        super().__init__(SourceUserRelationship)
-
-    def get_queryset(self, session: AsyncSession | None = None) -> QuerySet["SourceUserRelationship"]:
-        """Return base queryset for SourceUserRelationship."""
-        return super().get_queryset(session)
-
-    async def get_by_source_and_user(self, source_id: int, user_id: int) -> "SourceUserRelationship | None":
-        """Get relationship by source and user IDs."""
-        return await self.get_queryset().filter(source_id=source_id, user_id=user_id).first()
-
-    async def get_monitored_users_for_source(self, source_id: int) -> list["SourceUserRelationship"]:
-        """Get all users monitored by a specific source."""
-        return list(await self.get_queryset().filter(source_id=source_id).all())
-
-    async def get_sources_tracking_user(self, user_id: int) -> list["SourceUserRelationship"]:
-        """Get all sources that track a specific user."""
-        return list(await self.get_queryset().filter(user_id=user_id).all())

@@ -14,13 +14,13 @@ from app.agent.tools import tool
 )
 async def system_status() -> dict[str, Any]:
     from app.core.config import settings
-    from app.models import Job, Schedule
+    from app.models import AgentTask, Job
     from app.models.managers.agent_message_manager import agent_messages
 
     pending = await Job.objects.filter(status="pending").count()
     running = await Job.objects.filter(status="running").count()
     failed = await Job.objects.filter(status="failed").count()
-    active_schedules = await Schedule.objects.filter(is_active=True).count()
+    active_schedules = await AgentTask.objects.filter(is_active=True).count()
 
     daily_cost = await agent_messages.cost_today()
 

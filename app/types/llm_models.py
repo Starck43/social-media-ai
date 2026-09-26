@@ -1,22 +1,5 @@
 """
-DEPRECATED: This module has been moved to app.core.llm_presets
-
-Import from app.core.llm_presets instead for LLM provider metadata.
+REMOVED: Hardcoded LLM presets have been removed.
+All provider and model metadata now lives in the `llm_providers` / `llm_models` DB tables.
+Manage them via the admin panel or the CLI.
 """
-
-# Re-export for backward compatibility
-from app.core.llm_presets import (
-    LLMProviderMetadata,
-    ModelInfo,
-    get_cheapest_text_model,
-    get_model_display_name,
-    get_multimodal_models,
-)
-
-__all__ = [
-    "ModelInfo",
-    "LLMProviderMetadata",
-    "get_multimodal_models",
-    "get_cheapest_text_model",
-    "get_model_display_name",
-]

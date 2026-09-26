@@ -33,11 +33,13 @@ class BaseAdmin(ModelView):
     form_args = {
         'is_active': {
             'choices': [(True, 'Да'), (False, 'Нет')],
-            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
+            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x),
+            'description': 'Выключенная запись не участвует в работе планировщика и сбора данных',
         },
         'is_default': {
             'choices': [(True, 'Да'), (False, 'Нет')],
-            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x)
+            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x),
+            'description': 'Приоритетная запись: используется, когда явный выбор не задан',
         }
     }
     form_excluded_columns = ['created_at', 'updated_at']

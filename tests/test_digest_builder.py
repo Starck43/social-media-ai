@@ -2,17 +2,17 @@
 
 import pytest
 
-from app.models import DigestRun, Schedule
+from app.models import DigestRun, AgentTask
 from app.services.digest import builder
 
 
 @pytest.fixture(autouse=True)
 async def _cleanup():
     await DigestRun.objects.delete()
-    await Schedule.objects.delete(name__in=["it-digest", "it-digest-2"])
+    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2"])
     yield
     await DigestRun.objects.delete()
-    await Schedule.objects.delete(name__in=["it-digest", "it-digest-2"])
+    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2"])
 
 
 async def test_skipped_when_no_channels(monkeypatch):
@@ -39,7 +39,7 @@ async def test_sent_and_idempotent(monkeypatch):
     monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
     monkeypatch.setattr(builder, "_summarize", fake_summarize)
 
-    schedule = await Schedule.objects.create(
+    schedule = await AgentTask.objects.create(
         name="it-digest",
         cron_expr="0 9 * * *",
         timezone="UTC",
@@ -48,19 +48,19 @@ async def test_sent_and_idempotent(monkeypatch):
         is_active=True,
     )
 
-    result = await builder.build_and_publish(period="day", schedule_id=schedule.id)
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
     assert result["status"] == "sent"
     assert len(sent_calls) == 1
     run = (await DigestRun.objects.filter())[-1]
     assert run.status == "sent" and run.message_id == "42"
 
     # Idempotency: same schedule+period is not re-sent
-    again = await builder.build_and_publish(period="day", schedule_id=schedule.id)
+    again = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
     assert again["status"] == "skipped"
     assert again["reason"] == "already_sent"
     assert len(sent_calls) == 1
 
-    # Manual run (schedule_id=None) is never blocked
+    # Manual run (agent_task_id=None) is never blocked
     manual = await builder.build_and_publish(period="day")
     assert manual["status"] == "sent"
     assert len(sent_calls) == 2
@@ -101,7 +101,7 @@ async def test_scheduled_retry_reuses_run_row(monkeypatch):
     monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
     monkeypatch.setattr(builder, "_summarize", fake_summarize)
 
-    schedule = await Schedule.objects.create(
+    schedule = await AgentTask.objects.create(
         name="it-digest-2",
         cron_expr="0 9 * * *",
         timezone="UTC",
@@ -111,17 +111,17 @@ async def test_scheduled_retry_reuses_run_row(monkeypatch):
     )
 
     with pytest.raises(builder.DigestDeliveryError):
-        await builder.build_and_publish(period="day", schedule_id=schedule.id)
+        await builder.build_and_publish(period="day", agent_task_id=schedule.id)
 
-    result = await builder.build_and_publish(period="day", schedule_id=schedule.id)
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
     assert result["status"] == "sent"
 
-    rows = await DigestRun.objects.filter(schedule_id=schedule.id)
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
     assert len(rows) == 1  # one row per (schedule, period), updated in place
     assert rows[0].status == "sent" and rows[0].message_id == "7"
 
     # And after success the period is locked in
-    assert (await builder.build_and_publish(period="day", schedule_id=schedule.id))["reason"] == "already_sent"
+    assert (await builder.build_and_publish(period="day", agent_task_id=schedule.id))["reason"] == "already_sent"
 
 
 async def test_aggregate_shape():

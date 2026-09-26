@@ -67,13 +67,13 @@
 }
 
 [data-theme="dark"] {
-	/* Переопределение темной темы Tabler */
+	/* Переопределение темной темы Tabler — фон как в /app/ (slate-950/900/800) */
 	--tblr-primary: #6b83f3;
 	--tblr-secondary: #a17fed;
-	--tblr-bg-surface: #25213e;
-	--tblr-bg-surface-rgb: 0, 0, 0;
-	--tblr-bg-surface-secondary: #192f62;
-	--tblr-body-bg: #1a1a2e;
+	--tblr-bg-surface: #0f172a;
+	--tblr-bg-surface-rgb: 15, 23, 42;
+	--tblr-bg-surface-secondary: #1e293b;
+	--tblr-body-bg: #020617;
 	--tblr-body-color: #d3d3d6;
 	--tblr-border-color: #374151;
 

@@ -1,0 +1,14 @@
+{% if flashes %}
+    <div class="space-y-2 p-4">
+        {% for f in flashes %}
+            <div x-data="{ show: true }" x-show="show"
+                 class="flex items-center justify-between gap-4 rounded-lg border px-4 py-2 text-sm
+                       {% if f.kind == 'success' %}border-emerald-700 bg-emerald-950 text-emerald-200
+                       {% elif f.kind == 'error' %}border-rose-700 bg-rose-950 text-rose-200
+                       {% else %}border-slate-700 bg-slate-900 text-slate-200{% endif %}">
+                <span>{{ f.text }}</span>
+                <button @click="show = false" class="opacity-60 hover:opacity-100">&times;</button>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}

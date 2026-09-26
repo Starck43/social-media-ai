@@ -1,0 +1,947 @@
+# API Reference
+
+FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
+panel under `/admin`. All API endpoints (except health check) require
+authentication via Bearer JWT token.
+
+## Base URL
+
+```
+http://localhost:8000/api/v1
+```
+
+## Authentication
+
+All endpoints (except `GET /api/v1/health`) require a JWT access token.
+
+### Login
+
+Get access + refresh token pair.
+
+```
+POST /api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=<username_or_email>&password=<password>
+```
+
+**Response** `200 OK`:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "expires_at": 1735689600
+}
+```
+
+### Refresh Token
+
+Get a new access token using a refresh token.
+
+```
+POST /api/v1/auth/refresh-token
+Authorization: Bearer <refresh_token>
+```
+
+**Response** `200 OK`:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "expires_at": 1735689600
+}
+```
+
+### Register
+
+Create a new user.
+
+```
+POST /api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "password": "strongpassword123",
+  "is_active": true,
+  "is_superuser": false
+}
+```
+
+**Response** `201 Created`: same as login response.
+
+**Errors:**
+- `400` — Username or email already registered.
+
+---
+
+## Health
+
+```
+GET /api/v1/health
+```
+
+**Response** `200 OK`:
+```json
+{
+  "status": "ok",
+  "database": "connected"
+}
+```
+
+No authentication required.
+
+---
+
+## Users
+
+### List Users
+
+```
+GET /api/v1/users?skip=0&limit=100
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Default | Max | Description |
+|---|---|---|---|---|
+| `skip` | int | 0 | — | Records to skip |
+| `limit` | int | 100 | 100 | Max records |
+
+**Response** `200 OK`:
+```json
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@example.com",
+    "is_active": true,
+    "is_superuser": true,
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00"
+  }
+]
+```
+
+**Permissions:** superuser only.
+
+### Get Current User
+
+```
+GET /api/v1/users/me
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`: same shape as list items.
+
+### Update User
+
+```
+PUT /api/v1/users/{user_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "username": "newname",
+  "email": "new@example.com",
+  "is_active": true
+}
+```
+
+**Permissions:** superuser or the user themselves.
+
+### Delete User
+
+```
+DELETE /api/v1/users/{user_id}
+Authorization: Bearer <token>
+```
+
+**Response** `204 No Content`.
+
+**Permissions:** superuser only.
+
+### Change Password
+
+```
+POST /api/v1/users/{user_id}/change-password
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "current_password": "oldPass123",
+  "new_password": "newSecurePass123"
+}
+```
+
+**Response** `200 OK`:
+```json
+{
+  "detail": "Password updated successfully"
+}
+```
+
+**Validation:** new password must be ≥8 chars, contain uppercase, lowercase, digit.
+
+---
+
+## Roles & Permissions
+
+### List Roles
+
+```
+GET /api/v1/users/roles/
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` (paginated):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "admin",
+      "permissions": [
+        {"id": 1, "codename": "add_user", "name": "Can add user"}
+      ]
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "pages": 1
+}
+```
+
+### Get Role
+
+```
+GET /api/v1/users/roles/{role_name}
+Authorization: Bearer <token>
+```
+
+### Update Role Permissions
+
+```
+PUT /api/v1/users/roles/{role_name}/permissions
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "permissions": ["add_user", "change_user", "delete_user"],
+  "strategy": "replace"
+}
+```
+
+**Strategies:**
+| Strategy | Behavior |
+|---|---|
+| `replace` | Replace all permissions with the new list |
+| `merge` | Add new permissions, keep existing |
+| `synchronize` | Add new, remove those not in the list |
+| `update_actions` | Update actions for the same tables |
+
+**Response** `200 OK`:
+```json
+{
+  "message": "Permissions updated successfully",
+  "role": { ... },
+  "changes": {
+    "added": ["add_user"],
+    "removed": [],
+    "updated": [],
+    "unchanged": ["change_user"]
+  }
+}
+```
+
+---
+
+## Monitoring
+
+All monitoring endpoints require **superuser** access and run collection in
+background tasks.
+
+### Collect from Source
+
+```
+POST /api/v1/monitoring/collect/source
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "source_id": 1,
+  "content_type": "posts",
+  "analyze": true
+}
+```
+
+**Response** `200 OK`:
+```json
+{
+  "status": "started",
+  "source_id": 1,
+  "message": "Content collection started in background"
+}
+```
+
+### Collect from Platform
+
+```
+POST /api/v1/monitoring/collect/platform
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "platform_id": 1,
+  "source_types": ["GROUP", "CHANNEL"],
+  "analyze": true
+}
+```
+
+### Collect Monitored Users
+
+```
+POST /api/v1/monitoring/collect/monitored
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "source_id": 1,
+  "analyze": true
+}
+```
+
+### Get Source Analytics
+
+```
+GET /api/v1/monitoring/analytics/source/{source_id}
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`:
+```json
+{
+  "source_id": 1,
+  "source_name": "My VK Group",
+  "analytics": [
+    {
+      "id": 42,
+      "analysis_date": "2025-10-15",
+      "period_type": "day",
+      "topic_chain_id": "chain-abc",
+      "llm_model": "gpt-4o-mini",
+      "summary_data": { "sentiment_score": 0.75, ... },
+      "created_at": "2025-10-15T10:00:00"
+    }
+  ]
+}
+```
+
+---
+
+## AI Scenarios
+
+Bot scenarios define how AI analyzes content from sources.
+
+### Create Scenario
+
+```
+POST /api/v1/scenarios
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Sentiment Monitoring",
+  "description": "Track customer sentiment",
+  "analysis_types": ["sentiment", "keywords"],
+  "content_types": ["posts", "comments"],
+  "scope": {
+    "sentiment_config": {
+      "categories": ["positive", "negative", "neutral"]
+    }
+  },
+  "ai_prompt": "Analyze sentiment: {content}",
+  "trigger_type": "keywords",
+  "trigger_config": {"keywords": ["important", "urgent"]},
+  "action_type": "NOTIFICATION",
+  "is_active": true,
+  "collection_interval_hours": 24
+}
+```
+
+**Response** `201 Created`: `ScenarioResponse` object.
+
+**Permissions:** superuser only.
+
+### List Scenarios
+
+```
+GET /api/v1/scenarios?is_active=true
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Description |
+|---|---|---|
+| `is_active` | bool | Filter: `true` / `false` / omit for all |
+
+### Get Scenario
+
+```
+GET /api/v1/scenarios/{scenario_id}
+Authorization: Bearer <token>
+```
+
+### Update Scenario
+
+```
+PUT /api/v1/scenarios/{scenario_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "analysis_types": ["sentiment", "keywords", "topics"],
+  "scope": {
+    "topics_config": {"max_topics": 10}
+  }
+}
+```
+
+All fields are optional (partial update). Superuser only.
+
+### Delete Scenario
+
+```
+DELETE /api/v1/scenarios/{scenario_id}
+Authorization: Bearer <token>
+```
+
+Sources using this scenario get `bot_scenario_id` set to NULL. Superuser only.
+
+### Assign Scenario to Source
+
+```
+POST /api/v1/scenarios/assign
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "source_id": 123,
+  "scenario_id": 456
+}
+```
+
+Set `scenario_id` to `null` to remove assignment. Superuser only.
+
+### Get Scenario Sources
+
+```
+GET /api/v1/scenarios/{scenario_id}/sources?is_active=true
+Authorization: Bearer <token>
+```
+
+Returns all sources currently using this scenario.
+
+---
+
+## Notifications
+
+### List Notifications
+
+```
+GET /api/v1/notifications?is_read=false&type=alert&since=2025-01-01&limit=50&offset=0
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Description |
+|---|---|---|
+| `is_read` | bool | Filter by read status |
+| `notification_type` | string | Filter by type |
+| `since` | datetime | Show notifications after this date |
+| `limit` | int | Max 100 |
+| `offset` | int | Pagination offset |
+
+### Get Notification Stats
+
+```
+GET /api/v1/notifications/stats?since=2025-01-01
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "total": 42,
+  "unread": 5,
+  "by_type": {"alert": 20, "info": 22}
+}
+```
+
+### Get Notification
+
+```
+GET /api/v1/notifications/{notification_id}
+Authorization: Bearer <token>
+```
+
+### Create Notification
+
+```
+POST /api/v1/notifications
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "System Alert",
+  "message": "High toxicity detected in source #3",
+  "notification_type": "alert",
+  "related_entity_type": "source",
+  "related_entity_id": 3
+}
+```
+
+**Permissions:** superuser only.
+
+### Mark as Read
+
+```
+POST /api/v1/notifications/{notification_id}/mark-read
+Authorization: Bearer <token>
+```
+
+### Mark All as Read
+
+```
+POST /api/v1/notifications/mark-all-read
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "marked_count": 5
+}
+```
+
+### Delete Notification
+
+```
+DELETE /api/v1/notifications/{notification_id}
+Authorization: Bearer <token>
+```
+
+**Permissions:** superuser only.
+
+### Cleanup Old Notifications
+
+```
+POST /api/v1/notifications/cleanup?days=30
+Authorization: Bearer <token>
+```
+
+Deletes read notifications older than `days` (1–365). Superuser only.
+
+---
+
+## Dashboard
+
+### Get Dashboard Stats
+
+```
+GET /api/v1/dashboard/stats?platform_id=1&source_type=GROUP&since=2025-01-01
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Description |
+|---|---|---|
+| `platform_id` | int | Filter by platform |
+| `source_type` | string | Filter by source type |
+| `since` | date | Stats since this date |
+
+**Response:**
+```json
+{
+  "total_sources": 10,
+  "active_sources": 8,
+  "total_platforms": 3,
+  "active_platforms": 3,
+  "total_analytics": 150,
+  "total_topics": 25,
+  "unread_notifications": 5,
+  "sources_by_platform": {"VK": 7, "Telegram": 3},
+  "sources_by_type": {"GROUP": 5, "CHANNEL": 3, "USER": 2},
+  "analytics_by_period": {"day": 100, "week": 50}
+}
+```
+
+### Get Sources Summary
+
+```
+GET /api/v1/dashboard/sources?platform_id=1&source_type=GROUP&is_active=true&has_scenario=true&limit=50&offset=0
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "My VK Group",
+    "platform_name": "VK",
+    "source_type": "GROUP",
+    "is_active": true,
+    "last_checked": "2025-10-15T10:00:00",
+    "analytics_count": 30,
+    "bot_scenario_name": "Sentiment Monitoring"
+  }
+]
+```
+
+### Get Analytics Summary
+
+```
+GET /api/v1/dashboard/analytics?source_id=1&period_type=day&since=2025-01-01&limit=50&offset=0
+Authorization: Bearer <token>
+```
+
+### Get Source Trends
+
+```
+GET /api/v1/dashboard/trends/{source_id}?days=30&metric=sentiment
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `days` | int | 30 | Days to analyze (1–365) |
+| `metric` | string | sentiment | `sentiment`, `activity`, `engagement` |
+
+**Response:**
+```json
+[
+  {
+    "date": "2025-10-01",
+    "value": 0.75,
+    "label": "positive"
+  }
+]
+```
+
+### Get Recent Notifications
+
+```
+GET /api/v1/dashboard/notifications/recent?limit=10
+Authorization: Bearer <token>
+```
+
+### Get Topic Chains
+
+```
+GET /api/v1/dashboard/topic-chains?source_id=1&limit=50
+```
+
+No auth required. Returns topic chain summaries with source info and topics.
+
+### Get Topic Chain Details
+
+```
+GET /api/v1/dashboard/topic-chains/{chain_id}
+```
+
+### Get Topic Chain Evolution
+
+```
+GET /api/v1/dashboard/topic-chains/{chain_id}/evolution
+```
+
+### Get Scenarios List
+
+```
+GET /api/v1/dashboard/scenarios
+```
+
+Returns active scenarios (no auth required).
+
+---
+
+## Analytics Aggregation
+
+All aggregation endpoints use `ReportAggregator` and require authentication.
+
+### Sentiment Trends
+
+```
+GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&scenario_id=2&days=7&group_by=day
+```
+
+**Response:**
+```json
+{
+  "trends": [
+    {
+      "date": "2025-10-15",
+      "avg_sentiment_score": 0.75,
+      "total_analyses": 5,
+      "distribution": {
+        "positive": 3,
+        "neutral": 1,
+        "negative": 1
+      }
+    }
+  ],
+  "period_days": 7,
+  "group_by": "day"
+}
+```
+
+### Top Topics
+
+```
+GET /api/v1/dashboard/analytics/aggregate/top-topics?source_id=1&days=7&limit=10
+```
+
+**Response:**
+```json
+{
+  "topics": [
+    {
+      "topic": "AI Technologies",
+      "count": 12,
+      "avg_sentiment": 0.8,
+      "examples": ["Example 1...", "Example 2..."]
+    }
+  ],
+  "period_days": 7,
+  "total_topics": 10
+}
+```
+
+### LLM Stats
+
+```
+GET /api/v1/dashboard/analytics/aggregate/llm-stats?source_id=1&days=30
+```
+
+**Response:**
+```json
+{
+  "providers": {
+    "openai": {
+      "requests": 150,
+      "total_tokens": 45000,
+      "request_tokens": 30000,
+      "response_tokens": 15000,
+      "estimated_cost_usd": 0.45,
+      "avg_tokens_per_request": 300.0,
+      "models": {
+        "gpt-4o-mini": 120,
+        "gpt-4o": 30
+      }
+    }
+  },
+  "summary": {
+    "total_requests": 200,
+    "total_cost_usd": 0.55,
+    "period_days": 30
+  }
+}
+```
+
+### Content Mix
+
+```
+GET /api/v1/dashboard/analytics/aggregate/content-mix?source_id=1&days=7
+```
+
+### Engagement Metrics
+
+```
+GET /api/v1/dashboard/analytics/aggregate/engagement?source_id=1&days=7
+```
+
+---
+
+## LLM Providers
+
+### Create Provider
+
+```
+POST /api/v1/llm-providers/
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "OpenAI",
+  "description": "OpenAI GPT models",
+  "api_format": "openai",
+  "base_url": "https://api.openai.com/v1",
+  "auth_header": "Bearer",
+  "is_active": true,
+  "is_default": true
+}
+```
+
+**Permissions:** superuser only.
+
+### List Providers
+
+```
+GET /api/v1/llm-providers/?is_active=true
+Authorization: Bearer <token>
+```
+
+### Get Provider
+
+```
+GET /api/v1/llm-providers/{provider_id}
+Authorization: Bearer <token>
+```
+
+### Update Provider
+
+```
+PATCH /api/v1/llm-providers/{provider_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "is_active": false
+}
+```
+
+**Permissions:** superuser only.
+
+### Delete Provider
+
+```
+DELETE /api/v1/llm-providers/{provider_id}
+Authorization: Bearer <token>
+```
+
+**Permissions:** superuser only.
+
+---
+
+## Error Responses
+
+| Code | Meaning |
+|---|---|
+| `400` | Bad request (invalid credentials, validation error) |
+| `401` | Unauthorized (missing or invalid token) |
+| `403` | Forbidden (insufficient permissions) |
+| `404` | Resource not found |
+| `422` | Validation error (Pydantic) |
+| `500` | Internal server error |
+
+All error responses follow this shape:
+```json
+{
+  "detail": "Error message"
+}
+```
+
+---
+
+## Admin Panel
+
+The sqladmin panel provides a web UI for managing all database entities.
+
+**Base URL:** `http://localhost:8000/admin`
+
+**Pages:** User, Role, Permission, Source, BotScenario, Schedule, Job,
+DigestRun, AIAnalytics, LLMProvider, LLMModel, Tenant, TenantChannel,
+AgentSession, AgentMessage, AgentMemory, AgentFeedback, Notification, and more.
+
+### Password Reset
+
+```
+GET /admin/reset-password
+POST /admin/reset-password (form: email, csrf_token)
+```
+
+### Change Password
+
+```
+GET /admin/user/change-password/{user_id}
+POST /admin/user/change-password/{user_id} (form: current_password, new_password, confirm_password, csrf_token)
+```
+
+### Analytics Dashboard
+
+```
+GET /dashboard
+GET /dashboard/topic-chains
+```
+
+---
+
+## Schemas Reference
+
+### User
+
+```json
+{
+  "id": 1,
+  "username": "string (3-50 chars)",
+  "email": "valid email",
+  "is_active": true,
+  "is_superuser": false,
+  "created_at": "ISO datetime",
+  "updated_at": "ISO datetime"
+}
+```
+
+### Token
+
+```json
+{
+  "access_token": "JWT string",
+  "refresh_token": "JWT string (login/register only)",
+  "token_type": "bearer",
+  "expires_at": 1735689600
+}
+```
+
+### ScenarioResponse
+
+```json
+{
+  "id": 1,
+  "name": "string",
+  "description": "string",
+  "analysis_types": ["sentiment", "keywords"],
+  "content_types": ["posts", "comments"],
+  "scope": {},
+  "ai_prompt": "string",
+  "trigger_type": "keywords",
+  "trigger_config": {},
+  "action_type": "NOTIFICATION",
+  "is_active": true,
+  "collection_interval_hours": 24,
+  "created_at": "ISO datetime",
+  "updated_at": "ISO datetime"
+}
+```
+
+### LLMProviderResponse
+
+```json
+{
+  "id": 1,
+  "name": "OpenAI",
+  "description": "string",
+  "api_format": "openai",
+  "base_url": "https://api.openai.com/v1",
+  "auth_header": "Bearer",
+  "is_active": true,
+  "is_default": true,
+  "created_at": "ISO datetime",
+  "updated_at": "ISO datetime"
+}
+```

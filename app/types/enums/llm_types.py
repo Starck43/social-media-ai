@@ -6,6 +6,32 @@ from app.utils.db_enums import DatabaseEnum, database_enum
 
 from .content_types import MediaType  # noqa: F401
 
+API_FORMAT_LABELS: dict[str, str] = {
+    "openai": "OpenAI-compatible (/chat/completions)",
+    "anthropic": "Anthropic Messages (/messages)",
+}
+
+
+class APIFormatType(str, Enum):
+    """Supported LLM API formats (stored as plain string in llm_providers.api_format)."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+    @property
+    def label(self) -> str:
+        return API_FORMAT_LABELS.get(self.value, self.value)
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        """Get list of (value, label) tuples for form select fields."""
+        return [(m.value, m.label) for m in cls]
+
+    @classmethod
+    def values(cls) -> list[str]:
+        return [m.value for m in cls]
+
+
 LLM_STRATEGY_LABELS_RU: dict[str, str] = {
     "cost_efficient": "Экономичная",
     "quality": "Качество",

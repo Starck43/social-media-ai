@@ -10,7 +10,7 @@ import pytest
 
 from app.jobs import dispatcher
 from app.jobs.handlers import handle_digest
-from app.models import DigestRun, Job, Schedule
+from app.models import DigestRun, Job, AgentTask
 from app.scheduler import runner
 from app.services.digest import builder
 
@@ -22,15 +22,15 @@ async def _cleanup():
     async def wipe():
         await DigestRun.objects.delete()
         await Job.objects.delete(job_type="digest")
-        await Schedule.objects.delete(name=SCHEDULE_NAME)
+        await AgentTask.objects.delete(name=SCHEDULE_NAME)
 
     await wipe()
     yield
     await wipe()
 
 
-async def test_dispatcher_passes_schedule_id_to_handler(monkeypatch):
-    """Job context in columns (schedule_id) must reach the handler payload."""
+async def test_dispatcher_passes_agent_task_id_to_handler(monkeypatch):
+    """Job context in columns (agent_task_id) must reach the handler payload."""
     seen = {}
 
     async def fake_handler(payload):
@@ -39,7 +39,7 @@ async def test_dispatcher_passes_schedule_id_to_handler(monkeypatch):
 
     monkeypatch.setitem(dispatcher.HANDLERS, "digest", fake_handler)
 
-    schedule = await Schedule.objects.create(
+    schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
         timezone="UTC",
@@ -47,10 +47,10 @@ async def test_dispatcher_passes_schedule_id_to_handler(monkeypatch):
         payload={"period": "week"},
         is_active=True,
     )
-    await dispatcher.jobs.enqueue(job_type="digest", payload=schedule.payload, schedule_id=schedule.id)
+    await dispatcher.jobs.enqueue(job_type="digest", payload=schedule.payload, agent_task_id=schedule.id)
 
     assert await dispatcher.drain() == 1
-    assert seen["schedule_id"] == schedule.id
+    assert seen["agent_task_id"] == schedule.id
     assert seen["period"] == "week"
     assert isinstance(seen["job_id"], int)
 
@@ -75,7 +75,7 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
     monkeypatch.setattr(builder, "_summarize", fake_summarize)
 
     due = datetime.now(timezone.utc) - timedelta(minutes=1)
-    schedule = await Schedule.objects.create(
+    schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
         timezone="UTC",
@@ -85,11 +85,11 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
         next_run_at=due,
     )
 
-    # Scheduler pass enqueues the job and advances the schedule
+    # AgentTaskr pass enqueues the job and advances the schedule
     stats = await runner.tick()
     assert stats["enqueued"] == 1
 
-    refreshed = await Schedule.objects.get(id=schedule.id)
+    refreshed = await AgentTask.objects.get(id=schedule.id)
     assert refreshed.next_run_at > due
     assert refreshed.last_status == "ok"
 
@@ -97,7 +97,7 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
     assert await dispatcher.drain() == 1
     assert len(sent) == 1 and "Тестовая сводка" in sent[0]
 
-    run = await DigestRun.objects.get(schedule_id=schedule.id)
+    run = await DigestRun.objects.get(agent_task_id=schedule.id)
     assert run.status == "sent" and run.message_id == "1234"
 
     job = (await Job.objects.filter(job_type="digest"))[0]
@@ -105,7 +105,7 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
 
     # Re-running the same period is a no-op (idempotent), and a fresh job
     # for it does not deliver a second message.
-    await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, schedule_id=schedule.id)
+    await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, agent_task_id=schedule.id)
     assert await dispatcher.drain() == 1
     assert len(sent) == 1
 
@@ -143,7 +143,7 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
     monkeypatch.setattr(registry_module.settings, "MAX_CHANNEL_ID", "")
     monkeypatch.setattr(builder, "_summarize", fake_summarize)
 
-    schedule = await Schedule.objects.create(
+    schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
         timezone="UTC",
@@ -152,7 +152,7 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
         is_active=True,
     )
 
-    await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, schedule_id=schedule.id)
+    await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, agent_task_id=schedule.id)
     assert await dispatcher.drain() == 1
     assert len(attempts) == 1
 
@@ -160,7 +160,7 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
     assert failed.status == "pending" and failed.error and "temporary" in failed.error
     assert failed.attempts == 1
 
-    run = await DigestRun.objects.get(schedule_id=schedule.id)
+    run = await DigestRun.objects.get(agent_task_id=schedule.id)
     assert run.status == "failed"
 
     # Immediate retry: force the backoff to be over, then drain again
@@ -171,5 +171,5 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
     retried = await Job.objects.get(id=failed.id)
     assert retried.status == "done"
 
-    runs = await DigestRun.objects.filter(schedule_id=schedule.id)
+    runs = await DigestRun.objects.filter(agent_task_id=schedule.id)
     assert len(runs) == 1 and runs[0].status == "sent"

@@ -14,14 +14,13 @@
 
 -- 1. DeepSeek (уже должен быть создан миграцией, но добавим на всякий случай)
 INSERT INTO social_manager.llm_providers 
-    (name, description, provider_type, api_url, api_key_env, model_name, capabilities, config, is_active)
+    (name, description, provider_type, api_url, model_name, capabilities, config, is_active)
 VALUES 
     (
         'DeepSeek Chat',
         'DeepSeek LLM для текстового анализа. Быстрый и доступный по цене.',
         'deepseek',
         'https://api.deepseek.com/v1/chat/completions',
-        'DEEPSEEK_API_KEY',
         'deepseek-chat',
         '["text"]'::jsonb,
         '{"temperature": 0.2, "max_tokens": 2000}'::jsonb,
@@ -33,14 +32,13 @@ ON CONFLICT (name) DO UPDATE SET
 
 -- 2. OpenAI GPT-3.5 (для текста)
 INSERT INTO social_manager.llm_providers 
-    (name, description, provider_type, api_url, api_key_env, model_name, capabilities, config, is_active)
+    (name, description, provider_type, api_url, model_name, capabilities, config, is_active)
 VALUES 
     (
         'OpenAI GPT-3.5 Turbo',
         'OpenAI GPT-3.5 Turbo для быстрого анализа текста. Доступная цена.',
         'openai',
         'https://api.openai.com/v1/chat/completions',
-        'OPENAI_API_KEY',
         'gpt-3.5-turbo',
         '["text"]'::jsonb,
         '{"temperature": 0.3, "max_tokens": 2000}'::jsonb,
@@ -50,14 +48,13 @@ ON CONFLICT (name) DO NOTHING;
 
 -- 3. OpenAI GPT-4 (для текста и изображений)
 INSERT INTO social_manager.llm_providers 
-    (name, description, provider_type, api_url, api_key_env, model_name, capabilities, config, is_active)
+    (name, description, provider_type, api_url, model_name, capabilities, config, is_active)
 VALUES 
     (
         'OpenAI GPT-4 Turbo',
         'OpenAI GPT-4 Turbo для комплексного анализа текста. Высокое качество.',
         'openai',
         'https://api.openai.com/v1/chat/completions',
-        'OPENAI_API_KEY',
         'gpt-4-turbo-preview',
         '["text"]'::jsonb,
         '{"temperature": 0.2, "max_tokens": 3000}'::jsonb,
@@ -67,14 +64,13 @@ ON CONFLICT (name) DO NOTHING;
 
 -- 4. OpenAI GPT-4 Vision (для изображений и видео)
 INSERT INTO social_manager.llm_providers 
-    (name, description, provider_type, api_url, api_key_env, model_name, capabilities, config, is_active)
+    (name, description, provider_type, api_url, model_name, capabilities, config, is_active)
 VALUES 
     (
         'OpenAI GPT-4 Vision',
         'OpenAI GPT-4 с поддержкой анализа изображений и видео.',
         'openai',
         'https://api.openai.com/v1/chat/completions',
-        'OPENAI_API_KEY',
         'gpt-4-vision-preview',
         '["text", "image", "video"]'::jsonb,
         '{"temperature": 0.1, "max_tokens": 3000}'::jsonb,
@@ -84,14 +80,13 @@ ON CONFLICT (name) DO NOTHING;
 
 -- 5. Anthropic Claude (альтернатива)
 INSERT INTO social_manager.llm_providers 
-    (name, description, provider_type, api_url, api_key_env, model_name, capabilities, config, is_active)
+    (name, description, provider_type, api_url, model_name, capabilities, config, is_active)
 VALUES 
     (
         'Anthropic Claude 3',
         'Anthropic Claude 3 для анализа текста. Хорошо понимает контекст.',
         'anthropic',
         'https://api.anthropic.com/v1/messages',
-        'ANTHROPIC_API_KEY',
         'claude-3-opus-20240229',
         '["text"]'::jsonb,
         '{"temperature": 0.2, "max_tokens": 2000}'::jsonb,

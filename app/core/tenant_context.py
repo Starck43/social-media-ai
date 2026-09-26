@@ -76,13 +76,15 @@ def tenant_scope(tenant_id: Optional[int] = None, *, bypass: bool = False):
 
 
 class PlatformScopeMiddleware:
-    """Run every HTTP request as the platform owner (bypass).
+    """Run every operator HTTP request as the platform owner (bypass).
 
     The HTTP surfaces (`/api/v1`, sqladmin) are the operator's console, not a
     client-facing API: clients talk to the agent through messengers. So the
     request runs in the bootstrap workspace with the guard switched off, which
-    is exactly what the legacy endpoints assume. A future client-facing API must
-    set `tenant_scope()` from the caller's workspace instead of relying on this.
+    is exactly what the legacy endpoints assume.
+
+    `/app/*` is the exception: the client UI carries its own tenant context
+    resolved from web memberships — see `app/web/middleware.TenantUIMiddleware`.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -90,6 +92,10 @@ class PlatformScopeMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if path == "/app" or path.startswith("/app/"):
             await self.app(scope, receive, send)
             return
         with tenant_scope(bypass=True):

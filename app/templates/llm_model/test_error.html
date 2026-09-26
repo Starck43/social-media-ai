@@ -1,4 +1,7 @@
 {% extends "sqladmin/layout.html" %}
+{% set is_rate_limit = error_details.kind in ('rate_limit_error', 'rate_limit') or error_details.code in ('model_concurrency', 'rate_limit_exceeded', 'quota_exceeded') %}
+{% set is_auth_error = error_details.kind == 'authentication_error' or error_details.code in ('invalid_api_key', 'authentication_failed', 'unauthorized') %}
+{% set is_model_error = error_details.kind in ('model_not_found', 'invalid_request_error') or error_details.code in ('model_not_found', 'invalid_model', 'model_not_allowed') %}
 
 {% block title %}Ошибка тестирования: {{ model.name }}{% endblock %}
 
@@ -13,27 +16,77 @@
         </div>
         <div class="card-body">
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <strong>Модель:</strong> {{ model.name }}
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
+                    <strong>API модель:</strong> <code>{{ model.model_id }}</code>
+                </div>
+                <div class="col-md-4">
                     <strong>Провайдер:</strong> {{ provider.name }}
                 </div>
             </div>
-
             <div class="row mb-4">
                 <div class="col-md-6">
                     <strong>Время ошибки:</strong> {{ error_time.strftime('%d.%m.%Y %H:%M:%S') }}
                 </div>
+                {% if error_details.status_code %}
+                <div class="col-md-6">
+                    <strong>HTTP статус:</strong> <span class="badge bg-danger">{{ error_details.status_code }}</span>
+                </div>
+                {% endif %}
             </div>
 
-            <div class="alert alert-danger" role="alert">
+            {% if error_details.message %}
+            <div class="alert {% if is_rate_limit %}alert-warning{% elif is_auth_error %}alert-danger{% elif is_model_error %}alert-info{% else %}alert-danger{% endif %}" role="alert">
                 <h5 class="alert-heading">
-                    <i class="fa fa-times-circle"></i>
-                    Произошла ошибка:
+                    {% if is_rate_limit %}
+                    <i class="fa fa-clock"></i> Лимит исчерпан
+                    {% elif is_auth_error %}
+                    <i class="fa fa-lock"></i> Ошибка авторизации
+                    {% elif is_model_error %}
+                    <i class="fa fa-microchip"></i> Проблема с моделью
+                    {% else %}
+                    <i class="fa fa-times-circle"></i> Ошибка
+                    {% endif %}
                 </h5>
-                <p class="mb-0">{{ error_message }}</p>
+                <p class="mb-2">{{ error_details.message }}</p>
+                {% if error_details.code %}
+                <p class="mb-0"><small class="text-muted">Код: <code>{{ error_details.code }}</code></small></p>
+                {% endif %}
             </div>
+            {% endif %}
+
+            {% if is_rate_limit %}
+            <div class="card border-warning mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="card-title mb-0"><i class="fa fa-lightbulb me-2"></i>Что делать</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        {% if error_details.retry_after %}
+                        <li>Подождать <strong>{{ error_details.retry_after }}</strong> секунд и повторить.</li>
+                        {% endif %}
+                        <li><strong>Пополнить баланс</strong> на <a href="https://inference.dahl.global/account" target="_blank" class="alert-link">inference.dahl.global/account</a> — $0.03 за 1M токенов.</li>
+                        <li>Или <strong>переключиться на другую модель</strong> — доступны сейчас: <code>MiniMaxAI/MiniMax-M2.7</code>, <code>zai-org/GLM-5.3-Flash</code>.</li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_auth_error %}
+            <div class="card border-danger mb-4">
+                <div class="card-header bg-danger">
+                    <h5 class="card-title mb-0"><i class="fa fa-key me-2"></i>Проверьте API ключ</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        <li>Убедитесь, что API ключ для провайдера <strong>{{ provider.name }}</strong> указан корректно в настройках.</li>
+                        <li>Ключ должен быть активен в вашем аккаунте на <strong>inference.dahl.global</strong>.</li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
 
             {% if prompt %}
             <div class="row">
@@ -42,7 +95,7 @@
                         <div class="card-header bg-warning text-dark">
                             <h5 class="card-title mb-0">
                                 <i class="fa fa-question-circle"></i>
-                                Запрос, который вызвал ошибку
+                                Запрос
                             </h5>
                         </div>
                         <div class="card-body">
@@ -61,11 +114,11 @@
                         </div>
                         <div class="card-body">
                             <ul class="mb-0">
-                                <li>API ключ провайдера не настроен или неверный</li>
+                                <li>Недостаточно средств на аккаунте провайдера</li>
+                                <li>Лимит параллельных запросов исчерпан</li>
+                                <li>API ключ не настроен или неверный</li>
                                 <li>Модель неактивна или недоступна</li>
                                 <li>Проблемы с сетевым подключением</li>
-                                <li>Недостаточно средств на аккаунте провайдера</li>
-                                <li>Неверные настройки модели</li>
                             </ul>
                         </div>
                     </div>
@@ -88,11 +141,16 @@
                         </form>
                         <a href="{{ url_for('admin:list', identity='llm-model') }}" class="btn btn-secondary">
                             <i class="fa fa-arrow-left"></i>
-                            Назад к списку моделей
+                            Назад к списку
                         </a>
                     </div>
                 </div>
             </div>
+
+            <details class="mt-4">
+                <summary class="btn btn-outline-secondary btn-sm">📦 Сырые данные для отладки</summary>
+                <pre class="mt-2 p-3 border rounded small text-muted"><code>{{ error_details | tojson(indent=2, ensure_ascii=False) }}</code></pre>
+            </details>
         </div>
     </div>
 </div>

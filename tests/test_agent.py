@@ -208,18 +208,11 @@ async def test_chat_uses_agent_limits(_clean_sessions, monkeypatch):
     """_chat passes AGENT_MAX_TOKENS/AGENT_TEMPERATURE to the LLM client."""
     captured = {}
 
-    class _FakeClient:
-        async def chat(self, messages, tools=None, **kwargs):
-            captured.update(kwargs)
-            return {"content": "ok", "tool_calls": [], "usage": {}}
+    async def _fake_fallback(messages, tools=None, **kwargs):
+        captured.update(kwargs)
+        return {"content": "ok", "tool_calls": [], "usage": {}}
 
-    class _LLMClientStub:
-        @staticmethod
-        async def create(model):
-            return _FakeClient()
-
-    monkeypatch.setattr("app.services.digest.builder.resolve_model", _noop_async)
-    monkeypatch.setattr("app.services.ai.llm_client.LLMClient", _LLMClientStub)
+    monkeypatch.setattr("app.services.ai.llm_client.chat_with_fallback", _fake_fallback)
     monkeypatch.setattr(agent_runtime.settings, "AGENT_MAX_TOKENS", 2048)
     monkeypatch.setattr(agent_runtime.settings, "AGENT_TEMPERATURE", 0.5)
     _set_owner(monkeypatch)

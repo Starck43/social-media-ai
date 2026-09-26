@@ -8,7 +8,7 @@ Each source tracks:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Any, cast
+from typing import Any, Optional, cast
 
 from app.models import Source
 
@@ -74,7 +74,7 @@ class CheckpointManager:
 			timestamp = timestamp.replace(tzinfo=timezone.utc)
 
 		# Update via SourceManager
-		source = await Source.objects.update_last_checked(source_id, timestamp)
+		source = await Source.objects.update_last_checked(source_id, timestamp)  # type: ignore[attr-defined]
 
 		# Merge platform-specific params if provided
 		if params and source:
@@ -97,9 +97,6 @@ class CheckpointManager:
 		"""
 		Check if source should be collected based on checkpoint.
 
-		Uses source.bot_scenario.collection_interval_hours if available,
-		otherwise uses provided default.
-
 		Args:
 			source: Source to check
 			collection_interval_hours: Minimum interval between collections (hours)
@@ -113,10 +110,6 @@ class CheckpointManager:
 		# Never collected before - collect now
 		if source.last_checked is None:
 			return True
-
-		# Get interval from scenario if available
-		if hasattr(source, 'bot_scenario') and source.bot_scenario:
-			collection_interval_hours = source.bot_scenario.collection_interval_hours or collection_interval_hours
 
 		# Check if enough time passed since last collection
 		now = datetime.now(timezone.utc)

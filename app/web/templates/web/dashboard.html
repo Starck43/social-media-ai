@@ -1,0 +1,56 @@
+{% extends "web/base.html" %}
+{% block title %}Дашборд — AI Monitor{% endblock %}
+{% block content %}
+    <div class="mb-6">
+        <h1 class="text-2xl font-semibold tracking-tight">{{ tenant.name }}</h1>
+        <p class="mt-1 text-sm text-slate-400">
+            {{ tenant.slug }} · план {{ tenant.plan }} · роль:
+            {% for w in workspaces %}{% if w.active %}{{ w.role }}{% endif %}{% endfor %}
+        </p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Источники активны</p>
+            <p class="mt-2 text-3xl font-semibold">{{ kpis.active_sources }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Постов за сутки</p>
+            <p class="mt-2 text-3xl font-semibold">{{ kpis.posts_today }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Средний sentiment</p>
+            <p class="mt-2 text-3xl font-semibold text-slate-600">
+                {% if kpis.avg_sentiment == 0 %}—{% else %}{{ "%.2f"|format(kpis.avg_sentiment) }}{% endif %}
+            </p>
+            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">появится после анализа</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">LLM-расход за сутки</p>
+            <p class="mt-2 text-3xl font-semibold">${{ "%.2f"|format(kpis.cost_today_usd) }}</p>
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:col-span-2">
+            <h2 class="text-sm font-medium text-slate-300">Последние события</h2>
+            <div class="mt-6 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
+                Пока пусто — здесь появится лента сборов, триггеров и дайджестов
+            </div>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Быстрые действия</h2>
+            <div class="mt-4 space-y-2">
+                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
+                    Собрать сейчас
+                </button>
+                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
+                    Отправить дайджест
+                </button>
+                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
+                    Добавить источник
+                </button>
+            </div>
+        </div>
+    </div>
+{% endblock %}

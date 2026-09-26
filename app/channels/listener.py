@@ -6,12 +6,17 @@ so one VPS service covers cron jobs, background work and the agent chat.
 Design notes:
 - One `poll()` iterator per enabled channel; failures are per-channel and the
   loop keeps running (a dead Telegram token must not stop MAX).
+- Every inbound goes through `_ingest_safely` first: Telegram hands channel posts
+  to the bot as updates, so this is where Bot API collection happens (see
+  `app/services/monitoring/ingest.py`). It is synchronous on purpose — the
+  `getUpdates` offset advances only after the iteration completes.
 - `handle_inbound` returns the reply text (or None for strangers/empty text);
   this module sends it back to the same chat.
 - The agent ignores channel posts from non-owners (`is_channel_post` + owner
   allowlist), so the bot never replies to its own digest channel posts.
 - Telegram `getUpdates` offset lives in memory (`channel._offset`) — Telegram
-  replays unacked updates on restart, and unseen ones are simply handled.
+  replays unacked updates on restart, and unseen ones are simply handled (the
+  per-source watermark in ingest keeps that from double-charging the LLM).
 """
 
 from __future__ import annotations
@@ -34,6 +39,11 @@ async def _consume_channel(channel) -> None:
     while True:
         try:
             async for inbound in channel.poll():
+                # Ingest first and synchronously: the `getUpdates` offset is only
+                # confirmed once this iteration completes, which gives push-based
+                # collection at-least-once delivery (the source watermark then
+                # makes it effectively once).
+                await _ingest_safely(inbound)
                 reply = await _handle_safely(inbound)
                 if reply:
                     try:
@@ -58,6 +68,20 @@ async def _handle_safely(inbound: Inbound) -> str | None:
     except Exception as e:  # noqa: BLE001
         logger.error(f"Agent failed for {inbound.channel}:{inbound.chat_id}: {e}", exc_info=True)
         return "Внутренняя ошибка агента. Попробуйте позже."
+
+
+async def _ingest_safely(inbound: Inbound) -> None:
+    """Feed a channel post into the analysis pipeline; never breaks polling.
+
+    Telegram's Bot API hands us channel posts as updates, so ingesting here is
+    the only way to collect them (see `app/services/monitoring/ingest.py`).
+    """
+    from app.services.monitoring.ingest import ingest_channel_post
+
+    try:
+        await ingest_channel_post(inbound)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Ingest failed for {inbound.channel}:{inbound.chat_id}: {e}", exc_info=True)
 
 
 async def listen_forever() -> None:

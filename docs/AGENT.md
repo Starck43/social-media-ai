@@ -20,14 +20,16 @@ messenger message
 
 | Модуль | Роль |
 |---|---|
-| `app/agent/runtime.py` | Шагающий цикл агента: сессия, лимиты, подтверждения, loop |
-| `app/agent/prompts.py` | Системный промпт + текст `/help` |
+| `app/agent/runtime.py` | Шагающий цикл агента: сессия, лимиты, подтверждения, loop, сборка системного промпта (`build_system_prompt`) |
+| `app/agent/prompts.py` | Системный промпт + текст `/help`; `render_style_block` (tenants.agent_style) |
+| `app/agent/learning.py` | `run_learn` (факты из чата, watermark), `run_reflect` (гигиена памяти) |
 | `app/agent/session.py` | Загрузка/нормализация истории для LLM |
 | `app/agent/tools.py` | Реестр инструментов, OpenAI-схемы, диспетчеризация |
-| `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `schedule`, `reports` |
+| `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `schedule`, `reports`, `tasks`, `actions`, `scenarios` |
 | `app/models/agent_session.py` | Одна строка на (channel, chat_id); volatile `state` |
 | `app/models/agent_message.py` | Транскрипт диалога (user/assistant/tool) + токены/стоимость |
-| `app/models/agent_memory.py` | Факты в постоянной памяти: (tenant, scope, key) -> value |
+| `app/models/agent_feedback.py` | Оценки `/good`,`/bad` (vote, note, сообщение-основание) |
+| `app/models/agent_memory.py` | Факты в постоянной памяти: (tenant, scope, key) -> value + provenance |
 
 ## Инструменты
 
@@ -36,22 +38,51 @@ messenger message
 OpenAI function calling.
 
 Запись/отправка (`confirm=True`): `schedule_add/remove/pause`, `source_add/disable`,
-`digest_send_now`. Их модель не выполняет сама — runtime кладёт вызов в
-`session.state['pending_confirmation']` и ждёт явного «да»/«нет» от владельца.
+`digest_send_now`, `task_run`, `action_send`, `task_prompt_set`, `scenario_assign`. Их модель не
+выполняет сама — runtime кладёт вызов в `session.state['pending_confirmation']`
+и ждёт явного «да»/«нет» от владельца.
 
 Чтение/эйфемерные: `collect_now`, `sources_list`, `schedule_list`,
-`report_period`, `system_status`, `memory_get/set`.
+`report_period`, `system_status`, `memory_get/set`, `task_list`, `actions_log`.
 
 ## Команды чата
 
 - `/help` — список возможностей
 - `/stop` — очистить историю (session остаётся)
+- `/good` — отметить последний ответ как удачный (в `agent_feedback`)
+- `/bad <заметка>` — жалоба на последний ответ; заметки копятся для рефлексии
+- `/memory clear` — стереть выученные факты (только владелец; watermark `learn` остаётся)
 
-## Память
+## Память и обучение
 
 `memory_set`/`memory_get` — durable KV, скоуп на workspace
-(см. `agent_memory_manager`). Память **не** подмешивается в системный промпт
-автоматически: модель вызывает `memory_get` сама, когда ей нужен факт.
+(см. `agent_memory_manager`). Теперь память **подмешивается в системный промпт**
+автоматически: `build_system_prompt()` (`app/agent/runtime.py`) добавляет
+соглашение о стиле (`tenants.agent_style`) и top-N фактов по `confidence`
+(`agent_memory.snapshot()`, scope `meta` исключён).
+
+Каждый факт несёт provenance: `source` (`manual`|`learn`|`reflect`),
+`confidence` (0.1–1.0), `evidence_message_id` (сообщение-основание, FK SET NULL).
+
+Обучение — два фоновых jobs (см. `docs/AGENT_TASKS.md`):
+
+- `learn` (`app/agent/learning.py::run_learn`) — вытаскивает
+  устойчивые факты/предпочтения из новых реплик чата. Watermark в
+  `agent_memory(scope=meta,key=learn_msg_wm)`: LLM дёргается только когда
+  накопилось `min_messages` (default 8) новых user-реплик — иначе дешёвый skip.
+- `reflect` (`run_reflect`) — еженедельная гигиена: сливает
+  дубли, чистит устаревшее, понижает `confidence` спорного; из `/bad`-заметок
+  готовит **предложение** правки промптов (`prompt_advice`), но сам
+  `task_templates` не трогает.
+
+Дефолтные cron для обоих заданы в `app/scheduler/bootstrap.py`
+(`DEFAULT_SCHEDULES`) — там и смотреть актуальные значения.
+
+`task_prompt_set` (confirm-gated инструмент) — единственная точка правки
+промпта задачи: глобальный шаблон копируется в workspace и получает
+`revision += 1` (аудит). Изменения применяются со следующего `task_run`.
+
+Эволюция промптов **не происходит** автоматически: только через подтверждение владельца.
 
 ## Лимиты и стоимость
 
@@ -64,8 +95,8 @@ OpenAI function calling.
 | `AGENT_MAX_TOKENS` / `AGENT_TEMPERATURE` | Параметры `chat()` |
 | `AGENT_MODEL` | Явная модель; пусто = авто-выбор первой активной |
 
-Потраченные токены/считаются по `AgentMessage.tokens/cost`
-(`agent_messages.cost_today()`). См. `docs/SCHEDULER.md` для общей картины очереди.
+Потраченные токены считаются по `AgentMessage.tokens/cost`
+(`agent_messages.cost_today()`). См. `docs/AGENT_TASKS.md` для общей картины очереди.
 
 ## Tenancy
 

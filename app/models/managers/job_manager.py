@@ -22,7 +22,7 @@ class JobManager(BaseManager["Job"]):
         job_type: str,
         payload: Optional[dict] = None,
         *,
-        schedule_id: Optional[int] = None,
+        agent_task_id: Optional[int] = None,
         run_at: Optional[datetime] = None,
         max_attempts: Optional[int] = None,
     ) -> "Job":
@@ -32,7 +32,7 @@ class JobManager(BaseManager["Job"]):
         return await self.create(
             job_type=job_type,
             payload=payload or {},
-            schedule_id=schedule_id,
+            agent_task_id=agent_task_id,
             run_at=run_at or datetime.now(timezone.utc),
             max_attempts=max_attempts or settings.JOB_MAX_ATTEMPTS,
         )

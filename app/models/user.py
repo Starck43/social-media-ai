@@ -11,7 +11,7 @@ from ..core.config import settings
 from ..core.decorators import app_label
 
 if TYPE_CHECKING:
-    from . import Role
+    from . import Role, Source
 
 
 @app_label("account")
@@ -29,6 +29,14 @@ class User(Base, TimestampMixin):
     # Relationship to Role
     role_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_manager.roles.id"), nullable=False)
     role: Mapped["Role"] = relationship("Role", back_populates="users")
+
+    # Sources owned by this user
+    sources: Mapped[list["Source"]] = relationship(
+        "Source",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     # Manager will be set after class definition to avoid circular imports
     if TYPE_CHECKING:

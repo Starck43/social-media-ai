@@ -26,7 +26,8 @@ class ScenarioBase(BaseModel):
 	# Legacy (kept for backward compatibility)
 	ai_prompt: Optional[str] = Field(None, description="[Deprecated] Legacy AI prompt template")
 	is_active: bool = Field(True, description="Whether scenario is active")
-	collection_interval_hours: int = Field(1, ge=1, le=168, description="Collection interval in hours (1-168, max 1 week)")
+	max_tokens: Optional[int] = Field(None, ge=1, description="Max tokens for LLM responses in this scenario")
+	output_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured LLM output")
 
 
 class ScenarioCreate(ScenarioBase):
@@ -87,7 +88,8 @@ class ScenarioUpdate(BaseModel):
 	trigger_config: Optional[dict[str, Any]] = None
 	action_type: Optional[BotActionType] = None
 	is_active: Optional[bool] = None
-	collection_interval_hours: Optional[int] = Field(None, ge=1, le=168)
+	max_tokens: Optional[int] = Field(None, ge=1)
+	output_schema: Optional[dict[str, Any]] = None
 
 
 class ScenarioResponse(BaseModel):
@@ -113,7 +115,8 @@ class ScenarioResponse(BaseModel):
 	ai_prompt: Optional[str]
 	action_type: Optional[str]
 	is_active: bool
-	collection_interval_hours: int
+	max_tokens: Optional[int]
+	output_schema: Optional[dict]
 	created_at: str
 	updated_at: str
 

@@ -69,10 +69,28 @@ class Settings(BaseSettings):
     DB_SCHEMA: str = "social_manager"
 
     # External platform credentials (optional — integrations are enabled based on presence)
+    # Prefer the per-tenant vault (tenant_credentials); these are the legacy fallback.
     VK_APP_ID: Optional[str] = None
     VK_SERVICE_ACCESS_TOKEN: Optional[str] = None
+    VK_USER_ACCESS_TOKEN: Optional[str] = None  # legacy fallback for the vault's vk/user_token
+    VK_API_BASE_URL: str = "https://api.vk.com/method"
+    VK_API_VERSION: str = "5.199"
+    VK_REQUEST_TIMEOUT: float = 30.0
+
     TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
+    TELEGRAM_REQUEST_TIMEOUT: float = 30.0
+    # Legacy env fallback for the per-tenant MTProto session (L2 Telegram).
+    # Prefer: python -m cli.main credentials login telegram
+    TELEGRAM_API_ID: Optional[str] = None
+    TELEGRAM_API_HASH: Optional[str] = None
+    TELEGRAM_SESSION: Optional[str] = None
     TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Legacy: default chat for admin notifications
+
+    # Common social collection defaults
+    SOCIAL_PAGE_SIZE: int = 50
+    SOCIAL_MAX_PAGES: int = 20
+    SOCIAL_REQUEST_TIMEOUT: float = 30.0
 
     # --- Channels / owner allowlist ---
     TELEGRAM_OWNER_IDS: str = ""  # comma-separated Telegram user ids allowed to talk to the agent
@@ -80,7 +98,7 @@ class Settings(BaseSettings):
 
     # MAX messenger (Bot API: https://dev.max.ru)
     MAX_BOT_TOKEN: Optional[str] = None
-    MAX_API_BASE: str = "https://platform-api2.max.ru"
+    MAX_API_URL: str = "https://platform-api2.max.ru"
     MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
     MAX_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
 

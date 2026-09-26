@@ -504,7 +504,7 @@
                 if (!currentConfig || currentConfig === "{}") {
                     const defaultConfig = window.triggerDefaults[triggerDbValue];
                     configTextarea.value = JSON.stringify(defaultConfig, null, 2);
-                    console.log(`[BotScenario] Auto-filled trigger_config for: ${triggerDbValue} (NAME: ${triggerName})`);
+                    console.log(`[AgentScenario] Auto-filled trigger_config for: ${triggerDbValue} (NAME: ${triggerName})`);
                 }
             }
             
@@ -522,7 +522,7 @@
                 form.appendChild(triggerField);
             }
             triggerField.value = triggerName || "";  // Save NAME
-            console.log(`[BotScenario] trigger_type set to: ${triggerName}`);
+            console.log(`[AgentScenario] trigger_type set to: ${triggerName}`);
         }
         
         function syncActionToForm() {
@@ -543,7 +543,7 @@
                 form.appendChild(actionField);
             }
             actionField.value = actionName || "";  // Save NAME
-            console.log(`[BotScenario] action_type set to: ${actionName}`);
+            console.log(`[AgentScenario] action_type set to: ${actionName}`);
         }
         
         function formatTriggerConfig() {
@@ -585,7 +585,7 @@
             // Sync to form (will set hidden field to empty)
             syncTriggerToForm();
             
-            console.log("[BotScenario] Trigger selection cleared");
+            console.log("[AgentScenario] Trigger selection cleared");
         }
         
         function clearActionSelection() {
@@ -597,7 +597,7 @@
             // Sync to form (will set hidden field to empty)
             syncActionToForm();
             
-            console.log("[BotScenario] Action selection cleared");
+            console.log("[AgentScenario] Action selection cleared");
         }
 
         // Analysis types functions
@@ -753,7 +753,7 @@
                         textarea.value = "";
                         
                         syncTriggerToForm();
-                        console.log("[BotScenario] Trigger deselected by double-click");
+                        console.log("[AgentScenario] Trigger deselected by double-click");
                     } else {
                         lastSelectedTrigger = this;
                     }
@@ -774,7 +774,7 @@
                         lastSelectedAction = null;
                         
                         syncActionToForm();
-                        console.log("[BotScenario] Action deselected by double-click");
+                        console.log("[AgentScenario] Action deselected by double-click");
                     } else {
                         lastSelectedAction = this;
                     }
@@ -815,7 +815,7 @@
                 if (radio) {
                     radio.checked = true;
                     lastSelectedTrigger = radio;  // Set for deselection tracking
-                    console.log(`[BotScenario] Loaded trigger_type NAME: ${initialTriggerType}`);
+                    console.log(`[AgentScenario] Loaded trigger_type NAME: ${initialTriggerType}`);
                 }
             }
             
@@ -833,7 +833,7 @@
                 if (radio) {
                     radio.checked = true;
                     lastSelectedAction = radio;  // Set for deselection tracking
-                    console.log(`[BotScenario] Loaded action_type NAME: ${initialActionType}`);
+                    console.log(`[AgentScenario] Loaded action_type NAME: ${initialActionType}`);
                 }
             }
 

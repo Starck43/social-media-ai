@@ -1,129 +1,265 @@
 """
-Telegram API client for collecting messages and channel posts.
+Telegram collection client: L1 push contract + L2 MTProto pull (Telethon).
 
-Uses Telethon library for MTProto API access.
+The Bot API (L1) cannot read history, so pull collection is only meaningful in
+`user` mode through an authorized MTProto session (Telethon). Sessions are
+resolved from the tenant vault by `app.services.social.tg_session` and telethon
+is imported lazily — the app boots without it installed.
+
 Official documentation: https://docs.telethon.dev/
 """
 
 import logging
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Optional
 
+from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
 from app.types import SourceType
 
 logger = logging.getLogger(__name__)
 
+# Source.params["mode"] values (see docs/COLLECTION.md).
+MODE_API = "api"  # L1: Bot API push via listener -> ingest; pull is a no-op
+MODE_USER = "user"  # L2: MTProto user session pull (Telethon)
+
 
 class TelegramClient(BaseClient):
 	"""
-	Client for Telegram API integration using Telethon.
-	
-	Supports:
-	- Channel posts collection
-	- Group messages collection (if bot is member)
-	- User info retrieval
-	- Message history
-	
-	Note: Requires Telethon client configuration in platform params.
+	Client for Telegram: content collection and bot-side sending.
+
+	Collection is hybrid, decided per source by `Source.params["mode"]`:
+	- `api` (default, L1): no pull — the Bot API delivers only new updates to
+	  the listener, which feeds `services/monitoring/ingest.py`; pulling here
+	  would re-analyze pushes and burn LLM tokens, so it returns no items.
+	- `user` (L2): MTProto pull of everything newer than `Source.last_item_id`
+	  (watermark shared with the push path); `force_refresh` + `cli_dates`
+	  widen the window for a one-off backfill.
+
+	`send_message` writes through the Bot API and is unrelated to the layer.
 	"""
 
-	def _get_api_method(self, source_type: SourceType, content_type: str) -> str:
+	async def collect_data(self, source: Source, content_type: str = "posts") -> list[Any] | list[dict | None]:
+		"""Route the source to its collection layer (L1 no-op, L2 MTProto pull)."""
+		mode = (source.params or {}).get("mode", MODE_API)
+		if mode != MODE_USER:
+			if mode != MODE_API:
+				logger.warning(f"Unknown Telegram mode {mode!r} for source {source.id} - treating as api")
+			logger.info(f"Telegram source {source.id} is push-based (L1) - pull collection skipped")
+			return []
+		return await self._collect_mtproto(source)
+
+	async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
+		"""L2 pull: fetch messages newer than the watermark, then advance it.
+
+		A missing or revoked session is an error to log, not to raise: the job
+		reports the source as failed and the rest of the run continues.
 		"""
-		Get Telegram API method based on source type and content type.
-		
-		Args:
-			source_type: Type of source (CHANNEL, GROUP, USER)
-			content_type: Type of content to collect (posts, messages, etc.)
-			
-		Returns:
-			Method identifier for Telethon
+		from app.services.social.tg_session import build_client, load_session
+
+		session = await load_session()
+		if session is None:
+			logger.error(
+				f"No Telegram MTProto session for source {source.id} - "
+				"run: python -m cli.main credentials login telegram"
+			)
+			return []
+
+		params = source.params or {}
+		collection = params.get("collection") or {}
+		limit = int(collection.get("limit", params.get("limit", 100)))
+		force = bool(params.get("force_refresh"))
+
+		# The watermark is the primary cursor; dates only matter for backfills
+		# (first run or force_refresh), so a normal run costs nothing new.
+		min_id = 0 if force else self._watermark_id(source)
+		min_date = None if min_id else self._pull_start_date(source)
+
+		try:
+			client = build_client(session)
+		except ImportError:
+			logger.error("Telethon is not installed - L2 Telegram collection unavailable")
+			return []
+
+		messages: list[Any] = []
+		try:
+			await client.connect()
+			if not await client.is_user_authorized():
+				logger.error(
+					f"Telegram MTProto session for source {source.id} is expired or revoked - "
+					"re-run: python -m cli.main credentials login telegram"
+				)
+				return []
+			entity = await self._resolve_entity(client, source)
+			if entity is None:
+				return []
+			async for message in client.iter_messages(entity, limit=limit, min_id=min_id, min_date=min_date):
+				messages.append(message)
+		except Exception as e:  # noqa: BLE001 - one source must not sink the job
+			logger.error(f"Telegram L2 collection failed for source {source.id}: {e}", exc_info=True)
+			return []
+		finally:
+			try:
+				await client.disconnect()
+			except Exception:  # noqa: BLE001
+				pass
+
+		items = [item for item in (self._normalize_message(m, source) for m in messages) if item]
+		if not items:
+			logger.info(f"Telegram L2 source {source.id}: no new messages")
+			return []
+
+		new_watermark = max(int(item["id"]) for item in items)
+		if new_watermark > min_id:
+			await Source.objects.update_by_id(source.id, last_item_id=str(new_watermark))
+		logger.info(f"Telegram L2 source {source.id}: pulled {len(items)} messages (watermark {new_watermark})")
+		return items
+
+	@staticmethod
+	def _watermark_id(source: Source) -> int:
+		try:
+			return int(getattr(source, "last_item_id", None) or 0)
+		except (TypeError, ValueError):
+			return 0
+
+	def _pull_start_date(self, source: Source) -> Optional[datetime]:
+		"""Lower date bound for a first/forced L2 pull (no watermark yet)."""
+		params = source.params or {}
+		cli_dates = params.get("cli_dates") or {}
+		start = cli_dates.get("start_date") if cli_dates else None
+		if not start:
+			start = getattr(source, "last_checked", None) or getattr(source, "date_from", None)
+		if not start:
+			return None
+		try:
+			return self._convert_to_datetime(start)
+		except Exception as e:  # noqa: BLE001
+			logger.warning(f"Cannot parse Telegram pull start date {start!r}: {e}")
+			return None
+
+	@staticmethod
+	def _entity_ref(external_id: str) -> Any:
+		"""Map a Telegram `external_id` to something Telethon can resolve.
+
+		Bot API chat ids and MTProto peer ids differ: channels are stored as
+		`-100<channel_id>` (or the bare id), basic groups as negative ints,
+		public chats as @username or t.me links.
 		"""
-		methods = {
-			SourceType.CHANNEL: {
-				"posts": "get_messages",
-				"info": "get_entity",
-			},
-			SourceType.GROUP: {
-				"messages": "get_messages",
-				"info": "get_entity",
-			},
-			SourceType.USER: {
-				"messages": "get_messages",
-				"info": "get_entity",
-			},
+		ref = external_id.strip()
+		if ref.startswith("-100") and ref[4:].isdigit():
+			from telethon.tl.types import PeerChannel
+
+			return PeerChannel(int(ref[4:]))
+		if ref.lstrip("-").isdigit():
+			number = int(ref)
+			if number < 0:
+				from telethon.tl.types import PeerChat
+
+				return PeerChat(-number)
+			from telethon.tl.types import PeerUser
+
+			return PeerUser(number)
+		if "t.me/" in ref:
+			ref = ref.split("t.me/", 1)[1].strip("/")
+		if ref and not ref.startswith("@"):
+			ref = "@" + ref
+		return ref
+
+	async def _resolve_entity(self, client: Any, source: Source) -> Any:
+		ref = self._entity_ref(source.external_id or "")
+		try:
+			return await client.get_entity(ref)
+		except (ValueError, TypeError) as e:
+			logger.error(
+				f"Telegram entity {source.external_id!r} not resolvable for source {source.id}: {e} - "
+				"is the session account a member of that chat?"
+			)
+			return None
+
+	def _normalize_message(self, message: Any, source: Source) -> Optional[dict]:
+		"""Telethon Message -> the shared normalized content-item contract.
+
+		Keys match `ingest.normalize_channel_post` and `_normalize_response` so
+		the analyzer cannot tell L1 and L2 items apart. The `external_id` is
+		built from `Source.external_id` (the Bot API chat id the push path also
+		uses), because `dedup.item_hash` hashes it: the same post arriving via
+		push and later pulled via L2 must produce the same hash, so overlap
+		never pays twice.
+		"""
+		text = getattr(message, "text", None) or getattr(message, "message", None)
+		if not text:
+			return None  # media-only or service message: nothing to analyze
+
+		peer = getattr(message, "peer_id", None)
+		chat_id = (
+				getattr(message, "chat_id", None)
+				or getattr(peer, "channel_id", None)
+				or getattr(peer, "chat_id", None)
+				or ""
+		)
+
+		reactions_count = 0
+		reactions = getattr(message, "reactions", None)
+		for result in getattr(reactions, "results", None) or []:
+			reactions_count += getattr(result, "count", 0) or 0
+
+		replies = getattr(message, "replies", None)
+		source_type = source.source_type
+		item = {
+			"id": str(message.id),
+			"external_id": f"{source.external_id or chat_id}_{message.id}",
+			"text": text,
+			"date": getattr(message, "date", None) or datetime.now(timezone.utc),
+			"views": getattr(message, "views", 0) or 0,
+			"forwards": getattr(message, "forwards", 0) or 0,
+			"reactions": reactions_count,
+			"comments": getattr(replies, "replies", 0) if replies else 0,
+			"source_type": getattr(source_type, "value", source_type) or "channel",
+			"platform": "telegram",
+			"message_type": "post" if getattr(message, "is_channel", False) else "message",
+			"from_id": getattr(message, "sender_id", None),
+			"peer_id": chat_id,
+			"is_pinned": bool(getattr(message, "pinned", False)),
+			"edit_date": getattr(message, "edit_date", None),
 		}
-		
-		return methods.get(source_type, {}).get(content_type, "get_messages")
+		if getattr(message, "media", None):
+			item["has_media"] = True
+			item["media_type"] = type(message.media).__name__
+		return item
+
+	def _extract_items_from_response(self, response: dict) -> list:
+		if not response:
+			return []
+		return response.get("messages", []) if isinstance(response, dict) else list(response)
+
+	def _should_stop_pagination(self, response: dict, items: list, page_size: int, total_collected: int) -> bool:
+		return len(items) < page_size
+
+	def _build_paginated_response(self, all_items: list) -> dict:
+		return {"messages": all_items}
+
+	def _get_api_method(self, source_type: SourceType, content_type: str) -> str:
+		"""Telegram has no REST method map: L2 pull is `iter_messages`, L1 is push.
+
+		Present only to satisfy `BaseClient`; `collect_data` is overridden and
+		never enters the shared httpx collection path.
+		"""
+		return "iter_messages"
 
 	def _build_params(self, source: Source, method: str) -> dict:
+		"""Collection knobs for the L2 pull, read from `Source.params`.
+
+		Same abstract-method note as `_get_api_method`. Date cursors live in
+		`_pull_start_date`, the message-id cursor in `Source.last_item_id`.
 		"""
-		Build Telegram API request parameters for Telethon.
-		
-		Parameters:
-		- entity: Chat ID, username or channel link
-		- limit: Amount messages to retrieve
-		- offset_id: Message ID for pagination
-		- min_id: Minimum message ID
-		- max_id: Maximum message ID
-		
-		Args:
-			source: Source object with external_id and params
-			method: Telethon method name
-			
-		Returns:
-			Dictionary with request parameters
-		"""
-		platform_params = self.platform.params or {}
-		source_params = source.params.get('collection', {}) if source.params else {}
-
-		base_params = {
-			'entity': source.external_id,  # Can be username (@channel), chat_id, or link
-		}
-		
-		# Method-specific parameters
-		if method == 'get_messages':
-			base_params.update({
-				'limit': source_params.get('limit', 10),
-				'offset_id': source_params.get('offset_id', 0),
-				'reverse': source_params.get('reverse', False),
-			})
-
-			# TELEGRAM DATE FILTERING
-			# Similar priority logic as VK client
-			date_from = None
-			date_to = None
-
-			# Check CLI dates
-			cli_dates = source.params.get('cli_dates', {}) if source.params else {}
-
-			# Priority: last_checked > CLI dates > source model dates
-			if source.last_checked and not cli_dates.get('force_full_collection'):
-				date_from = source.last_checked
-			elif cli_dates:
-				date_from = cli_dates.get('start_date')
-				date_to = cli_dates.get('end_date')
-			else:
-				date_from = source.date_from if hasattr(source, 'date_from') and source.date_from else None
-				date_to = source.date_to if hasattr(source, 'date_to') and source.date_to else None
-
-			# Apply date filters for Telegram
-			if date_from:
-				try:
-					date_from_dt = self._convert_to_datetime(date_from)
-					base_params['offset_date'] = date_from_dt
-					logger.info(f"Telegram date_from filter: {date_from_dt.isoformat()}")
-				except Exception as e:
-					logger.warning(f"Failed to parse Telegram date_from: {e}")
-
-		# Merge with custom source parameters
-		return {**base_params, **source_params}
+		collection = (source.params or {}).get("collection") or {}
+		return {"entity": source.external_id, "limit": int(collection.get("limit", 100))}
 
 	def _normalize_response(self, raw_data: dict, source_type: SourceType) -> list[dict[str, Any]]:
 		"""
 		Normalize Telegram API response to unified format.
-		
+
 		Converts Telethon message objects to common format:
 		- id: Message ID
 		- text: Message text content
@@ -131,17 +267,17 @@ class TelegramClient(BaseClient):
 		- reactions: Reaction count
 		- views: View count
 		- forwards: Forward count
-		
+
 		Args:
-			raw_data: Raw response from Telethon (list of messages)
-			source_type: Type of source
-			
+				raw_data: Raw response from Telethon (list of messages)
+				source_type: Type of source
+
 		Returns:
-			List of normalized content items
+				List of normalized content items
 		"""
 		# Telethon returns list of Message objects or dict representation
-		messages = raw_data.get('messages', []) if isinstance(raw_data, dict) else raw_data
-		
+		messages = raw_data.get("messages", []) if isinstance(raw_data, dict) else raw_data
+
 		if not messages:
 			logger.info("No messages in Telegram response")
 			return []
@@ -150,62 +286,117 @@ class TelegramClient(BaseClient):
 		for msg in messages:
 			try:
 				# Handle both dict and object responses
-				if hasattr(msg, 'to_dict'):
+				if hasattr(msg, "to_dict"):
 					msg = msg.to_dict()
-				
+
 				# Extract message content
-				text = msg.get('message', '') or msg.get('text', '')
-				
+				text = msg.get("message", "") or msg.get("text", "")
+
 				# Extract engagement metrics
-				views = msg.get('views', 0) or 0
-				forwards = msg.get('forwards', 0) or 0
-				
+				views = msg.get("views", 0) or 0
+				forwards = msg.get("forwards", 0) or 0
+
 				# Reactions (if available)
-				reactions_data = msg.get('reactions', {})
+				reactions_data = msg.get("reactions", {})
 				reactions_count = 0
 				if reactions_data and isinstance(reactions_data, dict):
-					results = reactions_data.get('results', [])
-					reactions_count = sum(r.get('count', 0) for r in results)
-				
+					results = reactions_data.get("results", [])
+					reactions_count = sum(r.get("count", 0) for r in results)
+
 				# Build normalized item
 				normalized_item = {
-					'id': str(msg.get('id', '')),
-					'external_id': f"{msg.get('peer_id', {})}_{msg.get('id', '')}",
-					'text': text,
-					'date': msg.get('date') if isinstance(msg.get('date'), datetime) else datetime.fromtimestamp(msg.get('date', 0)),
-					
+					"id": str(msg.get("id", "")),
+					"external_id": f"{msg.get('peer_id', {})}_{msg.get('id', '')}",
+					"text": text,
+					"date": (
+						msg.get("date")
+						if isinstance(msg.get("date"), datetime)
+						else datetime.fromtimestamp(msg.get("date", 0))
+					),
 					# Engagement metrics
-					'views': views,
-					'forwards': forwards,
-					'reactions': reactions_count,
-					'replies': msg.get('replies', {}).get('replies', 0) if msg.get('replies') else 0,
-					
+					"views": views,
+					"forwards": forwards,
+					"reactions": reactions_count,
+					"replies": msg.get("replies", {}).get("replies", 0) if msg.get("replies") else 0,
 					# Metadata
-					'source_type': source_type.value if source_type else 'unknown',
-					'platform': 'telegram',
-					'message_type': 'post' if msg.get('post') else 'message',
-					
+					"source_type": source_type.value if source_type else "unknown",
+					"platform": "telegram",
+					"message_type": "post" if msg.get("post") else "message",
 					# Additional Telegram-specific fields
-					'from_id': msg.get('from_id'),
-					'peer_id': msg.get('peer_id'),
-					'is_pinned': msg.get('pinned', False),
-					'edit_date': msg.get('edit_date'),
+					"from_id": msg.get("from_id"),
+					"peer_id": msg.get("peer_id"),
+					"is_pinned": msg.get("pinned", False),
+					"edit_date": msg.get("edit_date"),
 				}
-				
+
 				# Include media info if present
-				if msg.get('media'):
-					normalized_item['has_media'] = True
-					media = msg['media']
-					if hasattr(media, '__class__'):
-						normalized_item['media_type'] = media.__class__.__name__
+				if msg.get("media"):
+					normalized_item["has_media"] = True
+					media = msg["media"]
+					if hasattr(media, "__class__"):
+						normalized_item["media_type"] = media.__class__.__name__
 					elif isinstance(media, dict):
-						normalized_item['media_type'] = media.get('_', 'unknown')
-				
+						normalized_item["media_type"] = media.get("_", "unknown")
+
 				normalized.append(normalized_item)
-				
+
 			except Exception as e:
 				logger.error(f"Error normalizing Telegram message: {e}", exc_info=True)
 				continue
 
 		logger.info(f"Normalized {len(normalized)} Telegram messages from {len(messages)} raw messages")
 		return normalized
+
+	async def send_message(
+			self,
+			chat_id: int | str,
+			text: str,
+			dry_run: bool = True,
+	) -> dict:
+		"""Send a message to a Telegram chat.
+
+		Args:
+				chat_id: Chat ID or username
+				text: Message text
+				dry_run: If True, return payload without sending (default True)
+
+		Returns:
+				Dict with 'success', 'payload', and optionally 'message_id'
+		"""
+		payload = {
+			"chat_id": chat_id,
+			"text": text,
+		}
+
+		if dry_run:
+			logger.info(f"[DRY RUN] Telegram send_message: chat={chat_id}")
+			return {"success": True, "dry_run": True, "payload": payload}
+
+		try:
+			from app.services.social.credentials import resolve_token
+
+			token = await resolve_token("telegram", kind="bot_token")
+			if not token:
+				return {"success": False, "error": "No Telegram bot token available"}
+
+			import httpx
+
+			api_base = settings.TELEGRAM_API_BASE_URL.rstrip("/")
+			timeout = settings.TELEGRAM_REQUEST_TIMEOUT
+			async with httpx.AsyncClient() as client:
+				resp = await client.post(
+					f"{api_base}/bot{token}/sendMessage",
+					json=payload,
+					timeout=timeout,
+				)
+				data = resp.json()
+
+			if not data.get("ok"):
+				return {"success": False, "error": data.get("description", "Unknown error")}
+
+			message_id = data.get("result", {}).get("message_id")
+			return {"success": True, "dry_run": False, "message_id": message_id, "payload": payload}
+
+		except Exception as e:
+			logger.error(f"Telegram send_message failed: {e}", exc_info=True)
+			return {"success": False, "error": str(e)}

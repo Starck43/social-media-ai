@@ -42,7 +42,7 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
 
     published = post.get("date")
     published_ts = float(published) if isinstance(published, (int, float, str)) else None
-    
+
     return {
         "id": str(post.get("message_id", "")),
         "external_id": f"{inbound.chat_id}_{post.get('message_id', '')}",
@@ -91,6 +91,27 @@ async def _find_source(chat_id: str) -> Optional[tuple[int, int, Optional[str]]]
         return source.id, source.tenant_id, getattr(source, "last_item_id", None)
 
 
+async def _is_digest_target(tenant_id: int, channel: str, chat_id: str) -> bool:
+    """True when the chat is the workspace's digest delivery channel.
+
+    Reads under `bypass` for the same reason as `_find_source`: the update
+    arrives with no workspace context, and by this point the source's tenant
+    is already known.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import TenantChannel
+
+    with tenant_scope(bypass=True):
+        binding = await TenantChannel.objects.filter(
+            tenant_id=tenant_id,
+            channel=channel,
+            chat_id=str(chat_id),
+            is_digest_target=True,
+            is_active=True,
+        ).first()
+    return binding is not None
+
+
 async def ingest_channel_post(inbound: Any) -> bool:
     """Analyze one channel post as its owning workspace. True when stored.
 
@@ -110,6 +131,14 @@ async def ingest_channel_post(inbound: Any) -> bool:
         logger.debug(f"No monitored Telegram source for chat {inbound.chat_id} - skipped")
         return False
     source_id, tenant_id, watermark = found
+
+    # The workspace's own digest lands in its digest-target channel; when that
+    # channel is also monitored as a source, analyzing our own summary would
+    # pay the LLM for our own text and pollute the analytics. The watermark is
+    # intentionally not advanced, so ordinary posts of the channel still ingest.
+    if await _is_digest_target(tenant_id, inbound.channel, inbound.chat_id):
+        logger.debug(f"Chat {inbound.chat_id} is a digest target - ingest skipped")
+        return False
 
     if _is_watermark_passed(item, watermark):
         logger.debug(f"Post {item['id']} of source {source_id} already ingested - skipped")

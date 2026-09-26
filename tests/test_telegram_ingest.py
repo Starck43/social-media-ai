@@ -173,3 +173,36 @@ async def test_ingest_resolves_workspace_itself(stub_analyzer):
     finally:
         with tenant_scope(tenant.id):
             await Source.objects.delete_by_id(source.id)
+
+
+async def test_digest_target_channel_is_not_ingested(telegram_source, stub_analyzer):
+    """The workspace's own digest must not re-enter the pipeline.
+
+    When the digest-target chat is also monitored as a source, its channel
+    posts arrive through the listener like any other — without the guard the
+    analyzer would pay the LLM for our own digest text. The watermark must
+    stay untouched so ordinary posts of that channel still ingest.
+    """
+    from app.models import TenantChannel
+
+    chat_id = str(telegram_source.external_id)
+    existing = await TenantChannel.objects.filter(channel="telegram", chat_id=chat_id).first()
+    if existing is not None:
+        await TenantChannel.objects.delete_by_id(existing.id)
+    binding = await TenantChannel.objects.create(
+        tenant_id=telegram_source.tenant_id,
+        channel="telegram",
+        chat_id=chat_id,
+        kind="channel",
+        is_digest_target=True,
+    )
+
+    try:
+        stored = await ingest_module.ingest_channel_post(_channel_post(message_id=101))
+
+        assert stored is False
+        assert stub_analyzer == []
+        refreshed = await type(telegram_source).objects.get(id=telegram_source.id)
+        assert refreshed.last_item_id is None
+    finally:
+        await TenantChannel.objects.delete_by_id(binding.id)

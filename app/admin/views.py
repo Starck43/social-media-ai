@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -1843,3 +1843,56 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "cron_expr": lambda m, a: cron_to_human(m.cron_expr),
         **BaseAdmin.column_formatters,
     }
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request=None
+    ) -> None:
+        """Schedule a task saved through the admin form.
+
+        The admin form omits `next_run_at`, so a task created/edited here would
+        otherwise never become due. Compute it from the cron expression so
+        admin-created tasks actually fire (a @once task is scheduled ~1 min out).
+        """
+        cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
+        if cron_expr and getattr(model, "next_run_at", None) is None:
+            if cron_expr == "@once":
+                data["next_run_at"] = datetime.now(timezone.utc) + timedelta(minutes=1)
+            else:
+                tz = data.get("timezone") or getattr(model, "timezone", None) or "Europe/Moscow"
+                from app.tasks.cron import next_run_at as compute_next
+
+                data["next_run_at"] = compute_next(cron_expr, tz)
+        await super().on_model_change(data, model, is_created, request)
+
+    @action(
+        name="run_now",
+        label="Выполнить сейчас",
+        add_in_list=True,
+        add_in_detail=True,
+    )
+    async def run_now_action(self, request: Request):
+        """Enqueue the selected task's job immediately; completes a @once task."""
+        from app.core.tenant_context import tenant_scope
+        from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.models.managers.job_manager import JobManager
+
+        pks = request.query_params.get("pks", "")
+        if not pks:
+            return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
+        task_id = int(pks.split(",")[0])
+
+        with tenant_scope(bypass=True):
+            task = await AgentTask.objects.get(id=task_id)
+        if task:
+            with tenant_scope(task.tenant_id):
+                await JobManager().enqueue(
+                    job_type=task.job_type,
+                    payload=task.payload or {},
+                    agent_task_id=task.id,
+                    run_at=datetime.now(timezone.utc),
+                )
+                if task.cron_expr == "@once":
+                    await AgentTaskManager().mark_triggered(task.id, None, status="ok")
+                    await AgentTask.objects.update_by_id(task.id, is_active=False)
+            request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» запущена"}
+        return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)

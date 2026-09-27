@@ -15,7 +15,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.tenant_context import PlatformScopeMiddleware, current_tenant_id, is_bypass, tenant_scope
 from app.main import create_application
-from app.models import User
+from app.models import AgentTask, Job, User
 from app.models.managers.tenant_manager import TenantInviteManager, TenantUserManager, tenants
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
@@ -257,3 +257,99 @@ async def test_platform_scope_skips_app_paths() -> None:
     seen.clear()
     await call("/app/settings")
     assert seen["bypass"] is False and seen["tenant"] is None
+
+
+# ── task run-now ───────────────────────────────────────────────────────────
+
+
+async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
+    username = _name("web")
+    token = await _csrf(client, "/app/register")
+    resp = await client.post(
+        "/app/register",
+        data={
+            "username": username,
+            "email": f"{username}@example.test",
+            "password": "secret-password-1",
+            "workspace": workspace,
+            "_csrf": token,
+        },
+    )
+    assert resp.status_code == 200
+    user = await User.objects.get(username=username)
+    memberships = await TenantUserManager().web_memberships(user.id)
+    return user, memberships[0].tenant_id
+
+
+async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
+    """Creating a @once task with 'Создать и выполнить' enqueues a job and completes it."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "RunNow Once")
+        name = _name("once")
+        task_id = None
+        try:
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                "/app/tasks",
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "run_now": "on", "_csrf": csrf},
+            )
+            assert resp.status_code == 200
+
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.get(name=name)
+                task_id = task.id
+                job = await Job.objects.get(agent_task_id=task.id, job_type="collect")
+            assert task.cron_expr == "@once"
+            assert task.is_active is False
+            assert task.last_run_at is not None
+            assert task.next_run_at is None
+            assert job is not None and job.status == "pending"
+        finally:
+            if user is not None:
+                await _delete_user(user.id)
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            await tenants.delete_by_id(tenant_id)
+
+
+async def test_run_now_endpoint_enqueues_recurring_task(client: AsyncClient) -> None:
+    """The /run-now action enqueues a job for a recurring task without touching its schedule."""
+    from app.tasks.cron import next_run_at as compute_next
+    from app.web.tasks import enqueue_task_now
+
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "RunNow Recurring")
+        name = _name("hourly")
+        task_id = None
+        try:
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.create(
+                    name=name,
+                    job_type="collect",
+                    cron_expr="0 * * * *",
+                    timezone="Europe/Moscow",
+                    payload={},
+                    is_active=True,
+                    next_run_at=compute_next("0 * * * *", "Europe/Moscow"),
+                )
+                task_id = task.id
+                next_before = task.next_run_at
+                # enqueue immediately (same path the /run-now endpoint and
+                # 'Сохранить и выполнить' use)
+                await enqueue_task_now(task)
+
+            with tenant_scope(bypass=True):
+                job = await Job.objects.get(agent_task_id=task_id, job_type="collect")
+                refreshed = await AgentTask.objects.get(id=task_id)
+            assert job is not None and job.status == "pending"
+            # recurring task keeps its schedule
+            assert refreshed.next_run_at == next_before
+            assert refreshed.is_active is True
+        finally:
+            if user is not None:
+                await _delete_user(user.id)
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            await tenants.delete_by_id(tenant_id)

@@ -436,7 +436,7 @@ def build_schema(cls, analysis_types, scope):
 
 ```bash
 export LOG_LEVEL=DEBUG
-python cli/scheduler.py run --source-id 16
+python -m cli.main collect run --source-id 16 --verbose
 ```
 
 Искать в логах:

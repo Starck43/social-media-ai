@@ -1,6 +1,6 @@
 import typer
 
-from .commands import credentials, roles, scenarios
+from .commands import collect, credentials, roles, scenarios
 
 app = typer.Typer(
     name="SMM Admin CLI",
@@ -11,6 +11,7 @@ app = typer.Typer(
 app.add_typer(roles.app, name="roles", help="Manage roles and permissions")
 app.add_typer(credentials.app, name="credentials", help="Manage platform credentials (tenant vault)")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
+app.add_typer(collect.app, name="collect", help="Run manual content collection & analysis")
 
 
 def _run_platform(coro):

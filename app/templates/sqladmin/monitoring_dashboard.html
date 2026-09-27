@@ -207,7 +207,7 @@
         const container = document.getElementById("sourcesContainer")
 
         if (sources.length === 0) {
-            container.innerHTML = "<div class=\"text-center py-4 text-muted\">Нет источников для отображения</div>"
+            container.innerHTML = "<div class='text-center py-4 text-muted'>Нет источников для отображения</div>"
             return
         }
 
@@ -225,7 +225,7 @@
             <div class="source-status">
                 <div class="status-indicator status-${source.is_active ? "active" : "inactive"}"></div>
                 <div class="last-checked">
-                    ${source.last_checked ? `Проверен: ${new Date(source.last_checked).toLocaleString()}` : "Никогда не проверялся"}
+                    ${source.last_checked ? `Проверен: ${new Date(source.last_checked).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : "Никогда не проверялся"}
                 </div>
             </div>
         </div>

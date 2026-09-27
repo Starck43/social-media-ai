@@ -179,7 +179,7 @@ async def create_test_data():
                     cost_per_1m = 0.25
                 
                 total_tokens = request_tokens + response_tokens
-                estimated_cost = (total_tokens / 1_000_000) * cost_per_1m
+                estimated_cost = round((total_tokens / 1_000_000) * cost_per_1m * 100, 6)  # USD tariffs stored as cents
                 
                 # Create analytics
                 analytics = await AIAnalytics.objects.create(
@@ -235,7 +235,7 @@ async def create_test_data():
                     cost_per_1m = 0.25
                 
                 total_tokens = request_tokens + response_tokens
-                estimated_cost = (total_tokens / 1_000_000) * cost_per_1m
+                estimated_cost = round((total_tokens / 1_000_000) * cost_per_1m * 100, 6)  # USD tariffs stored as cents
                 
                 analytics = await AIAnalytics.objects.create(
                     source_id=business_source.id,

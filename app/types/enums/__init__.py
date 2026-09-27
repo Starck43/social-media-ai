@@ -12,6 +12,9 @@ from .bot_types import BotActionStatus, BotActionType, BotTriggerType
 # Content types
 from .content_types import ContentType, MediaType
 
+# Job types
+from .job_types import JobType
+
 # LLM types
 from .llm_types import LLMStrategyType
 
@@ -43,6 +46,8 @@ __all__ = [
     "BotActionStatus",
     "BotActionType",
     "BotTriggerType",
+    # Job
+    "JobType",
     # LLM
     "LLMStrategyType",
     # Notifications

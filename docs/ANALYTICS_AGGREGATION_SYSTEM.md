@@ -14,7 +14,7 @@
 │  - summary_data (JSON): AI анализ контента                 │
 │  - response_payload (JSON): сырые ответы LLM               │
 │  - request_tokens, response_tokens: использование токенов  │
-│  - estimated_cost: расчетная стоимость (в центах)          │
+│  - estimated_cost: расчетная стоимость (в центах, с точностью до 1e-6 ¢)│
 │  - provider_type: провайдер LLM (openai, deepseek)         │
 │  - media_types: типы медиа (text, image, video)            │
 └─────────────────────────────────────────────────────────────┘
@@ -57,7 +57,7 @@
 # LLM cost tracking (для агрегации и отчетов)
 request_tokens: int | None       # Input tokens used
 response_tokens: int | None      # Output tokens generated
-estimated_cost: float | None     # Estimated cost in USD cents
+estimated_cost: Decimal | None    # Estimated cost in USD cents, NUMERIC(14,6)
 provider_type: str | None        # LLM provider: openai, deepseek, etc
 media_types: list[str] | None    # Types analyzed: text, image, video
 ```
@@ -249,7 +249,7 @@ GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&days=7
 analytics = AIAnalytics(
   request_tokens=500,
   response_tokens=150,
-  estimated_cost=1,  # cents (650 tokens / 1000 * 1)
+  estimated_cost=0.65,  # cents (650 tokens / 1000 * $0.01/1K), NUMERIC(14,6)
   provider_type="openai",
   media_types=["text"]
 )

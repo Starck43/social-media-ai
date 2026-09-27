@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Date, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
@@ -41,6 +41,9 @@ class DigestRun(Base, TenantScopedMixin, TimestampMixin):
     message_id: Mapped[str] = Column(String(100), nullable=True)
     content: Mapped[str] = Column(Text, nullable=True)
     error: Mapped[str] = Column(Text, nullable=True)
+    # USD spent on the LLM summary for this run (NULL = none / unknown tariffs).
+    # Priced from llm_models tariffs by the digest builder; feeds daily_cost_today().
+    llm_cost: Mapped[float | None] = Column(Float, nullable=True)
 
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager

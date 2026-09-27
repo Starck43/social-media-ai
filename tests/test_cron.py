@@ -1,7 +1,9 @@
-"""Unit tests for scheduler cron helpers (no DB required)."""
+"""Unit tests for task cron helpers (no DB required)."""
+
 from datetime import datetime, timezone
 
-from app.scheduler.cron import next_run_at, validate_cron
+from app.models.managers.agent_task_manager import AgentTaskManager
+from app.tasks.cron import cron_to_human, next_run_at, validate_cron
 
 
 class TestValidateCron:
@@ -11,10 +13,16 @@ class TestValidateCron:
         assert validate_cron("0 9 * * 1-5")
         assert validate_cron("30 8 1 * *")
 
+    def test_once_accepted(self):
+        assert validate_cron("@once")
+
     def test_invalid_expressions(self):
         assert not validate_cron("not a cron")
         assert not validate_cron("")
         assert not validate_cron("99 99 * * *")
+
+    def test_manager_validate_once(self):
+        assert AgentTaskManager.validate_cron("@once")
 
 
 class TestNextRunAt:
@@ -36,3 +44,32 @@ class TestNextRunAt:
         nxt = next_run_at("0 9 * * 1-5", "UTC", after=after)
         assert nxt.weekday() < 5
         assert nxt.day == 23
+
+
+class TestCronToHuman:
+    def test_empty_and_none(self):
+        assert cron_to_human(None) == "—"
+        assert cron_to_human("") == "—"
+
+    def test_once(self):
+        assert cron_to_human("@once") == "Разово"
+
+    def test_daily(self):
+        assert cron_to_human("0 9 * * *") == "Ежедневно в 09:00"
+
+    def test_every_n_hours(self):
+        assert cron_to_human("0 */6 * * *") == "Каждые 6 ч"
+
+    def test_weekly(self):
+        assert cron_to_human("0 5 * * 1") == "Еженедельно (Пн) в 05:00"
+
+    def test_monthly(self):
+        assert cron_to_human("0 4 1 * *") == "Ежемесячно 1-го в 04:00"
+
+    def test_wildcard_fields_do_not_crash(self):
+        # Regression: previously raised ValueError on int('*')
+        assert cron_to_human("* * * * *") == "Ежедневно в *:*"
+
+    def test_malformed_returns_raw(self):
+        assert cron_to_human("bad") == "bad"
+        assert cron_to_human("0 9 * *") == "0 9 * *"

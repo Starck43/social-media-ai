@@ -9,7 +9,7 @@
         </p>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    <div class="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">Источники активны</p>
             <p class="mt-2 text-3xl font-semibold">{{ kpis.active_sources }}</p>
@@ -17,6 +17,10 @@
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">Постов за сутки</p>
             <p class="mt-2 text-3xl font-semibold">{{ kpis.posts_today }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Активных задач</p>
+            <p class="mt-2 text-3xl font-semibold">{{ kpis.active_tasks }}</p>
         </div>
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">Средний sentiment</p>
@@ -33,23 +37,100 @@
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:col-span-2">
-            <h2 class="text-sm font-medium text-slate-300">Последние события</h2>
-            <div class="mt-6 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
-                Пока пусто — здесь появится лента сборов, триггеров и дайджестов
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-medium text-slate-300">Задачи</h2>
+                {% if is_superuser and tenants %}
+                    <form method="get" class="flex items-center gap-2">
+                        <select name="tenant_id" onchange="this.form.submit()"
+                                class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                            <option value="">Все тенанты</option>
+                            {% for t in tenants %}
+                                <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                {% else %}
+                    <a href="/app/tasks" class="text-sm text-cyan-400 hover:text-cyan-300">Все задачи →</a>
+                {% endif %}
             </div>
+            {% if recent_tasks %}
+                <div class="mt-4 overflow-hidden rounded-xl border border-slate-800">
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-slate-800 bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
+                            <tr>
+                                <th class="px-3 py-2">Название</th>
+                                <th class="px-3 py-2">Тип</th>
+                                {% if is_superuser %}<th class="px-3 py-2">Тенант</th>{% endif %}
+                                <th class="px-3 py-2">Расписание</th>
+                                <th class="px-3 py-2">Статус</th>
+                                <th class="px-3 py-2">Последний запуск</th>
+                                <th class="px-3 py-2">След. запуск</th>
+                                <th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800">
+                            {% for task in recent_tasks %}
+                                <tr class="bg-slate-900/50 hover:bg-slate-900/80">
+                                    <td class="px-3 py-2 font-medium">{{ task.name }}</td>
+                                    <td class="px-3 py-2">
+                                        <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">{{ task.job_type }}</span>
+                                    </td>
+                                    {% if is_superuser %}<td class="px-3 py-2 text-xs text-slate-400">{{ task.tenant.name }}</td>{% endif %}
+                                    <td class="px-3 py-2 text-slate-300 text-xs">{{ cron_to_human(task.cron_expr) }}</td>
+                                    <td class="px-3 py-2">
+                                        {% if task.is_active %}
+                                            <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активна</span>
+                                        {% else %}
+                                            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-3 py-2 text-slate-400">
+                                        {% if task.last_run_at %}
+                                            {{ task.last_run_at.strftime('%d.%m %H:%M') }}
+                                        {% else %}
+                                            <span class="text-slate-600">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-3 py-2 text-slate-400">
+                                        {% if task.cron_expr == '@once' and task.last_run_at %}
+                                            <span class="text-slate-600">—</span>
+                                        {% elif task.next_run_at %}
+                                            {{ task.next_run_at.strftime('%d.%m %H:%M') }}
+                                        {% else %}
+                                            <span class="text-slate-600">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
+                                            <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                            <button title="Выполнить сейчас"
+                                                    class="rounded-md border border-emerald-700 p-1.5 text-emerald-400 hover:bg-emerald-950">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="mt-4 flex h-24 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
+                    Пока нет задач. <a href="/app/tasks" class="ml-1 text-cyan-400 hover:underline">Создайте первую</a>
+                </div>
+            {% endif %}
         </div>
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <h2 class="text-sm font-medium text-slate-300">Быстрые действия</h2>
             <div class="mt-4 space-y-2">
-                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
-                    Собрать сейчас
-                </button>
-                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
-                    Отправить дайджест
-                </button>
-                <button disabled class="w-full cursor-not-allowed rounded-lg border border-slate-800 px-4 py-2 text-sm text-slate-600">
-                    Добавить источник
-                </button>
+                <a href="/app/tasks" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                    Создать задачу
+                </a>
+                <a href="/app/sources" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                    Источники
+                </a>
             </div>
         </div>
     </div>

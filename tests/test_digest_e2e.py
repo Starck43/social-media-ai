@@ -1,6 +1,6 @@
 """End-to-end M2 acceptance: cron schedule → job → digest → channel.
 
-Uses the real scheduler, queue and digest builder against the real database;
+Uses the real task runner, queue and digest builder against the real database;
 only the LLM summary and the outbound channel HTTP call are stubbed.
 """
 
@@ -11,7 +11,7 @@ import pytest
 from app.jobs import dispatcher
 from app.jobs.handlers import handle_digest
 from app.models import DigestRun, Job, AgentTask
-from app.scheduler import runner
+from app.tasks import runner
 from app.services.digest import builder
 
 SCHEDULE_NAME = "it-e2e-digest"
@@ -186,3 +186,31 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
 
     runs = await DigestRun.objects.filter(agent_task_id=schedule.id)
     assert len(runs) == 1 and runs[0].status == "sent"
+
+
+async def test_once_task_is_deactivated_after_trigger():
+    """A @once schedule enqueues once and is deactivated, not rescheduled."""
+    due = datetime.now(timezone.utc) - timedelta(minutes=1)
+    schedule = await AgentTask.objects.create(
+        name="it-e2e-once",
+        cron_expr="@once",
+        timezone="UTC",
+        job_type="digest",
+        payload={"period": "day"},
+        is_active=True,
+        next_run_at=due,
+    )
+
+    stats = await runner.tick()
+    assert stats["enqueued"] == 1
+
+    refreshed = await AgentTask.objects.get(id=schedule.id)
+    assert refreshed.is_active is False
+    assert refreshed.next_run_at is None
+    assert refreshed.last_status == "ok"
+
+    # A second tick must not enqueue again (task is inactive, no next run)
+    stats2 = await runner.tick()
+    assert stats2["enqueued"] == 0
+
+    await AgentTask.objects.delete(name="it-e2e-once")

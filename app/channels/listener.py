@@ -1,6 +1,6 @@
 """Channel listener: poll enabled channels, route inbound to the agent, reply.
 
-Wiring: app.runtime runs scheduler + worker AND this listener in one process,
+Wiring: app.runtime runs task runner + worker AND this listener in one process,
 so one VPS service covers cron jobs, background work and the agent chat.
 
 Design notes:

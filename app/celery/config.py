@@ -1,5 +1,5 @@
 """
-FROZEN — superseded by `app/scheduler` + `app/jobs` (DB-backed, no broker).
+FROZEN — superseded by `app/tasks` + `app/jobs` (DB-backed, no broker).
 
 Kept only for historical reference, and no entrypoint starts Celery. The only
 remaining importer is `app/api/v1/endpoints/ai.py` (the optional FastAPI admin

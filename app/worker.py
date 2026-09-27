@@ -1,4 +1,4 @@
-"""Worker entrypoint: process background jobs only (no scheduler).
+"""Worker entrypoint: process background jobs only (no task runner).
 
 Run: python -m app.worker
 """

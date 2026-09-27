@@ -1,4 +1,4 @@
-"""Unified runtime entrypoint: scheduler + worker + agent chat listener.
+"""Unified runtime entrypoint: task runner + worker + agent chat listener.
 
 Run: python -m app.runtime
 """
@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     from app.channels.listener import listen_forever
     from app.jobs.dispatcher import worker_forever
-    from app.scheduler.bootstrap import ensure_all_default_tasks
-    from app.scheduler.runner import run_forever
+    from app.tasks.bootstrap import ensure_all_default_tasks
+    from app.tasks.runner import run_forever
 
     # Default tasks are tenant-owned: seed every active workspace once.
     await ensure_all_default_tasks()

@@ -1,6 +1,6 @@
 """Sources CRUD for `/app/sources` (docs/design/ui.md §4.3).
 
-M2: list + add + edit + toggle. Sources are scoped to the current user.
+M2: list + add + edit + toggle. Sources are scoped to the current workspace.
 """
 from __future__ import annotations
 
@@ -34,14 +34,14 @@ async def _resolve_platform(form_value: str):
 @router.get("")
 @router.get("/")
 async def sources_list(request: Request):
-    user = request.state.web_user
+    tenant_id = request.state.tenant_id
     sources = await (
-        Source.objects.filter(user_id=user.id)
+        Source.objects.filter(tenant_id=tenant_id)
         .select_related("platform")
         .order_by(Source.created_at.desc())
     )
     user_sources = await (
-        Source.objects.filter(user_id=user.id, source_type=SourceType.USER)
+        Source.objects.filter(tenant_id=tenant_id, source_type=SourceType.USER)
         .select_related("platform")
         .order_by(Source.name, Source.id)
     )
@@ -74,8 +74,6 @@ async def source_add(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
 
-    user = request.state.web_user
-
     platform_row = await _resolve_platform(platform)
     if platform_row is None:
         add_flash(request, "error", f"Платформа '{platform}' не найдена")
@@ -88,7 +86,6 @@ async def source_add(
 
     existing = await Source.objects.get(
         tenant_id=request.state.tenant_id,
-        user_id=user.id,
         platform_id=platform_row.id,
         external_id=external_id,
     )
@@ -110,7 +107,6 @@ async def source_add(
         platform_id=platform_row.id,
         external_id=external_id.strip()[:200],
         source_type=st,
-        user_id=user.id,
         is_active=True,
         params=params,
     )
@@ -135,8 +131,7 @@ async def source_edit(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
 
-    user = request.state.web_user
-    source = await Source.objects.get(id=source_id, user_id=user.id)
+    source = await Source.objects.get(id=source_id, tenant_id=request.state.tenant_id)
     if source is None:
         add_flash(request, "error", "Источник не найден")
         return RedirectResponse("/app/sources", status_code=302)
@@ -153,7 +148,6 @@ async def source_edit(
 
     dup = await Source.objects.get(
         tenant_id=request.state.tenant_id,
-        user_id=user.id,
         platform_id=platform_row.id,
         external_id=external_id,
     )
@@ -194,8 +188,7 @@ async def source_toggle(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
 
-    user = request.state.web_user
-    source = await Source.objects.get(id=source_id, user_id=user.id)
+    source = await Source.objects.get(id=source_id, tenant_id=request.state.tenant_id)
     if source is None:
         add_flash(request, "error", "Источник не найден")
         return RedirectResponse("/app/sources", status_code=302)

@@ -352,7 +352,7 @@ journalctl -u smm-ai -f
 # Docker
 docker compose logs -f app
 
-# Check scheduler status
+# Check task status
 python -m cli.main task list
 
 # Check job queue

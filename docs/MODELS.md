@@ -364,7 +364,7 @@ AI analysis results.
 | `llm_model` | `String(100)` | Model used for analysis |
 | `request_tokens` | `Integer` | Input tokens used |
 | `response_tokens` | `Integer` | Output tokens generated |
-| `estimated_cost` | `Float` | Cost in USD cents |
+| `estimated_cost` | `Numeric(14,6)` | Cost in USD cents — sub-cent precision (1e-8 USD) |
 | `provider_type` | `String(30)` | LLM provider: `openai`, `anthropic`, etc. |
 | `media_types` | `JSON` | Types analyzed: `["text", "image"]` |
 | `created_at` | `DateTime` | Auto |
@@ -437,6 +437,7 @@ Digest delivery history.
 | `period_end` | `DateTime` | End of the digest period |
 | `status` | `Enum` | `pending`, `sent`, `failed`, `skipped` |
 | `results` | `JSON` | Per-channel delivery results |
+| `llm_cost` | `Float` | USD spent on the LLM summary (NULL = none); feeds the daily cap |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
@@ -497,7 +498,7 @@ Dialog transcript.
 | `tool_calls` | `JSON` | Tool call data (for assistant) |
 | `tool_outputs` | `JSON` | Tool output data (for tool) |
 | `tokens` | `Integer` | Tokens used |
-| `cost` | `Float` | Cost in USD cents |
+| `cost` | `Float` | Cost in USD (not cents) |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 

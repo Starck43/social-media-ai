@@ -11,16 +11,16 @@ longer depends on them.
 
 ## Stack
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 + Alembic, PostgreSQL, Docker Compose.
-- Runtime: DB-backed cron scheduler + `jobs` table queue (no broker), long
+- Runtime: DB-backed task runner + `jobs` table queue (no broker), long
   polling for Telegram/MAX bots (no public port needed).
 - Legacy/frozen (not exercised by the runtime): Celery + Redis, Streamlit
   frontend, FastAPI API + sqladmin admin (optional).
 
 ## Layout
 - `app/` — backend: `api/v1`, `models`, `schemas`, `services` (ai/monitoring/notifications/social/user/digest), `core`, `templates`, `static`
-- `app/runtime.py` — entrypoint: scheduler loop + worker loop + channels listener in one process
+- `app/runtime.py` — entrypoint: task runner loop + worker loop + channels listener in one process
 - `app/worker.py` — worker-only entrypoint (for a separate container/unit)
-- `app/scheduler/` — cron parsing, due-schedule tick, default schedules
+- `app/tasks/` — cron parsing, due-schedule tick, default schedules
 - `app/jobs/` — job dispatcher (claim/retry/backoff) and handlers
 - `app/channels/` — Telegram/MAX bot channels (send + long polling); the listener also feeds channel posts into collection
 - `app/services/social/` — platform API clients; `credentials.py` resolves tokens from the per-tenant vault (env = legacy fallback), `tg_session.py` manages the Telegram MTProto (L2) user session. Collection layer is chosen per source via `Source.params["mode"]` — see `docs/COLLECTION.md`
@@ -32,11 +32,11 @@ longer depends on them.
   base layout; `TenantUIMiddleware` resolves web memberships → tenant scope
   (`PlatformScopeMiddleware` bypasses everything except `/app/*`)
 - `app/celery/` — frozen legacy, do not extend
-- `cli/` — Typer CLI (`cli.main:app`): `schedule`, `digest`, `roles`, `credentials`
+- `cli/` — Typer CLI (`cli.main:app`): `collect`, `task`, `digest`, `roles`, `credentials`, `scenarios`
 - `migrations/` — Alembic; table creation is Alembic-only, run `alembic upgrade head`
 - `scripts/` — seed-скрипты и утилиты
 - `tests/` — pytest
-- `docs/` — project documentation (committed); index: `docs/DOCS_INDEX.md`, scheduler: `docs/AGENT_TASKS.md`, digest: `docs/DIGEST.md`, agent: `docs/AGENT.md`, tenancy: `docs/TENANCY.md`, collection/credentials: `docs/COLLECTION.md`
+- `docs/` — project documentation (committed); index: `docs/DOCS_INDEX.md`, tasks: `docs/AGENT_TASKS.md`, digest: `docs/DIGEST.md`, agent: `docs/AGENT.md`, tenancy: `docs/TENANCY.md`, collection/credentials: `docs/COLLECTION.md`
 
 ## Conventions
 - Formatting: black + isort, line-length 120 (config in `pyproject.toml`)
@@ -120,9 +120,17 @@ underlying error.
 ### Cost tracking
 
 Every LLM call stores `request_tokens`, `response_tokens`, `estimated_cost`
-(USD cents) and `provider_type` on the `ai_analytics` row. `ReportAggregator`
-rolls this up per provider/model for the digest and the dashboard. See
-`docs/ANALYTICS_AGGREGATION_SYSTEM.md`.
+(USD cents, `NUMERIC(14,6)` — sub-cent precision, since cheap models price most
+calls below one cent) and `provider_type` on the `ai_analytics` row.
+`ReportAggregator` rolls this up per provider/model for the digest and the
+dashboard. See `docs/ANALYTICS_AGGREGATION_SYSTEM.md`.
+
+Agent chat and digest summaries account separately for the **daily spend cap**
+(`AGENT_DAILY_COST_LIMIT` / `tenant.daily_cost_limit`): chat usage carries a
+priced `cost` (USD, from `llm_client.price_usage_usd` over `llm_models` tariffs)
+written to `agent_messages.cost`, digest summaries to `digest_runs.llm_cost`;
+the checked metric is `tenancy.resolver.daily_cost_today()` (per-tenant UTC
+day), enforced in the agent loop and before the digest's LLM call.
 
 ## Commands
 - Install: `pip install -r requirements.txt`

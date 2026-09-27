@@ -10,7 +10,7 @@ import logging
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
 from app.models.managers.agent_task_manager import AgentTaskManager
-from app.scheduler.cron import next_run_at
+from app.tasks.cron import next_run_at
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ tasks = AgentTaskManager()
 DEFAULT_TASKS = {
     "hourly-collect": ("0 * * * *", "collect", {}),
     "daily-prune": ("0 4 * * *", "prune", {"days": 7}),
+    "daily-analyze": ("0 9 * * *", "analyze", {}),
     # Learning loop: learn fires only after enough new chat turns;
     # reflect keeps memory clean once a week (both cheap when idle).
     "hourly-learn": ("30 * * * *", "learn", {"min_messages": 8}),

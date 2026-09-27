@@ -21,7 +21,9 @@ class AgentTaskManager(BaseManager):
 
     @staticmethod
     def validate_cron(cron_expr: str) -> bool:
-        """Return True if cron expression is valid (5-field)."""
+        """Return True if cron expression is valid (5-field) or @once."""
+        if cron_expr == "@once":
+            return True
         try:
             croniter(cron_expr, datetime.now(timezone.utc))
             return True

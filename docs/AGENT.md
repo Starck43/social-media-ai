@@ -75,7 +75,7 @@ OpenAI function calling.
   готовит **предложение** правки промптов (`prompt_advice`) — применяется
   вручную, автоматической точки правки нет.
 
-Дефолтные cron для обоих заданы в `app/scheduler/bootstrap.py`
+Дефолтные cron для обоих заданы в `app/tasks/bootstrap.py`
 (`DEFAULT_TASKS`) — там и смотреть актуальные значения.
 
 Промпты агента живут в `AgentScenario` (`text_prompt` и модальные варианты
@@ -89,15 +89,19 @@ OpenAI function calling.
 
 | Параметр | Назначение |
 |---|---|
-| `AGENT_DAILY_COST_LIMIT` | USD-потолок агента за сегодня (UTC-день); проверка до и во время цикла |
+| `AGENT_DAILY_COST_LIMIT` | USD-потолок за сегодня (UTC-день): агент + дайджесты; проверка до и во время цикла |
 | `tenant.daily_cost_limit` | Персональный лимит рабочего пространства (перекрывает глобальный) |
 | `AGENT_MAX_ITERATIONS` | Макс. раундов tool-calls на одно сообщение |
 | `AGENT_HISTORY_LIMIT` | Сколько сообщений истории уходит в LLM |
 | `AGENT_MAX_TOKENS` / `AGENT_TEMPERATURE` | Параметры `chat()` |
 | `AGENT_MODEL` | Явная модель; пусто = авто-выбор первой активной |
 
-Потраченные токены считаются по `AgentMessage.tokens/cost`
-(`agent_messages.cost_today()`). См. `docs/AGENT_TASKS.md` для общей картины очереди.
+Метрика расхода — `tenancy.resolver.daily_cost_today()`: сумма
+`AgentMessage.cost` (чат, пишется из `usage["cost"]`) и `DigestRun.llm_cost`
+(LLM-сводка дайджеста). Тарифы — из `llm_models` (`llm_client.price_usage_usd`),
+столько же записывает `analyze()` в top-level `usage` дайджеста. Дайджест при
+исчерпанном лимите публикуется без LLM-сводки. См. `docs/AGENT_TASKS.md` для
+общей картины очереди.
 
 ## Tenancy
 

@@ -316,11 +316,11 @@
 			</tr>
 			<tr>
 				<th>Создано:</th>
-				<td>{{ model.created_at.strftime('%d.%m.%Y %H:%M:%S') if model.created_at else '—' }}</td>
+				<td>{{ model.created_at.strftime('%d.%m.%Y %H:%M') if model.created_at else '—' }}</td>
 			</tr>
 			<tr>
 				<th>Обновлено:</th>
-				<td>{{ model.updated_at.strftime('%d.%m.%Y %H:%M:%S') if model.updated_at else '—' }}</td>
+				<td>{{ model.updated_at.strftime('%d.%m.%Y %H:%M') if model.updated_at else '—' }}</td>
 			</tr>
 		</table>
 	</div>

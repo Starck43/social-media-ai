@@ -1,8 +1,8 @@
 """Manual content collection & analysis via CLI.
 
-Replaces the legacy `cli/scheduler.py` debug script. Reuses the same
-`ContentCollector.collect_from_source` pipeline the runtime jobs use, so the
-analyzer behavior you test here is exactly what the cron/agent path runs.
+Replaces the legacy `cli/scheduler.py` debug script (now removed). Reuses the
+same `ContentCollector.collect_from_source` pipeline the runtime jobs use, so
+the analyzer behavior you test here is exactly what the cron/agent path runs.
 Rich console output is kept as the debug value (live progress + summaries).
 
 Run as: python -m cli.main collect run ...

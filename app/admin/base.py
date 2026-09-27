@@ -1,7 +1,10 @@
+from datetime import date, datetime
 from typing import Any
 
 from sqladmin import ModelView
 from sqladmin.fields import SelectField
+
+from .formatters import bool_formatter, date_formatter, datetime_formatter, empty_formatter
 
 
 class BaseAdmin(ModelView):
@@ -13,6 +16,18 @@ class BaseAdmin(ModelView):
     page_size_options = [25, 50, 100, 200]
     save_as = True
 
+    # Type-driven rendering: applied to every column of every admin view. sqladmin
+    # mirrors these into the detail pipeline as long as column_type_formatters_detail
+    # is left at its default, so one registration covers list, detail and CSV export.
+    # Day-first format is the project-wide convention for operators:
+    # dates -> 05.10.2025, timestamps -> 05.10.2025 14:30, NULL -> —.
+    column_type_formatters = {
+        type(None): empty_formatter,
+        bool: bool_formatter,
+        datetime: datetime_formatter,
+        date: date_formatter,
+    }
+
     column_labels = {
         "created_at": "Дата создания",
         "updated_at": "Дата обновления",
@@ -21,8 +36,6 @@ class BaseAdmin(ModelView):
 
     column_formatters = {
         "role": lambda m, a: m.role.name.upper() if m.role else "",
-        "updated_at": lambda m, a: m.updated_at.strftime("%d.%m.%Y") if hasattr(m, 'updated_at') else "",
-        "created_at": lambda m, a: m.created_at.strftime("%d.%m.%Y") if hasattr(m, 'created_at') else "",
     }
 
     form_overrides = {

@@ -16,6 +16,7 @@ Tenant-scoped rows cannot be read or written without a scope.
 
 | Command | Description |
 |---|---|
+| `collect` | Run manual content collection & analysis (debug/analyst tool) |
 | `task` | Manage agent tasks (cron) |
 | `digest` | Digest operations |
 | `credentials` | Manage platform credentials (tenant vault) |
@@ -24,9 +25,48 @@ Tenant-scoped rows cannot be read or written without a scope.
 
 ---
 
+## Collect
+
+Run manual content collection & AI analysis. Reuses the same
+`ContentCollector.collect_from_source` pipeline the runtime jobs use, so the
+analyzer behavior you test here is exactly what the cron/agent path runs.
+
+```bash
+python -m cli.main collect run [options]
+```
+
+**Options:**
+| Option | Default | Description |
+|---|---|---|
+| `--source-id` | — | Collect from a specific source ID |
+| `--source-url` | — | Collect by source URL (external_id) |
+| `--platform-id` | — | Collect all active sources on a platform |
+| `--start-date` | — | Start date `DD-MM-YYYY` (with `--force-refresh`) |
+| `--end-date` | — | End date `DD-MM-YYYY` (with `--force-refresh`) |
+| `--force-refresh` | `false` | Reset analytics + `last_checked`, full re-analysis |
+| `--verbose`, `-v` | `false` | Show detailed collection output |
+
+**Examples:**
+```bash
+# Collect & analyze a single source with details
+python -m cli.main collect run --source-id 1 --verbose
+
+# Full re-analysis from scratch
+python -m cli.main collect run --source-id 1 --force-refresh --verbose
+
+# Re-analyze a specific date range (needs --force-refresh for date filtering)
+python -m cli.main collect run --source-id 1 --force-refresh \
+  --start-date 01-09-2025 --end-date 30-09-2025 --verbose
+
+# All active sources on a platform
+python -m cli.main collect run --platform-id 1 --verbose
+```
+
+---
+
 ## Task
 
-Manage the cron tasks that drive the scheduler runner. Tasks are rows in the
+Manage the cron tasks that drive the task runner. Tasks are rows in the
 `agent_tasks` table.
 
 ### List Tasks

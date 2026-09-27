@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
 import httpx
@@ -13,6 +14,26 @@ logger = logging.getLogger(__name__)
 
 _last_request_time: dict[str, float] = {}
 MINUTE = 60
+
+# AgentMessage.cost / DigestRun.llm_cost are plain USD floats; quantise to 1e-9
+# so sub-cent calls from cheap models never round to "free".
+_COST_SCALE = Decimal("0.000000001")
+
+
+def price_usage_usd(model: LLMModel, prompt_tokens: int, completion_tokens: int) -> float:
+    """Price token usage from llm_models tariffs (USD per 1K tokens) -> USD.
+
+    Same formula as AIAnalyzer._price_usage but returns plain USD (that one
+    returns USD cents for the ai_analytics column). Decimal throughout — tariffs
+    have 4+ decimals and cheap models bill well under a cent per call; unknown
+    tariffs contribute 0 (never hardcode rates).
+    """
+    usd = Decimal(prompt_tokens or 0) / 1000 * Decimal(str(getattr(model, "input_cost_per_1k", 0) or 0)) + (
+        Decimal(completion_tokens or 0) / 1000 * Decimal(str(getattr(model, "output_cost_per_1k", 0) or 0))
+    )
+    if usd <= 0:
+        return 0.0
+    return float(usd.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
 
 
 def _cap_text(m: LLMModel) -> bool:
@@ -38,6 +59,21 @@ class LLMClient(ABC):
     @classmethod
     def create(cls, model: LLMModel) -> "LLMClient":
         return LLMClientFactory.create(model)
+
+    def _usage_block(self, prompt_tokens: int, completion_tokens: int) -> dict[str, Any]:
+        """Normalized usage: token counts + priced USD cost.
+
+        `cost` is what the daily cap and DigestRun.llm_cost account from; keep
+        the key present (0.0 when tariffs are unknown) so callers never branch.
+        """
+        prompt_tokens = int(prompt_tokens or 0)
+        completion_tokens = int(completion_tokens or 0)
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "cost": price_usage_usd(self.model, prompt_tokens, completion_tokens),
+        }
 
     @abstractmethod
     async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]: ...
@@ -94,6 +130,9 @@ class OpenAICompatibleClient(LLMClient):
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
             "parsed": self._parse_response(data),
+            "usage": self._usage_block(
+                (data.get("usage") or {}).get("prompt_tokens", 0), (data.get("usage") or {}).get("completion_tokens", 0)
+            ),
         }
 
     async def chat(
@@ -184,14 +223,12 @@ class OpenAICompatibleClient(LLMClient):
                 {"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": parsed}
             )
         usage = data.get("usage") or {}
+        block = self._usage_block(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+        block["total_tokens"] = usage.get("total_tokens", 0) or block["total_tokens"]
         return {
             "content": msg.get("content"),
             "tool_calls": tool_calls,
-            "usage": {
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            },
+            "usage": block,
             "finish_reason": choice.get("finish_reason"),
             "raw": data,
         }
@@ -246,10 +283,12 @@ class AnthropicClient(LLMClient):
             return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
         text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+        usage = data.get("usage") or {}
         return {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
             "parsed": _try_json(text),
+            "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
         }
 
     async def chat(
@@ -288,6 +327,9 @@ class AnthropicClient(LLMClient):
                 raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
             data = r.json()
 
+        return self._parse_chat(data)
+
+    def _parse_chat(self, data: dict) -> dict[str, Any]:
         content_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         for block in data.get("content") or []:
@@ -300,11 +342,7 @@ class AnthropicClient(LLMClient):
         return {
             "content": "\n".join(content_parts) or None,
             "tool_calls": tool_calls,
-            "usage": {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-            },
+            "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
             "finish_reason": data.get("stop_reason"),
             "raw": data,
         }

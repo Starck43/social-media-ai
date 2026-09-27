@@ -65,7 +65,7 @@ async def task_add(
     from app.core.config import settings
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.scheduler.cron import next_run_at
+    from app.tasks.cron import next_run_at
 
     job_types = _get_job_types()
     if job_type not in job_types:

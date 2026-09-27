@@ -12,6 +12,7 @@ from starlette.responses import RedirectResponse
 from wtforms import validators
 
 from app.admin.actions import LLMModelActions
+from app.admin.formatters import format_date, format_usd
 from app.models import (
 	User,
 	Role,
@@ -20,12 +21,14 @@ from app.models import (
 	Platform,
 	Source,
 	AgentScenario,
+	AgentTask,
 	BotAction,
 	TenantCredential,
 	AIAnalytics,
 	LLMProvider,
 	LLMModel,
 )
+from app.tasks.cron import cron_to_human
 from app.services.social.credentials import SETTABLE_KINDS
 from app.types import (
 	SourceType,
@@ -39,6 +42,7 @@ from app.types import (
 	BotActionType,
 	BotActionStatus,
 	BotTriggerType,
+	JobType,
 	NotificationType,
 )
 from app.types.enums.llm_types import APIFormatType
@@ -75,7 +79,9 @@ class UserAdmin(BaseAdmin, model=User):
 	form_edit_rules = ["username", "email", "role", "is_active"]
 
 	form_widget_args = {
-		"hashed_password": {"type": "password"}
+		"hashed_password": {"type": "password"},
+		"email": {"placeholder": "user@example.com"},
+		"username": {"placeholder": "username"},
 	}
 
 	form_args = {
@@ -102,16 +108,11 @@ class UserAdmin(BaseAdmin, model=User):
 		**BaseAdmin.form_args,
 	}
 
-	def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-		"""Handle datetime conversion for form display."""
-		# Convert datetime objects to strings for date fields in forms
-		if not is_created and model:  # Only for editing existing models
-			if hasattr(model, 'date_from') and model.date_from:
-				data['date_from'] = model.date_from.strftime('%Y-%m-%d')
-			if hasattr(model, 'date_to') and model.date_to:
-				data['date_to'] = model.date_to.strftime('%Y-%m-%d')
-
-		super().on_model_change(data, model, is_created, request)
+	async def on_model_change(
+		self, data: dict, model: Any, is_created: bool, request=None
+	) -> None:
+		"""Perform actions before model is created/updated."""
+		await super().on_model_change(data, model, is_created, request)
 
 	async def insert_model(self, request, data: dict) -> Any:
 		"""Ensure a password is set on user creation."""
@@ -262,7 +263,7 @@ class PlatformAdmin(BaseAdmin, model=Platform):
 			"name": "Название",
 			"platform_type": "Тип платформы",
 			"is_active": "Активна",
-			"base_url": "УРЛ платформы",
+			"base_url": "URL платформы",
 			"params": "Настройки API запросов",
 			"sources": "Источники",
 		},
@@ -304,7 +305,7 @@ class PlatformAdmin(BaseAdmin, model=Platform):
 			"validators": [validators.AnyOf([value for value, _ in PlatformType.choices()])],
 		},
 		"base_url": {
-			"label": "УРЛ платформы",
+			"label": "URL платформы",
 			"description": "Публичный адрес для ссылок, например https://vk.com (без завершающего слеша)",
 		},
 		"params": {
@@ -325,7 +326,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 	icon = "fa fa-rss"
 	column_list = [
 		"id",
-		"user",
+		"tenant",
 		"platform",
 		"name",
 		"source_type",
@@ -336,12 +337,12 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"date_from",
 		"date_to",
 	]
-	column_searchable_list = ["name", "external_id", "user.username"]
+	column_searchable_list = ["name", "external_id"]
 	column_sortable_list = ["name", "is_active", "last_checked"]
 	column_labels = dict(
 		{
 			"id": "ID",
-			"user": "Пользователь",
+			"tenant": "Рабочее пространство",
 			"platform": "Платформа",
 			"name": "Название",
 			"platform_id": "ID платформы",
@@ -359,7 +360,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 	column_details_exclude_list = ["platform_id", "agent_scenario_id"]
 
 	form_columns = [
-		"user",
+		"tenant",
 		"platform",
 		"name",
 		"source_type",
@@ -374,8 +375,8 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"last_checked": {
 			"readonly": True,
 		},
-		"date_from": {"placeholder": "ДД-ММ-ГГГГ"},
-		"date_to": {"placeholder": "ДД-ММ-ГГГГ"},
+		"date_from": {"placeholder": "ДД.ММ.ГГГГ"},
+		"date_to": {"placeholder": "ДД.ММ.ГГГГ"},
 	}
 	form_overrides = {
 		# SelectField override keeps the choices from form_args below (the default
@@ -386,9 +387,9 @@ class SourceAdmin(BaseAdmin, model=Source):
 		**BaseAdmin.form_overrides,
 	}
 	form_args = {
-		"user": {
-			"label": "Пользователь",
-			"description": "Владелец источника; рабочее пространство наследуется от владельца",
+		"tenant": {
+			"label": "Рабочее пространство",
+			"description": "Владелец источника (тенант); выбирается из списка",
 		},
 		"platform": {
 			"label": "Платформа",
@@ -436,9 +437,10 @@ class SourceAdmin(BaseAdmin, model=Source):
 	column_formatters = {
 		# Localized labels come from the shared enums (never duplicated as string maps)
 		"source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
-		"last_checked": lambda m, a: m.last_checked.strftime("%d.%m.%Y %H:%M") if m.last_checked else "",
-		"date_from": lambda m, a: m.date_from.strftime("%d.%m.%Y") if m.date_from else "—",
-		"date_to": lambda m, a: m.date_to.strftime("%d.%m.%Y") if m.date_to else "—",
+		# last_checked is a DateTime column and inherits the shared DD.MM.YYYY HH:MM
+		# formatter; date_from/date_to are DateTime in DB but date-only for the operator
+		"date_from": lambda m, a: format_date(m.date_from),
+		"date_to": lambda m, a: format_date(m.date_to),
 		**BaseAdmin.column_formatters,
 	}
 
@@ -612,9 +614,9 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		"text_llm_model": "Модель для текста",
 		"image_llm_model": "Модель для изображений",
 		"video_llm_model": "Модель для видео",
-		"text_llm_provider_id": "ID модели для текста",
-		"image_llm_provider_id": "ID модели для изображений",
-		"video_llm_provider_id": "ID модели для видео",
+		"text_llm_provider_id": "ID провайдера для текста",
+		"image_llm_provider_id": "ID провайдера для изображений",
+		"video_llm_provider_id": "ID провайдера для видео",
 		"llm_strategy": "Стратегия выбора модели"
 	}, **BaseAdmin.column_labels)
 
@@ -651,6 +653,22 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		'name': {
 			'label': 'Название',
 			'description': 'Короткое понятное имя сценария, например «Комментарии к постам VK»',
+		},
+		'max_tokens': {
+			'label': 'Лимит токенов ответа',
+			'description': 'Максимальное число токенов в ответе модели (пусто — использовать значение из настроек модели)',
+		},
+		'text_llm_model': {
+			'label': 'Модель для текста',
+			'description': 'Конкретная модель для анализа текста. Если не указана, выбирается по стратегии сценария',
+		},
+		'image_llm_model': {
+			'label': 'Модель для изображений',
+			'description': 'Конкретная модель для анализа изображений. Если не указана, выбирается по стратегии сценария',
+		},
+		'video_llm_model': {
+			'label': 'Модель для видео',
+			'description': 'Конкретная модель для анализа видео. Если не указана, выбирается по стратегии сценария',
 		},
 		'text_prompt': {
 			'description': (
@@ -1065,9 +1083,15 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 	name_plural = "AI Аналитика"
 	icon = "fa fa-chart-bar"
 
-	column_list = ["id", "source", "period_type", "topic_chain_id", "analysis_date", "created_at"]
-	column_searchable_list = ["source.name", "period_type"]
-	column_sortable_list = ["analysis_date", "topic_chain_id"]
+	# Rows are written by the analyzer only — the admin may inspect, correct or
+	# remove them, but never fabricate an analysis run.
+	can_create = False
+
+	# topic_chain_id and content_hash are machine keys kept out of the crowded list
+	column_list = ["id", "source", "analysis_date", "period_type", "llm_model", "estimated_cost", "created_at"]
+	column_searchable_list = ["source.name", "period_type", "llm_model"]
+	column_sortable_list = ["analysis_date", "created_at", "period_type", "estimated_cost"]
+	column_default_sort = [("analysis_date", True), ("id", True)]
 	column_labels = dict({
 		"id": "ID",
 		"source": "Источник",
@@ -1083,13 +1107,25 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 		"provider_type": "Провайдер",
 		"request_tokens": "Токенов на вход",
 		"response_tokens": "Токенов на выход",
-		"estimated_cost": "Стоимость, ¢",
+		"estimated_cost": "Стоимость, $",
 		"parent_analysis_id": "Родительский анализ",
 		"parent": "Родительский анализ",
 		"children": "Дочерние анализы",
 	}, **BaseAdmin.column_labels)
 
-	form_excluded_columns = ["summary_data"] + BaseAdmin.form_excluded_columns
+	# summary_data is rendered by the custom detail template; the metrics and keys
+	# below are filled in by the analyzer and must not be hand-edited.
+	form_excluded_columns = [
+		"summary_data",
+		"content_hash",
+		"topic_chain_id",
+		"provider_type",
+		"request_tokens",
+		"response_tokens",
+		"estimated_cost",
+		"parent_analysis_id",
+		"children",
+	] + BaseAdmin.form_excluded_columns
 	form_widget_args = {
 		"analysis_date": {
 			"readonly": True,
@@ -1105,6 +1141,8 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 	}
 
 	form_args = {
+		# Only the operator-correctable fields are listed; the machine-written
+		# metrics above are excluded from the form and shown read-only in details.
 		"analysis_date": {
 			"label": "Дата анализа",
 			"description": "Заполняется автоматически при создании записи",
@@ -1120,48 +1158,25 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 			"label": "Основные темы",
 			"description": "Список тем, выделенных моделью; заполняется автоматически",
 		},
-		"topic_chain_id": {
-			"label": "Цепочка",
-			"description": "ID связанной цепочки тем — объединяет анализы по одной теме",
-		},
 		"llm_model": {
 			"label": "Модель ИИ",
 			"description": "Модель, которой выполнен анализ; влияет на тарификацию",
-		},
-		"content_hash": {
-			"label": "Хэш контента",
-			"description": "SHA256-отпечаток проанализированного контента; защищает от повторной оплаты LLM",
 		},
 		"prompt_text": {
 			"label": "Промпт",
 			"description": "Полный текст промпта, отправленного модели; для разбора расхождений",
 		},
-		"provider_type": {
-			"label": "Провайдер",
-			"description": "API-формат провайдера (openai / anthropic), которым выполнен запрос",
-		},
-		"request_tokens": {
-			"label": "Токенов на вход",
-			"description": "Сколько токенов промпта списано провайдером",
-		},
-		"response_tokens": {
-			"label": "Токенов на выход",
-			"description": "Сколько токенов ответа сгенерировала модель",
-		},
-		"estimated_cost": {
-			"label": "Стоимость, ¢",
-			"description": "Оценка стоимости запроса в центах; суммируется в отчётах по провайдерам",
-		},
 		**BaseAdmin.form_args,
 	}
 
 	column_formatters = {
-		"analysis_date": lambda m, a: m.analysis_date.strftime("%d.%m.%Y %H:%M") if hasattr(m, 'analysis_date') else "",
+		# analysis_date is a Date column — the shared formatter renders DD.MM.YYYY
 		"period_type": lambda m, a: (
 			m.period_type.label
 			if m.period_type and hasattr(m.period_type, 'label')
 			else str(m.period_type) if m.period_type else "—"
 		),
+		"estimated_cost": lambda m, a: format_usd(m.estimated_cost),
 		**BaseAdmin.column_formatters,
 	}
 
@@ -1171,6 +1186,8 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 			if m.period_type and hasattr(m.period_type, 'label')
 			else str(m.period_type) if m.period_type else "—"
 		),
+		"estimated_cost": lambda m, a: format_usd(m.estimated_cost),
+		"content_hash": lambda m, a: (m.content_hash[:12] + "…") if m.content_hash else "—",
 	}
 
 	details_template = "sqladmin/ai_analytics_detail.html"
@@ -1374,6 +1391,12 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 		**BaseAdmin.form_overrides,
 	}
 
+	form_widget_args = {
+		"base_url": {"placeholder": "https://api.openai.com/v1"},
+		"auth_header": {"placeholder": "Authorization: Bearer {key}"},
+		"encrypted_api_key": {"type": "password", "placeholder": "sk-..."},
+	}
+
 	form_args = {
 		"name": {"label": "Название", "description": "Например: OpenAI, DeepSeek, Anthropic"},
 		"description": {"label": "Описание", "description": "Для справки"},
@@ -1400,7 +1423,10 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 			"label": "По умолчанию",
 			"description": "Этот провайдер будет в приоритете при авто-выборе",
 		},
-		"is_active": {"label": "Активен"},
+		"is_active": {
+			"label": "Активен",
+			"description": "Отключите, чтобы исключить провайдера из маршрутизации и авто-выбора моделей",
+		},
 		**BaseAdmin.form_args,
 	}
 
@@ -1481,7 +1507,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 			"model_type": "Тип модели",
 			"input_cost_per_1k": "Вход $/1K",
 			"output_cost_per_1k": "Выход $/1K",
-			"max_tokens": "Max токенов",
+			"max_tokens": "Макс. токенов",
 			"default_temperature": "Температура",
 			"is_active": "Активна",
 			"is_default": "По умолчанию",
@@ -1515,9 +1541,15 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		},
 		"input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
 		"output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
-		"max_tokens": {"label": "Max токенов", "description": "Лимит контекстного окна модели"},
-		"default_temperature": {"label": "Температура", "description": "По умолчанию 0.3"},
-		"is_active": {"label": "Активна"},
+		"max_tokens": {"label": "Макс. токенов", "description": "Лимит контекстного окна модели"},
+		"default_temperature": {
+			"label": "Температура",
+			"description": "Температура генерации (0.0 — максимальная точность, 1.0 — творческий ответ). По умолчанию 0.3",
+		},
+		"is_active": {
+			"label": "Активна",
+			"description": "Отключите, чтобы модель не использовалась сценариями и авто-выбором",
+		},
 		"is_default": {"label": "По умолчанию", "description": "Приоритетная модель для этого провайдера"},
 		"last_request_cost": {
 			"label": "Стоимость последнего запроса",
@@ -1599,6 +1631,10 @@ class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
 	column_details_exclude_list = ["secret_encrypted", "meta"]
 
 	form_excluded_columns = BaseAdmin.form_excluded_columns + ["meta"]
+	form_widget_args = {
+		"secret_encrypted": {"type": "password", "placeholder": "Вставьте секрет / токен..."},
+		"label": {"placeholder": "Например: user token владельца"},
+	}
 
 	form_overrides = {
 		"platform": SelectField,
@@ -1681,10 +1717,10 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 			"analytics_id": "Аналитика",
 			"action_type": "Тип действия",
 			"status": "Статус",
-			"payload": "Payload",
+			"payload": "Данные действия",
 			"result": "Результат",
 			"error": "Ошибка",
-			"dry_run": "Dry run",
+			"dry_run": "Тестовый запуск (dry run)",
 			"confirmed_by": "Подтверждено пользователем",
 			"confirmed_at": "Время подтверждения",
 			"attempts": "Попытки",
@@ -1725,3 +1761,85 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 		"action_type": lambda m, a: m.action_type.label if m.action_type is not None else "—",
 		"status": lambda m, a: m.status.label if m.status is not None else "—",
 	}
+
+
+class AgentTaskAdmin(BaseAdmin, model=AgentTask):
+    name = "Задача"
+    name_plural = "Задачи"
+    icon = "fa fa-clock"
+
+    column_list = ["id", "tenant", "name", "job_type", "cron_expr", "timezone", "is_active", "next_run_at", "last_run_at", "last_status"]
+    column_searchable_list = ["name", "job_type"]
+    column_sortable_list = ["name", "job_type", "is_active", "next_run_at"]
+    column_labels = dict({
+        "id": "ID",
+        "tenant": "Рабочее пространство",
+        "name": "Название",
+        "job_type": "Тип",
+        "cron_expr": "Расписание",
+        "timezone": "Часовой пояс",
+        "payload": "Параметры",
+        "is_active": "Активна",
+        "next_run_at": "Следующий запуск",
+        "last_run_at": "Последний запуск",
+        "last_status": "Статус",
+        "last_error": "Ошибка",
+    }, **BaseAdmin.column_labels)
+
+    form_columns = ["tenant", "name", "job_type", "cron_expr", "timezone", "payload", "is_active"]
+
+    form_overrides = {
+        "is_active": SelectField,
+        "job_type": SelectField,
+        **BaseAdmin.form_overrides,
+    }
+
+    form_widget_args = {
+        "name": {"placeholder": "Например: hourly-collect"},
+        "cron_expr": {"placeholder": "0 * * * *"},
+        "timezone": {"placeholder": "Europe/Moscow"},
+        "payload": {"rows": 4, "placeholder": '{"period": "day"}'},
+    }
+
+    form_args = {
+        "tenant": {
+            "label": "Рабочее пространство",
+            "description": "Владелец задачи: выберите тенант из списка (задача будет видна в его дашборде)",
+        },
+        "name": {
+            "label": "Название",
+            "description": "Уникальное системное имя задачи, например daily-digest или hourly-collect",
+        },
+        "job_type": {
+            "label": "Тип задачи",
+            "description": "Вид операции: сбор данных, отправка дайджеста, анализ или рефлексия",
+            "choices": JobType.choices(),
+            "coerce": str,
+        },
+        "cron_expr": {
+            "label": "Cron-выражение",
+            "description": "Расписание из 5 полей: минута час день месяц день-недели (например, '0 * * * *')",
+        },
+        "timezone": {
+            "label": "Часовой пояс",
+            "description": "Временная зона по IANA (по умолчанию Europe/Moscow)",
+        },
+        "payload": {
+            "label": "Параметры",
+            "description": "JSON с дополнительными параметрами задачи, например {\"period\": \"day\"}",
+        },
+        "is_active": {
+            "label": "Активна",
+            "choices": [(True, "Да"), (False, "Нет")],
+            "coerce": lambda x: x == "True" if isinstance(x, str) else bool(x),
+            "description": "Выключенная задача не запускается планировщиком",
+        },
+        **BaseAdmin.form_args,
+    }
+
+    column_formatters = {
+        # next_run_at / last_run_at inherit the shared DD.MM.YYYY HH:MM formatter
+        "last_status": lambda m, a: m.last_status or "—",
+        "cron_expr": lambda m, a: cron_to_human(m.cron_expr),
+        **BaseAdmin.column_formatters,
+    }

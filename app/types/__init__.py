@@ -6,6 +6,7 @@ from .enums import (  # User & Permissions; Platform & Sources; Content; Analysi
     BotActionType,
     BotTriggerType,
     ContentType,
+    JobType,
     LLMStrategyType,
     MediaType,
     MonitoringStatus,
@@ -31,6 +32,7 @@ __all__ = [
     "BotActionStatus",
     "BotActionType",
     "BotTriggerType",
+    "JobType",
     "LLMStrategyType",
     "NotificationType",
 ]

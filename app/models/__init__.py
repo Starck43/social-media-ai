@@ -41,7 +41,7 @@ from .permission import Permission
 from .platform import Platform
 from .role import Role
 
-# Scheduler / jobs
+# Task runner / jobs
 from .agent_task import AgentTask
 from .source import Source
 
@@ -81,7 +81,7 @@ __all__ = [
     "LLMModel",
     # Analytics models
     "AIAnalytics",
-    # Scheduler / jobs
+    # Task runner / jobs
     "AgentTask",
     "Job",
     "DigestRun",

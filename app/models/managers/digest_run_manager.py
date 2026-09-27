@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 
 from .base_manager import BaseManager
@@ -16,6 +16,15 @@ class DigestRunManager(BaseManager["DigestRun"]):
         from ..digest_run import DigestRun
 
         super().__init__(DigestRun)
+
+    async def cost_today(self, now: Optional[datetime] = None) -> float:
+        """Total USD spent on digest LLM summaries today (UTC day) — the daily cap check."""
+        from datetime import timezone
+
+        now = now or datetime.now(timezone.utc)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        rows = await self.filter(created_at__gte=day_start)
+        return sum(float(row.llm_cost or 0.0) for row in rows)
 
     async def already_sent(self, agent_task_id: Optional[int], period_start: date, period_end: date) -> bool:
         """True if a digest for this schedule+period was already sent successfully.
@@ -56,11 +65,7 @@ class DigestRunManager(BaseManager["DigestRun"]):
             )
             if existing is not None:
                 return await self.update_by_id(
-                    existing.id,
-                    status="pending",
-                    channel=channel,
-                    message_id=None,
-                    error=None
+                    existing.id, status="pending", channel=channel, message_id=None, error=None
                 )
 
         return await self.create(
@@ -71,3 +76,6 @@ class DigestRunManager(BaseManager["DigestRun"]):
             channel=channel,
             status="pending",
         )
+
+
+digest_runs = DigestRunManager()

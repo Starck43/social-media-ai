@@ -37,7 +37,7 @@ digest`), а LLM вызывается только там, где нужен с�
 
 ```mermaid
 flowchart TB
-    CRON["cron tick (app/scheduler)"] --> JOBS[("jobs queue")]
+    CRON["cron tick (app/tasks)"] --> JOBS[("jobs queue")]
     JOBS --> J1["collect"]
     JOBS --> J2["analyze"]
     JOBS --> J3["digest"]

@@ -66,7 +66,7 @@ class TriggerEvaluator:
 			filtered = content if has_spike else []
 		
 		elif trigger_type == BotTriggerType.TIME_BASED:
-			# Time-based triggers are handled by scheduler
+			# Time-based triggers are handled by the task runner
 			filtered = content
 		
 		else:

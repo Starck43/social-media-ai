@@ -50,19 +50,20 @@ def universal_date_parser(date_input: Any, target_timezone: str = 'UTC+3') -> Op
 
 		# String input
 		elif isinstance(date_input, str):
-			# Try DD-MM-YYYY format first (from CLI/forms)
-			try:
-				date_obj = datetime.strptime(date_input, '%d-%m-%Y')
-				# Apply timezone adjustment for Russia
-				if target_timezone == 'UTC+3':
-					# Set to beginning of day in UTC+3 = 21:00 previous day UTC
-					result = datetime.combine(date_obj, time(0, 0, 0))
-					result = result.replace(tzinfo=timezone.utc)  # This is actually 21:00 UTC for 00:00 MSK
-					return result
-				else:
-					return datetime.combine(date_obj, time(0, 0, 0)).replace(tzinfo=timezone.utc)
-			except ValueError:
-				pass
+			# Try day-first forms first (DD-MM-YYYY / DD.MM.YYYY — from CLI/forms)
+			for day_first_format in ('%d-%m-%Y', '%d.%m.%Y'):
+				try:
+					date_obj = datetime.strptime(date_input, day_first_format)
+					# Apply timezone adjustment for Russia
+					if target_timezone == 'UTC+3':
+						# Set to beginning of day in UTC+3 = 21:00 previous day UTC
+						result = datetime.combine(date_obj, time(0, 0, 0))
+						result = result.replace(tzinfo=timezone.utc)  # This is actually 21:00 UTC for 00:00 MSK
+						return result
+					else:
+						return datetime.combine(date_obj, time(0, 0, 0)).replace(tzinfo=timezone.utc)
+				except ValueError:
+					pass
 
 			# Try ISO format (from APIs/database)
 			try:

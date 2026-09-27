@@ -21,36 +21,25 @@ from ..types import SourceType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-	from . import AIAnalytics, AgentScenario, Platform
+	from . import AIAnalytics, AgentScenario, Platform, Tenant
 	from .managers.source_manager import SourceManager
 
 
 @app_label("social")
 class Source(Base, TenantScopedMixin, TimestampMixin):
 	__tablename__ = "sources"
-	if TYPE_CHECKING:
-		from . import User
-
-	# User who owns this source (user-scoped, not just tenant-scoped)
-	user_id: Mapped[int | None] = mapped_column(
-		ForeignKey("social_manager.users.id", ondelete="CASCADE"),
-		nullable=True,
-	)
-	user: Mapped["User | None"] = relationship("User", back_populates="sources")
 
 	__table_args__ = (
 		UniqueConstraint(
 			"tenant_id",
-			"user_id",
 			"platform_id",
 			"external_id",
-			name="uq_source_tenant_user_platform_external",
+			name="uq_source_tenant_platform_external",
 		),
 		Index("ix_sources_tenant_id", "tenant_id"),
 		Index("idx_sources_platform_id", "platform_id"),
 		Index("idx_sources_external_id", "external_id"),
 		Index("idx_sources_last_checked", "last_checked"),
-		Index("idx_sources_user_id", "user_id"),
 		{"schema": settings.DB_SCHEMA},
 	)
 
@@ -88,6 +77,9 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 
 	# Relationships
 	platform: Mapped["Platform"] = relationship("Platform", back_populates="sources")
+
+	# Owning workspace (tenant)
+	tenant: Mapped["Tenant"] = relationship("Tenant")
 
 	# Assign reusable scenario per source
 	agent_scenario_id: Mapped[int | None] = mapped_column(

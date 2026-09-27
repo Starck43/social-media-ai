@@ -5,7 +5,7 @@ or Redis. Two processes consume the same tables:
 
 | Process | Entrypoint | Responsibility |
 | --- | --- | --- |
-| runtime | `python -m app.runtime` | `scheduler/runner.py` tick loop, `jobs` worker, and `channels/listener.py` agent chat loop |
+| runtime | `python -m app.runtime` | `tasks/runner.py` tick loop, `jobs` worker, and `channels/listener.py` agent chat loop |
 | worker | `python -m app.worker` | claim and execute jobs |
 
 The process split matters: heavy collection runs in `worker`, so a chat reply
@@ -24,7 +24,7 @@ is never blocked behind a long collection.
 
 ## How a run happens
 
-1. `scheduler/runner.py::tick()` selects active agent_tasks with
+1. `tasks/runner.py::tick()` selects active agent_tasks with
    `next_run_at <= now`.
 2. For each, it inserts a `pending` job and advances `next_run_at` to the next
    cron occurrence. Deduplication is a side effect: advancing the task
@@ -43,7 +43,7 @@ idempotency depends on this.
 
 ## Cron expressions
 
-`app/scheduler/cron.py` validates expressions with `croniter` and computes the
+`app/tasks/cron.py` validates expressions with `croniter` and computes the
 next occurrence **in the task's own timezone**, returning UTC. `0 9 * * *`
 in `Europe/Moscow` therefore means 06:00 UTC.
 
@@ -64,7 +64,7 @@ is reachable through them yet.
 
 ## Default tasks
 
-`app/scheduler/bootstrap.py::ensure_all_default_tasks()` seeds every active
+`app/tasks/bootstrap.py::ensure_all_default_tasks()` seeds every active
 workspace at startup with `hourly-collect`, `daily-prune`, `hourly-learn` and
 `weekly-reflect`. On new tenant creation the caller must call
 `ensure_all_default_tasks(tenant_id)` separately (it is **not** automatic). The
@@ -72,11 +72,11 @@ bootstrap only inserts, never overwrites — so editing or pausing them in the
 database survives restarts.
 
 `learn` and `reflect` drive the chat-learning loop (`app/agent/learning.py`).
-`analyze` has **no default task** — it writes the `bot_actions` ledger, so
-it is meant to be added per workspace deliberately. Note the current CLI/tool
-gap: `task add` and the agent's `task_add` accept only
-`collect | digest | prune`, so an `analyze` row has to be inserted into
-`agent_tasks` directly until that allowlist is widened.
+`analyze` has no default task — it writes the `bot_actions` ledger, so
+it is meant to be added per workspace deliberately via `task add`.
+Both the CLI (`task add`) and the agent's `task_add` tool validate `job_type`
+against the `HANDLERS` registry dynamically, so every registered handler is
+reachable through both interfaces without code changes.
 
 `learn` self-gates on a message-count watermark, and `reflect` is a no-op when
 memory is empty — so both are cheap even when there is little to do.

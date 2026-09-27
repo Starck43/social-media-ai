@@ -340,9 +340,10 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
 
 
 async def _cost_today() -> float:
-    from app.models.managers.agent_message_manager import agent_messages
+    """Today's USD spend in this workspace: agent chat + digest summaries."""
+    from app.services.tenancy.resolver import daily_cost_today
 
-    return await agent_messages.cost_today()
+    return await daily_cost_today()
 
 
 async def _record_usage(session: Any, usage: dict) -> None:

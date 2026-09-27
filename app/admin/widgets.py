@@ -6,13 +6,13 @@ from app.utils.date_parsing import universal_date_parser
 
 class EuropeanDateField(Field):
 	"""
-	Поле для дат в формате DD-MM-YYYY с автоматическим преобразованием в DateTime
+	Поле для дат в формате ДД.ММ.ГГГГ с автоматическим преобразованием в DateTime
 	"""
 	widget = TextInput()
 
 	def _value(self):
 		if self.data:
-			return self.data.strftime('%d-%m-%Y')
+			return self.data.strftime('%d.%m.%Y')
 		return ''
 
 	def process_formdata(self, valuelist):
@@ -27,7 +27,7 @@ class EuropeanDateField(Field):
 		try:
 			self.data = universal_date_parser(date_str, target_timezone='UTC+3')
 			if not self.data:
-				raise ValueError('Неверный формат даты. Используйте ДД-ММ-ГГГГ')
+				raise ValueError('Неверный формат даты. Используйте ДД.ММ.ГГГГ')
 		except ValueError:
 			self.data = None
-			raise ValueError('Неверный формат даты. Используйте ДД-ММ-ГГГГ')
+			raise ValueError('Неверный формат даты. Используйте ДД.ММ.ГГГГ')

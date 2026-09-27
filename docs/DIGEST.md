@@ -17,6 +17,11 @@ for every channel; channels differ only in transport rules.
 4. `_summarize()` asks the LLM for a 2-4 sentence Russian summary. Model choice:
    `AGENT_MODEL` by name if set, otherwise the first active text-capable model.
    A broken LLM never breaks the digest — the summary is simply omitted.
+   The daily cost cap is checked *before* the call: past
+   `AGENT_DAILY_COST_LIMIT` (or `tenant.daily_cost_limit`) the summary is
+   skipped with the digest still rendered. A successful call prices its usage
+   from `llm_models` tariffs and stores it on `digest_runs.llm_cost`, which is
+   part of the cap's spend metric (`tenancy.resolver.daily_cost_today()`).
 5. `render.py` renders HTML-safe text with a length budget per channel.
 6. `broadcast_digest()` sends to each configured target and records the result.
 

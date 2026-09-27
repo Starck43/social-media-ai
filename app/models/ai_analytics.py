@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import JSON, Column, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, Column, Date, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
@@ -60,7 +61,15 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     media_types: Mapped[list[str] | None] = Column(JSON, nullable=True)
     request_tokens: Mapped[int | None] = Column(Integer, nullable=True)
     response_tokens: Mapped[int | None] = Column(Integer, nullable=True)
-    estimated_cost: Mapped[int | None] = Column(Integer, nullable=True)  # Cost in cents
+    # Money is exact Decimal, not float or integer cents: cheap models make most
+    # analysis calls cost well under a cent, and integer storage rounded those to
+    # zero (then dropped them as NULL), so SUM() under-reported daily spend.
+    # Unit stays USD cents because every consumer divides by 100.
+    estimated_cost: Mapped[Decimal | None] = Column(
+        Numeric(14, 6),
+        nullable=True,
+        comment="Estimated cost in USD cents at 1e-8 USD precision (NULL = unknown or free)",
+    )
 
     # Relationships
     source: Mapped["Source"] = relationship("Source", back_populates="analytics")

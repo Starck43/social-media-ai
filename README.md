@@ -165,7 +165,7 @@ alembic upgrade head
 python -m app.runtime
 ```
 
-> Runtime запустит scheduler, worker и Telegram/MAX listener в одном процессе.
+> Runtime запустит task runner, worker и Telegram/MAX listener в одном процессе.
 
 ### 4. Добавить LLM-провайдера
 
@@ -223,7 +223,7 @@ python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "wee
 | `SCHEDULER_ENABLED`               | включить cron-планировщик (по умолчанию `true`)     |
 | `SCHEDULER_TIMEZONE`              | часовой пояс cron (по умолчанию `Europe/Moscow`)    |
 | `AGENT_MODEL`                     | явная модель для агента (иначе первая активная)      |
-| `AGENT_DAILY_COST_LIMIT`          | USD-потолок агента за день (по умолчанию 5.0)        |
+| `AGENT_DAILY_COST_LIMIT`          | USD-потолок за день: агент + дайджесты (по умолчанию 5.0) |
 | `AGENT_MAX_ITERATIONS`            | макс. раундов tool-call на сообщение (по умолч. 6)  |
 | `AGENT_HISTORY_LIMIT`             | глубина истории в контексте агента (по умолч. 20)   |
 | `AGENT_MAX_TOKENS`                | макс. токенов в ответе агента (по умолч. 1024)      |

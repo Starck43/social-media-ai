@@ -232,7 +232,7 @@ class ReportAggregator:
                     "total_tokens": 0,
                     "request_tokens": 0,
                     "response_tokens": 0,
-                    "estimated_cost": 0,
+                    "estimated_cost": 0.0,
                     "models": Counter(),
                 }
             )
@@ -245,7 +245,8 @@ class ReportAggregator:
                 stats["request_tokens"] += a.request_tokens or 0
                 stats["response_tokens"] += a.response_tokens or 0
                 stats["total_tokens"] += (a.request_tokens or 0) + (a.response_tokens or 0)
-                stats["estimated_cost"] += a.estimated_cost or 0
+                # estimated_cost is NUMERIC(14,6) cents → keep the aggregates plain floats
+                stats["estimated_cost"] += float(a.estimated_cost or 0)
 
                 if a.llm_model:
                     stats["models"][a.llm_model] += 1

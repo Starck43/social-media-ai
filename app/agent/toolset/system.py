@@ -13,22 +13,22 @@ from app.agent.tools import tool
     parameters={"type": "object", "properties": {}, "required": []},
 )
 async def system_status() -> dict[str, Any]:
-    from app.core.config import settings
     from app.models import AgentTask, Job
-    from app.models.managers.agent_message_manager import agent_messages
+    from app.services.tenancy.resolver import current_daily_cost_limit, daily_cost_today
 
     pending = await Job.objects.filter(status="pending").count()
     running = await Job.objects.filter(status="running").count()
     failed = await Job.objects.filter(status="failed").count()
     active_schedules = await AgentTask.objects.filter(is_active=True).count()
 
-    daily_cost = await agent_messages.cost_today()
+    daily_cost = await daily_cost_today()
+    cap = await current_daily_cost_limit()
 
     return {
         "jobs": {"pending": pending, "running": running, "failed": failed},
         "schedules_active": active_schedules,
         "llm_cost_today_usd": round(daily_cost, 4),
-        "llm_cost_cap_usd": settings.AGENT_DAILY_COST_LIMIT,
+        "llm_cost_cap_usd": cap,
     }
 
 

@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     CREDENTIALS_KEY: Optional[str] = None  # Fernet key for tenant secrets
     DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
 
-    # --- Scheduler ---
+    # --- Task runner ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"

@@ -14,9 +14,9 @@ import asyncio
 import pytest
 
 from app.agent import runtime as agent_runtime
-from app.channels.base import Inbound
 from app.channels import listener as listener_module
-from app.models import AgentSession
+from app.channels.base import Inbound
+from app.models import AgentMessage, AgentSession, DigestRun
 
 
 @pytest.fixture
@@ -124,6 +124,33 @@ async def test_cost_cap_short_circuits(_clean_sessions, monkeypatch):
     reply = await agent_runtime.handle_inbound(_inbound("привет"))
     assert "лимит" in reply.lower()
     assert await AgentSession.objects.count() == 0
+
+
+async def test_cost_cap_enforced_from_recorded_usage(_clean_sessions, monkeypatch):
+    """usage['cost'] flows to the DB, so the next message trips the real cap.
+
+    Unlike test_cost_cap_short_circuits nothing is stubbed in the cost path:
+    record_usage -> cost_today() -> daily_cost_today() must fire on their own
+    (this chain used to sum to 0 forever because chat usage carried no cost).
+    """
+    _set_owner(monkeypatch)
+
+    async def priced(messages, specs):
+        return {"content": "ok", "tool_calls": [], "usage": {"total_tokens": 100, "cost": 6.0}}
+
+    monkeypatch.setattr(agent_runtime, "_chat", priced)
+
+    # Start from a zero spend metric regardless of what earlier tests recorded.
+    await AgentMessage.objects.filter().delete()
+    await DigestRun.objects.filter().delete()
+
+    # Under the cap: no spend recorded yet, the reply goes through.
+    first = await agent_runtime.handle_inbound(_inbound("привет"))
+    assert first == "ok"
+
+    # The recorded $6 exceeds the default $5 workspace cap -> refused.
+    second = await agent_runtime.handle_inbound(_inbound("снова"))
+    assert "лимит" in second.lower()
 
 
 async def test_non_owner_ignored(_clean_sessions, monkeypatch):

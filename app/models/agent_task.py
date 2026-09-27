@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text, UniqueConstraint, text
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
 from ..core.decorators import app_label
@@ -12,6 +12,7 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .managers.agent_task_manager import AgentTaskManager
+    from .tenant import Tenant
 
 
 @app_label("social")
@@ -42,6 +43,9 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     last_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str] = Column(String(20), nullable=True)  # ok | failed | skipped
     last_error: Mapped[str] = Column(Text, nullable=True)
+
+    # Owning workspace (tenant); friendly name shown in admin list/form instead of raw ID
+    tenant: Mapped["Tenant"] = relationship("Tenant")
 
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager

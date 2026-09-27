@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
 from app.core.config import settings
@@ -729,13 +730,19 @@ class AIAnalyzer:
 
         return obj
 
-    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> int:
+    #: Scale of AIAnalytics.estimated_cost (USD cents, 6 decimals = 1e-8 USD).
+    COST_SCALE = Decimal("0.000001")
+
+    async def _price_usage(self, usage_by_result: list[dict[str, Any]]) -> Decimal:
         """Price token usage from llm_models rates (USD per 1K tokens).
 
-        Returns estimated cost in USD cents. Unknown models contribute 0
+        Returns the estimated cost in USD cents, quantised to the scale of the
+        `estimated_cost` column. Decimal throughout: tariffs are USD per 1K with
+        4+ decimals, so float would both drift and hide sub-cent calls that
+        cheap models produce on nearly every run. Unknown models contribute 0
         (never hardcode rates); missing usage rows are priced at 0.
         """
-        total_usd = 0.0
+        total_usd = Decimal(0)
         for entry in usage_by_result:
             model_id = entry.get("model_id")
             req_tokens = entry.get("request_tokens", 0) or 0
@@ -750,10 +757,11 @@ class AIAnalyzer:
             if not model:
                 logger.warning(f"No llm_models row for {model_id}; cost contribution skipped")
                 continue
-            total_usd += req_tokens / 1000 * (model.input_cost_per_1k or 0.0) + resp_tokens / 1000 * (
-                model.output_cost_per_1k or 0.0
-            )
-        return int(round(total_usd * 100)) if total_usd > 0 else 0
+            total_usd += Decimal(req_tokens) / 1000 * Decimal(str(model.input_cost_per_1k or 0.0)) + Decimal(
+                resp_tokens
+            ) / 1000 * Decimal(str(model.output_cost_per_1k or 0.0))
+        cents = total_usd * 100
+        return cents.quantize(self.COST_SCALE, rounding=ROUND_HALF_UP) if cents > 0 else Decimal(0)
 
     def _build_trace_payload(self, analysis_results: dict[str, Any]) -> dict[str, Any]:
         """Build response_payload trace: full responses in DEBUG, metadata otherwise."""
@@ -1033,7 +1041,8 @@ class AIAnalyzer:
             }
 
         # Cost from llm_models prices (input_cost_per_1k / output_cost_per_1k, USD).
-        # estimated_cost column stores USD cents.
+        # estimated_cost stores USD cents with sub-cent precision; NULL is kept for
+        # "unknown or free" so a zero-cost row never looks like a pricing bug.
         estimated_cost_cents = await self._price_usage(usage_by_result)
 
         # Debug tracing only: full LLM responses go to response_payload when

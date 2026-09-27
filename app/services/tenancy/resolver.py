@@ -80,6 +80,33 @@ async def tenant_daily_cost_limit(tenant_id: int) -> float:
     return limit if limit > 0 else float(settings.AGENT_DAILY_COST_LIMIT or 0)
 
 
+async def current_daily_cost_limit() -> float:
+    """Effective cap for the ambient scope: workspace override, else global setting.
+
+    Used outside the inbound path (digest builder, status tool) where only the
+    tenant context is known; no tenant in scope = global limit.
+    """
+    from app.core.tenant_context import current_tenant_id
+
+    tid = current_tenant_id()
+    if tid is None:
+        return float(settings.AGENT_DAILY_COST_LIMIT or 0)
+    return await tenant_daily_cost_limit(tid)
+
+
+async def daily_cost_today() -> float:
+    """USD spent today (UTC day) in the ambient scope: agent chat + digest summaries.
+
+    This is the metric `AGENT_DAILY_COST_LIMIT` (and tenant.daily_cost_limit)
+    is checked against. Both sources are tenant-scoped, so inside
+    `tenant_scope(...)` the sum covers one workspace; in bypass it is global.
+    """
+    from app.models.managers.agent_message_manager import agent_messages
+    from app.models.managers.digest_run_manager import digest_runs
+
+    return await agent_messages.cost_today() + await digest_runs.cost_today()
+
+
 def _chat_kind(inbound: Any) -> str:
     return "channel" if getattr(inbound, "is_channel_post", False) else "private"
 

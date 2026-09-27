@@ -1,4 +1,4 @@
-"""Scheduler runner: poll agent tasks, enqueue due jobs, advance next_run_at.
+"""Task runner: poll agent tasks, enqueue due jobs, advance next_run_at.
 
 Tenancy: `agent_tasks`/`jobs` rows are tenant-owned, so the tick is run once per
 active workspace inside its tenant scope. The queryset guard in `BaseManager`
@@ -32,8 +32,12 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
     stats["due"] = len(due)
 
     for task in due:
+        is_once = task.cron_expr == "@once"
         try:
-            nxt = next_run_at(task.cron_expr, task.timezone, after=now)
+            if is_once:
+                nxt = None
+            else:
+                nxt = next_run_at(task.cron_expr, task.timezone, after=now)
         except (ValueError, KeyError) as e:
             logger.error(f"AgentTask {task.name}: invalid cron {task.cron_expr!r}: {e}")
             await tasks.mark_triggered(task.id, now, status="failed", error=str(e))
@@ -47,15 +51,20 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
             run_at=now,
         )
         await tasks.mark_triggered(task.id, nxt, status="ok")
+        if is_once:
+            await tasks.update_by_id(task.id, is_active=False)
         stats["enqueued"] += 1
-        logger.info(f"Enqueued {task.job_type} job for task {task.name!r}, next run {nxt.isoformat()}")
+        if is_once:
+            logger.info(f"Enqueued one-shot {task.job_type} job for task {task.name!r}")
+        else:
+            logger.info(f"Enqueued {task.job_type} job for task {task.name!r}, next run {nxt.isoformat()}")
 
     return stats
 
 
 async def tick() -> dict:
     """
-    One scheduler pass across all workspaces.
+    One task-runner pass across all workspaces.
 
     Returns stats: {"tenants": int, "due": int, "enqueued": int, "failed": int}
 
@@ -73,7 +82,7 @@ async def tick() -> dict:
             with tenant_scope(tenant.id):
                 stats = await tick_tenant(tenant.id)
         except Exception:  # noqa: BLE001
-            logger.exception(f"Scheduler tick failed for tenant {tenant.slug} (id={tenant.id})")
+            logger.exception(f"Task tick failed for tenant {tenant.slug} (id={tenant.id})")
             continue
         for key in ("due", "enqueued", "failed"):
             totals[key] += stats[key]
@@ -84,15 +93,15 @@ async def tick() -> dict:
 async def run_forever(poll_seconds: int | None = None) -> None:
     """Continuously run ticks. Dedupe: tasks are marked immediately, so re-ticks skip them."""
     poll = poll_seconds or settings.SCHEDULER_POLL_SECONDS
-    logger.info(f"Scheduler started (poll every {poll}s, tz={settings.SCHEDULER_TIMEZONE})")
+    logger.info(f"Task runner started (poll every {poll}s, tz={settings.SCHEDULER_TIMEZONE})")
     while True:
         try:
             stats = await tick()
             if stats["enqueued"] or stats["failed"]:
-                logger.info(f"Scheduler tick: {stats}")
+                logger.info(f"Task runner tick: {stats}")
         except asyncio.CancelledError:
-            logger.info("Scheduler stopped")
+            logger.info("Task runner stopped")
             break
         except Exception:
-            logger.exception("Scheduler tick failed")
+            logger.exception("Task runner tick failed")
         await asyncio.sleep(poll)

@@ -7,7 +7,9 @@ Three independent repairs, each dry-run by default:
                   Rows written before costs were priced from the DB carry stale values
                   computed from hardcoded rates; the runtime formula today is
                   ``req/1000*input_cost_per_1k + resp/1000*output_cost_per_1k`` in USD,
-                  stored as cents (``ContentAnalyzer._price_usage``).
+                  stored as cents with sub-cent precision (``ContentAnalyzer._price_usage``).
+                  Since migration 0060 widened the column from INTEGER to NUMERIC(14,6),
+                  this command also restores the fractions that integer rounding erased.
 * ``payload``   — rewrite DEBUG-era ``response_payload`` (raw provider completions with
                   ``choices``/``message``) into the metadata-only trace
                   ``{model, usage, parsed_keys}`` that the runtime keeps today, and
@@ -43,6 +45,7 @@ import asyncio
 import json
 import sys
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -140,27 +143,39 @@ def _backup(path: str | None, table: str, rows: list[dict[str, Any]]) -> None:
             handle.write(json.dumps({"_table": table, **row}, ensure_ascii=False, default=str) + "\n")
     _info(f"backed up {len(rows)} original row(s) to {target}")
 
-@dataclass
+@dataclass(frozen=True)
 class CostPlan:
     analytics_id: int
     model: str
-    stored: int | None
-    target: int | None
+    stored: Decimal | int | None
+    target: Decimal | None
     tokens: tuple[int, int]
 
 
-def _cents(value: int | None) -> str:
-    return "NULL" if value is None else f"{value}c"
+#: Scale of ai_analytics.estimated_cost (USD cents, 6 decimals = 1e-8 USD).
+COST_SCALE = Decimal("0.000001")
 
 
-def _price_cents(price: Price, request_tokens: int, response_tokens: int) -> int | None:
+def _cents(value: Decimal | int | None) -> str:
+    if value is None:
+        return "NULL"
+    return f"{Decimal(value).normalize():f}c"
+
+
+def _price_cents(price: Price, request_tokens: int, response_tokens: int) -> Decimal | None:
     """USD cents for one call, matching ContentAnalyzer._price_usage.
+
+    Decimal quantised to the column scale: cheap models price most calls below a
+    cent, which the old INTEGER column rounded to zero. Historical rows therefore
+    read as whole cents (or NULL) and usually need a reprice after migration 0060.
 
     ``None`` at zero is deliberate: the write path stores NULL rather than 0, so the
     reprice must not turn a free model into a row that looks priced-to-zero.
     """
-    usd = request_tokens / 1000 * price.input_cost_per_1k + response_tokens / 1000 * price.output_cost_per_1k
-    cents = int(round(usd * 100))
+    usd = Decimal(request_tokens) / 1000 * Decimal(str(price.input_cost_per_1k)) + Decimal(
+        response_tokens
+    ) / 1000 * Decimal(str(price.output_cost_per_1k))
+    cents = (usd * 100).quantize(COST_SCALE, rounding=ROUND_HALF_UP)
     return cents if cents > 0 else None
 
 
@@ -322,36 +337,16 @@ async def repair_payloads(session: AsyncSession, args: argparse.Namespace) -> in
     return len(plans)
 
 
-async def _resolve_membership_user(
-    session: AsyncSession, tenant_id: int, args: argparse.Namespace
-) -> tuple[int | None, str]:
+async def _resolve_membership_user(args: argparse.Namespace) -> tuple[int | None, str]:
     """Which user a membership without user_id should belong to."""
     if args.user_id is not None:
         return args.user_id, "--user-id"
-    owners = [
-        row[0]
-        for row in (
-            await session.execute(
-                text(
-                    f"select distinct user_id from {SCHEMA}.sources "
-                    f"where tenant_id = :tenant_id and user_id is not null"
-                ),
-                {"tenant_id": tenant_id},
-            )
-        ).all()
-    ]
-    if len(owners) == 1:
-        return owners[0], "sole owner of the tenant sources"
-    return None, f"{len(owners)} candidate owners, none explicit"
+    return None, "no --user-id given"
 
 
 async def repair_ownership(session: AsyncSession, args: argparse.Namespace) -> int:
-    """Link memberships that have no user; report sources whose owner is not a member.
-
-    Source rows are never moved between accounts and nothing is deleted: only missing
-    membership links are filled in, the rest has to be decided by a human.
-    """
-    print("ownership: workspace memberships and source owners")
+    """Link memberships that have no user (pass --user-id to pick the user)."""
+    print("ownership: workspace memberships")
     plans: list[dict[str, int]] = []
 
     memberships = (
@@ -367,7 +362,7 @@ async def repair_ownership(session: AsyncSession, args: argparse.Namespace) -> i
         .all()
     )
     for membership_id, tenant_id, slug, role, channel in memberships:
-        user_id, reason = await _resolve_membership_user(session, tenant_id, args)
+        user_id, reason = await _resolve_membership_user(args)
         if user_id is None:
             _warn(f"membership #{membership_id} (tenant '{slug}', role {role}) has no user — {reason}, pass --user-id")
             continue
@@ -385,29 +380,6 @@ async def repair_ownership(session: AsyncSession, args: argparse.Namespace) -> i
             continue
         _info(f"membership #{membership_id} (tenant '{slug}', role {role}) -> user_id={user_id} ({reason})")
         plans.append({"user_id": user_id, "id": membership_id})
-
-    orphans = (
-        (
-            await session.execute(
-                text(
-                    f"select s.id, t.slug, s.user_id, u.email from {SCHEMA}.sources s "
-                    f"join {SCHEMA}.tenants t on t.id = s.tenant_id "
-                    f"join {SCHEMA}.users u on u.id = s.user_id "
-                    f"left join {SCHEMA}.tenant_users tu on tu.tenant_id = s.tenant_id "
-                    f"and tu.user_id = s.user_id and tu.is_active "
-                    f"where tu.id is null order by s.id"
-                )
-            )
-        )
-        .all()
-    )
-    for source_id, slug, user_id, email in orphans:
-        _warn(f"source #{source_id} owned by user {user_id} ({email}) is not a member of tenant '{slug}'")
-    if orphans:
-        _info("orphans are reported only: link the membership above, or move the source deliberately")
-
-    ownerless = (await session.execute(text(f"select count(*) from {SCHEMA}.sources where user_id is null"))).scalar()
-    _info(f"sources without an owner: {ownerless}")
 
     test_users = (
         (

@@ -2,17 +2,17 @@
 
 import pytest
 
-from app.models import DigestRun, AgentTask
+from app.models import AgentTask, DigestRun
 from app.services.digest import builder
 
 
 @pytest.fixture(autouse=True)
 async def _cleanup():
     await DigestRun.objects.delete()
-    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2"])
+    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
     yield
     await DigestRun.objects.delete()
-    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2"])
+    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
 
 
 async def test_skipped_when_no_channels(monkeypatch):
@@ -129,3 +129,78 @@ async def test_aggregate_shape():
     assert data["period"] == "week"
     assert (end - start).days == 6
     assert "sentiment" in data and "topics" in data
+
+
+async def test_summarize_skipped_at_daily_cap(monkeypatch):
+    """At the cap _summarize never touches the model (digest still renders)."""
+    from app.services.tenancy import resolver as resolver_module
+
+    async def full_limit():
+        return 5.0
+
+    async def spent():
+        return 99.0
+
+    async def boom():  # resolve_model must never run
+        raise AssertionError("model must not be resolved at cap")
+
+    monkeypatch.setattr(resolver_module, "current_daily_cost_limit", full_limit)
+    monkeypatch.setattr(resolver_module, "daily_cost_today", spent)
+    monkeypatch.setattr(builder, "resolve_model", boom)
+
+    summary, info = await builder._summarize({"stats": {}})
+    assert summary is None
+    assert info["cost_cap"] is True
+
+
+async def test_run_records_llm_cost(monkeypatch):
+    """The summary's priced cost lands on DigestRun.llm_cost (the cap metric)."""
+
+    async def fake_broadcast(text):
+        return {"telegram": {"success": True, "message_id": 1}}
+
+    async def fake_summarize(data):
+        return "ok", {"model": "test-model", "cost": 0.42}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+
+    result = await builder.build_and_publish(period="day")
+    assert result["status"] == "sent"
+    run = (await DigestRun.objects.filter())[-1]
+    assert run.llm_cost == 0.42
+
+
+async def test_retry_accumulates_llm_cost(monkeypatch):
+    """Every summary attempt was really paid for — retries add up, not overwrite."""
+    attempts = []
+
+    async def fake_broadcast(text):
+        attempts.append(text)
+        if len(attempts) == 1:
+            return {"telegram": {"success": False, "error": "503"}}
+        return {"telegram": {"success": True, "message_id": 9}}
+
+    async def fake_summarize(data):
+        return "ok", {"model": "test-model", "cost": 0.1}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+
+    schedule = await AgentTask.objects.create(
+        name="it-digest-cost",
+        cron_expr="0 9 * * *",
+        timezone="UTC",
+        job_type="digest",
+        payload={"period": "day"},
+        is_active=True,
+    )
+
+    with pytest.raises(builder.DigestDeliveryError):
+        await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    assert result["status"] == "sent"
+
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert len(rows) == 1
+    assert rows[0].llm_cost == pytest.approx(0.2)

@@ -1,7 +1,7 @@
 """
 Celery tasks for background processing.
 
-FROZEN — superseded by `app/jobs` (DB-backed queue) and `app/scheduler`.
+FROZEN — superseded by `app/jobs` (DB-backed queue) and `app/tasks`.
 Not started by any entrypoint; `app.celery.config` requires a Redis broker.
 Do not extend: add a handler in `app/jobs/handlers.py` instead.
 """

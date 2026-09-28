@@ -15,8 +15,12 @@ is never blocked behind a long collection.
 
 - `agent_tasks` — one cron definition: `cron_expr`, `timezone`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON), `is_active`,
+  `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`),
+  `agent_scenario_id` (FK → `agent_scenarios`, optional), `is_active`,
   `next_run_at`, `last_run_at`, `last_status`, `last_error`.
+- `agent_task_sources` — many-to-many between tasks and `sources`. A task's
+  sources are linked here (not in `payload`); an empty set means all active
+  sources. The `sources` relationship is loaded via `task.sources` (a list).
 - `jobs` — the queue: `job_type`, `payload`, `status`
   (`pending` | `running` | `done` | `failed`), `run_at`, `locked_at`,
   `attempts`, `max_attempts`, `result`, `error`, plus `agent_task_id` when the
@@ -51,10 +55,20 @@ in `Europe/Moscow` therefore means 06:00 UTC.
 
 ```bash
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
+python -m cli.main task add hourly-collect "0 * * * *" collect \
+  --sources "1 2 3" --monitored "user_a, user_b" --excluded "spam_user"
+python -m cli.main task add nightly-analyze "0 2 * * *" analyze \
+  --sources "1" --scenario 5
 python -m cli.main task list
 python -m cli.main task pause weekly-digest
 python -m cli.main task remove weekly-digest
 ```
+
+Task sources are linked via the `agent_task_sources` m2m table
+(`--sources`); `--monitored`/`--excluded` become the flat `monitored_users` /
+`excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Use
+`task run --task <name|id>` to run an existing task now, or pass the same
+direct params to create and run a one-off `@once` task.
 
 Adding a job type means adding a function to the `HANDLERS` registry in
 `app/jobs/handlers.py`; `job_type` values are otherwise free-form strings, so

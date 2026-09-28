@@ -13,7 +13,7 @@ def register_model_types(connection, is_upgrade: bool = True):
 
 	# Get all tables in a schema (excluding system tables)
 	all_tables = set(inspector.get_table_names(schema=schema))
-	user_tables = all_tables - {'model_types', 'role_permission', 'alembic_version'}
+	user_tables = all_tables - {'model_types', 'role_permission', 'agent_task_sources', 'alembic_version'}
 
 	# Handle case when model_types table doesn't exist
 	if 'model_types' not in all_tables:

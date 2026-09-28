@@ -1,9 +1,9 @@
 """Tasks `/app/tasks` — create and manage scheduled agent tasks.
 
 Flow:
-- collect: payload = {source_ids: [1,2]}  — collect from specific sources
-- analyze: payload = {source_ids: [1,2], scenario_id: 5}  — analyze with scenario
-- other job_types: payload = {}
+- sources are linked via the m2m `agent_task_sources` table (not payload)
+- scenario is set via `agent_scenario_id` FK (not payload)
+- payload keeps flat keys: period, monitored_users, excluded_users, ...
 """
 
 from __future__ import annotations
@@ -20,6 +20,29 @@ from app.tasks.cron import cron_to_human
 from .deps import add_flash, ensure_csrf, render
 
 router = APIRouter(prefix="/tasks")
+
+
+def _split_names(raw: str) -> list[str]:
+    """Split a comma/space separated username string into a clean list."""
+    return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
+
+
+async def _replace_task_sources(task_id: int, source_ids: list[int]) -> None:
+    """Replace the task's m2m source links with the given set."""
+    from app.core.database import async_session_maker
+    from sqlalchemy import delete, insert
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.models.agent_task import agent_task_sources
+
+    async with async_session_maker() as session:
+        await session.execute(delete(agent_task_sources).where(agent_task_sources.c.agent_task_id == task_id))
+        if source_ids:
+            stmt = pg_insert(agent_task_sources).values(
+                [{"agent_task_id": task_id, "source_id": sid} for sid in source_ids]
+            )
+            await session.execute(stmt.on_conflict_do_nothing())
+        await session.commit()
 
 
 async def enqueue_task_now(task: "AgentTask") -> None:
@@ -47,6 +70,7 @@ async def tasks_list(request: Request):
 
     tasks = await (
         AgentTask.objects.filter(tenant_id=tenant_id)
+        .prefetch_related("sources", "agent_scenario")
         .order_by(AgentTask.created_at.desc())
     )
 
@@ -80,6 +104,8 @@ async def task_create(
     cron_custom: str = Form(...),
     source_ids: list[str] = Form([]),
     scenario_id: int = Form(default=None),
+    monitored_users: str = Form(""),
+    excluded_users: str = Form(""),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
 ):
@@ -104,10 +130,10 @@ async def task_create(
             parsed_source_ids.append(int(s))
 
     payload: dict = {}
-    if parsed_source_ids:
-        payload["source_ids"] = parsed_source_ids
-    if scenario_id:
-        payload["scenario_id"] = scenario_id
+    if monitored_users:
+        payload["monitored_users"] = _split_names(monitored_users)
+    if excluded_users:
+        payload["excluded_users"] = _split_names(excluded_users)
 
     from app.core.tenant_context import tenant_scope
     from app.tasks.cron import next_run_at
@@ -124,9 +150,12 @@ async def task_create(
             cron_expr=cron_expr,
             timezone="Europe/Moscow",
             payload=payload,
+            agent_scenario_id=scenario_id,
             is_active=True,
             next_run_at=next_run,
         )
+        if parsed_source_ids:
+            await _replace_task_sources(task.id, parsed_source_ids)
 
     if run_now:
         await enqueue_task_now(task)
@@ -191,6 +220,8 @@ async def task_update(
     is_active: str = Form(""),
     source_ids: list[str] = Form([]),
     scenario_id: int = Form(default=None),
+    monitored_users: str = Form(""),
+    excluded_users: str = Form(""),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
 ):
@@ -219,10 +250,10 @@ async def task_update(
             parsed_source_ids.append(int(s))
 
     payload: dict = {}
-    if parsed_source_ids:
-        payload["source_ids"] = parsed_source_ids
-    if scenario_id:
-        payload["scenario_id"] = scenario_id
+    if monitored_users:
+        payload["monitored_users"] = _split_names(monitored_users)
+    if excluded_users:
+        payload["excluded_users"] = _split_names(excluded_users)
 
     from app.core.tenant_context import tenant_scope
     from app.tasks.cron import next_run_at
@@ -240,9 +271,11 @@ async def task_update(
             cron_expr=cron_expr,
             timezone="Europe/Moscow",
             payload=payload,
+            agent_scenario_id=scenario_id,
             is_active=is_active == "on",
             next_run_at=next_run,
         )
+        await _replace_task_sources(task.id, parsed_source_ids)
 
     if run_now:
         updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)

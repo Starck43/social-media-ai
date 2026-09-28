@@ -94,7 +94,11 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 **Options:**
 | Option | Default | Description |
 |---|---|---|
-| `--payload`, `-p` | `{}` | JSON payload, e.g. `'{"source_ids": [1]}'` |
+| `--sources`, `-s` | — | Comma/space separated source IDs to link via the `agent_task_sources` m2m table (empty = all active) |
+| `--monitored` | — | Usernames to collect for (collect only) |
+| `--excluded` | — | Usernames to skip (collect/analyze) |
+| `--scenario` | — | `AgentScenario` ID to apply when the task runs |
+| `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
 
 **Examples:**
 ```bash
@@ -107,8 +111,12 @@ python -m cli.main task add daily-digest "0 9 * * *" digest
 # Weekly digest on Mondays
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 
-# Analyze (writes to bot_actions ledger)
-python -m cli.main task add daily-analyze "0 2 * * *" analyze
+# Collect from specific sources with monitored/excluded users
+python -m cli.main task add hourly-collect "0 * * * *" collect \
+  --sources "1 2" --monitored "user_a" --excluded "spam"
+
+# Analyze with a scenario
+python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --scenario 5
 ```
 
 ### Remove Task

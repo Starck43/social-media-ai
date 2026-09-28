@@ -6,37 +6,89 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+async def _load_task(task_id: int | None):
+    """Load the AgentTask (with its m2m sources) that triggered this job, if any."""
+    if not task_id:
+        return None
+    from app.models import AgentTask
+
+    return await (
+        AgentTask.objects.filter(id=task_id)
+        .prefetch_related("sources", "agent_scenario")
+        .first()
+    )
+
+
+async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
+    """Sources a job should operate on.
+
+    Sources come from the task's m2m `sources`; an empty set means all active
+    sources. When no task triggered the job, fall back to the legacy
+    `payload["source_ids"]` if present, else all active sources.
+    """
+    from app.models import Source
+
+    if task is not None:
+        if task.sources:
+            return list(task.sources)
+        return list(await Source.objects.filter(is_active=True))
+
+    source_ids = (payload or {}).get("source_ids") or []
+    if source_ids:
+        return list(await Source.objects.filter(id__in=source_ids))
+    return list(await Source.objects.filter(is_active=True))
+
+
+def _task_payload(task) -> dict[str, Any]:
+    """Payload dict of the task (or empty if there is no task)."""
+    return dict(task.payload or {}) if task is not None else {}
+
+
 async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Collect content from sources.
 
-    Payload:
-        source_ids: list[int] — specific sources; empty/missing = all active
+    Sources come from the task's m2m `sources` (task.sources); empty = all active.
+    Per-task overrides live in the task payload:
+        monitored_users: list[str] — collect these users instead of source defaults
+        excluded_users:  list[str] — skip these users
     """
-    from app.models import Source
     from app.services.monitoring.collector import ContentCollector
 
-    source_ids = payload.get("source_ids") or []
+    task = await _load_task(payload.get("agent_task_id"))
+    task_payload = _task_payload(task)
+    monitored_users = task_payload.get("monitored_users") or []
+    excluded_users = task_payload.get("excluded_users") or []
+
+    sources = await _resolve_sources(task, payload)
+
     collector = ContentCollector()
 
-    if source_ids:
-        sources = []
-        for sid in source_ids:
-            source = await Source.objects.get(id=sid)
-            if source:
-                sources.append(source)
-    else:
-        sources = await Source.objects.filter(is_active=True)
+    def _is_excluded(source) -> bool:
+        external = (source.external_id or "").lstrip("@")
+        return external in excluded_users
 
-    stats = {"sources": len(sources), "collected": 0, "failed": 0, "items": 0}
+    stats = {"sources": 0, "collected": 0, "failed": 0, "items": 0, "excluded": 0}
     for source in sources:
+        if _is_excluded(source):
+            stats["excluded"] += 1
+            continue
+        stats["sources"] += 1
         try:
-            result = await collector.collect_from_source(source)
-            if result and result.get("content_count", 0) > 0:
-                stats["collected"] += 1
-                stats["items"] += result["content_count"]
+            if monitored_users:
+                result = await collector.collect_monitored_users(source, analyze=True)
+                if result and result.get("total_items", 0) > 0:
+                    stats["collected"] += 1
+                    stats["items"] += result["total_items"]
+                else:
+                    stats["failed"] += 1
             else:
-                stats["failed"] += 1
+                result = await collector.collect_from_source(source)
+                if result and result.get("content_count", 0) > 0:
+                    stats["collected"] += 1
+                    stats["items"] += result["content_count"]
+                else:
+                    stats["failed"] += 1
         except Exception as e:
             logger.error(f"collect failed for source {source.id}: {e}", exc_info=True)
             stats["failed"] += 1
@@ -49,10 +101,17 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
     Payload:
         period: 'day' | 'week' (default 'day')
         agent_task_id: int | None — set when triggered by a task (idempotency)
+
+    # TODO(future): per-source digest. If task.sources is non-empty — filter the
+    # aggregation by them (requires source_ids support in ReportAggregator).
+    # Empty sources list = the whole workspace (current behaviour).
     """
     from app.services.digest.builder import build_and_publish
 
-    period = payload.get("period", "day")
+    task = await _load_task(payload.get("agent_task_id"))
+    task_payload = _task_payload(task)
+
+    period = task_payload.get("period", payload.get("period", "day"))
     if period not in ("day", "week"):
         return {"status": "failed", "error": f"Invalid period: {period}"}
     return await build_and_publish(period=period, agent_task_id=payload.get("agent_task_id"))
@@ -73,9 +132,11 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
 async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     """Analyze collected content and create bot actions if triggers match.
 
-    Payload:
-        source_ids: list[int] — specific sources; empty/missing = all active
-        scenario_id: int | None — specific scenario; empty/missing = auto-resolve
+    Sources come from the task's m2m `sources` (task.sources); empty = all active.
+    Scenario comes from the task's `agent_scenario` (fallback: tenant default).
+    Payload may carry:
+        scenario_id: int | None — explicit scenario override
+        excluded_users: list[str] — users to skip
 
     Flow:
     1. Get sources and their scenarios
@@ -83,32 +144,32 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     3. Run TriggerEvaluator.should_act on already-stored analysis result
     4. If action needed, check guards and create BotAction (dry_run=True by default)
     """
-    from app.models import AgentScenario, AIAnalytics, BotAction, Source
+    from app.models import AgentScenario, AIAnalytics, BotAction
     from app.services.ai.trigger_evaluator import trigger_evaluator
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
 
-    source_ids = payload.get("source_ids") or []
-    scenario_id = payload.get("scenario_id")
+    task = await _load_task(payload.get("agent_task_id"))
+    task_payload = _task_payload(task)
+    scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
+    excluded_users = task_payload.get("excluded_users") or []
 
     stats = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0}
 
-    # Get sources
-    if source_ids:
-        sources = []
-        for sid in source_ids:
-            source = await Source.objects.get(id=sid)
-            if source:
-                sources.append(source)
-    else:
-        sources = await Source.objects.filter(is_active=True)
-
-    stats["sources"] = len(sources)
+    sources = await _resolve_sources(task, payload)
 
     for source in sources:
+        if (source.external_id or "").lstrip("@") in excluded_users:
+            stats["skipped"] += 1
+            continue
         try:
-            # Resolve scenario — fallback to tenant default if source has none
-            if scenario_id:
+            stats["sources"] += 1
+
+            # Resolve scenario — prefer the task's own scenario, then an explicit
+            # override, then the source's scenario, then the tenant default.
+            if task is not None and getattr(task, "agent_scenario", None):
+                scenario = task.agent_scenario
+            elif scenario_id:
                 scenario = await AgentScenario.objects.get(id=scenario_id)
             elif source.agent_scenario_id:
                 scenario = await AgentScenario.objects.get(id=source.agent_scenario_id)

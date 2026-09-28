@@ -40,18 +40,33 @@ async def task_list() -> list[dict[str, Any]]:
     description=(
         "Создать cron-задачу. Примеры: «каждый день в 9:00» → '0 9 * * *', "
         "«каждый час» → '0 * * * *'. Тип задачи: collect, digest, prune, analyze, learn, reflect."
+        " Источники задаются списком source_ids (связываются с задачей); пустой список = все активные. "
+        "Для collect можно задать monitored_users (кого отслеживать) и excluded_users (кого игнорировать)."
     ),
     confirm=True,
     parameters={
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Уникальное имя задачи"},
-            "cron": {"type": "string", "description": "Cron-выражение из 5 полей (мин час день месяц день-недели)"},
+            "cron": {"type": "string", "description": "Cron-выражение из 5 полей (мин час день месяц день-недели) или @once"},
             "job_type": {"type": "string", "enum": list(_get_job_types()), "description": "Что запускать"},
-            "payload": {
-                "type": "object",
-                "description": 'Параметры задачи, например {"period": "day"} для digest, {"source_ids": [1]} для collect',
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "ID источников для задачи (связываются через m2m). Пусто = все активные",
             },
+            "monitored_users": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Опционально: список username для отслеживания (только collect)",
+            },
+            "excluded_users": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Опционально: список username для исключения (collect/analyze)",
+            },
+            "scenario_id": {"type": "integer", "description": "Опционально: ID сценария агента"},
+            "period": {"type": "string", "description": "Период для digest: day | week (default day)"},
         },
         "required": ["name", "cron", "job_type"],
     },
@@ -60,7 +75,11 @@ async def task_add(
     name: str,
     cron: str,
     job_type: str,
-    payload: dict[str, Any] | None = None,
+    source_ids: list[int] | None = None,
+    monitored_users: list[str] | None = None,
+    excluded_users: list[str] | None = None,
+    scenario_id: int | None = None,
+    period: str | None = None,
 ) -> dict[str, Any]:
     from app.core.config import settings
     from app.models import AgentTask
@@ -75,15 +94,40 @@ async def task_add(
     if await AgentTask.objects.get(name=name):
         return {"error": f"Task {name!r} already exists"}
 
+    payload: dict[str, Any] = {}
+    if monitored_users:
+        payload["monitored_users"] = list(monitored_users)
+    if excluded_users:
+        payload["excluded_users"] = list(excluded_users)
+    if period:
+        payload["period"] = period
+
     task = await AgentTask.objects.create(
         name=name,
         cron_expr=cron,
         timezone=settings.SCHEDULER_TIMEZONE,
         job_type=job_type,
-        payload=payload or {},
+        payload=payload,
+        agent_scenario_id=scenario_id,
         is_active=True,
         next_run_at=next_run_at(cron, settings.SCHEDULER_TIMEZONE),
     )
+
+    if source_ids:
+        from app.core.database import async_session_maker
+        from sqlalchemy import insert
+
+        from app.models.agent_task import agent_task_sources
+
+        async with async_session_maker() as session:
+            for sid in set(source_ids):
+                await session.execute(
+                    insert(agent_task_sources)
+                    .values(agent_task_id=task.id, source_id=sid)
+                    .prefix_with("ON CONFLICT DO NOTHING")
+                )
+            await session.commit()
+
     return {"status": "created", "name": task.name, "next_run_at": task.next_run_at.isoformat()}
 
 

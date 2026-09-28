@@ -386,7 +386,8 @@ Agent cron task definitions.
 | `cron_expr` | `String(50)` | Cron expression |
 | `timezone` | `String(50)` | Task timezone |
 | `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | Task-specific parameters |
+| `payload` | `JSON` | Task-specific parameters (flat keys: `period`, `monitored_users`, `excluded_users`, ...) |
+| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Reusable scenario applied when the task runs (nullable, `SET NULL`) |
 | `is_active` | `Boolean` | Active flag |
 | `next_run_at` | `DateTime` | Next scheduled run (UTC) |
 | `last_run_at` | `DateTime` | Last run timestamp |
@@ -396,6 +397,21 @@ Agent cron task definitions.
 | `updated_at` | `DateTime` | Auto |
 
 **Unique constraint:** `(tenant_id, name)`
+
+**Relationships:** `tenant`, `agent_scenario`, `sources` (many-to-many via
+`agent_task_sources`)
+
+---
+
+### `agent_task_sources`
+
+Many-to-many join between `agent_tasks` and `sources`. A task's sources are
+linked here (not in `payload`); an empty set means all active sources.
+
+| Column | Type | Description |
+|---|---|---|
+| `agent_task_id` | `Integer` FK → `agent_tasks` (PK, CASCADE) | |
+| `source_id` | `Integer` FK → `sources` (PK, CASCADE) | |
 
 ---
 

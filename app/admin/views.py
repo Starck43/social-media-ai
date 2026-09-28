@@ -1784,9 +1784,11 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "last_run_at": "Последний запуск",
         "last_status": "Статус",
         "last_error": "Ошибка",
+        "sources": "Источники",
+        "agent_scenario": "Сценарий бота",
     }, **BaseAdmin.column_labels)
 
-    form_columns = ["tenant", "name", "job_type", "cron_expr", "timezone", "payload", "is_active"]
+    form_columns = ["tenant", "name", "job_type", "cron_expr", "timezone", "sources", "agent_scenario", "payload", "is_active"]
 
     form_overrides = {
         "is_active": SelectField,
@@ -1824,6 +1826,14 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             "label": "Часовой пояс",
             "description": "Временная зона по IANA (по умолчанию Europe/Moscow)",
         },
+        "sources": {
+            "label": "Источники",
+            "description": "Источники, над которыми работает задача. Пусто — все активные источники",
+        },
+        "agent_scenario": {
+            "label": "Сценарий бота",
+            "description": "Сценарий анализа и реакции; пусто — используется сценарий по умолчанию",
+        },
         "payload": {
             "label": "Параметры",
             "description": "JSON с дополнительными параметрами задачи, например {\"period\": \"day\"}",
@@ -1841,6 +1851,8 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         # next_run_at / last_run_at inherit the shared DD.MM.YYYY HH:MM formatter
         "last_status": lambda m, a: m.last_status or "—",
         "cron_expr": lambda m, a: cron_to_human(m.cron_expr),
+        "sources": lambda m, a: ", ".join(s.name for s in m.sources) or "Все активные",
+        "agent_scenario": lambda m, a: m.agent_scenario.name if m.agent_scenario is not None else "—",
         **BaseAdmin.column_formatters,
     }
 
@@ -1863,6 +1875,17 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
 
                 data["next_run_at"] = compute_next(cron_expr, tz)
         await super().on_model_change(data, model, is_created, request)
+
+    def list_query(self, request: Request) -> Select:
+        return AgentTask.objects.prefetch_related("sources", "agent_scenario").filter().to_select()
+
+    def details_query(self, request: Request) -> Select:
+        pk = int(request.path_params["pk"])
+        return (
+            AgentTask.objects.prefetch_related("sources", "agent_scenario")
+            .filter(id=pk)
+            .to_select()
+        )
 
     @action(
         name="run_now",

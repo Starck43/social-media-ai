@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Table, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
@@ -11,8 +11,20 @@ from ..core.decorators import app_label
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from .agent_scenario import AgentScenario
     from .managers.agent_task_manager import AgentTaskManager
+    from .source import Source
     from .tenant import Tenant
+
+
+# Many-to-many between tasks and sources (replaces the old payload["source_ids"] list)
+agent_task_sources = Table(
+    "agent_task_sources",
+    Base.metadata,
+    Column("agent_task_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column("source_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.sources.id", ondelete="CASCADE"), primary_key=True),
+    schema=settings.DB_SCHEMA,
+)
 
 
 @app_label("social")
@@ -36,7 +48,7 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     )
     # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
     job_type: Mapped[str] = Column(String(20), nullable=False)
-    # Job payload: {"source_ids": [...], "scenario_id": 5, "period": "week", ...}
+    # Job payload: {"period": "week", "monitored_users": [...], "excluded_users": [...], ...}
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False, server_default="true")
     next_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
@@ -44,8 +56,26 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     last_status: Mapped[str] = Column(String(20), nullable=True)  # ok | failed | skipped
     last_error: Mapped[str] = Column(Text, nullable=True)
 
-    # Owning workspace (tenant); friendly name shown in admin list/form instead of raw ID
+    # Owning workspace (tenant);
     tenant: Mapped["Tenant"] = relationship("Tenant")
+
+    # Reusable scenario applied when this task runs (mirrors Source.agent_scenario)
+    agent_scenario_id: Mapped[int | None] = Column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_scenario: Mapped["AgentScenario | None"] = relationship(
+        "AgentScenario",
+        back_populates="agent_tasks",
+    )
+
+    # Sources this task operates on (many-to-many). Empty = all active sources.
+    sources: Mapped[list["Source"]] = relationship(
+        "Source",
+        secondary=agent_task_sources,
+        backref="agent_tasks",
+    )
 
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager

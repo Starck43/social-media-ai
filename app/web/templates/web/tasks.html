@@ -36,9 +36,9 @@
                             </td>
                             <td class="px-4 py-3 text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
                             <td class="px-4 py-3 text-slate-400">
-                                {% if task.payload and task.payload.get('source_ids') %}
+                                {% if task.sources %}
                                     <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">
-                                        {{ task.payload.source_ids|length }} источников
+                                        {{ task.sources|length }} источников
                                     </span>
                                 {% else %}
                                     <span class="text-slate-600">все</span>
@@ -85,8 +85,10 @@
                                             job_type: {{ task.job_type|tojson }},
                                             cron_expr: {{ task.cron_expr|tojson }},
                                             is_active: {{ 'true' if task.is_active else 'false' }},
-                                            source_ids: {{ (task.payload.get("source_ids", []) if task.payload else [])|tojson }},
-                                            scenario_id: {{ (task.payload.get("scenario_id") if task.payload else None)|tojson }}
+                                            source_ids: {{ (task.sources|map(attribute='id')|list if task.sources else [])|tojson }},
+                                            scenario_id: {{ (task.agent_scenario_id if task.agent_scenario_id else None)|tojson }},
+                                            monitored_users: {{ ((task.payload or {}).get("monitored_users", []) or [])|join(", ")|tojson }},
+                                            excluded_users: {{ ((task.payload or {}).get("excluded_users", []) or [])|join(", ")|tojson }}
                                         })'
                                         title="Редактировать"
                                         class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-slate-800">
@@ -288,6 +290,21 @@
                 </div>
                 {% endif %}
 
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="add-monitored" class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                        <input id="add-monitored" name="monitored_users" placeholder="username1, username2"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+                    </div>
+                    <div>
+                        <label for="add-excluded" class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                        <input id="add-excluded" name="excluded_users" placeholder="username1, username2"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+                    </div>
+                </div>
+
                 <div class="flex gap-2 pt-2">
                     <button type="button" @click="openAdd = false"
                             class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
@@ -454,6 +471,20 @@
                     </select>
                 </div>
                 {% endif %}
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                        <input name="monitored_users" x-model="editing.monitored_users" placeholder="username1, username2"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                        <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+                    </div>
+                </div>
                 <label class="flex items-center gap-2 text-sm text-slate-300">
                     <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
                     <input type="checkbox" x-model="editing.is_active"
@@ -484,13 +515,15 @@ function tasksPage() {
     return {
         openAdd: false,
         openEdit: false,
-        editing: { id: 0, name: '', job_type: '', cron_expr: '', is_active: true, source_ids: [], scenario_id: '' },
+        editing: { id: 0, name: '', job_type: '', cron_expr: '', is_active: true, source_ids: [], scenario_id: '', monitored_users: '', excluded_users: '' },
         editSched: scheduleBuilder(),
         editTask(data) {
             this.editing = {
                 ...data,
                 source_ids: data.source_ids || [],
                 scenario_id: data.scenario_id || '',
+                monitored_users: data.monitored_users || '',
+                excluded_users: data.excluded_users || '',
             };
             this.editSched.load(data.cron_expr);
             this.openEdit = true;

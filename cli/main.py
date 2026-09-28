@@ -29,6 +29,37 @@ def _run_platform(coro):
         return asyncio.run(coro)
 
 
+def _split_names(raw: str | None) -> list[str]:
+    """Split a comma/space separated username string into a clean list."""
+    if not raw:
+        return []
+    return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
+
+
+def _split_ints(raw: str | None) -> list[int]:
+    """Split a comma/space separated string into a list of ints."""
+    if not raw:
+        return []
+    return [int(p) for p in raw.replace(",", " ").split() if p.strip().isdigit()]
+
+
+async def _set_task_sources(task_id: int, source_ids: list[int]) -> None:
+    """Link a task to the given sources via the m2m table."""
+    from app.core.database import async_session_maker
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.models.agent_task import agent_task_sources
+
+    if not source_ids:
+        return
+    async with async_session_maker() as session:
+        stmt = pg_insert(agent_task_sources).values(
+            [{"agent_task_id": task_id, "source_id": sid} for sid in source_ids]
+        )
+        await session.execute(stmt.on_conflict_do_nothing())
+        await session.commit()
+
+
 task_app = typer.Typer(help="Manage agent tasks")
 
 
@@ -64,9 +95,19 @@ def task_list():
 @task_app.command("add")
 def task_add(
     name: str = typer.Argument(..., help="Unique task name"),
-    cron: str = typer.Argument(..., help="Cron expression, e.g. '0 9 * * *'"),
-    job_type: str = typer.Argument(..., help="Job type: collect | digest | prune"),
-    payload: str = typer.Option("{}", "--payload", "-p", help="JSON payload, e.g. '{\"source_ids\": [1] }'"),
+    cron: str = typer.Argument(..., help="Cron expression, e.g. '0 9 * * *' (or @once)"),
+    job_type: str = typer.Argument(..., help="Job type: collect | digest | prune | analyze | learn | reflect"),
+    source_ids: str = typer.Option(
+        None, "--sources", "-s", help="Comma/space separated source IDs to link (empty = all active)"
+    ),
+    monitored_users: str = typer.Option(
+        None, "--monitored", help="Comma/space separated usernames to collect for (collect only)"
+    ),
+    excluded_users: str = typer.Option(
+        None, "--excluded", help="Comma/space separated usernames to skip (collect/analyze)"
+    ),
+    scenario_id: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply when the task runs"),
+    payload: str = typer.Option("{}", "--payload", "-p", help="Extra JSON payload, e.g. '{\"period\": \"week\"}'"),
 ):
     """Add a task."""
     import json as _json
@@ -88,20 +129,30 @@ def task_add(
         rprint(f"[red]job_type must be one of: {', '.join(HANDLERS.keys())}[/red]")
         raise typer.Exit(1)
 
+    parsed_payload = _json.loads(payload)
+    if monitored_users:
+        parsed_payload["monitored_users"] = _split_names(monitored_users)
+    if excluded_users:
+        parsed_payload["excluded_users"] = _split_names(excluded_users)
+    parsed_source_ids = _split_ints(source_ids)
+
     async def _run():
         existing = await AgentTask.objects.get(name=name)
         if existing:
             rprint(f"[red]AgentTask '{name}' already exists[/red]")
             raise typer.Exit(1)
-        await sm.create(
+        task = await sm.create(
             name=name,
             cron_expr=cron,
             timezone=settings.SCHEDULER_TIMEZONE,
             job_type=job_type,
-            payload=_json.loads(payload),
+            payload=parsed_payload,
+            agent_scenario_id=scenario_id,
             is_active=True,
             next_run_at=next_run_at(cron, settings.SCHEDULER_TIMEZONE),
         )
+        if parsed_source_ids:
+            await _set_task_sources(task.id, parsed_source_ids)
         rprint(f"[green]AgentTask '{name}' created ({cron}, {job_type})[/green]")
 
     _run_platform(_run())
@@ -137,6 +188,83 @@ def task_pause(name: str = typer.Argument(...), resume: bool = typer.Option(Fals
             raise typer.Exit(1)
         await AgentTask.objects.update_by_id(s.id, is_active=resume)
         rprint(f"[green]{'Resumed' if resume else 'Paused'} '{name}'[/green]")
+
+    _run_platform(_run())
+
+
+@task_app.command("run")
+def task_run(
+    task: str = typer.Option(None, "--task", "-t", help="Existing task by name or id to run"),
+    job_type: str = typer.Option("collect", "--job-type", help="Job type for a one-off run (default collect)"),
+    sources: str = typer.Option(None, "--sources", "-s", help="Source IDs to link (one-off run)"),
+    monitored: str = typer.Option(None, "--monitored", help="Usernames to collect (one-off run)"),
+    excluded: str = typer.Option(None, "--excluded", help="Usernames to skip (one-off run)"),
+    scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
+    period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
+):
+    """Run a job now. Use --task <name|id> for an existing task, or pass
+    direct parameters to create and run a one-off @once task."""
+    import json as _json
+
+    from rich import print as rprint
+
+    from app.core.config import settings
+    from app.jobs.dispatcher import drain
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.models.managers.job_manager import JobManager
+
+    async def _run():
+        from datetime import datetime, timezone
+
+        from app.models import AgentTask
+        from app.tasks.cron import next_run_at
+
+        if task:
+            target = None
+            if task.isdigit():
+                target = await AgentTask.objects.get(id=int(task))
+            if target is None:
+                target = await AgentTask.objects.get(name=task)
+            if target is None:
+                rprint(f"[red]Task '{task}' not found[/red]")
+                raise typer.Exit(1)
+            await JobManager().enqueue(
+                job_type=target.job_type,
+                payload=target.payload or {},
+                agent_task_id=target.id,
+                run_at=datetime.now(timezone.utc),
+            )
+            rprint(f"[green]Job enqueued for task '{target.name}'[/green]")
+        else:
+            payload: dict = {}
+            if monitored:
+                payload["monitored_users"] = _split_names(monitored)
+            if excluded:
+                payload["excluded_users"] = _split_names(excluded)
+            if period:
+                payload["period"] = period
+            task_obj = await AgentTask.objects.create(
+                name=f"one-off-{job_type}",
+                cron_expr="@once",
+                timezone=settings.SCHEDULER_TIMEZONE,
+                job_type=job_type,
+                payload=payload,
+                agent_scenario_id=scenario,
+                is_active=True,
+                next_run_at=datetime.now(timezone.utc),
+            )
+            if _split_ints(sources):
+                await _set_task_sources(task_obj.id, _split_ints(sources))
+            await JobManager().enqueue(
+                job_type=job_type,
+                payload=payload,
+                agent_task_id=task_obj.id,
+                run_at=datetime.now(timezone.utc),
+            )
+            rprint(f"[green]One-off job enqueued ({job_type})[/green]")
+
+        processed = await drain(max_jobs=1)
+        rprint(f"[bold]Processed {processed} job(s).[/bold]")
 
     _run_platform(_run())
 

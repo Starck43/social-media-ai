@@ -136,6 +136,17 @@ No custom actions (managed via CRUD).
 |---|---|
 | **🧪 Тестировать модель** | Sends a test prompt to the model (mock or real) and displays the response, latency, token usage, and estimated cost. Can auto-update model prices from the response. |
 
+### Задача (AgentTask)
+
+| Action | Description |
+|---|---|
+| **Выполнить сейчас** | Enqueues the selected task's job immediately; a one-time (`@once`) task is completed (deactivated) in the process |
+
+The task create/edit form exposes **Источники** (multi-select over the
+`agent_task_sources` m2m table) and **Сценарий бота** (`agent_scenario_id`) in
+addition to the `payload` JSON (flat keys such as `period`, `monitored_users`,
+`excluded_users`).
+
 ---
 
 ## Analytics Dashboard

@@ -146,6 +146,9 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     # Reverse FK relation: one scenario can be reused by many sources
     sources = relationship("Source", back_populates="agent_scenario")
 
+    # Reverse FK relation: one scenario can be reused by many tasks
+    agent_tasks = relationship("AgentTask", back_populates="agent_scenario")
+
     # Manager will be set after class definition
     if TYPE_CHECKING:
         from .managers.agent_scenario_manager import AgentScenarioManager

@@ -36,19 +36,29 @@ class VKClient(BaseClient):
 
     # Filled by collect_data() before any request parameters are built.
     _access_token: str | None = None
+    # Resolved numeric external_id (screen_name -> id) for the current run.
+    _resolved_external_id: str | None = None
 
     async def collect_data(self, source: Source, content_type: str = "posts") -> list[dict]:
         """
-        Resolve the tenant's VK token, then delegate to the shared collector.
+        Resolve the tenant's VK token and the source's external_id, then
+        delegate to the shared collector.
 
         Vault first, env fallback. Without a token VK answers every method with
         error 5 (auth failed), so we stop before spending a request and let the
         caller record the source as failed.
+
+        A screen_name (e.g. `russkikh_natalia`) is resolved to a numeric ID once
+        here so that `_build_params` can send a valid `owner_id` to the VK API.
+        The numeric result is kept per-run; the stored `external_id` on the
+        Source row is left untouched (either numeric or screen_name works).
         """
         self._access_token = await resolve_token("vk")
         if not self._access_token:
             logger.error(f"No VK credential available for source {source.id} - collection skipped")
             return []
+
+        self._resolved_external_id = await self._resolve_external_id(source.external_id)
         logger.info(f"VK credential ready for source {source.id}")
         return await super().collect_data(source, content_type)
 
@@ -366,6 +376,13 @@ class VKClient(BaseClient):
         try:
             numeric_id = int(clean_id)
         except ValueError:
+            # A non-numeric screen_name. If we already resolved it to a numeric
+            # ID for this run, recurse with the resolved value; otherwise fall
+            # back to returning the raw screen_name (the API will reject it).
+            resolved = self._resolved_external_id or external_id
+            if resolved != external_id and resolved.lstrip("-").isdigit():
+                logger.warning(f"Invalid VK ID format: {external_id}, using resolved {resolved}")
+                return self._parse_owner_id(resolved, source_type)
             logger.warning(f"Invalid VK ID format: {external_id}, using as-is")
             return external_id
 

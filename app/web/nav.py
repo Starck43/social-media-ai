@@ -29,11 +29,16 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("sources", "/app/sources", "Источники"),
     NavItem("tasks", "/app/tasks", "Задачи"),
     NavItem("scenarios", "/app/scenarios", "Сценарии"),
-    NavItem("analytics", "/app/analytics", "Аналитика", ready=True),
-    NavItem("digests", "#", "Дайджесты", ready=False),
+    NavItem("analytics", "/app/analytics", "Аналитика"),
+    NavItem("digests", "/app/digests", "Дайджесты"),
+    NavItem("jobs", "/app/jobs", "Задания"),
     NavItem("chat", "#", "Чат с агентом", ready=False),
     NavItem("settings", "#", "Настройки", ready=False),
 )
 
-# Sections that fit the fixed mobile bar before it starts scrolling.
-MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item.ready)
+# Sections that fit the fixed mobile bar. Capped deliberately: seven full labels
+# do not fit a 360px screen, so the bar carries the daily loop (see a source, see
+# what happened, tweak the schedule) and the rest stays in the sidebar, which
+# returns above `md`.
+MOBILE_NAV_KEYS: frozenset[str] = frozenset({"dashboard", "sources", "tasks", "jobs"})
+MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item.key in MOBILE_NAV_KEYS)

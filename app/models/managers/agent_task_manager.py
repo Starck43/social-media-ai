@@ -46,6 +46,51 @@ class AgentTaskManager(BaseManager):
         """All active tasks."""
         return await self.filter(is_active=True)
 
+    async def get_sources(self, task_id: int) -> list[int]:
+        """Source ids linked to the task through the m2m table."""
+        return (await self._linked_source_ids([task_id])).get(task_id, [])
+
+    async def get_sources_map(self, task_ids: list[int]) -> dict[int, list[int]]:
+        """`{task_id: [source_id, ...]}` for a batch of tasks (one query)."""
+        return await self._linked_source_ids(task_ids)
+
+    async def _linked_source_ids(self, task_ids: list[int]) -> dict[int, list[int]]:
+        if not task_ids:
+            return {}
+        from sqlalchemy import select
+
+        from ..agent_task import agent_task_sources
+
+        rows = await self.aggregate_rows(
+            select(agent_task_sources.c.agent_task_id, agent_task_sources.c.source_id).where(
+                agent_task_sources.c.agent_task_id.in_(task_ids)
+            )
+        )
+        grouped: dict[int, list[int]] = {}
+        for task_id, source_id in rows:
+            grouped.setdefault(int(task_id), []).append(int(source_id))
+        return {tid: sorted(grouped.get(tid, [])) for tid in task_ids}
+
+    async def set_sources(self, task_id: int, source_ids: list[int]) -> int:
+        """Replace the task's source links with exactly `source_ids`.
+
+        The single write path for the m2m table — the web form, the CLI and the
+        agent tool all call it instead of hand-rolling delete+insert.
+        """
+        from ..agent_task import agent_task_sources
+
+        return await self._replace_secondary(
+            agent_task_sources, "agent_task_id", task_id, "source_id", source_ids
+        )
+
+    async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
+        """Link sources to the task, keeping the links that already exist."""
+        from ..agent_task import agent_task_sources
+
+        return await self._add_secondary(
+            agent_task_sources, "agent_task_id", task_id, "source_id", source_ids
+        )
+
     async def get_due(self, now: Optional[datetime] = None) -> list["AgentTask"]:
         """AgentTasks that are active and due for enqueueing (next_run_at stored in UTC)."""
         now = now or datetime.now(timezone.utc)
@@ -58,11 +103,31 @@ class AgentTaskManager(BaseManager):
         status: str = "ok",
         error: Optional[str] = None,
     ) -> None:
-        """Record a trigger: set last_run_at/last_status and advance next_run_at."""
+        """Record a trigger: set last_run_at/last_status and advance next_run_at.
+
+        Used by the scheduler to advance the schedule (dedup) and to flag a
+        bad cron expression. The actual outcome of a job is recorded later by
+        `record_result` when the worker finishes, so `last_status` here is a
+        provisional value and may be overwritten.
+        """
         await self.update_by_id(
             task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,
             last_error=error,
             next_run_at=next_run_at,
+        )
+
+    async def record_result(self, task_id: int, status: str, error: Optional[str] = None) -> None:
+        """Record the real outcome of a job run on its AgentTask.
+
+        Called by the job dispatcher on completion/failure so `last_status` /
+        `last_error` / `last_run_at` reflect what actually happened, not just
+        that the job was enqueued. Must run inside the task's tenant scope.
+        """
+        await self.update_by_id(
+            task_id,
+            last_run_at=datetime.now(timezone.utc),
+            last_status=status,
+            last_error=error,
         )

@@ -7,16 +7,32 @@ logger = logging.getLogger(__name__)
 
 
 async def _load_task(task_id: int | None):
-    """Load the AgentTask (with its m2m sources) that triggered this job, if any."""
+    """Load the AgentTask (with its m2m sources) that triggered this job, if any.
+
+    Handlers run inside the job's workspace scope, so this lookup is filtered by
+    tenant. A task that exists but lives in *another* workspace is a broken
+    cross-workspace link: returning None would let `_resolve_sources` fall back
+    to "all active sources" and quietly process the wrong workspace instead of
+    reporting the problem.
+    """
     if not task_id:
         return None
+    from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
 
-    return await (
+    task = await (
         AgentTask.objects.filter(id=task_id)
-        .prefetch_related("sources", "agent_scenario")
+        .prefetch_related("sources", "sources.platform", "sources.agent_scenario", "agent_scenario")
         .first()
     )
+    if task is not None:
+        return task
+    with tenant_scope(bypass=True):
+        other = await AgentTask.objects.get(id=task_id)
+    if other is not None:
+        raise ValueError(f"Task {task_id} belongs to workspace {other.tenant_id}, not to the job's workspace")
+    logger.warning(f"Job points at task {task_id}, which no longer exists; falling back to payload sources")
+    return None
 
 
 async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
@@ -29,14 +45,23 @@ async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
     from app.models import Source
 
     if task is not None:
-        if task.sources:
-            return list(task.sources)
-        return list(await Source.objects.filter(is_active=True))
+        # `sources` is a plain m2m, so the prefetch is not tenant-filtered: keep
+        # only the task's own workspace (link writes validate this, this is the
+        # runtime backstop for rows created before that check existed).
+        task_sources = [s for s in (task.sources or []) if s.tenant_id == task.tenant_id]
+        foreign = [s.id for s in (task.sources or []) if s.tenant_id != task.tenant_id]
+        if foreign:
+            logger.warning(f"Task {task.id} links foreign source(s) {foreign}; skipping them")
+        logger.info(f"_resolve_sources: task={task.id} has {len(task_sources)} sources: {[s.id for s in task_sources]}")
+        if task_sources:
+            return task_sources
+        logger.info("_resolve_sources: task has no sources, falling back to all active")
+        return list(await Source.objects.filter(is_active=True).select_related("platform", "agent_scenario"))
 
     source_ids = (payload or {}).get("source_ids") or []
     if source_ids:
-        return list(await Source.objects.filter(id__in=source_ids))
-    return list(await Source.objects.filter(is_active=True))
+        return list(await Source.objects.filter(id__in=source_ids).select_related("platform", "agent_scenario"))
+    return list(await Source.objects.filter(is_active=True).select_related("platform", "agent_scenario"))
 
 
 def _task_payload(task) -> dict[str, Any]:
@@ -59,6 +84,10 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     task_payload = _task_payload(task)
     monitored_users = task_payload.get("monitored_users") or []
     excluded_users = task_payload.get("excluded_users") or []
+    # Optional per-run overrides merged into each source's params (the collector
+    # reads force_refresh/cli_dates/incremental_mode from source.params).
+    force_refresh = task_payload.get("force_refresh") or payload.get("force_refresh")
+    cli_dates = task_payload.get("cli_dates") or payload.get("cli_dates")
 
     sources = await _resolve_sources(task, payload)
 
@@ -68,30 +97,58 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         external = (source.external_id or "").lstrip("@")
         return external in excluded_users
 
-    stats = {"sources": 0, "collected": 0, "failed": 0, "items": 0, "excluded": 0}
+    def _apply_params(source) -> None:
+        params = dict(source.params or {})
+        if force_refresh is not None:
+            params["force_refresh"] = bool(force_refresh)
+        if cli_dates:
+            params["cli_dates"] = cli_dates
+        source.params = params
+
+    stats = {
+        "sources": 0,
+        "collected": 0,
+        "empty": 0,
+        "error": 0,
+        "items": 0,
+        "excluded": 0,
+        "collected_sources": [],
+        "empty_sources": [],
+        "error_sources": [],
+        "excluded_sources": [],
+        "error_messages": [],
+    }
     for source in sources:
         if _is_excluded(source):
             stats["excluded"] += 1
+            stats["excluded_sources"].append(source.name)
             continue
         stats["sources"] += 1
+        _apply_params(source)
         try:
             if monitored_users:
-                result = await collector.collect_monitored_users(source, analyze=True)
+                result = await collector.collect_monitored_users(source, analyze=True, monitored_users=monitored_users)
                 if result and result.get("total_items", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["total_items"]
+                    stats["collected_sources"].append(source.name)
                 else:
-                    stats["failed"] += 1
+                    stats["empty"] += 1
+                    stats["empty_sources"].append(source.name)
             else:
                 result = await collector.collect_from_source(source)
                 if result and result.get("content_count", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["content_count"]
+                    stats["collected_sources"].append(source.name)
                 else:
-                    stats["failed"] += 1
+                    stats["empty"] += 1
+                    stats["empty_sources"].append(source.name)
         except Exception as e:
             logger.error(f"collect failed for source {source.id}: {e}", exc_info=True)
-            stats["failed"] += 1
+            stats["error"] += 1
+            stats["error_sources"].append(source.name)
+            stats["error_messages"].append(f"{source.name}: {e}")
     return stats
 
 

@@ -114,21 +114,27 @@ async def task_add(
     )
 
     if source_ids:
-        from app.core.database import async_session_maker
-        from sqlalchemy import insert
+        from app.models.managers.agent_task_manager import AgentTaskManager
 
-        from app.models.agent_task import agent_task_sources
-
-        async with async_session_maker() as session:
-            for sid in set(source_ids):
-                await session.execute(
-                    insert(agent_task_sources)
-                    .values(agent_task_id=task.id, source_id=sid)
-                    .prefix_with("ON CONFLICT DO NOTHING")
-                )
-            await session.commit()
+        # The m2m table has no tenant column, so a link written here is the
+        # only thing keeping a task out of another workspace's sources. Verify
+        # them against the task's own workspace, like the CLI and web do.
+        await _check_task_sources(source_ids, task.tenant_id)
+        await AgentTaskManager().add_sources(task.id, source_ids)
 
     return {"status": "created", "name": task.name, "next_run_at": task.next_run_at.isoformat()}
+
+
+async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
+    """Reject source ids that are missing or belong to another workspace."""
+    from app.models import Source
+
+    if not source_ids:
+        return
+    sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
+    foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
+    if foreign:
+        raise ValueError(f"Source(s) {', '.join(map(str, foreign))} belong to another workspace")
 
 
 @tool(

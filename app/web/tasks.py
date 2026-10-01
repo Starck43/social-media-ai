@@ -27,11 +27,8 @@ def _split_names(raw: str) -> list[str]:
     return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
 
 
-async def _replace_task_sources(task_id: int, source_ids: list[int]) -> None:
-    """Replace the task's m2m source links with the given set."""
-    from app.core.database import async_session_maker
-    from sqlalchemy import delete, insert
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
+async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
+    """Reject source ids that are missing or belong to another workspace.
 
     from app.models.agent_task import agent_task_sources
 
@@ -45,22 +42,25 @@ async def _replace_task_sources(task_id: int, source_ids: list[int]) -> None:
         await session.commit()
 
 
-async def enqueue_task_now(task: "AgentTask") -> None:
-    """Enqueue the task's job immediately; a one-time task is completed in the process."""
-    from app.core.tenant_context import tenant_scope
+async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: int) -> None:
+    """Replace the task's m2m source links with the given set."""
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.models.managers.job_manager import JobManager
 
-    with tenant_scope(task.tenant_id):
-        await JobManager().enqueue(
-            job_type=task.job_type,
-            payload=task.payload or {},
-            agent_task_id=task.id,
-            run_at=datetime.now(timezone.utc),
-        )
-        if task.cron_expr == "@once":
-            await AgentTaskManager().mark_triggered(task.id, None, status="ok")
-            await AgentTask.objects.update_by_id(task.id, is_active=False)
+    await _check_task_sources(source_ids, tenant_id)
+    await AgentTaskManager().set_sources(task_id, source_ids)
+
+
+async def enqueue_task_now(task: "AgentTask") -> "Job":
+    """Enqueue the task's job immediately; a one-time task is completed in the process.
+
+    Thin wrapper over `app.jobs.enqueue.enqueue_task_run` — the shared
+    implementation is also what the CLI and the sqladmin action call, so the
+    three surfaces cannot drift apart. Returns the created Job so the caller can
+    track its result (e.g. show a run-now notification once the worker finishes).
+    """
+    from app.jobs.enqueue import enqueue_task_run
+
+    return await enqueue_task_run(task)
 
 
 @router.get("")
@@ -155,10 +155,16 @@ async def task_create(
             next_run_at=next_run,
         )
         if parsed_source_ids:
-            await _replace_task_sources(task.id, parsed_source_ids)
+            await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
     if run_now:
-        await enqueue_task_now(task)
+        job = await enqueue_task_now(task)
+    try:
+        await _check_task_sources(parsed_source_ids, tenant_id)
+    except ValueError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse("/app/tasks", status_code=302)
+
         add_flash(request, "success", f"Задача «{name}» создана и запущена")
     else:
         add_flash(request, "success", f"Задача «{name}» создана")
@@ -205,9 +211,15 @@ async def task_run_now(
         add_flash(request, "error", "Задача не найдена")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    await enqueue_task_now(task)
-    add_flash(request, "success", f"Задача «{task.name}» запущена")
-    return RedirectResponse("/app/tasks", status_code=302)
+    job = await enqueue_task_now(task)
+    from app.jobs.dispatcher import run_job_now
+
+    result = await run_job_now(job.id)
+    if result and result.get("status") == "failed":
+        add_flash(request, "error", f"Задача «{task.name}» завершилась с ошибкой: {result.get('error', '?')}")
+    else:
+        add_flash(request, "success", f"Задача «{task.name}» выполнена")
+    return RedirectResponse(f"/app/tasks?job_id={job.id}", status_code=302)
 
 
 @router.post("/{task_id}")
@@ -275,12 +287,18 @@ async def task_update(
             is_active=is_active == "on",
             next_run_at=next_run,
         )
-        await _replace_task_sources(task.id, parsed_source_ids)
+        await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
     if run_now:
         updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
-        await enqueue_task_now(updated)
+        job = await enqueue_task_now(updated)
         add_flash(request, "success", f"Задача «{name}» обновлена и запущена")
+    try:
+        await _check_task_sources(parsed_source_ids, tenant_id)
+    except ValueError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse("/app/tasks", status_code=302)
+
     else:
         add_flash(request, "success", f"Задача «{name}» обновлена")
     return RedirectResponse("/app/tasks", status_code=302)

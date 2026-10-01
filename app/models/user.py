@@ -125,18 +125,20 @@ class User(Base, TimestampMixin):
     def __str__(self) -> str:
         return f"{self.username}"
 
-    def has_role(self, role: UserRoleType) -> bool:
-        """Check if user has a specific role"""
-        return self.role.codename == role.name
-
     def has_minimum_role(self, min_role: UserRoleType) -> bool:
         """Check if user has at least the specified role in hierarchy"""
         role_hierarchy = list(UserRoleType)
         try:
-            user_level = role_hierarchy.index(UserRoleType[self.role.codename.name])
-            min_level = role_hierarchy.index(min_role)
+            # `Role.codename` is mapped with the enum's sa_column, so it comes
+            # back from the DB as its string value ("ADMIN"), not as the enum
+            # member — normalise both shapes before the name lookup.
+            codename = self.role.codename
+            name = codename.name if hasattr(codename, "name") else str(codename)
+            min_name = min_role.name if hasattr(min_role, "name") else str(min_role)
+            user_level = role_hierarchy.index(UserRoleType[name])
+            min_level = role_hierarchy.index(UserRoleType[min_name])
             return user_level >= min_level
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, AttributeError):
             return False
 
 

@@ -30,7 +30,6 @@ from app.models import (
 	LLMModel,
 )
 from app.tasks.cron import cron_to_human
-from app.services.social.credentials import SETTABLE_KINDS
 from app.types import (
 	SourceType,
 	PlatformType,
@@ -58,6 +57,11 @@ class UserAdmin(BaseAdmin, model=User):
 	name = "Пользователь"
 	name_plural = "Пользователи"
 	icon = "fa fa-user"
+	# Право на смену чужого пароля — это право на изменение пользователя.
+	# Ключ — slug, который sqladmin ставит на кнопку (`@action` slugify'ит
+	# имя: `change_password` -> `change-password`).
+	action_permissions = {"change-password": ActionType.UPDATE}
+
 
 	column_list = ["id", "username", "email", "is_active", "role", "updated_at"]
 	column_labels = dict({
@@ -324,6 +328,9 @@ class PlatformAdmin(BaseAdmin, model=Platform):
 class SourceAdmin(BaseAdmin, model=Source):
 	name = "Источник"
 	name_plural = "Источники"
+
+	# Проверка источника ставит задачу сбора и пишет в карточку источника.
+	action_permissions = {"check-source": ActionType.UPDATE}
 	icon = "fa fa-rss"
 	column_list = [
 		"id",
@@ -589,6 +596,11 @@ class SourceAdmin(BaseAdmin, model=Source):
 class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 	name = "Сценарий бота"
 	name_plural = "Сценарии ботов"
+
+	action_permissions = {
+		"view-prompts": ActionType.VIEW,
+		"toggle-active": ActionType.UPDATE,
+	}
 	icon = "fa fa-robot"
 	column_list = ["id", "name", "description", "is_active", "max_tokens"]
 	column_searchable_list = ["name", "description"]
@@ -1088,6 +1100,9 @@ class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
 	# remove them, but never fabricate an analysis run.
 	can_create = False
 
+	# Просмотр разбора — то же право, что и просмотр карточки аналитики.
+	action_permissions = {"view-analysis": ActionType.VIEW}
+
 	# topic_chain_id and content_hash are machine keys kept out of the crowded list
 	column_list = ["id", "source", "analysis_date", "period_type", "llm_model", "estimated_cost", "created_at"]
 	column_searchable_list = ["source.name", "period_type", "llm_model"]
@@ -1217,6 +1232,12 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 	name = "Уведомление"
 	name_plural = "Уведомления"
 	icon = "fa fa-bell"
+
+	# Обе кнопки меняют состояние уведомления (локально и в мессенджере).
+	action_permissions = {
+		"mark-read": ActionType.UPDATE,
+		"send-to-messenger": ActionType.UPDATE,
+	}
 	column_list = ["id", "title", "notification_type", "is_read", "created_at"]
 	column_searchable_list = ["title", "notification_type"]
 	column_sortable_list = ["created_at", "is_read"]
@@ -1357,6 +1378,10 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 	name_plural = "Провайдеры LLM"
 	icon = "fa fa-server"
 
+	# Проба подключения ходит в провайдера его же ключом и тратит токены —
+	# это часть настройки, а не чтение.
+	action_permissions = {"test-connection": ActionType.CONFIGURE}
+
 	column_list = ["id", "name", "api_format", "base_url", "is_default", "is_active"]
 	column_searchable_list = ["name", "base_url"]
 	column_sortable_list = ["name", "api_format", "is_default", "is_active"]
@@ -1473,6 +1498,9 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 	name = "Модель LLM"
 	name_plural = "Модели LLM"
 	icon = "fa fa-microchip"
+
+	# Как и у провайдера: реальный вызов модели по сохранённому ключу.
+	action_permissions = {"test-model": ActionType.CONFIGURE}
 
 	column_list = [
 		"id",
@@ -1699,9 +1727,9 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 	`app.services.social.credentials` and are never displayed here.
 	"""
 
-	name = "Креды платформы"
-	name_plural = "Креды платформ"
-	icon = "fa fa-key"
+	name = "Личные креды"
+	name_plural = "Личные креды"
+	icon = "fa fa-user-lock"
 
 	column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
 	column_searchable_list = ["platform", "kind", "label"]
@@ -1712,16 +1740,8 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 	form_excluded_columns = BaseAdmin.form_excluded_columns + ["meta"]
 	form_widget_args = {
 		"secret_encrypted": {"type": "password", "placeholder": "Вставьте секрет / токен..."},
-		"label": {"placeholder": "Например: user token владельца"},
+		"label": {"placeholder": "Например: VK OAuth (PKCE)"},
 	}
-
-	form_overrides = {
-		"platform": SelectField,
-		"kind": SelectField,
-		**BaseAdmin.form_overrides,
-	}
-
-	_kind_choices = sorted({k for kinds in SETTABLE_KINDS.values() for k in kinds})
 
 	column_labels = dict(
 		{
@@ -1741,17 +1761,13 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 		"user_id": {"label": "Пользователь", "description": "ID из таблицы users"},
 		"platform": {
 			"label": "Платформа",
-			"description": "vk | telegram | max",
-			"choices": sorted(SETTABLE_KINDS),
-			"coerce": str,
+			"description": "vk | telegram",
 		},
 		"kind": {
 			"label": "Тип секрета",
-			"description": "vk: user_token (видит больше) | service_token; telegram/max: bot_token; telegram L2: api_id | api_hash | session",
-			"choices": _kind_choices,
-			"coerce": str,
+			"description": "vk: user_token; telegram L2: api_id | api_hash | session",
 		},
-		"label": {"label": "Метка", "description": "Для справки, например «user token владельца»"},
+		"label": {"label": "Метка", "description": "Для справки, например «VK OAuth (PKCE)»"},
 		"secret_encrypted": {
 			"label": "Секрет",
 			"description": "Вставьте токен открытым текстом — он будет зашифрован перед сохранением",
@@ -1837,6 +1853,9 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 	}
 
 	column_formatters_detail = {
+    # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
+    action_permissions = {"run-now": ActionType.UPDATE}
+
 		"action_type": lambda m, a: m.action_type.label if m.action_type is not None else "—",
 		"status": lambda m, a: m.status.label if m.status is not None else "—",
 	}

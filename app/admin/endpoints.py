@@ -11,11 +11,13 @@ from slowapi.util import get_remote_address
 from starlette import status
 from starlette.templating import Jinja2Templates
 
+from app.admin.authorization import require_admin_perm
 from app.admin.csrf import get_csrf_manager
 from app.core.config import settings
 from app.core.hashing import get_password_hash, generate_temporary_password, verify_password
 from app.models import User
 from app.services.user.auth import get_authenticated_user
+from app.types import ActionType
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -130,10 +132,11 @@ async def reset_password(
 
 		# Generate temporary password
 		temporary_password = generate_temporary_password()
-		user.hashed_password = get_password_hash(temporary_password)
-		user.updated_at = datetime.now()
-
-		user.save()
+		await User.objects.update_by_id(
+			user.id,
+			hashed_password=get_password_hash(temporary_password),
+			updated_at=datetime.now(),
+		)
 
 		# In production, you would send an email with a secure link
 		logger.info(f"Temporary password for {email}: {temporary_password}")
@@ -176,9 +179,10 @@ async def change_password_form_path(
 			status_code=status.HTTP_303_SEE_OTHER
 		)
 
-	# permission check
-	if not current_user.is_active and current_user.id != int(user_id):
-		raise HTTPException(status_code=403, detail="Permission denied")
+	# Permission: an operator may always change *their own* password; changing
+	# someone else's is a change to that user record and needs the right for it.
+	if current_user.id != int(user_id):
+		await require_admin_perm(request, "user", ActionType.UPDATE)
 
 	# Store the referer URL for redirect back after password change
 	referer = request.headers.get('referer', '')
@@ -288,9 +292,11 @@ async def change_password_submit_path(
 	# Perform the password update
 	try:
 		# Update password
-		current_user.hashed_password = get_password_hash(new_password),
-		current_user.updated_at = datetime.now()
-		current_user.save()
+		await User.objects.update_by_id(
+			current_user.id,
+			hashed_password=get_password_hash(new_password),
+			updated_at=datetime.now(),
+		)
 
 		del request.session["_messages"]
 
@@ -381,6 +387,12 @@ async def analytics_dashboard(request: Request):
 			status_code=status.HTTP_303_SEE_OTHER
 		)
 	
+	# The dashboard reads the analytics model from outside the sqladmin view tree,
+	# so it asks the console the same question. Placed before the `try` on
+	# purpose: a refused operator has to get a 403, not the catch-all below,
+	# which would sign them out and send them to the login form.
+	await require_admin_perm(request, "aianalytics", ActionType.VIEW)
+
 	try:
 		# Get user from session token
 		current_user = await get_authenticated_user(token=token, token_type="access")
@@ -430,6 +442,11 @@ async def topic_chains_dashboard(request: Request):
 			status_code=status.HTTP_303_SEE_OTHER
 		)
 	
+	# Same as the analytics dashboard above — and for the same reason it sits
+	# outside the `try`: the topic chains are built from the analyses, so they
+	# need the same right on the same model, and a refusal must stay a refusal.
+	await require_admin_perm(request, "aianalytics", ActionType.VIEW)
+
 	try:
 		current_user = await get_authenticated_user(token=token, token_type="access")
 		

@@ -14,8 +14,30 @@
                             <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
                         {% endfor %}
                     </select>
+                    <select name="scenario_id" onchange="this.form.submit()"
+                            class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                        <option value="">Все сценарии</option>
+                        {% for s in scenarios %}
+                            <option value="{{ s.id }}" {% if filter_scenario_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            {% elif scenarios %}
+                <form method="get" class="flex items-center gap-2">
+                    <select name="scenario_id" onchange="this.form.submit()"
+                            class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                        <option value="">Все сценарии</option>
+                        {% for s in scenarios %}
+                            <option value="{{ s.id }}" {% if filter_scenario_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
                 </form>
             {% endif %}
+            <a href="/app/vk/oauth"
+               title="Авторизуйте VK-приложение, чтобы включить сбор через персональный токен (L2)"
+               class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
+                Войти через VK ID
+            </a>
             <button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Добавить источник
@@ -83,6 +105,7 @@
                                     </button>
                                     <form method="post" action="/app/sources/{{ source.id }}/toggle" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                                         <button
                                             title="{% if source.is_active %}Деактивировать{% else %}Активировать{% endif %}"
                                             class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-slate-800">
@@ -118,6 +141,7 @@
             <p class="mt-1 text-sm text-slate-400">Укажите платформу и внешний идентификатор (ID сообщества, канала и т.д.).</p>
             <form method="post" action="/app/sources" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                 <div>
                     <label for="add-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
                     <input id="add-name" name="name" maxlength="100" placeholder="Мой источник"
@@ -175,6 +199,7 @@
             <p class="mt-1 text-sm text-slate-400">Обновите данные источника.</p>
             <form method="post" :action="'/app/sources/' + editing.id" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Название</label>
                     <input name="name" maxlength="100" x-model="editing.name"

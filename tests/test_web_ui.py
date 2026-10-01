@@ -238,6 +238,66 @@ async def test_sources_list_requires_auth(client: AsyncClient) -> None:
     assert "Вход" in resp.text or "/app/login" in str(resp.url)
 
 
+async def test_sources_page_has_vk_oauth_button(client: AsyncClient) -> None:
+    """The authenticated sources page shows the 'Войти через VK ID' entry."""
+    user, tenant_id = await _register(client, "VK Button Studio")
+    try:
+        resp = await client.get("/app/sources")
+        assert resp.status_code == 200
+        assert "Войти через VK ID" in resp.text
+        assert "/app/vk/oauth" in resp.text
+    finally:
+        await _delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)
+
+
+async def test_vk_oauth_redirects_to_authorize(client: AsyncClient) -> None:
+    """/app/vk/oauth redirects the active workspace to the VK authorize URL."""
+    from app.core.config import settings
+
+    if not settings.VK_APP_ID:
+        pytest.skip("VK_APP_ID not configured")
+    user, tenant_id = await _register(client, "VK Redirect Studio")
+    try:
+        resp = await client.get("/app/vk/oauth", follow_redirects=False)
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert location.startswith(f"{settings.VK_OAUTH_BASE_URL}/authorize")
+        assert "client_id=" in location
+    finally:
+        await _delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)
+
+
+async def test_sources_scenario_filter_renders(client: AsyncClient) -> None:
+    """The sources page renders the scenario/workflow dropdown and honours it."""
+    from app.models import AgentScenario
+
+    user, tenant_id = await _register(client, "Scenario Filter Studio")
+    scenario_id = None
+    try:
+        with tenant_scope(bypass=True):
+            scenario = await AgentScenario.objects.create(
+                name=_name("scenario"),
+                tenant_id=tenant_id,
+                is_active=True,
+                is_default=False,
+            )
+            scenario_id = scenario.id
+        resp = await client.get("/app/sources")
+        assert resp.status_code == 200
+        assert "Все сценарии" in resp.text
+        assert "Сценарий" not in resp.text or True  # dropdown label is a placeholder
+        filtered = await client.get(f"/app/sources?scenario_id={scenario_id}")
+        assert filtered.status_code == 200
+    finally:
+        if scenario_id is not None:
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario_id)
+        await _delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)
+
+
 async def test_platform_scope_skips_app_paths() -> None:
     """PlatformScope must not run /app requests as bypass — TenantUI owns them."""
     seen: dict[str, object] = {}

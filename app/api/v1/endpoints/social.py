@@ -6,10 +6,10 @@ comes from the signed `state` (workspace + PKCE verifier), verified inside
 `app.services.social.vk_oauth` before any token is exchanged.
 """
 
-from fastapi import APIRouter, HTTPException
-from starlette.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException, Request
+from starlette.responses import HTMLResponse, JSONResponse
 
-from app.services.social.vk_oauth import complete_authorization
+from app.services.social.vk_oauth import build_authorize_url, complete_authorization
 
 router = APIRouter(tags=["social"])
 
@@ -28,6 +28,25 @@ _ERROR_HTML = """
 <p style="color:#b91c1c">{error}</p>
 </body></html>
 """
+
+
+@router.get("/start")
+async def vk_oauth_start(request: Request):
+    """Initiate the VK OAuth (L2 user token) flow for the caller's workspace.
+
+    Authenticated via `ApiScopeMiddleware`; returns the authorize URL for the
+    caller to open in a browser. The public `/callback` completes the exchange
+    and stores `vk/user_token` in the caller's personal vault.
+    """
+    tenant_id = getattr(request.state, "tenant_id", None)
+    user_id = getattr(getattr(request.state, "api_user", None), "id", None)
+    if tenant_id is None or user_id is None:
+        raise HTTPException(status_code=403, detail="No active workspace")
+    try:
+        url = build_authorize_url(tenant_id, user_id=user_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse({"authorize_url": url, "tenant_id": tenant_id})
 
 
 @router.get("/callback", response_class=HTMLResponse)

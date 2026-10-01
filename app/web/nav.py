@@ -32,7 +32,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("analytics", "/app/analytics", "Аналитика"),
     NavItem("digests", "/app/digests", "Дайджесты"),
     NavItem("jobs", "/app/jobs", "Задания"),
-    NavItem("chat", "#", "Чат с агентом", ready=False),
+    NavItem("chat", "/app/chat", "Чат с агентом"),
     NavItem("settings", "#", "Настройки", ready=False),
 )
 

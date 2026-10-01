@@ -19,11 +19,21 @@ from typing import Any, Optional
 
 from app.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, tool_specs
+from app.channels.base import Inbound
 from app.core.config import settings
 from app.core.tenant_context import tenant_scope
-from app.services.tenancy.resolver import is_platform_owner, resolve_inbound, tenant_daily_cost_limit
+from app.services.tenancy.resolver import (
+    Resolution,
+    is_platform_owner,
+    resolve_inbound,
+    tenant_daily_cost_limit,
+)
 
 logger = logging.getLogger(__name__)
+
+# Chat surface for the browser UI. One session per user id, mirroring how a
+# private messenger chat maps to a conversation.
+WEB_CHANNEL = "web"
 
 
 def is_owner(inbound: Any) -> bool:
@@ -90,6 +100,60 @@ async def handle_inbound(inbound: Any) -> Optional[str]:
     # filter by tenant_id, writes are stamped with it, tools see only its data.
     with tenant_scope(resolution.tenant_id):
         return await _handle_in_tenant(inbound, resolution)
+
+
+async def handle_web_message(
+    text: str,
+    *,
+    tenant_id: int,
+    user_id: int,
+    role: str,
+) -> Optional[str]:
+    """Run one agent turn for a browser message in the given workspace.
+
+    The web UI already knows both halves of `Resolution` — `TenantUIMiddleware`
+    resolved the workspace from the web membership and the role from
+    `tenant_users` — while `resolve_inbound` only knows chats that a messenger
+    binding created. Reusing it here would force every `/app/chat` request
+    through an invite-code handshake it does not need.
+
+    Everything after the resolution is the shared path: the same session row
+    (`channel='web'`, one per user), the same confirmation gate, the same
+    daily cost cap and the same tool loop as a messenger chat. Returns the
+    reply text, or None when `text` is empty.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+
+    resolution = Resolution(
+        tenant_id=tenant_id,
+        channel=WEB_CHANNEL,
+        chat_id=str(user_id),
+        user_id=str(user_id),
+        role=role,
+    )
+    inbound = Inbound(
+        channel=WEB_CHANNEL,
+        chat_id=str(user_id),
+        user_id=str(user_id),
+        text=text,
+    )
+
+    with tenant_scope(tenant_id):
+        return await _handle_in_tenant(inbound, resolution)
+
+
+async def web_session_id(user_id: int) -> Optional[int]:
+    """The `channel='web'` agent session id for a user, if one exists yet.
+
+    Read-only: the chat page renders the transcript without creating a session
+    row for someone who has simply opened the page.
+    """
+    from app.models.managers.agent_session_manager import agent_sessions
+
+    session = await agent_sessions.get(channel=WEB_CHANNEL, chat_id=str(user_id))
+    return session.id if session is not None else None
 
 
 async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:

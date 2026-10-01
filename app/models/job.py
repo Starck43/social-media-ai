@@ -42,6 +42,10 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
     max_attempts: Mapped[int] = Column(Integer, default=settings.JOB_MAX_ATTEMPTS, nullable=False, server_default="3")
     result: Mapped[dict[str, Any]] = Column(JSON, nullable=True)
     error: Mapped[str] = Column(Text, nullable=True)
+    # USD spent on the LLM call for this job (NULL = none / unknown tariffs).
+    # Priced from llm_models tariffs by run_learn/run_reflect via the
+    # usage["cost"] block; feeds daily_cost_today().
+    llm_cost: Mapped[float | None] = Column(Float, nullable=True)
 
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager

@@ -83,7 +83,11 @@ def _clamp_confidence(value: Any) -> float:
 
 
 async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
-    """Extract durable facts/preferences from new chat turns into agent_memory."""
+    """Extract durable facts/preferences from new chat turns into agent_memory.
+
+    Returns the priced USD cost of the LLM call as ``llm_cost`` (0.0 when no
+    call was made) so the job dispatcher can persist it for the daily cap.
+    """
     from app.models import AgentMessage
     from app.models.managers.agent_memory_manager import agent_memory
 
@@ -93,12 +97,19 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
     )
     new_user_turns = sum(1 for r in rows if r.role == "user")
     if new_user_turns < max(1, int(min_messages)):
-        return {"status": "skipped", "new_user_messages": new_user_turns, "required": min_messages}
+        return {"status": "skipped", "new_user_messages": new_user_turns, "required": min_messages, "llm_cost": 0.0}
 
     transcript = _render_transcript(rows)
     if not transcript:
         await set_watermark(max(r.id for r in rows) if rows else watermark)
-        return {"status": "skipped", "reason": "empty transcript"}
+        return {"status": "skipped", "reason": "empty transcript", "llm_cost": 0.0}
+
+    from app.services.tenancy.resolver import current_daily_cost_limit, daily_cost_today
+
+    limit = await current_daily_cost_limit()
+    if limit and await daily_cost_today() >= limit:
+        logger.warning("Daily LLM cost cap reached — learn skipped")
+        return {"status": "skipped", "reason": "cost_cap", "llm_cost": 0.0}
 
     from app.services.ai.llm_client import chat_with_fallback
 
@@ -125,8 +136,9 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
         response = await chat_with_fallback(messages, max_tokens=800, temperature=0.2)
     except Exception as e:  # noqa: BLE001
         logger.error(f"learn: LLM call failed: {e}")
-        return {"status": "failed", "error": str(e)}
+        return {"status": "failed", "error": str(e), "llm_cost": 0.0}
 
+    llm_cost = float((response.get("usage") or {}).get("cost") or 0.0)
     parsed = extract_json(response.get("content") or "")
     facts = parsed.get("facts") if isinstance(parsed, dict) else None
     valid_ids = {r.id for r in rows}
@@ -153,13 +165,15 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
 
     if rows:
         await set_watermark(max(r.id for r in rows))
-    return {"status": "ok", "facts_stored": stored, "scanned_messages": len(rows)}
+    return {"status": "ok", "facts_stored": stored, "scanned_messages": len(rows), "llm_cost": llm_cost}
 
 
 async def run_reflect(dedup: bool = True) -> dict[str, Any]:
     """Weekly hygiene: merge stale/contradicting facts, weigh them by feedback.
 
     Proposes prompt-evolution advice from /bad notes but applies nothing by itself.
+    Returns the priced USD cost of the LLM call as ``llm_cost`` (0.0 when no
+    call was made) so the job dispatcher can persist it for the daily cap.
     """
     from app.models import AgentMemory
     from app.models.managers.agent_feedback_manager import agent_feedback
@@ -168,7 +182,14 @@ async def run_reflect(dedup: bool = True) -> dict[str, Any]:
     facts = list(await AgentMemory.objects.filter(AgentMemory.scope == "global"))
     notes = await agent_feedback.recent_notes("bad", limit=20)
     if not facts and not notes:
-        return {"status": "skipped", "reason": "nothing to reflect on"}
+        return {"status": "skipped", "reason": "nothing to reflect on", "llm_cost": 0.0}
+
+    from app.services.tenancy.resolver import current_daily_cost_limit, daily_cost_today
+
+    limit = await current_daily_cost_limit()
+    if limit and await daily_cost_today() >= limit:
+        logger.warning("Daily LLM cost cap reached — reflect skipped")
+        return {"status": "skipped", "reason": "cost_cap", "llm_cost": 0.0}
 
     facts_payload = [
         {
@@ -207,8 +228,9 @@ async def run_reflect(dedup: bool = True) -> dict[str, Any]:
         response = await chat_with_fallback(messages, max_tokens=900, temperature=0.1)
     except Exception as e:  # noqa: BLE001
         logger.error(f"reflect: LLM call failed: {e}")
-        return {"status": "failed", "error": str(e)}
+        return {"status": "failed", "error": str(e), "llm_cost": 0.0}
 
+    llm_cost = float((response.get("usage") or {}).get("cost") or 0.0)
     parsed = extract_json(response.get("content") or "")
     ops = parsed.get("ops") if isinstance(parsed, dict) else None
     advice = (parsed.get("prompt_advice") or "") if isinstance(parsed, dict) else ""
@@ -231,4 +253,11 @@ async def run_reflect(dedup: bool = True) -> dict[str, Any]:
                 )
                 applied["updated"] += 1
 
-    return {"status": "ok", "facts": len(facts), "bad_notes": len(notes), **applied, "prompt_advice": advice[:500]}
+    return {
+        "status": "ok",
+        "facts": len(facts),
+        "bad_notes": len(notes),
+        **applied,
+        "prompt_advice": advice[:500],
+        "llm_cost": llm_cost,
+    }

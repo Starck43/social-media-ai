@@ -134,7 +134,13 @@ async def execute_job(job: Any, handler: Callable) -> None:
     with tenant_scope(job.tenant_id):
         try:
             result = await handler(payload)
-            await jobs.mark_done(job.id, result=result)
+            llm_cost = None
+            if isinstance(result, dict) and result.get("llm_cost"):
+                try:
+                    llm_cost = float(result["llm_cost"])
+                except (TypeError, ValueError):
+                    llm_cost = None
+            await jobs.mark_done(job.id, result=result, llm_cost=llm_cost)
             logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
             # A skip is a normal no-op (already sent digest, learn below its
             # message threshold, cost cap, nothing to reflect on). It would fire

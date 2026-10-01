@@ -95,16 +95,17 @@ async def current_daily_cost_limit() -> float:
 
 
 async def daily_cost_today() -> float:
-    """USD spent today (UTC day) in the ambient scope: agent chat + digest summaries.
+    """USD spent today (UTC day) in the ambient scope: agent chat + digest summaries + learning/reflect.
 
     This is the metric `AGENT_DAILY_COST_LIMIT` (and tenant.daily_cost_limit)
-    is checked against. Both sources are tenant-scoped, so inside
+    is checked against. All three sources are tenant-scoped, so inside
     `tenant_scope(...)` the sum covers one workspace; in bypass it is global.
     """
     from app.models.managers.agent_message_manager import agent_messages
     from app.models.managers.digest_run_manager import digest_runs
+    from app.models.managers.job_manager import JobManager
 
-    return await agent_messages.cost_today() + await digest_runs.cost_today()
+    return await agent_messages.cost_today() + await digest_runs.cost_today() + await JobManager().cost_today()
 
 
 def _chat_kind(inbound: Any) -> str:

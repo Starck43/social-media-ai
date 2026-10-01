@@ -110,9 +110,19 @@ class JobManager(BaseManager["Job"]):
 
         await AgentTaskManager().record_result(job.agent_task_id, status=status, error=error)
 
-    async def mark_done(self, job_id: int, result: Optional[dict] = None) -> None:
+    async def cost_today(self, now: Optional[datetime] = None) -> float:
+        """Total USD spent on learning/reflect LLM calls today (UTC day) — the daily cap check."""
+        now = now or datetime.now(timezone.utc)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        rows = await self.filter(created_at__gte=day_start)
+        return sum(float(row.llm_cost or 0.0) for row in rows)
+
+    async def mark_done(self, job_id: int, result: Optional[dict] = None, llm_cost: Optional[float] = None) -> None:
         job = await self.get(id=job_id)
-        await self.update_by_id(job_id, status="done", result=result, error=None)
+        updates: dict = {"status": "done", "result": result, "error": None}
+        if llm_cost is not None:
+            updates["llm_cost"] = float(llm_cost)
+        await self.update_by_id(job_id, **updates)
         if job:
             await self._record_task_result(job, status="ok")
 

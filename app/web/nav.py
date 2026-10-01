@@ -33,7 +33,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("digests", "/app/digests", "Дайджесты"),
     NavItem("jobs", "/app/jobs", "Задания"),
     NavItem("chat", "/app/chat", "Чат с агентом"),
-    NavItem("settings", "#", "Настройки", ready=False),
+    NavItem("settings", "/app/settings", "Настройки"),
 )
 
 # Sections that fit the fixed mobile bar. Capped deliberately: seven full labels

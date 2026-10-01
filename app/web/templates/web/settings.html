@@ -1,0 +1,266 @@
+{% extends "web/base.html" %}
+{% block title %}Настройки — AI Monitor{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl">
+    <h1 class="text-2xl font-semibold tracking-tight">Настройки</h1>
+    <p class="mt-1 text-sm text-slate-400">Воркспейс, команда, личные ключи и каналы доставки.</p>
+
+    {% set tab_labels = {
+        'workspace': 'Воркспейс',
+        'team': 'Команда',
+        'credentials': 'Мои ключи',
+        'channels': 'Каналы',
+    } %}
+    <div class="mt-6 flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+        {% for key, label in tab_labels.items() %}
+            <a href="/app/settings?tab={{ key }}"
+               class="rounded-lg px-3 py-1.5 text-sm {% if tab == key %}bg-slate-800 font-medium text-white{% else %}text-slate-400 hover:bg-slate-900{% endif %}">
+                {{ label }}
+            </a>
+        {% endfor %}
+    </div>
+
+    {# ── workspace ───────────────────────────────────────────────────── #}
+    {% if tab == 'workspace' %}
+        <form method="post" action="/app/settings/workspace" class="mt-6 max-w-lg space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            {% if is_superuser and tenant %}<input type="hidden" name="tenant_id" value="{{ tenant.id }}">{% endif %}
+            <div>
+                <label for="ws-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                <input id="ws-name" name="name" value="{{ tenant.name if tenant else '' }}" required maxlength="100"
+                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+            </div>
+            <div>
+                <label for="ws-tz" class="mb-1 block text-sm text-slate-300">Часовой пояс</label>
+                <input id="ws-tz" name="timezone" value="{{ tenant.timezone if tenant else 'Europe/Moscow' }}" required
+                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-500">Расписания задач считаются в этой зоне.</p>
+            </div>
+            <div>
+                <label for="ws-cost" class="mb-1 block text-sm text-slate-300">Лимит LLM-расхода в сутки, $</label>
+                <input id="ws-cost" name="daily_cost_limit" value="{{ tenant.daily_cost_limit if tenant else '5.0' }}" required
+                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-500">Достигнут — чат, дайджесты и обучение пропускают вызов модели.</p>
+            </div>
+            {% if perms.can('tenant', 'update') %}
+                <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                    Сохранить
+                </button>
+            {% else %}
+                <p class="text-sm text-slate-500">Изменять настройки воркспейса может владелец.</p>
+            {% endif %}
+        </form>
+
+        {% if tenant %}
+            <dl class="mt-6 grid gap-4 sm:grid-cols-3">
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Идентификатор</dt>
+                    <dd class="mt-1 font-mono text-sm text-slate-300">{{ tenant.slug }}</dd>
+                </div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Лимит источников</dt>
+                    <dd class="mt-1 text-3xl font-semibold">{{ tenant.max_sources }}</dd>
+                </div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">План</dt>
+                    <dd class="mt-1 text-3xl font-semibold">{{ tenant.plan }}</dd>
+                </div>
+            </dl>
+        {% endif %}
+        <p class="mt-4 text-xs text-slate-600">
+            Модели и провайдеры LLM настраиваются оператором в консоли администратора — это общий для всех воркспейсов парк.
+</p>
+
+    {# ── team ────────────────────────────────────────────────────────── #}
+    {% elif tab == 'team' %}
+        <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                        <th class="px-5 py-3">Участник</th>
+                        <th class="px-5 py-3">Роль</th>
+                        {% if perms.can('tenant', 'update') %}<th class="px-5 py-3 text-right">Действия</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in memberships %}
+                        <tr class="border-b border-slate-800/50 last:border-0">
+                            <td class="px-5 py-3">
+                                <span class="text-slate-200">{{ member_names.get(m.user_id, '—') }}</span>
+                                {% if m.user_id == user.id %}
+                                    <span class="ml-2 text-xs text-slate-500">это вы</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3 text-slate-400">{{ role_labels.get(m.role, m.role) }}</td>
+                            {% if perms.can('tenant', 'update') %}
+                                <td class="px-5 py-3 text-right">
+                                    <form method="post" action="/app/settings/members/{{ m.id }}/role"
+                                          class="inline-flex items-center gap-2">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <select name="role" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
+                                            {% for value, label in role_labels.items() %}
+                                                <option value="{{ value }}" {% if value == m.role %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-900">Сохранить</button>
+                                    </form>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-4 text-xs text-slate-600">
+            Личный ключ участника может использоваться источником этого воркспейса — поэтому состав команды определяет, чьими токенами идёт сбор.
+        </p>
+
+    {# ── credentials ─────────────────────────────────────────────────── #}
+    {% elif tab == 'credentials' %}
+<div class="mt-6 max-w-lg rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Добавить ключ</h2>
+            <form method="post" action="/app/settings/credentials" class="mt-4 space-y-4">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <div>
+                    <label for="cr-kind" class="mb-1 block text-sm text-slate-300">Что сохраняем</label>
+                    <select id="cr-kind" name="kind" required
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        {% for platform, kinds in self_service_kinds.items() %}
+                            {% for kind, label in kinds %}
+                                <option value="{{ platform }}::{{ kind }}">{{ label }}</option>
+                            {% endfor %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="cr-secret" class="mb-1 block text-sm text-slate-300">Значение</label>
+                    <textarea id="cr-secret" name="secret" required rows="3"
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                              placeholder="Токен или содержимое файла сессии"></textarea>
+                    <p class="mt-1 text-xs text-slate-500">Хранится зашифрованным и не показывается снова.</p>
+                </div>
+                <div>
+                    <label for="cr-label" class="mb-1 block text-sm text-slate-300">Подпись (опционально)</label>
+                    <input id="cr-label" name="label" maxlength="100"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                </div>
+                <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                    Сохранить ключ
+                </button>
+            </form>
+        </div>
+
+        <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                        <th class="px-5 py-3">Ключ</th>
+                        <th class="px-5 py-3">Платформа</th>
+                        <th class="px-5 py-3">Состояние</th>
+                        <th class="px-5 py-3 text-right">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in credentials %}
+                        <tr class="border-b border-slate-800/50 last:border-0">
+                            <td class="px-5 py-3">
+                                <span class="text-slate-200">{{ row.label or row.kind }}</span>
+                                <span class="ml-2 font-mono text-xs text-slate-500">{{ row.kind }}</span>
+                            </td>
+                            <td class="px-5 py-3 text-slate-400">{{ row.platform }}</td>
+                            <td class="px-5 py-3">
+                                {% if row.is_active %}
+                                    <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активен</span>
+                                {% else %}
+                                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">отключён</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3 text-right">
+                                {% if row.is_active %}
+                                    <form method="post" action="/app/settings/credentials/{{ row.id }}/disable" class="inline">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <button class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-900">Отключить</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="px-5 py-8 text-center text-slate-500">
+                                Личных ключей пока нет. Некоторые источники требуют токен владельца.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-4 text-xs text-slate-600">
+            Это только ваши ключи. Источник использует ключ участника, выбранного в его настройках, иначе — владельца воркспейса.
+        </p>
+{# ── channels ────────────────────────────────────────────────────── #}
+    {% else %}
+        <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                        <th class="px-5 py-3">Канал</th>
+                        <th class="px-5 py-3">Активен</th>
+                        <th class="px-5 py-3">Дайджесты</th>
+                        <th class="px-5 py-3 text-right">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ch in channels %}
+                        <tr class="border-b border-slate-800/50 last:border-0">
+                            <td class="px-5 py-3">
+                                <span class="text-slate-200">{{ ch.channel_type or ch.platform or ch.channel_id }}</span>
+                                {% if ch.title %}<span class="ml-2 text-xs text-slate-500">{{ ch.title }}</span>{% endif %}
+                            </td>
+                            <td class="px-5 py-3">
+                                {% if ch.is_active %}
+                                    <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">да</span>
+                                {% else %}
+                                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">нет</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3">
+                                {% if ch.is_digest_target %}
+                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">получает</span>
+                                {% else %}
+                                    <span class="text-xs text-slate-500">нет</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-5 py-3 text-right">
+                                <form method="post" action="/app/settings/channels/{{ ch.id }}" class="inline-flex items-center gap-2">
+                                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                    <label class="inline-flex items-center gap-2 text-xs text-slate-400">
+                                        <input type="checkbox" name="is_digest_target" {% if ch.is_digest_target %}checked{% endif %}
+                                               {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                                               class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                                        получать дайджесты
+                                    </label>
+                                    {% if perms.can('tenant', 'update') %}
+                                        <button class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-900">Сохранить</button>
+                                    {% endif %}
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="px-5 py-8 text-center text-slate-500">
+                                Каналы не привязаны. Их добавляет оператор — после привязки агент отвечает в личном чате, а дайджесты приходят сюда.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-4 text-xs text-slate-600">
+            Токены ботов (`bot_token`) настраиваются оператором в консоли администратора — это конфигурация развёртывания, а не воркспейса.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

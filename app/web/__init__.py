@@ -16,6 +16,7 @@ from .jobs import router as jobs_router
 from .notifications import router as notifications_router
 from .onboarding import router as onboarding_router
 from .scenarios import router as scenarios_router
+from .settings import router as settings_router
 from .sources import router as sources_router
 from .tasks import router as tasks_router
 from .vk import router as vk_router
@@ -30,6 +31,7 @@ web_router.include_router(jobs_router)
 web_router.include_router(notifications_router)
 web_router.include_router(onboarding_router)
 web_router.include_router(scenarios_router)
+web_router.include_router(settings_router)
 web_router.include_router(sources_router)
 web_router.include_router(tasks_router)
 web_router.include_router(vk_router)

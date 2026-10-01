@@ -1,0 +1,318 @@
+"""Workspace settings `/app/settings` (docs/design/ui.md §4.8).
+
+Four tabs, one page. What belongs here and what stays in `/admin` is not a
+preference — it follows `docs/TENANCY.md`:
+
+* **workspace** — the profile of the current workspace, and of nothing else.
+* **team** — memberships in `tenant_users`; a personal secret is only usable by
+  a member, so this tab and the credentials tab describe the same trust circle.
+* **credentials** — the caller's *own* rows in `user_credentials`. Self-service
+  by design: the vault is keyed by `users.id`, so writing your own token needs
+  no new authorisation model. A user only ever sees and writes their own
+  secrets, never another member's.
+* **channels** — where digests and the agent are delivered.
+
+Deliberately absent: `llm_providers` / `llm_models`. The fleet is global and
+one-per-deployment, so it stays in the sqladmin console with its connection
+tests — a workspace must not be able to repoint the model the runtime uses.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import RedirectResponse
+
+from app.models.tenant import Tenant
+from app.types import ActionType
+
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render
+
+router = APIRouter(prefix="/settings")
+
+BACK = "/app/settings"
+
+TABS: tuple[str, ...] = ("workspace", "team", "credentials", "channels")
+
+# Personal kinds a user may store themselves. `bot_token`, `app_id` and
+# `client_secret` are per-deployment config, so they are not here: they live in
+# the environment (see `app/services/social/credentials.py::ENV_FALLBACK`).
+SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "vk": (("user_token", "VK: пользовательский токен"),),
+    "telegram": (("session", "Telegram: файл сессии MTProto"),),
+}
+
+ROLE_LABELS = {
+    "owner": "Владелец",
+    "admin": "Администратор",
+    "member": "Участник",
+    "viewer": "Наблюдатель",
+}
+
+
+def _tab_of(request: Request) -> str:
+    tab = request.query_params.get("tab") or "workspace"
+    return tab if tab in TABS else TABS[0]
+
+
+@router.get("")
+@router.get("/")
+async def settings_page(request: Request):
+    """One page, four tabs; the query string carries the active tab."""
+    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
+
+    tenant_id = request.state.tenant_id
+    user = getattr(request.state, "web_user", None)
+    user_id = getattr(user, "id", None)
+
+    tenant = await tenants.get(id=tenant_id)
+    memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
+    member_names = {}
+    member_ids = [m.user_id for m in memberships if m.user_id is not None]
+    if member_ids:
+        from app.models.user import User
+
+        rows = await User.objects.filter(id__in=member_ids)
+        member_names = {row.id: row.username for row in rows}
+
+    # Only the caller's own vault rows. `user_credentials` is not tenant-scoped,
+    # so the filter is by user id — never "the workspace's credentials".
+    credentials = []
+    if user_id is not None:
+        from app.models.managers.user_credential_manager import user_credentials
+
+        credentials = sorted(
+            await user_credentials.filter(user_id=user_id),
+            key=lambda row: (row.platform, row.kind),
+        )
+
+    channels = await TenantChannelManager().filter(tenant_id=tenant_id)
+
+    return render(
+        request,
+        "web/settings.html",
+        section="settings",
+        tab=_tab_of(request),
+        tenant=tenant,
+        memberships=memberships,
+        member_names=member_names,
+        credentials=credentials,
+        channels=channels,
+        self_service_kinds=SELF_SERVICE_KINDS,
+        role_labels=ROLE_LABELS,
+        action_types=ActionType.choices(),
+    )
+
+
+@router.post("/workspace")
+async def workspace_update(
+    request: Request,
+    name: str = Form(...),
+    timezone: str = Form(...),
+    daily_cost_limit: str = Form(...),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Rename the current workspace and set its schedule timezone and cost cap."""
+    tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "tenant", "update", back=BACK)
+    if denied is not None:
+        return denied
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+
+    # `action_tenant_id` is what makes this safe for a superuser: it resolves the
+    # workspace the form was rendered for, not the one in the session.
+    if await tenants.get(id=tenant_id) is None:
+        add_flash(request, "error", "Воркспейс не найден")
+        return RedirectResponse(BACK, status_code=302)
+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        add_flash(request, "error", f"Неизвестная таймзона: {timezone}")
+        return RedirectResponse(BACK, status_code=302)
+
+    try:
+        limit = float(daily_cost_limit)
+    except ValueError:
+        add_flash(request, "error", "Лимит должен быть числом")
+        return RedirectResponse(BACK, status_code=302)
+    if limit < 0:
+        add_flash(request, "error", "Лимит не может быть отрицательным")
+        return RedirectResponse(BACK, status_code=302)
+
+    await tenants.update_by_id(
+        tenant_id,
+        name=name.strip()[:100],
+        timezone=timezone,
+        daily_cost_limit=limit,
+    )
+    add_flash(request, "success", "Настройки воркспейса сохранены")
+    return RedirectResponse(BACK, status_code=302)
+
+
+@router.post("/credentials")
+async def credential_store(
+    request: Request,
+    kind: str = Form(...),
+    secret: str = Form(...),
+    label: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+):
+    """Store one of the caller's own personal secrets.
+
+    No permission gate on purpose: a row here is keyed by `users.id`, so a user
+    writes only their own vault and needs no right to do it. What *does* need a
+    right is using someone else's — that is `owner.py::resolve_source_owner`.
+
+    `kind` arrives as `platform::kind` from a single `<select>`: a platform with
+    two secret kinds (telegram today) cannot be expressed as a flat list, and
+    two coupled selects would have to be kept in sync in the browser.
+    """
+    user = getattr(request.state, "web_user", None)
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        add_flash(request, "error", "Только для вошедшего пользователя")
+        return RedirectResponse(BACK, status_code=302)
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    platform, _, kind = kind.partition("::")
+    kinds = dict(SELF_SERVICE_KINDS.get(platform.strip().lower(), ()))
+    if not kind or kind not in kinds:
+        # An unknown kind is refused rather than stored: the vault is also the
+        # fallback for `bot_token` / `app_id`, and this form must not become a
+        # second way to write deployment config.
+        add_flash(request, "error", f"Ключ '{kind}' нельзя задать из интерфейса")
+        return RedirectResponse(BACK, status_code=302)
+
+    if not secret.strip():
+        add_flash(request, "error", "Значение не может быть пустым")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.user_credential_manager import user_credentials
+
+    await user_credentials.store(
+        user_id=user_id,
+        platform=platform.strip().lower(),
+        kind=kind,
+        secret=secret.strip(),
+        label=label.strip()[:100] or kinds[kind],
+    )
+    add_flash(request, "success", f"Сохранено: {kinds[kind]}")
+    return RedirectResponse(f"{BACK}?tab=credentials", status_code=302)
+
+
+@router.post("/credentials/{credential_id}/disable")
+async def credential_disable(
+    request: Request,
+    credential_id: int,
+    token: str = Form("", alias="_csrf"),
+):
+    """Deactivate one of the caller's own rows; the row is kept for audit."""
+    user = getattr(request.state, "web_user", None)
+    user_id = getattr(user, "id", None)
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.user_credential_manager import user_credentials
+
+    # `id` and `user_id` in one predicate: possession of the row id must not be
+    # enough to edit a row that belongs to somebody else.
+    row = await user_credentials.get(id=credential_id, user_id=user_id)
+    if row is None:
+        add_flash(request, "error", "Ключ не найден")
+        return RedirectResponse(BACK, status_code=302)
+
+    await user_credentials.update_by_id(row.id, is_active=False)
+    add_flash(request, "success", f"Ключ «{row.label or row.kind}» отключён")
+    return RedirectResponse(f"{BACK}?tab=credentials", status_code=302)
+
+
+@router.post("/members/{membership_id}/role")
+async def membership_role(
+    request: Request,
+    membership_id: int,
+    role: str = Form(...),
+    token: str = Form("", alias="_csrf"),
+):
+    """Change a member's workspace role.
+
+    Two invariants the admin console cannot enforce for us: the caller must
+    belong to this workspace, and the last owner cannot be demoted — a
+    workspace with no owner has nobody who may manage it at all, so it would
+    be unreachable rather than merely restricted.
+    """
+    tenant_id = request.state.tenant_id
+
+    denied = guard_web(request, "tenant", "update", back=BACK)
+    if denied is not None:
+        return denied
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenant_users
+
+    # Scoped by `tenant_id`: knowing a row id from another workspace changes nothing.
+    membership = await tenant_users.get(id=membership_id, tenant_id=tenant_id)
+    if membership is None:
+        add_flash(request, "error", "Участник не найден")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+    new_role = role.strip().lower()
+    if new_role not in ROLE_LABELS:
+        add_flash(request, "error", f"Неизвестная роль: {role}")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+    if membership.role == "owner" and new_role != "owner":
+        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.role == "owner"]
+        if len(owners) <= 1:
+            add_flash(request, "error", "Владелец должен остаться хотя бы один")
+            return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+    await tenant_users.update_by_id(membership.id, role=new_role)
+    add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/channels/{channel_id}")
+async def channel_update(
+    request: Request,
+    channel_id: int,
+    is_digest_target: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+):
+    """Toggle whether a bound channel receives the daily digest."""
+    tenant_id = request.state.tenant_id
+
+    denied = guard_web(request, "tenant", "update", back=BACK)
+    if denied is not None:
+        return denied
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import TenantChannelManager
+
+    channel = await TenantChannelManager().get(id=channel_id, tenant_id=tenant_id)
+    if channel is None:
+        add_flash(request, "error", "Канал не найден")
+        return RedirectResponse(f"{BACK}?tab=channels", status_code=302)
+
+    await TenantChannelManager().update_by_id(channel.id, is_digest_target=is_digest_target == "on")
+    add_flash(request, "success", "Настройка канала сохранена")
+    return RedirectResponse(f"{BACK}?tab=channels", status_code=302)

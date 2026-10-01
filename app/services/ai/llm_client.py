@@ -373,22 +373,19 @@ class LLMClientFactory:
 # ──────────────────────────────────────────────────────────────
 
 
+async def _llm_models(query) -> list[LLMModel]:
+    """Load models with their provider attached.
+
+    `prefetch_related` is not optional: the factory and the fallback ordering
+    both read `model.provider` after the session is gone.
+    """
+    return list(await query.prefetch_related("provider"))
+
+
 async def chat_with_fallback(
     messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
 ) -> dict[str, Any]:
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.core.database import new_session
-
-    async with new_session() as db:
-        r = await db.execute(
-            select(LLMModel)
-            .options(selectinload(LLMModel.provider))
-            .where(LLMModel.is_active == True)
-            .order_by(LLMModel.id)
-        )
-        models = r.scalars().unique().all()
+    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
     text_models = [m for m in models if _cap_text(m)]
     text_models.sort(key=lambda m: (not m.provider.is_default, m.id))
@@ -410,33 +407,19 @@ async def chat_with_fallback(
 
 
 async def resolve_model() -> Optional[LLMModel]:
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
+    if settings.AGENT_MODEL:
+        m = await _llm_models(LLMModel.objects.filter(name=settings.AGENT_MODEL))
+        m = m[0] if m else None
+        if m:
+            return m
+        logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
 
-    from app.core.database import new_session
-
-    async with new_session() as db:
-        if settings.AGENT_MODEL:
-            r = await db.execute(
-                select(LLMModel).options(selectinload(LLMModel.provider)).where(LLMModel.name == settings.AGENT_MODEL)
-            )
-            m = r.scalar_one_or_none()
-            if m:
-                return m
-            logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
-
-        r = await db.execute(
-            select(LLMModel)
-            .options(selectinload(LLMModel.provider))
-            .where(LLMModel.is_active == True)
-            .order_by(LLMModel.is_default.desc(), LLMModel.id)
-        )
-        models = r.scalars().unique().all()
-        for m in models:
-            if _cap_text(m):
-                return m
-        logger.error("No active text LLM model available")
-        return None
+    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.is_default.desc(), LLMModel.id))
+    for m in models:
+        if _cap_text(m):
+            return m
+    logger.error("No active text LLM model available")
+    return None
 
 
 # ──────────────────────────────────────────────────────────────

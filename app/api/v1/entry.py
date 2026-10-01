@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import text
 
-from app.core.database import get_db
-from app.models import User
+from app.models import Permission, User
 from app.services.user.auth import get_authenticated_user
 
 from app.api.v1.endpoints import (
@@ -23,12 +20,21 @@ router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 router.include_router(llm_providers.router, prefix="/llm", tags=["llm"])
 
 
-# Keep the test endpoints for backward compatibility
+# Keep the test endpoints for backward compatibility.
+# The probe is a real ORM read against `Permission` (a global model, so it needs
+# no tenant context) instead of raw `SELECT`s on a session: same connectivity
+# signal, but it goes through the manager layer and cannot drift out of sync
+# with it. The previous version also crashed, awaiting a sync `Session`.
 @router.get("/test-db", include_in_schema=False)
-async def test_database(db: Session = Depends(get_db)):
-	result = db.execute(text("SELECT version()"))
-	version = result.scalar()
-	return {"database": "connected", "version": version}
+async def test_database():
+    try:
+        permission_count = await Permission.objects.count()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection error: {str(exc)}",
+        )
+    return {"database": "connected", "permissions": permission_count}
 
 
 @router.get("/test-auth", include_in_schema=False)
@@ -37,11 +43,10 @@ async def test_auth(current_user: User = Depends(get_authenticated_user)):
 
 
 @router.get("/health", tags=["Health"])
-async def health_check(db: Session = Depends(get_db)):
+async def health_check():
 	"""Health check endpoint"""
 	try:
-		# Check database connection
-		db.execute(text("SELECT 1"))
+		await Permission.objects.count()
 		return {
 			"status": "ok",
 			"database": "connected"

@@ -5,10 +5,8 @@ from datetime import date, timedelta
 from typing import Optional, List, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Source, AIAnalytics, Platform, Notification
-from app.core.database import get_db
 from app.schemas.dashboard import (
 	DashboardStats,
 	SourceSummary,
@@ -750,7 +748,6 @@ async def get_sentiment_trends_aggregate(
 	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 	group_by: str = Query('day', description="Group by: day, week"),
-	session: AsyncSession = Depends(get_db),
 ):
 	"""
 	Get aggregated sentiment trends over time.
@@ -758,7 +755,7 @@ async def get_sentiment_trends_aggregate(
 	Returns daily/weekly sentiment averages with distribution.
 	"""
 	
-	aggregator = ReportAggregator(session=session)
+	aggregator = ReportAggregator()
 	trends = await aggregator.get_sentiment_trends(
 		source_id=source_id,
 		scenario_id=scenario_id,
@@ -779,7 +776,6 @@ async def get_top_topics_aggregate(
 	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 	limit: int = Query(10, ge=1, le=50, description="Max topics to return"),
-	session: AsyncSession = Depends(get_db),
 ):
 	"""
 	Get top topics/keywords with sentiment and examples.
@@ -787,7 +783,7 @@ async def get_top_topics_aggregate(
 	Returns most mentioned topics with average sentiment scores.
 	"""
 	
-	aggregator = ReportAggregator(session=session)
+	aggregator = ReportAggregator()
 	topics = await aggregator.get_top_topics(
 		source_id=source_id,
 		scenario_id=scenario_id,
@@ -807,7 +803,6 @@ async def get_llm_provider_stats_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
 	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
-	session: AsyncSession = Depends(get_db),
 ):
 	"""
 	Get LLM provider usage statistics and costs.
@@ -815,7 +810,7 @@ async def get_llm_provider_stats_aggregate(
 	Returns provider breakdown with token usage and estimated costs.
 	"""
 	
-	aggregator = ReportAggregator(session=session)
+	aggregator = ReportAggregator()
 	stats = await aggregator.get_llm_provider_stats(
 		source_id=source_id,
 		scenario_id=scenario_id,
@@ -830,7 +825,6 @@ async def get_content_mix_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
 	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
-	session: AsyncSession = Depends(get_db),
 ):
 	"""
 	Get content type distribution (text/image/video).
@@ -838,7 +832,7 @@ async def get_content_mix_aggregate(
 	Returns percentage breakdown of analyzed media types.
 	"""
 	
-	aggregator = ReportAggregator(session=session)
+	aggregator = ReportAggregator()
 	mix = await aggregator.get_content_mix(
 		source_id=source_id,
 		scenario_id=scenario_id,
@@ -853,7 +847,6 @@ async def get_engagement_metrics_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
 	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
-	session: AsyncSession = Depends(get_db),
 ):
 	"""
 	Get engagement metrics (reactions, comments).
@@ -861,7 +854,7 @@ async def get_engagement_metrics_aggregate(
 	Returns average engagement rates per post.
 	"""
 	
-	aggregator = ReportAggregator(session=session)
+	aggregator = ReportAggregator()
 	metrics = await aggregator.get_engagement_metrics(
 		source_id=source_id,
 		scenario_id=scenario_id,

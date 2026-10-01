@@ -17,6 +17,7 @@ from app.api.v1 import entry
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.tenant_context import PlatformScopeMiddleware
+from app.models import Permission
 from app.web import web_router
 from app.web.middleware import TenantUIMiddleware
 
@@ -115,10 +116,12 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    # Более надежная проверка подключения к БД
+    # Probe through the manager layer: a real ORM read against a global model
+    # (Permission needs no tenant context). The previous version called
+    # `conn.execute("SELECT 1")` on the async engine without awaiting it, so
+    # the coroutine never ran and the check passed even with the database down.
     try:
-        with async_engine.connect() as conn:
-            conn.execute("SELECT 1")
+        await Permission.objects.count()
         db_status = "connected"
     except Exception:
         db_status = "disconnected"

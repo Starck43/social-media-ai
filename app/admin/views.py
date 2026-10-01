@@ -1595,10 +1595,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		await super().after_model_change(data, model, is_created, request)
 
 		if model.is_default:
-			objects_to_update = await LLMModel.objects.filter(provider_id=model.provider_id).exclude(id=model.id).all()
-			for obj in objects_to_update:
-				obj.is_default = False
-				obj.save()
+			# Only one default model per provider: clear the siblings in one
+			# statement instead of loading and re-saving each one (which went
+			# through the legacy sync `Base.save()`).
+			await LLMModel.objects.filter(provider_id=model.provider_id).exclude(id=model.id).update(
+				is_default=False
+			)
 
 	@action(name="test-model", label="🧪 Тестировать модель", add_in_list=True, add_in_detail=True)
 	async def test_model_action(self, request: Request):

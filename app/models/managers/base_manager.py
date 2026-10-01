@@ -42,6 +42,19 @@ def prefetch(
     return Prefetch(path=path, queryset=queryset, filters=filters, criteria=criteria or tuple())
 
 
+def relation_path_parts(relation: str) -> list[str]:
+    """Split a relation path into its segments, accepting both spellings.
+
+    `select_related` nested with Django's `"source__platform"` while
+    `prefetch_related` nested with SQLAlchemy's `"role.permissions"`, and each
+    silently ignored the other's spelling: the eager load simply did not happen
+    and the caller met a `DetachedInstanceError` much later, far from the typo.
+    Both spellings now mean the same thing in both methods, and a path that does
+    not resolve raises at the call site instead of loading nothing.
+    """
+    return [part for part in relation.replace(".", "__").split("__") if part]
+
+
 class QuerySet(Generic[M]):
     """
     Lazy query builder supporting method chaining and awaiting.
@@ -62,6 +75,10 @@ class QuerySet(Generic[M]):
         offset_value: Optional[int] = None,
         eager_loads: Optional[list[str | QueryableAttribute[Any]]] = None,
         prefetch_loads: Optional[list[str | QueryableAttribute[Any] | Prefetch]] = None,
+        join_specs: Optional[list[tuple[Any, Any, Any]]] = None,
+        group_by_clauses: Optional[list[Any]] = None,
+        havings: Optional[list[ColumnElement[bool]]] = None,
+        select_columns: Optional[Sequence[Any]] = None,
     ) -> None:
         self._manager = manager
         self._session = session
@@ -72,6 +89,14 @@ class QuerySet(Generic[M]):
         self._offset_value = offset_value
         self._eager_loads = eager_loads or []
         self._prefetch_loads = prefetch_loads or []
+        # (target, onclause, is_outer) triples, applied in order before the
+        # where-clause so a join may reference columns from earlier joins.
+        self._join_specs: list[tuple[Any, Any, bool]] = list(join_specs or [])
+        self._group_by_clauses: list[Any] = list(group_by_clauses or [])
+        self._havings: list[ColumnElement[bool]] = list(havings or [])
+        # When set, the SELECT list is replaced with these columns/labelled
+        # aggregates instead of whole model instances (aggregate/rollup reads).
+        self._select_columns: Optional[Sequence[Any]] = list(select_columns) if select_columns is not None else None
 
     def _clone(self, **overrides: Any) -> "QuerySet[M]":
         """Create a copy of this QuerySet with optional overrides."""
@@ -99,6 +124,18 @@ class QuerySet(Generic[M]):
             or []
         )
         session: AsyncSession | None = cast(Optional[AsyncSession], overrides.get("session", self._session))
+        join_specs: list[tuple[Any, Any, bool]] = list(
+            cast(Optional[list[tuple[Any, Any, bool]]], overrides.get("join_specs", self._join_specs)) or []
+        )
+        group_by_clauses: list[Any] = list(
+            cast(Optional[list[Any]], overrides.get("group_by_clauses", self._group_by_clauses)) or []
+        )
+        havings: list[ColumnElement[bool]] = list(
+            cast(Optional[list[ColumnElement[bool]]], overrides.get("havings", self._havings)) or []
+        )
+        select_columns: Optional[Sequence[Any]] = cast(
+            Optional[Sequence[Any]], overrides.get("select_columns", self._select_columns)
+        )
 
         return QuerySet(
             manager=self._manager,
@@ -110,6 +147,10 @@ class QuerySet(Generic[M]):
             offset_value=offset_value,
             eager_loads=eager_loads,
             prefetch_loads=prefetch_loads,
+            join_specs=join_specs,
+            group_by_clauses=group_by_clauses,
+            havings=havings,
+            select_columns=select_columns,
         )
 
     def filter(self, *criterion: ColumnElement[bool], **kwargs: Any) -> "QuerySet[M]":
@@ -203,6 +244,60 @@ class QuerySet(Generic[M]):
         new_prefetch = list(self._prefetch_loads) + list(relations)
         return self._clone(prefetch_loads=new_prefetch)
 
+    def join(
+        self,
+        *targets: Any,
+        onclause: Optional[ColumnElement[bool]] = None,
+        is_outer: bool = False,
+    ) -> "QuerySet[M]":
+        """Add an explicit JOIN so related rows can be filtered/aggregated.
+
+        Without it a read that needs another table had to open its own session
+        and hand-build `select(...).join(...)` — which is exactly how callers
+        slipped past the tenant guard. Chained joins apply in order.
+
+        `onclause` may be passed either by keyword or positionally as the second
+        argument (Django/SQLAlchemy style).
+
+        Examples:
+                        qs.join(Source, AIAnalytics.source_id == Source.id)
+                        qs.join(Source).filter(Source.agent_scenario_id == sid)
+        """
+        targets, onclause = self._split_join_args(targets, onclause)
+        specs = list(self._join_specs) + [(target, onclause, is_outer) for target in targets]
+        return self._clone(join_specs=specs)
+
+    @staticmethod
+    def _split_join_args(
+        targets: tuple[Any, ...], onclause: Optional[ColumnElement[bool]]
+    ) -> tuple[tuple[Any, ...], Optional[ColumnElement[bool]]]:
+        """Allow `join(Target, cond)` alongside `join(Target, onclause=cond)`."""
+        if onclause is None and len(targets) == 2 and isinstance(targets[1], ColumnElement):
+            return (targets[0],), cast(ColumnElement[bool], targets[1])
+        return targets, onclause
+
+    def outerjoin(self, *targets: Any, onclause: Optional[ColumnElement[bool]] = None) -> "QuerySet[M]":
+        """Add a LEFT OUTER JOIN — keeps parent rows without a match (rollups)."""
+        return self.join(*targets, onclause=onclause, is_outer=True)
+
+    def group_by(self, *clauses: Any) -> "QuerySet[M]":
+        """Group rows, normally combined with `select(func.count(...))`."""
+        return self._clone(group_by_clauses=list(self._group_by_clauses) + list(clauses))
+
+    def having(self, *criterion: ColumnElement[bool]) -> "QuerySet[M]":
+        """Filter grouped rows (aggregate conditions)."""
+        return self._clone(havings=list(self._havings) + list(criterion))
+
+    def values(self, *columns: Any) -> "QuerySet[M]":
+        """Select explicit columns/aggregates instead of whole model rows.
+
+        Read the result with `rows()` / `first_row()` / `scalar()`.
+
+        Examples:
+                        total = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar()
+        """
+        return self._clone(select_columns=list(columns))
+
     def to_select(self) -> Select[tuple[M]]:
         """
         Convert QuerySet to SQLAlchemy Select statement.
@@ -231,6 +326,59 @@ class QuerySet(Generic[M]):
         async with self._get_session() as session:
             result = await session.execute(stmt)
             return result.scalars().unique().all()
+
+    async def rows(self) -> Sequence[Any]:
+        """Execute a `values()`-style query and return raw `Row` tuples.
+
+        The aggregate/rollup read path: joins, `group_by` and labelled
+        aggregates live on the queryset, so the caller never needs a session.
+        """
+        stmt = await self._build_statement()
+        async with self._get_session() as session:
+            result = await session.execute(stmt)
+            return result.all()
+
+    async def first_row(self) -> Optional[Any]:
+        """Execute a `values()`-style query and return the first `Row`, or None."""
+        stmt = await self._build_statement(apply_pagination=False)
+        stmt = stmt.limit(1)
+        async with self._get_session() as session:
+            result = await session.execute(stmt)
+            return result.first()
+
+    async def scalar(self, default: Any = None) -> Any:
+        """First column of the first row (aggregate reads), or `default`."""
+        row = await self.first_row()
+        if row is None:
+            return default
+        try:
+            value = row[0]
+        except (IndexError, TypeError):
+            return default
+        return default if value is None else value
+
+    async def update(self, **values: Any) -> int:
+        """Bulk UPDATE every row matching the current filters. Returns the count.
+
+        A single statement instead of loading rows and re-saving them; the
+        tenant guard and all `filter()` criteria apply unchanged.
+        """
+        from sqlalchemy import update as sa_update
+
+        conditions: list[ColumnElement[bool]] = list(self._criterion)
+        if self._kw_filters:
+            conditions.extend(LookupCompiler.compile_filters(self._manager.model, self._kw_filters))
+        if self._join_specs:
+            raise ValueError("update() does not support joins — filter without them")
+
+        stmt: Any = sa_update(self._manager.model)
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        async with self._get_session() as session:
+            result: Any = await session.execute(stmt.values(**values))
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def first(self) -> Optional[M]:
         """Execute a query and return first result or None."""
@@ -430,7 +578,18 @@ class QuerySet(Generic[M]):
 
         This is a synchronous version for use in admin views where async is not supported.
         """
-        stmt = select(self._manager.model)
+        if self._select_columns is not None:
+            stmt = select(*self._select_columns)
+        else:
+            stmt = select(self._manager.model)
+
+        # Apply explicit joins first, so the where-clause may reference columns
+        # coming from a joined table.
+        for target, onclause, is_outer in self._join_specs:
+            if onclause is not None:
+                stmt = stmt.join(target, onclause, isouter=is_outer)
+            else:
+                stmt = stmt.join(target, isouter=is_outer)
 
         # Apply a criterion (expressions)
         if self._criterion:
@@ -442,43 +601,26 @@ class QuerySet(Generic[M]):
             if conditions:
                 stmt = stmt.where(and_(*conditions))
 
-        # Apply eager loading (joinedload)
-        if self._eager_loads:
+        # Grouping and aggregate filtering
+        if self._group_by_clauses:
+            stmt = stmt.group_by(*self._group_by_clauses)
+
+        if self._havings:
+            stmt = stmt.having(and_(*self._havings))
+
+        # Apply eager loading (joinedload). Only valid for whole-model rows:
+        # an explicit `values()` list is not an entity result set.
+        if self._eager_loads and self._select_columns is None:
             for rel in self._eager_loads:
-                if isinstance(rel, str):
-                    # Support nested relationships with '__' syntax (Django-style)
-                    # e.g., "source__platform" → joinedload(Model.source).joinedload(Source.platform)
-                    if "__" in rel:
-                        parts = rel.split("__")
-                        current_model: Any = self._manager.model
-                        first_rel = getattr(current_model, parts[0], None)
-                        if first_rel is None:
-                            continue
-                        first_attr = cast(QueryableAttribute[Any], first_rel)
-                        join_option = joinedload(first_attr)
-                        if hasattr(first_attr.property, "mapper"):
-                            current_model = first_attr.property.mapper.class_
+                # Spelling and typo handling live in one place: a name the model
+                # does not have raises there instead of being skipped here.
+                eager_option = self._manager.build_eager_option(rel)
+                if eager_option is not None:
+                    stmt = stmt.options(eager_option)
 
-                        for part in parts[1:]:
-                            next_rel = getattr(current_model, part, None)
-                            if next_rel is None:
-                                break
-                            next_attr = cast(QueryableAttribute[Any], next_rel)
-                            join_option = join_option.joinedload(next_attr)
-                            if hasattr(next_attr.property, "mapper"):
-                                current_model = next_attr.property.mapper.class_
-
-                        stmt = stmt.options(join_option)
-                    else:
-                        # Simple relationship name
-                        rel_attr = cast(QueryableAttribute[Any], getattr(self._manager.model, rel, None))
-                        if rel_attr is not None:
-                            stmt = stmt.options(joinedload(rel_attr))
-                elif isinstance(rel, (QueryableAttribute, InstrumentedAttribute)):
-                    stmt = stmt.options(joinedload(rel))
-
-        # Apply prefetch loading (selectinload)
-        if self._prefetch_loads:
+        # Apply prefetch loading (selectinload) — whole-model rows only, for the
+        # same reason as joinedload above.
+        if self._prefetch_loads and self._select_columns is None:
             for pref in self._prefetch_loads:
                 pref_option = self._manager.build_prefetch_option(pref)
                 if pref_option is not None:
@@ -707,6 +849,28 @@ class BaseManager(Generic[M]):
         """
         return self.get_queryset(session).prefetch_related(*relations)
 
+    def join(
+        self, *targets: Any, onclause: Optional[ColumnElement[bool]] = None, is_outer: bool = False, **kwargs: Any
+    ) -> QuerySet[M]:
+        """Start a queryset with an explicit JOIN (see `QuerySet.join`).
+
+        Examples:
+                        await Source.objects.outerjoin(Task, ...).values(...).rows()
+        """
+        return self.get_queryset(kwargs.pop("session", None)).join(*targets, onclause=onclause, is_outer=is_outer)
+
+    def outerjoin(self, *targets: Any, onclause: Optional[ColumnElement[bool]] = None, **kwargs: Any) -> QuerySet[M]:
+        """Start a queryset with a LEFT OUTER JOIN (see `QuerySet.outerjoin`)."""
+        return self.get_queryset(kwargs.pop("session", None)).outerjoin(*targets, onclause=onclause)
+
+    def group_by(self, *clauses: Any, **kwargs: Any) -> QuerySet[M]:
+        """Start a grouped queryset (see `QuerySet.group_by`)."""
+        return self.get_queryset(kwargs.pop("session", None)).group_by(*clauses)
+
+    def values(self, *columns: Any, **kwargs: Any) -> QuerySet[M]:
+        """Start a queryset with an explicit column/aggregate list (see `QuerySet.values`)."""
+        return self.get_queryset(kwargs.pop("session", None)).values(*columns)
+
     # Direct execution methods
 
     async def get(self, session: AsyncSession | None = None, **kwargs: Any) -> Optional[M]:
@@ -921,9 +1085,117 @@ class BaseManager(Generic[M]):
         """
         return await self.get_queryset(session).raw_sql(sql, params)
 
+    async def aggregate_rows(self, stmt: Any, session: AsyncSession | None = None) -> Sequence[Any]:
+        """Run a `Select` built by the caller and return raw `Row` tuples.
+
+        The escape hatch for association tables, which have columns but no
+        model to hang a queryset on. Model reads must go through
+        `filter()/values()` instead so the tenant guard still applies.
+        """
+        async with self._get_owned_session(session) as db:
+            result = await db.execute(stmt)
+            return result.all()
+
+    # Association-table helpers
+
+    async def _replace_secondary(
+        self,
+        table: Any,
+        key_column: str,
+        key_value: Any,
+        target_column: str,
+        target_values: Sequence[Any],
+        session: AsyncSession | None = None,
+    ) -> int:
+        """Rewrite a secondary (m2m) association table for one owner row.
+
+        Association tables have no model, so they cannot go through the
+        queryset; this is the single place that writes them. Callers used to
+        open their own session and hand-roll delete+insert-on-conflict, which
+        duplicated the same logic in three places.
+        """
+        from sqlalchemy import delete as sa_delete, insert as sa_insert
+
+        async with self._get_owned_session(session) as db:
+            await db.execute(sa_delete(table).where(table.c[key_column] == key_value))
+            values = sorted({int(v) for v in target_values})
+            if values:
+                await db.execute(
+                    sa_insert(table),
+                    [{key_column: key_value, target_column: v} for v in values],
+                )
+            await db.commit()
+            return len(values)
+
+    async def _add_secondary(
+        self,
+        table: Any,
+        key_column: str,
+        key_value: Any,
+        target_column: str,
+        target_values: Sequence[Any],
+        session: AsyncSession | None = None,
+    ) -> int:
+        """Add links to a secondary table, skipping pairs that already exist."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        values = sorted({int(v) for v in target_values})
+        if not values:
+            return 0
+
+        async with self._get_owned_session(session) as db:
+            await db.execute(
+                pg_insert(table)
+                .values([{key_column: key_value, target_column: v} for v in values])
+                .on_conflict_do_nothing()
+            )
+            await db.commit()
+            return len(values)
+
+    @asynccontextmanager
+    async def _get_owned_session(self, session: AsyncSession | None = None):
+        """Yield `session` when given, otherwise a session that is committed."""
+        if session is not None:
+            yield session
+        else:
+            async with async_session_maker() as owned:
+                try:
+                    yield owned
+                    await owned.commit()
+                except Exception:
+                    await owned.rollback()
+                    raise
+
     # Helper methods for building queries
+    @staticmethod
+    def resolve_relation_chain(model: Type[Any], path: str) -> list[QueryableAttribute[Any]] | None:
+        """The relationship attributes a relation path names, or None.
+
+        None means "this path is not a chain of relationships on this model" —
+        a typo, or a column where a relationship is expected. Callers raise with
+        the offending name; they must not skip the load quietly.
+        """
+        chain: list[QueryableAttribute[Any]] = []
+        current: Type[Any] = model
+        for part in relation_path_parts(path):
+            attr = getattr(current, part, None)
+            mapper = getattr(getattr(attr, "property", None), "mapper", None)
+            if attr is None or mapper is None:
+                return None
+            chain.append(cast(QueryableAttribute[Any], attr))
+            current = mapper.class_
+        return chain or None
+
+    @staticmethod
+    def _unknown_relation(relation: str, method: str) -> str:
+        return (
+            f"{method}({relation!r}): no such relation on this model. Nested paths "
+            f"may be written 'a.b' or 'a__b'; an unknown name raises instead of "
+            f"quietly loading nothing."
+        )
+
     def build_prefetch_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any] | Prefetch):
-        """Create selectinload option for a relation or Prefetch descriptor."""
+        """Create the selectinload option for a relation path or Prefetch descriptor."""
         if isinstance(relation, Prefetch):
             return self.build_prefetch_from_descriptor(relation)
 
@@ -931,11 +1203,34 @@ class BaseManager(Generic[M]):
             return selectinload(relation)
 
         if isinstance(relation, str):
-            if "." in relation:
-                return self.build_nested_selectinload(self.model, relation)
-            rel_attr = cast(QueryableAttribute[Any], getattr(self.model, relation, None))
-            if rel_attr is not None and hasattr(rel_attr, "property"):
-                return selectinload(rel_attr)
+            chain = self.resolve_relation_chain(self.model, relation)
+            if chain is None:
+                raise ValueError(self._unknown_relation(relation, "prefetch_related"))
+            option = selectinload(chain[0])
+            for attr in chain[1:]:
+                option = option.selectinload(attr)
+            return option
+
+        return None
+
+    def build_eager_option(self, relation: str | QueryableAttribute[Any] | InstrumentedAttribute[Any]):
+        """Create the joinedload option for a relation path.
+
+        The joinedload twin of `build_prefetch_option`, with the same spelling
+        rules: `"source__platform"` and `"source.platform"` both resolve, and a
+        name the model does not have raises instead of being skipped.
+        """
+        if isinstance(relation, (QueryableAttribute, InstrumentedAttribute)):
+            return joinedload(relation)
+
+        if isinstance(relation, str):
+            chain = self.resolve_relation_chain(self.model, relation)
+            if chain is None:
+                raise ValueError(self._unknown_relation(relation, "select_related"))
+            option = joinedload(chain[0])
+            for attr in chain[1:]:
+                option = option.joinedload(attr)
+            return option
 
         return None
 
@@ -950,14 +1245,22 @@ class BaseManager(Generic[M]):
             attr = path
             mapper = cast(Type[Any], attr.property.mapper.class_)
         elif isinstance(path, str):
-            if "." in path:
+            if len(relation_path_parts(path)) > 1:
                 if filters or criteria or queryset:
-                    raise ValueError("Filtered prefetch is not supported for dotted relation paths")
-                return self.build_nested_selectinload(self.model, path)
-            path_attr = getattr(self.model, path, None)
-            if path_attr is None:
-                return None
-            attr = cast(QueryableAttribute[Any], path_attr)
+                    raise ValueError("Filtered prefetch is not supported for nested relation paths")
+                chain = self.resolve_relation_chain(self.model, path)
+                if chain is None:
+                    raise ValueError(self._unknown_relation(path, "prefetch_related"))
+                option = selectinload(chain[0])
+                for nested in chain[1:]:
+                    option = option.selectinload(nested)
+                return option
+            chain = self.resolve_relation_chain(self.model, path)
+            if chain is None:
+                # Was a silent `return None`: a typo'd name loaded nothing and
+                # the failure surfaced later as a DetachedInstanceError.
+                raise ValueError(self._unknown_relation(path, "prefetch_related"))
+            attr = chain[0]
             mapper = cast(Type[Any], attr.property.mapper.class_)
         else:
             return None
@@ -984,30 +1287,6 @@ class BaseManager(Generic[M]):
             return selectinload(prefetch_attr)
 
         return selectinload(attr)
-
-    @staticmethod
-    def build_nested_selectinload(model: Type[M], path: str):
-        """Build nested selectinload for dotted paths like 'role.permissions'."""
-        parts = path.split(".")
-        first_attr = getattr(model, parts[0], None)
-        if first_attr is None:
-            return None
-        attr = cast(QueryableAttribute[Any], first_attr)
-        if not hasattr(attr, "property"):
-            return None
-
-        option = selectinload(attr)
-        current_cls = cast(Type[Any], attr.property.mapper.class_)
-
-        for part in parts[1:]:
-            next_attr = getattr(current_cls, part, None)
-            if next_attr is None:
-                return option
-            nested_attr = cast(QueryableAttribute[Any], next_attr)
-            option = option.selectinload(nested_attr)
-            current_cls = cast(Type[Any], nested_attr.property.mapper.class_)
-
-        return option
 
 
 class LookupCompiler:

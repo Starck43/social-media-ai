@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import ClassVar, TypeVar, TYPE_CHECKING
 
 from sqlalchemy import func, DateTime, MetaData, ForeignKey
-from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase, Session
+from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase
 
 from app.core.config import settings
 
@@ -69,60 +69,3 @@ class Base(DeclarativeBase):
 		objects: ClassVar[BaseManager]
 	else:
 		objects = None
-
-	def save(self, db: Session | None = None, **kwargs) -> T:
-		"""
-		Update model attributes and save to database.
-		This is a custom save method to avoid conflicts with SQLAlchemy's internals.
-
-		Args:
-			db: Optional SQLAlchemy session. If not provided, will create a new session.
-			**kwargs: Attributes to update
-
-		Returns:
-			The updated model instance
-		"""
-		for key, value in kwargs.items():
-			if hasattr(self, key) and not key.startswith("_"):
-				setattr(self, key, value)
-
-		if db is None:
-			from app.core.database import SessionLocal
-
-			session = SessionLocal()
-			try:
-				session.add(self)
-				session.commit()
-				session.refresh(self)
-			finally:
-				session.close()
-		else:
-			db.add(self)
-			db.commit()
-			db.refresh(self)
-		return self
-
-	def delete(self, db: Session | None = None) -> bool:
-		"""
-		Delete the model instance from the database.
-
-		Args:
-			db: Optional SQLAlchemy session. If not provided, will create a new session.
-
-		Returns:
-			bool: True if deletion successful
-		"""
-		if db is None:
-			from app.core.database import SessionLocal
-
-			session = SessionLocal()
-			try:
-				session.delete(self)
-				session.commit()
-				return True
-			finally:
-				session.close()
-		else:
-			db.delete(self)
-			db.commit()
-			return True

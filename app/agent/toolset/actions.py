@@ -19,11 +19,9 @@ from app.agent.tools import tool
     },
 )
 async def actions_log(limit: int = 10) -> dict[str, Any]:
-    from app.core.database import async_session_maker
     from app.models import BotAction
 
-    async with async_session_maker() as db:
-        actions = await BotAction.objects.filter().order_by(BotAction.created_at.desc()).limit(limit)
+    actions = await BotAction.objects.order_by(BotAction.created_at.desc()).limit(limit)
 
     return {
         "actions": [
@@ -59,7 +57,6 @@ async def actions_log(limit: int = 10) -> dict[str, Any]:
     confirm=True,
 )
 async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
-    from app.core.database import async_session_maker
     from app.models import BotAction, AgentScenario, Platform, Source
     from app.models.managers.bot_action_manager import BotActionManager
     from app.services.social.guards import extract_target_user, guards_checker
@@ -67,53 +64,52 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
 
     manager = BotActionManager()
 
-    async with async_session_maker() as db:
-        action = await BotAction.objects.get(id=action_id)
-        if not action:
-            return {"success": False, "error": f"Action {action_id} not found"}
+    action = await BotAction.objects.get(id=action_id)
+    if not action:
+        return {"success": False, "error": f"Action {action_id} not found"}
 
-        if action.status != BotActionStatus.PENDING:
-            return {"success": False, "error": f"Action is not pending: {action.status.name}"}
+    if action.status != BotActionStatus.PENDING:
+        return {"success": False, "error": f"Action is not pending: {action.status.name}"}
 
-        scenario = await AgentScenario.objects.get(id=action.agent_scenario_id)
-        if not scenario:
-            return {"success": False, "error": "Scenario not found"}
+    scenario = await AgentScenario.objects.get(id=action.agent_scenario_id)
+    if not scenario:
+        return {"success": False, "error": "Scenario not found"}
 
-        # Check guards (target user from payload feeds blacklist/whitelist)
-        allowed, reason = await guards_checker.check(scenario, target_user=extract_target_user(action.payload))
-        if not allowed:
-            return {"success": False, "error": f"Guards blocked: {reason}"}
+    # Check guards (target user from payload feeds blacklist/whitelist)
+    allowed, reason = await guards_checker.check(scenario, target_user=extract_target_user(action.payload))
+    if not allowed:
+        return {"success": False, "error": f"Guards blocked: {reason}"}
 
-        # Execute action based on platform
-        source = await Source.objects.get(id=action.source_id)
-        if not source:
-            return {"success": False, "error": "Source not found"}
+    # Execute action based on platform
+    source = await Source.objects.get(id=action.source_id)
+    if not source:
+        return {"success": False, "error": "Source not found"}
 
-        platform = await Platform.objects.get(id=source.platform_id)
+    platform = await Platform.objects.get(id=source.platform_id)
 
-        result = await _execute_action(source, platform, action, dry_run)
+    result = await _execute_action(source, platform, action, dry_run)
 
-        if result.get("success"):
-            if dry_run:
-                # Dry run: approve with system user (agent)
-                await manager.approve_action(action_id=action_id, user_id=None)
-                new_status = BotActionStatus.APPROVED
-            else:
-                # Real execution: mark as executed
-                await manager.mark_executed(action_id=action_id, result=result)
-                new_status = BotActionStatus.EXECUTED
+    if result.get("success"):
+        if dry_run:
+            # Dry run: approve with system user (agent)
+            await manager.approve_action(action_id=action_id, user_id=None)
+            new_status = BotActionStatus.APPROVED
         else:
-            await manager.mark_failed(action_id=action_id, error=result.get("error", "Unknown error"))
-            new_status = BotActionStatus.FAILED
+            # Real execution: mark as executed
+            await manager.mark_executed(action_id=action_id, result=result)
+            new_status = BotActionStatus.EXECUTED
+    else:
+        await manager.mark_failed(action_id=action_id, error=result.get("error", "Unknown error"))
+        new_status = BotActionStatus.FAILED
 
-        return {
-            "success": result.get("success", False),
-            "action_id": action.id,
-            "status": new_status.name,
-            "dry_run": dry_run,
-            "payload": action.payload,
-            "result": result,
-        }
+    return {
+        "success": result.get("success", False),
+        "action_id": action.id,
+        "status": new_status.name,
+        "dry_run": dry_run,
+        "payload": action.payload,
+        "result": result,
+    }
 
 
 async def _execute_action(source, platform, action, dry_run: bool) -> dict[str, Any]:

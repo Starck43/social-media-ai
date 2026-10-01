@@ -14,11 +14,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.database import new_session
-from app.models import AIAnalytics, AgentScenario, Source
+from app.models import AgentScenario, AIAnalytics, Source
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -35,11 +31,41 @@ class ReportAggregator:
     - LLM cost and efficiency analysis
     - Content type distribution
     - Engagement metrics
+
+    Every read goes through `AIAnalytics.objects`, so the tenant guard in
+    `BaseManager` applies: inside `tenant_scope(...)` a report covers exactly
+    one workspace, and only an explicit operator bypass is global. These
+    aggregations used to build `select()` statements on a session of their
+    own, which is why they needed a hand-written tenant clause to stay safe.
     """
 
-    def __init__(self, session: Optional[AsyncSession] = None):
-        """Initialize aggregator with database session."""
-        self.session = session
+    @staticmethod
+    def _analytics_query(
+        days: int,
+        source_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
+    ):
+        """Analytics rows for the report, scoped to the ambient tenant.
+
+        `tenant_id` narrows further (a superuser previewing another workspace);
+        it never widens what the ambient scope already allows.
+        """
+        qs = AIAnalytics.objects.filter(analysis_date__gte=date.today() - timedelta(days=days))
+
+        if source_id:
+            qs = qs.filter(source_id=source_id)
+
+        if scenario_id:
+            # Filter by the scenario attached to the analytics' source.
+            qs = qs.join(Source, AIAnalytics.source_id == Source.id).filter(
+                Source.agent_scenario_id == scenario_id
+            )
+
+        if tenant_id is not None:
+            qs = qs.filter(tenant_id=tenant_id)
+
+        return qs.order_by(AIAnalytics.analysis_date.asc())
 
     async def get_sentiment_trends(
         self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7, group_by: str = "day"
@@ -56,26 +82,8 @@ class ReportAggregator:
         Returns:
                 List of trend points with date, avg sentiment, counts
         """
-        session = self.session or new_session()
-
         try:
-            # Build query
-            query = select(AIAnalytics).where(AIAnalytics.analysis_date >= date.today() - timedelta(days=days))
-
-            # Apply filters
-            if source_id:
-                query = query.where(AIAnalytics.source_id == source_id)
-
-            if scenario_id:
-                # Join with Source to filter by scenario
-                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
-
-            # Order by date
-            query = query.order_by(AIAnalytics.analysis_date.asc())
-
-            # Execute
-            result = await session.execute(query)
-            analytics = result.scalars().all()
+            analytics = await self._analytics_query(days, source_id, scenario_id)
 
             # Aggregate by date
             trends = []
@@ -114,12 +122,14 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting sentiment trends: {e}", exc_info=True)
             return []
-        finally:
-            if not self.session:
-                await session.close()
 
     async def get_top_topics(
-        self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7, limit: int = 10
+        self,
+        source_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
+        days: int = 7,
+        limit: int = 10,
+        tenant_id: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         """
         Get top topics/keywords from analyses.
@@ -129,25 +139,13 @@ class ReportAggregator:
                 scenario_id: Filter by scenario
                 days: Amount days to look back
                 limit: Max amount topics to return
+                tenant_id: Scope to a tenant (via AIAnalytics.tenant_id)
 
         Returns:
                 List of topics with counts, sentiment, example posts
         """
-        session = self.session or new_session()
-
         try:
-            # Build query
-            query = select(AIAnalytics).where(AIAnalytics.analysis_date >= date.today() - timedelta(days=days))
-
-            if source_id:
-                query = query.where(AIAnalytics.source_id == source_id)
-
-            if scenario_id:
-                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
-
-            # Execute
-            result = await session.execute(query)
-            analytics = result.scalars().all()
+            analytics = await self._analytics_query(days, source_id, scenario_id, tenant_id)
 
             # Extract and count topics
             topic_counter = Counter()
@@ -191,9 +189,6 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting top topics: {e}", exc_info=True)
             return []
-        finally:
-            if not self.session:
-                await session.close()
 
     async def get_llm_provider_stats(
         self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 30
@@ -209,21 +204,8 @@ class ReportAggregator:
         Returns:
                 Dict with provider stats, costs, token usage
         """
-        session = self.session or new_session()
-
         try:
-            # Build query
-            query = select(AIAnalytics).where(AIAnalytics.analysis_date >= date.today() - timedelta(days=days))
-
-            if source_id:
-                query = query.where(AIAnalytics.source_id == source_id)
-
-            if scenario_id:
-                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
-
-            # Execute
-            result = await session.execute(query)
-            analytics = result.scalars().all()
+            analytics = await self._analytics_query(days, source_id, scenario_id)
 
             # Aggregate by provider
             provider_stats = defaultdict(
@@ -284,12 +266,13 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting LLM provider stats: {e}", exc_info=True)
             return {"providers": {}, "summary": {}}
-        finally:
-            if not self.session:
-                await session.close()
 
     async def get_content_mix(
-        self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7
+        self,
+        source_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
     ) -> dict[str, Any]:
         """
         Get content type distribution (text/image/video).
@@ -298,25 +281,13 @@ class ReportAggregator:
                 source_id: Filter by specific source
                 scenario_id: Filter by scenario
                 days: Number of days to look back
+                tenant_id: Scope to a tenant (via AIAnalytics.tenant_id)
 
         Returns:
                 Dict with counts and percentages per media type
         """
-        session = self.session or new_session()
-
         try:
-            # Build query
-            query = select(AIAnalytics).where(AIAnalytics.analysis_date >= date.today() - timedelta(days=days))
-
-            if source_id:
-                query = query.where(AIAnalytics.source_id == source_id)
-
-            if scenario_id:
-                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
-
-            # Execute
-            result = await session.execute(query)
-            analytics = result.scalars().all()
+            analytics = await self._analytics_query(days, source_id, scenario_id, tenant_id)
 
             # Count media types
             media_counts = Counter()
@@ -339,9 +310,6 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting content mix: {e}", exc_info=True)
             return {"media_types": {}, "total_analyses": 0, "total_media_items": 0}
-        finally:
-            if not self.session:
-                await session.close()
 
     async def get_engagement_metrics(
         self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7
@@ -357,21 +325,8 @@ class ReportAggregator:
         Returns:
                 Dict with avg reactions, comments, engagement rates
         """
-        session = self.session or new_session()
-
         try:
-            # Build query
-            query = select(AIAnalytics).where(AIAnalytics.analysis_date >= date.today() - timedelta(days=days))
-
-            if source_id:
-                query = query.where(AIAnalytics.source_id == source_id)
-
-            if scenario_id:
-                query = query.join(Source).where(Source.agent_scenario_id == scenario_id)
-
-            # Execute
-            result = await session.execute(query)
-            analytics = result.scalars().all()
+            analytics = await self._analytics_query(days, source_id, scenario_id)
 
             # Extract engagement data
             total_reactions = 0
@@ -399,9 +354,6 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting engagement metrics: {e}", exc_info=True)
             return {}
-        finally:
-            if not self.session:
-                await session.close()
 
     # Helper methods for data extraction
 

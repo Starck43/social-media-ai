@@ -114,3 +114,4 @@ class PlatformScopeMiddleware:
             return
         with tenant_scope(bypass=True):
             await self.app(scope, receive, send)
+

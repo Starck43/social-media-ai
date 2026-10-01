@@ -57,11 +57,11 @@ class UserAdmin(BaseAdmin, model=User):
 	name = "Пользователь"
 	name_plural = "Пользователи"
 	icon = "fa fa-user"
+
 	# Право на смену чужого пароля — это право на изменение пользователя.
 	# Ключ — slug, который sqladmin ставит на кнопку (`@action` slugify'ит
 	# имя: `change_password` -> `change-password`).
 	action_permissions = {"change-password": ActionType.UPDATE}
-
 
 	column_list = ["id", "username", "email", "is_active", "role", "updated_at"]
 	column_labels = dict({
@@ -328,10 +328,10 @@ class PlatformAdmin(BaseAdmin, model=Platform):
 class SourceAdmin(BaseAdmin, model=Source):
 	name = "Источник"
 	name_plural = "Источники"
+	icon = "fa fa-rss"
 
 	# Проверка источника ставит задачу сбора и пишет в карточку источника.
 	action_permissions = {"check-source": ActionType.UPDATE}
-	icon = "fa fa-rss"
 	column_list = [
 		"id",
 		"tenant",
@@ -596,12 +596,12 @@ class SourceAdmin(BaseAdmin, model=Source):
 class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 	name = "Сценарий бота"
 	name_plural = "Сценарии ботов"
+	icon = "fa fa-robot"
 
 	action_permissions = {
 		"view-prompts": ActionType.VIEW,
 		"toggle-active": ActionType.UPDATE,
 	}
-	icon = "fa fa-robot"
 	column_list = ["id", "name", "description", "is_active", "max_tokens"]
 	column_searchable_list = ["name", "description"]
 	column_sortable_list = ["name", "is_active", "max_tokens"]
@@ -635,6 +635,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
 	form_excluded_columns = BaseAdmin.form_excluded_columns + [
 		"sources",
+		"agent_tasks",
 		"llm_mapping",
 		# Exclude these fields — we handle them manually in custom template
 		"content_types",
@@ -1722,9 +1723,11 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 	"""
 	Personal (per-user) platform credentials: the L2 vault.
 
-	The form accepts the secret in plaintext and encrypts it before saving, so an
-	operator never sees ciphertext. Secrets themselves are resolved by
-	`app.services.social.credentials` and are never displayed here.
+	Secrets that belong to a *person* (VK L2 `user_token`, Telegram MTProto
+	`api_id`/`api_hash`/`session`), keyed by `users.id` and shared across the
+	workspaces that user belongs to. The form takes the secret in plaintext and
+	encrypts it before saving, so an operator never sees ciphertext; secrets are
+	resolved by `app.services.social.credentials` and never displayed here.
 	"""
 
 	name = "Личные креды"
@@ -1853,9 +1856,6 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 	}
 
 	column_formatters_detail = {
-    # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
-    action_permissions = {"run-now": ActionType.UPDATE}
-
 		"action_type": lambda m, a: m.action_type.label if m.action_type is not None else "—",
 		"status": lambda m, a: m.status.label if m.status is not None else "—",
 	}
@@ -1865,6 +1865,9 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     name = "Задача"
     name_plural = "Задачи"
     icon = "fa fa-clock"
+
+    # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
+    action_permissions = {"run-now": ActionType.UPDATE}
 
     column_list = ["id", "tenant", "name", "job_type", "cron_expr", "timezone", "is_active", "next_run_at", "last_run_at", "last_status"]
     column_searchable_list = ["name", "job_type"]
@@ -1994,26 +1997,18 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     async def run_now_action(self, request: Request):
         """Enqueue the selected task's job immediately; completes a @once task."""
         from app.core.tenant_context import tenant_scope
-        from app.models.managers.agent_task_manager import AgentTaskManager
-        from app.models.managers.job_manager import JobManager
+        from app.jobs.enqueue import enqueue_task_run
 
         pks = request.query_params.get("pks", "")
         if not pks:
             return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
         task_id = int(pks.split(",")[0])
 
+        # Operator console: read the task across workspaces (bypass), then act
+        # inside the task's own workspace — the shared helper does the scoping.
         with tenant_scope(bypass=True):
             task = await AgentTask.objects.get(id=task_id)
         if task:
-            with tenant_scope(task.tenant_id):
-                await JobManager().enqueue(
-                    job_type=task.job_type,
-                    payload=task.payload or {},
-                    agent_task_id=task.id,
-                    run_at=datetime.now(timezone.utc),
-                )
-                if task.cron_expr == "@once":
-                    await AgentTaskManager().mark_triggered(task.id, None, status="ok")
-                    await AgentTask.objects.update_by_id(task.id, is_active=False)
+            await enqueue_task_run(task)
             request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» запущена"}
         return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)

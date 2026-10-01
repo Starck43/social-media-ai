@@ -17,8 +17,8 @@ from app.api.v1 import entry
 from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
-from app.core.tenant_context import PlatformScopeMiddleware
 from app.models import Permission
+from app.core.tenant_context import PlatformScopeMiddleware
 from app.web import web_router
 from app.web.middleware import TenantUIMiddleware
 

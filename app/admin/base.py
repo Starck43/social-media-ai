@@ -1,8 +1,11 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from sqladmin import ModelView
 from sqladmin.fields import SelectField
+from starlette.requests import Request
+
+from app.types import ActionType
 
 from .formatters import bool_formatter, date_formatter, datetime_formatter, empty_formatter
 
@@ -15,6 +18,24 @@ class BaseAdmin(ModelView):
     page_size = 50
     page_size_options = [25, 50, 100, 200]
     save_as = True
+
+    # Which `ActionType` each custom `@action` of this view needs, by the slug
+    # the `action` decorator generates. Unlisted actions default to `update`
+    # (they are mutations by nature); a pure read declares `view` explicitly, a
+    # probe against a provider declares `configure`. `AdminAuthorizationBackend`
+    # reads this when it turns the operator's role into the grants of the
+    # console, so the button and its endpoint share one answer.
+    action_permissions: ClassVar[dict[str, ActionType]] = {}
+
+    @staticmethod
+    def get_admin_user(request: Request) -> Any | None:
+        """The operator on this request.
+
+        Resolved once per request by the authorization backend and kept on
+        `request.state`; the admin views that need an extra check of their own
+        read it from here instead of re-querying.
+        """
+        return getattr(request.state, "admin_user", None)
 
     # Type-driven rendering: applied to every column of every admin view. sqladmin
     # mirrors these into the detail pipeline as long as column_type_formatters_detail

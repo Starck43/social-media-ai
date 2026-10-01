@@ -3,6 +3,7 @@ from pathlib import Path
 from sqladmin import Admin
 from starlette.staticfiles import StaticFiles
 
+from app.admin.authorization import AdminAuthorizationBackend
 from app.admin.csrf import CSRFTokenManager
 from app.core.config import settings
 from app.core.database import async_engine
@@ -53,6 +54,7 @@ def setup_admin(app):
         engine=async_engine,
         authentication_backend=authentication_backend,
         base_url="/admin",
+        authorization_backend=AdminAuthorizationBackend(),
         title="Social Media AI Admin",
         logo_url="/static/logo.png",
         templates_dir=str(PROJECT_ROOT / "app" / "templates"),

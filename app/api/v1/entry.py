@@ -10,14 +10,20 @@ from app.api.v1.endpoints import (
 
 router = APIRouter()
 
-router.include_router(user.router, prefix="/users", tags=["user"])
-router.include_router(roles.router, prefix="/users/roles", tags=["user"])
+# Every data router requires a bearer token. `ApiScopeMiddleware` already
+# rejects unauthenticated /api/* requests, this is the defense-in-depth layer
+# that survives someone registering a new router without noticing the rule.
+# `/auth` stays public — it is how you get a token in the first place.
+API_AUTH = [Depends(get_authenticated_user)]
+
+router.include_router(user.router, prefix="/users", tags=["user"], dependencies=API_AUTH)
+router.include_router(roles.router, prefix="/users/roles", tags=["user"], dependencies=API_AUTH)
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
-router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
-router.include_router(scenarios.router, prefix="/ai", tags=["scenarios"])
-router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
-router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
-router.include_router(llm_providers.router, prefix="/llm", tags=["llm"])
+router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"], dependencies=API_AUTH)
+router.include_router(scenarios.router, prefix="/ai", tags=["scenarios"], dependencies=API_AUTH)
+router.include_router(notifications.router, prefix="/notifications", tags=["notifications"], dependencies=API_AUTH)
+router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"], dependencies=API_AUTH)
+router.include_router(llm_providers.router, prefix="/llm", tags=["llm"], dependencies=API_AUTH)
 
 
 # Keep the test endpoints for backward compatibility.
@@ -25,7 +31,7 @@ router.include_router(llm_providers.router, prefix="/llm", tags=["llm"])
 # no tenant context) instead of raw `SELECT`s on a session: same connectivity
 # signal, but it goes through the manager layer and cannot drift out of sync
 # with it. The previous version also crashed, awaiting a sync `Session`.
-@router.get("/test-db", include_in_schema=False)
+@router.get("/test-db", include_in_schema=False, dependencies=API_AUTH)
 async def test_database():
     try:
         permission_count = await Permission.objects.count()

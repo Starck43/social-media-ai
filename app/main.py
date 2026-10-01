@@ -14,6 +14,7 @@ from starlette.websockets import WebSocket
 
 from app.admin.csrf import CSRFTokenManager
 from app.api.v1 import entry
+from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.tenant_context import PlatformScopeMiddleware
@@ -71,8 +72,13 @@ def create_application() -> FastAPI:
     # the platform bypass and owns the tenant context for every /app request.
     application.add_middleware(TenantUIMiddleware)
 
-    # HTTP surfaces are the operator console: they run as the platform owner.
-    # See app/core/tenant_context.PlatformScopeMiddleware (/app/* is excluded).
+    # Same trick for the machine API: /api/* is authenticated and scoped to a
+    # workspace the caller is a member of (never bypass).
+    application.add_middleware(ApiScopeMiddleware)
+
+    # Operator console only (sqladmin, static, health): runs as the platform
+    # owner. See app/core/tenant_context.PlatformScopeMiddleware — it excludes
+    # /app/* and /api/* because those resolve their own tenant.
     application.add_middleware(PlatformScopeMiddleware)
 
     # Set up CORS

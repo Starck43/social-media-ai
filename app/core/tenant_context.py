@@ -76,16 +76,28 @@ def tenant_scope(tenant_id: Optional[int] = None, *, bypass: bool = False):
 
 
 class PlatformScopeMiddleware:
-    """Run every operator HTTP request as the platform owner (bypass).
+    """Run operator HTTP requests (sqladmin, static, health) as the platform owner.
 
-    The HTTP surfaces (`/api/v1`, sqladmin) are the operator's console, not a
-    client-facing API: clients talk to the agent through messengers. So the
-    request runs in the bootstrap workspace with the guard switched off, which
-    is exactly what the legacy endpoints assume.
+    The HTTP surfaces split into two camps, and this middleware only owns the
+    operator one:
 
-    `/app/*` is the exception: the client UI carries its own tenant context
-    resolved from web memberships — see `app/web/middleware.TenantUIMiddleware`.
+    - **Operator console** — `/admin/*` (sqladmin), `/static/*`, `/health`,
+      `/docs`. Runs in the bootstrap workspace with the guard switched off:
+      the developer/operator legitimately administers every workspace. The CLI
+      is the same thing outside HTTP (`tenant_scope(bypass=True)` in
+      `cli/main.py::_run_platform`).
+    - **Client surfaces** — excluded, because they resolve their own tenant and
+      run scoped: `/app/*` from web memberships (`TenantUIMiddleware`) and
+      `/api/*` from the bearer token + membership (`ApiScopeMiddleware`).
+
+    Letting `/api/*` fall through to bypass is what would let any caller read
+    every tenant's rows, so it is explicitly excluded here.
     """
+
+    # Prefixes that own their own (fail-closed) tenant context.
+    TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static")
+    # Exact paths that are infrastructure, not data.
+    BYPASS_EXACT_PATHS = ("/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico")
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -95,7 +107,9 @@ class PlatformScopeMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
-        if path == "/app" or path.startswith("/app/"):
+        if path in self.BYPASS_EXACT_PATHS or any(
+            path == prefix or path.startswith(f"{prefix}/") for prefix in self.TENANT_SCOPED_PREFIXES
+        ):
             await self.app(scope, receive, send)
             return
         with tenant_scope(bypass=True):

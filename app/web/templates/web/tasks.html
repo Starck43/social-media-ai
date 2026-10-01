@@ -94,6 +94,7 @@
                                 <div class="flex items-center gap-1">
                                     <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                                         <button title="Выполнить сейчас"
                                                 class="rounded-md border border-emerald-700 p-1.5 text-emerald-400 hover:bg-emerald-950">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
@@ -121,6 +122,7 @@
                                     </button>
                                     <form method="post" action="/app/tasks/{{ task.id }}/toggle" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                                         <button title="{% if task.is_active %}Деактивировать{% else %}Активировать{% endif %}"
                                                 class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-slate-800">
                                             {% if task.is_active %}
@@ -137,6 +139,7 @@
                                     <form method="post" action="/app/tasks/{{ task.id }}/delete" class="inline"
                                           onsubmit="return confirm('Удалить задачу «{{ task.name }}»?')">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                                         <button title="Удалить"
                                                 class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-red-900/30 hover:text-red-400">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
@@ -175,6 +178,7 @@
 
             <form method="post" action="/app/tasks" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
 
                 <div>
                     <label for="add-name" class="mb-1 block text-sm text-slate-300">Название</label>
@@ -363,6 +367,7 @@
             </div>
             <form method="post" :action="'/app/tasks/' + editing.id" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Название</label>
                     <input name="name" required maxlength="100" x-model="editing.name"

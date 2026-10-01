@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from app.models.source import Source
 from app.types import SourceType
 
-from .deps import add_flash, ensure_csrf, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, render, tenant_filter_context
 
 router = APIRouter(prefix="/sources")
 
@@ -39,23 +39,37 @@ async def sources_list(request: Request):
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
+    raw_scenario = request.query_params.get("scenario_id")
+    filter_scenario_id = int(raw_scenario) if raw_scenario and raw_scenario.isdigit() else None
+
+    from app.core.tenant_context import tenant_scope
+    from app.models import AgentScenario
+
+    # Scenarios for the filter dropdown — scoped to the workspace being viewed.
+    if is_superuser:
+        with tenant_scope(filter_tenant_id):
+            scenarios = list(await AgentScenario.objects.order_by(AgentScenario.name))
+    else:
+        scenarios = list(
+            await AgentScenario.objects.filter(tenant_id=request.state.tenant_id).order_by(AgentScenario.name)
+        )
+
     if is_superuser:
         # Superuser sees all tenants' sources, optionally narrowed to one.
         # Bypass the tenant guard (the middleware already set a tenant scope) so
         # the manager query isn't silently scoped to the active workspace.
-        from app.core.tenant_context import tenant_scope
-
         with tenant_scope(bypass=True):
             query = Source.objects.select_related("platform", "tenant")
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
+            if filter_scenario_id is not None:
+                query = query.filter(agent_scenario_id=filter_scenario_id)
             sources = await query.order_by(Source.created_at.desc())
     else:
-        sources = await (
-            Source.objects.filter(tenant_id=request.state.tenant_id)
-            .select_related("platform")
-            .order_by(Source.created_at.desc())
-        )
+        query = Source.objects.filter(tenant_id=request.state.tenant_id)
+        if filter_scenario_id is not None:
+            query = query.filter(agent_scenario_id=filter_scenario_id)
+        sources = await query.select_related("platform").order_by(Source.created_at.desc())
     user_sources = await (
         Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
         .select_related("platform")
@@ -76,6 +90,8 @@ async def sources_list(request: Request):
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
+        scenarios=scenarios,
+        filter_scenario_id=filter_scenario_id,
     )
 
 
@@ -88,10 +104,13 @@ async def source_add(
     source_type: str = Form(...),
     monitored_users: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
+
+    tenant_id = action_tenant_id(request, tenant_id)
 
     platform_row = await _resolve_platform(platform)
     if platform_row is None:
@@ -103,30 +122,33 @@ async def source_add(
         add_flash(request, "error", f"Тип источника '{source_type}' не найден")
         return RedirectResponse("/app/sources", status_code=302)
 
-    existing = await Source.objects.get(
-        tenant_id=request.state.tenant_id,
-        platform_id=platform_row.id,
-        external_id=external_id,
-    )
-    if existing is not None:
-        add_flash(request, "error", "Источник с таким ID уже существует")
-        return RedirectResponse("/app/sources", status_code=302)
+    from app.core.tenant_context import tenant_scope
 
-    clean_name = name.strip()[:100] or f"{platform}:{external_id}"
+    with tenant_scope(tenant_id):
+        existing = await Source.objects.get(
+            tenant_id=tenant_id,
+            platform_id=platform_row.id,
+            external_id=external_id,
+        )
+        if existing is not None:
+            add_flash(request, "error", "Источник с таким ID уже существует")
+            return RedirectResponse("/app/sources", status_code=302)
 
-    # Parse monitored users from comma-separated string into params
-    params: dict = {}
-    if monitored_users.strip():
-        params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
+        clean_name = name.strip()[:100] or f"{platform}:{external_id}"
 
-    new_source = await Source.objects.create(
-        name=clean_name,
-        platform_id=platform_row.id,
-        external_id=external_id.strip()[:200],
-        source_type=st,
-        is_active=True,
-        params=params,
-    )
+        # Parse monitored users from comma-separated string into params
+        params: dict = {}
+        if monitored_users.strip():
+            params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
+
+        await Source.objects.create(
+            name=clean_name,
+            platform_id=platform_row.id,
+            external_id=external_id.strip()[:200],
+            source_type=st,
+            is_active=True,
+            params=params,
+        )
 
     add_flash(request, "success", f"Источник '{clean_name}' добавлен")
     return RedirectResponse("/app/sources", status_code=302)
@@ -143,51 +165,57 @@ async def source_edit(
     is_active: str = Form("", alias="is_active"),
     monitored_users: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
 
-    source = await Source.objects.get(id=source_id, tenant_id=request.state.tenant_id)
-    if source is None:
-        add_flash(request, "error", "Источник не найден")
-        return RedirectResponse("/app/sources", status_code=302)
+    tenant_id = action_tenant_id(request, tenant_id)
 
-    platform_row = await _resolve_platform(platform)
-    if platform_row is None:
-        add_flash(request, "error", f"Платформа '{platform}' не найдена")
-        return RedirectResponse("/app/sources", status_code=302)
+    from app.core.tenant_context import tenant_scope
 
-    st = SourceType.get_by_value(source_type)
-    if st is None:
-        add_flash(request, "error", f"Тип источника '{source_type}' не найден")
-        return RedirectResponse("/app/sources", status_code=302)
+    with tenant_scope(tenant_id):
+        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
+        if source is None:
+            add_flash(request, "error", "Источник не найден")
+            return RedirectResponse("/app/sources", status_code=302)
 
-    dup = await Source.objects.get(
-        tenant_id=request.state.tenant_id,
-        platform_id=platform_row.id,
-        external_id=external_id,
-    )
-    if dup is not None and dup.id != source.id:
-        add_flash(request, "error", "Источник с таким ID уже существует")
-        return RedirectResponse("/app/sources", status_code=302)
+        platform_row = await _resolve_platform(platform)
+        if platform_row is None:
+            add_flash(request, "error", f"Платформа '{platform}' не найдена")
+            return RedirectResponse("/app/sources", status_code=302)
 
-    # Parse monitored users from comma-separated string into params
-    params = source.params.copy() if source.params else {}
-    if monitored_users.strip():
-        params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
-    else:
-        params.pop("monitored_users", None)
+        st = SourceType.get_by_value(source_type)
+        if st is None:
+            add_flash(request, "error", f"Тип источника '{source_type}' не найден")
+            return RedirectResponse("/app/sources", status_code=302)
 
-    await Source.objects.update_by_id(
-        source.id,
-        name=name.strip()[:100] or source.name,
-        platform_id=platform_row.id,
-        external_id=external_id.strip()[:200],
-        source_type=st,
-        is_active=is_active == "on",
-        params=params,
-    )
+        dup = await Source.objects.get(
+            tenant_id=tenant_id,
+            platform_id=platform_row.id,
+            external_id=external_id,
+        )
+        if dup is not None and dup.id != source.id:
+            add_flash(request, "error", "Источник с таким ID уже существует")
+            return RedirectResponse("/app/sources", status_code=302)
+
+        # Parse monitored users from comma-separated string into params
+        params = source.params.copy() if source.params else {}
+        if monitored_users.strip():
+            params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
+        else:
+            params.pop("monitored_users", None)
+
+        await Source.objects.update_by_id(
+            source.id,
+            name=name.strip()[:100] or source.name,
+            platform_id=platform_row.id,
+            external_id=external_id.strip()[:200],
+            source_type=st,
+            is_active=is_active == "on",
+            params=params,
+        )
 
     add_flash(request, "success", "Источник обновлён")
     return RedirectResponse("/app/sources", status_code=302)
@@ -198,17 +226,23 @@ async def source_toggle(
     request: Request,
     source_id: int,
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/sources", status_code=302)
 
-    source = await Source.objects.get(id=source_id, tenant_id=request.state.tenant_id)
-    if source is None:
-        add_flash(request, "error", "Источник не найден")
-        return RedirectResponse("/app/sources", status_code=302)
+    tenant_id = action_tenant_id(request, tenant_id)
 
-    await Source.objects.update_by_id(source.id, is_active=not source.is_active)
+    from app.core.tenant_context import tenant_scope
+
+    with tenant_scope(tenant_id):
+        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
+        if source is None:
+            add_flash(request, "error", "Источник не найден")
+            return RedirectResponse("/app/sources", status_code=302)
+
+        await Source.objects.update_by_id(source.id, is_active=not source.is_active)
     action = "активирован" if not source.is_active else "деактивирован"
     add_flash(request, "success", f"Источник '{source.name}' {action}")
     return RedirectResponse("/app/sources", status_code=302)

@@ -72,6 +72,21 @@ async def tenant_filter_context(request: Request, is_superuser: bool) -> tuple[i
     return filter_tenant_id, tenants
 
 
+def action_tenant_id(request: Request, posted_tenant_id: int | None = None) -> int | None:
+    """Resolve the workspace a superuser action should act on.
+
+    A superuser's active workspace (`request.state.tenant_id`) is independent of
+    the `?tenant_id=` list filter. POST forms carry the selected tenant as a
+    hidden field so that create/toggle/run/delete act on the workspace the user
+    is *viewing*, not the one they happen to have active. A regular user always
+    acts on their own active workspace.
+    """
+    user = getattr(request.state, "web_user", None)
+    if user is not None and user.is_superuser and posted_tenant_id is not None:
+        return posted_tenant_id
+    return getattr(request.state, "tenant_id", None)
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
     context: dict[str, Any] = {
         "user": getattr(request.state, "web_user", None),

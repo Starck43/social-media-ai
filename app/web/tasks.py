@@ -18,7 +18,7 @@ from app.models import AgentScenario, AgentTask, Job, Source
 from app.tasks.cron import cron_to_human
 from app.types import JobType
 
-from .deps import add_flash, ensure_csrf, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, render, tenant_filter_context
 
 router = APIRouter(prefix="/tasks")
 
@@ -123,12 +123,13 @@ async def task_create(
     excluded_users: str = Form(""),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    tenant_id = request.state.tenant_id
+    tenant_id = action_tenant_id(request, tenant_id)
 
     cron_expr = cron_custom.strip()
 
@@ -193,12 +194,13 @@ async def task_toggle(
     request: Request,
     task_id: int,
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    tenant_id = request.state.tenant_id
+    tenant_id = action_tenant_id(request, tenant_id)
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -216,12 +218,13 @@ async def task_run_now(
     request: Request,
     task_id: int,
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    tenant_id = request.state.tenant_id
+    tenant_id = action_tenant_id(request, tenant_id)
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -253,12 +256,13 @@ async def task_update(
     excluded_users: str = Form(""),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    tenant_id = request.state.tenant_id
+    tenant_id = action_tenant_id(request, tenant_id)
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -328,12 +332,13 @@ async def task_delete(
     request: Request,
     task_id: int,
     token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    tenant_id = request.state.tenant_id
+    tenant_id = action_tenant_id(request, tenant_id)
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:

@@ -19,7 +19,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
 
 # ─── Database ──────────────────────────────────────────────────
 POSTGRES_URL=postgresql+asyncpg://user:pass@localhost:5432/social_media
-DB_SCHEMA=social_manager
+DB_SCHEMA=public
 
 # ─── Redis (optional — only for frozen Celery / sqladmin storage) ─
 REDIS_URL=redis://localhost:6379/0
@@ -52,8 +52,8 @@ ADMIN_ENABLED=true
 # ─── External Platforms (optional — app boots without them) ───
 # VK
 VK_APP_ID=
-VK_SERVICE_ACCESS_TOKEN=
-VK_USER_ACCESS_TOKEN=
+VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
+VK_CLIENT_ACCESS_KEY=       # VK "Защищённый ключ" (OAuth client secret)
 
 # Telegram (Bot API)
 TELEGRAM_BOT_TOKEN=
@@ -125,7 +125,7 @@ LOG_LEVEL=INFO
 | Variable | Default | Description |
 |---|---|---|
 | `POSTGRES_URL` | *(required)* | Async PostgreSQL connection string (`postgresql+asyncpg://user:pass@host:port/db`) |
-| `DB_SCHEMA` | `social_manager` | PostgreSQL schema name |
+| `DB_SCHEMA` | `public` | PostgreSQL schema name |
 
 ### Redis
 
@@ -178,8 +178,8 @@ LOG_LEVEL=INFO
 | Variable | Default | Description |
 |---|---|---|
 | `VK_APP_ID` | `None` | VK application ID |
-| `VK_SERVICE_ACCESS_TOKEN` | `None` | VK service token (L1) |
-| `VK_USER_ACCESS_TOKEN` | `None` | VK user token (L2 fallback) |
+| `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
+| `VK_CLIENT_ACCESS_KEY` | `None` | VK OAuth client secret — console "Защищённый ключ" |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
@@ -196,7 +196,7 @@ LOG_LEVEL=INFO
 
 | Variable | Default | Description |
 |---|---|---|
-| `CREDENTIALS_KEY` | `None` | Fernet master key for encrypting `tenant_credentials` secrets. **Never commit.** |
+| `CREDENTIALS_KEY` | `None` | Fernet master key for encrypting personal (`user_credentials`) secrets. **Never commit.** |
 | `DEFAULT_TENANT_SLUG` | `owner` | Slug of the bootstrap (owner) workspace |
 
 ### Scheduler
@@ -269,18 +269,21 @@ Extra variables in `.env` are ignored (`extra="ignore"`).
 
 ---
 
-## Per-Tenant Secrets
+## Platform credentials
 
-Platform credentials (VK tokens, Telegram bot tokens, MAX tokens) should be
-stored in the `tenant_credentials` database table, encrypted with Fernet under
-`CREDENTIALS_KEY`. Environment variables are a **legacy fallback** for single-tenant
-installations.
+Two kinds of secret, resolved by `app/services/social/credentials.py`:
 
-Manage credentials via CLI:
-```bash
-python -m cli.main credentials set vk user_token --tenant owner
-python -m cli.main credentials list --tenant owner
-python -m cli.main credentials test vk
-```
+- **Personal L2 secrets** (VK `user_token`, Telegram MTProto `api_id` /
+  `api_hash` / `session`) live in the `user_credentials` table, keyed by
+  `users.id`, encrypted with Fernet under `CREDENTIALS_KEY`. Manage via CLI:
+  ```bash
+  python -m cli.main credentials login telegram --user <id>
+  python -m cli.main credentials oauth vk --user <id> --tenant owner
+  python -m cli.main credentials list --user <id>
+  python -m cli.main credentials test --user <id>
+  ```
+- **Application / infrastructure config** (VK `app_id`, `client_secret`,
+  service token; Telegram/MAX bot tokens) is one-per-deployment and read from
+  the **environment** (`.env`), not from the DB.
 
 See also: [COLLECTION.md](./COLLECTION.md) — Credential vault.

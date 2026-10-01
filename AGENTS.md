@@ -23,7 +23,7 @@ longer depends on them.
 - `app/tasks/` — cron parsing, due-schedule tick, default schedules
 - `app/jobs/` — job dispatcher (claim/retry/backoff) and handlers
 - `app/channels/` — Telegram/MAX bot channels (send + long polling); the listener also feeds channel posts into collection
-- `app/services/social/` — platform API clients; `credentials.py` resolves tokens from the per-tenant vault (env = legacy fallback), `tg_session.py` manages the Telegram MTProto (L2) user session. Collection layer is chosen per source via `Source.params["mode"]` — see `docs/COLLECTION.md`
+- `app/services/social/` — platform API clients; `credentials.py` resolves secrets from the personal vault (`user_credentials`, L2 tokens/sessions) with env as the application-config fallback; `owner.py` picks which user's personal token a source collects with; `tg_session.py` manages the Telegram MTProto (L2) user session. Collection layer is chosen per source via `Source.params["mode"]` — see `docs/COLLECTION.md`
 - `app/services/monitoring/` — `collector.py` (pull: VK/API) and `ingest.py` (push: Telegram Bot API updates)
 - `app/services/digest/` — digest aggregation, LLM summary, rendering
 - `app/services/llm/` — universal LLM clients (OpenAI-compatible + Anthropic)
@@ -64,11 +64,10 @@ supported; adding a new provider is a row in the DB, not a code change.
 |-------|-------|---------|
 | `llm_providers` | global (optionally per-tenant override) | Connection: `name`, `api_format` (`openai` \| `anthropic`), `base_url`, `auth_header`, `encrypted_api_key`, `is_active`, `is_default` |
 | `llm_models` | global | Model definition: `provider_id`, `name` (human), `model_id` (API model string), `model_type` (`text` \| `image` \| `embedding`), `input_cost_per_1k`, `output_cost_per_1k`, `max_tokens`, `default_temperature`, `is_active` |
-| `tenant_credentials` | per-tenant | Optional tenant-specific provider overrides, encrypted with Fernet under `CREDENTIALS_KEY` |
 
 `LLMProvider` and `LLMModel` are **global** (see `TENANCY.md`) because the same
-provider fleet serves all workspaces. Tenants may override via
-`tenant_credentials` if they bring their own keys.
+provider fleet serves all workspaces. Per-tenant provider overrides are not
+implemented; a workspace uses the global fleet.
 
 ### Two API formats, one interface
 
@@ -104,7 +103,7 @@ surface instead of silently routing to a fallback.
 ### Encryption at rest
 
 API keys are stored in `llm_providers.encrypted_api_key` encrypted with Fernet
-using the same `CREDENTIALS_KEY` as `tenant_credentials`. The master key comes
+using the same `CREDENTIALS_KEY` as the personal vault (`user_credentials`). The master key comes
 from the env (`CREDENTIALS_KEY`) and is **never** committed. Admin UI shows the
 key masked; the edit form accepts a new plaintext and re-encrypts on save.
 Reading the column through ORM returns the ciphertext; use
@@ -125,12 +124,38 @@ calls below one cent) and `provider_type` on the `ai_analytics` row.
 `ReportAggregator` rolls this up per provider/model for the digest and the
 dashboard. See `docs/ANALYTICS_AGGREGATION_SYSTEM.md`.
 
-Agent chat and digest summaries account separately for the **daily spend cap**
-(`AGENT_DAILY_COST_LIMIT` / `tenant.daily_cost_limit`): chat usage carries a
-priced `cost` (USD, from `llm_client.price_usage_usd` over `llm_models` tariffs)
-written to `agent_messages.cost`, digest summaries to `digest_runs.llm_cost`;
-the checked metric is `tenancy.resolver.daily_cost_today()` (per-tenant UTC
-day), enforced in the agent loop and before the digest's LLM call.
+Agent chat, digest summaries and learning/reflect account separately for the
+**daily spend cap** (`AGENT_DAILY_COST_LIMIT` / `tenant.daily_cost_limit`): chat
+usage carries a priced `cost` (USD, from `llm_client.price_usage_usd` over
+`llm_models` tariffs) written to `agent_messages.cost`, digest summaries to
+`digest_runs.llm_cost`, `learn`/`reflect` job results to `jobs.llm_cost`; the
+checked metric is `tenancy.resolver.daily_cost_today()` (per-tenant UTC day),
+enforced in the agent loop, before the digest's LLM call and before the
+learning/reflect call.
+
+## Scripts (переиспользуйте, не пишите заново)
+
+Готовые утилиты для типовых операций — используйте их, а не ручные SQL-запросы
+(все работают с текущей схемой `settings.DB_SCHEMA`, сейчас `public`):
+
+- `scripts/setup/roles.py` — создать/обновить 7 платформенных ролей
+  (`python -m scripts.setup.roles`).
+- `scripts/setup/permissions.py` — досоздать отсутствующие `permissions` для всех
+  `model_types` и выдать дефолтные права ролям
+  (`python -m scripts.setup.permissions`).
+- `scripts/setup/assign_roles_permissions.py` — применить каноническую матрицу
+  прав ролей (`python -m scripts.setup.assign_roles_permissions`); идемпотентно,
+  шаблоны совпадают без учёта регистра. **Правьте матрицу `ROLE_PERMISSIONS`
+  здесь, а не вручную.**
+- `scripts/fix_permission_codenames.py` — починить исторически битые codename
+  (`app.Model.('view', …)` → `app.Model.view`); dry-run по умолчанию, `--apply`
+  для записи.
+- `scripts/update_permission_actions.py` — привести `.edit` codename к `.update`.
+- CLI: `python -m cli.main roles list|show|update|preset` — посмотреть/назначить
+  права роли из терминала.
+
+Схема для всех скриптов берётся из `settings.DB_SCHEMA` (не хардкодьте
+`social_manager`/`public`). Тестовую БД поднимает `scripts/setup_test_db.py`.
 
 ## Commands
 - Install: `pip install -r requirements.txt`

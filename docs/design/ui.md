@@ -101,7 +101,7 @@
 | List | Таблица: название, платформа, тип, сценарий, статус, последний сбор, кнопка «Собрать». |
 | Add | Wizard: платформа → режим (L1/L2/L3) → ввод идентификатора → выбор сценария → тест подключения. |
 | Detail | История сборов, последние посты (только метаданные, без сырых текстов), привязанный сценарий. |
-| Credentials | Кнопка «Подключить через vault» → модалка ввода токена → `tenant_credentials` (Fernet). |
+| Credentials | Кнопка «Подключить через vault» → модалка ввода токена → `user_credentials` (Fernet, личные L2). |
 
 ### 4.4. Analytics (`/app/analytics`)
 
@@ -150,8 +150,8 @@
 
 - **Workspace:** slug, daily cost limit, agent style (тон, язык, тихие часы).
 - **Team:** список `tenant_users` + их роли. Генерация invite-кода.
-- **Credentials:** список записей `tenant_credentials` (без plaintext!), кнопки `disable` / `test` / `rotate`.
-- **LLM providers:** если владелец workspace — superuser, видит глобальные; если нет — только переопределения своего workspace через `tenant_credentials`.
+- **Credentials:** список записей `user_credentials` (личные L2, без plaintext!), кнопки `disable` / `test` / `rotate`.
+- **LLM providers:** глобальные (переопределения per-tenant не реализованы).
 - **Notifications:** на что подписан (алерты, дайджесты, подтверждения).
 - **Export / Delete:** выгрузка данных workspace, самоуничтожение (soft-delete tenant).
 

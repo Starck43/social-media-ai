@@ -66,7 +66,7 @@ media_types: list[str] | None    # Types analyzed: text, image, video
 
 **Индекс для быстрых запросов:**
 ```sql
-CREATE INDEX idx_ai_analytics_provider ON social_manager.ai_analytics(provider_type);
+CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 ```
 
 ### 2. ReportAggregator Service
@@ -376,7 +376,7 @@ SELECT
     SUM(request_tokens) as total_request_tokens,
     SUM(response_tokens) as total_response_tokens,
     SUM(estimated_cost) as total_cost
-FROM social_manager.ai_analytics
+FROM public.ai_analytics
 GROUP BY source_id, analysis_date;
 
 -- Refresh периодически

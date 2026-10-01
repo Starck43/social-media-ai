@@ -436,7 +436,7 @@ def build_schema(cls, analysis_types, scope):
 
 ```bash
 export LOG_LEVEL=DEBUG
-python -m cli.main collect run --source-id 16 --verbose
+python -m cli.main collect --src 16 --verbose
 ```
 
 Искать в логах:

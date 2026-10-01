@@ -77,6 +77,55 @@ Content-Type: application/json
 
 ---
 
+## Authorization
+
+Authentication answers *who* is calling; authorization answers *what they may
+do*. They are separate layers, and every surface uses the same two:
+
+| Surface | Authentication | Rights |
+|---|---|---|
+| `/api/*` | bearer JWT (`ApiScopeMiddleware`) | per-endpoint: `require_model_perm` (model rights) and `require_platform_role` (role ladder); today only `PUT /users/roles/{name}/permissions` declares one |
+| `/app/*` | web session (`TenantUIMiddleware`) | workspace membership is the boundary; no per-model right in the client UI |
+| `/admin/*` | admin backend | per-model rights, Django-style (`docs/ADMIN.md`) |
+| CLI | none (developer tool) | runs with the tenant guard off; `--tenant` picks a workspace |
+
+### Workspace selection
+
+Every `/api/*` request runs inside one workspace, resolved from the caller's
+`tenant_users` membership and never from the request body:
+
+- unauthenticated → `401`;
+- `X-Tenant-Id` / `X-Tenant-Slug` *select* among the caller's own workspaces, so
+  a workspace they are not a member of is `403`, never honoured;
+- data access goes through `BaseManager`, so every SELECT is filtered to that
+  workspace — a foreign id reads as "not found", not as a leak.
+
+### Rights
+
+The rights of a caller are the rights of their **platform role**
+(`users.role_id`), read from `role_permission` → `permissions`:
+
+```python
+require_model_perm("source", ActionType.CREATE)
+```
+
+means "this role may create sources", checked against
+`permissions.model_type_id` + `action_type` — never against the `codename`
+column, because several seeded codenames are malformed. A superuser
+(`users.is_superuser` or the `SUPERUSER` role) passes everything.
+
+`User.model_permissions()` is the canonical predicate for all three surfaces, so
+the API, the console and the role editor cannot drift apart. See
+`docs/ADMIN.md` for the console's mapping of these rights onto buttons, and
+`docs/TENANCY.md` for how the workspace itself is resolved.
+
+**Not enforced yet:** most `/api/*` endpoints authenticate but do not declare a
+model right, so any authenticated member may call them. The building blocks are
+in place — adopting a right is one `Depends(require_model_perm(...))` on the
+endpoint.
+
+---
+
 ## Health
 
 ```
@@ -855,7 +904,7 @@ The sqladmin panel provides a web UI for managing all database entities.
 **Base URL:** `http://localhost:8000/admin`
 
 **Pages:** User, Role, Permission, Platform, Source, AgentScenario, BotAction,
-AIAnalytics, Notification, LLMProvider, LLMModel, and TenantCredential.
+AIAnalytics, Notification, LLMProvider, LLMModel, UserCredential.
 
 ### Password Reset
 

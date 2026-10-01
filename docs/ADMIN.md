@@ -42,6 +42,85 @@ Returns: `{"valid": true/false}`
 
 ---
 
+## Authorization (Django-style per-model permissions)
+
+The console is gated by the **platform role** of the signed-in operator, the
+same way Django gates a `ModelAdmin`. There is no separate admin permission
+model: the answer to "may this operator do this" comes from `role_permission` →
+`permissions.model_type_id` + `action_type`, read through
+`User.model_permissions()` — one source of truth shared with `/api` and the CLI.
+
+**Who may enter:** a superuser (`users.is_superuser` or the `SUPERUSER` role),
+or any user whose role carries at least one model `view`
+(`User.has_admin_access()`). Anyone else is sent back to the login form.
+
+**What they may do:** per model, the role's rights map onto the console actions
+one to one, and sqladmin asks about every one of them — hiding a button and
+blocking the route behind it are the same check.
+
+| Console action | Required `ActionType` |
+|---|---|
+| list, details | `VIEW` |
+| create, import | `CREATE` |
+| edit | `UPDATE` |
+| delete | `DELETE` |
+| export | `EXPORT` |
+| `@action` buttons | whatever the view declares (below) |
+
+Two rules on top of the table, both Django's:
+
+- **any right implies the change list** — an operator who may only *create* a
+  record still has to open the list to reach the form, so `create` / `update` /
+  `delete` / `export` also grant `list` and `details`;
+- **no right, no model** — a model the role says nothing about is not in the
+  menu (`ModelView.is_accessible`) and its routes answer 403.
+
+A model view can switch an action off entirely with the usual `can_create`,
+`can_edit`, `can_delete`, `can_export` flags (e.g. `AIAnalyticsAdmin` has
+`can_create = False`); a flag off means the action opens nothing, right or not.
+
+**Custom actions** are not model CRUD, so each view declares what its buttons
+need in `BaseAdmin.action_permissions`, keyed by the slug sqladmin generates
+(`@action` slugifies the function name, so `mark_read` is `"mark-read"`):
+
+| View | Action | Right | Why |
+|---|---|---|---|
+| `UserAdmin` | `change-password` | `UPDATE` | it edits a user record |
+| `SourceAdmin` | `check-source` | `UPDATE` | it enqueues a collection run |
+| `AgentScenarioAdmin` | `view-prompts` / `toggle-active` | `VIEW` / `UPDATE` | read / toggles a flag |
+| `AgentTaskAdmin` | `run-now` | `UPDATE` | it enqueues a job |
+| `NotificationAdmin` | `mark-read`, `send-to-messenger` | `UPDATE` | both change state |
+| `AIAnalyticsAdmin` | `view-analysis` | `VIEW` | it opens the details page |
+| `LLMProviderAdmin` | `test-connection` | `CONFIGURE` | it calls the provider with the stored key |
+| `LLMModelAdmin` | `test-model` | `CONFIGURE` | same, for a model |
+
+Unlisted actions default to `UPDATE` (they are mutations by nature), and a key
+that names no action on the view is logged as a warning at startup — the
+spelling mistake is otherwise silent.
+
+**Where the code lives**
+
+| File | Role |
+|---|---|
+| `app/models/user.py` | `model_permissions()` / `has_perm_for()` — the canonical check |
+| `app/admin/authorization.py` | `AdminAuthorizationBackend` — turns those rights into grants; also `require_admin_perm()` for routes outside the console |
+| `app/admin/base.py` | `action_permissions` declaration + `get_admin_user()` |
+| `app/admin/views.py` | per-view flags and action declarations |
+| `app/admin/auth.py` | who may enter the console at all |
+| `scripts/setup/assign_roles_permissions.py` | the canonical role → permission matrix |
+
+The backend derives the `identity → model` mapping from the registered views
+(`AgentTask` → `agent-task` → the `model_types` row `agenttask`), so a newly
+added admin view is gated with no extra wiring. A superuser is granted the
+wildcard pair and passes everything.
+
+The routes in `app/admin/endpoints.py` sit outside the sqladmin view tree
+(`/dashboard`, `/dashboard/topic-chains`, the password pages), so they call
+`require_admin_perm()` explicitly; changing *someone else's* password needs
+`user.update`, changing your own does not.
+
+---
+
 ## CSRF Protection
 
 The admin panel uses CSRF tokens for all state-changing operations. Tokens are
@@ -80,7 +159,7 @@ The following model pages are available (all under `/admin/<identity>`):
 | Уведомление | `Notification` | 🔔 | System notifications |
 | Провайдер LLM | `LLMProvider` | 🖥️ | LLM provider config |
 | Модель LLM | `LLMModel` | 💾 | LLM model definitions |
-| Креды платформ | `TenantCredential` | 🔐 | Platform credentials vault |
+| Личные креды | `UserCredential` | 🔐 | Personal (per-user) L2 credentials vault |
 
 ---
 

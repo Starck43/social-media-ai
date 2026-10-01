@@ -121,7 +121,7 @@
 | `agent_sessions`, `agent_messages`, `agent_memory` | диалог и память агента                    |
 | `digest_runs`                                      | идемпотентная история отправок дайджестов |
 | `llm_providers`, `llm_models`                      | настройки LLM-провайдеров (глобальные)    |
-| `tenant_credentials`                               | секреты tenant-ов, зашифрованные Fernet   |
+| `user_credentials`                                 | личные L2-секреты (VK user_token, TG session), Fernet |
 
 Полный список схем — в [`docs/`](./docs/).
 
@@ -256,6 +256,23 @@ pip install -r requirements.txt
 alembic upgrade head
 pytest
 ```
+
+Тесты идут в отдельной схеме `DB_TEST_SCHEMA` (по умолчанию `test_schema`) —
+рабочие данные не затрагиваются никогда. Отдельная база `TEST_POSTGRES_URL`
+необязательна: она даёт второй уровень изоляции, но требует права `CREATEDB`.
+`tests/conftest.py` разворачивает процесс на тестовую схему до первого импорта
+`app`, а `scripts/setup_test_db.py` при первом запуске сам создаёт схему, таблицы
+и сиды (роли, permissions, платформы, bootstrap-воркспейс) — повторные запуски
+идемпотентны. Скрипт откажется работать, если цель совпадёт с рабочей базой **и**
+рабочей схемой одновременно.
+
+```bash
+pytest                                  # схема создастся сама
+python -m scripts.setup_test_db --check # какая база и схема будут использованы
+python -m scripts.setup_test_db --reset # очистить всё и пересеять
+```
+
+Тесты, требующие данных, которых нет в сидах, создают их сами.
 
 ## 📚 Documentation
 

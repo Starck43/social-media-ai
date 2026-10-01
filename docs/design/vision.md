@@ -48,7 +48,7 @@ flowchart TB
         L2["L2 авторизованная сессия (user token)"]
         L3["L3 браузер (отложено)"]
     end
-    CREDS[("tenant_credentials Fernet")] --> COLLECT
+    CREDS[("user_credentials / env Fernet")] --> COLLECT
     J1 --> COLLECT --> NORM["нормализация + дедуп"] --> AN[("ai_analytics")]
 
     J2 --> TRIG["триггеры (правила, без LLM)"] --> ANA["AIAnalyzer + промпт задачи"] --> AN
@@ -79,9 +79,10 @@ flowchart TB
 
 Правила, которые не обсуждаются:
 
-- Секреты живут только в `tenant_credentials` (Fernet, ключ `CREDENTIALS_KEY`
-  из env). Env-переменные — устаревший fallback для single-tenant установок,
-  основной путь — БД.
+- Персональные L2-секреты живут в `user_credentials` (Fernet, ключ
+  `CREDENTIALS_KEY` из env), привязанные к `users.id`; app/bot-конфиг
+  (VK app, bot-токены) читается из env. Секрет никогда не хранится в открытом
+  виде и не логируется.
 - **Агент и LLM никогда не видят plaintext**: инструментам доступно только
   «подключение работает / нет», платформа и срок жизни токена. Секрет не
   попадает ни в промпт, ни в лог, ни в чат.

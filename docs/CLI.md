@@ -6,9 +6,18 @@ Social Media AI Administration CLI built with Typer.
 python -m cli.main <command> <subcommand> [options]
 ```
 
-The CLI runs every command as the **platform owner** via `tenant_scope(bypass=True)`,
-so it can administer the owner workspace and, with `--tenant`, any client workspace.
-Tenant-scoped rows cannot be read or written without a scope.
+The CLI is the **developer console**: it runs every command with
+`tenant_scope(bypass=True)`, so it reads and writes across all workspaces and a
+create without `--tenant` lands in the bootstrap workspace. End users never
+reach this path — API and web requests are pinned to their own workspace.
+
+Commands that must act *inside* one workspace take `--tenant <slug|id>` and
+switch the scope on for that block (`task add`, one-off `task <job_type>`, `credentials`,
+`scenarios`). A task's own workspace always wins over any flag: `task <job_type> --task
+<id>` uses the workspace stored on the task row.
+
+Output that spans workspaces names them: `task list` has a `workspace` column and
+`task remove` reports every workspace it deleted from.
 
 ---
 
@@ -17,11 +26,54 @@ Tenant-scoped rows cannot be read or written without a scope.
 | Command | Description |
 |---|---|
 | `collect` | Run manual content collection & analysis (debug/analyst tool) |
-| `task` | Manage agent tasks (cron) |
+| `analyze` | Run the analyze handler directly (triggers + bot actions) |
 | `digest` | Digest operations |
+| `prune` | Trim old finished jobs directly |
+| `learn` | Extract durable facts from chat into memory directly |
+| `reflect` | Weekly memory hygiene + prompt-evolution proposals directly |
+| `task` | Manage agent tasks (cron) |
 | `credentials` | Manage platform credentials (tenant vault) |
 | `roles` | Manage roles and permissions |
 | `scenarios` | Manage agent scenarios |
+
+---
+
+## Direct Job-Type Commands
+
+`analyze`, `prune`, `learn` and `reflect` are **direct** commands: they resolve
+sources via a unified `--src` flag and run the matching job handler *now*,
+without creating a task or touching the queue. They share one shape:
+
+```bash
+python -m cli.main <job_type> [options]
+```
+
+**Common options:**
+| Option | Default | Description |
+|---|---|---|
+| `--src`, `-s` | all active | Source ids, urls or platform keyword (`vk`/`telegram`/`max`), comma/space separated |
+| `--tenant` | — | Workspace slug or id (empty = all active sources) |
+| `--verbose`, `-v` | `false` | Show detailed output |
+
+**Job-type specific options:**
+| Command | Extra options |
+|---|---|
+| `analyze` | `--scenario <id>`, `--excluded <users>` |
+| `prune` | `--days <n>` (default `7`) |
+| `learn` | `--min-messages <n>` (default `8`), `--window <n>` (default `200`) |
+| `reflect` | `--dedup/--no-dedup` (default on) |
+
+**Examples:**
+```bash
+# Analyze sources 739 and 740 with a scenario
+python -m cli.main analyze --src 739,740 --scenario 3
+
+# Prune jobs older than 14 days
+python -m cli.main prune --src 739 --days 14
+
+# Learn from chat (min 5 new turns)
+python -m cli.main learn --src 739 --min-messages 5
+```
 
 ---
 
@@ -32,34 +84,31 @@ Run manual content collection & AI analysis. Reuses the same
 analyzer behavior you test here is exactly what the cron/agent path runs.
 
 ```bash
-python -m cli.main collect run [options]
+python -m cli.main collect [options]
 ```
 
 **Options:**
 | Option | Default | Description |
 |---|---|---|
-| `--source-id` | — | Collect from a specific source ID |
-| `--source-url` | — | Collect by source URL (external_id) |
-| `--platform-id` | — | Collect all active sources on a platform |
-| `--start-date` | — | Start date `DD-MM-YYYY` (with `--force-refresh`) |
-| `--end-date` | — | End date `DD-MM-YYYY` (with `--force-refresh`) |
-| `--force-refresh` | `false` | Reset analytics + `last_checked`, full re-analysis |
+| `--src`, `-s` | all active | Source ids, urls or platform keyword (`vk`/`telegram`/`max`), comma/space separated |
+| `--tenant` | — | Workspace slug or id |
+| `--monitored` | — | Usernames to collect for instead of source defaults |
+| `--excluded` | — | Usernames to skip |
 | `--verbose`, `-v` | `false` | Show detailed collection output |
 
 **Examples:**
 ```bash
 # Collect & analyze a single source with details
-python -m cli.main collect run --source-id 1 --verbose
+python -m cli.main collect --src 739 --verbose
 
-# Full re-analysis from scratch
-python -m cli.main collect run --source-id 1 --force-refresh --verbose
+# Collect from several sources by id
+python -m cli.main collect --src 739,740 --verbose
 
-# Re-analyze a specific date range (needs --force-refresh for date filtering)
-python -m cli.main collect run --source-id 1 --force-refresh \
-  --start-date 01-09-2025 --end-date 30-09-2025 --verbose
+# Collect all active sources on VK
+python -m cli.main collect --src vk --verbose
 
-# All active sources on a platform
-python -m cli.main collect run --platform-id 1 --verbose
+# Collect by source url with monitored/excluded users
+python -m cli.main collect --src https://vk.com/russkikh_natalia --monitored user_a --excluded spam
 ```
 
 ---
@@ -125,6 +174,44 @@ python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --sc
 python -m cli.main task remove <name>
 ```
 
+### Run Task
+
+Run an existing task now (or create a one-off run). Each job type is a
+subcommand, so the type is implicit — there is no `--job-type` flag:
+
+```bash
+python -m cli.main task <job_type> --task <name|id> [options]
+```
+
+where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
+`reflect`.
+
+**Options:**
+| Option | Default | Description |
+|---|---|---|
+| `--task`, `-t` | — | Existing task by name or id to run (source already lives on the task) |
+| `--sources`, `-s` | — | Source IDs to link (one-off run) |
+| `--monitored` | — | Usernames to collect (one-off run) |
+| `--excluded` | — | Usernames to skip (one-off run) |
+| `--scenario` | — | `AgentScenario` ID (one-off run) |
+| `--period` | — | Period for digest/collect: `day`, `week`, `last month` etc. |
+| `--tenant` | — | Workspace slug or id for a one-off run |
+
+A task's own workspace always wins over `--tenant`. Running a task executes
+*its own* job — it never drains an unrelated pending job.
+
+**Examples:**
+```bash
+# Run an existing collect task
+python -m cli.main task collect --task 524
+
+# Run an existing digest task with a period
+python -m cli.main task digest --task 524 --period week
+
+# One-off analyze run
+python -m cli.main task analyze --sources 739 --scenario 3
+```
+
 ### Pause / Resume Task
 
 ```bash
@@ -160,6 +247,26 @@ python -m cli.main digest send-now week
 
 Manual runs are **not idempotent** — useful for testing channel setup without
 waiting for a task.
+
+### Run Digest Direct
+
+Same as `send-now`, but resolves sources via the unified `--src` flag:
+
+```bash
+python -m cli.main digest run [options]
+```
+
+**Options:**
+| Option | Default | Description |
+|---|---|---|
+| `--src`, `-s` | all active | Source ids, urls or platform keyword |
+| `--tenant` | — | Workspace slug or id |
+| `--period` | `day` | `day` or `week` |
+| `--verbose`, `-v` | `false` | Show detailed output |
+
+```bash
+python -m cli.main digest run --src 739 --period week
+```
 
 ---
 

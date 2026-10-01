@@ -89,7 +89,7 @@ OpenAI function calling.
 
 | Параметр | Назначение |
 |---|---|
-| `AGENT_DAILY_COST_LIMIT` | USD-потолок за сегодня (UTC-день): агент + дайджесты; проверка до и во время цикла |
+| `AGENT_DAILY_COST_LIMIT` | USD-потолок за сегодня (UTC-день): агент + дайджесты + обучение (`learn`/`reflect`); проверка до и во время цикла |
 | `tenant.daily_cost_limit` | Персональный лимит рабочего пространства (перекрывает глобальный) |
 | `AGENT_MAX_ITERATIONS` | Макс. раундов tool-calls на одно сообщение |
 | `AGENT_HISTORY_LIMIT` | Сколько сообщений истории уходит в LLM |
@@ -97,10 +97,13 @@ OpenAI function calling.
 | `AGENT_MODEL` | Явная модель; пусто = авто-выбор первой активной |
 
 Метрика расхода — `tenancy.resolver.daily_cost_today()`: сумма
-`AgentMessage.cost` (чат, пишется из `usage["cost"]`) и `DigestRun.llm_cost`
-(LLM-сводка дайджеста). Тарифы — из `llm_models` (`llm_client.price_usage_usd`),
-столько же записывает `analyze()` в top-level `usage` дайджеста. Дайджест при
-исчерпанном лимите публикуется без LLM-сводки. См. `docs/AGENT_TASKS.md` для
+`AgentMessage.cost` (чат, пишется из `usage["cost"]`), `DigestRun.llm_cost`
+(LLM-сводка дайджеста) и `Job.llm_cost` (`learn`/`reflect`, пишется из
+`usage["cost"]` ответа `chat_with_fallback` через результат job'а).
+Тарифы — из `llm_models` (`llm_client.price_usage_usd`),
+столько же записывает `analyze()` в top-level `usage` дайджеста. Дайджест и
+`learn`/`reflect` при исчерпанном лимите пропускают LLM-вызов (дайджест при
+этом публикуется без LLM-сводки). См. `docs/AGENT_TASKS.md` для
 общей картины очереди.
 
 ## Tenancy

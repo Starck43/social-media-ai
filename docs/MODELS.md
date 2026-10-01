@@ -1,13 +1,13 @@
 # Data Model Reference
 
-Entity-relationship reference for all database tables in the `social_manager` schema.
+Entity-relationship reference for all database tables in the configured schema (`settings.DB_SCHEMA`, default `public`).
 
 ## Base Classes
 
 ### `Base`
 
 SQLAlchemy `DeclarativeBase` with:
-- Default schema: `social_manager`
+- Default schema: `settings.DB_SCHEMA` (default `public`)
 - Custom `save()` and `delete()` methods
 - `objects` class attribute set to `BaseManager` after class definition
 
@@ -256,16 +256,17 @@ Messenger chat → tenant binding.
 
 ---
 
-### `tenant_credentials`
+### `user_credentials`
 
-Per-tenant encrypted secrets.
+Personal (per-user) L2 secrets, keyed by `users.id` — deliberately not
+tenant-scoped (a person's tokens are valid in every workspace they belong to).
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `platform` | `String(30)` | `'vk'`, `'telegram'`, `'max'` |
-| `kind` | `String(30)` | `'user_token'`, `'service_token'`, `'bot_token'`, etc. |
+| `user_id` | `Integer` FK → `users` | Owner of the secret |
+| `platform` | `String(30)` | `'vk'`, `'telegram'` |
+| `kind` | `String(30)` | `'user_token'`, `'session'`, `'api_id'`, `'api_hash'` |
 | `label` | `String(100)` | Free-form note |
 | `secret_encrypted` | `Text` | Fernet-encrypted secret |
 | `expires_at` | `DateTime` | Credential expiry |
@@ -431,8 +432,9 @@ Background job queue.
 | `locked_at` | `DateTime` | When claimed by worker |
 | `attempts` | `Integer` | Current attempt count |
 | `max_attempts` | `Integer` | Max retries |
-| `result` | `JSON` | Job result |
+| `result` | `JSON` | Job result (for `learn`/`reflect` includes priced `llm_cost`) |
 | `error` | `Text` | Error message |
+| `llm_cost` | `Float` | USD spent on the LLM call (NULL = none); feeds the daily cap |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
@@ -603,7 +605,7 @@ Action ledger (audit trail for automated actions).
 │ tenants  │────<│ tenant_users     │     │ tenant_channels  │
 └────┬─────┘     └──────────────────┘     └──────────────────┘
      │     ┌──────────────────┐     ┌──────────────────┐
-     │     │ tenant_invites   │     │tenant_credentials│
+     │     │ tenant_invites   │     │user_credentials  │
      │     └──────────────────┘     └──────────────────┘
      │
      ├────< sources
@@ -627,7 +629,9 @@ Action ledger (audit trail for automated actions).
 | Migration | Description |
 |---|---|
 | `0031` | Add LLM cost tracking to `ai_analytics` |
-| `0044` | Add tenancy core tables (`tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `tenant_credentials`) + add `tenant_id` to 10 business tables |
+| `0044` | Add tenancy core tables (`tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, workspace `tenant_credentials`) + add `tenant_id` to 10 business tables |
 | `0049` | Add `content_hash` to `ai_analytics` for deduplication |
+| `0065` | Add `user_credentials` (personal L2 vault, keyed by `users.id`) |
+| `0066` | Drop `tenant_credentials` (app/bot config moves to the environment) |
 
-Head migration: `0049` (verify with `alembic current`).
+Head migration: `0066` (verify with `alembic current`).

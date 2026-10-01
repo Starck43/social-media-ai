@@ -23,8 +23,9 @@ is never blocked behind a long collection.
   sources. The `sources` relationship is loaded via `task.sources` (a list).
 - `jobs` — the queue: `job_type`, `payload`, `status`
   (`pending` | `running` | `done` | `failed`), `run_at`, `locked_at`,
-  `attempts`, `max_attempts`, `result`, `error`, plus `agent_task_id` when the
-  job came from a task.
+  `attempts`, `max_attempts`, `result`, `error`, `llm_cost` (USD spent by the
+  job's LLM call — `learn`/`reflect`, NULL when none), plus `agent_task_id` when
+  the job came from a task.
 
 ## How a run happens
 
@@ -67,8 +68,9 @@ python -m cli.main task remove weekly-digest
 Task sources are linked via the `agent_task_sources` m2m table
 (`--sources`); `--monitored`/`--excluded` become the flat `monitored_users` /
 `excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Use
-`task run --task <name|id>` to run an existing task now, or pass the same
-direct params to create and run a one-off `@once` task.
+`task <job_type> --task <name|id>` (e.g. `task collect --task 524`) to run an
+existing task now, or pass the same direct params to create and run a one-off
+`@once` task.
 
 Adding a job type means adding a function to the `HANDLERS` registry in
 `app/jobs/handlers.py`; `job_type` values are otherwise free-form strings, so

@@ -28,6 +28,8 @@ from app.core.tenant_context import tenant_scope
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 
+from .perms import WebPerms
+
 # Pages reachable without an authenticated session.
 PUBLIC_PATHS = frozenset({"/app/login", "/app/register"})
 # Pages reachable while logged in but without any workspace membership.
@@ -54,6 +56,9 @@ class TenantUIMiddleware:
         request.state.tenant = None
         request.state.tenant_id = None
         request.state.unread_notifications = 0
+        # Built below once the active workspace is known; always set so
+        # templates can call `perms.can(...)` unconditionally.
+        request.state.web_perms = WebPerms(user, memberships)
 
         if user is None and path not in PUBLIC_PATHS:
             await self._redirect(scope, receive, send, f"/app/login?next={quote(path, safe='')}")
@@ -64,6 +69,7 @@ class TenantUIMiddleware:
             return
 
         tenant_id = self._active_tenant_id(request, memberships)
+        request.state.web_perms = WebPerms(user, memberships, tenant_id)
         if tenant_id is not None:
             request.state.tenant = await tenants.get(id=tenant_id)
             request.state.tenant_id = tenant_id
@@ -113,7 +119,10 @@ class TenantUIMiddleware:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             if payload.get("type") != "access":
                 return None
-            user = await User.objects.get(id=int(payload["sub"]))
+            # `role.permissions` eager: `WebPerms.can()` reads the role's model
+            # rights, and the session this row came from is already closed — a
+            # lazy walk would raise DetachedInstanceError in the middle of a page.
+            user = await User.objects.prefetch_related("role.permissions").get(id=int(payload["sub"]))
         except (JWTError, KeyError, ValueError, TypeError):
             return None
         if user is None or not user.is_active:

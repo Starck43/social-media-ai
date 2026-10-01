@@ -10,9 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.models import Tenant
+from app.types import ActionType
+
+from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 
 templates = Jinja2Templates(directory="app/web/templates")
 
@@ -87,6 +91,27 @@ def action_tenant_id(request: Request, posted_tenant_id: int | None = None) -> i
     return getattr(request.state, "tenant_id", None)
 
 
+def guard_web(
+    request: Request,
+    model_name: str,
+    action: ActionType | str,
+    *,
+    back: str,
+    reason: str = "Недостаточно прав для этого действия",
+) -> RedirectResponse | None:
+    """Gate a mutation: None when the caller may act, else flash + redirect to `back`.
+
+    Hiding a button in the template is not a check — every POST handler calls
+    this first. The rule lives in `app/web/perms.py` (workspace owner or the
+    platform role's model rights; superusers pass).
+    """
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and perms.can(model_name, action):
+        return None
+    add_flash(request, "error", reason)
+    return RedirectResponse(back, status_code=302)
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
     context: dict[str, Any] = {
         "user": getattr(request.state, "web_user", None),
@@ -94,6 +119,9 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
         "workspaces": getattr(request.state, "workspaces", []) or [],
         "tenant": getattr(request.state, "tenant", None),
         "unread_notifications": getattr(request.state, "unread_notifications", 0) or 0,
+        "perms": getattr(request.state, "web_perms", None),
+        "nav": NAV_ITEMS,
+        "mobile_nav": MOBILE_NAV_ITEMS,
         "csrf": csrf_token(request),
         "flashes": pop_flashes(request),
         "path": request.url.path,

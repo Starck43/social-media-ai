@@ -79,7 +79,7 @@
                     {% endif %}
                 </td>
                 <td class="px-4 py-3 text-right">
-                    {% if s.is_active and not s.is_default %}
+                    {% if s.is_active and not s.is_default and perms and perms.can('agentscenario', 'update') %}
                         <form method="post" action="/app/scenarios/set-default" class="inline">
                             <input type="hidden" name="scenario_id" value="{{ s.id }}">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">

@@ -12,7 +12,7 @@ from sqlalchemy import func
 from app.models.agent_scenario import AgentScenario
 from app.models.source import Source
 
-from .deps import add_flash, ensure_csrf, render
+from .deps import add_flash, ensure_csrf, guard_web, render
 
 router = APIRouter(prefix="/scenarios")
 
@@ -64,6 +64,10 @@ async def scenarios_set_default(
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/scenarios", status_code=302)
+
+    denied = guard_web(request, "agentscenario", "update", back="/app/scenarios")
+    if denied is not None:
+        return denied
 
     # The manager's tenant guard scopes the lookup, so a foreign id reads as
     # "not found" instead of leaking another workspace's scenario.

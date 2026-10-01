@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from app.models.source import Source
 from app.types import SourceType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render, safe_next, tenant_filter_context
 
 router = APIRouter(prefix="/sources")
 
@@ -105,22 +105,31 @@ async def source_add(
     monitored_users: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    # The onboarding wizard posts here too — land back on the page that was
+    # filled in (validating, so `?next=` cannot become an open redirect).
+    next: str = Form(""),
 ):
+    back = safe_next(next) or "/app/sources"
+
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-        return RedirectResponse("/app/sources", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "source", "create", back=back)
+    if denied is not None:
+        return denied
 
     platform_row = await _resolve_platform(platform)
     if platform_row is None:
         add_flash(request, "error", f"Платформа '{platform}' не найдена")
-        return RedirectResponse("/app/sources", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     st = SourceType.get_by_value(source_type)
     if st is None:
         add_flash(request, "error", f"Тип источника '{source_type}' не найден")
-        return RedirectResponse("/app/sources", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     from app.core.tenant_context import tenant_scope
 
@@ -132,7 +141,7 @@ async def source_add(
         )
         if existing is not None:
             add_flash(request, "error", "Источник с таким ID уже существует")
-            return RedirectResponse("/app/sources", status_code=302)
+            return RedirectResponse(back, status_code=302)
 
         clean_name = name.strip()[:100] or f"{platform}:{external_id}"
 
@@ -151,7 +160,7 @@ async def source_add(
         )
 
     add_flash(request, "success", f"Источник '{clean_name}' добавлен")
-    return RedirectResponse("/app/sources", status_code=302)
+    return RedirectResponse(back, status_code=302)
 
 
 @router.post("/{source_id}")
@@ -172,6 +181,10 @@ async def source_edit(
         return RedirectResponse("/app/sources", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "source", "update", back="/app/sources")
+    if denied is not None:
+        return denied
 
     from app.core.tenant_context import tenant_scope
 
@@ -233,6 +246,10 @@ async def source_toggle(
         return RedirectResponse("/app/sources", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "source", "update", back="/app/sources")
+    if denied is not None:
+        return denied
 
     from app.core.tenant_context import tenant_scope
 

@@ -82,7 +82,12 @@
 | `/app/login` | Email + пароль. После успеха — редирект на dashboard. |
 | `/app/register` | Саморегистрация создаёт новый `tenant` + `tenant_user` (role=`owner`). |
 | `/app/invite` | Форма ввода invite-кода (из Telegram `/invite`). Редиректит в созданный workspace. |
-| `/app/onboarding` | Первый вход: выбор платформы (VK/Telegram/MAX), добавление первого источника, настройка расписания. |
+| `/app/onboarding` | Первый вход: чек-лист из двух шагов — источник и расписание. Каждая форма постит в существующий эндпоинт создания с `next=/app/onboarding`, так что «создать» имеет одну реализацию. Шаг помечен «готово», когда источник / задача уже есть; форма не показывается без права `create`. |
+
+Шаблон навигации — `app/web/nav.py` (`NAV_ITEMS`), а не литерал в HTML: пункт с
+неготовой страницей несёт `ready=False` и рисуется как «скоро», поэтому в меню
+нет ссылки `#`, которая ничего не делает. Мобильный бар (`MOBILE_NAV_ITEMS`)
+содержит только `ready` — под ним нет места для «скоро».
 
 ### 4.2. Dashboard (`/app/`)
 
@@ -295,6 +300,14 @@
 ---
 
 ## 7. Безопасность
+
+- **Права в `/app` — `app/web/perms.py`** (`WebPerms.can(model, action)`): владелец
+  workspace (`tenant_users.role == "owner"`) управляет своим workspace всегда,
+  остальные — по платформенной роли (`User.has_perm_for`, структурированные
+  `permissions.model_type_id` + `action_type`), суперюзер — всё. То же правило,
+  что `Resolution.is_owner` применяет в чате. Мутации закрыты серверно
+  (`guard_web` в `app/web/deps.py`), кнопки в шаблонах лишь скрываются — это не
+  проверка. Шаблон: `perms.can('source', 'create')`.
 
 - **JWT короткого života** (15 мин access + 30 дней refresh, уже настроено в `CONFIGURATION.md`).
 - **HttpOnly cookie** для refresh-токена, access — в памяти.

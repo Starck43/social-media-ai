@@ -1,0 +1,169 @@
+{% extends "web/base.html" %}
+{% block title %}Начало работы — AI Monitor{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-3xl">
+    <div class="mb-6">
+        <h1 class="text-2xl font-semibold tracking-tight">Начало работы</h1>
+        <p class="mt-1 text-sm text-slate-400">
+            Два шага — и конвейер заработает: подключите источник, поставьте расписание.
+            Дальше сбор, анализ и дайджесты выполняются сами.
+        </p>
+    </div>
+
+    <ol class="space-y-5">
+        <!-- 1 ─────────────────────────────────────────────────────────── -->
+        <li class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-500">Шаг 1</p>
+                    <h2 class="mt-1 text-lg font-semibold">Источник</h2>
+                </div>
+                {% if has_source %}
+                    <span class="rounded-full bg-emerald-950 px-3 py-1 text-xs text-emerald-400">готово</span>
+                {% else %}
+                    <span class="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">не сделано</span>
+                {% endif %}
+            </div>
+
+            {% if has_source %}
+                <p class="mt-3 text-sm text-slate-400">Источник подключён — сбор по нему пойдёт по расписанию.</p>
+                <a href="/app/sources" class="mt-4 inline-block text-sm text-cyan-400 hover:text-cyan-300">
+                    Управлять источниками →
+                </a>
+            {% elif perms and perms.can('source', 'create') %}
+                <form method="post" action="/app/sources" class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <input type="hidden" name="next" value="/app/onboarding">
+                    <div>
+                        <label for="ob-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
+                        <input id="ob-name" name="name" maxlength="100" placeholder="Мой источник"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label for="ob-platform" class="mb-1 block text-sm text-slate-300">Платформа</label>
+                        <select id="ob-platform" name="platform" required
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for platform in platforms %}
+                                <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="ob-type" class="mb-1 block text-sm text-slate-300">Тип</label>
+                        <select id="ob-type" name="source_type" required
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for st in source_types %}
+                                <option value="{{ st.db_value }}">{{ st.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="ob-external" class="mb-1 block text-sm text-slate-300">Внешний ID</label>
+                        <input id="ob-external" name="external_id" required maxlength="200"
+                               placeholder="123456 или https://vk.com/club1"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label for="ob-monitored" class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
+                        <input id="ob-monitored" name="monitored_users"
+                               placeholder="username1, username2, @durov"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <p class="mt-1 text-xs text-slate-500">Через запятую. Можно оставить пустым.</p>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                            Подключить источник
+                        </button>
+                    </div>
+                </form>
+            {% else %}
+                <p class="mt-3 text-sm text-slate-500">
+                    Недостаточно прав, чтобы подключить источник — обратитесь к владельцу workspace.
+                </p>
+            {% endif %}
+        </li>
+
+        <!-- 2 ─────────────────────────────────────────────────────────── -->
+        <li class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-500">Шаг 2</p>
+                    <h2 class="mt-1 text-lg font-semibold">Расписание</h2>
+                </div>
+                {% if has_task %}
+                    <span class="rounded-full bg-emerald-950 px-3 py-1 text-xs text-emerald-400">готово</span>
+                {% else %}
+                    <span class="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">не сделано</span>
+                {% endif %}
+            </div>
+
+            {% if has_task %}
+                <p class="mt-3 text-sm text-slate-400">Расписание задано — планировщик сам запускает задачи.</p>
+                <a href="/app/tasks" class="mt-4 inline-block text-sm text-cyan-400 hover:text-cyan-300">
+                    Управлять задачами →
+                </a>
+            {% elif perms and perms.can('agenttask', 'create') %}
+                <form method="post" action="/app/tasks" class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <input type="hidden" name="next" value="/app/onboarding">
+                    <div>
+                        <label for="ob-task" class="mb-1 block text-sm text-slate-300">Название</label>
+                        <input id="ob-task" name="name" required maxlength="100" placeholder="Ежедневный сбор"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label for="ob-job" class="mb-1 block text-sm text-slate-300">Что делаем</label>
+                        <select id="ob-job" name="job_type" required
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for value, label in job_types %}
+                                <option value="{{ value }}" {% if value == 'collect' %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label for="ob-cron" class="mb-1 block text-sm text-slate-300">Когда</label>
+                        <select id="ob-cron" name="cron_custom" required
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for expr, label in presets %}
+                                <option value="{{ expr }}">{{ label }} · {{ cron_to_human(expr) }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500">
+                            Нужен свой интервал? Задайте его на <a href="/app/tasks" class="text-cyan-400 hover:text-cyan-300">странице задач</a>.
+                        </p>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                            Создать расписание
+                        </button>
+                    </div>
+                </form>
+            {% else %}
+                <p class="mt-3 text-sm text-slate-500">
+                    Недостаточно прав, чтобы создать задачу — обратитесь к владельцу workspace.
+                </p>
+            {% endif %}
+        </li>
+
+        <!-- 3 ─────────────────────────────────────────────────────────── -->
+        <li class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-xs uppercase tracking-wider text-slate-500">Шаг 3</p>
+            <h2 class="mt-1 text-lg font-semibold">Смотрите результат</h2>
+            <p class="mt-3 text-sm text-slate-400">
+                После первых запусков здесь появятся KPI, темы и последние анализы.
+                Дайджесты и чат с агентом подключаются дальше — они появятся в меню слева.
+            </p>
+            <div class="mt-4 flex flex-wrap gap-3">
+                <a href="/app/"
+                   class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+                    Открыть дашборд
+                </a>
+                <a href="/app/scenarios"
+                   class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                    Настроить сценарии
+                </a>
+            </div>
+        </li>
+    </ol>
+</div>
+{% endblock %}

@@ -18,7 +18,7 @@ from app.models import AgentScenario, AgentTask, Job, Source
 from app.tasks.cron import cron_to_human
 from app.types import JobType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render, safe_next, tenant_filter_context
 
 router = APIRouter(prefix="/tasks")
 
@@ -124,12 +124,24 @@ async def task_create(
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    # Where to land after creating — the onboarding wizard posts here too, and
+    # every failure below has to come back to the page that was filled in.
+    next: str = Form(""),
 ):
+    back = safe_next(next) or "/app/tasks"
+    # `None` when the caller stayed on /app/tasks; the run-status modal only
+    # exists there, so an external caller (onboarding) takes the plain flash.
+    return_to = safe_next(next)
+
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-        return RedirectResponse("/app/tasks", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "agenttask", "create", back=back)
+    if denied is not None:
+        return denied
 
     cron_expr = cron_custom.strip()
 
@@ -138,7 +150,7 @@ async def task_create(
     tasks_mgr = AgentTaskManager()
     if not tasks_mgr.validate_cron(cron_expr):
         add_flash(request, "error", f"Некорректное cron-выражение: {cron_expr}")
-        return RedirectResponse("/app/tasks", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     parsed_source_ids: list[int] = []
     for s in source_ids:
@@ -164,7 +176,7 @@ async def task_create(
         await _check_task_sources(parsed_source_ids, tenant_id)
     except ValueError as e:
         add_flash(request, "error", str(e))
-        return RedirectResponse("/app/tasks", status_code=302)
+        return RedirectResponse(back, status_code=302)
 
     with tenant_scope(tenant_id):
         task = await AgentTask.objects.create(
@@ -183,10 +195,12 @@ async def task_create(
     if run_now:
         job = await enqueue_task_now(task)
         add_flash(request, "success", f"Задача «{name}» создана и запущена")
-        return RedirectResponse(f"/app/tasks?job_id={job.id}", status_code=302)
+        # The run-status modal lives on the tasks page; from onboarding there is
+        # nothing to poll, so land on the caller's page with the flash instead.
+        return RedirectResponse(back if return_to else f"/app/tasks?job_id={job.id}", status_code=302)
     else:
         add_flash(request, "success", f"Задача «{name}» создана")
-    return RedirectResponse("/app/tasks", status_code=302)
+    return RedirectResponse(back, status_code=302)
 
 
 @router.post("/{task_id}/toggle")
@@ -201,6 +215,10 @@ async def task_toggle(
         return RedirectResponse("/app/tasks", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+    if denied is not None:
+        return denied
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -225,6 +243,11 @@ async def task_run_now(
         return RedirectResponse("/app/tasks", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    # Enqueues a job — the same right the sqladmin run-now action declares.
+    denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+    if denied is not None:
+        return denied
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -263,6 +286,10 @@ async def task_update(
         return RedirectResponse("/app/tasks", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+    if denied is not None:
+        return denied
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:
@@ -339,6 +366,10 @@ async def task_delete(
         return RedirectResponse("/app/tasks", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "agenttask", "delete", back="/app/tasks")
+    if denied is not None:
+        return denied
 
     task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
     if task is None:

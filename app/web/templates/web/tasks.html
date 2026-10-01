@@ -16,10 +16,12 @@
                     </select>
                 </form>
             {% endif %}
+            {% if perms and perms.can('agenttask', 'create') %}
             <button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Создать задачу
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -91,6 +93,7 @@
                             </td>
                             {% if is_superuser %}<td class="px-4 py-3 text-xs text-slate-400">{{ task.tenant.name }}</td>{% endif %}
                             <td class="px-4 py-3">
+                                {% if perms and perms.can_any('agenttask', 'update', 'delete') %}
                                 <div class="flex items-center gap-1">
                                     <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -148,6 +151,7 @@
                                         </button>
                                     </form>
                                 </div>
+                                {% endif %}
                             </td>
                         </tr>
                     {% endfor %}
@@ -156,7 +160,15 @@
         </div>
     {% else %}
         <div class="flex h-40 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
-            Пока нет задач. Создайте первую для автоматического сбора или анализа данных.
+            <p class="text-center">
+                Пока нет задач.
+                {% if perms and perms.can('agenttask', 'create') %}
+                    <a href="/app/onboarding" class="text-cyan-400 hover:underline">Создайте первую</a>
+                    для автоматического сбора или анализа данных.
+                {% else %}
+                    Первая задача создаётся владельцем workspace.
+                {% endif %}
+            </p>
         </div>
     {% endif %}
 

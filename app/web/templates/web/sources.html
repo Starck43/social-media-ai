@@ -38,10 +38,12 @@
                class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
                 Войти через VK ID
             </a>
+            {% if perms and perms.can('source', 'create') %}
             <button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Добавить источник
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -86,6 +88,7 @@
                             <td class="px-4 py-3 text-slate-400">{{ source.created_at.strftime('%Y-%m-%d') }}</td>
                             {% if is_superuser %}<td class="px-4 py-3 text-xs text-slate-400">{{ source.tenant.name }}</td>{% endif %}
                             <td class="px-4 py-3">
+                                {% if perms and perms.can('source', 'update') %}
                                 <div class="flex items-center gap-1">
                                     <button
                                         @click='editSource({
@@ -121,6 +124,7 @@
                                         </button>
                                     </form>
                                 </div>
+                                {% endif %}
                             </td>
                         </tr>
                     {% endfor %}
@@ -129,7 +133,14 @@
         </div>
     {% else %}
         <div class="flex h-60 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
-            Пока нет источников. Добавьте первый, чтобы начать сбор данных.
+            <p class="text-center">
+                Пока нет источников.
+                {% if perms and perms.can('source', 'create') %}
+                    <a href="/app/onboarding" class="text-cyan-400 hover:underline">Добавьте первый</a>, чтобы начать сбор данных.
+                {% else %}
+                    Добавьте первый, чтобы начать сбор данных.
+                {% endif %}
+            </p>
         </div>
     {% endif %}
 

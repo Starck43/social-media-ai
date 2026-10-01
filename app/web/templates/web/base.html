@@ -17,25 +17,14 @@
             AI Monitor
         </a>
         <nav class="mt-2 flex-1 space-y-0.5">
-            {% set nav_items = [
-                ('dashboard', '/app/', 'Дашборд', True),
-                ('sources', '/app/sources', 'Источники', True),
-                ('tasks', '/app/tasks', 'Задачи', True),
-                ('analytics', '#', 'Аналитика', False),
-                ('schedules', '#', 'Расписания', False),
-                ('digests', '#', 'Дайджесты', False),
-                ('chat', '#', 'Чат с агентом', False),
-                ('scenarios', '/app/scenarios', 'Сценарии', True),
-                ('settings', '#', 'Настройки', False),
-            ] %}
-            {% for key, href, label, enabled in nav_items %}
-                {% if enabled %}
-                    <a href="{{ href }}"
-                       class="block rounded-lg px-3 py-2 text-sm {% if section == key %}bg-slate-800 font-medium text-white{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-100{% endif %}">{{ label }}</a>
+            {% for item in nav %}
+                {% if item.ready %}
+                    <a href="{{ item.href }}"
+                       class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-800 font-medium text-white{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-100{% endif %}">{{ item.label }}</a>
                 {% else %}
                     <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-600"
                           title="Раздел появится в следующих вехах">
-                        {{ label }}
+                        {{ item.label }}
                         <span class="text-[10px] uppercase tracking-wider text-slate-700">скоро</span>
                     </span>
                 {% endif %}
@@ -160,9 +149,23 @@
 
         {% include "web/_flashes.html" %}
 
-        <main class="flex-1 p-6">{% block content %}{% endblock %}</main>
+        <main class="flex-1 p-4 pb-28 md:p-6 md:pb-6">{% block content %}{% endblock %}</main>
     </div>
 </div>
+
+{# Mobile: the sidebar is hidden below `md`, so the ready sections move to a fixed
+   bottom bar. `pb-28` on <main> keeps the last row from hiding under it. #}
+<nav class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden"
+     aria-label="Основные разделы">
+    <div class="flex">
+        {% for item in mobile_nav %}
+            <a href="{{ item.href }}"
+               class="flex-1 px-2 py-3 text-center text-xs {% if section == item.key %}font-medium text-cyan-400{% else %}text-slate-400{% endif %}">
+                {{ item.label }}
+            </a>
+        {% endfor %}
+    </div>
+</nav>
 
 <script>
 function notificationsBell() {

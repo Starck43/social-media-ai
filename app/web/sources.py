@@ -2,6 +2,7 @@
 
 M2: list + add + edit + toggle. Sources are scoped to the current workspace.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request
@@ -10,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from app.models.source import Source
 from app.types import SourceType
 
-from .deps import add_flash, ensure_csrf, render
+from .deps import add_flash, ensure_csrf, render, tenant_filter_context
 
 router = APIRouter(prefix="/sources")
 
@@ -34,14 +35,29 @@ async def _resolve_platform(form_value: str):
 @router.get("")
 @router.get("/")
 async def sources_list(request: Request):
-    tenant_id = request.state.tenant_id
-    sources = await (
-        Source.objects.filter(tenant_id=tenant_id)
-        .select_related("platform")
-        .order_by(Source.created_at.desc())
-    )
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
+
+    if is_superuser:
+        # Superuser sees all tenants' sources, optionally narrowed to one.
+        # Bypass the tenant guard (the middleware already set a tenant scope) so
+        # the manager query isn't silently scoped to the active workspace.
+        from app.core.tenant_context import tenant_scope
+
+        with tenant_scope(bypass=True):
+            query = Source.objects.select_related("platform", "tenant")
+            if filter_tenant_id is not None:
+                query = query.filter(tenant_id=filter_tenant_id)
+            sources = await query.order_by(Source.created_at.desc())
+    else:
+        sources = await (
+            Source.objects.filter(tenant_id=request.state.tenant_id)
+            .select_related("platform")
+            .order_by(Source.created_at.desc())
+        )
     user_sources = await (
-        Source.objects.filter(tenant_id=tenant_id, source_type=SourceType.USER)
+        Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
         .select_related("platform")
         .order_by(Source.name, Source.id)
     )
@@ -57,6 +73,9 @@ async def sources_list(request: Request):
         platforms=await _platforms(),
         source_types=list(SourceType),
         user_sources_json=user_sources_data,
+        is_superuser=is_superuser,
+        tenants=tenants,
+        filter_tenant_id=filter_tenant_id,
     )
 
 
@@ -98,9 +117,7 @@ async def source_add(
     # Parse monitored users from comma-separated string into params
     params: dict = {}
     if monitored_users.strip():
-        params["monitored_users"] = [
-            u.strip() for u in monitored_users.split(",") if u.strip()
-        ]
+        params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
 
     new_source = await Source.objects.create(
         name=clean_name,
@@ -158,9 +175,7 @@ async def source_edit(
     # Parse monitored users from comma-separated string into params
     params = source.params.copy() if source.params else {}
     if monitored_users.strip():
-        params["monitored_users"] = [
-            u.strip() for u in monitored_users.split(",") if u.strip()
-        ]
+        params["monitored_users"] = [u.strip() for u in monitored_users.split(",") if u.strip()]
     else:
         params.pop("monitored_users", None)
 

@@ -9,75 +9,142 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Request
-from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 
-from app.core.database import new_session
 from app.models.agent_task import AgentTask
 from app.models.ai_analytics import AIAnalytics
 from app.models.source import Source
 from app.tasks.cron import cron_to_human
 
-from .deps import render
+from .deps import render, tenant_filter_context
 
 router = APIRouter()
 
 
 async def _kpis(tenant_id: int | None, is_superuser: bool = False) -> dict[str, int | float]:
     """Aggregate KPIs for the current tenant (set by TenantUIMiddleware);
-    if is_superuser, tenant_id is None → show global aggregates."""
+    if is_superuser, tenant_id is None → show global aggregates.
+
+    The managers carry the tenant guard, so a normal request needs no manual
+    `tenant_id` predicate: it is applied unless the caller holds a bypass.
+    Aggregates run through `values()` + `scalar()` rather than a raw session.
+
+    A superuser without an active workspace sees global aggregates, so their
+    branch runs under an explicit bypass — never "no tenant means everything".
+    """
     today = date.today()
 
-    async with new_session() as session:
-        # Active sources count (tenant-scoped unless superuser)
-        if is_superuser and tenant_id is None:
-            sources_q = await session.execute(
-                select(func.count(Source.id)).where(Source.is_active == True)  # noqa: E712
-            )
-        else:
-            sources_q = await session.execute(
-                select(func.count(Source.id)).where(
-                    Source.tenant_id == tenant_id, Source.is_active == True  # noqa: E712
-                )
-            )
-        active_sources = sources_q.scalar() or 0
+    if is_superuser and tenant_id is None:
+        from app.core.tenant_context import tenant_scope
 
-        # Posts analyzed today
-        posts_today_q = await session.execute(
-            select(func.count(AIAnalytics.id)).where(AIAnalytics.analysis_date == today)
-        )
-        posts_today = posts_today_q.scalar() or 0
+        with tenant_scope(bypass=True):
+            return await _kpis_in_scope(today)
 
-        # LLM cost today (cents → dollars)
-        cost_today_q = await session.execute(
-            select(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0)).where(AIAnalytics.analysis_date == today)
-        )
-        cost_cents = cost_today_q.scalar() or 0
-        # SUM() over NUMERIC comes back as Decimal — keep the KPI a plain float
-        cost_usd = float(cost_cents) / 100
+    return await _kpis_in_scope(today)
 
-        # Sentiment: placeholder (no data yet)
-        avg_sentiment = 0.0
 
-        # Active tasks count (tenant-scoped unless superuser)
-        if is_superuser and tenant_id is None:
-            tasks_q = await session.execute(
-                select(func.count(AgentTask.id)).where(AgentTask.is_active == True)  # noqa: E712
-            )
-        else:
-            tasks_q = await session.execute(
-                select(func.count(AgentTask.id)).where(
-                    AgentTask.tenant_id == tenant_id, AgentTask.is_active == True  # noqa: E712
-                )
-            )
-        active_tasks = tasks_q.scalar() or 0
+async def _kpis_in_scope(today: date) -> dict[str, int | float]:
+    """KPI aggregates for the ambient scope (tenant context or superuser bypass)."""
+    active_sources = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar(0)
+
+    posts_today = await (
+        AIAnalytics.objects.filter(analysis_date=today).values(func.count(AIAnalytics.id)).scalar(0)
+    )
+
+    # LLM cost today (cents → dollars)
+    cost_cents = await (
+        AIAnalytics.objects.filter(analysis_date=today)
+        .values(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0))
+        .scalar(0)
+    )
+    # SUM() over NUMERIC comes back as Decimal — keep the KPI a plain float
+    cost_usd = float(cost_cents) / 100
+
+    # Sentiment: average of recent sentiment scores across the tenant's analyses
+    avg_sentiment = 0.0
+    sentiment_analyzed = False
+    recent = await (
+        AIAnalytics.objects.filter(analysis_date__gte=today - timedelta(days=7))
+        .select_related("source")
+        .order_by(AIAnalytics.created_at.desc())
+    )
+    scores: list[float] = []
+    for a in recent:
+        sent = _extract_sentiment_score(a.summary_data)
+        if sent is not None:
+            scores.append(sent)
+    if scores:
+        avg_sentiment = sum(scores) / len(scores)
+        sentiment_analyzed = True
+
+    active_tasks = await AgentTask.objects.filter(is_active=True).values(func.count(AgentTask.id)).scalar(0)
 
     return {
         "active_sources": active_sources,
         "posts_today": posts_today,
         "avg_sentiment": avg_sentiment,
+        "sentiment_analyzed": sentiment_analyzed,
         "cost_today_usd": cost_usd,
         "active_tasks": active_tasks,
+    }
+
+
+def _extract_sentiment_score(summary_data: dict | None) -> float | None:
+    """Pull a 0.0–1.0 sentiment score from summary_data (v3.0 multi-llm first)."""
+    if not summary_data:
+        return None
+    multi_llm = summary_data.get("multi_llm_analysis", {})
+    text_analysis = multi_llm.get("text_analysis", {}) or {}
+    score = text_analysis.get("sentiment_score")
+    if isinstance(score, (int, float)):
+        return max(0.0, min(1.0, float(score)))
+    ai = summary_data.get("ai_analysis", {})
+    sentiment = ai.get("sentiment_analysis", {}) or {}
+    overall = sentiment.get("overall_sentiment", {})
+    if isinstance(overall, dict) and isinstance(overall.get("score"), (int, float)):
+        return max(0.0, min(1.0, float(overall["score"])))
+    return None
+
+
+async def _analytics(tenant_id: int | None, is_superuser: bool = False) -> dict:
+    """Aggregated analytics widgets for the dashboard (ReportAggregator, no LLM)."""
+    if is_superuser and tenant_id is None:
+        from app.core.tenant_context import tenant_scope
+
+        with tenant_scope(bypass=True):
+            return await _analytics_in_scope(None)
+
+    return await _analytics_in_scope(tenant_id)
+
+
+async def _analytics_in_scope(tenant_filter: int | None) -> dict:
+    """Report widgets for the ambient scope; `tenant_filter` narrows explicitly."""
+    from app.services.ai.reporting import ReportAggregator
+
+    agg = ReportAggregator()
+    top_topics = await agg.get_top_topics(days=7, limit=6, tenant_id=tenant_filter)
+    content_mix = await agg.get_content_mix(days=7, tenant_id=tenant_filter)
+
+    recent = []
+    rows = await AIAnalytics.objects.select_related("source").order_by(AIAnalytics.created_at.desc()).limit(8)
+    for a in rows:
+        sd = a.summary_data or {}
+        recent.append(
+            {
+                "id": a.id,
+                "source_name": a.source.name if a.source else f"#{a.source_id}",
+                "analysis_date": a.analysis_date,
+                "title": sd.get("analysis_title") or f"Анализ #{a.id}",
+                "summary": (sd.get("analysis_summary") or "")[:220],
+                "topics": (sd.get("main_topics") or [])[:4],
+                "cost_usd": float(a.estimated_cost or 0) / 100,
+            }
+        )
+
+    return {
+        "top_topics": top_topics,
+        "content_mix": content_mix,
+        "recent": recent,
     }
 
 
@@ -87,17 +154,20 @@ async def _recent_tasks(tenant_id: int | None, is_superuser: bool = False, filte
     Superuser sees all tasks (optionally narrowed to one tenant via
     `filter_tenant_id`); regular users see their own tenant's tasks.
     """
-    async with new_session() as session:
-        if is_superuser:
-            stmt = select(AgentTask).options(selectinload(AgentTask.tenant))
+    if is_superuser:
+        from app.core.tenant_context import tenant_scope
+
+        with tenant_scope(bypass=True):
+            query = AgentTask.objects.prefetch_related("tenant")
             if filter_tenant_id is not None:
-                stmt = stmt.where(AgentTask.tenant_id == filter_tenant_id)
-            q = await session.execute(stmt.order_by(AgentTask.created_at.desc()).limit(20))
-        else:
-            q = await session.execute(
-                select(AgentTask).where(AgentTask.tenant_id == tenant_id).order_by(AgentTask.created_at.desc()).limit(5)
-            )
-        return q.scalars().all()
+                query = query.filter(tenant_id=filter_tenant_id)
+            return await query.order_by(AgentTask.created_at.desc()).limit(20)
+
+    return await (
+        AgentTask.objects.filter(tenant_id=tenant_id)
+        .order_by(AgentTask.created_at.desc())
+        .limit(5)
+    )
 
 
 # A path of "" is rejected by FastAPI when the router is included, so the index
@@ -112,22 +182,18 @@ async def dashboard(request: Request):
     filter_tenant_id = None
     tenants = []
     if is_superuser:
-        raw_tenant = request.query_params.get("tenant_id")
-        filter_tenant_id = int(raw_tenant) if raw_tenant and raw_tenant.isdigit() else None
-        async with new_session() as session:
-            from app.models import Tenant
-
-            result = await session.execute(select(Tenant).order_by(Tenant.name))
-            tenants = result.scalars().all()
+        filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
     kpis = await _kpis(tenant_id, is_superuser)
     recent_tasks = await _recent_tasks(tenant_id, is_superuser, filter_tenant_id)
+    analytics = await _analytics(tenant_id, is_superuser)
     return render(
         request,
         "web/dashboard.html",
         section="dashboard",
         kpis=kpis,
         recent_tasks=recent_tasks,
+        analytics=analytics,
         cron_to_human=cron_to_human,
         is_superuser=is_superuser,
         tenants=tenants,

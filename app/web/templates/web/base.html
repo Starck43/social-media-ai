@@ -93,6 +93,61 @@
             </div>
 
             <div class="flex items-center gap-3">
+                <div x-data="notificationsBell()">
+                    <button @click="open()"
+                            title="Уведомления"
+                            class="relative rounded-lg border border-slate-800 p-2 text-slate-300 hover:bg-slate-900">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/>
+                        </svg>
+                        <span x-show="unread > 0" x-cloak
+                              class="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+                            <span x-text="unread"></span>
+                        </span>
+                    </button>
+
+                    <div x-show="openModal" @click.outside="close()" @keydown.escape.window="close()" x-cloak
+                         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+                        <div class="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+                            <div class="flex items-center justify-between">
+                                <h2 class="text-lg font-semibold">Уведомления</h2>
+                                <button type="button" @click="close()" class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div class="mt-4 max-h-80 space-y-2 overflow-y-auto">
+                                <template x-if="loading">
+                                    <p class="py-6 text-center text-sm text-slate-500">Загрузка…</p>
+                                </template>
+                                <template x-if="!loading && items.length === 0">
+                                    <p class="py-6 text-center text-sm text-slate-500">Нет уведомлений</p>
+                                </template>
+                                <template x-for="n in items" :key="n.id">
+                                    <div class="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div class="min-w-0">
+                                                <p class="text-sm font-medium text-slate-200" x-text="n.title"></p>
+                                                <p class="mt-1 text-xs text-slate-400" x-text="n.message"></p>
+                                                <p class="mt-1 text-[11px] text-slate-600" x-text="n.created_at"></p>
+                                            </div>
+                                            <button type="button" @click="readOne(n)"
+                                                    title="Отметить прочитанным"
+                                                    class="shrink-0 rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-emerald-600/20 hover:text-emerald-400"
+                                                    x-show="!n.is_read">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <span class="hidden text-sm text-slate-400 sm:inline">{{ user.username if user }}</span>
                 <form method="post" action="/app/logout">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -108,5 +163,39 @@
         <main class="flex-1 p-6">{% block content %}{% endblock %}</main>
     </div>
 </div>
+
+<script>
+function notificationsBell() {
+    return {
+        openModal: false,
+        loading: false,
+        items: [],
+        unread: {{ unread_notifications }},
+        open() {
+            this.openModal = true;
+            this.load();
+        },
+        close() {
+            this.openModal = false;
+        },
+        readOne(n) {
+            fetch('/app/notifications/read/' + n.id, { method: 'POST', headers: { 'Accept': 'application/json' } })
+                .catch(() => {});
+            if (!n.is_read && this.unread > 0) this.unread -= 1;
+            this.items = this.items.filter((item) => item.id !== n.id);
+        },
+        load() {
+            this.loading = true;
+            fetch('/app/notifications', { headers: { 'Accept': 'application/json' } })
+                .then(r => r.json())
+                .then((data) => {
+                    this.items = data.notifications || [];
+                    this.loading = false;
+                })
+                .catch(() => { this.loading = false; });
+        },
+    };
+}
+</script>
 </body>
 </html>

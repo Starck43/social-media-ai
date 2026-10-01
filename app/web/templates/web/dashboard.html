@@ -24,10 +24,13 @@
         </div>
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">Средний sentiment</p>
-            <p class="mt-2 text-3xl font-semibold text-slate-600">
-                {% if kpis.avg_sentiment == 0 %}—{% else %}{{ "%.2f"|format(kpis.avg_sentiment) }}{% endif %}
+            <p class="mt-2 text-3xl font-semibold
+               {% if not kpis.sentiment_analyzed %}text-slate-600{% elif kpis.avg_sentiment >= 0.6 %}text-emerald-400{% elif kpis.avg_sentiment < 0.4 %}text-rose-400{% else %}text-amber-300{% endif %}">
+                {% if kpis.sentiment_analyzed %}{{ "%.2f"|format(kpis.avg_sentiment) }}{% else %}—{% endif %}
             </p>
-            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">появится после анализа</p>
+            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">
+                {% if kpis.sentiment_analyzed %}за 7 дней{% else %}появится после анализа{% endif %}
+            </p>
         </div>
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">LLM-расход за сутки</p>
@@ -83,6 +86,14 @@
                                         {% else %}
                                             <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
                                         {% endif %}
+                                        {% if task.last_status == 'failed' %}
+                                            <span title="{{ task.last_error or '' }}"
+                                                  class="ml-1 rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                                        {% elif task.last_status == 'ok' %}
+                                            <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">ок</span>
+                                        {% elif task.last_status == 'skipped' %}
+                                            <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">пропущено</span>
+                                        {% endif %}
                                     </td>
                                     <td class="px-3 py-2 text-slate-400">
                                         {% if task.last_run_at %}
@@ -131,6 +142,77 @@
                 <a href="/app/sources" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
                     Источники
                 </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:col-span-2">
+            <h2 class="text-sm font-medium text-slate-300">Последние анализы</h2>
+            {% if analytics.recent %}
+                <div class="mt-4 space-y-3">
+                    {% for a in analytics.recent %}
+                        <div class="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <p class="font-medium text-slate-200">{{ a.title }}</p>
+                                <span class="shrink-0 text-xs text-slate-500">
+                                    {{ a.source_name }} · {{ a.analysis_date.strftime('%d.%m.%Y') }}
+                                </span>
+                            </div>
+                            {% if a.summary %}
+                                <p class="mt-2 text-sm text-slate-400">{{ a.summary }}</p>
+                            {% endif %}
+                            {% if a.topics %}
+                                <div class="mt-3 flex flex-wrap gap-1.5">
+                                    {% for t in a.topics %}
+                                        <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            {% if a.cost_usd > 0 %}
+                                <p class="mt-2 text-xs text-slate-600">LLM-расход: ${{ "%.4f"|format(a.cost_usd) }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="mt-4 flex h-24 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
+                    Анализов пока нет. Запустите задачу сбора/анализа.
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="space-y-4">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-300">Топ тем за 7 дней</h2>
+                {% if analytics.top_topics %}
+                    <div class="mt-4 space-y-2">
+                        {% for t in analytics.top_topics %}
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-slate-300">{{ t.topic }}</span>
+                                <span class="text-xs text-slate-500">{{ t.count }}×</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                {% endif %}
+            </div>
+
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-300">Типы контента</h2>
+                {% if analytics.content_mix.media_types %}
+                    <div class="mt-4 space-y-2">
+                        {% for media, info in analytics.content_mix.media_types.items() %}
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="capitalize text-slate-300">{{ media }}</span>
+                                <span class="text-xs text-slate-500">{{ info.count }} ({{ info.percentage }}%)</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                {% endif %}
             </div>
         </div>
     </div>

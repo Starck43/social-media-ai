@@ -251,8 +251,14 @@ async def test_platform_scope_skips_app_paths() -> None:
     async def call(path: str) -> None:
         await mw({"type": "http", "path": path, "method": "GET", "headers": []}, None, None)
 
-    await call("/api/v1/ping")
+    await call("/admin/tasks")
     assert seen["bypass"] is True
+
+    # /api is a client surface, not the operator console: it must stay out of
+    # the bypass (ApiScopeMiddleware authenticates and scopes it instead).
+    seen.clear()
+    await call("/api/v1/ping")
+    assert seen["bypass"] is False
 
     seen.clear()
     await call("/app/settings")

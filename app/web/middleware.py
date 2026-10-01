@@ -53,6 +53,7 @@ class TenantUIMiddleware:
         request.state.workspaces = []
         request.state.tenant = None
         request.state.tenant_id = None
+        request.state.unread_notifications = 0
 
         if user is None and path not in PUBLIC_PATHS:
             await self._redirect(scope, receive, send, f"/app/login?next={quote(path, safe='')}")
@@ -82,6 +83,13 @@ class TenantUIMiddleware:
                     )
 
         with tenant_scope(tenant_id):
+            if tenant_id is not None:
+                try:
+                    from app.models import Notification
+
+                    request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
+                except Exception:  # noqa: BLE001 — a badge must never break a page
+                    request.state.unread_notifications = 0
             await self.app(scope, receive, send)
 
     @staticmethod

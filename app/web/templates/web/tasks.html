@@ -4,10 +4,23 @@
 <div x-data="tasksPage()">
     <div class="mb-6 flex items-center justify-between">
         <h1 class="text-2xl font-semibold tracking-tight">Задачи</h1>
-        <button @click="openAdd = true"
-                class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-            Создать задачу
-        </button>
+        <div class="flex items-center gap-3">
+            {% if is_superuser and tenants %}
+                <form method="get" class="flex items-center gap-2">
+                    <select name="tenant_id" onchange="this.form.submit()"
+                            class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                        <option value="">Все тенанты</option>
+                        {% for t in tenants %}
+                            <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            {% endif %}
+            <button @click="openAdd = true"
+                    class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                Создать задачу
+            </button>
+        </div>
     </div>
 
     {% if tasks %}
@@ -22,6 +35,7 @@
                         <th class="px-4 py-3">Статус</th>
                         <th class="px-4 py-3">Последний запуск</th>
                         <th class="px-4 py-3">Следующий запуск</th>
+                        {% if is_superuser %}<th class="px-4 py-3">Тенант</th>{% endif %}
                         <th class="px-4 py-3"></th>
                     </tr>
                 </thead>
@@ -50,6 +64,14 @@
                                 {% else %}
                                     <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
                                 {% endif %}
+                                {% if task.last_status == 'failed' %}
+                                    <span title="{{ task.last_error or '' }}"
+                                          class="ml-1 rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                                {% elif task.last_status == 'ok' %}
+                                    <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">ок</span>
+                                {% elif task.last_status == 'skipped' %}
+                                    <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">пропущено</span>
+                                {% endif %}
                             </td>
                             <td class="px-4 py-3 text-slate-400">
                                 {% if task.last_run_at %}
@@ -67,6 +89,7 @@
                                     <span class="text-slate-600">—</span>
                                 {% endif %}
                             </td>
+                            {% if is_superuser %}<td class="px-4 py-3 text-xs text-slate-400">{{ task.tenant.name }}</td>{% endif %}
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-1">
                                     <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
@@ -508,15 +531,103 @@
             </form>
         </div>
     </div>
+
+    <!-- Run-now result modal -->
+    <div x-show="runModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+        <div class="w-[95%] max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold" x-text="runModal.data.label || 'Запуск…'"></h2>
+                <button type="button" @click="runModal.close()" class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <template x-if="runModal.loading">
+                <div class="mt-5 flex items-center gap-3 text-sm text-slate-300">
+                    <svg class="h-5 w-5 animate-spin text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Задача выполняется…</span>
+                </div>
+            </template>
+
+            <template x-if="!runModal.loading">
+                <div class="mt-5">
+                    <template x-if="runModal.data.status === 'done'">
+                        <div class="rounded-lg border border-emerald-700 bg-emerald-950 p-4 text-sm text-emerald-200">
+                            <p x-text="runModal.data.detail || 'Готово'"></p>
+                        </div>
+                    </template>
+                    <template x-if="runModal.data.status === 'failed'">
+                        <div class="rounded-lg border border-rose-700 bg-rose-950 p-4 text-sm text-rose-200">
+                            <p x-text="runModal.data.error || 'Ошибка выполнения'"></p>
+                        </div>
+                    </template>
+                    <template x-if="runModal.data.status === 'not_found'">
+                        <div class="rounded-lg border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">
+                            Задача не найдена.
+                        </div>
+                    </template>
+                    <div class="mt-4 flex justify-end">
+                        <button @click="runModal.close()" class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+                            Закрыть
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
 </div>
 
 <script>
+const RUN_JOB_ID = {{ job_id|tojson if job_id else 'null' }};
+
 function tasksPage() {
     return {
         openAdd: false,
         openEdit: false,
         editing: { id: 0, name: '', job_type: '', cron_expr: '', is_active: true, source_ids: [], scenario_id: '', monitored_users: '', excluded_users: '' },
+        runModal: {
+            open: RUN_JOB_ID !== null,
+            loading: RUN_JOB_ID !== null,
+            data: { label: 'Запуск…' },
+            pollTimer: null,
+            close() {
+                this.open = false;
+                if (this.pollTimer) clearInterval(this.pollTimer);
+            },
+        },
         editSched: scheduleBuilder(),
+        init() {
+            if (RUN_JOB_ID !== null) this.pollRun();
+        },
+        pollRun() {
+            const start = Date.now();
+            const MAX_MS = 60000;
+            const poll = () => {
+                if (Date.now() - start > MAX_MS) {
+                    this.runModal.loading = false;
+                    this.runModal.data = { status: 'timeout', label: 'Время вышло', error: 'Задача не завершилась за 60 секунд' };
+                    if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer);
+                    return;
+                }
+                fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then((data) => {
+                        this.runModal.data = data;
+                        if (data.status === 'done' || data.status === 'failed' || data.status === 'not_found') {
+                            this.runModal.loading = false;
+                            if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer);
+                        }
+                    })
+                    .catch(() => { /* transient — keep polling */ });
+            };
+            poll();
+            this.runModal.pollTimer = setInterval(poll, 2000);
+        },
         editTask(data) {
             this.editing = {
                 ...data,

@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app.models import Tenant
+
 templates = Jinja2Templates(directory="app/web/templates")
 
 
@@ -45,12 +47,38 @@ def safe_next(raw: str | None) -> str | None:
     return None
 
 
+async def tenant_filter_context(request: Request, is_superuser: bool) -> tuple[int | None, list]:
+    """Resolve the superuser tenant filter (`?tenant_id=`) + tenant list.
+
+    Returns `(filter_tenant_id, tenants)`. A regular user gets `(None, [])` —
+    they always see their own tenant. A superuser may narrow to one tenant;
+    `tenants` powers the dropdown.
+    """
+    if not is_superuser:
+        return None, []
+
+    raw = request.query_params.get("tenant_id")
+    if raw is not None:
+        # Explicit ?tenant_id= wins, including "" which clears the filter (all).
+        filter_tenant_id = int(raw) if raw.isdigit() else None
+    else:
+        # No filter given → default to the current workspace, so the superuser
+        # sees their own space's data first, not a global mix.
+        filter_tenant_id = getattr(request.state, "tenant_id", None)
+
+    # Tenants are global (no `TenantScopedMixin`), so the manager needs no
+    # tenant context here — the dropdown must list every workspace.
+    tenants = list(await Tenant.objects.order_by(Tenant.name))
+    return filter_tenant_id, tenants
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
     context: dict[str, Any] = {
         "user": getattr(request.state, "web_user", None),
         "memberships": getattr(request.state, "memberships", []) or [],
         "workspaces": getattr(request.state, "workspaces", []) or [],
         "tenant": getattr(request.state, "tenant", None),
+        "unread_notifications": getattr(request.state, "unread_notifications", 0) or 0,
         "csrf": csrf_token(request),
         "flashes": pop_flashes(request),
         "path": request.url.path,

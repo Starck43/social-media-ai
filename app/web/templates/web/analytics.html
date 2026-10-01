@@ -1,0 +1,190 @@
+{% extends "web/base.html" %}
+{% block title %}Аналитика — AI Monitor{% endblock %}
+{% block content %}
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Аналитика</h1>
+            <p class="mt-1 text-sm text-slate-400">
+                {{ tenant.name if tenant else 'Все workspaces' }} · агрегация по сохранённым анализам
+            </p>
+        </div>
+        <form method="get" class="flex items-center gap-2">
+            {% if is_superuser and tenants %}
+                <select name="tenant_id" onchange="this.form.submit()"
+                        class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                    <option value="">Все тенанты</option>
+                    {% for t in tenants %}
+                        <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+            {% endif %}
+            <select name="days" onchange="this.form.submit()"
+                    class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                {% for value, label in periods %}
+                    <option value="{{ value }}" {% if days == value|int %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Анализов</p>
+            <p class="mt-2 text-3xl font-semibold">{{ analytics.kpis.total_analyses }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Постов</p>
+            <p class="mt-2 text-3xl font-semibold">{{ analytics.kpis.total_posts }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Пик активных пользователей</p>
+            <p class="mt-2 text-3xl font-semibold">{{ analytics.kpis.peak_users }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">LLM-расход</p>
+            <p class="mt-2 text-3xl font-semibold">${{ "%.2f"|format(analytics.kpis.cost_usd) }}</p>
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-medium text-slate-300">Настроение по дням</h2>
+                <div class="flex items-center gap-3 text-xs text-slate-400">
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>позитив</span>
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-300"></span>нейтр</span>
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-rose-400"></span>негатив</span>
+                </div>
+            </div>
+            {% if analytics.sentiment %}
+                <div class="mt-4 space-y-2">
+                    {% for p in analytics.sentiment %}
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">{{ p.date }}</span>
+                            <div class="flex items-center gap-4">
+                                <span class="w-8 text-right text-slate-300">{{ "%.2f"|format(p.avg_sentiment_score) }}</span>
+                                <div class="flex items-center gap-3 text-xs">
+                                    <span class="w-6 text-right text-emerald-400">{{ p.distribution.positive }}</span>
+                                    <span class="w-6 text-right text-amber-300">{{ p.distribution.neutral }}</span>
+                                    <span class="w-6 text-right text-rose-400">{{ p.distribution.negative }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Активность пользователей</h2>
+            {% if analytics.activity %}
+                <div class="mt-4 space-y-2">
+                    {% for a in analytics.activity %}
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-400">{{ a.date }}</span>
+                            <div class="flex items-center gap-4 text-xs">
+                                <span class="text-slate-300">{{ a.messages_count }} сообщ.</span>
+                                <span class="w-6 text-right text-cyan-400">{{ a.active_users }} юз.</span>
+                                <span class="w-10 text-right text-slate-500">{{ a.engagement_rate }} eng.</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Топ тем</h2>
+            {% if analytics.topics %}
+                <div class="mt-4 space-y-2">
+                    {% for t in analytics.topics %}
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="truncate text-slate-300">{{ t.topic }}</span>
+                            <span class="ml-2 shrink-0 text-xs text-slate-500">{{ t.count }}×</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Типы контента</h2>
+            {% if analytics.content_mix.media_types %}
+                <div class="mt-4 space-y-2">
+                    {% for media, info in analytics.content_mix.media_types.items() %}
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="capitalize text-slate-300">{{ media }}</span>
+                            <span class="text-xs text-slate-500">{{ info.count }} ({{ info.percentage }}%)</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Вовлечённость</h2>
+            {% if analytics.engagement %}
+                <div class="mt-4 space-y-3 text-sm">
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Реакций / пост</span>
+                        <span class="text-slate-200">{{ "%.1f"|format(analytics.engagement.avg_reactions_per_post) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Комментариев / пост</span>
+                        <span class="text-slate-200">{{ "%.1f"|format(analytics.engagement.avg_comments_per_post) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Всего реакций</span>
+                        <span class="text-slate-200">{{ analytics.engagement.total_reactions }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Всего комментариев</span>
+                        <span class="text-slate-200">{{ analytics.engagement.total_comments }}</span>
+                    </div>
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <h2 class="text-sm font-medium text-slate-300">Расход по LLM-провайдерам</h2>
+        {% if analytics.llm.providers %}
+            <div class="mt-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                        <tr>
+                            <th class="px-3 py-2">Провайдер</th>
+                            <th class="px-3 py-2">Запросов</th>
+                            <th class="px-3 py-2">Токенов</th>
+                            <th class="px-3 py-2">Стоимость</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                        {% for provider, stats in analytics.llm.providers.items() %}
+                            <tr class="bg-slate-900/50 hover:bg-slate-900/80">
+                                <td class="px-3 py-2 font-medium text-slate-200">{{ provider }}</td>
+                                <td class="px-3 py-2 text-slate-300">{{ stats.requests }}</td>
+                                <td class="px-3 py-2 text-slate-300">{{ stats.total_tokens }}</td>
+                                <td class="px-3 py-2 text-slate-300">${{ "%.4f"|format(stats.estimated_cost_usd) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+        {% endif %}
+    </div>
+{% endblock %}

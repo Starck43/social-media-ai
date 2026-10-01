@@ -21,7 +21,22 @@ from app.models import AgentMessage, AgentSession, DigestRun
 
 @pytest.fixture
 async def _clean_sessions():
+    """Reset agent state, with the test chat already bound to the workspace.
+
+    Every test in this file drives the agent loop, not first-contact
+    onboarding: on an unbound chat the first message only binds it and
+    returns a welcome line instead of reaching the model. Binding chat 7 here
+    keeps the tests independent of whatever a previous run left behind.
+    """
+    from app.core.config import settings
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.tenant_manager import tenant_channels, tenant_users, tenants
+
     await AgentSession.objects.delete()
+    tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
+    with tenant_scope(bypass=True):
+        await tenant_users.add_member(tenant_id=tenant.id, channel="telegram", external_user_id="7", role="owner")
+        await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id="7", kind="private")
     yield
     await AgentSession.objects.delete()
 

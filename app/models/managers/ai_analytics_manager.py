@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Optional, Sequence, TYPE_CHECKING, Any
+from typing import Optional, Sequence, Any
 
-from sqlalchemy import select, and_, desc, Row, RowMapping
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped
+from sqlalchemy import select
 
+from ...types import PeriodType
 from .base_manager import BaseManager
-
-if TYPE_CHECKING:
-    from ..ai_analytics import AIAnalytics
 
 
 class AIAnalyticsManager(BaseManager):
-    """Manager for AI analytics operations."""
+    """Manager for AI analytics operations.
+
+    No method takes a session: reads go through the queryset, so the tenant
+    guard in `BaseManager` applies and a caller cannot accidentally read another
+    workspace's analytics. The previous signatures took a caller-owned
+    `AsyncSession` and ran hand-built `select()` statements on it, which
+    bypassed that guard entirely.
+    """
 
     def __init__(self):
         # Use string literal to avoid circular import
@@ -22,44 +25,30 @@ class AIAnalyticsManager(BaseManager):
 
         super().__init__(AIAnalytics)
 
-    async def get_by_source_id(
-        self, db: AsyncSession, source_id: Mapped[int], skip: int = 0, limit: int = 100
-    ) -> Sequence[AIAnalytics]:
+    async def get_by_source_id(self, source_id: int, skip: int = 0, limit: int = 100) -> Sequence[Any]:
         """Retrieve analytics by source ID with pagination."""
-
-        result = await db.execute(
-            select(self.model)
-            .where(self.model.source_id == source_id)
-            .order_by(desc(self.model.analysis_date))
+        return await (
+            self.filter(source_id=source_id)
+            .order_by(self.model.analysis_date.desc())
             .offset(skip)
             .limit(limit)
         )
-        return result.scalars().all()
 
-    async def get_latest_by_source_id(self, db: AsyncSession, source_id: Mapped[int]) -> Optional[AIAnalytics]:
+    async def get_latest_by_source_id(self, source_id: int) -> Optional[Any]:
         """Get latest analytics for a source."""
-
-        result = await db.execute(
-            select(self.model)
-            .where(self.model.source_id == source_id)
-            .order_by(desc(self.model.analysis_date))
-            .limit(1)
-        )
-        return result.scalars().first()
+        return await self.filter(source_id=source_id).order_by(self.model.analysis_date.desc()).first()
 
     async def get_by_date_range(
         self,
-        db: AsyncSession,
-        source_id: Mapped[int],
-        start_date: Mapped[date],
-        end_date: Mapped[date],
-        period_type: str = "daily",
-    ) -> Sequence[AIAnalytics]:
+        source_id: int,
+        start_date: date,
+        end_date: date,
+        period_type: PeriodType = PeriodType.DAILY,
+    ) -> Sequence[Any]:
         """
         Retrieve analytics for a source within date range.
 
         Args:
-                db: Database session
                 source_id: ID of the source
                 start_date: Start date of the period
                 end_date: End date of the period
@@ -68,108 +57,66 @@ class AIAnalyticsManager(BaseManager):
         Returns:
                 List of AIAnalytics objects
         """
-        result = await db.execute(
-            select(self.model)
-            .where(
-                and_(
-                    self.model.source_id == source_id,
-                    self.model.analysis_date >= start_date,
-                    self.model.analysis_date <= end_date,
-                    self.model.period_type == period_type,
-                )
-            )
-            .order_by(self.model.analysis_date)
-        )
-        return result.scalars().all()
+        return await self.filter(
+            source_id=source_id,
+            analysis_date__gte=start_date,
+            analysis_date__lte=end_date,
+            period_type=period_type,
+        ).order_by(self.model.analysis_date)
 
-    async def get_daily_summary(self, db: AsyncSession, analysis_date: date) -> Sequence[AIAnalytics]:
+    async def get_daily_summary(self, analysis_date: date) -> Sequence[Any]:
         """Get all daily summaries for a specific date."""
-
-        result = await db.execute(
-            select(self.model)
-            .where(and_(self.model.analysis_date == analysis_date, self.model.period_type == "daily"))
-            .order_by(self.model.source_id)
-        )
-        return result.scalars().all()
+        return await self.filter(
+            analysis_date=analysis_date, period_type=PeriodType.DAILY
+        ).order_by(self.model.source_id)
 
     async def save_analysis(
         self,
-        db: AsyncSession,
         source_id: int,
         analysis_date: date,
         summary_data: dict,
-        period_type: str = "daily",
+        period_type: PeriodType = PeriodType.DAILY,
         topic_chain_id: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,
         llm_model: Optional[str] = None,
         prompt_text: Optional[str] = None,
         response_payload: Optional[dict] = None,
-    ) -> Row[Any] | RowMapping | Any:
+    ) -> Any:
         """
         Save AI analysis results with full LLM tracing.
 
-        Args:
-                db: Database session
-                source_id: ID of the source
-                analysis_date: Date of analysis
-                summary_data: AI analysis results in JSON format
-                period_type: Type of period ('daily', 'weekly')
-                topic_chain_id: Chain ID for ongoing topics
-                parent_analysis_id: Parent analysis ID for threaded analysis
-                llm_model: LLM model used
-                prompt_text: Prompt sent to LLM
-                response_payload: Full LLM response payload
+        Upserts on (source, date, period): an existing row is updated in place,
+        otherwise a new one is created. `create()` stamps `tenant_id` from the
+        ambient scope, so callers must run inside `tenant_scope(...)`.
 
         Returns:
-                Created AIAnalytics object
+                The created or updated AIAnalytics object
         """
-        # Check if analysis already exists for this date and source
-        existing = await db.execute(
-            select(self.model).where(
-                and_(
-                    self.model.source_id == source_id,
-                    self.model.analysis_date == analysis_date,
-                    self.model.period_type == period_type,
-                )
-            )
+        existing = await self.get(source_id=source_id, analysis_date=analysis_date, period_type=period_type)
+
+        updates: dict[str, Any] = {"summary_data": summary_data}
+        if topic_chain_id:
+            updates["topic_chain_id"] = topic_chain_id
+        if parent_analysis_id:
+            updates["parent_analysis_id"] = parent_analysis_id
+        if llm_model:
+            updates["llm_model"] = llm_model
+        if prompt_text:
+            updates["prompt_text"] = prompt_text
+        if response_payload:
+            updates["response_payload"] = response_payload
+
+        if existing:
+            return await self.update_by_id(existing.id, **updates)
+
+        return await self.create(
+            source_id=source_id,
+            analysis_date=analysis_date,
+            period_type=period_type,
+            **updates,
         )
-        existing_analysis = existing.scalars().first()
 
-        if existing_analysis:
-            # Update existing analysis
-            existing_analysis.summary_data = summary_data
-            if topic_chain_id:
-                existing_analysis.topic_chain_id = topic_chain_id
-            if parent_analysis_id:
-                existing_analysis.parent_analysis_id = parent_analysis_id
-            if llm_model:
-                existing_analysis.llm_model = llm_model
-            if prompt_text:
-                existing_analysis.prompt_text = prompt_text
-            if response_payload:
-                existing_analysis.response_payload = response_payload
-            await db.commit()
-            await db.refresh(existing_analysis)
-            return existing_analysis
-        else:
-            # Create new analysis
-            analysis = self.model(
-                source_id=source_id,
-                analysis_date=analysis_date,
-                period_type=period_type,
-                summary_data=summary_data,
-                topic_chain_id=topic_chain_id,
-                parent_analysis_id=parent_analysis_id,
-                llm_model=llm_model,
-                prompt_text=prompt_text,
-                response_payload=response_payload,
-            )
-            db.add(analysis)
-            await db.commit()
-            await db.refresh(analysis)
-            return analysis
-
-    async def get_trends(self, source_id: Mapped[int], days: int = 30) -> dict:
+    async def get_trends(self, source_id: int, days: int = 30) -> dict:
         """
         Get trends analysis for a source over time.
 
@@ -180,10 +127,10 @@ class AIAnalyticsManager(BaseManager):
         Returns:
                 Dictionary with trend analysis
         """
-        end_date: Mapped[date] = date.today()
-        start_date: Mapped[date] = end_date - timedelta(days=days)
+        end_date: date = date.today()
+        start_date: date = end_date - timedelta(days=days)
 
-        analytics = await self.filter_by_date_range(source_id, start_date, end_date)
+        analytics = await self.get_by_date_range(source_id, start_date, end_date)
 
         if not analytics:
             return {}
@@ -230,58 +177,51 @@ class AIAnalyticsManager(BaseManager):
 
         return trends
 
-    async def get_by_topic_chain(self, db: AsyncSession, topic_chain_id: str) -> Sequence[AIAnalytics]:
+    async def get_by_topic_chain(self, topic_chain_id: str) -> Sequence[Any]:
         """
         Get all analytics in a topic chain.
 
         Args:
-                db: Database session
                 topic_chain_id: Chain ID to filter by
 
         Returns:
                 List of AIAnalytics objects in the chain
         """
-        result = await db.execute(
-            select(self.model).where(self.model.topic_chain_id == topic_chain_id).order_by(self.model.analysis_date)
-        )
-        return result.scalars().all()
+        return await self.filter(topic_chain_id=topic_chain_id).order_by(self.model.analysis_date)
 
-    async def get_children(self, db: AsyncSession, parent_id: int) -> Sequence[AIAnalytics]:
+    async def get_children(self, parent_id: int) -> Sequence[Any]:
         """
         Get child analytics for a parent analysis.
 
         Args:
-                db: Database session
                 parent_id: Parent analysis ID
 
         Returns:
                 List of child AIAnalytics objects
         """
-        result = await db.execute(
-            select(self.model).where(self.model.parent_analysis_id == parent_id).order_by(self.model.analysis_date)
-        )
-        return result.scalars().all()
+        return await self.filter(parent_analysis_id=parent_id).order_by(self.model.analysis_date)
 
-    @staticmethod
-    async def get_sources_without_recent_analysis(db: AsyncSession, days: int = 1) -> Sequence[int]:
+    async def get_sources_without_recent_analysis(self, days: int = 1) -> Sequence[int]:
         """
         Get source IDs that haven't been analyzed in the specified days.
 
+        Reads through `Source.objects`, so the result is limited to the ambient
+        workspace — the old version executed a bare `select(Source.id)` on the
+        caller's session and would have returned every workspace's sources.
+
         Args:
-                db: Database session
                 days: Amount days to check back
 
         Returns:
                 List of source IDs that need analysis
         """
-        cutoff_date: Mapped[date] = date.today() - timedelta(days=days)
-
-        # Subquery to find sources with recent analysis
         from ..source import Source
 
-        subquery = select(AIAnalytics.source_id).where(AIAnalytics.analysis_date >= cutoff_date).subquery()
+        cutoff_date: date = date.today() - timedelta(days=days)
 
-        # Find sources without recent analysis
-        result = await db.execute(select(Source.id).where(~Source.id.in_(select(subquery))).where(Source.is_active))
+        # Subquery over the analytics of the last `days` days
+        recent = select(self.model.source_id).where(self.model.analysis_date >= cutoff_date)
 
-        return result.scalars().all()
+        # Active sources that have no recent analysis
+        rows = await Source.objects.filter(is_active=True).exclude(Source.id.in_(recent)).values(Source.id).rows()
+        return [row[0] for row in rows]

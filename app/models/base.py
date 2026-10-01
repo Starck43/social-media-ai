@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import ClassVar, TypeVar, TYPE_CHECKING
+from typing import ClassVar, TYPE_CHECKING
 
 from sqlalchemy import func, DateTime, MetaData, ForeignKey
 from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase
@@ -31,10 +31,9 @@ class TenantScopedMixin:
 
 	Enforcement lives in `BaseManager`/`QuerySet`, not here:
 	- SELECT queries are filtered to `current_tenant_id()` (unless superuser bypass);
-	- `create()` stamps `tenant_id` from the context and refuses to run
-	  without a tenant (fail-closed);
+	- `create()` stamps `tenant_id` from the context and refuses to run without a tenant (fail-closed);
 	- `update_by_id`/`delete_by_id` re-fetch the row through the scoped
-	  queryset, so a cross-tenant id silently becomes "not found".
+	queryset, so a cross-tenant id silently becomes "not found".
 
 	Models that must stay global (`Platform`, `LLMProvider`, `LLMModel`,
 	`ModelType`, `Permission`, `Role`, and the `Tenant*` tables themselves,

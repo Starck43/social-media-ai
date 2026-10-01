@@ -7,6 +7,7 @@ from sqlalchemy import CheckConstraint, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.models.base import Base
 from app.models.managers.base_manager import prefetch
 from app.models.platform import Platform
@@ -22,18 +23,19 @@ async def async_session():
     """Создание асинхронной тестовой сессии.
 
     Метаданные проекта спроектированы под PostgreSQL: MetaData закреплена за
-    схемой ``social_manager``, а в моделях есть pg-оператор ``~`` в CHECK и
+    схемой из настроек, а в моделях есть pg-оператор ``~`` в CHECK и
     касты ``::json`` в server_default. Для SQLite поэтому: (1) приаттачиваем
-    схему отдельной in-memory БД, (2) на время ``create_all`` снимаем
-    несовместимые конструкции и ставим их обратно в ``finally`` (общий
-    metadata процесса не должен меняться).
+    схему отдельной in-memory БД — под тем именем, которое задаёт
+    ``settings.DB_SCHEMA`` (conftest уже перенаправил его на схему тестов),
+    (2) на время ``create_all`` снимаем несовместимые конструкции и ставим их
+    обратно в ``finally`` (общий metadata процесса не должен меняться).
     """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
 
     @event.listens_for(engine.sync_engine, "connect")
     def _attach_schema(dbapi_conn, _record):
         cursor = dbapi_conn.cursor()
-        cursor.execute("ATTACH DATABASE ':memory:' AS social_manager")
+        cursor.execute(f"ATTACH DATABASE ':memory:' AS {settings.DB_SCHEMA}")
         cursor.close()
 
     stripped = []
@@ -450,6 +452,49 @@ class TestIssuesAndProblems:
         )
 
         assert len(platforms) >= 1
+
+
+def _loader_options(queryset):
+    """The loader options of the statement a queryset builds (no DB needed)."""
+    return queryset._build_statement_sync()._with_options
+
+
+class TestRelationPaths:
+    """`select_related` and `prefetch_related` must agree, and must not lie.
+
+    The two neighbours nested differently — Django's `"source__platform"` for
+    eager loading, SQLAlchemy's `"role.permissions"` for prefetching — and each
+    silently ignored the other's spelling. A prefetch that matched nothing was
+    accepted happily, so the caller only met the problem later, as a
+    `DetachedInstanceError` from a lazy load, nowhere near the call that lied.
+    """
+
+    def test_prefetch_accepts_both_spellings(self):
+        assert len(_loader_options(User.objects.prefetch_related("role.permissions"))) == 1
+        assert len(_loader_options(User.objects.prefetch_related("role__permissions"))) == 1
+
+    def test_eager_load_accepts_both_spellings(self):
+        for path in ("role.permissions", "role__permissions"):
+            assert len(_loader_options(User.objects.select_related(path))) == 1, path
+
+    def test_both_spellings_produce_the_same_option(self):
+        dotted = _loader_options(User.objects.prefetch_related("role.permissions"))[0]
+        django = _loader_options(User.objects.prefetch_related("role__permissions"))[0]
+        assert str(dotted) == str(django)
+
+    def test_an_unknown_relation_raises_instead_of_loading_nothing(self):
+        for queryset in (
+            User.objects.prefetch_related("nope"),
+            User.objects.prefetch_related("role.permisions"),
+            User.objects.select_related("role__permisions"),
+        ):
+            with pytest.raises(ValueError, match="no such relation"):
+                _loader_options(queryset)
+
+    def test_a_column_is_not_a_relation(self):
+        """`prefetch_related("username")` is a mistake, not a no-op."""
+        with pytest.raises(ValueError, match="no such relation"):
+            _loader_options(User.objects.prefetch_related("username"))
 
 
 # Запуск тестов

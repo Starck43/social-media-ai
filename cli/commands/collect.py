@@ -1,11 +1,11 @@
-"""Manual content collection & analysis via CLI.
+"""Direct content collection via CLI.
 
-Replaces the legacy `cli/scheduler.py` debug script (now removed). Reuses the
-same `ContentCollector.collect_from_source` pipeline the runtime jobs use, so
-the analyzer behavior you test here is exactly what the cron/agent path runs.
-Rich console output is kept as the debug value (live progress + summaries).
+A thin wrapper over the `collect` job handler: resolves `--src`, builds the
+handler payload and runs it now (no task, no queue). The handler runs the same
+`ContentCollector` pipeline the runtime uses, so what you test here is exactly
+what the cron/agent path runs.
 
-Run as: python -m cli.main collect run ...
+Run as: python -m cli.main collect --src 739,740 [--tenant ...]
 """
 
 from __future__ import annotations
@@ -13,8 +13,11 @@ from __future__ import annotations
 from typing import Optional
 
 import typer
+from rich import print as rprint
+from rich.panel import Panel
+from rich.table import Table
 
-app = typer.Typer(name="collect", help="Run manual content collection & analysis")
+from cli.run import resolve_sources, run_handler
 
 
 def _run(coro):
@@ -39,133 +42,78 @@ def _parse_date(value: Optional[str]):
     return parsed.date()
 
 
-@app.command("run")
-def run_collect(
-    source_id: Optional[int] = typer.Option(None, "--source-id", help="Collect from a specific source ID"),
-    source_url: Optional[str] = typer.Option(None, "--source-url", help="Collect by source URL (external_id)"),
-    platform_id: Optional[int] = typer.Option(None, "--platform-id", help="Collect all active sources on a platform"),
-    start_date: Optional[str] = typer.Option(None, "--start-date", help="Start date DD-MM-YYYY (with --force-refresh)"),
-    end_date: Optional[str] = typer.Option(None, "--end-date", help="End date DD-MM-YYYY (with --force-refresh)"),
-    force_refresh: bool = typer.Option(
-        False, "--force-refresh", help="Reset analytics + last_checked, full re-analysis"
-    ),
+def _report(stats: dict) -> None:
+    table = Table(show_header=True, header_style="bold blue")
+    table.add_column("Метрика", style="cyan")
+    table.add_column("Значение", style="white")
+    for k, label in (
+        ("sources", "Источников"),
+        ("collected", "Собрано"),
+        ("empty", "Без контента"),
+        ("error", "Ошибки"),
+        ("items", "Записей собрано"),
+        ("analytics", "Аналитики создано"),
+        ("excluded", "Исключено"),
+    ):
+        table.add_row(label, str(stats.get(k, 0)))
+    rprint(Panel.fit(table, title="[bold green]📊 СБОР ЗАВЕРШЁН[/bold green]", border_style="green"))
+    if stats.get("empty"):
+        rprint("[dim]Без контента = источник опрошен, но записей нет (это не ошибка).[/dim]")
+    if stats.get("error_messages"):
+        rprint("[bold red]Ошибки при сборе:[/bold red]")
+        for msg in stats["error_messages"]:
+            rprint(f"  [red]• {msg}[/red]")
+
+
+def collect_cmd(
+    src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max), comma/space separated"),
+    tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active sources)"),
+    monitored: str = typer.Option(None, "--monitored", help="Usernames to collect for instead of source defaults"),
+    excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
+    start_date: str = typer.Option(None, "--start-date", help="Start date DD-MM-YYYY (with --force-refresh)"),
+    end_date: str = typer.Option(None, "--end-date", help="End date DD-MM-YYYY (with --force-refresh)"),
+    force_refresh: bool = typer.Option(False, "--force-refresh", help="Reset analytics + last_checked, full re-analysis"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed collection output"),
 ):
     """Run content collection & AI analysis manually (debug/analyst tool)."""
-    from rich import print as rprint
-    from rich.panel import Panel
-    from rich.table import Table
+    from cli._tenant import resolve_tenant_id
 
-    from app.models import AIAnalytics, Source
-    from app.services.monitoring.collector import ContentCollector
-
-    parsed_start = _parse_date(start_date)
-    parsed_end = _parse_date(end_date)
-
-    async def _run_all():
-        sources: list[Source] = []
-        if source_id:
-            src = await Source.objects.get(id=source_id)
-            sources = [src] if src else []
-        elif source_url:
-            external_id = source_url.rstrip("/").split("/")[-1]
-            qs = Source.objects.filter(external_id=external_id, is_active=True)
-            if platform_id:
-                qs = qs.filter(platform_id=platform_id)
-            sources = list(await qs)
-        elif platform_id:
-            sources = list(await Source.objects.filter(platform_id=platform_id, is_active=True))
-        else:
-            sources = list(await Source.objects.filter(is_active=True))
-
+    async def _main():
+        tenant_id = await resolve_tenant_id(tenant)
+        sources = await resolve_sources(src, tenant_id)
         if not sources:
             rprint("[red]No active sources matched the given filters[/red]")
             raise typer.Exit(1)
 
-        if force_refresh:
-            deleted = 0
-            for src in sources:
-                qs = AIAnalytics.objects.filter(source_id=src.id)
-                if parsed_start:
-                    qs = qs.filter(analysis_date__gte=parsed_start)
-                if parsed_end:
-                    qs = qs.filter(analysis_date__lte=parsed_end)
-                rows = await qs.all()
-                if rows:
-                    await AIAnalytics.objects.filter(id__in=[r.id for r in rows]).delete()
-                    deleted += len(rows)
-                await Source.objects.update_by_id(src.id, last_checked=None)
-            rprint(f"[yellow]Force refresh: deleted {deleted} analytics record(s), reset last_checked[/yellow]")
+        payload = {"source_ids": [s.id for s in sources]}
+        if monitored:
+            payload["monitored_users"] = [
+                m.strip().lstrip("@") for m in monitored.replace(",", " ").split() if m.strip()
+            ]
+        if excluded:
+            payload["excluded_users"] = [
+                e.strip().lstrip("@") for e in excluded.replace(",", " ").split() if e.strip()
+            ]
+        if force_refresh or start_date or end_date:
+            payload["force_refresh"] = True
+            cli_dates = {}
+            if start_date:
+                cli_dates["start_date"] = _parse_date(start_date)
+            if end_date:
+                cli_dates["end_date"] = _parse_date(end_date)
+            if cli_dates:
+                payload["cli_dates"] = cli_dates
 
-        rprint(
-            Panel.fit(
-                "[bold cyan]🚀 STARTING CONTENT COLLECTION[/bold cyan]",
-                border_style="cyan",
-            )
-        )
+        rprint(Panel.fit("[bold cyan]🚀 НАЧАЛО СБОРА КОНТЕНТА[/bold cyan]", border_style="cyan"))
+        if verbose:
+            for s in sources:
+                scenario = s.agent_scenario
+                rprint(
+                    f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name}, "
+                    f"scenario={scenario.name if scenario else 'None'})[/dim]"
+                )
 
-        collector = ContentCollector()
-        stats = {"sources": 0, "collected": 0, "failed": 0, "items": 0, "analytics": 0}
+        return await run_handler("collect", payload, tenant_id)
 
-        for source in sources:
-            # CLI mode: full collection with date filtering (incremental_mode off).
-            params = dict(source.params or {})
-            params.pop("incremental_mode", None)
-            if parsed_start or parsed_end:
-                params["force_refresh"] = True
-                params["cli_dates"] = {
-                    "start_date": parsed_start,
-                    "end_date": parsed_end,
-                }
-            source.params = params
-
-            if verbose:
-                scenario = source.agent_scenario
-                analyze_by = scenario.analyze_type if scenario else "themes"
-                rprint(f"[dim]🎯 Source: {source.name} (id={source.id}, platform={source.platform.name})[/dim]")
-                rprint(f"[dim]   Scenario: {scenario.name if scenario else 'None'} (analyze by: {analyze_by})[/dim]")
-                rprint(f"[dim]   Last checked: {source.last_checked}[/dim]")
-
-            stats["sources"] += 1
-            try:
-                result = await collector.collect_from_source(source)
-                if result:
-                    stats["collected"] += 1
-                    stats["items"] += result.get("content_count", 0)
-                    stats["analytics"] += result.get("analytics_count", 0)
-                    if verbose:
-                        rprint(
-                            f"[green]  ✅ collected {result['content_count']} items, "
-                            f"{result.get('analytics_count', 0)} analytics[/green]"
-                        )
-                else:
-                    stats["failed"] += 1
-                    if verbose:
-                        rprint(f"[red]  ❌ failed for source {source.id}[/red]")
-            except Exception as e:
-                stats["failed"] += 1
-                rprint(f"[red]  ❌ error for source {source.id}: {e}[/red]")
-
-        return stats
-
-    stats = _run(_run_all())
-
-    table = Table(show_header=True, header_style="bold blue")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="white")
-    for k, label in (
-        ("sources", "Sources"),
-        ("collected", "Successful"),
-        ("failed", "Failed"),
-        ("items", "Items Collected"),
-        ("analytics", "Analytics Created"),
-    ):
-        table.add_row(label, str(stats[k]))
-
-    rprint(
-        Panel.fit(
-            table,
-            title="[bold green]📊 COLLECTION COMPLETE[/bold green]",
-            border_style="green",
-        )
-    )
+    stats = _run(_main())
+    _report(stats)

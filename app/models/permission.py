@@ -74,11 +74,10 @@ class Permission(Base, TimestampMixin):
 		if not re.match(pattern, codename):
 			raise ValueError(f"Invalid codename format: {codename}")
 
-		action_part = codename.split('.')[2]
 		try:
 			cls.action_from_token(codename.split('.')[2])
 		except ValueError:
-			raise ValueError(f"Invalid action type in codename: {action_part}")
+			raise ValueError(f"Invalid action type in codename: {codename.split('.')[2]}")
 
 	@classmethod
 	def split_codename(cls, codename: str) -> tuple[str, str]:

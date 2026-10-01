@@ -1,24 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import Optional, Sequence
 
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped
-
-from app.core.database import new_session
+from sqlalchemy import Text, cast
 
 from .base_manager import BaseManager
 
-if TYPE_CHECKING:
-    from ..agent_scenario import AgentScenario
-else:
-    # Use string literals to avoid circular imports
-    AgentScenario = "AgentScenario"
-
 
 class AgentScenarioManager(BaseManager):
-    """Manager for bot scenario operations."""
+    """Manager for bot scenario operations.
+
+    No method takes a session: reads go through the queryset, so the tenant
+    guard in `BaseManager` applies. The previous signatures took a caller-owned
+    `AsyncSession` and ran hand-built `select()` statements on it, which
+    bypassed that guard — a scenario from another workspace was reachable.
+    """
 
     def __init__(self):
         # Use string literal to avoid circular import
@@ -27,92 +23,79 @@ class AgentScenarioManager(BaseManager):
         super().__init__(B)
 
     async def get_default_scenario(
-        self, db: AsyncSession | None = None, *, tenant_id: int | None = None
-    ) -> Optional[AgentScenario]:
+        self, *, tenant_id: Optional[int] = None
+    ) -> Optional[object]:
         """
-        Retrieve the default scenario for the given tenant.
+        Retrieve the default scenario for the tenant in scope.
 
-        Returns the active scenario marked is_default=True, or None if none exists.
-        Pass ``db`` inside an open session, or ``tenant_id`` to let the method
-        open its own session (callers that do not hold one).
+        Returns the active scenario marked is_default=True, or None if none
+        exists. `tenant_id` narrows explicitly (operator runs); otherwise the
+        ambient tenant context decides.
         """
-        stmt = select(self.model).where(self.model.is_default == True, self.model.is_active == True)
+        qs = self.filter(is_default=True, is_active=True)
         if tenant_id is not None:
-            stmt = stmt.where(self.model.tenant_id == tenant_id)
+            qs = qs.filter(tenant_id=tenant_id)
+        return await qs.first()
 
-        if db is not None:
-            result = await db.execute(stmt)
-            return result.scalars().first()
-
-        async with new_session() as session:
-            result = await session.execute(stmt)
-            return result.scalars().first()
-
-    async def get_active_scenarios(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> Sequence[AgentScenario]:
+    async def get_active_scenarios(self, skip: int = 0, limit: int = 100) -> Sequence[object]:
         """
         Retrieve all active bot scenarios with pagination.
 
         Args:
-                db: Database session
                 skip: Amount records to skip
                 limit: Maximum amount records to return
 
         Returns:
                 List of active AgentScenario objects
         """
-        result = await db.execute(select(self.model).where(self.model.is_active).offset(skip).limit(limit))
-        return result.scalars().all()
+        return await self.filter(is_active=True).offset(skip).limit(limit)
 
-    async def get_by_name(self, db: AsyncSession, name: Mapped[str]) -> Optional[AgentScenario]:
+    async def get_by_name(self, name: str) -> Optional[object]:
         """
         Retrieve bot scenario by exact name match.
 
         Args:
-                db: Database session
                 name: Scenario name to search for
 
         Returns:
                 AgentScenario object if found, None otherwise
         """
-        result = await db.execute(select(self.model).where(self.model.name == name))
-        return result.scalars().first()
+        return await self.filter(name=name).first()
 
-    async def get_scenarios_by_content_type(self, db: AsyncSession, content_type: str) -> Sequence[AgentScenario]:
+    async def get_scenarios_by_content_type(self, content_type: str) -> Sequence[object]:
         """
         Retrieve scenarios that work with specific content type.
 
         Args:
-                db: Database session
                 content_type: Type of content (e.g., 'posts', 'comments', 'videos')
 
         Returns:
                 List of matching AgentScenario objects
         """
-        query = select(self.model).where(self.model.is_active)
-
-        # Filter by content type in JSON array
+        qs = self.filter(is_active=True)
         if content_type:
-            query = query.where(self.model.content_types.contains([content_type]))
+            # `content_types` is `JSON`, not `JSONB`: `.contains()` there emits
+            # `LIKE`, which PostgreSQL rejects on a `json` column. Cast to text
+            # and match the quoted value inside the array literal.
+            as_text = cast(self.model.content_types, Text)
+            qs = qs.filter(as_text.contains(f'"{content_type}"'))
+        return await qs
 
-        result = await db.execute(query)
-        return result.scalars().all()
-
-    async def get_scenarios_by_scope(self, db: AsyncSession, scope_filter: dict) -> Sequence[AgentScenario]:
+    async def get_scenarios_by_scope(self, scope_filter: dict) -> Sequence[object]:
         """
         Retrieve scenarios that match specific scope conditions.
 
         Args:
-                db: Database session
                 scope_filter: Dictionary with scope conditions to match
 
         Returns:
                 List of AgentScenario objects that match the scope
         """
         if not scope_filter:
-            return await self.get_active_scenarios(db)
+            return await self.get_active_scenarios()
 
         # Get all active scenarios
-        scenarios = await self.get_active_scenarios(db)
+        scenarios = await self.get_active_scenarios()
         matching_scenarios = []
 
         for scenario in scenarios:
@@ -132,20 +115,18 @@ class AgentScenarioManager(BaseManager):
 
     async def create_scenario(
         self,
-        db: AsyncSession,
-        name: Mapped[str],
+        name: str,
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
         action_type: Optional[str] = None,
         content_types: Optional[list] = None,
         is_active: bool = True,
         is_default: bool = False,
-    ) -> AgentScenario:
+    ) -> object:
         """
         Create a new agent scenario with validation.
 
         Args:
-                db: Database session
                 name: Scenario name
                 scope: JSON conditions and variables for AI behavior
                 ai_prompt: AI prompt for response generation
@@ -157,11 +138,12 @@ class AgentScenarioManager(BaseManager):
         Returns:
                 Created AgentScenario object
         """
-        existing = await self.get_by_name(db, name)
+        existing = await self.get_by_name(name)
         if existing:
             raise ValueError(f"Scenario with name '{name}' already exists")
 
-        scenario = self.model(
+        # `create()` stamps tenant_id from the ambient scope (fail-closed).
+        return await self.create(
             name=name,
             scope=scope or {},
             ai_prompt=ai_prompt,
@@ -171,74 +153,51 @@ class AgentScenarioManager(BaseManager):
             is_default=is_default,
         )
 
-        db.add(scenario)
-        await db.commit()
-        await db.refresh(scenario)
-        return scenario
-
-    async def update_scenario_activity(
-        self, db: AsyncSession, scenario_id: int, is_active: bool
-    ) -> Optional[AgentScenario]:
+    async def update_scenario_activity(self, scenario_id: int, is_active: bool) -> Optional[object]:
         """
         Update scenario active status.
 
         Args:
-                db: Database session
                 scenario_id: ID of the scenario to update
                 is_active: New active status
 
         Returns:
                 Updated AgentScenario object if found, None otherwise
         """
-        scenario = await self.get(scenario_id)
-        if scenario:
-            scenario.is_active = is_active
-            await db.commit()
-            await db.refresh(scenario)
-        return scenario
+        return await self.update_by_id(scenario_id, is_active=is_active)
 
-    async def get_scenarios_by_action_type(
-        self, db: AsyncSession, action_type: Optional[str] = None
-    ) -> Sequence[AgentScenario]:
+    async def get_scenarios_by_action_type(self, action_type: Optional[str] = None) -> Sequence[object]:
         """
         Retrieve scenarios filtered by action type.
 
         Args:
-                db: Database session
                 action_type: Action type to filter by (None for analysis-only scenarios)
 
         Returns:
                 List of AgentScenario objects
         """
-        query = select(self.model).where(self.model.is_active)
+        qs = self.filter(is_active=True)
 
         if action_type is None:
             # Get analysis-only scenarios (action_type is NULL)
-            query = query.where(self.model.action_type.is_(None))
+            qs = qs.filter(self.model.action_type.is_(None))
         else:
             # Get scenarios with specific action type
-            query = query.where(self.model.action_type == action_type)
+            qs = qs.filter(action_type=action_type)
 
-        result = await db.execute(query)
-        return result.scalars().all()
+        return await qs
 
-    async def get_scenarios_with_cooldown(
-        self, db: AsyncSession, recently_used_scenario_ids: list[int]
-    ) -> Sequence[AgentScenario]:
+    async def get_scenarios_with_cooldown(self, recently_used_scenario_ids: list[int]) -> Sequence[object]:
         """
         Get active scenarios excluding those in a cooldown.
 
         Args:
-                db: Database session
                 recently_used_scenario_ids: List of scenario IDs that are in cooldown
 
         Returns:
                 List of available AgentScenario objects
         """
         if not recently_used_scenario_ids:
-            return await self.get_active_scenarios(db)
+            return await self.get_active_scenarios()
 
-        result = await db.execute(
-            select(self.model).where(and_(self.model.is_active, ~self.model.id.in_(recently_used_scenario_ids)))
-        )
-        return result.scalars().all()
+        return await self.filter(is_active=True).exclude(id__in=recently_used_scenario_ids)

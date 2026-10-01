@@ -57,54 +57,45 @@ def seed_default(
     from app.models import AgentScenario
 
     async def _seed():
-        from sqlalchemy import select
-
-        from app.core.database import new_session
         from app.services.ai.llm_client import resolve_model
 
         tid = await _resolve_tenant_id(tenant)
 
-        async with new_session() as db:
-            existing = await db.execute(
-                select(AgentScenario).where(
-                    AgentScenario.tenant_id == tid,
-                    AgentScenario.is_default == True,
-                    AgentScenario.is_active == True,
-                )
-            )
-            existing_sc = existing.scalars().first()
+        # The CLI runs under `tenant_scope(bypass=True)`, so the manager is not
+        # narrowed to one workspace: filter explicitly on the target's id.
+        existing = await AgentScenario.objects.filter(
+            tenant_id=tid, is_default=True, is_active=True
+        )
+        existing_sc = existing[0] if existing else None
 
-            if existing_sc and not force:
-                rprint(f"[yellow]Default scenario already exists: {existing_sc.name} (id={existing_sc.id})[/yellow]")
-                rprint("[dim]Use --force to replace it[/dim]")
-                return
+        if existing_sc and not force:
+            rprint(f"[yellow]Default scenario already exists: {existing_sc.name} (id={existing_sc.id})[/yellow]")
+            rprint("[dim]Use --force to replace it[/dim]")
+            return
 
-            if existing_sc:
-                existing_sc.is_default = False
-                rprint(f"[dim]Cleared is_default on existing scenario {existing_sc.id}[/dim]")
+        if existing_sc:
+            await AgentScenario.objects.update_by_id(existing_sc.id, is_default=False)
+            rprint(f"[dim]Cleared is_default on existing scenario {existing_sc.id}[/dim]")
 
-            default_model = await resolve_model()
-            text_llm_model_id = default_model.id if default_model else None
+        default_model = await resolve_model()
+        text_llm_model_id = default_model.id if default_model else None
 
-            new_scenario = AgentScenario(
-                tenant_id=tid,
-                name="Базовый мониторинг",
-                description="Стандартный сценарий: анализ настроений и ключевых слов по расписанию. Триггер: TIME_BASED.",
-                content_types=["text"],
-                analysis_types=["sentiment", "keywords"],
-                scope=BASIC_MONITORING_SCOPE,
-                analyze_type="themes",
-                trigger_type=BotTriggerType.TIME_BASED,
-                trigger_config={},
-                action_type=None,
-                is_active=True,
-                is_default=True,
-                text_llm_model_id=text_llm_model_id,
-            )
-            db.add(new_scenario)
-            await db.commit()
-            await db.refresh(new_scenario)
-            rprint(f"[green]Seeded default scenario: id={new_scenario.id}, name={new_scenario.name!r}[/green]")
+        new_scenario = await AgentScenario.objects.create(
+            tenant_id=tid,
+            name="Базовый мониторинг",
+            description="Стандартный сценарий: анализ настроений и ключевых слов по расписанию. Триггер: TIME_BASED.",
+            content_types=["text"],
+            analysis_types=["sentiment", "keywords"],
+            scope=BASIC_MONITORING_SCOPE,
+            analyze_type="themes",
+            trigger_type=BotTriggerType.TIME_BASED,
+            trigger_config={},
+            action_type=None,
+            is_active=True,
+            is_default=True,
+            text_llm_model_id=text_llm_model_id,
+        )
+        rprint(f"[green]Seeded default scenario: id={new_scenario.id}, name={new_scenario.name!r}[/green]")
 
     try:
         _run(_seed())

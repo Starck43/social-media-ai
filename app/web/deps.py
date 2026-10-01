@@ -112,6 +112,18 @@ def guard_web(
     return RedirectResponse(back, status_code=302)
 
 
+def perms_can(request: Request, model_name: str, action: ActionType | str) -> bool:
+    """The same rule as `guard_web`, as a plain boolean.
+
+    For the server side of a page: a delete confirmation that warns about the
+    cascade should not be rendered for someone who cannot delete, and a template
+    `perms` check alone would not stop the POST from being described. Returns
+    False when the request carries no `WebPerms` — fail closed.
+    """
+    perms = getattr(request.state, "web_perms", None)
+    return perms is not None and perms.can(model_name, action)
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
     context: dict[str, Any] = {
         "user": getattr(request.state, "web_user", None),

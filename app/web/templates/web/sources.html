@@ -56,6 +56,7 @@
                         <th class="px-4 py-3">Платформа</th>
                         <th class="px-4 py-3">Внешний ID</th>
                         <th class="px-4 py-3">Тип</th>
+                        <th class="px-4 py-3">Режим</th>
                         <th class="px-4 py-3">Отслеж.</th>
                         <th class="px-4 py-3">Статус</th>
                         <th class="px-4 py-3">Создан</th>
@@ -67,10 +68,17 @@
                     {% for source in sources %}
                         {% set monitored = source.params.get("monitored_users", []) if source.params else [] %}
                         <tr class="hover:bg-slate-900/80">
-                            <td class="px-4 py-3 font-medium">{{ source.name }}</td>
+                            <td class="px-4 py-3 font-medium">
+                                <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-400 hover:underline">{{ source.name }}</a>
+                            </td>
                             <td class="px-4 py-3 text-slate-400">{{ source.platform.name }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ source.external_id }}</td>
                             <td class="px-4 py-3 text-slate-400">{{ source.source_type.display_name }}</td>
+                            <td class="px-4 py-3">
+                                {% set mode = source.params.get("mode", "pull") if source.params else "pull" %}
+                                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
+                                      title="{{ mode }}">{{ dict(modes).get(mode, 'pull').split(' — ')[0] }}</span>
+                            </td>
                             <td class="px-4 py-3 text-slate-400">
                                 {% if monitored %}
                                     <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ monitored|length }}</span>
@@ -90,7 +98,9 @@
                             <td class="px-4 py-3">
                                 {% if perms and perms.can('source', 'update') %}
                                 <div class="flex items-center gap-1">
-                                    <button
+                                    {% set mode = source.params.get("mode", "pull") if source.params else "pull" %}
+                                {% set owner_id = (source.params.get("token_owner") or "") if source.params else "" %}
+                                <button
                                         @click='editSource({
                                             id: {{ source.id }},
                                             name: {{ source.name|tojson }},
@@ -98,7 +108,9 @@
                                             external_id: {{ source.external_id|tojson }},
                                             source_type: {{ source.source_type.db_value|tojson }},
                                             is_active: {{ 'true' if source.is_active else 'false' }},
-                                            monitored_users: {{ monitored|tojson }}
+                                            monitored_users: {{ monitored|tojson }},
+                                            mode: {{ mode|tojson }},
+                                            token_owner: {{ owner_id|string|tojson }}
                                         })'
                                         title="Редактировать"
                                         class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-slate-800">
@@ -189,6 +201,25 @@
                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                     <p class="mt-1 text-xs text-slate-500">Через запятую: username1, username2, @durov</p>
                 </div>
+                <div>
+                    <label for="add-mode" class="mb-1 block text-sm text-slate-300">Режим сбора</label>
+                    <select id="add-mode" name="mode"
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        {% for value, hint in modes %}
+                            <option value="{{ value }}">{{ value }} — {{ hint }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="add-token_owner" class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
+                    <select id="add-token_owner" name="token_owner"
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <option value="">владелец workspace по умолчанию</option>
+                        {% for member in members %}
+                            <option value="{{ member.id }}">{{ member.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="flex gap-2">
                     <button type="button" @click="openAdd = false"
                             class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
@@ -246,6 +277,25 @@
                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                     <p class="mt-1 text-xs text-slate-500">Через запятую: username1, username2, @durov</p>
                 </div>
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Режим сбора</label>
+                    <select name="mode" x-model="editing.mode"
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        {% for value, hint in modes %}
+                            <option value="{{ value }}">{{ value }} — {{ hint }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
+                    <select name="token_owner" x-model="editing.token_owner"
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <option value="">владелец workspace по умолчанию</option>
+                        {% for member in members %}
+                            <option value="{{ member.id }}">{{ member.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <label class="flex items-center gap-2 text-sm text-slate-300">
                     <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
                     <input type="checkbox" x-model="editing.is_active"
@@ -272,9 +322,9 @@ function sourcesPage() {
         openAdd: false,
         openEdit: false,
         selectedAddPlatform: '{{ platforms[0].platform_type.db_value if platforms else "" }}',
-        editing: { id: 0, name: '', platform: '', external_id: '', source_type: '', is_active: true, monitored_users: [], monitored_users_str: '' },
+        editing: { id: 0, name: '', platform: '', external_id: '', source_type: '', is_active: true, monitored_users: [], monitored_users_str: '', mode: 'pull', token_owner: '' },
         editSource(data) {
-            this.editing = { ...data, monitored_users: data.monitored_users || [], monitored_users_str: (data.monitored_users || []).join(', ') };
+            this.editing = { ...data, monitored_users: data.monitored_users || [], monitored_users_str: (data.monitored_users || []).join(', '), mode: data.mode || 'pull', token_owner: String(data.token_owner || '') };
             this.openEdit = true;
         },
     };

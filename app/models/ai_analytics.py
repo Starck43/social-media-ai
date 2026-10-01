@@ -31,10 +31,10 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     source_id: Mapped[int] = Column(
-        Integer, ForeignKey("social_manager.sources.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.sources.id", ondelete="CASCADE"), nullable=False
     )
     analysis_date: Mapped[Date] = Column(Date, nullable=True, default=date.today, server_default=text("CURRENT_DATE"))
-    # Store as PostgreSQL enum matching existing DB type social_manager.analysis_period_type
+    # Store as PostgreSQL enum matching the existing DB analysis_period_type type
     period_type: Mapped[PeriodType] = PeriodType.sa_column(
         type_name="analysis_period_type", nullable=False, default=PeriodType.DAILY, store_as_name=True
     )
@@ -47,7 +47,7 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     # Chain tracking for ongoing topics/threads
     topic_chain_id: Mapped[str] = Column(String(100), nullable=True)
     parent_analysis_id: Mapped[int] = Column(
-        ForeignKey("social_manager.ai_analytics.id", ondelete="SET NULL"), nullable=True
+        ForeignKey(f"{settings.DB_SCHEMA}.ai_analytics.id", ondelete="SET NULL"), nullable=True
     )
 
     summary_data: Mapped[JSON] = Column(JSON, nullable=False, default=dict, server_default=text("'{}'::jsonb"))

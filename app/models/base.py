@@ -4,7 +4,7 @@ from typing import ClassVar, TypeVar, TYPE_CHECKING
 from sqlalchemy import func, DateTime, MetaData, ForeignKey
 from sqlalchemy.orm import mapped_column, Mapped, declared_attr, DeclarativeBase, Session
 
-T = TypeVar("T", bound="Base")
+from app.core.config import settings
 
 
 class TimestampMixin:
@@ -58,7 +58,9 @@ class Base(DeclarativeBase):
 
 	__allow_unmapped__ = True
 
-	metadata = MetaData(schema="social_manager")
+	# Default for any table that does not restate it in `__table_args__`; the
+	# schema is a setting, so the test suite can run against its own.
+	metadata = MetaData(schema=settings.DB_SCHEMA)
 
 	# Manager will be set after class definition to avoid circular imports
 	if TYPE_CHECKING:

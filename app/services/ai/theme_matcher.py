@@ -7,6 +7,7 @@ Theme matching service for AI analytics.
 import logging
 from typing import Optional
 
+from app.core.config import settings
 from app.models import AIAnalytics
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class ThemeMatcher:
 					SELECT *, 
 						CARDINALITY(main_topics & %s)::float / 
 						GREATEST(CARDINALITY(main_topics | %s), 1) as similarity
-					FROM social_manager.ai_analytics 
+					FROM {settings.DB_SCHEMA}.ai_analytics 
 					WHERE source_id = %s 
 					AND main_topics && %s
 					AND main_topics IS NOT NULL

@@ -27,7 +27,7 @@ class User(Base, TimestampMixin):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
 
     # Relationship to Role
-    role_id: Mapped[int] = mapped_column(Integer, ForeignKey("social_manager.roles.id"), nullable=False)
+    role_id: Mapped[int] = mapped_column(Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id"), nullable=False)
     role: Mapped["Role"] = relationship("Role", back_populates="users")
 
     # Manager will be set after class definition to avoid circular imports

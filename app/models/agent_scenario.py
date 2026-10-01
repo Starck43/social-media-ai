@@ -108,19 +108,19 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     # LLM models for different content types
     text_llm_model_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+        ForeignKey(f"{settings.DB_SCHEMA}.llm_models.id", ondelete="SET NULL"),
         nullable=True,
         comment="Specific LLM model for text analysis",
     )
     image_llm_model_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+        ForeignKey(f"{settings.DB_SCHEMA}.llm_models.id", ondelete="SET NULL"),
         nullable=True,
         comment="Specific LLM model for image analysis",
     )
     video_llm_model_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.llm_models.id", ondelete="SET NULL"),
+        ForeignKey(f"{settings.DB_SCHEMA}.llm_models.id", ondelete="SET NULL"),
         nullable=True,
         comment="Specific LLM model for video analysis",
     )

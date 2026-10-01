@@ -29,8 +29,10 @@ class Permission(Base, TimestampMixin):
 		store_as_name=True  # Хранить как имена (VIEW, CREATE, UPDATE, etc.)
 	)
 	# Relationships
-	model_type_id: Mapped[int] = mapped_column(ForeignKey("social_manager.model_types.id"))
-	model_type: Mapped["ModelType"] = relationship("ModelType", back_populates="permissions")
+	model_type_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.model_types.id"))
+	# eager so `Permission.model_type.model_name` is safe on detached/async users
+	# (used by `User.has_perm_for` on the admin and API paths).
+	model_type: Mapped["ModelType"] = relationship("ModelType", back_populates="permissions", lazy="selectin")
 
 	def __str__(self) -> str:
 		return f"{self.codename}"

@@ -9,6 +9,8 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import TypeDecorator
 from sqlalchemy.orm import mapped_column
 
+from app.core.config import settings
+
 E = TypeVar("E", bound=Enum)
 
 
@@ -31,7 +33,7 @@ class DatabaseEnum(Enum):
         cls,
         type_name: str | None = None,
         store_as_name: bool = False,
-        schema: str = "social_manager",
+        schema: str | None = None,
     ) -> Any:
         """Create a SQLAlchemy Enum type for this enum class."""
         raise NotImplementedError  # attached by @database_enum
@@ -73,8 +75,13 @@ def database_enum(enum_class: Type[E]) -> Type[E]:
                 values.append(str(e.value))
         return values
 
-    def sa_enum(cls, type_name: str = None, store_as_name: bool = False, schema: str = "social_manager"):
-        """Создает SQLAlchemy Enum с правильной обработкой tuple enums."""
+    def sa_enum(cls, type_name: str = None, store_as_name: bool = False, schema: str | None = None) -> Any:
+        """Создает SQLAlchemy Enum с правильной обработкой tuple enums.
+
+        По умолчанию берется схема из настроек, чтобы PostgreSQL-тип
+        создавался рядом со своей таблицей, а не в захардкоженной схеме.
+        """
+        schema = schema or settings.DB_SCHEMA
         # Проверяем, используем ли tuple enum (есть db_value)
         has_db_value = any(hasattr(e, "db_value") for e in cls)
 

@@ -45,7 +45,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 
 	id: Mapped[int] = mapped_column(primary_key=True)  # Тип выводится автоматически
 	platform_id: Mapped[int] = mapped_column(
-		ForeignKey("social_manager.platforms.id", ondelete="CASCADE"),
+		ForeignKey(f"{settings.DB_SCHEMA}.platforms.id", ondelete="CASCADE"),
 		nullable=False,
 	)
 	name: Mapped[str] = mapped_column(String(255), nullable=False)  # String(255) нужен для длины
@@ -83,7 +83,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 
 	# Assign reusable scenario per source
 	agent_scenario_id: Mapped[int | None] = mapped_column(
-		ForeignKey("social_manager.agent_scenarios.id", ondelete="SET NULL"),
+		ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="SET NULL"),
 		nullable=True,
 	)
 	# Link to reusable agent scenario; scenario is preserved on source deletion

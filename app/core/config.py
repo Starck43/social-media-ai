@@ -66,7 +66,8 @@ class Settings(BaseSettings):
 
     POSTGRES_URL: str
     REDIS_URL: str = "redis://localhost:6379/0"  # Optional: only needed by frozen Celery/sqladmin storage
-    DB_SCHEMA: str = "social_manager"
+    DB_SCHEMA: str = "public"
+    DB_TEST_SCHEMA: str = "test_schema"
 
     # External platform credentials (optional — integrations are enabled based on presence)
     # Prefer the per-tenant vault (tenant_credentials); these are the legacy fallback.

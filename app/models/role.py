@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 role_permission = Table(
 	"role_permission",
 	Base.metadata,
-	Column("role_id", Integer, ForeignKey("social_manager.roles.id"), primary_key=True),
-	Column("permission_id", Integer, ForeignKey("social_manager.permissions.id"), primary_key=True),
+	Column("role_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id"), primary_key=True),
+	Column("permission_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.permissions.id"), primary_key=True),
 	schema=settings.DB_SCHEMA
 )
 

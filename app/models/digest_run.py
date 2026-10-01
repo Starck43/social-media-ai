@@ -28,7 +28,7 @@ class DigestRun(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[int] = Column(Integer, primary_key=True)
     agent_task_id: Mapped[int | None] = Column(
         Integer,
-        ForeignKey("social_manager.agent_tasks.id", ondelete="SET NULL"),
+        ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
     period: Mapped[str] = Column(String(10), nullable=False)  # 'day' | 'week'

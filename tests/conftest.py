@@ -4,19 +4,52 @@ Async tests share one event loop (see `asyncio_default_test_loop_scope` in
 pyproject.toml), so here we only make sure the pooled DB connections are
 closed from inside that same loop before the process exits.
 
+The suite runs against its own database
+---------------------------------------
+Tests must never write into the working database, so the whole process is
+redirected to ``TEST_POSTGRES_URL`` and ``DB_TEST_SCHEMA`` *before* anything
+under ``app`` is imported. That ordering is not incidental:
+``app.core.database`` builds its engines at import time from ``POSTGRES_URL``,
+and the models bake ``settings.DB_SCHEMA`` into their ``__table_args__`` while
+they load, so a redirect applied later would leave both the pool and the tables
+on the working ones. ``resolve_and_redirect`` republishes both under the names
+the application reads and refuses to continue when they resolve to the working
+database *and* the working schema.
+
+``scripts.setup_test_db`` then makes sure that database exists, carries the
+schema and holds the reference rows the suite reads (roles, permissions,
+platforms, the bootstrap workspace). It is idempotent, so the first `pytest`
+after a clone sets everything up on its own. Its ``--reset`` truncates every
+table, which is only needed when a run was interrupted mid-way.
+
+Two escape hatches remain and are deliberate:
+
+* ``tests/test_base_manager.py`` builds its own SQLite engine (the models are
+  PostgreSQL-shaped, so that file never touches the database at all);
+* ``tests/test_vk_collection.py`` builds its own engine from
+  ``settings.POSTGRES_URL`` — which this module has already pointed at the
+  test database — and only issues reads.
+
 Tenancy: every business table is tenant-owned and `BaseManager` is fail-closed,
 so the suite has to say *whose* data a test touches. Legacy tests describe the
 single-workspace era and therefore run as the platform owner (bypass); tests
 marked `@pytest.mark.tenancy` opt out and exercise the real guard.
 """
 
-import pytest
+import sys
+from pathlib import Path
 
-import app.models.managers.base_manager as base_manager_module
-from app.core.database import async_engine
+# Make `scripts` importable when pytest is started from another directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Captured before any fixture patches the module attribute.
-REAL_IS_BYPASS = base_manager_module.is_bypass
+# Has to run before the first `app` import below — see the module docstring.
+from scripts.setup_test_db import resolve_and_redirect  # noqa: E402
+
+WORKING_DATABASE_URL, TEST_DATABASE_URL, TEST_SCHEMA = resolve_and_redirect()
+
+import pytest  # noqa: E402
+
+import app.models.managers.base_manager as base_manager_module  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +63,9 @@ def _platform_scope(request, monkeypatch):
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _dispose_db_engine():
-    yield
-    await async_engine.dispose()
+async def _test_database():
+    """Create and seed the test database before the first test runs."""
+    from scripts.setup_test_db import database_name, ensure_test_database
+
+    shares = bool(WORKING_DATABASE_URL) and database_name(WORKING_DATABASE_URL) == database_name(TEST_DATABASE_URL)
+    await ensure_test_database(TEST_DATABASE_URL, shares_working_database=shares)

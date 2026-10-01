@@ -27,13 +27,13 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[int] = Column(Integer, primary_key=True)
 
     agent_scenario_id: Mapped[int] = Column(
-        Integer, ForeignKey("social_manager.agent_scenarios.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="CASCADE"), nullable=False
     )
     source_id: Mapped[int] = Column(
-        Integer, ForeignKey("social_manager.sources.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.sources.id", ondelete="CASCADE"), nullable=False
     )
     analytics_id: Mapped[int | None] = Column(
-        Integer, ForeignKey("social_manager.ai_analytics.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.ai_analytics.id", ondelete="SET NULL"), nullable=True
     )
 
     action_type: Mapped[BotActionType] = BotActionType.sa_column(
@@ -53,7 +53,7 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
 
     dry_run: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
     confirmed_by: Mapped[int | None] = Column(
-        Integer, ForeignKey("social_manager.tenant_users.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.tenant_users.id", ondelete="SET NULL"), nullable=True
     )
     confirmed_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
 

@@ -43,7 +43,7 @@ class BaseClient(ABC):
 
 		except Exception as e:
 			logger.error(f"Data collection error for {source.name}: {e}")
-			return []
+			raise
 
 	async def _collect_full(self, source: Source, method: str, content_type: str) -> list[dict]:
 		"""
@@ -69,6 +69,7 @@ class BaseClient(ABC):
 			logger.info(f"Fetching page {page + 1}, offset: {offset}")
 
 			res = await self._make_request(method, params)
+			self._raise_api_error(res)
 			items = self._extract_items_from_response(res)
 
 			if not items:
@@ -114,6 +115,7 @@ class BaseClient(ABC):
 
 		# Collect single page
 		res = await self._make_request(method, params)
+		self._raise_api_error(res)
 		items = self._extract_items_from_response(res)
 
 		if not items:
@@ -192,6 +194,22 @@ class BaseClient(ABC):
 			)
 			response.raise_for_status()
 			return response.json()
+
+	def _raise_api_error(self, response: dict) -> None:
+		"""
+		Raise a clear (Russian) exception when the platform returns an API error.
+
+		VK-style responses carry the error under a top-level `error` key
+		(`{"error": {"error_code": 15, "error_msg": "..."}}`). Without this check
+		such an error is silently treated as an empty result, which hides real
+		problems (private wall, missing permission, quota, auth failure).
+		"""
+		error = response.get("error") if isinstance(response, dict) else None
+		if not isinstance(error, dict):
+			return
+		code = error.get("error_code") or error.get("code")
+		msg = error.get("error_msg") or error.get("message") or "неизвестная ошибка API"
+		raise RuntimeError(f"Ошибка API ({code or 'без кода'}): {msg}")
 
 	@staticmethod
 	def _convert_to_datetime(date_obj, end_of_day=False):

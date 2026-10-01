@@ -3,8 +3,9 @@ Telegram collection client: L1 push contract + L2 MTProto pull (Telethon).
 
 The Bot API (L1) cannot read history, so pull collection is only meaningful in
 `user` mode through an authorized MTProto session (Telethon). Sessions are
-resolved from the tenant vault by `app.services.social.tg_session` and telethon
-is imported lazily — the app boots without it installed.
+resolved from the personal vault (`app.services.social.tg_session`, keyed by the
+source's owner user) and telethon is imported lazily — the app boots without it
+installed.
 
 Official documentation: https://docs.telethon.dev/
 """
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Source.params["mode"] values (see docs/COLLECTION.md).
 MODE_API = "api"  # L1: Bot API push via listener -> ingest; pull is a no-op
 MODE_USER = "user"  # L2: MTProto user session pull (Telethon)
+MODE_AUTO = "auto"  # default: L2 pull when an MTProto session exists, else L1 push
 
 
 class TelegramClient(BaseClient):
@@ -30,25 +32,36 @@ class TelegramClient(BaseClient):
 	Client for Telegram: content collection and bot-side sending.
 
 	Collection is hybrid, decided per source by `Source.params["mode"]`:
-	- `api` (default, L1): no pull — the Bot API delivers only new updates to
+	- `api` (L1): no pull — the Bot API delivers only new updates to
 	  the listener, which feeds `services/monitoring/ingest.py`; pulling here
 	  would re-analyze pushes and burn LLM tokens, so it returns no items.
 	- `user` (L2): MTProto pull of everything newer than `Source.last_item_id`
 	  (watermark shared with the push path); `force_refresh` + `cli_dates`
 	  widen the window for a one-off backfill.
+	- `auto` (default): L2 pull whenever an MTProto session is configured,
+	  otherwise fall back to L1 (push-based, returns no items).
 
 	`send_message` writes through the Bot API and is unrelated to the layer.
 	"""
 
 	async def collect_data(self, source: Source, content_type: str = "posts") -> list[Any] | list[dict | None]:
 		"""Route the source to its collection layer (L1 no-op, L2 MTProto pull)."""
-		mode = (source.params or {}).get("mode", MODE_API)
-		if mode != MODE_USER:
-			if mode != MODE_API:
-				logger.warning(f"Unknown Telegram mode {mode!r} for source {source.id} - treating as api")
-			logger.info(f"Telegram source {source.id} is push-based (L1) - pull collection skipped")
-			return []
-		return await self._collect_mtproto(source)
+		mode = (source.params or {}).get("mode", MODE_AUTO)
+		if mode == MODE_USER:
+			return await self._collect_mtproto(source)
+
+		if mode == MODE_AUTO:
+			from app.services.social.tg_session import load_session
+
+			if await load_session() is not None:
+				logger.info(f"Telegram source {source.id} in auto mode - L2 session available, pulling via MTProto")
+				return await self._collect_mtproto(source)
+			logger.info(f"Telegram source {source.id} in auto mode - no L2 session, falling back to L1 (push)")
+
+		if mode not in (MODE_API, MODE_AUTO):
+			logger.warning(f"Unknown Telegram mode {mode!r} for source {source.id} - treating as api")
+		logger.info(f"Telegram source {source.id} is push-based (L1) - pull collection skipped")
+		return []
 
 	async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
 		"""L2 pull: fetch messages newer than the watermark, then advance it.
@@ -56,13 +69,15 @@ class TelegramClient(BaseClient):
 		A missing or revoked session is an error to log, not to raise: the job
 		reports the source as failed and the rest of the run continues.
 		"""
+		from app.services.social.owner import resolve_source_owner
 		from app.services.social.tg_session import build_client, load_session
 
-		session = await load_session()
+		owner_user_id = await resolve_source_owner(source)
+		session = await load_session(user_id=owner_user_id)
 		if session is None:
 			logger.error(
 				f"No Telegram MTProto session for source {source.id} - "
-				"run: python -m cli.main credentials login telegram"
+				"run: python -m cli.main credentials login telegram --user <id>"
 			)
 			return []
 

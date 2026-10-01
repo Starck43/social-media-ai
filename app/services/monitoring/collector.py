@@ -45,18 +45,22 @@ class ContentCollector:
 			Dict with collection results or None if failed
 		"""
 		try:
-			# If source.source_type is string, convert to SourceType
+			from app.models import Platform
+
 			if isinstance(source.source_type, str):
 				source.source_type = SourceType.get_by_value(source.source_type)
 				if not source.source_type:
 					logger.error(f"Invalid source type: {source.source_type}")
 					return None
 
-			platform_obj = source.platform
+			platform_id = source.platform_id
+			try:
+				platform_obj = source.platform
+			except Exception:
+				platform_obj = None
 
-			if not hasattr(platform_obj, 'params'):
-				from app.models import Platform
-				platform_obj = await Platform.objects.get(id=source.platform_id)
+			if not platform_obj or not hasattr(platform_obj, 'params'):
+				platform_obj = await Platform.objects.get(id=platform_id)
 
 			client = get_social_client(platform_obj)
 
@@ -95,8 +99,8 @@ class ContentCollector:
 			if NOTIFICATIONS_AVAILABLE:
 				try:
 					await notify.create(
-						title=f"Error collecting from source {source.name}",
-						message=f"Failed to collect data: {str(e)}",
+						title=f"Ошибка сбора источника {source.name}",
+						message=f"Не удалось собрать данные: {str(e)}",
 						ntype=NotificationType.API_ERROR,
 						entity_type="source",
 						entity_id=source.id,
@@ -105,7 +109,10 @@ class ContentCollector:
 				except:
 					pass  # Don't fail on notification error
 
-			return None
+			# Re-raise so the caller can tell a real failure (error) apart from a
+			# legitimately empty result (no content). Swallowing here turns every
+			# API/network failure into "no content".
+			raise
 
 	async def collect_from_platform(
 			self,
@@ -163,22 +170,27 @@ class ContentCollector:
 		logger.info(f"Collection complete: {results}")
 		return results
 
-	async def collect_monitored_users(self, source: Source, analyze: bool = True) -> dict:
+	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None) -> dict:
 		"""
 		Collect content from monitored users of a source.
 
 		Monitored users are stored in source.params["monitored_users"] as a list
-		of username strings. Each username is resolved to a Source by matching
-		external_id on the same platform.
+		of username strings, or passed explicitly via `monitored_users` (e.g. a
+		task's payload override). Each username is resolved to a Source by
+		matching external_id on the same platform.
 
 		Args:
 			source: Source with monitored_users in params
 			analyze: Whether to run AI analysis
+			monitored_users: Optional explicit username list (overrides params)
 
 		Returns:
 			Dict with collection statistics
 		"""
-		monitored_usernames = source.params.get("monitored_users", []) or []
+		if monitored_users is None:
+			monitored_usernames = source.params.get("monitored_users", []) or []
+		else:
+			monitored_usernames = monitored_users
 		if not monitored_usernames:
 			logger.info(f"Source {source.id} has no monitored users")
 			return {"total_users": 0, "successful": 0, "failed": 0}

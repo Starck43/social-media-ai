@@ -22,8 +22,9 @@ from .views import (
     PlatformAdmin,
     RoleAdmin,
     SourceAdmin,
-    TenantCredentialAdmin,
+    TenantAdmin,
     UserAdmin,
+    UserCredentialAdmin,
 )
 
 # Get the project root directory
@@ -91,7 +92,8 @@ def setup_admin(app):
         NotificationAdmin,
         LLMProviderAdmin,
         LLMModelAdmin,
-        TenantCredentialAdmin,
+        TenantAdmin,
+        UserCredentialAdmin,
     ]
 
     for view_class in view_configs:

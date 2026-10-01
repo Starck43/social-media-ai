@@ -19,7 +19,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Text,
     UniqueConstraint,
     text,
 )
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     from .managers.base_manager import BaseManager
     from .managers.tenant_manager import (
         TenantChannelManager,
-        TenantCredentialManager,
         TenantInviteManager,
         TenantManager,
         TenantUserManager,
@@ -169,43 +167,8 @@ class TenantChannel(Base, TimestampMixin):
         return f"TenantChannel#{self.id}[{self.channel}:{self.chat_id}]"
 
 
-@app_label("account")
-class TenantCredential(Base, TimestampMixin):
-    """Per-tenant third-party secrets, encrypted at rest (Fernet)."""
-
-    __tablename__ = "tenant_credentials"
-    __table_args__ = (
-        Index("ix_tenant_credentials_tenant_id", "tenant_id"),
-        {"schema": settings.DB_SCHEMA},
-    )
-
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    tenant_id: Mapped[int] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.tenants.id", ondelete="CASCADE"), nullable=False
-    )
-    platform: Mapped[str] = Column(String(30), nullable=False)  # 'vk' | 'telegram' | 'llm' | ...
-    kind: Mapped[str] = Column(String(30), nullable=False)  # 'user_token' | 'community_token' | 'api_key'
-    label: Mapped[str | None] = Column(String(100), nullable=True)
-    secret_encrypted: Mapped[str] = Column(Text, nullable=False)
-    expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
-    meta: Mapped[dict[str, Any] | None] = Column(JSON, nullable=True)
-    is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
-
-    if TYPE_CHECKING:
-        objects: ClassVar[TenantCredentialManager | BaseManager]
-    else:
-        objects: ClassVar = None
-
-    def reveal(self) -> str:
-        """Decrypt the secret (call sparingly; never log the result)."""
-        from app.utils.crypto import decrypt_secret
-
-        return decrypt_secret(self.secret_encrypted)
-
-
 from .managers.tenant_manager import (  # noqa: E402
     TenantChannelManager,
-    TenantCredentialManager,
     TenantInviteManager,
     TenantManager,
     TenantUserManager,
@@ -215,4 +178,3 @@ Tenant.objects = TenantManager()
 TenantUser.objects = TenantUserManager()
 TenantInvite.objects = TenantInviteManager()
 TenantChannel.objects = TenantChannelManager()
-TenantCredential.objects = TenantCredentialManager()

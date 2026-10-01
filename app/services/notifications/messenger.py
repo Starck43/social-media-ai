@@ -12,7 +12,7 @@ class MessengerService:
 
     def __init__(self):
         self.telegram_bot_token = settings.TELEGRAM_BOT_TOKEN
-        self.vk_app_secret = settings.VK_SERVICE_ACCESS_TOKEN
+        self.vk_app_secret = settings.VK_SERVICE_KEY
 
     async def send_notification(
         self,

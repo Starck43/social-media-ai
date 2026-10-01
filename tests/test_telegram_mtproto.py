@@ -115,7 +115,7 @@ def fake_client_factory(monkeypatch):
     def _install(session=True, **client_kwargs):
         holder = {}
 
-        async def fake_load(tenant_id=None):
+        async def fake_load(user_id=None):
             if not session:
                 return None
             return tg_session_module.TelegramSession(api_id=12345, api_hash="h" * 32, session="s" * 20)
@@ -137,7 +137,9 @@ def fake_client_factory(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-async def test_default_mode_is_push_and_pull_is_noop():
+async def test_default_mode_is_auto_and_pull_is_noop_without_session(fake_client_factory):
+    # `auto` with no MTProto session falls back to L1 (push) -> no items
+    fake_client_factory(session=False)
     client = TelegramClient(_Platform())
     assert await client.collect_data(_source()) == []
 
@@ -145,6 +147,13 @@ async def test_default_mode_is_push_and_pull_is_noop():
 async def test_api_mode_skips_pull():
     client = TelegramClient(_Platform())
     assert await client.collect_data(_source(params={"mode": "api"})) == []
+
+
+async def test_auto_mode_pulls_via_l2_when_session_exists(fake_client_factory):
+    fake_client_factory()
+    client = TelegramClient(_Platform())
+    items = await client.collect_data(_source(params={"mode": "auto"}))
+    assert [int(i["id"]) for i in items] == [12, 11]
 
 
 async def test_unknown_mode_falls_back_to_push():
@@ -320,10 +329,10 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
             is_active=True,
         )
 
-    async def fake_load(tenant_id=None):
+    async def fake_load(user_id=None):
         from app.core.tenant_context import current_tenant_id
 
-        # The caller passes no explicit tenant; resolution must use the ambient
+        # The caller passes no explicit owner; resolution must use the ambient
         # workspace scope, exactly like the job dispatcher.
         assert current_tenant_id() == tenant.id, "L2 session must resolve in the owning workspace"
         return tg_session_module.TelegramSession(api_id=12345, api_hash="h" * 32, session="s" * 20)

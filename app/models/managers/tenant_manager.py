@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..tenant import Tenant, TenantChannel, TenantCredential, TenantInvite, TenantUser
+    from ..tenant import Tenant, TenantChannel, TenantInvite, TenantUser
 
 
 def hash_invite_code(code: str) -> str:
@@ -98,6 +98,11 @@ class TenantUserManager(BaseManager["TenantUser"]):
     async def web_memberships(self, user_id: int) -> list["TenantUser"]:
         rows = await self.filter(user_id=user_id, channel=WEB_CHANNEL, is_active=True)
         return sorted(rows, key=lambda m: m.id)
+
+    async def web_memberships_for_tenant(self, tenant_id: int) -> list["TenantUser"]:
+        """Active web members of a workspace (with a `user_id` bound)."""
+        rows = await self.filter(tenant_id=tenant_id, channel=WEB_CHANNEL, is_active=True)
+        return [m for m in rows if m.user_id is not None]
 
 
 class TenantInviteManager(BaseManager["TenantInvite"]):
@@ -205,31 +210,7 @@ class TenantChannelManager(BaseManager["TenantChannel"]):
         return await self.filter(tenant_id=tenant_id, is_digest_target=True, is_active=True)
 
 
-class TenantCredentialManager(BaseManager["TenantCredential"]):
-    def __init__(self):
-        from ..tenant import TenantCredential
-
-        super().__init__(TenantCredential)
-
-    async def store(
-        self, *, tenant_id: int, platform: str, kind: str, secret: str, label: str | None = None
-    ) -> "TenantCredential":
-        from app.utils.crypto import encrypt_secret
-
-        return await self.create(
-            tenant_id=tenant_id,
-            platform=platform,
-            kind=kind,
-            label=label,
-            secret_encrypted=encrypt_secret(secret),
-        )
-
-    async def active(self, *, tenant_id: int, platform: str) -> list["TenantCredential"]:
-        return await self.filter(tenant_id=tenant_id, platform=platform, is_active=True)
-
-
 tenants = TenantManager()
 tenant_users = TenantUserManager()
 tenant_invites = TenantInviteManager()
 tenant_channels = TenantChannelManager()
-tenant_credentials = TenantCredentialManager()

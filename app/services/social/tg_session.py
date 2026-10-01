@@ -1,12 +1,16 @@
-"""Telegram MTProto (L2) session: vault-backed credentials and client building.
+"""Telegram MTProto (L2) session: personal-vault credentials and client building.
 
-Three kinds in the per-tenant vault make an L2 session work:
+Three kinds make an L2 session work:
 
 | kind       | meaning                                  |
 |------------|------------------------------------------|
 | `api_id`   | Telegram app id from my.telegram.org      |
 | `api_hash` | Telegram app hash from my.telegram.org    |
 | `session`  | Telethon `StringSession` after login      |
+
+These are *personal* secrets (they act as the logged-in user), so they live in
+`user_credentials` keyed by `users.id` — never duplicated per workspace — with
+the environment as a legacy fallback.
 
 The session string is a full-access credential (equivalent to being logged in
 as the user): store it only in the vault, never log or echo it. telethon is
@@ -40,15 +44,17 @@ class TelegramSession:
     session: str  # Telethon StringSession serialised
 
 
-async def load_session(tenant_id: Optional[int] = None) -> Optional[TelegramSession]:
-    """Resolve api_id/api_hash/session from the vault (env as legacy fallback).
+async def load_session(user_id: Optional[int] = None) -> Optional[TelegramSession]:
+    """Resolve api_id/api_hash/session from the personal vault or env.
 
-    Returns None when any part is missing — partial configuration never
-    produces a half-working client. Never logs the secrets.
+    With `user_id` the parts come from `user_credentials` (env as fallback);
+    without it, only env is consulted. Returns None when any part is missing —
+    partial configuration never produces a half-working client. Never logs the
+    secrets.
     """
-    api_id = await resolve_token("telegram", tenant_id=tenant_id, kinds=("api_id",))
-    api_hash = await resolve_token("telegram", tenant_id=tenant_id, kinds=("api_hash",))
-    session = await resolve_token("telegram", tenant_id=tenant_id, kinds=("session",))
+    api_id = await resolve_token("telegram", kinds=("api_id",), owner_user_id=user_id)
+    api_hash = await resolve_token("telegram", kinds=("api_hash",), owner_user_id=user_id)
+    session = await resolve_token("telegram", kinds=("session",), owner_user_id=user_id)
 
     if not (api_id and api_hash and session):
         return None
@@ -60,13 +66,13 @@ async def load_session(tenant_id: Optional[int] = None) -> Optional[TelegramSess
         return None
 
 
-async def require_session(tenant_id: Optional[int] = None) -> TelegramSession:
+async def require_session(user_id: Optional[int] = None) -> TelegramSession:
     """Like `load_session` but raises `SessionMissing` instead of returning None."""
-    session = await load_session(tenant_id)
+    session = await load_session(user_id)
     if session is None:
         raise SessionMissing(
-            "No Telegram MTProto session configured (need api_id + api_hash + session in the vault). "
-            "Run: python -m cli.main credentials login telegram"
+            "No Telegram MTProto session configured (need api_id + api_hash + session). "
+            "Run: python -m cli.main credentials login telegram --user <id>"
         )
     return session
 
@@ -95,21 +101,21 @@ async def check_session(session: TelegramSession) -> str:
         return f"error: {e}"
 
 
-async def save_session(tenant_id: int, *, api_id: int, api_hash: str, session: str) -> None:
-    """Persist the three L2 parts into the vault, replacing the active ones.
+async def save_session(user_id: int, *, api_id: int, api_hash: str, session: str) -> None:
+    """Persist the three L2 parts into the personal vault, replacing the active ones.
 
     Old rows are deactivated, not deleted: resolution already prefers the
     newest row, but a clean single-active row keeps admin/CLI output honest.
     Secrets go through `store()` (Fernet) and are never logged.
     """
-    from app.models.managers.tenant_manager import tenant_credentials
+    from app.models.managers.user_credential_manager import user_credentials
 
     for kind, value in (("api_id", str(api_id)), ("api_hash", api_hash), ("session", session)):
-        stale = await tenant_credentials.filter(tenant_id=tenant_id, platform="telegram", kind=kind, is_active=True)
+        stale = await user_credentials.filter(user_id=user_id, platform="telegram", kind=kind, is_active=True)
         for row in stale:
-            await tenant_credentials.update_by_id(row.id, is_active=False)
-        await tenant_credentials.store(tenant_id=tenant_id, platform="telegram", kind=kind, secret=value)
-    logger.info(f"Stored Telegram MTProto session parts for workspace {tenant_id}")
+            await user_credentials.update_by_id(row.id, is_active=False)
+        await user_credentials.store(user_id=user_id, platform="telegram", kind=kind, secret=value)
+    logger.info(f"Stored Telegram MTProto session parts for user {user_id}")
 
 
 async def interactive_login(api_id: int, api_hash: str) -> str:

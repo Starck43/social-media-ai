@@ -20,10 +20,11 @@ from app.models import (
 	Notification,
 	Platform,
 	Source,
+	Tenant,
+	UserCredential,
 	AgentScenario,
 	AgentTask,
 	BotAction,
-	TenantCredential,
 	AIAnalytics,
 	LLMProvider,
 	LLMModel,
@@ -1613,9 +1614,85 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		return await LLMModelActions.test_model(self, request, pks, self.identity)
 
 
-class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
+
+class TenantAdmin(BaseAdmin, model=Tenant):
+	name = "Рабочее пространство"
+	name_plural = "Рабочие пространства"
+	icon = "fa fa-building"
+
+	column_list = [
+		"id",
+		"name",
+		"slug",
+		"plan",
+		"timezone",
+		"is_active",
+		"max_sources",
+		"daily_cost_limit",
+		"updated_at",
+	]
+	column_searchable_list = ["name", "slug"]
+	column_sortable_list = ["name", "slug", "plan", "is_active"]
+	column_labels = dict({
+		"id": "ID",
+		"name": "Название",
+		"slug": "Slug",
+		"plan": "Тариф",
+		"timezone": "Часовой пояс",
+		"is_active": "Активно",
+		"daily_cost_limit": "Дневной лимит затрат, $",
+		"max_sources": "Макс. источников",
+		"agent_style": "Стиль агента",
+	}, **BaseAdmin.column_labels)
+
+	form_columns = [
+		"name",
+		"slug",
+		"plan",
+		"timezone",
+		"is_active",
+		"max_sources",
+		"daily_cost_limit",
+		"agent_style",
+	]
+	form_widget_args = {
+		"agent_style": {"rows": 6, "placeholder": '{"tone": "friendly", "length": "short"}'},
+	}
+
+	form_args = {
+		"name": {"label": "Название", "description": "Отображаемое имя рабочего пространства"},
+		"slug": {"label": "Slug", "description": "Уникальный короткий идентификатор, используется в URL и заголовках"},
+		"plan": {"label": "Тариф", "description": "Тарифный план, например personal"},
+		"timezone": {"label": "Часовой пояс", "description": "IANA, например Europe/Moscow"},
+		"daily_cost_limit": {
+			"label": "Дневной лимит затрат, $",
+			"description": "Лимит расходов на LLM за сутки (в долларах США)",
+		},
+		"max_sources": {
+			"label": "Макс. источников",
+			"description": "Ограничение на число источников рабочего пространства",
+		},
+		"agent_style": {
+			"label": "Стиль агента",
+			"description": "JSON-контракт стиля ответов агента: {tone, length, language, quiet_hours}",
+		},
+		**BaseAdmin.form_args,
+	}
+
+	def is_accessible(self, request: Request) -> bool:
+		"""Workspaces are the owner console: platform superusers only.
+
+		A model permission would be the wrong gate even here — the list spans
+		every workspace, and the owner of one of them has no business seeing or
+		editing the others.
+		"""
+		user = self.get_admin_user(request)
+		return user is not None and bool(user._is_superuser_role())
+
+
+class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 	"""
-	Per-tenant platform credentials (the vault).
+	Personal (per-user) platform credentials: the L2 vault.
 
 	The form accepts the secret in plaintext and encrypts it before saving, so an
 	operator never sees ciphertext. Secrets themselves are resolved by
@@ -1626,9 +1703,9 @@ class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
 	name_plural = "Креды платформ"
 	icon = "fa fa-key"
 
-	column_list = ["id", "tenant_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
+	column_list = ["id", "user_id", "platform", "kind", "label", "expires_at", "is_active", "updated_at"]
 	column_searchable_list = ["platform", "kind", "label"]
-	column_sortable_list = ["platform", "kind", "expires_at", "is_active"]
+	column_sortable_list = ["user_id", "platform", "kind", "expires_at", "is_active"]
 	column_default_sort = [("updated_at", True)]
 	column_details_exclude_list = ["secret_encrypted", "meta"]
 
@@ -1649,7 +1726,7 @@ class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
 	column_labels = dict(
 		{
 			"id": "ID",
-			"tenant_id": "Рабочее пространство",
+			"user_id": "Пользователь",
 			"platform": "Платформа",
 			"kind": "Тип секрета",
 			"label": "Метка",
@@ -1661,7 +1738,7 @@ class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
 	)
 
 	form_args = {
-		"tenant_id": {"label": "Рабочее пространство", "description": "ID из таблицы tenants"},
+		"user_id": {"label": "Пользователь", "description": "ID из таблицы users"},
 		"platform": {
 			"label": "Платформа",
 			"description": "vk | telegram | max",
@@ -1683,12 +1760,12 @@ class TenantCredentialAdmin(BaseAdmin, model=TenantCredential):
 		**BaseAdmin.form_args,
 	}
 
-	async def after_model_change(self, data: dict, model: TenantCredential, is_created: bool, request=None) -> None:
+	async def after_model_change(self, data: dict, model: UserCredential, is_created: bool, request=None) -> None:
 		if model.secret_encrypted and not model.secret_encrypted.startswith("gAAAAA"):
 			from app.utils.crypto import encrypt_secret
 
 			model.secret_encrypted = encrypt_secret(model.secret_encrypted)
-			await TenantCredential.objects.update_by_id(model.id, secret_encrypted=model.secret_encrypted)
+			await UserCredential.objects.update_by_id(model.id, secret_encrypted=model.secret_encrypted)
 		await super().after_model_change(data, model, is_created, request)
 
 

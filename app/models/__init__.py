@@ -49,11 +49,11 @@ from .source import Source
 from .tenant import (
     Tenant,
     TenantChannel,
-    TenantCredential,
     TenantInvite,
     TenantUser,
 )
 from .user import User
+from .user_credential import UserCredential
 
 __all__ = [
     # Base classes
@@ -70,7 +70,7 @@ __all__ = [
     "TenantUser",
     "TenantInvite",
     "TenantChannel",
-    "TenantCredential",
+    "UserCredential",
     # Social monitoring models
     "Platform",
     "Source",

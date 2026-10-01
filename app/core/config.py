@@ -69,20 +69,23 @@ class Settings(BaseSettings):
     DB_SCHEMA: str = "public"
     DB_TEST_SCHEMA: str = "test_schema"
 
-    # External platform credentials (optional — integrations are enabled based on presence)
-    # Prefer the per-tenant vault (tenant_credentials); these are the legacy fallback.
+    # External platform credentials (optional — integrations are enabled based on presence).
+    # Application/infrastructure config, one-per-deployment: read from here. Personal
+    # L2 secrets (VK user_token, Telegram MTProto parts) live in `user_credentials`.
     VK_APP_ID: Optional[str] = None
-    VK_SERVICE_ACCESS_TOKEN: Optional[str] = None
-    VK_USER_ACCESS_TOKEN: Optional[str] = None  # legacy fallback for the vault's vk/user_token
+    VK_SERVICE_KEY: Optional[str] = None  # VK console "Сервисный ключ доступа" — L1 service token
+    VK_CLIENT_ACCESS_KEY: Optional[str] = None  # VK console "Защищённый ключ" — OAuth client secret
     VK_API_BASE_URL: str = "https://api.vk.com/method"
+    VK_OAUTH_BASE_URL: str = "https://oauth.vk.com"
+    VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # VK OAuth callback (must be public)
     VK_API_VERSION: str = "5.199"
     VK_REQUEST_TIMEOUT: float = 30.0
 
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
     TELEGRAM_REQUEST_TIMEOUT: float = 30.0
-    # Legacy env fallback for the per-tenant MTProto session (L2 Telegram).
-    # Prefer: python -m cli.main credentials login telegram
+    # Env fallback for the MTProto session (L2 Telegram). Prefer the personal vault
+    # of the source's owner: python -m cli.main credentials login telegram --user <id>
     TELEGRAM_API_ID: Optional[str] = None
     TELEGRAM_API_HASH: Optional[str] = None
     TELEGRAM_SESSION: Optional[str] = None

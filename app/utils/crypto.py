@@ -1,4 +1,4 @@
-"""Fernet helpers for per-tenant secrets: one env key, reversible encryption.
+"""Fernet helpers for the personal credential vault: one env key, reversible encryption.
 
 `CREDENTIALS_KEY` must be a urlsafe-base64 32-byte key (`Fernet.generate_key()`).
 Rotation: set a new key and re-encrypt (there is deliberately no multi-key
@@ -21,7 +21,7 @@ def _fernet() -> Fernet:
 
 
 def encrypt_secret(plaintext: str) -> str:
-    """Encrypt a secret for storage in `tenant_credentials.secret_encrypted`."""
+    """Encrypt a secret for storage in `user_credentials.secret_encrypted`."""
     return _fernet().encrypt(plaintext.encode()).decode()
 
 

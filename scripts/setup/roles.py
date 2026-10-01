@@ -4,6 +4,7 @@ from typing import cast
 
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.types import UserRoleType
 
@@ -17,7 +18,7 @@ def seed_roles() -> None:
 
 		# Get existing roles
 		existing_roles = db.execute(
-			text("SELECT id, name, codename FROM social_manager.roles")
+			text(f'SELECT id, name, codename FROM "{settings.DB_SCHEMA}".roles')
 		).fetchall()
 
 		existing_codenames = {role.codename for role in existing_roles}
@@ -34,10 +35,10 @@ def seed_roles() -> None:
 			if role_codename in existing_codenames:
 				# Update existing role
 				db.execute(
-					text("""
-						UPDATE social_manager.roles 
-						SET 
-							name = :name, 
+					text(f"""
+						UPDATE "{settings.DB_SCHEMA}".roles
+						SET
+							name = :name,
 							description = :description,
 							created_at = NOW(),
 							updated_at = NOW()
@@ -55,8 +56,8 @@ def seed_roles() -> None:
 				# Insert new role
 				db.execute(
 					text(
-						"""
-						INSERT INTO social_manager.roles (name, codename, description, created_at, updated_at)
+						f"""
+						INSERT INTO "{settings.DB_SCHEMA}".roles (name, codename, description, created_at, updated_at)
 						VALUES (:name, :codename, :description, NOW(), NOW())
 					"""
 				).bindparams(

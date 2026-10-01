@@ -75,7 +75,12 @@ def assign_default_roles_permissions():
 	"""
 
 	print("\nDefault permissions assigning ...")
-	RolePermissionService.assign_default_permissions()
+	import asyncio
+
+	from app.core.tenant_context import tenant_scope
+
+	with tenant_scope(bypass=True):
+		asyncio.run(RolePermissionService.assign_default_permissions())
 
 
 if __name__ == "__main__":

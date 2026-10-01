@@ -55,18 +55,28 @@ class Permission(Base, TimestampMixin):
 
 	@property
 	def action(self) -> ActionType:
-		return ActionType(self.codename.split('.')[2])
+		return self.action_from_token(self.codename.split('.')[2])
 
-	@staticmethod
-	def validate_codename(codename: str):
-		pattern = r'^[a-z_]+\.[a-z_]+\.[a-z]+$'
+	@classmethod
+	def action_from_token(cls, token: str) -> ActionType:
+		"""`ActionType` members are (db_value, display name, emoji) tuples, so the
+		stored lowercase token is looked up by `db_value`, not by enum value."""
+		for action in ActionType:
+			if action.db_value == token:
+				return action
+		raise ValueError(f"Invalid action type: {token}")
+
+	@classmethod
+	def validate_codename(cls, codename: str):
+		# app label: lowercase; model name: the table's class name, so CamelCase is
+		# normal (`dashboard.AIAnalytics.view`); action: the lowercase db token.
+		pattern = r'^[a-z][a-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[a-z][a-z0-9_]*$'
 		if not re.match(pattern, codename):
 			raise ValueError(f"Invalid codename format: {codename}")
 
 		action_part = codename.split('.')[2]
 		try:
-			# action_part must be a value of ActionType enum in lowercase
-			ActionType(action_part)
+			cls.action_from_token(codename.split('.')[2])
 		except ValueError:
 			raise ValueError(f"Invalid action type in codename: {action_part}")
 

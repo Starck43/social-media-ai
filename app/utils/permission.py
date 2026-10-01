@@ -9,22 +9,15 @@ def generate_permission_codename(app_label: str, model_name: str, action: Action
 	- app.post.view
 	- app.user.edit
 	- app.analytics.view
+
+	`action.db_value` is the stable lowercase token ("view", "create", ...).
+	`action.value` is the display tuple and must never be used here — it used
+	to be, which produced codenames like
+	`social.AgentTask.('view', 'Просмотр', '👀')` in the permissions table.
+
+	Codenames are a display/storage key only: nothing checks access against them
+	any more (the broken rows make that impossible and the structured columns in
+	`permissions` are the real source), so do not parse them back — ask
+	`User.model_permissions()` instead.
 	"""
-	return f"{app_label.lower()}.{model_name.lower()}.{action.value.lower()}"
-
-
-def parse_permission_codename(codename: str) -> tuple[str, str, ActionType]:
-	"""
-	Parsing codename back into components
-	"""
-	parts = codename.split('.')
-	if len(parts) != 3:
-		raise ValueError(f"Invalid codename format: {codename}")
-
-	app_label, model_name, action_value = parts
-	try:
-		action = ActionType(action_value)
-	except ValueError:
-		raise ValueError(f"Invalid action type: {action_value}")
-
-	return app_label, model_name, action
+	return f"{app_label.lower()}.{model_name.lower()}.{action.db_value}"

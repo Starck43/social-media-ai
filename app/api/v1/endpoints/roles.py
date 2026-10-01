@@ -1,12 +1,12 @@
 # app/api/v1/endpoints/roles.py
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_pagination import Page, paginate
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.api.deps import require_platform_role
 from app.models import Role
 from app.schemas.role import RoleResponse, PermissionsRequest
 from app.services.user.permissions import RolePermissionService
+from app.types import UserRoleType
 
 router = APIRouter(tags=["users"])
 
@@ -14,17 +14,16 @@ router = APIRouter(tags=["users"])
 @router.get("/", response_model=Page[RoleResponse])
 async def list_roles() -> Page[RoleResponse]:
 	"""Get paginated list of all roles with their permissions"""
-	roles = await Role.objects.select_related("permissions").order_by(Role.id)
+	# `permissions` is a m2m: select_related silently returns empty collections,
+	# so the roles would serialise with no permissions at all.
+	roles = await Role.objects.prefetch_related("permissions").order_by(Role.id)
 	return paginate(roles)
 
 
 @router.get("/{role_name}", response_model=RoleResponse)
-def get_role(
-		role_name: str,
-		db: Session = Depends(get_db)
-) -> RoleResponse:
+async def get_role(role_name: str) -> RoleResponse:
 	"""Get a specific role with its permissions by name"""
-	role = Role.objects.get_with_permissions(role_name, db=db)
+	role = await Role.objects.get_by_name_with_permissions(role_name)
 	if not role:
 		raise HTTPException(404, "Role not found")
 	return RoleResponse.model_validate(role)
@@ -34,10 +33,13 @@ def get_role(
 async def update_role_permissions(
 		role_name: str,
 		permissions_request: PermissionsRequest,
-		db: Session = Depends(get_db)
+	_current_user=Depends(require_platform_role(UserRoleType.ADMIN)),
 ) -> dict:
 	"""
 	Update permissions for a role using the specified strategy.
+
+	Platform role ADMIN or higher: this rewrites what every account of that role
+	may do, so it is deliberately above workspace owners.
 
 	Available strategies:
 	— 'replace' (default): Replace all permissions with the new list
@@ -47,7 +49,7 @@ async def update_role_permissions(
 	"""
 	try:
 		# Use RolePermissionService to handle the update
-		result = RolePermissionService.update_role_permissions(
+		result = await RolePermissionService.update_role_permissions(
 			role_codename=role_name.lower(),
 			permission_codenames=permissions_request.permissions,
 			strategy=permissions_request.strategy
@@ -57,7 +59,7 @@ async def update_role_permissions(
 			return {"message": "No changes were made to the role permissions"}
 
 		# Get the updated role to return
-		role = Role.objects.get_with_permissions(role_name.lower(), db=db)
+		role = await Role.objects.get_by_name_with_permissions(role_name)
 
 		return {
 			"message": "Permissions updated successfully",
@@ -73,5 +75,5 @@ async def update_role_permissions(
 	except ValueError as e:
 		raise HTTPException(400, str(e))
 	except Exception as e:
-		db.rollback()
+		# The service owns its session, so a failure there is already rolled back.
 		raise HTTPException(500, f"Internal server error: {str(e)}")

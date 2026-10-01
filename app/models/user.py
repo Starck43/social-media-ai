@@ -38,19 +38,89 @@ class User(Base, TimestampMixin):
     else:
         objects: ClassVar = None
 
+    # Class-level default so the cache exists even on ORM-loaded instances
+    # (SQLAlchemy populates via __new__, skipping __init__).
+    _model_perms_cache: set[tuple[str, ActionType]] | None = None
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._permissions_cache = None
+        self._model_perms_cache = None
 
-    def has_perm(self, permission: ActionType) -> bool:
-        """Check if user has a specific permission"""
+    def _is_superuser_role(self) -> bool:
+        """True for the user's own `is_superuser` flag or the SUPERUSER role.
+
+        `Role.codename` comes back from the DB as its string value ("SUPERUSER")
+        rather than the enum member, so both shapes are normalised before the
+        lookup.
+        """
         if self.is_superuser:
             return True
+        codename = self.role.codename if self.role else None
+        if codename is None:
+            return False
+        name = codename.name if hasattr(codename, "name") else str(codename)
+        return name == UserRoleType.SUPERUSER.name
 
-        if self._permissions_cache is None:
-            self._permissions_cache = {p.codename for p in self.role.permissions}
+    def model_permissions(self, model_name: str) -> set[ActionType]:
+        """Every `ActionType` the user's role grants on one model.
 
-        return permission in self._permissions_cache
+        Same source as `has_perm_for` — the structured columns
+        (`model_types.model_name` + `action_type`) rather than the codename,
+        for the reason documented there. Superusers (and the SUPERUSER role)
+        get the whole enum.
+
+        Callers that need more than a yes/no (the admin backend turns the role's
+        rights into the per-model grants of the console) read the set once
+        instead of asking the same question seven times.
+        """
+        if self._is_superuser_role():
+            return set(ActionType)
+
+        if self._model_perms_cache is None:
+            cache: set[tuple[str, ActionType]] = set()
+            for permission in (self.role.permissions if self.role else []):
+                model_type = permission.model_type
+                if model_type is None:
+                    continue
+                cache.add((model_type.model_name.lower(), permission.action_type))
+            self._model_perms_cache = cache
+
+        wanted = model_name.lower()
+        return {action for name, action in self._model_perms_cache if name == wanted}
+
+    def has_perm_for(self, model_name: str, action: ActionType) -> bool:
+        """Check a permission by model + action instead of by codename.
+
+        The stored codenames are not reliably parseable:
+        ``generate_permission_codename`` interpolated ``action.value``, which for
+        these enums is the display tuple, so rows like
+        ``social.AgentTask.('view', 'Просмотр', '👀')`` exist in ``permissions``.
+        The structured columns — ``permissions.model_type_id`` and
+        ``action_type`` — are correct, so the check goes through
+        ``model_types.model_name`` plus the action enum.
+
+        Superusers (and the SUPERUSER role) always pass.
+        """
+        if self._is_superuser_role():
+            return True
+
+        return action in self.model_permissions(model_name)
+
+    def has_admin_access(self) -> bool:
+        """Whether the user may enter the operator console (/admin).
+
+        Superusers always may. Anyone else may only if their role carries at
+        least one model `view` permission — they then see only the models that
+        permission grants. Requires the ``role`` relationship (with its
+        ``permissions``) to be eager-loaded.
+        """
+        if self._is_superuser_role():
+            return True
+        for permission in self.role.permissions:
+            model_type = permission.model_type
+            if model_type is not None and permission.action_type == ActionType.VIEW:
+                return True
+        return False
 
     def __str__(self) -> str:
         return f"{self.username}"

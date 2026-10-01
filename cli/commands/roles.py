@@ -12,10 +12,30 @@ console = Console()
 SHOW_LIST_COUNT = 5
 
 
+def _platform(coro):
+	"""Run an async CLI body: the CLI is developer mode, so the tenant guard is
+	bypassed and the coroutine gets its own event loop."""
+	import asyncio
+
+	from app.core.tenant_context import tenant_scope
+
+	with tenant_scope(bypass=True):
+		return asyncio.run(coro)
+
+
+def _codename(role: Role) -> str:
+	"""`Role.codename` is loaded as its string value ("ADMIN"), not as the enum."""
+	codename = role.codename
+	return codename.name if hasattr(codename, "name") else str(codename)
+
+
 @app.command("list")
 def list_roles():
 	"""List all roles with their permissions"""
-	roles: list[Role] = Role.objects.order_by(Role.id).all()
+	async def _run() -> list[Role]:
+		return list(await Role.objects.prefetch_related("permissions").order_by(Role.id))
+
+	roles = _platform(_run())
 
 	table = Table(title="Roles and Permissions", show_lines=True)
 	table.add_column("ID", style="cyan")
@@ -23,13 +43,13 @@ def list_roles():
 	table.add_column("TABLE PERMISSIONS", style="magenta")
 
 	for role in roles:
-		perm_list = ", ".join([p.codename for p in role.permissions[:SHOW_LIST_COUNT]])  # First 3 perms
+		perm_list = ", ".join([p.codename for p in role.permissions[:SHOW_LIST_COUNT]])
 		if len(role.permissions) > SHOW_LIST_COUNT:
 			perm_list += f"\n... and {len(role.permissions) - SHOW_LIST_COUNT} more"
 
 		table.add_row(
 			str(role.id),
-			role.codename.name,
+			_codename(role),
 			perm_list or "No permissions"
 		)
 
@@ -40,19 +60,21 @@ def list_roles():
 @app.command("show")
 def show_role(role_id: int):
 	"""Show detailed information about a role"""
+	async def _run():
+		return await Role.objects.filter(id=role_id).prefetch_related("permissions").first()
 
-	role = Role.objects.get(id=role_id)
+	role = _platform(_run())
 	if not role:
 		console.print(f"❌ [red]Role with ID {role_id} not found[/red]")
 		raise typer.Exit(code=1)
 
-	table = Table(title=f"Role: {role.codename.name}")
+	table = Table(title=f"Role: {_codename(role)}")
 	table.add_column("Property", style="cyan")
 	table.add_column("Value", style="green")
 
 	table.add_row("ID", str(role.id))
 	table.add_row("Name", role.name)
-	table.add_row("Code", role.codename.name)
+	table.add_row("Code", _codename(role))
 	table.add_row("Description", role.description or "No description")
 	table.add_row("Permission Count", str(len(role.permissions)))
 	table.add_row("Permission List", "\n".join([p.codename for p in role.permissions]), style="yellow")
@@ -65,7 +87,7 @@ def assign_default_permissions():
 	"""Assign default permissions to all roles based on hierarchy"""
 	try:
 		console.print("🔄 [yellow]Assigning default permissions...[/yellow]")
-		RolePermissionService.assign_default_permissions()
+		_platform(RolePermissionService.assign_default_permissions())
 		console.print("✅ [green]Done![/green]\n")
 	except Exception as e:
 		console.print(f"❌ [red]Error: {str(e)}[/red]")
@@ -115,7 +137,7 @@ def update_role_permissions(
 			console.print("\n🔍 [yellow]DRY RUN - No changes will be made[/yellow]")
 
 		# Show expanded permissions for better UX
-		expanded = RolePermissionService.expand_permission_patterns(permissions)
+		expanded = _platform(RolePermissionService.expand_permission_patterns(permissions))
 		console.print("\n[bold]Permission patterns:[/bold]")
 		for p in permissions:
 			console.print(f"  • {p}")
@@ -129,11 +151,11 @@ def update_role_permissions(
 			return
 
 		# Update role permissions
-		result = RolePermissionService.update_role_permissions(
+		result = _platform(RolePermissionService.update_role_permissions(
 			role_codename=role.lower(),
 			permission_codenames=permissions,
 			strategy=strategy
-		)
+		))
 
 		if not any(result.values()):
 			console.print("\nℹ️  [yellow]No changes were made to the role permissions[/yellow]")

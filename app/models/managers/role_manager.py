@@ -36,6 +36,25 @@ class RoleManager(BaseManager['Role']):
 		"""
 		return await self.filter(name=name.lower()).first()
 
+	async def get_by_name_with_permissions(self, name: str) -> Optional['Role']:
+		"""
+		Get role by name with its permissions preloaded.
+
+		Endpoints serialise the role right after the lookup, when the session is
+		already closed — without the prefetch that is a DetachedInstanceError.
+
+		Args:
+			name: Role name (case-insensitive)
+
+		Returns:
+			Role object with permissions loaded, or None
+		"""
+		return await (
+			self.filter(name=name.lower())
+			.prefetch_related("permissions")
+			.first()
+		)
+
 	async def get_by_codename(self, codename: 'UserRoleType') -> Optional['Role']:
 		"""
 		Get role by a codename.
@@ -110,13 +129,32 @@ class RoleManager(BaseManager['Role']):
 			description=description
 		)
 
+	async def set_permissions(self, role_id: int, permission_ids: list[int]) -> int:
+		"""Replace a role's permission links with exactly `permission_ids`.
+
+		The association table has no model, so this is the single write path
+		for it — the API, the CLI and the setup scripts all funnel through here.
+		"""
+		from ..role import role_permission
+
+		return await self._replace_secondary(
+			role_permission, "role_id", role_id, "permission_id", permission_ids
+		)
+
+
+
 	async def add_permission(
 		self,
 		role_id: int,
 		permission_id: int
 	) -> Optional['Role']:
 		"""
-		Add a permission to a role.
+		Add a permission to a role, keeping the ones it already has.
+
+		Rewrites `role_permission` through `set_permissions`. Appending to the ORM
+		collection and relying on an "auto-commit through the relationship" never
+		worked: `get_with_permissions` opens and closes its own session, so the
+		role came back detached and the link was silently lost.
 
 		Args:
 			role_id: Role ID
@@ -125,22 +163,16 @@ class RoleManager(BaseManager['Role']):
 		Returns:
 			Updated Role object or None if role not found
 		"""
-		from ..permission import Permission
-		
 		role = await self.get_with_permissions(role_id)
 		if not role:
 			return None
-		
-		permission = await Permission.objects.get(id=permission_id)
-		if not permission:
-			return None
-		
-		# Add permission if not already present
-		if permission not in role.permissions:
-			role.permissions.append(permission)
-			# Session will auto-commit through relationship
-		
-		return role
+
+		permission_ids = {p.id for p in role.permissions}
+		if permission_id in permission_ids:
+			return role
+
+		await self.set_permissions(role_id, [*permission_ids, permission_id])
+		return await self.get_with_permissions(role_id)
 
 	async def remove_permission(
 		self,
@@ -150,6 +182,9 @@ class RoleManager(BaseManager['Role']):
 		"""
 		Remove a permission from a role.
 
+		See `add_permission`: the association table is rewritten explicitly
+		instead of mutating a detached collection.
+
 		Args:
 			role_id: Role ID
 			permission_id: Permission ID
@@ -157,21 +192,16 @@ class RoleManager(BaseManager['Role']):
 		Returns:
 			Updated Role object or None if role not found
 		"""
-		from ..permission import Permission
-		
 		role = await self.get_with_permissions(role_id)
 		if not role:
 			return None
-		
-		permission = await Permission.objects.get(id=permission_id)
-		if not permission:
-			return None
-		
-		# Remove permission if present
-		if permission in role.permissions:
-			role.permissions.remove(permission)
-		
-		return role
+
+		kept = {p.id for p in role.permissions if p.id != permission_id}
+		if len(kept) == len(role.permissions):
+			return role
+
+		await self.set_permissions(role_id, list(kept))
+		return await self.get_with_permissions(role_id)
 
 	async def get_roles_with_permission(
 		self,

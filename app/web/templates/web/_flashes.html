@@ -1,13 +1,24 @@
+{# Flash messages.
+
+   They stack under the header on every page, so two things matter: they must
+   announce themselves to a screen reader (the list only *appears* on render),
+   and they must get out of the way — a success message the reader has to
+   dismiss by hand is noise on the next page. Success fades on its own; an
+   error stays until dismissed, because it usually says what to fix. #}
 {% if flashes %}
-    <div class="space-y-2 p-4">
+    <div class="space-y-2 p-4" role="status" aria-live="polite">
         {% for f in flashes %}
-            <div x-data="{ show: true }" x-show="show"
-                 class="flex items-center justify-between gap-4 rounded-lg border px-4 py-2 text-sm
+            {% set auto = f.kind != 'error' %}
+            <div x-data="{ show: true }"
+                 x-show="show"
+                 {% if auto %}x-init="setTimeout(() => show = false, 5000)"{% endif %}
+                 class="flex items-start justify-between gap-4 rounded-lg border px-4 py-2 text-sm
                        {% if f.kind == 'success' %}border-emerald-700 bg-emerald-950 text-emerald-200
                        {% elif f.kind == 'error' %}border-rose-700 bg-rose-950 text-rose-200
                        {% else %}border-slate-700 bg-slate-900 text-slate-200{% endif %}">
                 <span>{{ f.text }}</span>
-                <button @click="show = false" class="opacity-60 hover:opacity-100">&times;</button>
+                <button type="button" @click="show = false" aria-label="Скрыть"
+                        class="opacity-60 hover:opacity-100">&times;</button>
             </div>
         {% endfor %}
     </div>

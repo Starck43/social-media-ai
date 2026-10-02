@@ -7,6 +7,7 @@ so templates never call into session internals.
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import Request
@@ -19,6 +20,35 @@ from app.types import ActionType
 from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 
 templates = Jinja2Templates(directory="app/web/templates")
+
+
+def human_datetime(value: Any, *, empty: str = "—") -> str:
+    """Render a timestamp the way a person reads it: `сегодня, 14:30`.
+
+    The pages had five hand-written `strftime` formats between them — a task
+    list showing `01.10.2026 09:00` next to a digest list showing `01.10 09:00`
+    for the same kind of event. One filter keeps them comparable, and "сегодня"
+    answers the only question a reader has about a recent run.
+
+    Accepts `datetime`, `date` and `None`; naive values are read as UTC so the
+    output does not depend on the server's local zone.
+    """
+    if value is None:
+        return empty
+    if isinstance(value, datetime):
+        moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        today = datetime.now(timezone.utc).date()
+        if moment.date() == today:
+            return f"сегодня, {moment:%H:%M}"
+        if moment.date() == today - timedelta(days=1):
+            return f"вчера, {moment:%H:%M}"
+        return moment.strftime("%d.%m.%Y %H:%M")
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    return str(value)
+
+
+templates.env.filters["human_dt"] = human_datetime
 
 
 def add_flash(request: Request, kind: str, text: str) -> None:

@@ -1,0 +1,56 @@
+{# Shared building blocks for the /app pages.
+
+   The card wrapper alone was repeated 42 times across the templates, which is
+   how the padding drifted apart page by page. Same for the dashed "nothing
+   here yet" block: six near-identical copies, three of which had lost their
+   call to action. Both live here now.
+
+   Callers pass the body through `{% call %}` so a card keeps its own markup:
+
+       {% call card() %}
+         <h2 class="text-sm font-medium text-slate-300">Как собирается</h2>
+       {% endcall %}
+#}
+
+{% macro card(extra="") -%}
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ extra }}">
+        {{ caller() }}
+    </div>
+{%- endmacro %}
+
+
+{% macro empty_state(title, hint="", height="h-40", radius="rounded-2xl") -%}
+    <div class="flex {{ height }} items-center justify-center {{ radius }} border border-dashed
+                border-slate-800 text-sm text-slate-500">
+        <p class="max-w-md px-4 text-center">
+            {{ title }}
+            {% if hint %}{{ hint }}{% endif %}
+        </p>
+    </div>
+{%- endmacro %}
+
+
+{# An empty list with a way out. `cta_label` is omitted entirely when the caller
+   has no right to act — a link to a page that will refuse the same action is
+   worse than no link, because it costs the reader a dead end. #}
+{% macro empty_state_cta(title, cta_label, cta_href, hint="", height="h-40") -%}
+    <div class="flex {{ height }} items-center justify-center rounded-2xl border border-dashed
+                border-slate-800 text-sm text-slate-500">
+        <p class="max-w-md px-4 text-center">
+            {{ title }}
+            {% if cta_label %}
+                {% if hint %}{{ hint }} <a href="{{ cta_href }}" class="text-cyan-400 hover:underline">{{ cta_label }}</a>{% else %}<a href="{{ cta_href }}" class="text-cyan-400 hover:underline">{{ cta_label }}</a>{% endif %}
+            {% elif hint %}
+                {{ hint }}
+            {% endif %}
+        </p>
+    </div>
+{%- endmacro %}
+
+
+{% macro page_title(title, subtitle="") -%}
+    <div class="mb-6">
+        <h1 class="text-2xl font-semibold tracking-tight">{{ title }}</h1>
+        {% if subtitle %}<p class="mt-1 text-sm text-slate-400">{{ subtitle }}</p>{% endif %}
+    </div>
+{%- endmacro %}

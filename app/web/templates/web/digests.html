@@ -108,7 +108,6 @@
         {% endif %}
     </div>
 </div>
-</div>
 
 <!-- History ───────────────────────────────────────────────────────────── -->
 <h2 class="mb-3 mt-8 text-sm font-medium text-slate-300">История</h2>
@@ -151,7 +150,7 @@
                         <td class="px-4 py-3 text-xs text-slate-400">
                             {% if run.llm_cost is not none %}${{ "%.4f"|format(run.llm_cost) }}{% else %}—{% endif %}
                         </td>
-                        <td class="px-4 py-3 text-xs text-slate-500">{{ run.created_at.strftime('%d.%m %H:%M') }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-500">{{ run.created_at|human_dt }}</td>
                         <td class="px-4 py-3 text-right">
                             <button @click="open = !open" class="text-xs text-cyan-400 hover:text-cyan-300">
                                 <span x-show="!open">Показать</span>
@@ -176,8 +175,7 @@
         </table>
     </div>
 {% else %}
-    <div class="flex h-40 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
-        Дайджестов ещё не было — они появятся здесь после первого запуска расписания.
-    </div>
+    {% from "web/_macros.html" import empty_state %}
+    {{ empty_state("Дайджестов ещё не было.", "Они появятся здесь после первого запуска расписания.") }}
 {% endif %}
 {% endblock %}

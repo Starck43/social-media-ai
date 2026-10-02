@@ -104,7 +104,7 @@
                                     {% if is_superuser %}<td class="px-3 py-2 text-xs text-slate-400">{{ task.tenant.name }}</td>{% endif %}
                                     <td class="px-3 py-2 text-slate-300 text-xs">{{ cron_to_human(task.cron_expr) }}</td>
                                     <td class="px-3 py-2">
-                                        {% if task.is_active %}
+                                        {% if task.id in effective_active %}
                                             <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активна</span>
                                         {% else %}
                                             <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
@@ -120,7 +120,7 @@
                                     </td>
                                     <td class="px-3 py-2 text-slate-400">
                                         {% if task.last_run_at %}
-                                            {{ task.last_run_at.strftime('%d.%m %H:%M') }}
+                                            {{ task.last_run_at|human_dt }}
                                         {% else %}
                                             <span class="text-slate-600">—</span>
                                         {% endif %}
@@ -129,7 +129,7 @@
                                         {% if task.cron_expr == '@once' and task.last_run_at %}
                                             <span class="text-slate-600">—</span>
                                         {% elif task.next_run_at %}
-                                            {{ task.next_run_at.strftime('%d.%m %H:%M') }}
+                                            {{ task.next_run_at|human_dt }}
                                         {% else %}
                                             <span class="text-slate-600">—</span>
                                         {% endif %}
@@ -138,7 +138,7 @@
                                         {% if perms and perms.can('agenttask', 'update') %}
                                         <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                                             <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                            <button title="Выполнить сейчас"
+                                            <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
                                                     class="rounded-md border border-emerald-700 p-1.5 text-emerald-400 hover:bg-emerald-950">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/>
@@ -153,8 +153,10 @@
                     </table>
                 </div>
             {% else %}
-                <div class="mt-4 flex h-24 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
-                    Пока нет задач. <a href="/app/tasks" class="ml-1 text-cyan-400 hover:underline">Создайте первую</a>
+                {% from "web/_macros.html" import empty_state %}
+                {{ empty_state("Пока нет задач.", height="h-24", radius="rounded-xl") }}
+                <div class="mt-2 text-center">
+                    <a href="/app/tasks" class="text-sm text-cyan-400 hover:underline">Создайте первую</a>
                 </div>
             {% endif %}
         </div>
@@ -181,7 +183,7 @@
                             <div class="flex items-center justify-between gap-3">
                                 <p class="font-medium text-slate-200">{{ a.title }}</p>
                                 <span class="shrink-0 text-xs text-slate-500">
-                                    {{ a.source_name }} · {{ a.analysis_date.strftime('%d.%m.%Y') }}
+                                    {{ a.source_name }} · {{ a.analysis_date|human_dt }}
                                 </span>
                             </div>
                             {% if a.summary %}
@@ -201,9 +203,7 @@
                     {% endfor %}
                 </div>
             {% else %}
-                <div class="mt-4 flex h-24 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-500">
-                    Анализов пока нет. Запустите задачу сбора/анализа.
-                </div>
+                {{ empty_state("Анализов пока нет.", "Запустите задачу сбора или анализа.", height="h-24", radius="rounded-xl") }}
             {% endif %}
         </div>
 

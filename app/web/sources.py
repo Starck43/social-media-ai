@@ -22,17 +22,16 @@ from contextlib import nullcontext
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import cast, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import func
 
 from app.models.source import Source
 from app.types import SourceType
-
 from .deps import (
     action_tenant_id,
     add_flash,
     ensure_csrf,
     guard_web,
+    human_datetime,
     perms_can,
     render,
     safe_next,
@@ -113,6 +112,41 @@ async def _resolve_platform(form_value: str):
     return await Platform.objects.filter(platform_type=pt).first()
 
 
+async def _vk_l2_status(user) -> dict:
+    """The caller's own VK L2 (user_token) connection state for the sources page.
+
+    Returns a dict the template can turn into a badge:
+    `connected` (has an active, unexpired user_token), `expired` (active row but
+    the token aged out and needs a re-auth), or `missing`. Only the caller's own
+    vault is consulted — a source may collect with a different member's token
+    (`owner.resolve_source_owner`), which this badge does not claim to know.
+    """
+    from datetime import datetime, timezone
+
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        return {"state": "missing", "label": "VK не подключён"}
+
+    from app.models.managers.user_credential_manager import user_credentials
+
+    row = None
+    for candidate in await user_credentials.active(user_id=user_id, platform="vk"):
+        if candidate.kind == "user_token":
+            row = candidate
+            break
+
+    if row is None:
+        return {"state": "missing", "label": "VK не подключён"}
+
+    expired = False
+    if row.expires_at is not None:
+        moment = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        expired = moment <= datetime.now(timezone.utc)
+    if expired:
+        return {"state": "expired", "label": "Токен VK истёк — войдите заново"}
+    return {"state": "connected", "label": "VK подключён"}
+
+
 @router.get("")
 @router.get("/")
 async def sources_list(request: Request):
@@ -151,6 +185,8 @@ async def sources_list(request: Request):
         if filter_scenario_id is not None:
             query = query.filter(agent_scenario_id=filter_scenario_id)
         sources = await query.select_related("platform").order_by(Source.created_at.desc())
+    vk_l2 = await _vk_l2_status(user)
+
     user_sources = await (
         Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
         .select_related("platform")
@@ -170,6 +206,7 @@ async def sources_list(request: Request):
         modes=COLLECTION_MODES,
         members=await _workspace_members(request.state.tenant_id) if request.state.tenant_id else [],
         user_sources_json=user_sources_data,
+        vk_l2=vk_l2,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -265,12 +302,12 @@ async def source_edit(
     request: Request,
     source_id: int,
     name: str = Form(""),
-    platform: str = Form(...),
-    external_id: str = Form(...),
-    source_type: str = Form(...),
+    platform: str = Form(""),
+    external_id: str = Form(""),
+    source_type: str = Form(""),
     is_active: str = Form("", alias="is_active"),
     monitored_users: str = Form(""),
-    mode: str = Form("pull"),
+    mode: str = Form(""),
     token_owner: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
@@ -293,55 +330,72 @@ async def source_edit(
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
 
-        platform_row = await _resolve_platform(platform)
-        if platform_row is None:
-            add_flash(request, "error", f"Платформа '{platform}' не найдена")
-            return RedirectResponse("/app/sources", status_code=302)
+        # Platform and source_type: required for full edit, optional for quick edit.
+        if platform:
+            platform_row = await _resolve_platform(platform)
+            if platform_row is None:
+                add_flash(request, "error", f"Платформа '{platform}' не найдена")
+                return RedirectResponse("/app/sources", status_code=302)
+        else:
+            platform_row = source.platform
 
-        st = SourceType.get_by_value(source_type)
-        if st is None:
-            add_flash(request, "error", f"Тип источника '{source_type}' не найден")
-            return RedirectResponse("/app/sources", status_code=302)
+        if source_type:
+            st = SourceType.get_by_value(source_type)
+            if st is None:
+                add_flash(request, "error", f"Тип источника '{source_type}' не найден")
+                return RedirectResponse("/app/sources", status_code=302)
+        else:
+            st = source.source_type
 
-        dup = await Source.objects.get(
-            tenant_id=tenant_id,
-            platform_id=platform_row.id,
-            external_id=external_id,
-        )
-        if dup is not None and dup.id != source.id:
-            add_flash(request, "error", "Источник с таким ID уже существует")
-            return RedirectResponse("/app/sources", status_code=302)
+        # Only check duplicates if external_id changed.
+        new_external_id = external_id.strip()[:200] or source.external_id
+        if new_external_id != source.external_id:
+            dup = await Source.objects.get(
+                tenant_id=tenant_id,
+                platform_id=platform_row.id,
+                external_id=new_external_id,
+            )
+            if dup is not None and dup.id != source.id:
+                add_flash(request, "error", "Источник с таким ID уже существует")
+                return RedirectResponse("/app/sources", status_code=302)
 
-        # Parse monitored users from comma-separated string into params
-        params = _clean_params(monitored_users, source.params)
-        if mode not in dict(COLLECTION_MODES):
-            add_flash(request, "error", f"Неизвестный режим сбора: {mode}")
-            return RedirectResponse("/app/sources", status_code=302)
-        params["mode"] = mode
+        # Parse monitored users from comma-separated string into params.
+        params = dict(source.params or {})
+        params = _clean_params(monitored_users, params)
+
+        # Mode: optional — keep existing if not posted.
+        if mode:
+            if mode not in dict(COLLECTION_MODES):
+                add_flash(request, "error", f"Неизвестный режим сбора: {mode}")
+                return RedirectResponse("/app/sources", status_code=302)
+            params["mode"] = mode
 
         # An empty box means "fall back to the workspace owner", so the key is
         # removed rather than written as None.
-        owner_id, owner_error = _validate_token_owner(token_owner, {u.id for u in await _workspace_members(tenant_id)})
-        if owner_error:
-            add_flash(request, "error", owner_error)
-            return RedirectResponse("/app/sources", status_code=302)
-        if owner_id is None:
-            params.pop("token_owner", None)
-        else:
-            params["token_owner"] = owner_id
+        if token_owner or mode or platform or source_type:
+            owner_id, owner_error = _validate_token_owner(
+                token_owner, {u.id for u in await _workspace_members(tenant_id)}
+            )
+            if owner_error:
+                add_flash(request, "error", owner_error)
+                return RedirectResponse("/app/sources", status_code=302)
+            if owner_id is None:
+                params.pop("token_owner", None)
+            else:
+                params["token_owner"] = owner_id
 
         await Source.objects.update_by_id(
             source.id,
             name=name.strip()[:100] or source.name,
             platform_id=platform_row.id,
-            external_id=external_id.strip()[:200],
+            external_id=new_external_id,
             source_type=st,
             is_active=is_active == "on",
             params=params,
         )
 
     add_flash(request, "success", "Источник обновлён")
-    return RedirectResponse("/app/sources", status_code=302)
+    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
 
 @router.post("/{source_id}/toggle")
@@ -353,11 +407,11 @@ async def source_toggle(
 ):
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-        return RedirectResponse("/app/sources", status_code=302)
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     tenant_id = action_tenant_id(request, tenant_id)
 
-    denied = guard_web(request, "source", "update", back="/app/sources")
+    denied = guard_web(request, "source", "update", back=f"/app/sources/{source_id}")
     if denied is not None:
         return denied
 
@@ -367,12 +421,12 @@ async def source_toggle(
         source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
         if source is None:
             add_flash(request, "error", "Источник не найден")
-            return RedirectResponse("/app/sources", status_code=302)
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
         await Source.objects.update_by_id(source.id, is_active=not source.is_active)
     action = "активирован" if not source.is_active else "деактивирован"
     add_flash(request, "success", f"Источник '{source.name}' {action}")
-    return RedirectResponse("/app/sources", status_code=302)
+    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
 
 @router.get("/{source_id}")
@@ -392,7 +446,9 @@ async def source_detail(request: Request, source_id: int):
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
 
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
-        source = await Source.objects.filter(id=source_id).select_related("platform", "agent_scenario").first()
+        source = (
+            await Source.objects.filter(id=source_id).select_related("platform", "tenant", "agent_scenario").first()
+        )
         # A superuser browsing all workspaces may open any source; anyone else is
         # confined to the workspace the middleware opened.
         if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
@@ -459,6 +515,9 @@ async def source_detail(request: Request, source_id: int):
 
     is_ready, readiness_hint = _readiness(source, schedules)
 
+    platforms = await _platforms()
+    source_types_list = list(SourceType)
+
     return render(
         request,
         "web/source_detail.html",
@@ -482,6 +541,8 @@ async def source_detail(request: Request, source_id: int):
         last_checked_label=_last_checked_label(source.last_checked),
         is_ready=is_ready,
         readiness_hint=readiness_hint,
+        platforms=platforms,
+        source_types=source_types_list,
     )
 
 
@@ -518,7 +579,7 @@ def _schedule_view(task) -> dict:
         "name": task.name,
         "is_active": task.is_active,
         "cron_label": cron_to_human(task.cron_expr),
-        "next_run_label": task.next_run_at.strftime("%d.%m %H:%M") if task.next_run_at else "—",
+        "next_run_label": human_datetime(task.next_run_at),
     }
 
 
@@ -526,13 +587,15 @@ def _window_label(source) -> str:
     """The collection window in one line; unbounded on either side reads «…»."""
 
     def fmt(value) -> str:
+        # A window is a calendar range, so keep the plain date even when the
+        # shared filter would say «сегодня» — the bounds matter more than recency.
         return value.strftime("%d.%m.%Y") if value else "…"
 
     return f"с {fmt(source.date_from)} по {fmt(source.date_to)}"
 
 
 def _last_checked_label(last_checked) -> str:
-    return last_checked.strftime("%d.%m.%Y %H:%M") if last_checked else "не проверялся"
+    return human_datetime(last_checked, empty="не проверялся")
 
 
 def _readiness(source, schedules) -> tuple[bool, str]:

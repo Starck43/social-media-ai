@@ -1,3 +1,4 @@
+{% from "web/_macros.html" import control, task_fields, tenant_field %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block content %}
@@ -190,23 +191,8 @@
 
             <form method="post" action="/app/tasks" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-
-                <div>
-                    <label for="add-name" class="mb-1 block text-sm text-slate-300">Название</label>
-                    <input id="add-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                </div>
-
-                <div>
-                    <label for="add-job_type" class="mb-1 block text-sm text-slate-300">Тип задачи</label>
-                    <select id="add-job_type" name="job_type" required
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                        {% for value, label in job_types %}
-                            <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                {{ tenant_field(is_superuser, filter_tenant_id) }}
+                {{ task_fields(job_types, "add") }}
 
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Расписание</label>
@@ -240,12 +226,12 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Время</label>
                                         <input type="time" name="sched_time" x-model="time" value="09:00"
-                                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                               class="{{ control() }}">
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
                                         <select x-model="freq"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <option value="daily">Каждый день</option>
                                             <option value="weekly">По дням недели</option>
                                             <option value="monthly">Каждый месяц</option>
@@ -273,7 +259,7 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">День месяца</label>
                                         <select x-model.number="monthday"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <template x-for="d in 28" :key="d">
                                                 <option :value="d" x-text="d"></option>
                                             </template>
@@ -285,7 +271,7 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Интервал</label>
                                         <select x-model.number="everyHours"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <template x-for="h in intervalOptions" :key="h">
                                                 <option :value="h" x-text="h + ' ч'"></option>
                                             </template>
@@ -319,7 +305,7 @@
                 <div>
                     <label for="add-scenario_id" class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
                     <select id="add-scenario_id" name="scenario_id"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            class="{{ control() }}">
                         <option value="">— не выбран —</option>
                         {% for scenario in scenarios %}
                             <option value="{{ scenario.id }}">{{ scenario.name }}</option>
@@ -333,13 +319,13 @@
                     <div>
                         <label for="add-monitored" class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
                         <input id="add-monitored" name="monitored_users" placeholder="username1, username2"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                               class="{{ control() }}">
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
                     </div>
                     <div>
                         <label for="add-excluded" class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
                         <input id="add-excluded" name="excluded_users" placeholder="username1, username2"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                               class="{{ control() }}">
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
                     </div>
                 </div>
@@ -383,12 +369,12 @@
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Название</label>
                     <input name="name" required maxlength="100" x-model="editing.name"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                           class="{{ control() }}">
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Тип задачи</label>
                     <select name="job_type" required x-model="editing.job_type"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            class="{{ control() }}">
                         {% for value, label in job_types %}
                             <option value="{{ value }}">{{ label }}</option>
                         {% endfor %}
@@ -426,12 +412,12 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Время</label>
                                         <input type="time" name="sched_time" x-model="time"
-                                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                               class="{{ control() }}">
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
                                         <select x-model="freq"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <option value="daily">Каждый день</option>
                                             <option value="weekly">По дням недели</option>
                                             <option value="monthly">Каждый месяц</option>
@@ -459,7 +445,7 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">День месяца</label>
                                         <select x-model.number="monthday"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <template x-for="d in 28" :key="d">
                                                 <option :value="d" x-text="d"></option>
                                             </template>
@@ -471,7 +457,7 @@
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-400">Интервал</label>
                                         <select x-model.number="everyHours"
-                                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                                class="{{ control() }}">
                                             <template x-for="h in intervalOptions" :key="h">
                                                 <option :value="h" x-text="h + ' ч'"></option>
                                             </template>
@@ -503,7 +489,7 @@
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
                     <select name="scenario_id" x-model="editing.scenario_id"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            class="{{ control() }}">
                         <option value="">— не выбран —</option>
                         {% for scenario in scenarios %}
                             <option :value="{{ scenario.id }}">{{ scenario.name }}</option>
@@ -515,13 +501,13 @@
                     <div>
                         <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
                         <input name="monitored_users" x-model="editing.monitored_users" placeholder="username1, username2"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                               class="{{ control() }}">
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
                     </div>
                     <div>
                         <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
                         <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                               class="{{ control() }}">
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
                     </div>
                 </div>

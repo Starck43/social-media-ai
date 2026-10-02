@@ -1,3 +1,4 @@
+{% from "web/_macros.html" import control, source_fields, tenant_field %}
 {% extends "web/base.html" %}
 {% block title %}Источники — Мониторинг{% endblock %}
 {% block content %}
@@ -142,50 +143,11 @@
                 т.д.).</p>
             <form method="post" action="/app/sources" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
-                                                                 value="{{ filter_tenant_id }}">{% endif %}
-                <div>
-                    <label for="add-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
-                    <input id="add-name" name="name" maxlength="100" placeholder="Мой источник"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                </div>
-                <div>
-                    <label for="add-platform" class="mb-1 block text-sm text-slate-300">Платформа</label>
-                    <select id="add-platform" name="platform" required
-                            @change="selectedAddPlatform = $event.target.value"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                        {% for platform in platforms %}
-                        <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="add-source_type" class="mb-1 block text-sm text-slate-300">Тип</label>
-                    <select id="add-source_type" name="source_type" required
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                        {% for st in source_types %}
-                        <option value="{{ st.db_value }}">{{ st.display_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="add-external_id" class="mb-1 block text-sm text-slate-300">Внешний ID</label>
-                    <input id="add-external_id" name="external_id" required maxlength="200"
-                           placeholder="123456789 или @channel"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500">
-                </div>
-                <div>
-                    <label for="add-monitored_users" class="mb-1 block text-sm text-slate-300">Отслеживаемые
-                        пользователи</label>
-                    <input id="add-monitored_users" name="monitored_users"
-                           placeholder="username1, username2, @durov"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                    <p class="mt-1 text-xs text-slate-500">Через запятую: username1, username2, @durov</p>
-                </div>
+                {{ tenant_field(is_superuser, filter_tenant_id) }}
+                {{ source_fields(platforms, source_types, "add") }}
                 <div>
                     <label for="add-mode" class="mb-1 block text-sm text-slate-300">Режим сбора</label>
-                    <select id="add-mode" name="mode"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select id="add-mode" name="mode" class="{{ control() }}">
                         {% for value, hint in modes %}
                         <option value="{{ value }}">{{ value }} — {{ hint }}</option>
                         {% endfor %}
@@ -193,8 +155,7 @@
                 </div>
                 <div>
                     <label for="add-token_owner" class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
-                    <select id="add-token_owner" name="token_owner"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select id="add-token_owner" name="token_owner" class="{{ control() }}">
                         <option value="">владелец workspace по умолчанию</option>
                         {% for member in members %}
                         <option value="{{ member.id }}">{{ member.username }}</option>
@@ -223,17 +184,14 @@
             <p class="mt-1 text-sm text-slate-400">Обновите данные источника.</p>
             <form method="post" :action="'/app/sources/' + editing.id" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
-                                                                 value="{{ filter_tenant_id }}">{% endif %}
+                {{ tenant_field(is_superuser, filter_tenant_id) }}
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Название</label>
-                    <input name="name" maxlength="100" x-model="editing.name"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <input name="name" maxlength="100" x-model="editing.name" class="{{ control() }}">
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Платформа</label>
-                    <select name="platform" required x-model="editing.platform"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select name="platform" required x-model="editing.platform" class="{{ control() }}">
                         {% for platform in platforms %}
                         <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
                         {% endfor %}
@@ -241,8 +199,7 @@
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Тип</label>
-                    <select name="source_type" required x-model="editing.source_type"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select name="source_type" required x-model="editing.source_type" class="{{ control() }}">
                         {% for st in source_types %}
                         <option value="{{ st.db_value }}">{{ st.display_name }}</option>
                         {% endfor %}
@@ -251,19 +208,17 @@
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Внешний ID</label>
                     <input name="external_id" required maxlength="200" x-model="editing.external_id"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500">
+                           class="{{ control('font-mono') }}">
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
                     <input name="monitored_users" x-model="editing.monitored_users_str"
-                           placeholder="username1, username2, @durov"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                           placeholder="username1, username2, @durov" class="{{ control() }}">
                     <p class="mt-1 text-xs text-slate-500">Через запятую: username1, username2, @durov</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Режим сбора</label>
-                    <select name="mode" x-model="editing.mode"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select name="mode" x-model="editing.mode" class="{{ control() }}">
                         {% for value, hint in modes %}
                         <option value="{{ value }}">{{ value }} — {{ hint }}</option>
                         {% endfor %}
@@ -271,8 +226,7 @@
                 </div>
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
-                    <select name="token_owner" x-model="editing.token_owner"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <select name="token_owner" x-model="editing.token_owner" class="{{ control() }}">
                         <option value="">владелец workspace по умолчанию</option>
                         {% for member in members %}
                         <option value="{{ member.id }}">{{ member.username }}</option>
@@ -305,7 +259,6 @@
         return {
             openAdd: false,
             openEdit: false,
-            selectedAddPlatform: "{{ platforms[0].platform_type.db_value if platforms else '' }}",
             editing: {
                 id: 0,
                 name: "",

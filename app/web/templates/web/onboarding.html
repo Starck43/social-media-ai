@@ -1,3 +1,4 @@
+{% from "web/_macros.html" import control, source_fields, task_fields %}
 {% extends "web/base.html" %}
 {% block title %}Начало работы — AI Monitor{% endblock %}
 {% block content %}
@@ -34,42 +35,9 @@
                 <form method="post" action="/app/sources" class="mt-4 grid gap-3 sm:grid-cols-2">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     <input type="hidden" name="next" value="/app/onboarding">
-                    <div>
-                        <label for="ob-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
-                        <input id="ob-name" name="name" maxlength="100" placeholder="Мой источник"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                    </div>
-                    <div>
-                        <label for="ob-platform" class="mb-1 block text-sm text-slate-300">Платформа</label>
-                        <select id="ob-platform" name="platform" required
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                            {% for platform in platforms %}
-                                <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label for="ob-type" class="mb-1 block text-sm text-slate-300">Тип</label>
-                        <select id="ob-type" name="source_type" required
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                            {% for st in source_types %}
-                                <option value="{{ st.db_value }}">{{ st.display_name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label for="ob-external" class="mb-1 block text-sm text-slate-300">Внешний ID</label>
-                        <input id="ob-external" name="external_id" required maxlength="200"
-                               placeholder="123456 или https://vk.com/club1"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label for="ob-monitored" class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
-                        <input id="ob-monitored" name="monitored_users"
-                               placeholder="username1, username2, @durov"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                        <p class="mt-1 text-xs text-slate-500">Через запятую. Можно оставить пустым.</p>
-                    </div>
+                    {# The macro's own divs are the grid cells — emitting it here
+                       keeps them as direct children of `sm:grid-cols-2`. #}
+                    {{ source_fields(platforms, source_types, "ob") }}
                     <div class="sm:col-span-2">
                         <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                             Подключить источник
@@ -106,24 +74,10 @@
                 <form method="post" action="/app/tasks" class="mt-4 grid gap-3 sm:grid-cols-2">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     <input type="hidden" name="next" value="/app/onboarding">
-                    <div>
-                        <label for="ob-task" class="mb-1 block text-sm text-slate-300">Название</label>
-                        <input id="ob-task" name="name" required maxlength="100" placeholder="Ежедневный сбор"
-                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                    </div>
-                    <div>
-                        <label for="ob-job" class="mb-1 block text-sm text-slate-300">Что делаем</label>
-                        <select id="ob-job" name="job_type" required
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                            {% for value, label in job_types %}
-                                <option value="{{ value }}" {% if value == 'collect' %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
+                    {{ task_fields(job_types, "ob") }}
                     <div class="sm:col-span-2">
                         <label for="ob-cron" class="mb-1 block text-sm text-slate-300">Когда</label>
-                        <select id="ob-cron" name="cron_custom" required
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        <select id="ob-cron" name="cron_custom" required class="{{ control() }}">
                             {% for expr, label in presets %}
                                 <option value="{{ expr }}">{{ label }} · {{ cron_to_human(expr) }}</option>
                             {% endfor %}

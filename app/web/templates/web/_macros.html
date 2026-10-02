@@ -11,6 +11,96 @@
          <h2 class="text-sm font-medium text-slate-300">Как собирается</h2>
        {% endcall %}
 #}
+{# ── form controls ──────────────────────────────────────────────────────────
+
+   One class list for every input and select on `/app`. It was pasted 80 times
+   across the templates, which is how the focus ring ended up on some fields and
+   not others. `extra` appends a modifier — `font-mono` for identifiers,
+   `text-rose-300` for a rejected value. #}
+{% macro control(extra="") -%}
+    w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500{{ (" " + extra) if extra }}
+{%- endmacro %}
+
+
+{# The workspace a superuser is *viewing*, not the one they happen to have
+   active — `deps.action_tenant_id` reads it back. A regular member never sees
+   the field, and neither does a superuser with no filter selected. #}
+{% macro tenant_field(is_superuser, filter_tenant_id) -%}
+    {% if is_superuser and filter_tenant_id %}
+        <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
+    {% endif %}
+{%- endmacro %}
+
+
+{# The source fields, in the order a reader fills them: name, platform, type,
+   identifier, extra handles. `idp` prefixes the ids because the add modal and
+   the onboarding wizard are both one-form-per-page; the labels point at the
+   ids, so they have to stay paired.
+
+   Only these five are shared. `mode` and `token_owner` are the collection
+   layer's knobs and belong to the list page, where someone is tuning a source
+   that already exists — the wizard posts the endpoint defaults instead. #}
+{% macro source_fields(platforms, source_types, idp) -%}
+    <div>
+        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
+        <input id="{{ idp }}-name" name="name" maxlength="100" placeholder="Мой источник"
+               class="{{ control() }}">
+    </div>
+    <div>
+        <label for="{{ idp }}-platform" class="mb-1 block text-sm text-slate-300">Платформа</label>
+        <select id="{{ idp }}-platform" name="platform" required
+                class="{{ control() }}">
+            {% for platform in platforms %}
+                <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="{{ idp }}-source_type" class="mb-1 block text-sm text-slate-300">Тип</label>
+        <select id="{{ idp }}-source_type" name="source_type" required
+                class="{{ control() }}">
+            {% for st in source_types %}
+                <option value="{{ st.db_value }}">{{ st.display_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="{{ idp }}-external_id" class="mb-1 block text-sm text-slate-300">Внешний ID</label>
+        <input id="{{ idp }}-external_id" name="external_id" required maxlength="200"
+               placeholder="123456789, @channel или https://vk.com/club1"
+               class="{{ control('font-mono') }}">
+    </div>
+    <div>
+        <label for="{{ idp }}-monitored_users" class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
+        <input id="{{ idp }}-monitored_users" name="monitored_users"
+               placeholder="username1, username2, @durov"
+               class="{{ control() }}">
+        <p class="mt-1 text-xs text-slate-500">Через запятую. Можно оставить пустым.</p>
+    </div>
+{%- endmacro %}
+
+
+{# Name and type of a task. The schedule is deliberately *not* here: the list
+   page builds it interactively (preset buttons + a frequency picker feeding a
+   hidden `cron_custom`), while the wizard offers a plain select of ready-made
+   crons. Two widgets, one field name — `tasks.task_create` reads `cron_custom`
+   either way. #}
+{% macro task_fields(job_types, idp) -%}
+    <div>
+        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-300">Название</label>
+        <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
+               class="{{ control() }}">
+    </div>
+    <div>
+        <label for="{{ idp }}-job_type" class="mb-1 block text-sm text-slate-300">Тип задачи</label>
+        <select id="{{ idp }}-job_type" name="job_type" required
+                class="{{ control() }}">
+            {% for value, label in job_types %}
+                <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+{%- endmacro %}
 
 {% macro card(extra="") -%}
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ extra }}">

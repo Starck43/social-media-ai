@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from types import SimpleNamespace
 
 from httpx import ASGITransport, AsyncClient
 
@@ -28,8 +29,9 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AgentTask, Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import UserRoleType
+from app.types import JobType, UserRoleType
 from app.web.nav import MOBILE_NAV_ITEMS, NAV_ITEMS
+from app.web.onboarding import SCHEDULE_PRESETS
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 DENIED = "Недостаточно прав для этого действия"
@@ -38,6 +40,89 @@ TODO = "не сделано"
 # Both wizard forms carry this hidden field; its presence is how a test tells
 # "the member got the form" from "the member got the read-only note".
 WIZARD_MARKER = 'name="next" value="/app/onboarding"'
+# The control class as it was written out by hand, 80 times across the
+# templates. One macro (`_macros.control`) owns it now; a template that spells
+# it out again has reintroduced the drift that macro removed.
+RAW_CONTROL_CLASS = "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+FORM_FIELD_RE = re.compile(r'<form[^>]*\baction="([^"]+)"[^>]*>(.*?)</form>', re.S)
+FIELD_NAME_RE = re.compile(r'\bname="([^"]+)"')
+LABEL_FOR_RE = re.compile(r'<label[^>]*\bfor="([^"]+)"')
+
+
+def _form_fields(html: str, action: str) -> set[str]:
+    """Every field name a given form posts.
+
+    Used to compare the wizard against the page it mirrors: both post to the
+    same endpoint, so a field that exists in one and not the other is drift,
+    not a design choice.
+    """
+    for found_action, body in FORM_FIELD_RE.findall(html):
+        if found_action == action:
+            return set(FIELD_NAME_RE.findall(body))
+    raise AssertionError(f"no form posting to {action}")
+
+
+class _Perms:
+    """A member who may do everything — the wizard only hides a form."""
+
+    def can(self, *_args, **_kwargs) -> bool:
+        return True
+
+
+def _render(name: str, **extra) -> str:
+    """Render a page template directly, with the context its route supplies.
+
+    Not through the ASGI stack: `conftest` forces `is_bypass()`, so a request
+    sees *every* workspace's rows and the checklist may read as already done —
+    the very thing these tests must be able to see unfinished. Rendering the
+    template with an explicit context makes "no source yet" a fact of the test
+    rather than of whatever the database happens to hold.
+    """
+    from app.tasks.cron import cron_to_human
+    from app.types import SourceType
+    from app.web.deps import templates
+    from app.web.nav import MOBILE_NAV_ITEMS, NAV_ITEMS
+
+    platforms = [SimpleNamespace(platform_type=SimpleNamespace(db_value="vk"), name="ВКонтакте")]
+    context: dict = {
+        "nav": NAV_ITEMS,
+        "mobile_nav": MOBILE_NAV_ITEMS,
+        "user": None,
+        "memberships": [],
+        "workspaces": [],
+        "tenant": SimpleNamespace(name="WS", slug="ws", plan="free"),
+        "unread_notifications": 0,
+        "perms": _Perms(),
+        "csrf": "test-csrf",
+        "flashes": [],
+        "path": "/app/",
+        "section": "",
+        # Shared by both pages under test.
+        "platforms": platforms,
+        "source_types": list(SourceType),
+        "job_types": JobType.choices(),
+        "cron_to_human": cron_to_human,
+        "modes": (("pull", "Через API платформы"),),
+        "members": [],
+        # The list pages.
+        "is_superuser": False,
+        "filter_tenant_id": None,
+        "tenants": [],
+        "scenarios": [],
+        "sources": [],
+        "tasks": [],
+        "effective_active": set(),
+        "job_id": None,
+        "vk_l2": {"state": "missing", "label": "VK не подключён"},
+        "user_sources_json": [],
+        "filter_scenario_id": None,
+        # The wizard: a workspace that has neither yet.
+        "has_source": False,
+        "has_task": False,
+        "presets": SCHEDULE_PRESETS,
+    }
+    context.update(extra)
+    return templates.get_template(name).render(**context)
 
 
 # ── navigation as data ─────────────────────────────────────────────────────
@@ -297,3 +382,74 @@ async def test_next_cannot_be_an_open_redirect() -> None:
                 for source in await Source.objects.filter(name="Redirect probe").all():
                     await Source.objects.delete(id=source.id)
             await _drop(user, tenant_id)
+
+
+# ── the wizard and the pages it mirrors share one form definition ──────────
+
+
+async def test_wizard_posts_exactly_the_fields_the_list_pages_expose() -> None:
+    """The regression this refactor exists to prevent.
+
+    The wizard step and the list-page modal post to `/app/sources`, and both
+    draw their fields from `_macros.source_fields`. The wizard's fields must
+    therefore be a *subset* of the list page's — if someone adds a field to the
+    modal and forgets the wizard (or renames one), the fresh-workspace path
+    silently stops being able to set it and nothing else fails.
+
+    `mode` and `token_owner` are the documented exception: they tune a source
+    that already exists, so the wizard takes the endpoint defaults.
+    """
+    wizard = _render("web/onboarding.html")
+
+    wizard_source = _form_fields(wizard, "/app/sources")
+    list_source = _form_fields(_render("web/sources.html"), "/app/sources")
+    # `next` is the wizard's own addition — it is what sends the POST back here
+    # instead of to the list page — so it is the one field allowed to exist
+    # only in the wizard.
+    assert wizard_source - {"next"} <= list_source, f"wizard-only fields: {wizard_source - list_source}"
+    assert list_source - wizard_source == {"mode", "token_owner"}
+
+    wizard_task = _form_fields(wizard, "/app/tasks")
+    list_task = _form_fields(_render("web/tasks.html"), "/app/tasks")
+    assert wizard_task - {"next"} <= list_task, f"wizard-only task fields: {wizard_task - list_task}"
+    # The schedule widget differs by design (a preset select vs. the
+    # interactive builder), but both post the same field name.
+    assert "cron_custom" in wizard_task & list_task
+
+
+def test_wizard_labels_point_at_real_inputs() -> None:
+    """The shared macro renders `label for=` next to the id it names.
+
+    `idp` is what keeps the two copies apart; a prefix that collides would
+    leave a label bound to the wrong input, which an assertion on field names
+    would not catch.
+    """
+    for name in ("web/onboarding.html", "web/sources.html", "web/tasks.html"):
+        page = _render(name)
+        targets = set(LABEL_FOR_RE.findall(page))
+        assert targets, f"{name} renders no labelled field"
+        for target in targets:
+            assert f'id="{target}"' in page, f"{name}: label points at a missing id: {target}"
+
+
+def test_form_controls_come_from_one_macro() -> None:
+    """The control class is defined once, in `_macros.control`.
+
+    It was written out by hand 80 times across the templates — which is how the
+    focus ring ended up on some fields and not others. Only the macro itself
+    may still spell it out.
+    """
+    from app.web.deps import templates
+
+    offenders = []
+    for name in ("sources.html", "tasks.html", "onboarding.html"):
+        source = templates.get_template(f"web/{name}").filename
+        with open(source, encoding="utf-8") as fh:
+            if RAW_CONTROL_CLASS in fh.read():
+                offenders.append(name)
+    assert offenders == [], f"control class written out by hand in {offenders}"
+
+    # …and the macro still produces it. `_macros.html` holds only definitions,
+    # so rendering it yields nothing: ask the template's module for the macro.
+    macros = templates.get_template("web/_macros.html").module
+    assert RAW_CONTROL_CLASS in macros.control()

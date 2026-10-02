@@ -1,0 +1,324 @@
+{% extends "web/base.html" %}
+{% block title %}{{ scenario.name }} | Сценарии{% endblock %}
+{% block content %}
+{% set editable = perms and perms.can('agentscenario', 'update') %}
+<div class="mx-auto max-w-4xl">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <a href="/app/scenarios" class="text-sm text-slate-400 hover:text-slate-200">← Все сценарии</a>
+            <h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ scenario.name }}</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                {% if scenario.is_default %}
+                    Сценарий по умолчанию для новых источников.
+                {% else %}
+                    Назначен тем источникам, которые его выбрали.
+                {% endif %}
+            </p>
+        </div>
+        {% if editable %}
+            <button type="submit" form="scenario-form"
+                    class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                Сохранить
+            </button>
+        {% endif %}
+    </div>
+
+    {% if not editable %}
+        <div class="mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
+            Вы можете читать сценарий, но не менять его — правомочие требуется ролью.
+        </div>
+    {% endif %}
+
+    {% set ro = '' if editable else 'pointer-events-none opacity-60' %}
+    <form id="scenario-form" method="post" action="/app/scenarios/{{ scenario.id }}" class="space-y-5">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+        <!-- Основное ─────────────────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Основное</legend>
+            <div>
+                <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                <input id="sc-name" name="name" required maxlength="255" value="{{ scenario.name }}"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+            </div>
+            <div>
+                <label for="sc-desc" class="mb-1 block text-sm text-slate-300">Описание</label>
+                <textarea id="sc-desc" name="description" rows="2"
+                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">{{ scenario.description or '' }}</textarea>
+            </div>
+            <div class="flex flex-wrap gap-6">
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="checkbox" name="is_active" {% if scenario.is_active %}checked{% endif %}
+                           {% if not editable %}disabled{% endif %}
+                           class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                    Активен
+                </label>
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="checkbox" name="requires_approval" {% if scenario.requires_approval %}checked{% endif %}
+                           {% if not editable %}disabled{% endif %}
+                           class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                    Действия требуют подтверждения
+                </label>
+            </div>
+        </fieldset>
+
+        <!-- Что попадает в анализ ────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Что попадает в анализ</legend>
+            <p class="text-xs text-slate-500">
+                Пустой список — «любой тип». Список ограничивает, какие единицы контента вообще рассматриваются.
+            </p>
+            <div>
+                <span class="mb-2 block text-sm text-slate-300">Тип контента</span>
+                <div class="flex flex-wrap gap-2">
+                    {% for ct in content_types %}
+                        <label class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-900">
+                            <input type="checkbox" name="content_types" value="{{ ct.db_value }}"
+                                   {% if scenario.content_types and ct.db_value in scenario.content_types %}checked{% endif %}
+                                   {% if not editable %}disabled{% endif %}
+                                   class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                            {{ ct.display_name }}
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <span class="mb-2 block text-sm text-slate-300">Тип анализа</span>
+                <div class="flex flex-wrap gap-2">
+                    {% for at in analysis_types %}
+                        <label class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-900">
+                            <input type="checkbox" name="analysis_types" value="{{ at.db_value }}"
+                                   {% if scenario.analysis_types and at.db_value in scenario.analysis_types %}checked{% endif %}
+                                   {% if not editable %}disabled{% endif %}
+                                   class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                            {{ at.display_name }}
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <label for="sc-analyze-type" class="mb-1 block text-sm text-slate-300">Режим анализа</label>
+                <select id="sc-analyze-type" name="analyze_type" {% if not editable %}disabled{% endif %}
+                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                    <option value="">По умолчанию</option>
+                    {% for mode in analyze_types %}
+                        <option value="{{ mode.value }}" {% if scenario.analyze_type and scenario.analyze_type.value == mode.value %}selected{% endif %}>
+                            {{ mode.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="sc-scope" class="mb-1 block text-sm text-slate-300">Параметры анализа (scope, JSON)</label>
+                <textarea id="sc-scope" name="scope" rows="4"
+                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500 {{ ro }}">{{ pretty_json(scenario.scope) }}</textarea>
+            </div>
+        </fieldset>
+
+        <!-- Триггер и действие ──────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Триггер и действие</legend>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label for="sc-trigger" class="mb-1 block text-sm text-slate-300">Когда срабатывает</label>
+                    <select id="sc-trigger" name="trigger_type" {% if not editable %}disabled{% endif %}
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                        <option value="">Любой контент</option>
+                        {% for t in trigger_types %}
+                            <option value="{{ t.db_value }}" {% if scenario.trigger_type and scenario.trigger_type.db_value == t.db_value %}selected{% endif %}>
+                                {{ t.display_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="sc-action" class="mb-1 block text-sm text-slate-300">Что делает агент</label>
+                    <select id="sc-action" name="action_type" {% if not editable %}disabled{% endif %}
+                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                        <option value="">Ничего</option>
+                        {% for a in action_types %}
+                            <option value="{{ a.db_value }}" {% if scenario.action_type and scenario.action_type.db_value == a.db_value %}selected{% endif %}>
+                                {{ a.display_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label for="sc-trigger-config" class="mb-1 block text-sm text-slate-300">Параметры триггера (JSON)</label>
+                <textarea id="sc-trigger-config" name="trigger_config" rows="3"
+                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500 {{ ro }}">{{ pretty_json(scenario.trigger_config) }}</textarea>
+                <p class="mt-1 text-xs text-slate-500">
+                    Словарь и пороги зависят от типа триггера — например, у «по sentiment» это <code class="font-mono">{"min": 0.3}</code>.
+                    {% if trigger_hint %}<span class="text-slate-400">{{ trigger_hint }}</span>{% endif %}
+                </p>
+            </div>
+        </fieldset>
+
+        <!-- Ограничения ─────────────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Ограничения</legend>
+            <div class="grid gap-4 sm:grid-cols-3">
+                <div>
+                    <label for="sc-rate" class="mb-1 block text-sm text-slate-300">Не чаще, чем раз в час</label>
+                    <input id="sc-rate" name="rate_limit_per_hour" type="number" min="0"
+                           value="{{ scenario.rate_limit_per_hour or '' }}"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                </div>
+                <div>
+                    <label for="sc-cooldown" class="mb-1 block text-sm text-slate-300">Пауза между действиями, сек</label>
+                    <input id="sc-cooldown" name="cooldown_seconds" type="number" min="0"
+                           value="{{ scenario.cooldown_seconds or '' }}"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                </div>
+                <div>
+                    <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
+                    <input id="sc-max-tokens" name="max_tokens" type="number" min="0"
+                           value="{{ scenario.max_tokens or '' }}"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                </div>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label for="sc-blacklist" class="mb-1 block text-sm text-slate-300">Стоп-слова</label>
+                    <input id="sc-blacklist" name="blacklist" value="{{ (scenario.blacklist or []) | join(', ') }}"
+                           placeholder="спам, реклама"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                    <p class="mt-1 text-xs text-slate-500">Пост с таким словом не обрабатывается.</p>
+                </div>
+                <div>
+                    <label for="sc-whitelist" class="mb-1 block text-sm text-slate-300">Только эти слова</label>
+                    <input id="sc-whitelist" name="whitelist" value="{{ (scenario.whitelist or []) | join(', ') }}"
+                           placeholder="запуск, обновление"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                    <p class="mt-1 text-xs text-slate-500">Сработает только если слово есть в посте.</p>
+                </div>
+            </div>
+<!-- Промпты ──────────────────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Промпты</legend>
+            <p class="text-xs text-slate-500">
+                Пустое поле — берётся промпт по умолчанию из
+                <code class="text-slate-400">app/agent/prompts</code>.
+            </p>
+            <div class="grid gap-4 lg:grid-cols-2">
+                <div class="lg:col-span-2">
+                    <label for="sc-prompt-text" class="mb-1 block text-sm text-slate-300">Текстовый анализ</label>
+                    <textarea id="sc-prompt-text" name="text_prompt" rows="5" {{ ro }}
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.text_prompt or '' }}</textarea>
+                </div>
+                <div>
+                    <label for="sc-prompt-image" class="mb-1 block text-sm text-slate-300">Изображения</label>
+                    <textarea id="sc-prompt-image" name="image_prompt" rows="4" {{ ro }}
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.image_prompt or '' }}</textarea>
+                </div>
+                <div>
+                    <label for="sc-prompt-video" class="mb-1 block text-sm text-slate-300">Видео</label>
+                    <textarea id="sc-prompt-video" name="video_prompt" rows="4" {{ ro }}
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.video_prompt or '' }}</textarea>
+                </div>
+                <div>
+                    <label for="sc-prompt-audio" class="mb-1 block text-sm text-slate-300">Аудио</label>
+                    <textarea id="sc-prompt-audio" name="audio_prompt" rows="4" {{ ro }}
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.audio_prompt or '' }}</textarea>
+                </div>
+                <div>
+                    <label for="sc-prompt-summary" class="mb-1 block text-sm text-slate-300">Сводный анализ</label>
+                    <textarea id="sc-prompt-summary" name="unified_summary_prompt" rows="4" {{ ro }}
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.unified_summary_prompt or '' }}</textarea>
+                </div>
+            </div>
+        </fieldset>
+
+        <!-- Модели ───────────────────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">Модели LLM</legend>
+            <div>
+                <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
+                <select id="sc-strategy" name="llm_strategy" {{ ro }}
+                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <option value="">Автовыбор (флот платформы)</option>
+                    {% for value, label in llm_strategies %}
+                        <option value="{{ value }}"
+                                {% if scenario.llm_strategy and scenario.llm_strategy.value == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-3">
+                {% for field, current, label in [
+                    ('text_llm_model_id', scenario.text_llm_model_id, 'Текст'),
+                    ('image_llm_model_id', scenario.image_llm_model_id, 'Изображения'),
+                    ('video_llm_model_id', scenario.video_llm_model_id, 'Видео'),
+                ] %}
+                    <div>
+                        <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                        <select id="sc-{{ field }}" name="{{ field }}" {{ ro }}
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                            <option value="">Автовыбор</option>
+                            {% for m in llm_models if m.model_type == field.split('_')[0] %}
+                                <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endfor %}
+            </div>
+        </fieldset>
+
+        <!-- По умолчанию ─────────────────────────────────────────────── -->
+        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <legend class="px-2 text-sm font-medium text-slate-300">По умолчанию</legend>
+            <label class="flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" name="is_default" {% if scenario.is_default %}checked{% endif %}
+                       {% if not editable %}disabled{% endif %}
+                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                Сценарий по умолчанию для новых источников
+            </label>
+        </fieldset>
+
+<div class="flex justify-end gap-3">
+            <a href="/app/scenarios" class="rounded-lg border border-slate-700 px-5 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                Отмена
+            </a>
+            {% if editable %}
+                <button type="submit"
+                        class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                    Сохранить
+                </button>
+            {% endif %}
+        </div>
+    </form>
+
+    <!-- Тест-прогон ─────────────────────────────────────────────────── -->
+    {% if editable %}
+        <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Проверить триггер</h2>
+            <p class="mt-1 text-xs text-slate-500">
+                Текст идёт через тот же <code class="text-slate-400">TriggerEvaluator</code>, что и конвейер.
+                Модель не вызывается, ничего не записывается.
+            </p>
+            <form method="post" action="/app/scenarios/{{ scenario.id }}/test-trigger" class="mt-4 space-y-3">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <div>
+                    <label for="tt-sample" class="mb-1 block text-sm text-slate-300">Текст поста</label>
+                    <textarea id="tt-sample" name="sample_text" rows="3"
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                              placeholder="Вставьте текст поста, который хотите проверить"></textarea>
+                </div>
+                <div>
+                    <label for="tt-json" class="mb-1 block text-sm text-slate-300">Результат анализа (JSON)</label>
+                    <textarea id="tt-json" name="analysis_json" rows="3"
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                              placeholder='{"sentiment_score": 0.8}'></textarea>
+                    <p class="mt-1 text-xs text-slate-500">
+                        Нужен только для триггеров «после анализа» (sentiment_threshold, manual).
+                    </p>
+                </div>
+                <button class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                    Проверить
+                </button>
+            </form>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+        </fieldset>

@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, source_fields, tenant_field %}
+{% from "web/_macros.html" import connection_badge, control, source_fields, tenant_field %}
 {% extends "web/base.html" %}
 {% block title %}Источники — Мониторинг{% endblock %}
 {% block content %}
@@ -20,40 +20,34 @@
                 </label>
             </form>
             {% endif %}
-            {% if vk_l2.state == "connected" %}
-            <span class="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-2 py-1.5">
-                <span class="sr-only">VK подключён</span>
-                <svg class="h-5 w-5 rounded-full" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="10" r="10" fill="#3E7D57"/>
-                    <path d="M6.5 10.5l2.5 2.5 4.5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </span>
-            <form method="post" action="/app/vk/logout" class="inline">
-                <button type="submit"
-                        class="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800">
-                    Выйти из аккаунта ВК
-                </button>
-            </form>
-            {% elif vk_l2.state == "expired" %}
-            {# An expired token is not the same as never having connected: it
-               needs a re-auth, and saying so is the whole point of the state.
-               Without this branch the user just sees the login button and no
-               reason to press it. #}
-            <span class="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1.5 text-sm text-amber-300"
-                  title="Персональный токен истёк — авторизуйтесь заново, чтобы сбор продолжил работать">
-                {{ vk_l2.label }}
-            </span>
-            <a href="/app/vk/oauth"
-               title="Авторизуйте VK-приложение заново, чтобы обновить персональный токен (L2)"
-               class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
-                Войти через VK ID
-            </a>
-            {% else %}
-            <a href="/app/vk/oauth"
-               title="Авторизуйте VK-приложение, чтобы включить сбор через персональный токен (L2)"
-               class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
-                Войти через VK ID
-            </a>
+            {# Connection state belongs in the row, not only in Settings: this is the table
+   someone scans when a source went quiet, and the question there is always
+   "which one?". A healthy owner shows an inert badge, `renewable` shows that it
+   renews itself, and only a state needing action becomes the link. #}
+            {% if connection_banners %}
+            <div class="space-y-2">
+                {% for banner in connection_banners %}
+                    {% if banner.can_connect %}
+                    <div class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-700/50 bg-amber-500/10 px-3 py-2">
+                        <span class="text-sm text-amber-200">
+                            {{ banner.label }} — сбор через личный аккаунт не работает
+                            для {{ banner.count }} источник(ов)
+                        </span>
+                        {% if banner.is_oauth %}
+                            <a href="/app/connections/{{ banner.platform }}/authorize?next=/app/sources"
+                               class="rounded-lg border border-amber-600 px-3 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20">
+                                Подключить {{ banner.title }}
+                            </a>
+                        {% else %}
+                            <a href="/app/settings?tab=connections"
+                               class="rounded-lg border border-amber-600 px-3 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20">
+                                Подключить в настройках
+                            </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
             {% endif %}
             {% if perms and perms.can('source', 'create') %}
             <button @click="openAdd = true"
@@ -74,12 +68,16 @@
                 <th class="px-4 py-3">Платформа</th>
                 <th class="px-4 py-3">Внешний ID</th>
                 <th class="px-4 py-3">Тип</th>
-                <th class="px-4 py-3">Режим</th>
+                {# No «Режим» column: it is a property of the source, and the detail
+                   page's «Как собирается» block already explains it with its own
+                   hint. A three-word badge in a scan-the-list table only repeated
+                   it. #}
+                <th class="px-4 py-3 text-center">Доступ</th>
                 <th class="px-4 py-3">Отслеж.</th>
                 <th class="px-4 py-3">Статус</th>
                 <th class="px-4 py-3">Создан</th>
                 {% if is_superuser %}
-                <th class="px-4 py-3">Тенант</th>
+                <th class="px-4 py-3">Пространство</th>
                 {% endif %}
             </tr>
             </thead>
@@ -94,10 +92,26 @@
                 <td class="px-4 py-3 text-slate-400">{{ source.platform.name }}</td>
                 <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ source.external_id }}</td>
                 <td class="px-4 py-3 text-slate-400">{{ source.source_type.display_name }}</td>
-                <td class="px-4 py-3">
-                    {% set mode = source.params.get("mode", "pull") if source.params else "pull" %}
-                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
-                          title="{{ mode }}">{{ dict(modes).get(mode, 'pull').split(' — ')[0] }}</span>
+                {% set conn = source_connections.get(source.id) %}
+                <td class="px-4 py-3 text-center">
+                    {# The owner's own access, not the caller's: a source may collect
+                       with a teammate's token, and only the owner can fix that one.
+                       Push sources have no entry and render as "—".
+
+                       Centre-aligned because the cell is one badge wide and the
+                       reason under it — «Не настроено оператором» and friends — is a
+                       sentence, not a left-aligned paragraph: left-aligned it read as
+                       ragged leftover text next to the pill badges above it. #}
+                    {% if conn %}
+                        {{ connection_badge(conn, conn.fix_href) }}
+                        {# Nothing to click when the deployment itself has no app
+                           credentials, so the reason is spelled out instead. #}
+                        {% if conn.needs_action and not conn.can_connect %}
+                            <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ conn.detail }}</p>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-slate-600">—</span>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3 text-slate-400">
                     {% if monitored %}

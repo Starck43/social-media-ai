@@ -5,14 +5,14 @@
         <div>
             <h1 class="text-2xl font-semibold tracking-tight">Аналитика</h1>
             <p class="mt-1 text-sm text-slate-400">
-                {{ tenant.name if tenant else 'Все workspaces' }} · агрегация по сохранённым анализам
+                {{ tenant.name if tenant else 'Все пространства' }} · агрегация по сохранённым анализам
             </p>
         </div>
         <form method="get" class="flex items-center gap-2">
             {% if is_superuser and tenants %}
                 <select name="tenant_id" onchange="this.form.submit()"
                         class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
-                    <option value="">Все тенанты</option>
+                    <option value="">Все пространства</option>
                     {% for t in tenants %}
                         <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
                     {% endfor %}

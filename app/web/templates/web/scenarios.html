@@ -27,13 +27,14 @@
                 <th class="px-4 py-3">Контент</th>
                 <th class="px-4 py-3 text-center">Задач</th>
                 <th class="px-4 py-3 text-center">Статус</th>
-                <th class="px-4 py-3"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-800">
             {% for s in scenarios %}
             <tr class="hover:bg-slate-900/80">
-                <td class="px-4 py-3 font-medium text-slate-100">{{ s.name }}</td>
+                <td class="px-4 py-3 font-medium text-slate-100">
+                    <a href="/app/scenarios/{{ s.id }}" class="hover:text-cyan-400 hover:underline">{{ s.name }}</a>
+                </td>
                 <td class="px-4 py-3 text-slate-400 max-w-xs truncate">{{ s.description or "—" }}</td>
                 <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-1">
@@ -57,21 +58,14 @@
                 </td>
                 <td class="px-4 py-3 text-center text-slate-300">{{ s.task_count }}</td>
                 <td class="px-4 py-3 text-center">
+                    {# The same pill the sources and tasks lists use. The dot-plus-word
+                       pair this had before was the only state on the page not wearing
+                       it, so a column of statuses read as a column of sentences. #}
                     {% if s.is_active %}
-                        <span class="inline-flex items-center gap-1 text-green-400">
-                            <span class="h-1.5 w-1.5 rounded-full bg-green-400"></span>активен
-                        </span>
+                        <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активен</span>
                     {% else %}
-                        <span class="inline-flex items-center gap-1 text-slate-500">
-                            <span class="h-1.5 w-1.5 rounded-full bg-slate-600"></span>неактивен
-                        </span>
+                        <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивен</span>
                     {% endif %}
-                </td>
-                <td class="px-4 py-3 text-right">
-                    <a href="/app/scenarios/{{ s.id }}"
-                       class="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-cyan-600 hover:text-cyan-400">
-                        {% if perms and perms.can('agentscenario', 'update') %}Настроить{% else %}Посмотреть{% endif %}
-                    </a>
                 </td>
             </tr>
             {% endfor %}

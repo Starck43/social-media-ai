@@ -69,7 +69,7 @@
                     <form method="get" class="flex items-center gap-2">
                         <select name="tenant_id" onchange="this.form.submit()"
                                 class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
-                            <option value="">Все тенанты</option>
+                            <option value="">Все пространства</option>
                             {% for t in tenants %}
                                 <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
                             {% endfor %}
@@ -86,7 +86,7 @@
                             <tr>
                                 <th class="px-3 py-2">Название</th>
                                 <th class="px-3 py-2">Тип</th>
-                                {% if is_superuser %}<th class="px-3 py-2">Тенант</th>{% endif %}
+                                {% if is_superuser %}<th class="px-3 py-2">Пространство</th>{% endif %}
                                 <th class="px-3 py-2">Расписание</th>
                                 <th class="px-3 py-2">Статус</th>
                                 <th class="px-3 py-2">Последний запуск</th>

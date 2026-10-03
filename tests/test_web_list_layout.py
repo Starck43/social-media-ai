@@ -228,9 +228,54 @@ async def test_the_task_name_opens_the_editor() -> None:
 
             assert 'aria-label="Настроить задачу"' not in page.text
             row = next(r for r in _table_rows(page.text) if "byname" in r)
-            assert "editTask({" in row, "the name must reach the editor"
+            assert f'@click="editTask({task_id})"' in row, "the name must reach the editor"
         finally:
             await _drop_task(task_id)
+            await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_the_editor_is_addressable_by_url() -> None:
+    """Opening the editor puts the task id in the URL, and that URL reopens it.
+
+    The modal is the only way into a task's settings, so its address has to name
+    the task: a reload, a bookmark or a link pasted to a colleague must land on
+    the open editor rather than on the bare list. The same id therefore has to
+    travel both ways — out through `history.replaceState`, back in through
+    `?task_id=` — and a link naming a task this page does not show must open
+    nothing rather than something from another workspace.
+    """
+    task_id = None
+    other_task_id = None
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "TaskUrl")
+        await _login(client, user.username)
+        try:
+            task_id = await _task(tenant_id, _name("url"))
+            foreign = await _task(tenant_id, _name("foreign"))
+            other_task_id = foreign
+
+            page = await client.get("/app/tasks")
+            assert page.status_code == 200
+            # Opening writes the id; closing takes it away, so the address bar
+            # never names a task whose editor is not on screen.
+            assert "setTaskParam" in page.text
+            assert 'searchParams.set("task_id"' in page.text
+            assert 'searchParams.delete("task_id"' in page.text
+            assert "replaceState" in page.text, "the id must not spam the history stack"
+            close = re.search(r'x-show="openEdit".*?</form>', page.text, re.S)
+            assert close and "closeEdit()" in close.group(0), "closing must clear the parameter"
+
+            # A direct link opens that editor, and only that one.
+            deep = await client.get(f"/app/tasks?task_id={task_id}")
+            assert deep.status_code == 200
+            assert f"const OPEN_TASK_ID = {task_id}" in deep.text
+
+            stranger = await client.get(f"/app/tasks?task_id={foreign + 100_000}")
+            assert "const OPEN_TASK_ID = null" in stranger.text
+        finally:
+            await _drop_task(task_id)
+            await _drop_task(other_task_id)
             await _drop(user, tenant_id)
 
 

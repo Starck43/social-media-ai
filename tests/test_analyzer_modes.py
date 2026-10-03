@@ -54,7 +54,7 @@ async def test_analyze_content_dispatches_sources_mode(monkeypatch, source):
     seen = {}
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                        analysis_date=None, force_reanalyze=False, analyze_type=None):
+                        analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
         seen["chain"] = topic_chain_id
         seen["analyze_type"] = analyze_type
         seen["len"] = len(content)
@@ -82,7 +82,7 @@ async def test_analyze_content_dispatches_monitored_users_mode(monkeypatch, sour
     chains = []
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                        analysis_date=None, force_reanalyze=False, analyze_type=None):
+                        analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -102,7 +102,7 @@ async def test_monitored_users_groups_by_author_dict(monkeypatch, source):
     chains = []
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                      analysis_date=None, force_reanalyze=False, analyze_type=None):
+                      analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -125,7 +125,7 @@ async def test_analyze_content_days_mode_groups_by_day(monkeypatch, source):
 
     called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False):
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None):
         called.append("days")
         return []
 
@@ -139,7 +139,7 @@ async def test_analyze_content_themes_mode_still_works(monkeypatch, source):
     """themes mode still routes to the theme-grouped analysis (regression guard)."""
     called = []
 
-    async def fake_by_themes(self, content, source, force_reanalyze=False):
+    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None):
         called.append("themes")
         return []
 
@@ -147,3 +147,93 @@ async def test_analyze_content_themes_mode_still_works(monkeypatch, source):
 
     await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="themes")
     assert called == ["themes"]
+
+
+async def test_base_analyze_does_not_save_a_timed_out_llm_stub(monkeypatch, source):
+    """A timed-out/errored LLM result must not be saved as a real analysis.
+
+    On timeout the client returns `parsed={"analysis": "Timeout"}`. Saving that
+    would mark the batch as analyzed (dedup) and block a retry, leaving a
+    stats-only chain entry with no conclusion. So `base_analyze_content` must
+    treat an error stub as "no result" and skip the save.
+    """
+    from app.services.ai.content_classifier import ContentClassifier
+
+    saved = []
+
+    async def fake_analyze_text(self, text_items, agent_scenario, content_stats, platform_name, source):
+        return {
+            "request": {"model": "m", "prompt": "p", "provider": "openai"},
+            "response": {"error": "timeout"},
+            "parsed": {"analysis": "Timeout"},
+        }
+
+    async def fake_save(self, *a, **k):
+        saved.append(a)
+        from app.models import AIAnalytics
+
+        return AIAnalytics(id=1, source_id=source.id)
+
+    monkeypatch.setattr(AIAnalyzer, "_analyze_text", fake_analyze_text)
+    monkeypatch.setattr(AIAnalyzer, "_save_analysis", fake_save)
+    # content must be classified as text-only (no media URLs / images).
+    monkeypatch.setattr(ContentClassifier, "prepare_text_content", lambda items: "text")
+    monkeypatch.setattr(ContentClassifier, "get_media_urls", lambda items: [])
+
+    result = await AIAnalyzer().base_analyze_content(
+        [{"text": "post 1", "published_at": "2026-10-03T10:00:00"}], source
+    )
+    assert result is None
+    assert saved == [], "a timed-out LLM stub must not be persisted"
+
+
+async def test_analyze_content_uses_passed_scenario_for_mode(monkeypatch, source):
+    """A caller-supplied scenario's analyze_type selects the mode and is forwarded.
+
+    This is the regression behind "no agent conclusion / old unclear chain title":
+    `handle_analyze` resolves the task's scenario but used to drop it, so the
+    analysis fell back to the (absent) tenant default and the default prompt —
+    scenario 6's custom prompt/analysis_types never ran. Now the resolved
+    scenario reaches `base_analyze_content`, which must use it instead of the
+    tenant default.
+    """
+    from app.models import AgentScenario
+
+    mode_called = []
+
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None):
+        mode_called.append(agent_scenario)
+        return []
+
+    monkeypatch.setattr(AIAnalyzer, "_analyze_content_by_days", fake_by_days)
+
+    sc = AgentScenario(id=999, name="Сценарий 6", analyze_type="days")
+    await AIAnalyzer().analyze_content([{"text": "x"}], source, agent_scenario=sc)
+    # The scenario's analyze_type ("days") selects the mode, and the scenario
+    # object itself is handed down.
+    assert mode_called == [sc]
+
+
+async def test_base_analyze_prefers_passed_scenario_over_tenant_default(monkeypatch, source):
+    """`base_analyze_content` must use the passed scenario, not re-lookup the default."""
+    from app.models import AgentScenario
+    from app.services.ai.content_classifier import ContentClassifier
+
+    looked_up_default = []
+
+    async def fake_default(tenant_id=None):
+        looked_up_default.append(tenant_id)
+        return AgentScenario(id=1, name="Default")
+
+    monkeypatch.setattr(AgentScenario.objects, "get_default_scenario", fake_default)
+    monkeypatch.setattr(AIAnalyzer, "_save_analysis", lambda *a, **k: None)
+    monkeypatch.setattr(ContentClassifier, "prepare_text_content", lambda items: "text")
+    monkeypatch.setattr(ContentClassifier, "get_media_urls", lambda items: [])
+    monkeypatch.setattr(AIAnalyzer, "_get_llm_model", lambda *a, **k: None)
+
+    sc = AgentScenario(id=999, name="Task scenario", output_schema=None, analysis_types=["sentiment"])
+    await AIAnalyzer().base_analyze_content(
+        [{"text": "post 1", "published_at": "2026-10-03T10:00:00"}], source, agent_scenario=sc
+    )
+    # No tenant-default lookup happened: the caller's scenario was already resolved.
+    assert looked_up_default == []

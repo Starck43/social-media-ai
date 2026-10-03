@@ -113,6 +113,10 @@ def _render(name: str, **extra) -> str:
         "tasks": [],
         "effective_active": set(),
         "job_id": None,
+        # The editor's row data and the task a `?task_id=` link names — both
+        # empty here: the list pages under test carry no tasks.
+        "edit_tasks": {},
+        "open_task_id": None,
         # Connection state per source row, plus a banner per blocked platform.
         # Empty here: the list pages under test carry no sources.
         "source_connections": {},

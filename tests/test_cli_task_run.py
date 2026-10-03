@@ -53,7 +53,7 @@ async def _make_task(tenant_id: int | None, name: str, cron: str = "0 9 * * *") 
     """Create a task, in `tenant_id` or (None) in the bootstrap workspace."""
     scope = tenant_scope(bypass=True) if tenant_id is None else tenant_scope(tenant_id)
     with scope:
-        return await AgentTask.objects.create(name=name, cron_expr=cron, timezone="UTC", job_type="collect", payload={})
+        return await AgentTask.objects.create(name=name, cron_expr=cron, job_type="collect", payload={})
 
 
 async def _make_source(tenant_id: int) -> Source:

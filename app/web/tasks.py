@@ -211,12 +211,18 @@ async def task_create(
         payload["excluded_users"] = _split_names(excluded_users)
 
     from app.core.tenant_context import tenant_scope
-    from app.tasks.cron import next_run_at
+    from app.models.managers.tenant_manager import tenants
+    from app.tasks.cron import next_run_at, resolve_tz
+
+    # The workspace zone wins; the global setting is only the fallback. Must
+    # agree with the runner, which re-advances the schedule in the same zone.
+    tenant = await tenants.get(id=tenant_id)
+    tz = resolve_tz(tenant)
 
     if cron_expr == "@once":
         next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
     else:
-        next_run = next_run_at(cron_expr, "Europe/Moscow")
+        next_run = next_run_at(cron_expr, tz)
 
     try:
         await _check_task_sources(parsed_source_ids, tenant_id)
@@ -241,7 +247,6 @@ async def task_create(
             name=name.strip()[:100],
             job_type=job_type,
             cron_expr=cron_expr,
-            timezone="Europe/Moscow",
             payload=payload,
             agent_scenario_id=scenario_id,
             is_active=is_active,
@@ -387,12 +392,18 @@ async def task_update(
         payload["excluded_users"] = _split_names(excluded_users)
 
     from app.core.tenant_context import tenant_scope
-    from app.tasks.cron import next_run_at
+    from app.models.managers.tenant_manager import tenants
+    from app.tasks.cron import next_run_at, resolve_tz
+
+    # Same rule as create: the workspace zone, so an edit does not silently
+    # re-schedule the task in the global zone the runner would keep using.
+    tenant = await tenants.get(id=tenant_id)
+    tz = resolve_tz(tenant)
 
     if cron_expr == "@once":
         next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
     else:
-        next_run = next_run_at(cron_expr, "Europe/Moscow")
+        next_run = next_run_at(cron_expr, tz)
 
     try:
         await _check_task_sources(parsed_source_ids, tenant_id)
@@ -419,7 +430,6 @@ async def task_update(
             name=name.strip()[:100],
             job_type=job_type,
             cron_expr=cron_expr,
-            timezone="Europe/Moscow",
             payload=payload,
             agent_scenario_id=scenario_id,
             is_active=requested_active and activation_blocked is None,

@@ -205,7 +205,7 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `SCHEDULER_ENABLED` | `true` | Enable/disable the scheduler loop |
 | `SCHEDULER_POLL_SECONDS` | `30` | How often the scheduler checks for due schedules |
-| `SCHEDULER_TIMEZONE` | `Europe/Moscow` | Timezone for cron expressions |
+| `SCHEDULER_TIMEZONE` | `Europe/Moscow` | Fallback timezone for cron expressions (a workspace's own timezone wins) |
 
 ### Agent
 

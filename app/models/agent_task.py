@@ -43,9 +43,6 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     name: Mapped[str] = Column(String(100), nullable=False)
 
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
-    timezone: Mapped[str] = Column(
-        String(64), nullable=False, default=settings.SCHEDULER_TIMEZONE, server_default="Europe/Moscow"
-    )
     # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
     job_type: Mapped[str] = Column(String(20), nullable=False)
     # Job payload: {"period": "week", "monitored_users": [...], "excluded_users": [...], ...}

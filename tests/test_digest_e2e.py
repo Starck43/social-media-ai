@@ -55,7 +55,6 @@ async def test_dispatcher_passes_agent_task_id_to_handler(monkeypatch):
     schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "week"},
         is_active=True,
@@ -91,7 +90,6 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
     schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,
@@ -159,7 +157,6 @@ async def test_failed_delivery_retries_without_duplicating_run_row(monkeypatch):
     schedule = await AgentTask.objects.create(
         name=SCHEDULE_NAME,
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,
@@ -194,7 +191,6 @@ async def test_once_task_is_deactivated_after_trigger():
     schedule = await AgentTask.objects.create(
         name="it-e2e-once",
         cron_expr="@once",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,

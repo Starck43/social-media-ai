@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 
+from app.core.config import settings
 from app.models.managers.agent_task_manager import AgentTaskManager
-from app.tasks.cron import cron_to_human, next_run_at, validate_cron
+from app.tasks.cron import cron_to_human, next_run_at, resolve_tz, validate_cron
 
 
 class TestValidateCron:
@@ -44,6 +45,46 @@ class TestNextRunAt:
         nxt = next_run_at("0 9 * * 1-5", "UTC", after=after)
         assert nxt.weekday() < 5
         assert nxt.day == 23
+
+
+class TestResolveTz:
+    """The workspace zone must beat the global default, everywhere."""
+
+    class _Tenant:
+        def __init__(self, timezone: str | None):
+            self.timezone = timezone
+
+    def test_workspace_zone_wins_over_setting(self):
+        assert resolve_tz(self._Tenant("Asia/Yekaterinburg")) == "Asia/Yekaterinburg"
+
+    def test_falls_back_to_setting_without_a_tenant(self):
+        assert resolve_tz(None) == settings.SCHEDULER_TIMEZONE
+
+    def test_falls_back_to_setting_for_a_blank_zone(self):
+        assert resolve_tz(self._Tenant("")) == settings.SCHEDULER_TIMEZONE
+        assert resolve_tz(self._Tenant(None)) == settings.SCHEDULER_TIMEZONE
+
+    def test_schedule_does_not_drift_between_writers(self):
+        """Regression: creation and the runner must resolve the SAME zone.
+
+        Mixing a per-workspace zone at creation with the global setting in the
+        runner moved the fire time by the offset between the two on the first
+        run, silently, hours off.
+        """
+        tenant = self._Tenant("Asia/Yekaterinburg")
+        after = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+
+        created = next_run_at("0 9 * * *", resolve_tz(tenant), after=after)
+        advanced = next_run_at("0 9 * * *", resolve_tz(tenant), after=created)
+        drifted = next_run_at("0 9 * * *", "Europe/Moscow", after=created)
+
+        # Same clock hour as the creation wrote, one day on (croniter is
+        # strictly-after, so the fire that just happened is not repeated).
+        assert advanced.hour == created.hour == 4  # 09:00 Yekaterinburg == 04:00 UTC
+        assert (advanced.date() - created.date()).days == 1
+        # The global zone the runner used to apply would have shifted it 2 h.
+        assert drifted.hour == 6
+        assert advanced != drifted
 
 
 class TestCronToHuman:

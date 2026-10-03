@@ -144,7 +144,6 @@ async def _add_task(
 
     from rich import print as rprint
 
-    from app.core.config import settings
     from app.core.tenant_context import tenant_scope
     from app.models import AgentTask
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -165,11 +164,15 @@ async def _add_task(
         if cron.strip() == "@once":
             next_run = datetime.now(timezone.utc) + timedelta(minutes=1)
         else:
-            next_run = next_run_at(cron, settings.SCHEDULER_TIMEZONE)
+            # The workspace zone, same rule as the web form and the runner.
+            from app.models.managers.tenant_manager import tenants
+            from app.tasks.cron import resolve_tz
+
+            tenant_row = await tenants.get(id=tenant_id) if tenant_id else None
+            next_run = next_run_at(cron, resolve_tz(tenant_row))
         task = await AgentTaskManager().create(
             name=name,
             cron_expr=cron,
-            timezone=settings.SCHEDULER_TIMEZONE,
             job_type=job_type,
             payload=parsed_payload,
             agent_scenario_id=scenario_id,
@@ -330,8 +333,6 @@ async def _run_task(
     else:
         from datetime import datetime, timezone
 
-        from app.core.config import settings
-
         tenant_id = await resolve_tenant_id(tenant)
         payload: dict = {}
         if monitored:
@@ -350,7 +351,6 @@ async def _run_task(
             target = await AgentTask.objects.create(
                 name=f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
                 cron_expr="@once",
-                timezone=settings.SCHEDULER_TIMEZONE,
                 job_type=job_type,
                 payload=payload,
                 agent_scenario_id=scenario,

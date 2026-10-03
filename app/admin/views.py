@@ -1937,7 +1937,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     # Запуск задачи ставит job в очередь — это изменение, а не просмотр.
     action_permissions = {"run-now": ActionType.UPDATE}
 
-    column_list = ["id", "tenant", "name", "job_type", "cron_expr", "timezone", "is_active", "next_run_at", "last_run_at", "last_status"]
+    column_list = ["id", "tenant", "name", "job_type", "cron_expr", "is_active", "next_run_at", "last_run_at", "last_status"]
     column_searchable_list = ["name", "job_type"]
     column_sortable_list = ["name", "job_type", "is_active", "next_run_at"]
     column_labels = dict({
@@ -1946,7 +1946,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "name": "Название",
         "job_type": "Тип",
         "cron_expr": "Расписание",
-        "timezone": "Часовой пояс",
         "payload": "Параметры",
         "is_active": "Активна",
         "next_run_at": "Следующий запуск",
@@ -1957,7 +1956,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "agent_scenario": "Сценарий бота",
     }, **BaseAdmin.column_labels)
 
-    form_columns = ["tenant", "name", "job_type", "cron_expr", "timezone", "sources", "agent_scenario", "payload", "is_active"]
+    form_columns = ["tenant", "name", "job_type", "cron_expr", "sources", "agent_scenario", "payload", "is_active"]
 
     form_overrides = {
         "is_active": SelectField,
@@ -1968,7 +1967,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     form_widget_args = {
         "name": {"placeholder": "Например: hourly-collect"},
         "cron_expr": {"placeholder": "0 * * * *"},
-        "timezone": {"placeholder": "Europe/Moscow"},
         "payload": {"rows": 4, "placeholder": '{"period": "day"}'},
     }
 
@@ -1990,10 +1988,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "cron_expr": {
             "label": "Cron-выражение",
             "description": "Расписание из 5 полей: минута час день месяц день-недели (например, '0 * * * *')",
-        },
-        "timezone": {
-            "label": "Часовой пояс",
-            "description": "Временная зона по IANA (по умолчанию Europe/Moscow)",
         },
         "sources": {
             "label": "Источники",
@@ -2044,9 +2038,9 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
 
         active = data.get("is_active", getattr(model, "is_active", False))
         job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
+        tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
+        tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
         if active and AgentTaskManager.requires_sources(job_type):
-            tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
-            tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
             submitted = data.get("sources") or []
             submitted_ids = [int(v) if isinstance(v, (int, str)) else getattr(v, "id", None) for v in submitted]
             submitted_ids = [i for i in submitted_ids if i is not None]
@@ -2070,10 +2064,17 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             if cron_expr == "@once":
                 data["next_run_at"] = datetime.now(timezone.utc) + timedelta(minutes=1)
             else:
-                tz = data.get("timezone") or getattr(model, "timezone", None) or "Europe/Moscow"
+                from app.models import Tenant
                 from app.tasks.cron import next_run_at as compute_next
+                from app.tasks.cron import resolve_tz
 
-                data["next_run_at"] = compute_next(cron_expr, tz)
+                # The workspace's own zone, same rule as the web form and the
+                # runner; a task scheduled here in the global zone would move by
+                # the offset between the two on its first fire.
+                with tenant_scope(bypass=True):
+                    tenant = await Tenant.objects.get(id=tenant_id) if tenant_id else None
+
+                data["next_run_at"] = compute_next(cron_expr, resolve_tz(tenant))
         await super().on_model_change(data, model, is_created, request)
 
     def list_query(self, request: Request) -> Select:

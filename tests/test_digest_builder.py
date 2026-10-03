@@ -42,7 +42,6 @@ async def test_sent_and_idempotent(monkeypatch):
     schedule = await AgentTask.objects.create(
         name="it-digest",
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,
@@ -104,7 +103,6 @@ async def test_scheduled_retry_reuses_run_row(monkeypatch):
     schedule = await AgentTask.objects.create(
         name="it-digest-2",
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,
@@ -190,7 +188,6 @@ async def test_retry_accumulates_llm_cost(monkeypatch):
     schedule = await AgentTask.objects.create(
         name="it-digest-cost",
         cron_expr="0 9 * * *",
-        timezone="UTC",
         job_type="digest",
         payload={"period": "day"},
         is_active=True,

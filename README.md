@@ -221,7 +221,7 @@ python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "wee
 | `MAX_CHANNEL_ID`                  | канал для отправки дайджестов (MAX)                 |
 | `MAX_API_BASE`                    | base URL для MAX Bot API (по умолчанию `https://platform-api2.max.ru`) |
 | `SCHEDULER_ENABLED`               | включить cron-планировщик (по умолчанию `true`)     |
-| `SCHEDULER_TIMEZONE`              | часовой пояс cron (по умолчанию `Europe/Moscow`)    |
+| `SCHEDULER_TIMEZONE`              | часовой пояс cron по умолчанию (зона воркспейса важнее) |
 | `AGENT_MODEL`                     | явная модель для агента (иначе первая активная)      |
 | `AGENT_DAILY_COST_LIMIT`          | USD-потолок за день: агент + дайджесты (по умолчанию 5.0) |
 | `AGENT_MAX_ITERATIONS`            | макс. раундов tool-call на сообщение (по умолч. 6)  |

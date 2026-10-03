@@ -10,7 +10,7 @@ import logging
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
 from app.models.managers.agent_task_manager import AgentTaskManager
-from app.tasks.cron import next_run_at
+from app.tasks.cron import next_run_at, resolve_tz
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,18 @@ DEFAULT_TASKS = {
 }
 
 
-async def ensure_default_tasks(tenant_id: int, timezone: str | None = None) -> int:
+async def ensure_default_tasks(tenant_id: int) -> int:
     """Create missing default tasks for one workspace. Returns how many were added.
 
     Must be called inside `tenant_scope(tenant_id)`.
     """
-    tz = timezone or await _tenant_timezone(tenant_id)
+    from app.models import Tenant
+
+    # The workspace zone, not the global default: a default task scheduled in the
+    # wrong zone would fire hours off for every non-default workspace, and the
+    # runner would then keep re-advancing it in the global zone.
+    tenant = await Tenant.objects.get(id=tenant_id)
+    tz = resolve_tz(tenant)
     created = 0
     for name, (cron_expr, job_type, payload) in DEFAULT_TASKS.items():
         existing = await AgentTask.objects.get(name=name)
@@ -45,7 +51,6 @@ async def ensure_default_tasks(tenant_id: int, timezone: str | None = None) -> i
         await tasks.create(
             name=name,
             cron_expr=cron_expr,
-            timezone=tz,
             job_type=job_type,
             payload=payload,
             is_active=True,
@@ -56,13 +61,6 @@ async def ensure_default_tasks(tenant_id: int, timezone: str | None = None) -> i
     return created
 
 
-async def _tenant_timezone(tenant_id: int) -> str:
-    from app.models import Tenant
-
-    tenant = await Tenant.objects.get(id=tenant_id)
-    return (tenant.timezone if tenant else None) or "Europe/Moscow"
-
-
 async def ensure_all_default_tasks() -> dict[str, int]:
     """Run the bootstrap for every active workspace (startup path)."""
     from app.models import Tenant
@@ -70,5 +68,5 @@ async def ensure_all_default_tasks() -> dict[str, int]:
     result: dict[str, int] = {}
     for tenant in await Tenant.objects.filter(is_active=True):
         with tenant_scope(tenant.id):
-            result[tenant.slug] = await ensure_default_tasks(tenant.id, tenant.timezone)
+            result[tenant.slug] = await ensure_default_tasks(tenant.id)
     return result

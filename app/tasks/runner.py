@@ -15,7 +15,7 @@ from app.core.tenant_context import tenant_scope
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.job_manager import JobManager
 
-from .cron import next_run_at
+from .cron import next_run_at, resolve_tz
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,13 @@ tasks = AgentTaskManager()
 jobs = JobManager()
 
 
-async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
-    """One pass for a single workspace. Must be called inside its tenant scope."""
+async def tick_tenant(tenant_id: int, now: datetime | None = None, tz: str | None = None) -> dict:
+    """One pass for a single workspace. Must be called inside its tenant scope.
+
+    `tz` is the workspace's cron timezone; it must be the same one the task was
+    scheduled with at creation, or the schedule shifts by the offset between the
+    two zones on the first fire. Omit it only where no tenant row is at hand.
+    """
     now = now or datetime.now(timezone.utc)
     stats = {"due": 0, "enqueued": 0, "failed": 0}
 
@@ -37,7 +42,7 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None) -> dict:
             if is_once:
                 nxt = None
             else:
-                nxt = next_run_at(task.cron_expr, task.timezone, after=now)
+                nxt = next_run_at(task.cron_expr, tz or settings.SCHEDULER_TIMEZONE, after=now)
         except (ValueError, KeyError) as e:
             logger.error(f"AgentTask {task.name}: invalid cron {task.cron_expr!r}: {e}")
             await tasks.mark_triggered(task.id, now, status="failed", error=str(e))
@@ -80,7 +85,7 @@ async def tick() -> dict:
     for tenant in tenants:
         try:
             with tenant_scope(tenant.id):
-                stats = await tick_tenant(tenant.id)
+                stats = await tick_tenant(tenant.id, tz=resolve_tz(tenant))
         except Exception:  # noqa: BLE001
             logger.exception(f"Task tick failed for tenant {tenant.slug} (id={tenant.id})")
             continue
@@ -93,7 +98,10 @@ async def tick() -> dict:
 async def run_forever(poll_seconds: int | None = None) -> None:
     """Continuously run ticks. Dedupe: tasks are marked immediately, so re-ticks skip them."""
     poll = poll_seconds or settings.SCHEDULER_POLL_SECONDS
-    logger.info(f"Task runner started (poll every {poll}s, tz={settings.SCHEDULER_TIMEZONE})")
+    logger.info(
+        f"Task runner started (poll every {poll}s, default tz={settings.SCHEDULER_TIMEZONE}; "
+        "a workspace with its own timezone uses that)"
+    )
     while True:
         try:
             stats = await tick()

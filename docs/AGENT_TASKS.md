@@ -109,6 +109,13 @@ memory is empty — so both are cheap even when there is little to do.
 `SCHEDULER_ENABLED`, `SCHEDULER_POLL_SECONDS`, `SCHEDULER_TIMEZONE`,
 `JOB_MAX_ATTEMPTS`, `JOB_RETRY_BACKOFF_SECONDS` (see `app/core/config.py`).
 
+`SCHEDULER_TIMEZONE` is only the **fallback**: a workspace's own
+`tenants.timezone` decides when its tasks fire (`app/tasks/cron.py::resolve_tz`
+is the single place that resolves it, used by every writer — the web form, the
+admin, the CLI, the agent tool, the bootstrap and the runner). The two must
+agree, because a schedule is written once at creation and re-advanced after
+every fire.
+
 ## Why not Celery
 
 One VPS, one operator: Redis and a Celery worker add two moving parts for a

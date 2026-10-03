@@ -81,10 +81,10 @@ async def task_add(
     scenario_id: int | None = None,
     period: str | None = None,
 ) -> dict[str, Any]:
-    from app.core.config import settings
-    from app.models import AgentTask
+    from app.core.tenant_context import current_tenant_id
+    from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.tasks.cron import next_run_at
+    from app.tasks.cron import next_run_at, resolve_tz
 
     job_types = _get_job_types()
     if job_type not in job_types:
@@ -102,15 +102,17 @@ async def task_add(
     if period:
         payload["period"] = period
 
+    # The workspace zone, same rule as the web form and the runner: a task
+    # created here in the global zone would shift by the offset on its first fire.
+    tenant = await Tenant.objects.get(id=current_tenant_id())
     task = await AgentTask.objects.create(
         name=name,
         cron_expr=cron,
-        timezone=settings.SCHEDULER_TIMEZONE,
         job_type=job_type,
         payload=payload,
         agent_scenario_id=scenario_id,
         is_active=True,
-        next_run_at=next_run_at(cron, settings.SCHEDULER_TIMEZONE),
+        next_run_at=next_run_at(cron, resolve_tz(tenant)),
     )
 
     if source_ids:

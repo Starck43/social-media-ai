@@ -7,6 +7,39 @@ from app.types import BotActionType
 logger = logging.getLogger(__name__)
 
 
+class PlanLimitError(Exception):
+    """A workspace tier has no room for what was asked for.
+
+    Raised by services that enforce `tenants.plan` quotas, so a REST layer can
+    answer 403 with the message a reader can act on rather than letting a quota
+    breach surface as an opaque 500.
+    """
+
+
+async def _scenario_limit_reason() -> Optional[str]:
+    """Why another scenario cannot be created in the ambient workspace, or None.
+
+    Reads the ambient tenant scope rather than a passed-in row: every caller of
+    `ScenarioService` already runs inside the workspace it is writing to, and
+    resolving it from one place keeps the service free of a tenant parameter it
+    would only forward.
+    """
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.tenant_manager import tenants
+    from app.services.tenancy.limits import check_scenario_limit
+
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        # No workspace in scope means an operator-level call outside a tenant
+        # (seeding, tests). Refusing there would break setup, not protect a
+        # quota that is not being consumed.
+        return None
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None:
+        return None
+    return await check_scenario_limit(tenant)
+
+
 def build_output_schema(analysis_types: Optional[list[str]] = None) -> dict:
     """Generate a JSON Schema for structured LLM output from analysis_types.
 
@@ -200,7 +233,18 @@ class ScenarioService:
 
         Returns:
             Created AgentScenario object
+
+        Raises:
+            PlanLimitError: the workspace tier has no room for another scenario.
         """
+        # Tier check before the insert, so a refused scenario leaves no row. The
+        # service is the single funnel every scenario creation passes through
+        # (REST, admin, CLI), which is why the check lives here rather than in
+        # one endpoint that the others would bypass.
+        blocked = await _scenario_limit_reason()
+        if blocked:
+            raise PlanLimitError(blocked)
+
         scenario = await AgentScenario.objects.create(
             name=name,
             description=description,

@@ -161,12 +161,18 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
         "workspaces": getattr(request.state, "workspaces", []) or [],
         "tenant": getattr(request.state, "tenant", None),
         "unread_notifications": getattr(request.state, "unread_notifications", 0) or 0,
+        # Personal connections this person must act on; empty in a healthy setup.
+        "connection_alerts": getattr(request.state, "connection_alerts", []) or [],
         "perms": getattr(request.state, "web_perms", None),
         "nav": NAV_ITEMS,
         "mobile_nav": MOBILE_NAV_ITEMS,
         "csrf": csrf_token(request),
         "flashes": pop_flashes(request),
         "path": request.url.path,
+        # Tier names, for `plan_badge` on any page. A constant of the deployment,
+        # not per-request state, so it belongs here rather than in every handler
+        # that might render a badge.
+        "plan_labels": {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS},
     }
     context.update(extra)
     return templates.TemplateResponse(request=request, name=name, context=context, status_code=status_code)

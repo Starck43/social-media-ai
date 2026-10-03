@@ -15,7 +15,7 @@ from app.schemas.scenario import (
     ScenarioUpdate,
     ScenarioResponse,
 )
-from app.services.ai.scenario import scenario_service
+from app.services.ai.scenario import PlanLimitError, scenario_service
 from app.services.user.auth import get_authenticated_user
 
 router = APIRouter(tags=["scenarios"])
@@ -54,20 +54,26 @@ async def create_scenario(
     if not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    scenario = await scenario_service.create_scenario(
-        name=request.name,
-        description=request.description,
-        analysis_types=request.analysis_types,
-        content_types=request.content_types,
-        scope=request.scope,
-        ai_prompt=request.ai_prompt,
-        trigger_type=request.trigger_type,
-        trigger_config=request.trigger_config,
-        action_type=request.action_type,
-        is_active=request.is_active,
-        max_tokens=request.max_tokens,
-        output_schema=request.output_schema,
-    )
+    try:
+        scenario = await scenario_service.create_scenario(
+            name=request.name,
+            description=request.description,
+            analysis_types=request.analysis_types,
+            content_types=request.content_types,
+            scope=request.scope,
+            ai_prompt=request.ai_prompt,
+            trigger_type=request.trigger_type,
+            trigger_config=request.trigger_config,
+            action_type=request.action_type,
+            is_active=request.is_active,
+            max_tokens=request.max_tokens,
+            output_schema=request.output_schema,
+        )
+    except PlanLimitError as e:
+        # A quota is not a permission problem, but the client did ask for
+        # something it cannot have; 403 with the reason is what a client can
+        # show. The message names the tier and the count on purpose.
+        raise HTTPException(status_code=403, detail=str(e)) from e
 
     return ScenarioResponse(
         id=scenario.id,

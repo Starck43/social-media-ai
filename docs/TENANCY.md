@@ -18,11 +18,57 @@ client workspace. A chat is bound to exactly one tenant, and every data row
    / `delete_by_id` re-fetch through the scoped queryset, so a cross-tenant id
    silently becomes "not found".
 
+## Plans and quotas
+
+`tenants.plan` is the workspace's billing tier. It is a `CHECK`-constrained
+column with three values — `starter`, `pro`, `business` — and it is the one
+place that decides what a workspace may do:
+
+| | `starter` | `pro` (default) | `business` |
+| --- | --- | --- | --- |
+| Sources | 3 | 20 | ∞ |
+| LLM budget / day | $2 | $20 | operator-set |
+| Delivery channels | 1 | 5 | ∞ |
+| Agent scenarios | 1 | 10 | ∞ |
+| Team seats (`/app`) | 1 | 5 | ∞ |
+| Scheduled tasks | 3 | 20 | ∞ |
+| Data retention | 7 days | 30 days | 90 days |
+| Auto-comments | dry-run only | auto | auto |
+| Agent learning / reflection | — | ✅ | ✅ |
+| LLM model types | text | text + image + embedding | text + image + embedding |
+
+The numbers live in `Tenant.PLAN_LIMITS` (`app/models/tenant.py`) and are
+enforced by `app/services/tenancy/limits.py`, which every write path that can
+consume one calls. A quota check returns a **message**, not a boolean, so a
+refusal names the tier and the count rather than saying "limit reached".
+
+Three rules are worth knowing because they are not obvious from the table:
+
+* **A tier change applies immediately.** There is no cached copy of the limits.
+  Lowering a workspace to `starter` refuses the next source add.
+* **A column may tighten a tier, never raise it.** `max_sources` and
+  `daily_cost_limit` remain columns so a workspace can set a tighter budget of
+  its own; `effective_limits()` takes whichever is *lower*. An unlimited tier
+  stays unlimited — those columns are `NOT NULL` and defaulting to 20 would
+  otherwise silently cap `business`.
+* **Downgrading is allowed and reports the overage.** Refusing would trap a
+  customer who must downgrade *because* they are over budget, so
+  `limits.plan_overage()` returns what has to be deleted instead.
+
+**Team seats count `/app` memberships, not chat participants.** `tenant_users`
+holds both a web membership and a messenger identity; billing a plan for both
+would charge the owner for talking to their own agent, which is the product.
+The same applies to `tenant_channels`: binding a chat your workspace already
+owns is not a second channel.
+
+Only a platform superuser can change a tier (`POST /app/settings/plan`, or the
+admin console) — it is a billing act, not a workspace preference.
+
 ## Tables
 
 | Table | Scope | Notes |
 | --- | --- | --- |
-| `tenants` | global | Workspace metadata: slug, plan, daily_cost_limit, etc. |
+| `tenants` | global | Workspace metadata: slug, plan (tier), daily_cost_limit, etc. |
 | `tenant_users` | global | Membership: which user belongs to which workspace. |
 | `tenant_invites` | global | Invite codes (hashed); `redeem()` checks expiry/uses. |
 | `tenant_channels` | global | Chat→tenant binding; unique per `(channel, chat_id)`. |

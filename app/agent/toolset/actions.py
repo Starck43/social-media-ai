@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from app.agent.tools import tool
 
@@ -56,6 +56,28 @@ async def actions_log(limit: int = 10) -> dict[str, Any]:
     },
     confirm=True,
 )
+async def _auto_actions_forced_dry_run() -> Optional[str]:
+    """Why the ambient workspace may not publish an action, or None.
+
+    Reads the ambient tenant scope: the agent loop and the web UI both run
+    inside the workspace whose action this is, and the action's own tenant is
+    not on the tool's arguments. Outside any workspace (an operator driving the
+    CLI) the tier does not apply.
+    """
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.tenant_manager import tenants
+
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        return None
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None or tenant.has_feature("allow_auto_actions"):
+        return None
+    return (
+        f"Тариф «{tenant.plan_label}» не включает автопубликацию — действие выполнено в режиме dry-run."
+    )
+
+
 async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
     from app.models import BotAction, AgentScenario, Platform, Source
     from app.models.managers.bot_action_manager import BotActionManager
@@ -70,6 +92,15 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
 
     if action.status != BotActionStatus.PENDING:
         return {"success": False, "error": f"Action is not pending: {action.status.name}"}
+
+    # A tier that does not include auto actions may still *preview* one (that is
+    # what dry_run is), but must not publish it. Enforced here rather than on the
+    # BotAction row because this is the only path that reaches a live platform —
+    # the row's own `dry_run` flag is a default the caller chooses.
+    if not dry_run:
+        forced = await _auto_actions_forced_dry_run()
+        if forced:
+            return {"success": False, "error": forced, "dry_run": True}
 
     scenario = await AgentScenario.objects.get(id=action.agent_scenario_id)
     if not scenario:

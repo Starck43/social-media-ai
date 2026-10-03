@@ -74,9 +74,24 @@ def parse_invite_code(text: str) -> Optional[str]:
 
 
 async def tenant_daily_cost_limit(tenant_id: int) -> float:
-    """Per-workspace LLM budget; falls back to the global setting when unset."""
+    """Per-workspace LLM budget; falls back to the global setting when unset.
+
+    Reads `effective_limits()`, not the raw column: the plan is the ceiling and
+    the column may only tighten it, so a workspace on `starter` cannot spend
+    the $20 its `pro`-era column still says. 0 means "no cap" (business, or an
+    unset column with no global setting), and callers treat 0 as unlimited.
+    """
     tenant = await tenants.get(id=tenant_id)
-    limit = float(getattr(tenant, "daily_cost_limit", 0) or 0)
+    if tenant is None:
+        return float(settings.AGENT_DAILY_COST_LIMIT or 0)
+
+    limit = tenant.effective_limits().get("daily_cost_limit")
+    if limit is None:
+        # An unlimited tier still honours a column the operator set on purpose
+        # (`business` with a $5 budget is a legitimate choice), so fall through
+        # to the column before the global default.
+        limit = getattr(tenant, "daily_cost_limit", 0)
+    limit = float(limit or 0)
     return limit if limit > 0 else float(settings.AGENT_DAILY_COST_LIMIT or 0)
 
 

@@ -25,7 +25,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
 from app.models.source import Source
+from app.services.social.connections import source_connection_status, source_connection_statuses
 from app.types import SourceType
+
 from .deps import (
     action_tenant_id,
     add_flash,
@@ -112,39 +114,49 @@ async def _resolve_platform(form_value: str):
     return await Platform.objects.filter(platform_type=pt).first()
 
 
-async def _vk_l2_status(user) -> dict:
-    """The caller's own VK L2 (user_token) connection state for the sources page.
+def _connection_banners(sources, statuses: dict) -> list[dict]:
+    """One entry per platform that blocks personal collection on this page.
 
-    Returns a dict the template can turn into a badge:
-    `connected` (has an active, unexpired user_token), `expired` (active row but
-    the token aged out and needs a re-auth), or `missing`. Only the caller's own
-    vault is consulted — a source may collect with a different member's token
-    (`owner.resolve_source_owner`), which this badge does not claim to know.
+    Computed from the sources actually on the page, so it stays silent while
+    nothing needs a personal token and appears only when collection really is
+    blocked — the sources page is where an operator looks when a source is
+    quiet, so this is where a one-click fix belongs. A source may collect with a
+    teammate's token, hence the owner's status rather than the caller's own.
+
+    Every blocked platform gets an entry, not just the first: VK and Telegram
+    break independently, and a banner that named only one of them sent people
+    away to reconnect a platform that was already fine.
+
+    Takes the mapping the list already built, so the badge column and the banner
+    cost one pass of queries between them rather than two.
     """
-    from datetime import datetime, timezone
+    from app.services.social.connections import CONNECTIONS_BY_PLATFORM
+    blocked: dict[str, dict] = {}
+    for source in sources:
+        status = statuses.get(source.id)
+        if status is None or not status.needs_action:
+            continue
+        entry = blocked.setdefault(status.platform, {"status": status, "names": []})
+        entry["names"].append(source.name or str(source.id))
 
-    user_id = getattr(user, "id", None)
-    if user_id is None:
-        return {"state": "missing", "label": "VK не подключён"}
-
-    from app.models.managers.user_credential_manager import user_credentials
-
-    row = None
-    for candidate in await user_credentials.active(user_id=user_id, platform="vk"):
-        if candidate.kind == "user_token":
-            row = candidate
-            break
-
-    if row is None:
-        return {"state": "missing", "label": "VK не подключён"}
-
-    expired = False
-    if row.expires_at is not None:
-        moment = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
-        expired = moment <= datetime.now(timezone.utc)
-    if expired:
-        return {"state": "expired", "label": "Токен VK истёк — войдите заново"}
-    return {"state": "connected", "label": "VK подключён"}
+    banners = []
+    for platform, entry in blocked.items():
+        spec = CONNECTIONS_BY_PLATFORM[platform]
+        status = entry["status"]
+        banners.append(
+            {
+                "platform": platform,
+                "title": spec.title,
+                "label": status.label,
+                "detail": status.detail,
+                "count": len(entry["names"]),
+                "names": entry["names"][:3],
+                # Only a platform with an OAuth flow can be fixed by clicking.
+                "can_connect": status.can_connect,
+                "is_oauth": spec.is_oauth,
+            }
+        )
+    return banners
 
 
 @router.get("")
@@ -168,7 +180,11 @@ async def sources_list(request: Request):
     else:
         query = Source.objects.filter(tenant_id=request.state.tenant_id)
         sources = await query.select_related("platform").order_by(Source.created_at.desc())
-    vk_l2 = await _vk_l2_status(user)
+    # The per-row badge and the banner are per-source (whose token is used), not
+    # per-caller, so both are computed from the rows actually rendered above.
+    # One pass, one set of queries: `_connection_banners` reads the same mapping.
+    source_connections = await source_connection_statuses(sources)
+    connection_banners = _connection_banners(sources, source_connections)
 
     user_sources = await (
         Source.objects.filter(tenant_id=request.state.tenant_id, source_type=SourceType.USER)
@@ -189,7 +205,8 @@ async def sources_list(request: Request):
         modes=COLLECTION_MODES,
         members=await _workspace_members(request.state.tenant_id) if request.state.tenant_id else [],
         user_sources_json=user_sources_data,
-        vk_l2=vk_l2,
+        source_connections=source_connections,
+        connection_banners=connection_banners,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -257,6 +274,20 @@ async def source_add(
         if existing is not None:
             add_flash(request, "error", "Источник с таким ID уже существует")
             return RedirectResponse(back, status_code=302)
+
+        # The workspace tier caps how many sources may exist. Checked here,
+        # after the permission gate: a caller who may not create sources should
+        # not learn the workspace's remaining quota from an error message.
+        if tenant_id is not None:
+            from app.models.managers.tenant_manager import tenants
+            from app.services.tenancy.limits import check_source_limit
+
+            tenant_row = await tenants.get(id=tenant_id)
+            if tenant_row is not None:
+                blocked = await check_source_limit(tenant_row)
+                if blocked:
+                    add_flash(request, "error", blocked)
+                    return RedirectResponse(back, status_code=302)
 
         clean_name = name.strip()[:100] or f"{platform}:{external_id}"
 
@@ -494,7 +525,11 @@ async def source_detail(request: Request, source_id: int):
         owner_label = "Не определён"
         owner_hint = "В workspace нет участников с веб-доступом — сбор пойдёт на переменные окружения."
 
-    is_ready, readiness_hint = _readiness(source, schedules)
+    is_ready, readiness_hint = await _readiness(source, schedules)
+
+    # The owner's own connection, shown in "Чей токен" — the exact place an
+    # operator looks when one source is silent while the rest work.
+    owner_connection = await source_connection_status(source)
 
     platforms = await _platforms()
     source_types_list = list(SourceType)
@@ -516,6 +551,7 @@ async def source_detail(request: Request, source_id: int):
         monitored_users=(source.params or {}).get("monitored_users") or [],
         owner_label=owner_label,
         owner_hint=owner_hint,
+        owner_connection=owner_connection,
         token_owner=token_owner,
         window_label=_window_label(source),
         schedules=[_schedule_view(s) for s in schedules],
@@ -551,6 +587,7 @@ def _analysis_row(a) -> dict:
 
     cost = a.estimated_cost
     return {
+        "id": a.id,
         "analysis_date": a.analysis_date.isoformat() if a.analysis_date else "—",
         "main_topics": a.main_topics or [],
         "sentiment": _extract_sentiment_score(a.summary_data),
@@ -651,10 +688,10 @@ async def _attach_raw_previews(collections: list[dict]) -> None:
     """Give each still-unanalysed run its raw items, ready to show.
 
     Only rows still in `collected_items` are visible here — they are the runs
-    whose content nobody has analysed yet. As soon as an analysis consumes a
-    run its rows are retired, and that run falls back to counters alone, which
-    is the intended behaviour: what was collected stays on record as numbers,
-    the text is only kept while something might still need it.
+    whose content nobody has analysed yet. Once an analysis stores the matching
+    items those rows are retired, and the run falls back to counters alone,
+    which is the intended behaviour: what was collected stays on record as
+    numbers, the text is only kept while something might still need it.
     """
     if not collections:
         return
@@ -696,11 +733,14 @@ def _preview(text: str | None, limit: int = RAW_PREVIEW_CHARS) -> str:
     return cut.rstrip(" .,;:!?—-") + " …"
 
 
-def _readiness(source, schedules) -> tuple[bool, str]:
+async def _readiness(source, schedules) -> tuple[bool, str]:
     """Why nothing is coming out of this source — or True when nothing is wrong.
 
     The reasons are ordered as an operator would hit them, so the hint names
-    the first thing to fix instead of listing candidates.
+    the first thing to fix instead of listing candidates. A missing personal
+    token comes first among the *collection* reasons: without it the source can
+    only be read with the community token, which is exactly the case where it
+    looks alive but silently returns nothing.
     """
     if not source.is_active:
         return False, "Источник выключен — сбор по нему не идёт."
@@ -711,6 +751,12 @@ def _readiness(source, schedules) -> tuple[bool, str]:
     if (source.params or {}).get("mode", "pull") == "push":
         # Nothing to schedule: pushes arrive on the channel listener's own.
         return False, "Push-источник наполняет канал Telegram — проверьте, что бот подключён."
+
+    # An L2 source whose owner never authorized reads as "collected, empty"
+    # forever; saying so here is cheaper than discovering it in a digest.
+    status = await source_connection_status(source)
+    if status is not None and status.needs_action:
+        return False, f"{status.label}: {status.detail.lower()} — личный доступ нужен для сбора."
     return True, ""
 
 

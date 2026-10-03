@@ -102,9 +102,108 @@
     </div>
 {%- endmacro %}
 
+{# A connection state as a badge. One place, because the tone→colour mapping was
+   hand-written in three templates and had already drifted: the settings cards
+   used one palette, the source page another, and the sources list had none.
+
+   `status` is a `ConnectionStatus` (or None for a source that needs no personal
+   secret, which renders as "—"). `href` turns the badge into the fix; it is only
+   ever passed for a state that needs action, so a healthy token stays inert
+   rather than inviting a click that would do nothing. #}
+{% macro connection_badge(status, href="") -%}
+    {% if not status %}
+        <span class="text-slate-600">—</span>
+    {% else %}
+        {% set tone_class = {
+            "ok": "bg-emerald-500/10 text-emerald-300",
+            "bad": "bg-rose-500/10 text-rose-300",
+            "warn": "bg-amber-500/10 text-amber-300",
+            "idle": "bg-slate-800 text-slate-500",
+        }.get(status.tone, "bg-slate-800 text-slate-500") %}
+        {% if href %}
+            <a href="{{ href }}" title="{{ status.detail }}"
+               class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {{ tone_class }} hover:brightness-125">{{ status.label }}</a>
+        {% else %}
+            <span title="{{ status.detail }}"
+                  class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {{ tone_class }}">{{ status.label }}</span>
+        {% endif %}
+    {% endif %}
+{%- endmacro %}
+
+
 {% macro card(extra="") -%}
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ extra }}">
         {{ caller() }}
+    </div>
+{%- endmacro %}
+
+
+{# ── billing plan ──────────────────────────────────────────────────────────
+
+   The tier a workspace is on, and what each tier includes. Both live here
+   because the settings page and the dashboard show the same badge, and the
+   colours match `app/admin/formatters.py::plan_badge` so a plan looks the same
+   in the admin console and in /app. #}
+
+{% macro plan_badge(plan) -%}
+    {% set tone = {
+        "starter": "bg-slate-800 text-slate-300 ring-slate-700",
+        "pro": "bg-cyan-500/10 text-cyan-300 ring-cyan-800",
+        "business": "bg-amber-500/10 text-amber-300 ring-amber-800",
+    }.get(plan, "bg-slate-800 text-slate-300 ring-slate-700") %}
+    <span class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 {{ tone }}">{{ plan_labels.get(plan, plan) }}</span>
+{%- endmacro %}
+
+
+{# The three tiers side by side, with the workspace's own column marked.
+
+   `plan_rows` is a list of dicts from `app/web/settings.py::PLAN_ROWS`, so the
+   wording lives in Python next to the limits it describes instead of being
+   duplicated as markup here and again in the admin console. `usage` maps a row
+   key to "current/total" for the plan's own column. #}
+{% macro plan_comparison_table(plans, plan_rows, current_plan, usage={}) -%}
+    <div class="overflow-x-auto rounded-2xl border border-slate-800">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-800 text-left">
+                    <th class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500">Возможности</th>
+                    {% for plan in plans %}
+                        <th class="px-4 py-3 {% if plan == current_plan %}text-cyan-300{% else %}text-slate-400{% endif %}">
+                            {{ plan_labels.get(plan, plan) }}
+                            {% if plan == current_plan %}
+                                <span class="ml-1 text-xs font-normal text-slate-500">(ваш)</span>
+                            {% endif %}
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in plan_rows %}
+                    <tr class="border-b border-slate-800/50 last:border-0">
+                        <td class="px-4 py-3 text-slate-400">{{ row.label }}</td>
+                        {% for plan in plans %}
+                            <td class="px-4 py-3 {% if plan == current_plan %}text-slate-200{% else %}text-slate-500{% endif %}">
+                                {% set value = row.get(plan) %}
+                                {% if value is boolean %}
+                                    {% if value %}
+                                        <span class="text-emerald-400" title="включено">✓</span>
+                                    {% else %}
+                                        <span class="text-slate-600" title="не включено">—</span>
+                                    {% endif %}
+                                {% elif value is none %}
+                                    <span class="text-slate-400">∞</span>
+                                {% else %}
+                                    {{ value }}
+                                    {% if plan == current_plan and usage.get(row.key) %}
+                                        <span class="ml-1 text-xs text-slate-500">{{ usage[row.key] }}</span>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 {%- endmacro %}
 

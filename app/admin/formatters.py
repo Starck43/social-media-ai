@@ -18,6 +18,8 @@ from typing import Any, Optional, Union
 from markupsafe import Markup
 from sqladmin.formatters import bool_formatter
 
+from app.models.tenant import Tenant
+
 # Rendered instead of a blank cell or the literal "None" for missing values.
 EMPTY = "—"
 
@@ -33,7 +35,38 @@ __all__ = [
     "format_date",
     "format_datetime",
     "format_usd",
+    "plan_badge",
 ]
+
+#: Tailwind classes per tier, chosen to match the /app palette in
+#: `web/_macros.html::plan_badge` so a plan looks the same in both surfaces.
+#: An unknown value falls back to the neutral one rather than rendering nothing,
+#: which would read as "this workspace has no plan".
+_PLAN_BADGES = {
+    "starter": "bg-slate-800 text-slate-300 ring-slate-700",
+    "pro": "bg-cyan-950 text-cyan-300 ring-cyan-800",
+    "business": "bg-amber-950 text-amber-300 ring-amber-800",
+}
+_PLAN_BADGE_FALLBACK = "bg-slate-800 text-slate-300 ring-slate-700"
+
+
+def plan_badge(value: Any) -> Markup:
+    """A workspace's billing tier as a coloured pill.
+
+    Takes the raw column value, not the model: sqladmin hands column formatters
+    the cell's value, and the same helper is used by `TenantAdmin.column_formatters`.
+    An empty or unknown plan renders as `EMPTY` rather than a badge with no
+    label — the value is not a tier, and saying so is more useful than dressing
+    it up as one.
+    """
+    if value is None:
+        return Markup(EMPTY)
+    key = str(value).strip().lower()
+    if key not in Tenant.PLAN_LIMITS:
+        return Markup(EMPTY)
+    classes = _PLAN_BADGES.get(key, _PLAN_BADGE_FALLBACK)
+    label = Tenant.PLAN_LIMITS[key]["label"]
+    return Markup(f'<span class="px-2 py-0.5 rounded-full text-xs font-medium ring-1 {classes}">{label}</span>')
 
 
 def empty_formatter(value: Any) -> Markup:

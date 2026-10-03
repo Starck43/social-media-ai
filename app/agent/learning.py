@@ -82,6 +82,35 @@ def _clamp_confidence(value: Any) -> float:
         return 0.5
 
 
+async def _plan_gate(feature: str, job: str) -> Optional[dict[str, Any]]:
+    """Skip-result when the ambient workspace's tier excludes `feature`, else None.
+
+    Returns the job result dict directly so both `run_learn` and `run_reflect`
+    can `return` it unchanged — the caller should not have to know whether it was
+    the tier or the budget that stopped the run.
+
+    No workspace in scope (operator-level run, seeding) is *not* blocked: the
+    gate protects a quota, and outside a workspace there is no quota to consume.
+    """
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.tenant_manager import tenants
+
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        return None
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None or tenant.has_feature(feature):
+        return None
+
+    logger.info("Plan %s excludes %s — %s skipped", tenant.plan, feature, job)
+    return {
+        "status": "skipped",
+        "reason": "plan",
+        "detail": f"Тариф «{tenant.plan_label}» не включает эту функцию.",
+        "llm_cost": 0.0,
+    }
+
+
 async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
     """Extract durable facts/preferences from new chat turns into agent_memory.
 
@@ -90,6 +119,14 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
     """
     from app.models import AgentMessage
     from app.models.managers.agent_memory_manager import agent_memory
+
+    # Tier first, before any work: a plan that does not include learning should
+    # not render a transcript, and the reason the job skipped must be "plan",
+    # not "not enough messages" or "cost_cap" — those send the operator to fix
+    # something that is not broken.
+    plan_gate = await _plan_gate("allow_learning", "learning")
+    if plan_gate is not None:
+        return plan_gate
 
     watermark = await get_watermark()
     rows = list(
@@ -178,6 +215,11 @@ async def run_reflect(dedup: bool = True) -> dict[str, Any]:
     from app.models import AgentMemory
     from app.models.managers.agent_feedback_manager import agent_feedback
     from app.models.managers.agent_memory_manager import agent_memory
+
+    # Same order as run_learn: the tier decides before the budget is consulted.
+    plan_gate = await _plan_gate("allow_reflection", "reflection")
+    if plan_gate is not None:
+        return plan_gate
 
     facts = list(await AgentMemory.objects.filter(AgentMemory.scope == "global"))
     notes = await agent_feedback.recent_notes("bad", limit=20)

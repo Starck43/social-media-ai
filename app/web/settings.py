@@ -6,10 +6,13 @@ preference — it follows `docs/TENANCY.md`:
 * **workspace** — the profile of the current workspace, and of nothing else.
 * **team** — memberships in `tenant_users`; a personal secret is only usable by
   a member, so this tab and the credentials tab describe the same trust circle.
-* **credentials** — the caller's *own* rows in `user_credentials`. Self-service
-  by design: the vault is keyed by `users.id`, so writing your own token needs
-  no new authorisation model. A user only ever sees and writes their own
-  secrets, never another member's.
+* **connections** — one card per platform: authorize, renew, disconnect. This
+  is where a person connects their own accounts once, and where the state of
+  that connection is explained. It replaced a raw list of `user_credentials`
+  rows, because a row is an implementation detail while «ВКонтакте подключено»
+  is a fact a person acts on. Manual key entry survives inside each card as the
+  fallback for platforms without an OAuth flow (and for anyone who prefers it).
+  A user only ever sees and writes their own secrets, never another member's.
 * **channels** — where digests and the agent are delivered.
 
 Deliberately absent: `llm_providers` / `llm_models`. The fleet is global and
@@ -18,6 +21,8 @@ tests — a workspace must not be able to repoint the model the runtime uses.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
@@ -31,13 +36,16 @@ router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("workspace", "team", "credentials", "channels")
+TABS: tuple[str, ...] = ("workspace", "team", "connections", "channels")
 
-# Personal kinds a user may store themselves. `bot_token`, `app_id` and
-# `client_secret` are per-deployment config, so they are not here: they live in
-# the environment (see `app/services/social/credentials.py::ENV_FALLBACK`).
+# Personal kinds a user may store themselves, per platform. `bot_token`,
+# `app_id` and `client_secret` are per-deployment config, so they are not here:
+# they live in the environment (see
+# `app/services/social/credentials.py::ENV_FALLBACK`). The values mirror the
+# registry in `app/services/social/connections.py` — a platform is a card, and
+# this is the manual fallback *inside* that card for anyone who cannot use OAuth.
 SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "vk": (("user_token", "VK: пользовательский токен"),),
+    "vk": (("user_token", "VK: личный токен вручную"),),
     "telegram": (("session", "Telegram: файл сессии MTProto"),),
 }
 
@@ -48,9 +56,60 @@ ROLE_LABELS = {
     "viewer": "Наблюдатель",
 }
 
+#: The comparison table's rows: what each tier is compared on.
+#:
+#: The wording lives here, next to the numbers it describes, rather than in the
+#: template — so the pricing page and `Tenant.PLAN_LIMITS` cannot drift into
+#: showing a limit the runtime does not enforce. `key` is the `PLAN_LIMITS` key,
+#: which is also how the template looks up this row's usage counter.
+#:
+#: `None` renders as ∞; a boolean renders as a tick or a dash.
+PLAN_ROWS: tuple[dict[str, Any], ...] = (
+    {"key": "max_sources", "label": "Источники", "unit": "шт"},
+    {"key": "daily_cost_limit", "label": "Бюджет LLM в сутки", "unit": "$"},
+    {"key": "max_channels", "label": "Каналы доставки", "unit": "шт"},
+    {"key": "max_scenarios", "label": "Сценарии агента", "unit": "шт"},
+    {"key": "max_team_members", "label": "Участники команды", "unit": "чел"},
+    {"key": "max_tasks", "label": "Задачи по расписанию", "unit": "шт"},
+    {"key": "retention_days", "label": "Хранение данных", "unit": "дн."},
+    {"key": "allow_auto_actions", "label": "Авто-комментарии", "unit": ""},
+    {"key": "allow_learning", "label": "Обучение агента", "unit": ""},
+    {"key": "allow_reflection", "label": "Рефлексия", "unit": ""},
+)
+
+#: Plan -> the value shown in its column for each row. Built from
+#: `PLAN_LIMITS` so a new tier appears without touching the template, and a
+#: changed number appears everywhere it is shown.
+def _plan_table() -> list[dict[str, Any]]:
+    from app.models.tenant import Tenant
+
+    rows = []
+    for row in PLAN_ROWS:
+        entry = {"key": row["key"], "label": row["label"]}
+        for plan in Tenant.PLANS:
+            value = Tenant.PLAN_LIMITS[plan].get(row["key"])
+            if row["unit"] == "$" and isinstance(value, (int, float)):
+                value = f"${value:g}"
+            elif isinstance(value, (int, float)) and row["unit"] == "дн.":
+                value = f"{value} дн."
+            entry[plan] = value
+        rows.append(entry)
+    return rows
+
+
+def _plan_labels() -> dict[str, str]:
+    from app.models.tenant import Tenant
+
+    return {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS}
+
 
 def _tab_of(request: Request) -> str:
     tab = request.query_params.get("tab") or "workspace"
+    # `credentials` was this tab's old name. Redirecting to the renamed one is
+    # not cosmetic: an old bookmark that silently rendered the workspace tab
+    # would look like the credentials tab had been deleted.
+    if tab == "credentials":
+        tab = "connections"
     return tab if tab in TABS else TABS[0]
 
 
@@ -85,7 +144,31 @@ async def settings_page(request: Request):
             key=lambda row: (row.platform, row.kind),
         )
 
+    # One card per platform, each carrying its own state, its action and — for
+    # a manual platform or someone without OAuth — the fallback form.
+    from app.services.social.connections import CONNECTIONS, connection_statuses
+
+    statuses = {status.platform: status for status in await connection_statuses(user_id)}
+    cards = []
+    for spec in CONNECTIONS:
+        status = statuses.get(spec.platform)
+        card = {
+            "platform": spec.platform,
+            "title": spec.title,
+            "purpose": spec.purpose,
+            "is_oauth": spec.is_oauth,
+            "manual_hint": spec.manual_hint,
+            "status": status,
+            "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
+            "rows": [row for row in credentials if row.platform == spec.platform],
+        }
+        cards.append(card)
+
     channels = await TenantChannelManager().filter(tenant_id=tenant_id)
+
+    # What this workspace has already consumed, so the plan column can show
+    # "3 / 3" instead of a bare ceiling the reader has to count rows to match.
+    usage = await _plan_usage(tenant_id, channels, memberships)
 
     return render(
         request,
@@ -95,12 +178,53 @@ async def settings_page(request: Request):
         tenant=tenant,
         memberships=memberships,
         member_names=member_names,
+        connections=cards,
         credentials=credentials,
         channels=channels,
         self_service_kinds=SELF_SERVICE_KINDS,
         role_labels=ROLE_LABELS,
         action_types=ActionType.choices(),
+        plans=list(Tenant.PLANS),
+        plan_labels=_plan_labels(),
+        plan_rows=_plan_table(),
+        plan_usage=usage,
     )
+
+
+async def _plan_usage(
+    tenant_id: int,
+    channels: list[Any],
+    memberships: list[Any],
+) -> dict[str, str]:
+    """Current usage per quota row, as "used/limit" for the plan's column.
+
+    Only rows that are countable get an entry. A row with no counter (a feature
+    flag) simply has no usage to show, which is why the template treats a
+    missing key as "nothing to annotate".
+    """
+    from app.models.agent_scenario import AgentScenario
+    from app.models.agent_task import AgentTask
+    from app.models.source import Source
+
+    tenant = await Tenant.objects.get(id=tenant_id)
+    limits = tenant.effective_limits() if tenant else {}
+
+    counts = {
+        "max_sources": await Source.objects.filter(tenant_id=tenant_id).count(),
+        "max_channels": len(channels),
+        "max_scenarios": await AgentScenario.objects.filter(tenant_id=tenant_id).count(),
+        "max_team_members": len([m for m in memberships if m.user_id is not None]),
+        "max_tasks": await AgentTask.objects.filter(tenant_id=tenant_id).count(),
+    }
+
+    usage: dict[str, str] = {}
+    for key, used in counts.items():
+        limit = limits.get(key)
+        if limit is None:
+            continue
+        over = " ⚠" if used > limit else ""
+        usage[key] = f"{used}/{int(limit)}{over}"
+    return usage
 
 
 @router.post("/workspace")
@@ -209,7 +333,7 @@ async def credential_store(
         label=label.strip()[:100] or kinds[kind],
     )
     add_flash(request, "success", f"Сохранено: {kinds[kind]}")
-    return RedirectResponse(f"{BACK}?tab=credentials", status_code=302)
+    return RedirectResponse(f"{BACK}?tab=connections", status_code=302)
 
 
 @router.post("/credentials/{credential_id}/disable")
@@ -237,7 +361,7 @@ async def credential_disable(
 
     await user_credentials.update_by_id(row.id, is_active=False)
     add_flash(request, "success", f"Ключ «{row.label or row.kind}» отключён")
-    return RedirectResponse(f"{BACK}?tab=credentials", status_code=302)
+    return RedirectResponse(f"{BACK}?tab=connections", status_code=302)
 
 
 @router.post("/members/{membership_id}/role")
@@ -286,6 +410,70 @@ async def membership_role(
     await tenant_users.update_by_id(membership.id, role=new_role)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/plan")
+async def plan_update(
+    request: Request,
+    plan: str = Form(...),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Move a workspace to another billing tier.
+
+    Superuser-only, and deliberately so: this is a billing act, not a workspace
+    preference, so a workspace owner cannot grant themselves limits they did not
+    buy. A downgrade that leaves the workspace over its new ceilings is allowed
+    and reported — refusing would trap a customer who has to downgrade precisely
+    because they are over budget — but it is spelled out so the operator knows
+    what to delete before the next create attempt fails.
+    """
+    back = f"{BACK}?tab=workspace"
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+
+    user = getattr(request.state, "web_user", None)
+    if user is None or not getattr(user, "is_superuser", False):
+        add_flash(request, "error", "Менять тариф может только оператор платформы")
+        return RedirectResponse(back, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+    from app.services.tenancy.limits import plan_overage
+
+    target_id = action_tenant_id(request, tenant_id) or request.state.tenant_id
+    tenant = await tenants.get(id=target_id)
+    if tenant is None:
+        add_flash(request, "error", "Воркспейс не найден")
+        return RedirectResponse(BACK, status_code=302)
+
+    requested = (plan or "").strip().lower()
+    if requested not in Tenant.PLAN_LIMITS:
+        # Normalise rather than 422: the form posts a fixed set, but a
+        # hand-written request must not be able to write a value the CHECK
+        # constraint would reject at commit time.
+        add_flash(request, "error", f"Неизвестный тариф: {plan}")
+        return RedirectResponse(back, status_code=302)
+
+    if requested == tenant.plan:
+        add_flash(request, "info", f"Тариф уже «{tenant.plan_label}»")
+        return RedirectResponse(back, status_code=302)
+
+    over = await plan_overage(tenant.id, requested)
+    await tenants.update_by_id(tenant.id, plan=requested)
+
+    label = Tenant.PLAN_LIMITS[requested]["label"]
+    if over:
+        add_flash(
+            request,
+            "warning",
+            f"Тариф изменён на «{label}». Придётся сократить: {'; '.join(over)} — "
+            f"до этого добавлять нельзя.",
+        )
+    else:
+        add_flash(request, "success", f"Тариф изменён на «{label}»")
+    return RedirectResponse(back, status_code=302)
 
 
 @router.post("/channels/{channel_id}")

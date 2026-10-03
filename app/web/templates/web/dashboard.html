@@ -1,11 +1,13 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import plan_badge with context %}
 {% block title %}Дашборд — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">{{ tenant.name }}</h1>
-        <p class="mt-1 text-sm text-slate-400">
-            {{ tenant.slug }} · план {{ tenant.plan }} · роль:
-            {% for w in workspaces %}{% if w.active %}{{ w.role }}{% endif %}{% endfor %}
+        <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+            <span class="font-mono">{{ tenant.slug }}</span>
+            {{ plan_badge(tenant.plan) }}
+            <span>роль: {% for w in workspaces %}{% if w.active %}{{ w.role }}{% endif %}{% endfor %}</span>
         </p>
     </div>
 
@@ -179,7 +181,7 @@
             {% if analytics.recent %}
                 <div class="mt-4 space-y-3">
                     {% for a in analytics.recent %}
-                        <div class="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                        <a href="/app/analytics/{{ a.id }}" class="block rounded-xl border border-slate-800 bg-slate-950 p-4 transition hover:border-cyan-700">
                             <div class="flex items-center justify-between gap-3">
                                 <p class="font-medium text-slate-200">{{ a.title }}</p>
                                 <span class="shrink-0 text-xs text-slate-500">
@@ -199,7 +201,7 @@
                             {% if a.cost_usd > 0 %}
                                 <p class="mt-2 text-xs text-slate-600">LLM-расход: ${{ "%.4f"|format(a.cost_usd) }}</p>
                             {% endif %}
-                        </div>
+                        </a>
                     {% endfor %}
                 </div>
             {% else %}

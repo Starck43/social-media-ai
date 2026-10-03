@@ -48,10 +48,13 @@ def test_unknown_tab_falls_back_to_workspace() -> None:
             self.query_params = {"tab": value} if value is not None else {}
 
     assert _tab_of(_R(None)) == "workspace"
-    assert _tab_of(_R("credentials")) == "credentials"
+    assert _tab_of(_R("connections")) == "connections"
+    # The tab was renamed; an old bookmark must land on the new name rather than
+    # silently rendering the workspace tab, which reads as "the tab is gone".
+    assert _tab_of(_R("credentials")) == "connections"
     # A hand-typed tab must not reach a template branch that does not exist.
     assert _tab_of(_R("../../admin")) == "workspace"
-    assert set(TABS) == {"workspace", "team", "credentials", "channels"}
+    assert set(TABS) == {"workspace", "team", "connections", "channels"}
 
 
 def test_self_service_kinds_exclude_deployment_secrets() -> None:
@@ -167,6 +170,67 @@ async def test_all_four_tabs_render_for_the_owner() -> None:
             await _cleanup(user)
 
 
+async def test_the_workspace_tab_shows_the_tier_and_the_comparison() -> None:
+    """The tier is readable, and all three tiers are compared side by side.
+
+    Asserts the numbers come from `PLAN_LIMITS` rather than being retyped in the
+    template, so a limit the runtime enforces and a limit the pricing page shows
+    cannot drift apart without a test going red.
+    """
+    from app.models.tenant import Tenant
+
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "PlanView")
+        try:
+            page = await client.get("/app/settings?tab=workspace")
+            assert page.status_code == 200
+
+            for plan in Tenant.PLANS:
+                assert Tenant.PLAN_LIMITS[plan]["label"] in page.text, plan
+            for row_label in ("Источники", "Каналы доставки", "Участники команды"):
+                assert row_label in page.text, row_label
+
+            # The numbers the runtime enforces are the numbers on the page.
+            assert str(Tenant.PLAN_LIMITS["starter"]["max_sources"]) in page.text
+            assert str(Tenant.PLAN_LIMITS["pro"]["max_sources"]) in page.text
+
+            # A non-superuser sees the comparison but not the switcher: the tier
+            # is a billing act, not a workspace preference.
+            assert "Сменить тариф" not in page.text
+        finally:
+            await _cleanup(user)
+
+
+async def test_a_non_owner_cannot_change_the_tier() -> None:
+    """The POST is refused for a non-superuser even with a valid CSRF token.
+
+    The form is hidden for non-superusers, so this asserts the handler too —
+    hiding a button is not a check.
+    """
+    from app.models.tenant import Tenant
+
+    async with await _client() as client:
+        owner, tenant_id = await _register(client, "PlanOwner")
+        member, _ = await _register(client, "PlanMember")
+        try:
+            # Sign the second account in and try to move the first's workspace.
+            await _login(client, member.username)
+            token = await _csrf(client, "/app/settings")
+            resp = await client.post(
+                "/app/settings/plan",
+                data={"_csrf": token, "plan": "business", "tenant_id": str(tenant_id)},
+            )
+            assert resp.status_code == 200
+
+            from app.models.managers.tenant_manager import tenants
+
+            row = await tenants.get(id=tenant_id)
+            assert row.plan == Tenant.DEFAULT_PLAN, "a non-superuser moved the tier"
+        finally:
+            await _cleanup(owner)
+            await _cleanup(member)
+
+
 async def test_workspace_update_writes_the_profile() -> None:
     from app.models.managers.tenant_manager import tenants
 
@@ -249,13 +313,19 @@ async def test_a_user_sees_only_their_own_personal_keys() -> None:
 
         async with await _client() as c:
             await _login(c, owner.username)
-            page = await c.get("/app/settings?tab=credentials")
+            page = await c.get("/app/settings?tab=connections")
             assert page.status_code == 200
             # The mask of the caller's own row is shown; the other member's is not.
             assert "owner-token" not in page.text
             assert "member-token" not in page.text
             body = page.text
-            assert body.count("VK: пользовательский токен") >= 1
+            # Their own row appears under the VK card, with its connection state.
+            assert "ВКонтакте" in body
+            assert "user_token" in body
+            # A live token with no refresh is still "connected" — an absent
+            # `expires_at` means unknown, not broken, and must not nag.
+            assert "Подключено" in body
+            assert "Войти заново" not in body
     finally:
         await _cleanup(owner, member)
 

@@ -12,7 +12,7 @@ from starlette.responses import RedirectResponse
 from wtforms import validators
 
 from app.admin.actions import LLMModelActions
-from app.admin.formatters import format_date, format_usd
+from app.admin.formatters import format_date, format_usd, plan_badge
 from app.models import (
 	User,
 	Role,
@@ -1668,6 +1668,22 @@ class TenantAdmin(BaseAdmin, model=Tenant):
 		"agent_style": "Стиль агента",
 	}, **BaseAdmin.column_labels)
 
+	# The tier as a coloured pill in the list, matching /app's badge. Without it
+	# the column is a bare word ("pro") that carries no sense of weight.
+	column_formatters = {
+		"plan": lambda m, v: plan_badge(v),
+		**BaseAdmin.column_formatters,
+	}
+	column_formatters_detail = {
+		"plan": lambda m, v: plan_badge(v),
+	}
+
+	# A free-text plan field could be saved as "Pro " or "personal" and only fail
+	# at the CHECK constraint, on save, as a 500. A select cannot express that.
+	form_choices = {
+		"plan": [(key, Tenant.PLAN_LIMITS[key]["label"]) for key in Tenant.PLANS],
+	}
+
 	form_columns = [
 		"name",
 		"slug",
@@ -1685,7 +1701,15 @@ class TenantAdmin(BaseAdmin, model=Tenant):
 	form_args = {
 		"name": {"label": "Название", "description": "Отображаемое имя рабочего пространства"},
 		"slug": {"label": "Slug", "description": "Уникальный короткий идентификатор, используется в URL и заголовках"},
-		"plan": {"label": "Тариф", "description": "Тарифный план, например personal"},
+		"plan": {
+			"label": "Тариф",
+			"description": (
+				"Тарифный план. Определяет лимиты, которые применяются сразу: "
+				"источники, каналы, сценарии, участники, задачи, дневной бюджет LLM. "
+				"Понижение тарифа не удаляет данные — но превышенные лимиты "
+				"придётся сократить, чтобы продолжить добавлять."
+			),
+		},
 		"timezone": {"label": "Часовой пояс", "description": "IANA, например Europe/Moscow"},
 		"daily_cost_limit": {
 			"label": "Дневной лимит затрат, $",

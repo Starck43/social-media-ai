@@ -18,7 +18,7 @@ from app.models import AgentScenario, AgentTask, Job, Source
 from app.tasks.cron import cron_to_human
 from app.types import JobType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render, safe_next, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, perms_can, render, safe_next, tenant_filter_context
 
 router = APIRouter(prefix="/tasks")
 
@@ -266,6 +266,80 @@ async def task_create(
     else:
         add_flash(request, "success", f"Задача «{name}» создана")
     return RedirectResponse(back, status_code=302)
+
+
+@router.get("/{task_id}")
+async def task_detail(request: Request, task_id: int):
+    """One task: what it does, what sources it touches, and its recent runs."""
+    from contextlib import nullcontext
+
+    from app.core.tenant_context import tenant_scope
+    from app.models.agent_task import AgentTask
+    from app.models.agent_scenario import AgentScenario
+    from app.models.job import Job
+    from app.models.source import Source
+
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
+
+    source = None
+    with tenant_scope(bypass=True) if is_superuser else nullcontext():
+        source = (
+            await AgentTask.objects.filter(id=task_id).select_related("tenant").first()
+        )
+        if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
+            source = None
+        if source is None:
+            return render(
+                request,
+                "web/task_detail.html",
+                section="tasks",
+                task=None,
+                filter_tenant_id=filter_tenant_id,
+            )
+
+        # Recent jobs for this task.
+        recent_jobs = await (
+            Job.objects.filter(agent_task_id=task_id)
+            .order_by(Job.created_at.desc())
+            .limit(10)
+        )
+
+        # Linked sources.
+        linked_sources = await (
+            Source.objects.filter(id__in=await _task_source_ids(task_id))
+            .order_by(Source.name)
+        )
+
+        # Scenario.
+        scenario = None
+        if source.agent_scenario_id is not None:
+            scenario = await AgentScenario.objects.get(id=source.agent_scenario_id, tenant_id=source.tenant_id)
+
+    return render(
+        request,
+        "web/task_detail.html",
+        section="tasks",
+        task=source,
+        filter_tenant_id=filter_tenant_id,
+        recent_jobs=recent_jobs,
+        sources=linked_sources,
+        scenario=scenario,
+        cron_to_human=cron_to_human,
+        JOB_TYPE_TITLES=JOB_TYPE_TITLES,
+        perms_can=perms_can,
+    )
+
+
+async def _task_source_ids(task_id: int) -> list[int]:
+    """Return the source ids linked to a task via the m2m table."""
+    from app.models.agent_task import agent_task_sources
+
+    rows = await agent_task_sources.select().where(
+        agent_task_sources.c.task_id == task_id
+    ).fetchall()
+    return [r.source_id for r in rows]
 
 
 @router.post("/{task_id}/toggle")

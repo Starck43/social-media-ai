@@ -10,6 +10,7 @@ caught by the max_uses check on the second call).
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -18,6 +19,8 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
     from ..tenant import Tenant, TenantChannel, TenantInvite, TenantUser
+
+logger = logging.getLogger(__name__)
 
 
 def hash_invite_code(code: str) -> str:
@@ -34,6 +37,35 @@ def generate_invite_code() -> str:
     return f"{raw[:4]}-{raw[4:]}"
 
 
+class PlanLimitError(Exception):
+    """A workspace tier has no room for what was asked for.
+
+    Defined here and re-exported from `app.services.ai.scenario` so the managers
+    — which sit below the service layer — and the services can raise the same
+    type without importing each other.
+    """
+
+
+async def _member_limit_reason(tenant_id: int) -> str | None:
+    """Why this workspace cannot take another member, or None."""
+    from app.services.tenancy.limits import check_member_limit
+
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None:
+        return None
+    return await check_member_limit(tenant)
+
+
+async def _channel_limit_reason(tenant_id: int) -> str | None:
+    """Why this workspace cannot bind another chat, or None."""
+    from app.services.tenancy.limits import check_channel_limit
+
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None:
+        return None
+    return await check_channel_limit(tenant)
+
+
 class TenantManager(BaseManager["Tenant"]):
     def __init__(self):
         from ..tenant import Tenant
@@ -48,10 +80,15 @@ class TenantManager(BaseManager["Tenant"]):
         existing = await self.get_by_slug(slug)
         if existing is not None:
             return existing
+        # `plan` is a tier, and this workspace used to be created as the
+        # non-tier "owner". It is `business` rather than the default `pro`
+        # because it is the operator's own workspace and is expected to hold
+        # every legacy source: an operator hitting "maximum 20 sources" on a
+        # fresh install would read it as a bug, not a plan.
         return await self.create(
             name="Owner workspace",
             slug=slug.strip().lower(),
-            plan="owner",
+            plan="business",
             daily_cost_limit=5.0,
             max_sources=100,
         )
@@ -75,22 +112,40 @@ class TenantUserManager(BaseManager["TenantUser"]):
     async def add_member(
         self, *, tenant_id: int, channel: str, external_user_id: str, role: str = "owner"
     ) -> TenantUser | None:
+        """Bind a messenger identity (a chat participant) to a workspace.
+
+        No tier check here, unlike `add_web_member`, and that asymmetry is
+        deliberate: the team quota counts seats in the web console, not people
+        who messaged the bot. The workspace owner talking to their own agent is
+        the product, not an extra seat — charging for it would make the free
+        tier unusable for the thing it exists for.
+        """
         existing = await self.get(tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id))
         if existing is not None:
             if not existing.is_active or existing.role != role:
                 return await self.update_by_id(existing.id, is_active=True, role=role)
             return existing
+
         return await self.create(
             tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role=role
         )
 
     async def add_web_member(self, *, tenant_id: int, user_id: int, role: str = "owner") -> "TenantUser | None":
-        """Web membership: same row, but bound to the `users` table via user_id."""
+        """Web membership: same row, but bound to the `users` table via user_id.
+
+        This is the path that consumes a team seat, so this is where the tier is
+        enforced — which is also the path invite redemption takes.
+        """
         existing = await self.get(tenant_id=tenant_id, user_id=user_id)
         if existing is not None:
             if not existing.is_active or existing.role != role:
                 return await self.update_by_id(existing.id, is_active=True, role=role)
             return existing
+
+        blocked = await _member_limit_reason(tenant_id)
+        if blocked:
+            raise PlanLimitError(blocked)
+
         return await self.create(
             tenant_id=tenant_id, channel=WEB_CHANNEL, external_user_id=str(user_id), user_id=user_id, role=role
         )
@@ -173,6 +228,11 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
 
         Idempotent per membership: an existing (even re-activated) member does
         not burn another use of the code.
+
+        A workspace at its tier's team limit answers `no_seat` rather than
+        raising: the invite is a *page* in the web flow, and turning a quota
+        breach into an exception here would surface as a 500 on a form the
+        person already filled in correctly.
         """
         invite = await self._valid_invite(code)
         if invite is None:
@@ -182,7 +242,14 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
         if member is not None and member.is_active:
             return {"status": "already", "tenant_id": invite.tenant_id}
 
-        await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role=invite.role)
+        try:
+            await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role=invite.role)
+        except PlanLimitError as e:
+            # The code is not burned: the seat may free up, and this person
+            # should be able to redeem the same code once it does.
+            logger.info("Invite for tenant %s refused by tier: %s", invite.tenant_id, e)
+            return {"status": "no_seat", "reason": str(e)}
+
         await self.update_by_id(invite.id, used_count=invite.used_count + 1)
         return {"status": "bound", "tenant_id": invite.tenant_id, "role": invite.role}
 
@@ -204,6 +271,13 @@ class TenantChannelManager(BaseManager["TenantChannel"]):
             if not existing.is_active or existing.kind != kind:
                 return await self.update_by_id(existing.id, is_active=True, kind=kind)
             return existing
+
+        # Only a genuinely new binding consumes quota. Re-binding a chat this
+        # workspace already owns (onboarding, invite redemption) returns above.
+        blocked = await _channel_limit_reason(tenant_id)
+        if blocked:
+            raise PlanLimitError(blocked)
+
         return await self.create(tenant_id=tenant_id, channel=channel, chat_id=str(chat_id), kind=kind)
 
     async def digest_targets(self, tenant_id: int) -> list["TenantChannel"]:

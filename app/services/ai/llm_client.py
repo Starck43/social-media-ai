@@ -40,6 +40,27 @@ def _cap_text(m: LLMModel) -> bool:
     return m.model_type in ("text", "image")  # image-capable models also handle text
 
 
+async def _allowed_model_types() -> Optional[set[str]]:
+    """Model types the ambient workspace's tier may use, or None when unfiltered.
+
+    `starter` buys text, so an image model in the global fleet must not be chosen
+    for it — the tier is a promise about what is billed, and routing a `starter`
+    workspace to a vision model breaks it. Returns None (allow everything) when
+    no workspace is in scope, so operator-level calls and seeding still work.
+    """
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.tenant_manager import tenants
+
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        return None
+    tenant = await tenants.get(id=tenant_id)
+    if tenant is None:
+        return None
+    allowed = tenant.plan_limits().get("model_types")
+    return None if allowed is None else set(allowed)
+
+
 # ──────────────────────────────────────────────────────────────
 # Base client
 # ──────────────────────────────────────────────────────────────
@@ -387,7 +408,13 @@ async def chat_with_fallback(
 ) -> dict[str, Any]:
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
-    text_models = [m for m in models if _cap_text(m)]
+    allowed_types = await _allowed_model_types()
+    text_models = [m for m in models if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types)]
+    if not text_models and allowed_types is not None:
+        # The tier's fleet is empty. Say so instead of raising "No LLM models
+        # available", which would send the operator looking at the LLM console
+        # for a model that is there and simply not part of this plan.
+        logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
     text_models.sort(key=lambda m: (not m.provider.is_default, m.id))
 
     last_err: Optional[Exception] = None
@@ -415,10 +442,18 @@ async def resolve_model() -> Optional[LLMModel]:
         logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
 
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.is_default.desc(), LLMModel.id))
+    # An explicit AGENT_MODEL is honoured even on a tier that does not include
+    # its type: it is an operator's deliberate override of the runtime, and a
+    # blank env var must not turn into "no model at all". The automatic choice
+    # below is filtered.
+    allowed_types = await _allowed_model_types()
     for m in models:
-        if _cap_text(m):
+        if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types):
             return m
-    logger.error("No active text LLM model available")
+    if allowed_types is None:
+        logger.error("No active text LLM model available")
+    else:
+        logger.error("No active LLM model of type %s available for this workspace's tier", sorted(allowed_types))
     return None
 
 

@@ -172,6 +172,17 @@ async def invite_submit(request: Request, code: str = Form(...), token: str = Fo
             error="Код не найден, истёк или уже использован",
             needs_workspace=not request.state.memberships,
         )
+    if result["status"] == "no_seat":
+        # The workspace is at its tier's team limit. Said as a page, not a 500:
+        # the code was valid and the person is already signed in, so there is
+        # nothing for them to fix but wait for a seat.
+        return render(
+            request,
+            "web/invite.html",
+            status_code=409,
+            error=result["reason"],
+            needs_workspace=not request.state.memberships,
+        )
     request.session["app_tenant_id"] = result["tenant_id"]
     add_flash(request, "success", "Вы присоединены к workspace.")
     return RedirectResponse("/app/", status_code=302)

@@ -159,6 +159,20 @@ async def _add_task(
         # Checked before the insert: a rejected source must not leave a task
         # behind that silently runs "all active sources".
         await _check_task_sources(parsed_source_ids, tenant_id)
+
+        # The workspace tier caps how many scheduled tasks it may hold. The CLI
+        # is an operator surface, so it is still the tier that answers — not an
+        # "administrators may exceed the quota" escape hatch.
+        if tenant_id:
+            from app.models.managers.tenant_manager import tenants
+            from app.services.tenancy.limits import check_task_limit
+
+            tenant_row = await tenants.get(id=tenant_id)
+            if tenant_row is not None:
+                blocked = await check_task_limit(tenant_row)
+                if blocked:
+                    rprint(f"[red]{blocked}[/red]")
+                    raise typer.Exit(1)
         # `@once` is not a croniter expression, so it gets a near-term fire time
         # (same rule as the web form) instead of going through next_run_at().
         if cron.strip() == "@once":

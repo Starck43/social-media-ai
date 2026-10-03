@@ -123,7 +123,9 @@ async def test_good_command_without_assistant_message_is_noop():
 
 @pytest.fixture
 async def workspace():
-    tenant = await Tenant.objects.create(name=f"Learn WS {_uniq()}", slug=f"learn-{_uniq()}", plan="personal")
+    # `pro`, not a tier of its own: learning is included from Pro up, and the
+    # tier is a real CHECK-constrained value rather than a free-text label.
+    tenant = await Tenant.objects.create(name=f"Learn WS {_uniq()}", slug=f"learn-{_uniq()}", plan="pro")
     yield tenant
     await Tenant.objects.delete_by_id(tenant.id)
 

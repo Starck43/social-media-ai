@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 import app.services.social.base as base_module
+from app.services.social.credentials import AuthorizationRequired
 from app.services.social.vk_client import VKClient
 
 
@@ -186,15 +187,108 @@ async def test_user_mode_uses_only_user_token(creds, stub_collector):
     assert seen == ["USR"]
 
 
-async def test_user_mode_without_user_token_returns_empty(creds, stub_collector):
+async def test_user_mode_without_user_token_raises_authorization_required(creds, stub_collector):
+    """L2 requested, nobody authorized → say so instead of faking an empty run.
+
+    Returning `[]` here made a misconfigured owner indistinguishable from a
+    quiet wall: the job reported "collected, 0 items" and the operator only
+    noticed days later, in a digest. The typed error is what the sources page
+    and the job result turn into a one-click fix.
+    """
     creds.service, creds.user = "SVC", None
     seen = stub_collector()
 
     client = VKClient(_Platform())
-    result = await client.collect_data(_source(params={"mode": "user"}))
+    with pytest.raises(AuthorizationRequired) as ei:
+        await client.collect_data(_source(params={"mode": "user"}))
 
-    assert result == []
+    assert "личный токен" in str(ei.value)
+    assert ei.value.hint, "the error must tell the user what to do next"
     assert seen == []
+
+
+# --------------------------------------------------------------------------- #
+# L2 IP-binding refresh-once
+# --------------------------------------------------------------------------- #
+
+_IP_ERROR = "Ошибка API (5): User authorization failed: access_token was given to another ip address"
+
+
+def _stub_refresh(monkeypatch, *, fresh_token="USR_FRESH", fail=False):
+    """Stub `refresh_user_token` (lives in vk_oauth, imported lazily in the client).
+
+    Records calls and returns `fresh_token`, or None when `fail` is set (refresh
+    itself could not renew the token).
+    """
+    calls = []
+
+    async def fake_refresh(user_id):
+        calls.append(user_id)
+        return None if fail else fresh_token
+
+    import app.services.social.vk_oauth as vk_oauth_module
+
+    monkeypatch.setattr(vk_oauth_module, "refresh_user_token", fake_refresh)
+    return calls
+
+
+def _stub_owner(monkeypatch, owner=1):
+    """`resolve_source_owner` resolves a real `users.id`; stub it so L2 refresh
+    has a concrete owner to renew (the client re-resolves it on every run, so
+    setting `client._token_owner` by hand is not enough)."""
+    import app.services.social.vk_client as vk_client_module
+
+    async def fake(source):
+        return owner
+
+    monkeypatch.setattr(vk_client_module, "resolve_source_owner", fake)
+
+
+async def test_auto_refreshes_stale_l2_token_and_retries(creds, stub_collector, monkeypatch):
+    """L1 fails, L2 token is IP-bound to a foreign address → refresh and retry once."""
+    creds.service, creds.user = "SVC", "USR"
+    _stub_owner(monkeypatch, owner=1)
+    refresh_calls = _stub_refresh(monkeypatch, fresh_token="USR_FRESH")
+    # L1 fails, the stale L2 token fails with the IP error, the refreshed one succeeds.
+    seen = stub_collector(fail_tokens=("SVC", "USR"), return_items=[{"id": "1"}], error_msg=_IP_ERROR)
+
+    client = VKClient(_Platform())
+    items = await client.collect_data(_source())
+
+    assert [i["id"] for i in items] == ["1"]
+    assert seen == ["SVC", "USR", "USR_FRESH"]
+    assert refresh_calls == [1]  # forced once
+
+
+async def test_auto_surfaces_error_when_refresh_fails(creds, stub_collector, monkeypatch):
+    """Refresh-once must not loop forever: if renewal fails, the IP error surfaces."""
+    creds.service, creds.user = "SVC", "USR"
+    _stub_owner(monkeypatch, owner=1)
+    refresh_calls = _stub_refresh(monkeypatch, fail=True)
+    seen = stub_collector(fail_tokens=("SVC", "USR"), error_msg=_IP_ERROR)
+
+    client = VKClient(_Platform())
+    with pytest.raises(RuntimeError) as ei:
+        await client.collect_data(_source())
+
+    assert "5" in str(ei.value)
+    assert seen == ["SVC", "USR"]  # no retry without a fresh token
+    assert refresh_calls == [1]
+
+
+async def test_auto_no_refresh_on_non_ip_error(creds, stub_collector, monkeypatch):
+    """Only the IP-binding wording triggers a refresh; other L2 errors don't."""
+    creds.service, creds.user = "SVC", "USR"
+    _stub_owner(monkeypatch, owner=1)
+    refresh_calls = _stub_refresh(monkeypatch)
+    seen = stub_collector(fail_tokens=("SVC", "USR"), error_msg="Ошибка API (5): auth failed")
+
+    client = VKClient(_Platform())
+    with pytest.raises(RuntimeError):
+        await client.collect_data(_source())
+
+    assert seen == ["SVC", "USR"]
+    assert refresh_calls == []  # code 5, but not the IP-binding wording
 
 
 # --------------------------------------------------------------------------- #
@@ -207,3 +301,9 @@ def test_layer1_unavailable_matches_codes_15_and_5():
     assert VKClient._is_layer1_unavailable(RuntimeError("Ошибка API (5): auth failed"))
     assert not VKClient._is_layer1_unavailable(RuntimeError("Ошибка API (6): too many requests"))
     assert not VKClient._is_layer1_unavailable(RuntimeError("network timeout"))
+
+
+def test_is_ip_binding_error_matches_foreign_ip_wording():
+    assert VKClient._is_ip_binding_error(RuntimeError(_IP_ERROR))
+    assert not VKClient._is_ip_binding_error(RuntimeError("Ошибка API (5): auth failed"))
+    assert not VKClient._is_ip_binding_error(RuntimeError("Ошибка API (15): access denied"))

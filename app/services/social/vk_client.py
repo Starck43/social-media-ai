@@ -11,7 +11,7 @@ from typing import Any
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
-from app.services.social.credentials import resolve_token
+from app.services.social.credentials import AuthorizationRequired, resolve_token
 from app.services.social.owner import resolve_source_owner
 from app.types import SourceType
 from app.utils.date_parsing import to_unix_timestamp, universal_date_parser
@@ -104,7 +104,17 @@ class VKClient(BaseClient):
 			if mode == self.MODE_API or not self._is_layer1_unavailable(e):
 				raise
 			logger.info(f"VK L1 failed for source {source.id}: {e}; retrying with L2 (user token)")
-			items = await self._collect_with_kinds(source, content_type, ("user_token",))
+			try:
+				items = await self._collect_with_kinds(source, content_type, ("user_token",))
+			except AuthorizationRequired as auth_error:
+				# Both layers are unusable: L1 cannot see this source *and* nobody
+				# has authorized L2. That is one fact for the user, not two —
+				# the L1 error is kept in the message so the cause is not lost.
+				raise AuthorizationRequired(
+					f"{auth_error} ({e})",
+					platform=auth_error.platform,
+					hint=auth_error.hint,
+				) from e
 			if items:
 				return items
 			# L2 yielded nothing (e.g. no user token configured) - surface the
@@ -112,15 +122,58 @@ class VKClient(BaseClient):
 			raise
 
 	async def _collect_with_kinds(self, source: Source, content_type: str, kinds: tuple[str, ...]) -> list[dict]:
-		"""Run the shared collector with a specific token kind (L1/L2)."""
+		"""Run the shared collector with a specific token kind (L1/L2).
+
+		An L2 (user) token can go stale *before* it expires when the deployment's
+		IP changes: VK ID binds the access token to the IP it was issued on, so a
+		run from another address gets error 5 "another ip address" even though
+		the token is far from its expiry. Without a retry the source fails until
+		the next hourly renewal. So on a code-5 (IP binding) rejection of a user
+		token we force a refresh and retry exactly once — the new token is bound
+		to the current IP, which is what the failing request was missing.
+		"""
 		token = await resolve_token("vk", kinds=kinds, owner_user_id=self._token_owner)
 		if not token:
 			if kinds == ("user_token",):
-				logger.error(f"No VK user credential available for source {source.id} - collection skipped")
+				# L2 was requested and there is nobody authorized to provide it.
+				# Returning [] here made the source look "collected, just empty",
+				# so a misconfigured owner stayed invisible; this is the one case
+				# where the operator must be told rather than the run.
+				raise AuthorizationRequired(
+					f"Нужен личный токен ВКонтакте для источника {source.name}",
+					platform="vk",
+					hint="Подключите ВКонтакте в настройках, чтобы сбор через личный аккаунт заработал.",
+				)
+			logger.error(f"No VK service credential available for source {source.id} - collection skipped")
 			return []
 		self._access_token = token
 		logger.info(f"VK credential ready for source {source.id} (L2 user token)")
-		return await super().collect_data(source, content_type)
+		try:
+			return await super().collect_data(source, content_type)
+		except RuntimeError as e:
+			if kinds != ("user_token",) or not self._is_ip_binding_error(e) or self._token_owner is None:
+				raise
+			# The user token is bound to a foreign IP. Renew it (which binds it to
+			# the IP this request actually runs from) and retry once.
+			logger.info(f"VK L2 token rejected for source {source.id} ({e}); refreshing and retrying once")
+			from app.services.social.vk_oauth import refresh_user_token
+
+			refreshed = await refresh_user_token(self._token_owner)
+			if not refreshed:
+				raise
+			self._access_token = refreshed
+			return await super().collect_data(source, content_type)
+
+	@staticmethod
+	def _is_ip_binding_error(error: RuntimeError) -> bool:
+		"""True for VK error 5 whose text is the IP-binding rejection.
+
+		Code 5 alone is ambiguous (invalid/expired token also maps to 5), so the
+		message is narrowed to the "another ip address" wording — the one case a
+		refresh fixes. Anything else is left to fail so a real auth problem is not
+		masked by an unnecessary refresh.
+		"""
+		return "given to another ip address" in str(error)
 
 	@staticmethod
 	def _is_layer1_unavailable(error: RuntimeError) -> bool:

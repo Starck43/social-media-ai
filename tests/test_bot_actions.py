@@ -56,7 +56,6 @@ async def source(platform, scenario):
         name="Test Source",
         source_type=SourceType.CHANNEL,
         external_id="12345",
-        agent_scenario_id=scenario.id,
         is_active=True,
     )
     yield s
@@ -233,7 +232,7 @@ class TestAnalyzeHandler:
         )
 
         try:
-            stats = await handle_analyze({"source_ids": [source.id]})
+            stats = await handle_analyze({"source_ids": [source.id], "scenario_id": scenario.id})
             assert stats["sources"] == 1
             assert stats["actions_created"] >= 1
 
@@ -248,7 +247,7 @@ class TestAnalyzeHandler:
         """No analytics → no actions created."""
         from app.jobs.handlers import handle_analyze
 
-        stats = await handle_analyze({"source_ids": [source.id]})
+        stats = await handle_analyze({"source_ids": [source.id], "scenario_id": scenario.id})
         assert stats["sources"] == 1
         assert stats["actions_created"] == 0
 
@@ -269,7 +268,7 @@ class TestAnalyzeHandler:
         )
 
         try:
-            stats = await handle_analyze({"source_ids": [source.id]})
+            stats = await handle_analyze({"source_ids": [source.id], "scenario_id": scenario.id})
             assert stats["actions_created"] == 0
         finally:
             await AIAnalytics.objects.delete_by_id(analytics.id)

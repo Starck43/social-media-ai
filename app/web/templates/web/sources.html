@@ -34,6 +34,20 @@
                     Выйти из аккаунта ВК
                 </button>
             </form>
+            {% elif vk_l2.state == "expired" %}
+            {# An expired token is not the same as never having connected: it
+               needs a re-auth, and saying so is the whole point of the state.
+               Without this branch the user just sees the login button and no
+               reason to press it. #}
+            <span class="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1.5 text-sm text-amber-300"
+                  title="Персональный токен истёк — авторизуйтесь заново, чтобы сбор продолжил работать">
+                {{ vk_l2.label }}
+            </span>
+            <a href="/app/vk/oauth"
+               title="Авторизуйте VK-приложение заново, чтобы обновить персональный токен (L2)"
+               class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
+                Войти через VK ID
+            </a>
             {% else %}
             <a href="/app/vk/oauth"
                title="Авторизуйте VK-приложение, чтобы включить сбор через персональный токен (L2)"

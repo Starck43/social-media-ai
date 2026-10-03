@@ -142,6 +142,8 @@ class BotTriggerType(DatabaseEnum, Enum):
 class AnalyzeType(DatabaseEnum, Enum):
     THEMES = "themes"
     DAYS = "days"
+    SOURCES = "sources"
+    MONITORED_USERS = "monitored_users"
 
 
 @database_enum

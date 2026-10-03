@@ -12,7 +12,7 @@ Covers the three promises this feature makes:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -64,8 +64,24 @@ def _collector(items, analyzer=None):
     return c
 
 
+class _Row:
+    """A stand-in for a saved AIAnalytics row.
+
+    Carries `summary_data["content_hashes"]` because that is the whole basis of
+    retirement: the collector drops exactly the raw items whose hash an
+    analysis really stored.
+    """
+
+    def __init__(self, hashes):
+        self.summary_data = {"content_hashes": list(hashes)}
+
+
 class _Analyzer:
-    """Records what it was asked to analyse; `result` decides if it saved."""
+    """Records what it was asked to analyse; `result` decides if it saved.
+
+    `result` is either None (nothing stored — the raw copy must survive) or a
+    list of `_Row`s, which a caller can narrow to simulate a partial analysis.
+    """
 
     def __init__(self, result=None):
         self.result = result
@@ -74,6 +90,13 @@ class _Analyzer:
     async def analyze_content(self, content, source, **kwargs):
         self.calls.append(list(content))
         return self.result
+
+
+def _saved(items):
+    """An analysis that stored every one of `items`."""
+    from app.services.ai.dedup import item_hash
+
+    return [_Row([item_hash(i) for i in items])]
 
 
 async def test_collect_without_inline_analysis_stages_raw_items(source):
@@ -90,17 +113,73 @@ async def test_collect_without_inline_analysis_stages_raw_items(source):
     assert all(r.run_id == 4242 for r in rows)
 
 
-async def test_inline_analysis_stages_nothing(source):
-    """Analysing in the same pass needs no staging — and does none."""
-    analyzer = _Analyzer(result=[object()])
-    c = _collector(_items(3), analyzer=analyzer)
+async def test_inline_analysis_stages_first_then_retires_what_it_saved(source):
+    """The raw copy is written *before* the analysis, dropped after it saved.
+
+    Staging used to be the alternative to analysing, so the one run that
+    actually called the LLM kept its batch in a local variable: a crashed
+    worker or an outage lost the content outright. Now the rows exist for the
+    whole call and go only once an analysis really stored their hashes.
+    """
+    items = _items(3)
+    analyzer = _Analyzer(result=_saved(items))
+    c = _collector(items, analyzer=analyzer)
 
     result = await c.collect_from_source(source, analyze=True, run_id=4242)
 
-    assert result["staged"] == 0
+    # The batch was written (3 rows reported), then retired by the save.
+    assert result["staged"] == 3
     assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0
     # The content still reached the analyser.
     assert len(analyzer.calls[0]) == 3
+
+
+async def test_rows_exist_while_the_analysis_is_still_running(source):
+    """The write happens *before* the LLM call, not after it."""
+    items = _items(3)
+    seen: dict = {}
+
+    class _SlowAnalyzer(_Analyzer):
+        async def analyze_content(self, content, source, **kwargs):
+            # Mid-call the raw copy must already be on disk.
+            seen["rows_during_call"] = len(await CollectedItem.objects.filter(source_id=source.id))
+            return await super().analyze_content(content, source, **kwargs)
+
+    c = _collector(items, analyzer=_SlowAnalyzer(result=None))
+
+    await c.collect_from_source(source, analyze=True, run_id=4242)
+
+    assert seen["rows_during_call"] == 3
+    # The analysis stored nothing, so the batch stays for a later attempt.
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 3
+
+
+async def test_inline_analysis_failure_keeps_the_raw_copy(source):
+    """A failed inline analysis must not cost us the only copy of the content."""
+    c = _collector(_items(3), analyzer=_Analyzer(result=None))
+
+    result = await c.collect_from_source(source, analyze=True, run_id=4242)
+
+    assert result["analytics_count"] == 0
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 3
+
+
+async def test_partial_analysis_retires_only_what_it_covered(source):
+    """Retiring by run would have eaten the days that never got analysed.
+
+    A three-day batch analysed one day at a time: the rows of the two days that
+    failed are still the only copy of that content, so they must survive.
+    """
+    items = _items(3)
+    covered = items[:1]
+    analyzer = _Analyzer(result=_saved(covered))
+    c = _collector(items, analyzer=analyzer)
+
+    await c.collect_from_source(source, analyze=True, run_id=4242)
+
+    rows = await CollectedItem.objects.filter(source_id=source.id)
+    assert len(rows) == 2
+    assert {r.text for r in rows} == {"пост номер 1", "пост номер 2"}
 
 
 async def test_run_carries_hashes_even_when_analysis_fails(source):
@@ -170,7 +249,6 @@ async def _task_with_scenario(job_type="analyze"):
         name=f"t_{uuid.uuid4().hex[:6]}",
         job_type=job_type,
         cron_expr="@once",
-        timezone="Europe/Moscow",
         payload={},
         agent_scenario_id=scenario.id,
         is_active=True,
@@ -191,7 +269,11 @@ async def test_analyze_retires_staged_rows_after_a_saved_analysis(source, monkey
 
     async def fake_analyze(self, content, source_, **kwargs):
         seen["count"] = len(content)
-        return [object()]
+        # A saved analysis reports the item hashes it covers — that is what the
+        # retirement keys on.
+        from app.services.ai.dedup import item_hash
+
+        return [_Row([item_hash(i) for i in content])]
 
     monkeypatch.setattr(analyzer_mod.AIAnalyzer, "analyze_content", fake_analyze)
     task, scenario = await _task_with_scenario()
@@ -229,3 +311,67 @@ async def test_failed_analysis_keeps_staged_rows(source, monkeypatch):
         await _T.objects.delete_by_id(task.id)
 
     assert len(await CollectedItem.objects.filter(source_id=source.id)) == 3
+
+
+async def test_retiring_one_source_leaves_the_others_alone(source):
+    """A job collects every source, so retirement must not sweep the workspace.
+
+    One collect run stages rows for several sources at the same `run_id`.
+    Retiring "the run" instead of "this source's analysed items" deleted the raw
+    copy of sources whose analysis never happened — the exact loss this table
+    exists to prevent.
+    """
+    other = await Source.objects.create(
+        platform_id=source.platform_id,
+        name="stage-src-2",
+        source_type=SourceType.CHANNEL.name,
+        external_id="stage-2",
+        is_active=True,
+    )
+    try:
+        c = _collector(_items(2))
+        # Same run for both sources: this is what one job does.
+        await c.collect_from_source(source, analyze=False, run_id=777)
+        await c.collect_from_source(other, analyze=False, run_id=777)
+        assert len(await CollectedItem.objects.filter(source_id=other.id)) == 2
+
+        from app.jobs.handlers import _retire_staged
+
+        items = _items(2)
+        removed = await _retire_staged(_saved(items), source.id)
+
+        assert removed == 2
+        assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0
+        # The neighbour's content is untouched.
+        assert len(await CollectedItem.objects.filter(source_id=other.id)) == 2
+    finally:
+        await CollectedItem.objects.filter(source_id=other.id).delete()
+        await Source.objects.delete_by_id(other.id)
+
+
+async def test_prune_sweeps_raw_content_nobody_analysed(source):
+    """The age sweep the table promises, wired to something for once.
+
+    `delete_older_than` existed from the start but was called from nowhere, so
+    "a failed analysis keeps the content" also meant "keeps it forever". The
+    ceiling on that has to be a job that actually runs.
+    """
+    from app.jobs.handlers import handle_prune
+
+    c = _collector(_items(2))
+    await c.collect_from_source(source, analyze=False, run_id=888)
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 2
+
+    # Nothing is old enough yet — a sweep must not eat fresh content.
+    fresh = await handle_prune({"staged_days": 7})
+    assert fresh["staged_deleted"] == 0
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 2
+
+    # Age the rows past the budget and the same job reclaims them.
+    await CollectedItem.objects.filter(source_id=source.id).update(
+        created_at=datetime.now(timezone.utc) - timedelta(days=30)
+    )
+    swept = await handle_prune({"staged_days": 7})
+
+    assert swept["staged_deleted"] == 2
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0

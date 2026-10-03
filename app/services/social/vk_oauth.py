@@ -75,6 +75,12 @@ def code_challenge(verifier: str) -> str:
 
 DEFAULT_EXPIRES_IN = 3600
 
+# How long before its expiry a VK user token is renewed proactively. The access
+# token lives one hour and the refresh token six months, so renewing early is
+# essentially free — while renewing late means a run can start with a token that
+# dies mid-request.
+_RENEW_MARGIN = timedelta(minutes=5)
+
 # Ephemeral authorization states live in the personal vault (`user_credentials`)
 # as short-lived rows: `kind="oauth_pending"`, `label=state` (queryable),
 # `secret_encrypted=code_verifier`, `expires_at=now+TTL`. This reuses the
@@ -259,6 +265,17 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
     """Refresh a user's VK user token from its stored refresh token.
 
     Returns the new access token, or None when there is nothing to refresh.
+
+    Two VK ID rules shape this function (see id.vk.ru → Refresh token):
+
+    - the **refresh token rotates** on every use, and the response carries a new
+      one. Keeping the previous value "just in case" is what turns a transient
+      network error into a lost session: a replayed refresh token makes VK
+      invalidate *every* token in the session, so the user has to log in again.
+    - an expired refresh token (180 days) cannot be renewed at all. A failure is
+      therefore recorded on the row (`meta.refresh_failed_at`) and then left
+      alone, rather than being retried on every collection run — the person has
+      to re-authorize, and the UI says so instead of pretending all is well.
     """
     from app.models.managers.user_credential_manager import user_credentials
     from app.utils.crypto import encrypt_secret
@@ -270,7 +287,7 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
     row = await user_credentials.newest(user_id=user_id, platform="vk", kind="user_token")
     if row is None:
         return None
-    meta = row.meta or {}
+    meta = dict(row.meta or {})
     refresh = meta.get("refresh_token")
     if not refresh:
         return None
@@ -291,15 +308,20 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
         data = await _post_form(payload)
     except Exception as exc:
         logger.warning("VK ID refresh failed for user %s: %s", user_id, exc)
+        await _mark_refresh_failed(user_credentials, row, meta)
         return None
 
     access = data["access_token"]
     expires_at = None
     if data.get("expires_in"):
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(data["expires_in"]))
-    meta["refresh_token"] = data.get("refresh_token") or refresh
+    # The rotated refresh token replaces the old one outright. Falling back to
+    # the spent value here would be the single most expensive line in this file
+    # — see the docstring.
+    meta["refresh_token"] = data.get("refresh_token") or ""
     if data.get("user_id"):
         meta["user_id"] = data.get("user_id")
+    meta.pop("refresh_failed_at", None)
 
     await user_credentials.update_by_id(
         row.id,
@@ -309,3 +331,38 @@ async def refresh_user_token(user_id: int) -> Optional[str]:
     )
     logger.info("VK ID user token refreshed for user %s", user_id)
     return access
+
+
+async def _mark_refresh_failed(user_credentials, row, meta: dict[str, Any]) -> None:
+    """Remember that renewal failed, so the UI can ask for a re-login.
+
+    Best-effort: this is a bookkeeping write on an already-failing path, so a
+    failure to record must not mask the original problem.
+    """
+    meta["refresh_failed_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        await user_credentials.update_by_id(row.id, meta=meta)
+    except Exception:  # noqa: BLE001 — bookkeeping must never raise
+        logger.warning("Could not record VK ID refresh failure for user %s", row.user_id, exc_info=True)
+
+
+async def renew_if_expiring(user_id: int, *, margin: timedelta = _RENEW_MARGIN) -> Optional[str]:
+    """Return a usable VK token, renewing it before it actually expires.
+
+    `resolve_token` only renews a token that has *already* aged out. That is late:
+    a collection run starting at 10:59 would take the token, and the request
+    landing at 11:00 would fail. Renewing a margin early costs nothing (the
+    refresh token is valid for months) and removes the race.
+    """
+    from app.models.managers.user_credential_manager import user_credentials
+
+    row = await user_credentials.newest(user_id=user_id, platform="vk", kind="user_token")
+    if row is None:
+        return None
+    expires_at = row.expires_at
+    if expires_at is None:
+        return None
+    moment = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+    if moment > datetime.now(timezone.utc) + margin:
+        return None
+    return await refresh_user_token(user_id)

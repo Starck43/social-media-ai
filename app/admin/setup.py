@@ -36,6 +36,17 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # templates.env.globals['include_sqladmin'] = lambda name: f"sqladmin/{name}"
 
 
+def _render_analysis(summary_data):
+    """Shared `summary_data` → display structure, used by the admin detail page.
+
+    The same helper the web UI (`/app/analytics/{id}`) renders through, so the
+    two surfaces extract and display the stored analysis identically.
+    """
+    from app.services.ai.analysis_render import render_analysis
+
+    return render_analysis(summary_data)
+
+
 def setup_admin(app):
     """Initialize SQLAdmin with all views."""
 
@@ -67,6 +78,7 @@ def setup_admin(app):
             "csrf_token": lambda: csrf_manager.generate_token(),
             "settings": settings,
             "debug": settings.DEBUG,
+            "render_analysis": _render_analysis,
         }
     )
 

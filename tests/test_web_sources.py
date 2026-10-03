@@ -246,25 +246,24 @@ async def test_a_source_without_collect_history_says_so():
             await _drop(user, tenant_id)
 
 
-async def test_vk_l2_badge_reflects_own_token():
-    """The sources page shows the caller's own VK L2 connection state.
+async def test_the_sources_page_does_not_push_the_vk_login():
+    """The sources page no longer carries a VK badge; Settings owns that state.
 
-    Connected (active, unexpired `vk/user_token`) renders the badge; no token
-    renders none — the button alone invites a first authorization.
+    What it must still get right is *silence*: with no source that needs a
+    personal token, nothing about VK is shown at all. A login button parked on
+    this page was noise for everyone whose collection works with the community
+    token alone.
     """
-    from datetime import datetime, timedelta, timezone
-
-    from app.models.managers.user_credential_manager import user_credentials
-
     client = await _client()
     user, tenant_id = await _register(client, "vkbadge")
     try:
         await _login(client, user.username)
 
+        from app.models.managers.user_credential_manager import user_credentials
+
         page = await client.get("/app/sources")
         assert page.status_code == 200
-        assert "Войти через VK ID" in page.text
-        assert "VK подключён" not in page.text
+        assert "Войти через VK ID" not in page.text
 
         await user_credentials.store(
             user_id=user.id,
@@ -275,15 +274,6 @@ async def test_vk_l2_badge_reflects_own_token():
         )
         page = await client.get("/app/sources")
         assert page.status_code == 200
-        assert "VK подключён" in page.text
-
-        await user_credentials.update_by_id(
-            (await user_credentials.newest(user_id=user.id, platform="vk", kind="user_token")).id,
-            expires_at=datetime.now(timezone.utc) - timedelta(days=1),
-        )
-        page = await client.get("/app/sources")
-        assert page.status_code == 200
-        assert "VK подключён" not in page.text
-        assert "Токен VK истёк" in page.text
+        assert "Войти через VK ID" not in page.text
     finally:
         await _drop(user, tenant_id)

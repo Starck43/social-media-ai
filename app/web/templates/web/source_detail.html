@@ -1,8 +1,8 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import connection_badge, empty_state %}
 {% block title %}{% if source %}{{ source.name }}{% else %}Источник не найден{% endif %} — AI Monitor{% endblock %}
 {% block content %}
 {% if not source %}
-    {% from "web/_macros.html" import empty_state %}
     {{ empty_state("Источник не найден или принадлежит другому workspace.", height="h-64") }}
     <div class="mt-4 text-center">
         <a href="/app/sources" class="text-sm text-cyan-400 hover:underline">К списку источников</a>
@@ -97,6 +97,21 @@
                         <dt class="text-xs uppercase tracking-wider text-slate-500">Чей токен</dt>
                         <dd class="mt-1 text-slate-300">{{ owner_label }}</dd>
                         <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ owner_hint }}</p>
+                        {# The owner's own connection, right where the operator is
+                           already asking "why is this one silent?". A token that
+                           renews itself says so explicitly — otherwise an hourly
+                           expiry reads as a problem and trains people to re-login. #}
+                        {# The badge is the fix when there is one: `fix_href` is empty
+                           for a healthy or self-renewing token, so it stays inert
+                           rather than inviting a click that would do nothing. The
+                           link goes to the connections tab, which is where the
+                           manual form lives and where every platform is explained. #}
+                        {% if owner_connection %}
+                            {{ connection_badge(owner_connection, '/app/settings?tab=connections' if owner_connection.needs_action else '') }}
+                            {% if owner_connection.detail %}
+                                <p class="mt-1 text-xs text-slate-500">{{ owner_connection.detail }}</p>
+                            {% endif %}
+                        {% endif %}
                     </div>
                 {% endif %}
                 {% if monitored_users %}
@@ -301,7 +316,7 @@
                                     {% elif c["staged_total"] %}
                                         <span class="text-xs text-slate-500">разобрано, ждёт анализа</span>
                                     {% else %}
-                                        <span class="text-xs text-slate-600" title="разобрано анализом — сырые записи убраны">
+                                        <span class="text-xs text-slate-600" title="сырые записи убраны: анализ их разобрал и сохранил">
                                             —
                                         </span>
                                     {% endif %}
@@ -351,7 +366,9 @@
                     <tbody>
                         {% for a in recent %}
                             <tr class="border-b border-slate-800/60 last:border-0">
-                                <td class="py-2.5 pr-4 text-slate-300">{{ a.analysis_date }}</td>
+                                <td class="py-2.5 pr-4 text-slate-300">
+                                    <a href="/app/analytics/{{ a.id }}" class="text-cyan-400 hover:underline">{{ a.analysis_date }}</a>
+                                </td>
                                 <td class="py-2.5 pr-4 text-slate-400">
                                     {% if a.main_topics %}
                                         <span class="line-clamp-1">{{ a.main_topics | join(", ") }}</span>

@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from app.services.social.credentials import AuthorizationRequired
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,29 +77,34 @@ def _task_payload(task) -> dict[str, Any]:
 ANALYZE_STAGE_BATCH = 100
 
 
-async def _retire_staged(run_ids: set[int]) -> int:
-    """Drop the raw rows of runs whose analysis has now saved a result.
+async def _retire_staged(analytics: Any, source_id: int) -> int:
+    """Drop the raw rows whose content these saved analyses actually cover.
 
-    Only ever called on the success path: rows belong to the run that fetched
-    them, so retiring by run clears exactly what has been dealt with.
+    Keyed on the stored item hashes rather than on the job that fetched them,
+    which is what makes the promise "the raw copy goes only after a successful
+    save" hold in the cases a run id cannot express: rows staged by an API or
+    CLI collection carry no job at all, and a partially successful analysis
+    covers only part of the batch.
+
+    Only ever called on the success path, and never raises — leftovers are swept
+    by the retention pass in `handle_prune`.
     """
     from app.core.database import new_session
     from app.models import CollectedItem
+    from app.services.ai.dedup import analysed_hashes
 
-    if not run_ids:
+    hashes = analysed_hashes(analytics)
+    if not hashes:
         return 0
-    removed = 0
     session = new_session()
     try:
         async with session.begin():
-            for run_id in run_ids:
-                removed += await CollectedItem.objects.delete_for_run(session, run_id)
+            return await CollectedItem.objects.delete_hashes(session, source_id, hashes)
     except Exception as e:  # noqa: BLE001 — leftovers are swept by the retention pass
-        logger.warning(f"Could not retire staged rows for runs {sorted(run_ids)}: {e}")
+        logger.warning(f"Could not retire staged rows of source {source_id}: {e}")
         return 0
     finally:
         await session.close()
-    return removed
 
 
 async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
@@ -126,14 +133,14 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     # can be retired once an analysis has consumed it.
     run_id = payload.get("job_id")
     # Whether this task wants its freshly collected content analysed right away.
-    # Default True keeps the existing "collect and analyse in one pass" shape:
-    # the analyser holds the items and records its own hashes, so staging them
-    # would cost an insert and a delete per run for nothing. Set
-    # `analyze_inline: false` to park the raw content instead, for a separate
-    # analyze step to pick up — that is the only case that writes rows.
+    # Default False: a `collect` task parks the raw batch in `collected_items`
+    # for a separate `analyze` task to drain (the workspace ships collect and
+    # analyze as two tasks). Set `analyze_inline: true` to collect and analyse
+    # in one pass — that case stages first and retires the rows the analysis
+    # actually stored.
     analyze_inline = task_payload.get("analyze_inline")
     if analyze_inline is None:
-        analyze_inline = payload.get("analyze_inline", True)
+        analyze_inline = payload.get("analyze_inline", False)
 
     sources = await _resolve_sources(task, payload)
 
@@ -183,7 +190,15 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             if monitored_users:
                 result = await collector.collect_monitored_users(
-                    source, analyze=True, monitored_users=monitored_users, force_reanalyze=force_reanalyze
+                    source,
+                    # Same `analyze_inline` decision and same run id as the
+                    # single-source branch below. This one hardcoded
+                    # `analyze=True` and dropped `run_id`, so its raw copy could
+                    # be neither written nor retired later.
+                    analyze=bool(analyze_inline),
+                    monitored_users=monitored_users,
+                    force_reanalyze=force_reanalyze,
+                    run_id=run_id,
                 )
                 items = (result or {}).get("total_items", 0)
                 new_items = (result or {}).get("total_new_items", 0)
@@ -245,8 +260,13 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     "name": source.name,
                     "items": 0,
                     "new_items": 0,
-                    "outcome": "error",
+                    # `auth_required` is its own outcome: it is not a broken
+                    # source, it is a missing authorization, and the fix is one
+                    # click on a different page. Flattening it into "error" is
+                    # what made this invisible for so long.
+                    "outcome": "auth_required" if isinstance(e, AuthorizationRequired) else "error",
                     "analyzed": 0,
+                    "auth_hint": getattr(e, "hint", "") if isinstance(e, AuthorizationRequired) else "",
                 }
             )
     return stats
@@ -278,15 +298,39 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
-    """Retention: trim old finished jobs (default: older than 7 days)."""
+    """Retention: trim old finished jobs (default: older than 7 days).
+
+    Also sweeps raw content nobody ever analysed. `collected_items` is a
+    write-ahead copy, so a collection whose analysis keeps failing (or a run
+    with no job behind it, whose `run_id` is NULL) would keep its rows for
+    ever; this is the ceiling on that. The sweep the table's own docstrings
+    promise was never wired to anything — without it, "a failed analysis keeps
+    the content" quietly becomes "keeps it until the disk fills".
+    """
     from datetime import datetime, timedelta, timezone
 
-    from app.models import Job
+    from app.core.database import new_session
+    from app.models import CollectedItem, Job
 
     days = int(payload.get("days", 7))
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     deleted = await Job.objects.filter(status__in=["done", "failed"]).filter(Job.created_at < cutoff).delete()
-    return {"deleted": deleted}
+
+    # Unanalysed raw content: same age budget as the job history. Raw text is
+    # kept only while an analysis might still want it, so `staged_days` follows
+    # `days` unless the task says otherwise.
+    staged_days = int(payload.get("staged_days", days))
+    staged_deleted = 0
+    session = new_session()
+    try:
+        async with session.begin():
+            staged_deleted = await CollectedItem.objects.delete_older_than(session, staged_days)
+    except Exception as e:  # noqa: BLE001 — a sweep failure must not fail the prune
+        logger.warning(f"Could not sweep stale collected_items: {e}")
+    finally:
+        await session.close()
+
+    return {"deleted": deleted, "staged_deleted": staged_deleted, "staged_days": staged_days}
 
 
 async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
@@ -346,13 +390,14 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 stats["skipped"] += 1
                 continue
 
-            # Drain whatever the collect task staged for this source.
+            # Drain whatever the collect run staged for this source.
             #
-            # A collect run set to `analyze_inline: false` parks the raw batch in
-            # `collected_items` instead of analysing it; this is where that work
-            # gets paid for. The rows are retired only after an analysis has
-            # actually saved something — a failed analysis leaves them for the
-            # next attempt rather than dropping the only copy of the content.
+            # Every collection writes its raw batch first; this is where a run
+            # with `analyze_inline: false` gets that work paid for. The rows are
+            # retired by the hashes the analysis actually stored, so a partial
+            # result keeps the unanalysed rows and a failed analysis leaves
+            # every one of them for the next attempt — the only copy of the
+            # content must never be the thing we drop.
             try:
                 staged = await CollectedItem.objects.for_source(source.id, limit=ANALYZE_STAGE_BATCH)
                 if staged:
@@ -360,9 +405,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
                     items = [row.as_agent_item() for row in staged]
                     fresh = await AIAnalyzer().analyze_content(items, source)
-                    if fresh:
-                        run_ids = {row.run_id for row in staged if row.run_id}
-                        deleted = await _retire_staged(run_ids)
+                    # Retire by what the analysis stored, not by the run the rows
+                    # came from: rows staged by an API/CLI run carry no run id at
+                    # all, and a partial analysis must leave the rest alone.
+                    deleted = await _retire_staged(fresh, source.id)
+                    if deleted:
                         logger.info(
                             f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}"
                         )

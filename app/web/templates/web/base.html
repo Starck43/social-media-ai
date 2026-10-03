@@ -82,6 +82,25 @@
             </div>
 
             <div class="flex items-center gap-3">
+                {# Personal connections needing action. Silent when everything is
+                   healthy: a badge that is always on stops being read, and this
+                   one would cry wolf every time an hourly token aged out. #}
+                {% if connection_alerts %}
+                    <a href="/app/settings?tab=connections"
+                       title="{{ connection_alerts | map(attribute='detail') | join(' · ') }}"
+                       class="flex items-center gap-2 rounded-lg border border-amber-700/60 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-200 hover:bg-amber-500/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                        </svg>
+                        <span class="hidden sm:inline">
+                            {% for alert in connection_alerts %}
+                                {{ alert.label }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </span>
+                        <span class="sm:hidden">Подключения</span>
+                    </a>
+                {% endif %}
+
                 <div x-data="notificationsBell()">
                     <button @click="open()"
                             title="Уведомления"

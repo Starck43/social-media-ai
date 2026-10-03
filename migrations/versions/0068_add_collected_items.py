@@ -5,10 +5,9 @@ and were then dropped: nothing could show *what* had been collected, and the
 only record of having seen an item was `ai_analytics`, which stays empty while
 analysis fails — so every re-run reported the whole wall as new again.
 
-This table is the staging area between the two. Rows are written only when a
-run will not analyse the batch immediately (an inline analysis has its own
-ledger in `ai_analytics.summary_data["content_hashes"]` and needs no staging),
-and are removed once an analysis has consumed them.
+This table is the write-ahead area between fetching and analysis. Rows are
+written by every collection, before the analysis runs, and are removed once an
+analysis has actually stored the matching content.
 
 Revision ID: 0068
 Revises: 0067

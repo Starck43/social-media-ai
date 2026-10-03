@@ -101,3 +101,106 @@ async def analytics_page(request: Request):
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
     )
+
+
+@router.get("/chains")
+async def analytics_chains(request: Request):
+    """All theme chains with a chronological retrospective per chain.
+
+    A chain groups the analyses of one ongoing theme/source/user over time.
+    This page lists every chain the workspace has and, for each, a timeline of
+    its analyses — the "удобный просмотр ретроспективы" the user asked for.
+    """
+    from app.models import AIAnalytics
+    from app.services.ai.topic_chain_service import TopicChainService
+
+    rows = await AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None)).order_by(
+        AIAnalytics.analysis_date
+    )
+    chain_data = TopicChainService().build_topic_chain(rows)
+
+    # Order chains by their latest analysis (most recent first).
+    chains = sorted(
+        chain_data.values(),
+        key=lambda ch: ch.get("date_range", {}).get("end") or "",
+        reverse=True,
+    )
+    return render(
+        request,
+        "web/analytics_chains.html",
+        section="analytics",
+        chains=chains,
+        total_chains=len(chains),
+    )
+
+
+@router.get("/chains/{chain_id}")
+async def analytics_chain_detail(request: Request, chain_id: str):
+    """One chain's full retrospective: a chronological timeline of analyses."""
+    from app.models import AIAnalytics
+    from app.services.ai.topic_chain_service import TopicChainService
+
+    rows = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date)
+    if not rows:
+        return render(request, "web/not_found.html", status_code=404)
+
+    chain_data = TopicChainService().build_topic_chain(rows).get(chain_id)
+    if chain_data is None:
+        chain_data = {"chain_id": chain_id, "evolution": [], "total_analyses": 0, "date_range": {}}
+
+    return render(
+        request,
+        "web/analytics_chain_detail.html",
+        section="analytics",
+        chain=chain_data,
+    )
+
+
+# Registered last so the static `/chains` routes win over the dynamic
+# `{analysis_id}` (a request to `/analytics/chains` must not be captured as an
+# analysis id — FastAPI would answer 422 instead of the chains page).
+@router.get("/{analysis_id}")
+async def analytics_detail(request: Request, analysis_id: int):
+    """One saved analysis, rendered from its stored summary_data.
+
+    This is the link the dashboard "Последние анализы" cards and the source
+    page rows point at, so a user can open a single result and read the AI
+    summary, topics, mood and statistics instead of hunting through the
+    aggregate page. Rendering reuses `analysis_render.render_analysis`, the
+    same helper the sqladmin detail template uses.
+    """
+    from app.models import AIAnalytics
+    from app.services.ai.analysis_render import render_analysis
+
+    row = await AIAnalytics.objects.select_related("source").get(id=analysis_id)
+    if row is None:
+        return render(request, "web/not_found.html", status_code=404)
+
+    display = render_analysis(row.summary_data or {})
+
+    # All analytics sharing this row's chain, for the "next/previous in chain"
+    # navigation and the retrospective timeline.
+    chain = []
+    if row.topic_chain_id:
+        chain = await AIAnalytics.objects.filter(topic_chain_id=row.topic_chain_id).order_by(
+            AIAnalytics.analysis_date
+        )
+        chain = [
+            {
+                "id": c.id,
+                "analysis_date": c.analysis_date,
+                "title": (c.summary_data or {}).get("analysis_title") or f"Анализ #{c.id}",
+            }
+            for c in chain
+        ]
+
+    return render(
+        request,
+        "web/analytics_detail.html",
+        section="analytics",
+        analysis=row,
+        display=display,
+        chain=chain,
+    )
+
+

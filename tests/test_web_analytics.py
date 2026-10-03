@@ -153,3 +153,90 @@ async def test_analytics_page_shows_real_data(client: AsyncClient) -> None:
         assert "актив" in resp.text or "юз." in resp.text
     finally:
         await _drop(user, tenant_id, source_id)
+
+
+async def test_analytics_detail_shows_single_analysis(client: AsyncClient) -> None:
+    """`/app/analytics/{id}` renders one analysis from its summary_data."""
+    user, tenant_id = await _register(client, "ad")
+    source_id = await _make_source(client, tenant_id, "Деталь источник")
+    analysis_id = None
+    try:
+        with tenant_scope(tenant_id):
+            a = await AIAnalytics.objects.create(
+                source_id=source_id,
+                analysis_date=date.today(),
+                period_type=PeriodType.DAILY,
+                topic_chain_id="src_1_scn_2_topic",
+                summary_data={
+                    "analysis_title": "Активность за 17 октября",
+                    "analysis_summary": "Ключевой вывод анализа",
+                    "multi_llm_analysis": {
+                        "text_analysis": {
+                            "main_topics": ["Тема A", "Тема B"],
+                            "overall_mood": "позитивное",
+                            "highlights": ["Заметный рост"],
+                            "sentiment_score": 0.9,
+                        }
+                    },
+                    "content_statistics": {"total_posts": 4, "total_reactions": 9, "active_users": 2},
+                },
+            )
+            analysis_id = a.id
+
+        await _login(client, user.username)
+        resp = await client.get(f"/app/analytics/{analysis_id}")
+        assert resp.status_code == 200
+
+        # The AI title, summary, topics and mood surface on the page.
+        assert "Активность за 17 октября" in resp.text
+        assert "Ключевой вывод анализа" in resp.text
+        assert "Тема A" in resp.text
+        assert "Тема B" in resp.text
+        assert "позитивное" in resp.text
+        # The chain link is present (the analysis belongs to one).
+        assert "/app/analytics/chains" in resp.text
+    finally:
+        await _drop(user, tenant_id, source_id)
+
+
+async def test_analytics_detail_404_for_unknown_id(client: AsyncClient) -> None:
+    user, tenant_id = await _register(client, "a4")
+    try:
+        await _login(client, user.username)
+        resp = await client.get("/app/analytics/99999999")
+        assert resp.status_code == 404
+    finally:
+        await _drop(user, tenant_id, None)
+
+
+async def test_analytics_chains_lists_chain_and_detail_shows_timeline(client: AsyncClient) -> None:
+    """`/app/analytics/chains` lists chains; the chain detail shows evolution."""
+    user, tenant_id = await _register(client, "ac")
+    source_id = await _make_source(client, tenant_id, "Цепочка источник")
+    try:
+        with tenant_scope(tenant_id):
+            for day_offset in (0, 1):
+                await AIAnalytics.objects.create(
+                    source_id=source_id,
+                    analysis_date=date.today() - timedelta(days=day_offset),
+                    period_type=PeriodType.DAILY,
+                    topic_chain_id="chain_abc",
+                    summary_data={
+                        "analysis_title": f"Анализ за день {day_offset}",
+                        "multi_llm_analysis": {"text_analysis": {"main_topics": ["Тема"]}},
+                    },
+                )
+
+        await _login(client, user.username)
+        resp = await client.get("/app/analytics/chains")
+        assert resp.status_code == 200
+        assert "chain_abc" in resp.text
+        assert "Цепочки тем" in resp.text
+
+        resp = await client.get("/app/analytics/chains/chain_abc")
+        assert resp.status_code == 200
+        assert "Анализ за день 0" in resp.text
+        assert "Анализ за день 1" in resp.text
+    finally:
+        await _drop(user, tenant_id, source_id)
+

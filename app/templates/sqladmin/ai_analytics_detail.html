@@ -144,11 +144,13 @@
 
 {% block content %}
 <div class="analytics-container">
+	{% set rendered = render_analysis(model.summary_data) if model.summary_data else {} %}
 	<div class="analytics-header">
 		<div>
 			<h1><i class="fa fa-chart-bar"></i> AI Аналитика #{{ model.id }}</h1>
 			<p class="text-muted">
-				Источник: <strong>{{ model.source.name if model.source else '—' }}</strong> | 
+				{% if rendered.get('analysis_title') %}{{ rendered.get('analysis_title') }} — {% endif %}
+				Источник: <strong>{{ model.source.name if model.source else '—' }}</strong> |
 				Дата: <strong>{{ model.analysis_date.strftime('%d.%m.%Y') if model.analysis_date else '—' }}</strong>
 			</p>
 		</div>
@@ -190,71 +192,78 @@
 	</div>
 
 	<!-- Content Statistics -->
-	{% if model.summary_data and model.summary_data.get('content_statistics') %}
+	{% set stats = rendered.get('content_statistics', {}) %}
+	{% if stats %}
 	<div class="section-card">
 		<h3 class="section-title"><i class="fa fa-chart-line"></i> Статистика контента</h3>
 		<div class="analytics-grid">
 			<div class="metric-card">
-				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_posts', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_posts', 0) }}</div>
 				<div class="metric-label">Постов</div>
 			</div>
 			<div class="metric-card">
-				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_reactions', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_reactions', 0) }}</div>
 				<div class="metric-label">Реакций</div>
 			</div>
 			<div class="metric-card">
-				<div class="metric-value">{{ model.summary_data.content_statistics.get('total_comments', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_comments', 0) }}</div>
 				<div class="metric-label">Комментариев</div>
 			</div>
 			<div class="metric-card">
-				{% set avg_reactions = model.summary_data.content_statistics.get('avg_reactions_per_post', 0) %}
-				{% set avg_reactions_num = avg_reactions | float if avg_reactions is not none and avg_reactions | string | length > 0 else 0.0 %}
-				<div class="metric-value">{{ "%.1f"|format(avg_reactions_num) }}</div>
+				<div class="metric-value">{{ "%.1f"|format(stats.get('avg_reactions_per_post', 0) | float) }}</div>
 				<div class="metric-label">Средняя вовлеченность</div>
 			</div>
 		</div>
 	</div>
 	{% endif %}
 
+	<!-- Analysis Summary -->
+	{% if rendered.get('analysis_summary') %}
+	<div class="section-card">
+		<h3 class="section-title"><i class="fa fa-file-text"></i> Сводка анализа</h3>
+		<div class="analysis-content">
+			<p style="white-space: pre-line; line-height: 1.6;">{{ rendered.get('analysis_summary') }}</p>
+		</div>
+	</div>
+	{% endif %}
+
 	<!-- Text Analysis Results -->
-	{% if model.summary_data and model.summary_data.get('multi_llm_analysis', {}).get('text_analysis') %}
-	{% set text_analysis = model.summary_data.multi_llm_analysis.text_analysis %}
+	{% if rendered.get('main_topics') or rendered.get('overall_mood') or rendered.get('highlights') or rendered.get('sentiment', {}).get('score') is not none %}
 	<div class="section-card">
 		<h3 class="section-title"><i class="fa fa-comments"></i> Анализ текста</h3>
 		<div class="analysis-content">
-			{% if text_analysis.get('main_topics') %}
+			{% if rendered.get('main_topics') %}
 			<h5>Главные темы:</h5>
 			<ul>
-				{% for topic in text_analysis.main_topics %}
+				{% for topic in rendered.get('main_topics') %}
 				<li>{{ topic }}</li>
 				{% endfor %}
 			</ul>
 			{% endif %}
 
-			{% if text_analysis.get('overall_mood') %}
-			<h5>Общее настроение:</h5>
-			<p>{{ text_analysis.overall_mood }}</p>
-			{% endif %}
-
-			{% if text_analysis.get('highlights') %}
-			<h5>Выделяющиеся моменты:</h5>
-			<ul>
-				{% for highlight in text_analysis.highlights %}
-				<li>{{ highlight }}</li>
-				{% endfor %}
-			</ul>
-			{% endif %}
-
-			{% if text_analysis.get('sentiment_score') is not none %}
-			<h5>Оценка тональности:</h5>
+			{% if rendered.get('sentiment', {}).get('score') is not none %}
+			<h5>Оценка тональности: {{ rendered.get('sentiment', {}).get('label') }}</h5>
 			<div class="progress" style="height: 30px;">
-				{% set score = text_analysis.sentiment_score %}
-				{% set score_num = score | float if score is not none and score | string | length > 0 else 0.0 %}
+				{% set score_num = rendered.get('sentiment', {}).get('score', 0.0) | float %}
 				<div class="progress-bar bg-success" role="progressbar"
 					 style="width: {{ (score_num * 100)|round(1) }}%">
 					{{ "%.1f"|format(score_num * 100) }}%
 				</div>
 			</div>
+			{% endif %}
+
+			{% if rendered.get('overall_mood') %}
+			<h5>Общее настроение:</h5>
+			<p>{{ rendered.get('overall_mood') }}</p>
+			{% endif %}
+
+			{% if rendered.get('highlights') %}
+			<h5>Выделяющиеся моменты:</h5>
+			<ul>
+				{% for highlight in rendered.get('highlights') %}
+				<li>{{ highlight }}</li>
+				{% endfor %}
+			</ul>
 			{% endif %}
 		</div>
 	</div>

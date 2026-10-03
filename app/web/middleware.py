@@ -16,6 +16,7 @@ The middleware stores `web_user`, `memberships`, `tenant` and `tenant_id` on
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 from jose import JWTError, jwt
@@ -29,6 +30,8 @@ from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 
 from .perms import WebPerms
+
+logger = logging.getLogger(__name__)
 
 # Pages reachable without an authenticated session.
 PUBLIC_PATHS = frozenset({"/app/login", "/app/register"})
@@ -56,6 +59,11 @@ class TenantUIMiddleware:
         request.state.tenant = None
         request.state.tenant_id = None
         request.state.unread_notifications = 0
+        # Personal platform connections this person must act on (see
+        # `app/services/social/connections.py`). Empty in a healthy setup, and
+        # the navbar renders nothing at all for an empty list — a permanent
+        # "connected" badge is noise that trains people to ignore badges.
+        request.state.connection_alerts = []
         # Built below once the active workspace is known; always set so
         # templates can call `perms.can(...)` unconditionally.
         request.state.web_perms = WebPerms(user, memberships)
@@ -88,6 +96,9 @@ class TenantUIMiddleware:
                         }
                     )
 
+        if user is not None:
+            request.state.connection_alerts = await self._connection_alerts(user.id)
+
         with tenant_scope(tenant_id):
             if tenant_id is not None:
                 try:
@@ -97,6 +108,17 @@ class TenantUIMiddleware:
                 except Exception:  # noqa: BLE001 — a badge must never break a page
                     request.state.unread_notifications = 0
             await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _connection_alerts(user_id: int) -> list:
+        """Connections this person must fix, or [] — a badge must never break a page."""
+        try:
+            from app.services.social.connections import statuses_needing_action
+
+            return await statuses_needing_action(user_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not resolve connection statuses for user %s", user_id, exc_info=True)
+            return []
 
     @staticmethod
     def _active_tenant_id(request: Request, memberships) -> int | None:

@@ -1,0 +1,63 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import card, empty_state, page_title %}
+{% block title %}Цепочка {{ chain.chain_id }} — AI Monitor{% endblock %}
+{% block content %}
+    {{ page_title("Цепочка тем", chain.chain_id) }}
+
+    <div class="mb-6 flex items-center gap-3 text-xs text-slate-400">
+        <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
+        <span>·</span>
+        <span>{{ chain.total_analyses }} анализ(ов)</span>
+        {% if chain.date_range.start %}
+            <span>·</span>
+            <span>{{ chain.date_range.start }} — {{ chain.date_range.end }}</span>
+        {% endif %}
+    </div>
+
+    {% if chain.evolution %}
+        <div class="relative space-y-0">
+            <div class="absolute bottom-2 left-4 top-2 w-px bg-slate-800"></div>
+            {% for step in chain.evolution %}
+                <div class="relative pl-12 pb-8">
+                    <span class="absolute left-2.5 top-1 h-3.5 w-3.5 rounded-full border-2 border-cyan-500 bg-slate-950"></span>
+                    <div>
+                        <p class="text-sm font-medium text-slate-200">
+                            {{ step.date }}
+                            {% if step.analysis_title %} — {{ step.analysis_title }}{% endif %}
+                        </p>
+                        {% if step.analysis_summary %}
+                            <p class="mt-2 text-sm leading-relaxed text-slate-400">{{ step.analysis_summary }}</p>
+                        {% endif %}
+                        {% if step.topics %}
+                            <div class="mt-2 flex flex-wrap gap-1.5">
+                                {% for t in step.topics %}
+                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        {% if step.metrics %}
+                            <div class="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                                <span>Постов: {{ step.metrics.total_posts }}</span>
+                                <span>Реакций: {{ step.metrics.total_reactions }}</span>
+                                {% if step.metrics.sentiment_label %}
+                                    <span>Настроение: {{ step.metrics.sentiment_label }}</span>
+                                {% endif %}
+                                {% if step.metrics.toxicity_category %}
+                                    <span>Токсичность: {{ step.metrics.toxicity_category }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                        {% if step.source_info and step.source_info.source_id %}
+                            <a href="/app/sources/{{ step.source_info.source_id }}"
+                               class="mt-2 inline-block text-xs text-cyan-400 hover:underline">
+                                Источник #{{ step.source_info.source_id }}
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        {{ empty_state("В цепочке нет анализов.", height="h-40") }}
+    {% endif %}
+{% endblock %}

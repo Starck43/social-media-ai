@@ -68,12 +68,16 @@ class ContentCollector:
 		source: Source,
 		run_id: Optional[int],
 	) -> int:
-		"""Park a fetched batch in `collected_items` until an analysis takes it.
+		"""Park a fetched batch in `collected_items` as the durable copy.
 
-		Only called when the run will *not* analyse inline: an inline analysis
-		has the batch in hand and records its own ledger in
-		`ai_analytics.summary_data["content_hashes"]`, so writing it out first
-		would only cost an insert and a delete per run.
+		Called on *every* collection, analysis inline or not. Staging used to be
+		the alternative to analysing, which made the raw copy exist only in the
+		one case nobody wanted it in: a collect run that analysed inline kept
+		its batch in a local variable for the length of one LLM call, so a
+		crashed worker, a timeout or an outage left nothing behind. Written
+		first and deleted only once an analysis has saved a result, the table is
+		a write-ahead copy — which is the only reason it can promise "a failed
+		analysis keeps the content for a retry".
 
 		Returns the number of rows written. The run's hash ledger lives on the
 		call's result, not here, so it outlives the rows themselves.
@@ -122,6 +126,37 @@ class ContentCollector:
 			await session.close()
 		logger.info(f"Staged {written} raw items for source {source.id} (run {run_id})")
 		return written
+
+	async def _retire_staged(self, source: Source, analytics: list) -> int:
+		"""Drop the raw rows whose content these analyses have actually saved.
+
+		An `AIAnalytics` row carries `summary_data["content_hashes"]` — the items
+		it covers. Retiring by exactly those hashes is what makes "delete only
+		after a successful save" true rather than approximately true: an analysis
+		that covered one day of a three-day batch retires that day and leaves the
+		other two staged, instead of the whole batch being declared consumed.
+
+		Never raises: the rows left behind are swept by the retention pass.
+		"""
+		from app.core.database import new_session
+		from app.models import CollectedItem
+		from app.services.ai.dedup import analysed_hashes
+
+		hashes = analysed_hashes(analytics)
+		if not hashes:
+			return 0
+
+		session = new_session()
+		try:
+			async with session.begin():
+				removed = await CollectedItem.objects.delete_hashes(session, source.id, hashes)
+		except Exception as e:  # noqa: BLE001 — leftovers are swept by retention
+			logger.warning(f"Could not retire staged rows for source {source.id}: {e}")
+			return 0
+		finally:
+			await session.close()
+		logger.info(f"Retired {removed} analysed raw item(s) for source {source.id}")
+		return removed
 
 	async def collect_from_source(
 			self,
@@ -204,17 +239,23 @@ class ContentCollector:
 
 			hashes = [item_hash(item) for item in content]
 
-			# Run AI analysis if requested, otherwise stage the batch for a later
-			# one. An inline analysis already holds the items and records its own
-			# hashes, so writing them out first would buy nothing but inserts.
+			# Write the raw batch first, then analyse it.
+			#
+			# Order matters and it is the whole point: the staged rows are a
+			# write-ahead copy. While the LLM call runs (or fails, or the worker is
+			# killed) the content is on disk, so a later `analyze` run can pick it
+			# up. Rows are retired per the analyses that actually saved something,
+			# which is why a failed analysis leaves the batch staged for a retry.
+			staged = await self._stage_items(content, source, run_id)
+
 			analytics = None
-			staged = 0
 			if analyze and content:
 				analytics = await self.analyzer.analyze_content(
 					content, source, analyze_by=analyze_by, force_reanalyze=force_reanalyze
 				)
-			else:
-				staged = await self._stage_items(content, source, run_id)
+				await self._retire_staged(source, analytics)
+			# No analysis this run: the staged rows are the deliverable, left for
+			# the separate `analyze` step to drain.
 
 			await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
@@ -225,7 +266,9 @@ class ContentCollector:
 				"analyzed": analyze,
 				"analyze_by": analyze_by,
 				"analytics_count": len(analytics) if analytics else 0,
-				# Rows parked in `collected_items` awaiting an analysis.
+				# Rows written to `collected_items` this run. Still there if the
+				# analysis failed or is deferred — that is the honest count of the
+				# raw copy, not of what survived it.
 				"staged": staged,
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
@@ -311,7 +354,7 @@ class ContentCollector:
 		logger.info(f"Collection complete: {results}")
 		return results
 
-	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None, force_reanalyze: bool = False) -> dict:
+	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None, force_reanalyze: bool = False, run_id: Optional[int] = None) -> dict:
 		"""
 		Collect content from monitored users of a source.
 
@@ -325,6 +368,9 @@ class ContentCollector:
 			analyze: Whether to run AI analysis
 			monitored_users: Optional explicit username list (overrides params)
 			force_reanalyze: Bypass dedup and re-analyze everything
+			run_id: The collect run these rows belong to, so a later analysis
+				can retire exactly this batch. Without it the raw copy is
+				anonymous and only the age sweep can reclaim it.
 
 		Returns:
 			Dict with collection statistics
@@ -362,7 +408,9 @@ class ContentCollector:
 		}
 
 		for user in monitored_sources:
-			result = await self.collect_from_source(user, analyze=analyze, force_reanalyze=force_reanalyze)
+			result = await self.collect_from_source(
+				user, analyze=analyze, force_reanalyze=force_reanalyze, run_id=run_id
+			)
 			if result:
 				results["successful"] += 1
 				results["total_items"] += result["content_count"]

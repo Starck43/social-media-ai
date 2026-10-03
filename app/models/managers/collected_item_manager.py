@@ -123,16 +123,29 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         rows = await self.filter(source_id=source_id).values(CollectedItem.content_hash).rows()
         return {r[0] for r in rows if r and r[0]}
 
-    async def delete_for_run(self, session: Any, run_id: int) -> int:
-        """Retire the raw items of a run that analysis has consumed.
+    async def delete_hashes(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
+        """Retire the raw items whose content an analysis has actually saved.
 
-        Deliberately keyed on the run rather than on a per-row flag: a row is
-        dropped exactly when the run that fetched it succeeded. An analysis that
-        failed leaves every row of that run in place for a retry.
+        The precise counterpart to "analyse first, store the raw copy": the
+        caller passes the item hashes that ended up in
+        `ai_analytics.summary_data["content_hashes"]`, so a partial analysis
+        (one day of three failed) leaves exactly the unanalysed rows behind
+        instead of declaring the whole batch consumed.
+
+        Keyed on the hash rather than the run so it works for collections that
+        carry no job at all (API endpoints, `--src` on the CLI, the agent tool):
+        `run_id` is NULL there, and a NULL-keyed delete would either miss or
+        sweep unrelated rows.
         """
+        wanted = [h for h in dict.fromkeys(hashes) if h]
+        if not wanted:
+            return 0
         result = await session.execute(
-            sa_text(f"DELETE FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id"),
-            {"run_id": run_id},
+            sa_text(
+                f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
+                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)"
+            ),
+            {"source_id": source_id, "hashes": list(wanted)},
         )
         return int(result.rowcount or 0)
 

@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from .analytics import router as analytics_router
 from .auth import router as auth_router
 from .chat import router as chat_router
+from .connections import router as connections_router
 from .dashboard import router as dashboard_router
 from .digests import router as digests_router
 from .jobs import router as jobs_router
@@ -26,6 +27,7 @@ web_router.include_router(auth_router)
 web_router.include_router(analytics_router)
 web_router.include_router(dashboard_router)
 web_router.include_router(chat_router)
+web_router.include_router(connections_router)
 web_router.include_router(digests_router)
 web_router.include_router(jobs_router)
 web_router.include_router(notifications_router)

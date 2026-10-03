@@ -66,20 +66,22 @@ class TelegramClient(BaseClient):
 	async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
 		"""L2 pull: fetch messages newer than the watermark, then advance it.
 
-		A missing or revoked session is an error to log, not to raise: the job
-		reports the source as failed and the rest of the run continues.
+		A missing session raises `AuthorizationRequired`: the job reports the
+		source as failed, the rest of the run continues, and the operator gets
+		told why — as opposed to an empty list, which reads as "nothing new".
 		"""
+		from app.services.social.credentials import AuthorizationRequired
 		from app.services.social.owner import resolve_source_owner
 		from app.services.social.tg_session import build_client, load_session
 
 		owner_user_id = await resolve_source_owner(source)
 		session = await load_session(user_id=owner_user_id)
 		if session is None:
-			logger.error(
-				f"No Telegram MTProto session for source {source.id} - "
-				"run: python -m cli.main credentials login telegram --user <id>"
+			raise AuthorizationRequired(
+				f"Нужна Telegram-сессия для источника {source.name}",
+				platform="telegram",
+				hint="Подключите Telegram в настройках, чтобы читать закрытые чаты и историю.",
 			)
-			return []
 
 		params = source.params or {}
 		collection = params.get("collection") or {}
@@ -101,16 +103,21 @@ class TelegramClient(BaseClient):
 		try:
 			await client.connect()
 			if not await client.is_user_authorized():
-				logger.error(
-					f"Telegram MTProto session for source {source.id} is expired or revoked - "
-					"re-run: python -m cli.main credentials login telegram"
+				raise AuthorizationRequired(
+					f"Telegram-сессия источника {source.name} истекла или отозвана",
+					platform="telegram",
+					hint="Подключите Telegram заново в настройках.",
 				)
-				return []
 			entity = await self._resolve_entity(client, source)
 			if entity is None:
 				return []
 			async for message in client.iter_messages(entity, limit=limit, min_id=min_id, min_date=min_date):
 				messages.append(message)
+		except AuthorizationRequired:
+			# Raised above for an unauthorized session. It must survive the broad
+			# catch below: it is a fact the operator has to act on, not a glitch
+			# to log and turn into an empty pull.
+			raise
 		except Exception as e:  # noqa: BLE001 - one source must not sink the job
 			logger.error(f"Telegram L2 collection failed for source {source.id}: {e}", exc_info=True)
 			return []

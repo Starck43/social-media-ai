@@ -54,11 +54,52 @@ token is stored in the `meta` JSON of the `vk/user_token` row (see
 
 Rules: a vault row always beats the env variable; an expired row (`expires_at`
 in the past) is skipped with a warning — except a **VK user token**, which is
-transparently refreshed from its stored `refresh_token` before it is skipped
-(so L2 collection never fails just because the token aged out); a decryption
-failure is logged and treated as absent; the plaintext is never logged, never
-put into an LLM prompt and never echoed into a chat. Agent tools see
-`credential_status()` only.
+renewed from its stored `refresh_token` *before* it expires (`_RENEW_MARGIN`, see
+below) and never returned stale (so L2 collection never fails just because the
+token aged out); a decryption failure is logged and treated as absent; the
+plaintext is never logged, never put into an LLM prompt and never echoed into a
+chat. Agent tools see `credential_status()` only.
+
+### Connection states — `app/services/social/connections.py`
+
+One module answers "is this person authorized, and does it matter?", so no page
+re-derives "expired?" from a timestamp. `connection_status(platform, user_id)`
+returns a `ConnectionStatus` whose `needs_action` means *a human must press a
+button*:
+
+| State | Condition | `needs_action` |
+| --- | --- | --- |
+| `connected` | row present, not expired | no |
+| `renewable` | expired, but a `refresh_token` renews it silently | **no** |
+| `reauth` | no refresh token, or the last renewal failed | yes |
+| `missing` | never connected | yes |
+| `unconfigured` | the deployment has no app credentials | no |
+
+The distinction that matters is `renewable` vs `reauth`. VK access tokens live
+**1 hour** and are renewed automatically; showing «войдите заново» for that
+every hour is what pushed people to log out and re-authorize for no reason. A
+renewal failure is recorded as `meta.refresh_failed_at` and treated as `reauth`
+for `REFRESH_FAILURE_COOLDOWN` (6 h) — the UI then asks for a re-login instead of
+retrying a refresh token that is known to be spent.
+
+Consumers: the navbar (`TenantUIMiddleware` → `connection_alerts`, rendered only
+when non-empty), `/app/settings?tab=connections` (one card per platform),
+`/app/sources` (a per-row «Доступ» badge, plus a banner per blocked platform when
+one is actually blocked on this page), and `sources.py::_readiness` (a missing L2
+token is a named reason on the source page). All of them render through the
+`connection_badge` macro, so the tone→colour mapping lives in one place.
+`source_connection_status(source)` answers for the *owner*, not the caller, since
+a source may collect with a teammate's token; `source_connection_statuses()`
+answers for a whole page and memoises both the owner lookup and the status, so a
+list of sources sharing one token costs two queries rather than two per row.
+
+Two properties templates get for free instead of re-deriving them:
+`ConnectionStatus.fix_href` is empty unless the state needs action *and* the
+platform can be fixed, so a healthy or self-renewing badge is inert, and it points
+at the settings tab for a `manual` platform that has no authorize endpoint at all.
+
+Adding a platform is one `ConnectionSpec` row plus, for OAuth, a branch in
+`app/web/connections.py::connection_authorize`.
 
 ### Admin
 
@@ -196,13 +237,29 @@ require our bearer token. Security comes from a **signed `state`** — the state
 workspace and the PKCE verifier without any server-side session, and a forged or
 tampered state is rejected before any code is exchanged.
 
-Auto-refresh: VK access tokens age out, so when `resolve_token("vk", ...)` meets
-an expired `vk/user_token` it reads `meta.refresh_token` and calls VK's
-`access_token?grant_type=refresh_token`, then rewrites the vault row (access +
-rotated refresh + new `expires_at`). The L2 collector (`VKClient`,
-`Source.params["mode"] = "user"` or `auto`) never sees a stale token. A missing
-`app_id`/`client_secret` or refresh token just leaves the flow unchanged — the
-row is skipped with a warning, as before.
+Auto-refresh: VK access tokens age out in **1 hour** and cannot be extended, but
+each authorization also yields a **refresh token valid for 180 days** that is
+renewed silently. `resolve_token("vk", ...)` calls `renew_if_expiring()`, which
+renews ~5 minutes *before* the expiry rather than after it — a run that starts at
+10:59 would otherwise carry a token that dies mid-request.
+
+Two VK ID rules shape `refresh_user_token()`:
+
+- **the refresh token rotates.** The response carries a new one and the old value
+  stops working; VK invalidates *every* token in the session if a spent refresh
+  token is replayed. The rotated value therefore replaces the old one outright,
+  and a response without one stores `""` rather than keeping the spent token.
+- **a renewal failure is not retried silently.** It records
+  `meta.refresh_failed_at`, after which the connection reads as `reauth` for
+  `REFRESH_FAILURE_COOLDOWN` and the UI asks for a login. Re-posting a known-bad
+  refresh token is exactly what loses a working session.
+
+A missing `app_id` leaves the flow unchanged — the row is skipped with a warning,
+as before.
+
+Consequence for the product: **re-authorization is a ~6-monthly event, not a
+routine chore.** Anything in the UI that asks for a login more often than that is
+reporting a bug, not a fact.
 
 ## Source parameters
 
@@ -245,6 +302,39 @@ A repeated item is never analyzed (and paid for) twice —
 - Fail-open: any lookup/matching error analyzes the full batch — a dedup bug
   degrades to "pay twice", never to "analysis silently skipped".
 - Lookback: last 30 days, capped at 200 rows per source.
+
+## Raw content (`collected_items`)
+
+Every collection writes its fetched batch here **before** anything is analysed,
+and the rows are deleted only once an analysis has actually stored the matching
+content. The table is therefore a write-ahead copy, not an archive — see
+`docs/design/vision.md` for why raw text is not kept forever.
+
+| Stage | Table state |
+| --- | --- |
+| batch fetched, analysis not yet run | rows written (`run_id` = the job, NULL outside one) |
+| analysis saved the content | rows for the hashes it covered are deleted |
+| analysis failed / returned nothing | every row stays, and the next `analyze` run retries them |
+
+Consequences worth knowing before changing this code:
+
+- **Write before analyse.** The rows exist for the whole LLM call, so a crashed
+  worker, a timeout or an outage leaves the content on disk. An inline analysis
+  no longer keeps its batch in a local variable.
+- **Retire by stored hash, not by job.** `dedup.analysed_hashes()` reads
+  `ai_analytics.summary_data["content_hashes"]` and only those rows go, so a
+  partial analysis (one day of three failed) leaves the rest staged. Keying on
+  the run instead would both sweep other sources of the same job and miss rows
+  staged by an API/CLI collection that has no job at all.
+- **Retention is `handle_prune`.** It sweeps rows older than `staged_days`
+  (defaults to the job-history `days`), which is the ceiling on a permanently
+  failing source.
+
+`analyze_inline` defaults to **false** for a `collect` job — the raw batch stays
+staged for the separate `analyze` task, which is the workspace's shipped shape
+(`daily-collect` parks, `daily-analyze` drains). Set `analyze_inline: true` to
+collect and analyse in one pass; the rows the analysis actually stored are then
+retired immediately.
 
 ## Tests
 

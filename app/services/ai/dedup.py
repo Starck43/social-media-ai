@@ -49,6 +49,22 @@ def hashes_hash(hashes) -> str:
     return hashlib.sha256("\n".join(sorted(set(hashes))).encode("utf-8")).hexdigest()
 
 
+def analysed_hashes(analytics) -> set[str]:
+    """Every item hash these saved analyses actually stored.
+
+    The read side of the "delete the raw copy only after a successful save"
+    rule: retirement keys on this set, so a partial analysis (one day of three
+    failed, or a day the LLM rejected) leaves exactly the unanalysed rows
+    staged instead of declaring the whole batch consumed. Lives here because
+    the meaning of ``summary_data["content_hashes"]`` belongs with the rest of
+    the hash vocabulary, not with either caller.
+    """
+    hashes: set[str] = set()
+    for row in analytics or []:
+        hashes.update((getattr(row, "summary_data", None) or {}).get("content_hashes") or [])
+    return hashes
+
+
 def batch_hash(items: list[dict]) -> str:
     """sha256 of the sorted per-item hashes — order-independent."""
     return hashes_hash(item_hash(i) for i in items)

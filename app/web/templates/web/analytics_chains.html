@@ -1,0 +1,40 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import card, empty_state, page_title %}
+{% block title %}Цепочки тем — AI Monitor{% endblock %}
+{% block content %}
+    {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
+
+    {% if chains %}
+        <div class="space-y-4">
+            {% for chain in chains %}
+                <a href="/app/analytics/chains/{{ chain.chain_id }}" class="block">
+                    {% call card(extra="transition hover:border-cyan-700") %}
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="truncate font-medium text-slate-200">{{ chain.chain_id }}</p>
+                                <p class="mt-1 text-xs text-slate-500">
+                                    {{ chain.total_analyses }} анализ(ов)
+                                    {% if chain.date_range.start %}
+                                        · {{ chain.date_range.start }} — {{ chain.date_range.end }}
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <span class="shrink-0 text-xs text-cyan-400">Открыть →</span>
+                        </div>
+                        {% if chain.evolution %}
+                            <div class="mt-3 flex flex-wrap gap-1.5">
+                                {% for step in chain.evolution[:4] %}
+                                    {% for t in step.topics[:3] %}
+                                        <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
+                                    {% endfor %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endcall %}
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        {{ empty_state("Цепочек тем пока нет.", "Анализы появляются здесь, когда у них есть topic_chain_id.", height="h-48") }}
+    {% endif %}
+{% endblock %}

@@ -238,14 +238,32 @@ async def test_sources_list_requires_auth(client: AsyncClient) -> None:
     assert "Вход" in resp.text or "/app/login" in str(resp.url)
 
 
-async def test_sources_page_has_vk_oauth_button(client: AsyncClient) -> None:
-    """The authenticated sources page shows the 'Войти через VK ID' entry."""
+async def test_vk_oauth_moved_to_settings(client: AsyncClient) -> None:
+    """Connecting VK is a Settings concern now; the old route still works.
+
+    The login button left `/app/sources` on purpose: a permanent button next to
+    the source list nagged everyone whose collection works with the community
+    token alone. The legacy `/app/vk/oauth` path is kept so bookmarks and the
+    API-driven flow do not dead-end.
+    """
+    from app.core.config import settings
+
     user, tenant_id = await _register(client, "VK Button Studio")
     try:
-        resp = await client.get("/app/sources")
-        assert resp.status_code == 200
-        assert "Войти через VK ID" in resp.text
-        assert "/app/vk/oauth" in resp.text
+        page = await client.get("/app/sources")
+        assert page.status_code == 200
+        assert "Войти через VK ID" not in page.text
+
+        settings_page = await client.get("/app/settings?tab=connections")
+        assert settings_page.status_code == 200
+        assert "Подключения" in settings_page.text
+        assert "ВКонтакте" in settings_page.text
+        if not settings.VK_APP_ID:
+            # Nothing to redirect to — the card says so instead of offering a
+            # button that would only produce an error.
+            assert "Не настроено оператором" in settings_page.text
+        else:
+            assert "/app/connections/vk/authorize" in settings_page.text
     finally:
         await _delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
@@ -392,7 +410,6 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
                     name=name,
                     job_type="digest",
                     cron_expr="0 * * * *",
-                    timezone="Europe/Moscow",
                     payload={},
                     is_active=True,
                     next_run_at=compute_next("0 * * * *", "Europe/Moscow"),
@@ -446,7 +463,6 @@ async def test_a_direct_run_job_is_never_claimable_by_the_worker(client: AsyncCl
                     name=_name("direct"),
                     job_type="digest",
                     cron_expr="0 * * * *",
-                    timezone="Europe/Moscow",
                     payload={},
                     is_active=True,
                     next_run_at=None,

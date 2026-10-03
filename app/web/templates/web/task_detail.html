@@ -1,0 +1,381 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import empty_state %}
+{% block title %}{% if task %}{{ task.name }} — AI Monitor{% else %}Задача не найдена{% endif %}{% endblock %}
+{% block content %}
+{% if not task %}
+    {{ empty_state("Задача не найдена или принадлежит другому workspace.", height="h-64") }}
+    <div class="mt-4 text-center">
+        <a href="/app/tasks" class="text-sm text-cyan-400 hover:underline">К списку задач</a>
+    </div>
+{% else %}
+<div x-data="{ openEdit: false }">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="min-w-0">
+            <a href="/app/tasks" class="text-sm text-slate-500 hover:text-slate-300">← Задачи</a>
+            <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ task.name }}</h1>
+            <p class="mt-1 text-sm text-slate-400">
+                {{ JOB_TYPE_TITLES.get(task.job_type, task.job_type) }} ·
+                {% if task.tenant %}{{ task.tenant.name }}{% else %}—{% endif %}
+            </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            {% if perms_can(request, 'agenttask', 'update') %}
+            <button @click="openEdit = true"
+                    class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                Редактировать
+            </button>
+            <form method="post" action="/app/tasks/{{ task.id }}/toggle">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+                <button class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                    {% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}
+                </button>
+            </form>
+            {% endif %}
+            {% if perms_can(request, 'agenttask', 'delete') %}
+            <div x-data="{ open: false }">
+                <button @click="open = true"
+                        class="rounded-lg border border-rose-900/70 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/40">
+                    Удалить
+                </button>
+                <div x-show="open" x-cloak
+                     class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+                     @keydown.escape.window="open = false">
+                    <div class="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+                        <h2 class="text-lg font-semibold text-rose-300">Удалить задачу?</h2>
+                        <p class="mt-2 text-sm text-slate-400">
+                            «{{ task.name }}» будет удалена безвозвратно. Задачи, использующие привязанные источники, останутся.
+                        </p>
+                        <div class="mt-5 flex justify-end gap-2">
+                            <button @click="open = false"
+                                    class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                                Отмена
+                            </button>
+                            <form method="post" action="/app/tasks/{{ task.id }}/delete">
+                                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+                                <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500">
+                                    Удалить навсегда
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+        <!-- Configuration ─────────────────────────────────────────────── -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Настройка</h2>
+            <dl class="mt-3 space-y-3 text-sm">
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Тип</dt>
+                    <dd class="mt-1">
+                        <span class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-200">{{ task.job_type }}</span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Расписание</dt>
+                    <dd class="mt-1 text-slate-300">{{ cron_to_human(task.cron_expr) }}</dd>
+                    <p class="mt-1 text-xs text-slate-500">
+                        {% if task.next_run_at %}
+                            Следующий запуск: {{ task.next_run_at|human_dt }}
+                        {% else %}
+                            Не запланирован
+                        {% endif %}
+                    </p>
+                </div>
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Статус</dt>
+                    <dd class="mt-1">
+                        {% if task.id in effective_active %}
+                            <span class="rounded-full bg-emerald-950 px-2 py-1 text-xs text-emerald-400">активна</span>
+                        {% else %}
+                            <span class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-500">неактивна</span>
+                        {% endif %}
+                        {% if task.last_status == 'failed' %}
+                            <span class="ml-1 rounded-full bg-rose-950 px-2 py-1 text-xs text-rose-400">ошибка</span>
+                        {% elif task.last_status == 'ok' %}
+                            <span class="ml-1 rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-400">ок</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if scenario %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Сценарий</dt>
+                    <dd class="mt-1 text-slate-300">{{ scenario.name }}</dd>
+                </div>
+                {% endif %}
+                {% if sources %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Источники ({{ sources|length }})</dt>
+                    <dd class="mt-1 space-y-1">
+                        {% for s in sources %}
+                        <a href="/app/sources/{{ s.id }}" class="block text-sm text-slate-300 hover:text-cyan-400 hover:underline">
+                            {{ s.name }}
+                        </a>
+                        {% endfor %}
+                    </dd>
+                </div>
+                {% else %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Источники</dt>
+                    <dd class="mt-1 text-xs text-slate-500">все активные</dd>
+                </div>
+                {% endif %}
+                {% set mu = (task.payload or {}).get("monitored_users", []) %}
+                {% if mu %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Отслеживаемые</dt>
+                    <dd class="mt-1 flex flex-wrap gap-1.5">
+                        {% for u in mu %}
+                        <span class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300">{{ u }}</span>
+                        {% endfor %}
+                    </dd>
+                </div>
+                {% endif %}
+                {% set eu = (task.payload or {}).get("excluded_users", []) %}
+                {% if eu %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-500">Исключённые</dt>
+                    <dd class="mt-1 flex flex-wrap gap-1.5">
+                        {% for u in eu %}
+                        <span class="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300">{{ u }}</span>
+                        {% endfor %}
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Stats ─────────────────────────────────────────────────────── -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Статистика</h2>
+            <div class="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                    <p class="text-2xl font-semibold">{{ recent_jobs|length }}</p>
+                    <p class="text-xs text-slate-500">последних запусков</p>
+                </div>
+                <div>
+                    {% set failed = recent_jobs | selectattr('status', 'equalto', 'failed') | list | length %}
+                    <p class="text-2xl font-semibold {% if failed %}text-rose-400{% else %}text-slate-200{% endif %}">{{ failed }}</p>
+                    <p class="text-xs text-slate-500">ошибок</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-200">
+                        {% if task.last_run_at %}{{ task.last_run_at|human_dt }}{% else %}—{% endif %}
+                    </p>
+                    <p class="text-xs text-slate-500">последний запуск</p>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-slate-200">
+                        {% if task.created_at %}{{ task.created_at|human_dt }}{% else %}—{% endif %}
+                    </p>
+                    <p class="text-xs text-slate-500">создана</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions ───────────────────────────────────────────────────── -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Действия</h2>
+            <div class="mt-3 space-y-2">
+                {% if perms_can(request, 'agenttask', 'update') %}
+                <form method="post" action="/app/tasks/{{ task.id }}/run-now">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+                    <button class="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">
+                        Выполнить сейчас
+                    </button>
+                </form>
+                {% endif %}
+                <a href="/app/tasks" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                    К списку задач
+                </a>
+                <a href="/app/jobs" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                    Все jobs
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent runs ─────────────────────────────────────────────────── -->
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <h2 class="text-sm font-medium text-slate-300">Последние запуски</h2>
+        {% if recent_jobs %}
+        <div class="mt-3 overflow-x-auto">
+            <table class="w-full min-w-[30rem] text-left text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
+                        <th class="py-2 pr-4 font-normal">Когда</th>
+                        <th class="py-2 pr-4 font-normal">Статус</th>
+                        <th class="py-2 pr-4 font-normal">Результат</th>
+                        <th class="py-2 font-normal">Длительность</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in recent_jobs %}
+                    <tr class="border-b border-slate-800/60 last:border-0">
+                        <td class="py-2.5 pr-4 text-slate-400">
+                            <a href="/app/jobs" class="hover:text-cyan-400">{{ job.created_at|human_dt }}</a>
+                        </td>
+                        <td class="py-2.5 pr-4">
+                            {% if job.status == 'done' %}
+                                <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">готово</span>
+                            {% elif job.status == 'failed' %}
+                                <span class="rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                            {% elif job.status == 'running' %}
+                                <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">выполняется</span>
+                            {% else %}
+                                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{{ job.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2.5 pr-4 text-slate-400">
+                            {% if job.result %}
+                                {% set r = job.result if job.result is mapping else {} %}
+                                {% set items = r.get('items', r.get('new_items', '—')) %}
+                                {{ items }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="py-2.5 text-slate-400">
+                            {% if job.started_at and job.finished_at %}
+                                {{ job.finished_at - job.started_at }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="mt-3 text-sm text-slate-500">Запусков пока не было.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Edit modal ───────────────────────────────────────────────────────── -->
+{% if perms_can(request, 'agenttask', 'update') %}
+<div x-show="openEdit" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+     @keydown.escape.window="openEdit = false">
+    <div class="w-[95%] max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div class="mb-5 flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold">Редактировать задачу</h2>
+                <p class="mt-1 text-sm text-slate-400">Обновите данные задачи.</p>
+            </div>
+            <button type="button" @click="openEdit = false" aria-label="Закрыть"
+                    class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                     stroke="currentColor" class="h-5 w-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <form method="post" action="/app/tasks/{{ task.id }}" class="mt-5 space-y-4">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+            <div>
+                <label class="mb-1 block text-sm text-slate-300">Название</label>
+                <input name="name" required maxlength="100" value="{{ task.name }}"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+            </div>
+            <div>
+                <label class="mb-1 block text-sm text-slate-300">Тип задачи</label>
+                <select name="job_type" required
+                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    {% for value, label in job_types %}
+                    <option value="{{ value }}" {% if value == task.job_type %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="mb-1 block text-sm text-slate-300">Расписание</label>
+                <input name="cron_expr" required value="{{ task.cron_expr }}"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500">
+                <p class="mt-1 text-xs text-slate-500">cron-выражение, например: 0 9 * * *</p>
+            </div>
+            {% if sources %}
+            <div>
+                <label class="mb-1 block text-sm text-slate-300">Источники</label>
+                <div class="max-h-32 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-2 space-y-1">
+                    {% for s in sources %}
+                    <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
+                        <input type="checkbox" name="source_ids" value="{{ s.id }}"
+                               {% if s.id in linked_source_ids %}checked{% endif %}
+                               class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                        {{ s.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if scenarios %}
+            <div>
+                <label class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
+                <select name="scenario_id"
+                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                    <option value="">— не выбран —</option>
+                    {% for scenario in scenarios %}
+                    <option value="{{ scenario.id }}" {% if scenario.id == task.agent_scenario_id %}selected{% endif %}>{{ scenario.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                    {% set mu = (task.payload or {}).get("monitored_users", []) %}
+                    <input name="monitored_users" value="{{ mu|join(', ') }}"
+                           placeholder="username1, username2"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                    {% set eu = (task.payload or {}).get("excluded_users", []) %}
+                    <input name="excluded_users" value="{{ eu|join(', ') }}" placeholder="username1, username2"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                </div>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-slate-300">
+                <input type="hidden" name="is_active" value="{{ 'on' if task.id in effective_active else '' }}">
+                <input type="checkbox" {% if task.id in effective_active %}checked{% endif %}
+                       class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                Активна
+            </label>
+            <div class="flex flex-wrap items-center gap-2 pt-2">
+                {% if perms_can(request, 'agenttask', 'delete') %}
+                <button type="submit" formnovalidate
+                        formaction="/app/tasks/{{ task.id }}/delete"
+                        @click="if (!confirm('Удалить задачу «' + '{{ task.name }}' + '»?')) $event.preventDefault()"
+                        class="rounded-lg border border-rose-900/70 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/40">
+                    Удалить
+                </button>
+                {% endif %}
+                <div class="ml-auto flex flex-1 gap-2">
+                    <button type="button" @click="openEdit = false"
+                            class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                        Отмена
+                    </button>
+                    <button type="submit"
+                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                        Сохранить
+                    </button>
+                    <button type="submit" name="run_now" value="on"
+                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500">
+                        Сохранить и выполнить
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

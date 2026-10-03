@@ -32,6 +32,22 @@ class CredentialMissing(RuntimeError):
     """No usable secret exists and the caller asked for a required one."""
 
 
+class AuthorizationRequired(RuntimeError):
+    """A source needs a personal (L2) secret that nobody has authorized yet.
+
+    Raised by the collectors instead of returning an empty list, because
+    "nothing was collected" and "we are not authorized to look" are different
+    facts: the first is quiet, the second needs the user to press one button.
+    The `hint` is what the UI shows next to that button, so it is written for
+    a person, not for a log file.
+    """
+
+    def __init__(self, message: str, *, platform: str = "", hint: str = "") -> None:
+        super().__init__(message)
+        self.platform = platform
+        self.hint = hint
+
+
 # Ordered kinds per platform: the first available one wins. A VK user token sees
 # more than a community service token, so it is preferred when both are present.
 KIND_PREFERENCE: dict[str, tuple[str, ...]] = {
@@ -71,9 +87,9 @@ async def _newest_row(rows: list, kind: str) -> Optional[Any]:
 async def _from_user_vault(user_id: int, platform: str, kind: str) -> Optional[str]:
     """Newest usable personal vault row for (user, platform, kind), or None.
 
-    A VK L2 user token that has expired is transparently refreshed via its
-    stored `refresh_token` (see `app.services.social.vk_oauth`) before the row
-    is skipped, so an L2 collection never fails just because the token aged out.
+    A VK L2 user token that has expired is transparently renewed via its stored
+    `refresh_token` (see `app.services.social.vk_oauth`) before the row is
+    skipped, so an L2 collection never fails just because the token aged out.
     """
     from app.models.managers.user_credential_manager import user_credentials
 
@@ -81,13 +97,15 @@ async def _from_user_vault(user_id: int, platform: str, kind: str) -> Optional[s
     row = await _newest_row(rows, kind)
     if row is None:
         return None
-    if _is_expired(row.expires_at):
-        if platform == "vk" and kind == "user_token":
-            from app.services.social.vk_oauth import refresh_user_token
+    if platform == "vk" and kind == "user_token":
+        # Renew slightly *before* the expiry, not only after it: a run that
+        # starts at 10:59 would otherwise carry a token that dies mid-request.
+        from app.services.social.vk_oauth import renew_if_expiring
 
-            refreshed = await refresh_user_token(user_id)
-            if refreshed:
-                return refreshed
+        renewed = await renew_if_expiring(user_id)
+        if renewed:
+            return renewed
+    if _is_expired(row.expires_at):
         logger.warning(f"{platform}/{kind} credential of user {user_id} expired - skipped")
         return None
     try:

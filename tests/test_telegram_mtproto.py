@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 import app.services.social.tg_session as tg_session_module
+from app.services.social.credentials import AuthorizationRequired
 from app.services.social.tg_client import TelegramClient
 
 
@@ -161,10 +162,19 @@ async def test_unknown_mode_falls_back_to_push():
     assert await client.collect_data(_source(params={"mode": "browser"})) == []
 
 
-async def test_user_mode_without_session_returns_empty(fake_client_factory):
+async def test_user_mode_without_session_raises_authorization_required(fake_client_factory):
+    """L2 requested, no session → say so, do not fake an empty pull.
+
+    An empty result reads as "nothing new in the channel", which is a very
+    different fact from "we were never authorized to look".
+    """
     fake_client_factory(session=False)
     client = TelegramClient(_Platform())
-    assert await client.collect_data(_source(params={"mode": "user"})) == []
+    with pytest.raises(AuthorizationRequired) as ei:
+        await client.collect_data(_source(params={"mode": "user"}))
+
+    assert "сессия" in str(ei.value).lower()
+    assert ei.value.hint
 
 
 # --------------------------------------------------------------------------- #
@@ -172,10 +182,11 @@ async def test_user_mode_without_session_returns_empty(fake_client_factory):
 # --------------------------------------------------------------------------- #
 
 
-async def test_expired_or_revoked_session_returns_empty(fake_client_factory):
+async def test_expired_or_revoked_session_raises_authorization_required(fake_client_factory):
     fake_client_factory(authorized=False)
     client = TelegramClient(_Platform())
-    assert await client._collect_mtproto(_source(params={"mode": "user"})) == []
+    with pytest.raises(AuthorizationRequired):
+        await client._collect_mtproto(_source(params={"mode": "user"}))
 
 
 async def test_unresolvable_entity_returns_empty(fake_client_factory):

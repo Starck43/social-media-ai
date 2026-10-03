@@ -16,8 +16,8 @@ router = APIRouter(tags=["social"])
 _SUCCESS_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>VK авторизация</title></head>
 <body style="font-family:system-ui,sans-serif;text-align:center;padding:4rem">
 <h2>Авторизация VK завершена</h2>
-<p>Сейчас страница обновится автоматически...</p>
-<script>setTimeout(function(){window.location.href="/app/sources";}, 800);</script>
+<p>Возвращаем в настройки — статус обновится сразу.</p>
+<script>setTimeout(function(){window.location.href="/app/settings?tab=connections";}, 800);</script>
 </body></html>
 """
 

@@ -1,17 +1,21 @@
-"""Raw content handed over by a platform, held until an analysis consumes it.
+"""Raw content handed over by a platform, written before it is analysed.
 
 The runtime used to pass the fetched batch straight to the analyser and drop
 it on the floor: the texts lived in a local variable for the length of one call
-and were gone afterward. Nothing could show *what* was collected, and the only
-dedup index was `ai_analytics`, which stays empty for as long as analysis
-fails — so every re-run reported the whole wall as "new" again.
+and were gone afterward — including when that call crashed or the LLM was down.
+Nothing could show *what* was collected, and the only dedup index was
+`ai_analytics`, which stays empty for as long as analysis fails — so every
+re-run reported the whole wall as "new" again.
 
-A row here is one item of one run, in the shape the analyser already consumes
+A row here is one fetched item, in the shape the analyser already consumes
 (`as_agent_item()`), so a deferred analysis feeds rows back through the very
 same code path that a live collection does.
 
-Rows are dropped once an analysis has actually consumed them; until then they
-are the only copy, so a failed analysis must never be treated as "processed".
+The rows are a write-ahead copy: written first, deleted only once an analysis
+has actually stored the matching content (by item hash, so a partial analysis
+retires only what it covered). Until then, they are the only copy, so a failed
+analysis must never be treated as "processed", and `handle_prune` is the
+ceiling on rows nobody ever analysed.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 
 @app_label("social")
 class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
-    """One fetched item, stored raw and unread until analysis takes it."""
+    """One fetched item, written raw before analysis and removed once it saved."""
 
     __tablename__ = "collected_items"
     __table_args__ = (

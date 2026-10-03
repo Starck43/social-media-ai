@@ -54,6 +54,12 @@ class AIAnalyzer:
 
         if analyze_by == "themes":
             return await self._analyze_content_by_themes(content, source, force_reanalyze=force_reanalyze)
+        elif analyze_by == "sources":
+            return await self._analyze_content_by_sources(content, source, force_reanalyze=force_reanalyze)
+        elif analyze_by == "monitored_users":
+            return await self._analyze_content_by_monitored_users(
+                content, source, force_reanalyze=force_reanalyze
+            )
         else:
             return await self._analyze_content_by_days(content, source, force_reanalyze=force_reanalyze)
 
@@ -79,6 +85,7 @@ class AIAnalyzer:
         parent_analysis_id: Optional[int] = None,
         analysis_date: Optional[date] = None,
         force_reanalyze: bool = False,
+        analyze_type: Optional[str] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
@@ -92,6 +99,10 @@ class AIAnalyzer:
                 force_reanalyze: Bypass dedup and analyze everything (used by a
                         full-cycle `--force-refresh` task run so stored rows are
                         overwritten; costs tokens, so it is never the default).
+                analyze_type: The scenario's analysis mode ("days"/"themes"/
+                        "sources"/"monitored_users"); when set, it shapes the
+                        auto-generated chain id so a mode's records share one
+                        stable chain.
 
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
@@ -190,7 +201,9 @@ class AIAnalyzer:
                 # nothing. That is why this workspace had no content hashes at
                 # all and every re-collection looked brand new.
                 main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("main_topics") or []
-                topic_chain_id = self._generate_topic_chain_id(source, main_topics, agent_scenario)
+                topic_chain_id = self._generate_topic_chain_id(
+                    source, main_topics, agent_scenario, analyze_type=analyze_type
+                )
                 logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
 
             # Save comprehensive analysis
@@ -310,6 +323,115 @@ class AIAnalyzer:
         await self._auto_link_to_existing_theme(analysis, source)
 
         return [analysis]
+
+    async def _analyze_content_by_sources(
+        self, content: list[dict], source: Source, force_reanalyze: bool = False
+    ) -> list[AIAnalytics]:
+        """Analyze content grouped by its origin source.
+
+        `analyze_type = "sources"` builds one analysis per distinct source the
+        batch came from, each with a stable per-source chain id, so the
+        retrospective follows a single source's evolution over time instead of
+        being fragmented by topic. A batch that is already a single source's
+        content collapses to one record.
+
+        Args:
+                content: List of content items
+                source: The primary source being analyzed (fallback chain owner)
+                force_reanalyze: Bypass dedup and re-analyze everything
+
+        Returns:
+                List of AIAnalytics records (one per source group)
+        """
+        from collections import OrderedDict
+
+        if not content:
+            return []
+
+        # Group by the item's own source id when present; otherwise every item
+        # belongs to the caller's `source`.
+        groups: OrderedDict[int | str, list[dict]] = OrderedDict()
+        for item in content:
+            src_id = item.get("source_id") or item.get("source") or source.id
+            groups.setdefault(src_id, []).append(item)
+
+        analytics_list = []
+        for src_key, group in groups.items():
+            try:
+                analysis = await self.base_analyze_content(
+                    group, source, force_reanalyze=force_reanalyze, analyze_type="sources"
+                )
+                if analysis:
+                    analytics_list.append(analysis)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Error analyzing source group {src_key} for source {source.id}: {e}")
+                continue
+
+        logger.info(
+            f"Analyzed {len(groups)} source group(s) for source {source.id} "
+            f"(analyze_type=sources), {len(analytics_list)} records"
+        )
+        return analytics_list
+
+    async def _analyze_content_by_monitored_users(
+        self, content: list[dict], source: Source, force_reanalyze: bool = False
+    ) -> list[AIAnalytics]:
+        """Analyze content grouped by the tracked user who authored it.
+
+        `analyze_type = "monitored_users"` builds one analysis per distinct
+        author among the content (the users listed in
+        `Source.params["monitored_users"]` when the collector filtered by them).
+        Each user gets a stable chain id, so the retrospective follows one
+        person's activity across runs.
+
+        Args:
+                content: List of content items
+                source: The source being analyzed
+                force_reanalyze: Bypass dedup and re-analyze everything
+
+        Returns:
+                List of AIAnalytics records (one per monitored user group)
+        """
+        from collections import OrderedDict
+
+        if not content:
+            return []
+
+        def _author_key(item: dict) -> str:
+            for key in ("author_id", "user_id", "owner_id", "from_id"):
+                if item.get(key) is not None:
+                    return str(item[key])
+            # The platform clients pack the author into a dict.
+            author = item.get("author")
+            if isinstance(author, dict):
+                for key in ("id", "user_id", "owner_id", "from_id", "username", "name"):
+                    if author.get(key) is not None:
+                        return str(author[key])
+            # No explicit author — fall back to the source's own identity.
+            return str(source.id)
+
+        groups: OrderedDict[str, list[dict]] = OrderedDict()
+        for item in content:
+            groups.setdefault(_author_key(item), []).append(item)
+
+        analytics_list = []
+        for author, group in groups.items():
+            try:
+                chain_id = f"src_{source.id}_user_{author}"
+                analysis = await self.base_analyze_content(
+                    group, source, topic_chain_id=chain_id, force_reanalyze=force_reanalyze
+                )
+                if analysis:
+                    analytics_list.append(analysis)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Error analyzing monitored user {author} for source {source.id}: {e}")
+                continue
+
+        logger.info(
+            f"Analyzed {len(groups)} monitored user(s) for source {source.id} "
+            f"(analyze_type=monitored_users), {len(analytics_list)} records"
+        )
+        return analytics_list
 
     async def _auto_link_to_existing_theme(self, analysis: AIAnalytics, source: Source):
         """
@@ -900,24 +1022,38 @@ class AIAnalyzer:
 
         return None
 
-    def _generate_topic_chain_id(self, source: Source, main_topics: list[str], agent_scenario: AgentScenario = None):
+    def _generate_topic_chain_id(self, source: Source, main_topics: list[str], agent_scenario: AgentScenario = None, analyze_type: str = None):
         """
         Generate topic chain ID for source.
 
         NEW LOGIC: One source + one scenario = one chain (timeline by dates).
         All analyses for this source+scenario go into the same chain.
 
+        The mode changes what the chain follows:
+          - "sources": a stable per-source chain (source + scenario only)
+          - "monitored_users": per monitored user (source + scenario + author),
+            so each tracked person's activity has its own timeline
+          - otherwise: the chain is anchored on the top topic (themes), so an
+            evolving theme keeps one chain across runs
+
         Args:
                 source: Source being analysed
                 main_topics: List of main topics from analysis
                 agent_scenario: Bot scenario (optional)
+                analyze_type: The scenario's analysis mode, if known
 
         Returns:
-                Chain ID string: "source_{id}" or "source_{id}_scenario_{id}"
+                Chain ID string
         """
         top_topic = main_topics[0] if main_topics else "general"
         normalized_topic = "".join(c for c in top_topic.lower() if c.isalnum())[:20]
 
+        scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
+
+        if analyze_type == "sources":
+            return f"src_{source.id}_{scn}_all"
+        if analyze_type == "monitored_users":
+            return f"src_{source.id}_{scn}_users"
         if agent_scenario and agent_scenario.id:
             return f"src_{source.id}_scn_{agent_scenario.id}_{normalized_topic}"
         else:

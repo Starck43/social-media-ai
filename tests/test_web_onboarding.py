@@ -113,7 +113,10 @@ def _render(name: str, **extra) -> str:
         "tasks": [],
         "effective_active": set(),
         "job_id": None,
-        "vk_l2": {"state": "missing", "label": "VK не подключён"},
+        # Connection state per source row, plus a banner per blocked platform.
+        # Empty here: the list pages under test carry no sources.
+        "source_connections": {},
+        "connection_banners": [],
         "user_sources_json": [],
         "filter_scenario_id": None,
         # The wizard: a workspace that has neither yet.

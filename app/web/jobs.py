@@ -120,7 +120,7 @@ async def job_run(
 
     from app.jobs.dispatcher import run_job_now
 
-    result = await run_job_now(job.id)
+    result = await run_job_now(job.id, allow_retry=False)
     if result and result.get("status") == "failed":
         add_flash(request, "error", f"Задание снова упало: {result.get('error', '?')}")
     else:

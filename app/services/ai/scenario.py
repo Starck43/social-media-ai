@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from app.models import AgentScenario, Source
+from app.models import AgentScenario
 from app.types import BotActionType
 
 logger = logging.getLogger(__name__)
@@ -221,40 +221,6 @@ class ScenarioService:
             f"Created scenario: {name} (ID: {scenario.id}), analysis: {analysis_types}, content: {content_types}"
         )
         return scenario
-
-    async def assign_scenario_to_source(self, source_id: int, scenario_id: Optional[int]) -> Optional[Source]:
-        """
-        Assign or remove a bot scenario from a source.
-
-        Args:
-                source_id: Source ID
-                scenario_id: Bot scenario ID (None to remove)
-
-        Returns:
-                Updated Source object or None if not found
-        """
-        source = await Source.objects.assign_scenario(source_id, scenario_id)
-
-        if source:
-            action = "assigned" if scenario_id else "removed"
-            logger.info(f"Scenario {action} for source {source_id}")
-        else:
-            logger.warning(f"Source {source_id} not found")
-
-        return source
-
-    async def get_sources_by_scenario(self, scenario_id: int, is_active: Optional[bool] = True) -> list[Source]:
-        """
-        Get all sources using a specific scenario.
-
-        Args:
-                scenario_id: Bot scenario ID
-                is_active: Filter by active status
-
-        Returns:
-                List of Source objects
-        """
-        return await Source.objects.get_by_scenario(scenario_id, is_active)
 
     async def get_scenario_by_id(self, scenario_id: int) -> Optional[AgentScenario]:
         """Get scenario by ID."""

@@ -124,21 +124,6 @@ class ScenarioResponse(BaseModel):
 		from_attributes = True
 
 
-class ScenarioAssign(BaseModel):
-	"""Schema for assigning a scenario to a source."""
-
-	source_id: int = Field(..., gt=0, description="Source ID to assign scenario to")
-	scenario_id: Optional[int] = Field(None, gt=0, description="Scenario ID to assign (null to remove)")
-
-
-class ScenarioSourcesResponse(BaseModel):
-	"""Schema for returning sources using a specific scenario."""
-
-	scenario_id: int
-	scenario_name: str
-	sources: list[dict]
-
-
 class ScenarioListItem(BaseModel):
 	"""Schema for listing scenarios in filters and simple lists."""
 

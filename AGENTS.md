@@ -48,6 +48,8 @@ longer depends on them.
 - Tests: `pytest` (asyncio_mode = auto, coverage on `app/` by default via addopts)
 - Migrations: Alembic (`alembic.ini`); keep `alembic check` clean
 - Config via env vars / `.env` — never commit `.env*`
+- DB schema: `settings.DB_SCHEMA` (default `public`)
+- venv: use project .venv
 - Optional integrations (VK, Telegram, MAX, Redis) must stay startable when
   unconfigured — the app has to boot with none of them set
 - Commit messages, code, and committed docs in English; user-facing agent

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Optional, Sequence, Any
+from typing import Any, Optional, Sequence
 
 from sqlalchemy import select
 
@@ -28,10 +28,7 @@ class AIAnalyticsManager(BaseManager):
     async def get_by_source_id(self, source_id: int, skip: int = 0, limit: int = 100) -> Sequence[Any]:
         """Retrieve analytics by source ID with pagination."""
         return await (
-            self.filter(source_id=source_id)
-            .order_by(self.model.analysis_date.desc())
-            .offset(skip)
-            .limit(limit)
+            self.filter(source_id=source_id).order_by(self.model.analysis_date.desc()).offset(skip).limit(limit)
         )
 
     async def get_latest_by_source_id(self, source_id: int) -> Optional[Any]:
@@ -66,9 +63,9 @@ class AIAnalyticsManager(BaseManager):
 
     async def get_daily_summary(self, analysis_date: date) -> Sequence[Any]:
         """Get all daily summaries for a specific date."""
-        return await self.filter(
-            analysis_date=analysis_date, period_type=PeriodType.DAILY
-        ).order_by(self.model.source_id)
+        return await self.filter(analysis_date=analysis_date, period_type=PeriodType.DAILY).order_by(
+            self.model.source_id
+        )
 
     async def save_analysis(
         self,
@@ -158,15 +155,18 @@ class AIAnalyticsManager(BaseManager):
                     }
                 )
 
-            # Activity trend
-            if "activity_metrics" in summary:
-                activity_data = summary["activity_metrics"]
+            # Activity trend — read the real per-day stats written by the
+            # analyzer under content_statistics (active_users, messages_count,
+            # engagement_rate). The legacy "activity_metrics" key is kept as a
+            # fallback for rows stored before those fields existed.
+            activity = summary.get("content_statistics") or summary.get("activity_metrics") or {}
+            if activity:
                 trends["activity_trend"].append(
                     {
                         "date": analysis.analysis_date,
-                        "messages_count": activity_data.get("messages_count", 0),
-                        "active_users": activity_data.get("active_users", 0),
-                        "engagement_rate": activity_data.get("engagement_rate", 0),
+                        "messages_count": activity.get("messages_count", 0),
+                        "active_users": activity.get("active_users", 0),
+                        "engagement_rate": activity.get("engagement_rate", 0),
                     }
                 )
 
@@ -225,3 +225,92 @@ class AIAnalyticsManager(BaseManager):
         # Active sources that have no recent analysis
         rows = await Source.objects.filter(is_active=True).exclude(Source.id.in_(recent)).values(Source.id).rows()
         return [row[0] for row in rows]
+
+    async def build_period_rollups(self, period_type: PeriodType, start: date, end: date) -> int:
+        """Aggregate the daily analytics of a period into one rollup row per source.
+
+        Gives `period_type` its real meaning: a WEEKLY/MONTHLY run folds the
+        period's DAILY rows for each source into a single row (upserted by
+        `(source_id, start, period_type)`). Engagement and LLM cost are summed;
+        the summary_data carries a period_rollup marker plus the rolled-up
+        content statistics.
+
+        Args:
+                period_type: PeriodType.WEEKLY or PeriodType.MONTHLY
+                start: First day of the period (also the rollup row's analysis_date)
+                end: Last day of the period (inclusive)
+
+        Returns:
+                Number of rollup rows written (created or updated)
+        """
+        if period_type not in (PeriodType.WEEKLY, PeriodType.MONTHLY):
+            return 0
+
+        daily = await self.filter(
+            analysis_date__gte=start,
+            analysis_date__lte=end,
+            period_type=PeriodType.DAILY,
+        )
+
+        by_source: dict[int, list[Any]] = {}
+        for row in daily:
+            by_source.setdefault(row.source_id, []).append(row)
+
+        written = 0
+        for source_id, rows in by_source.items():
+            total_posts = sum((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) for r in rows)
+            messages = sum((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) for r in rows)
+            active_users = sum(
+                (r.summary_data or {}).get("content_statistics", {}).get("active_users", 0) for r in rows
+            )
+            reactions = sum(
+                (r.summary_data or {}).get("content_statistics", {}).get("total_reactions", 0) for r in rows
+            )
+            comments = sum((r.summary_data or {}).get("content_statistics", {}).get("total_comments", 0) for r in rows)
+            views = sum((r.summary_data or {}).get("content_statistics", {}).get("total_views", 0) for r in rows)
+
+            request_tokens = sum(r.request_tokens or 0 for r in rows)
+            response_tokens = sum(r.response_tokens or 0 for r in rows)
+            estimated_cost = sum(r.estimated_cost or 0 for r in rows)
+
+            content_statistics = {
+                "total_posts": total_posts,
+                "messages_count": messages,
+                "active_users": active_users,
+                "total_reactions": reactions,
+                "total_comments": comments,
+                "total_views": views,
+                "engagement_rate": (reactions + comments + views) / total_posts if total_posts else 0,
+            }
+            summary = {
+                "period_rollup": {
+                    "period_type": period_type.db_value,
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "source_ids": [source_id],
+                },
+                "content_statistics": content_statistics,
+            }
+
+            existing = await self.filter(source_id=source_id, analysis_date=start, period_type=period_type).first()
+            if existing:
+                await self.update_by_id(
+                    existing.id,
+                    summary_data=summary,
+                    request_tokens=request_tokens or None,
+                    response_tokens=response_tokens or None,
+                    estimated_cost=estimated_cost or None,
+                )
+            else:
+                await self.create(
+                    source_id=source_id,
+                    analysis_date=start,
+                    period_type=period_type,
+                    summary_data=summary,
+                    request_tokens=request_tokens or None,
+                    response_tokens=response_tokens or None,
+                    estimated_cost=estimated_cost or None,
+                )
+            written += 1
+
+        return written

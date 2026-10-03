@@ -47,9 +47,7 @@ async def _kpis_in_scope(today: date) -> dict[str, int | float]:
     """KPI aggregates for the ambient scope (tenant context or superuser bypass)."""
     active_sources = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar(0)
 
-    posts_today = await (
-        AIAnalytics.objects.filter(analysis_date=today).values(func.count(AIAnalytics.id)).scalar(0)
-    )
+    posts_today = await AIAnalytics.objects.filter(analysis_date=today).values(func.count(AIAnalytics.id)).scalar(0)
 
     # LLM cost today (cents → dollars)
     cost_cents = await (
@@ -77,7 +75,13 @@ async def _kpis_in_scope(today: date) -> dict[str, int | float]:
         avg_sentiment = sum(scores) / len(scores)
         sentiment_analyzed = True
 
-    active_tasks = await AgentTask.objects.filter(is_active=True).values(func.count(AgentTask.id)).scalar(0)
+    active_tasks = 0
+    due_tasks = await AgentTask.objects.filter(is_active=True).prefetch_related("sources", "agent_scenario")
+    if due_tasks:
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        active_source_ids = await AgentTaskManager().get_workspace_active_source_ids()
+        active_tasks = sum(1 for t in due_tasks if AgentTaskManager._task_effectively_active(t, active_source_ids))
 
     return {
         "active_sources": active_sources,
@@ -158,16 +162,43 @@ async def _recent_tasks(tenant_id: int | None, is_superuser: bool = False, filte
         from app.core.tenant_context import tenant_scope
 
         with tenant_scope(bypass=True):
-            query = AgentTask.objects.prefetch_related("tenant")
+            query = AgentTask.objects.prefetch_related("tenant", "sources", "agent_scenario")
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
             return await query.order_by(AgentTask.created_at.desc()).limit(20)
 
     return await (
         AgentTask.objects.filter(tenant_id=tenant_id)
+        .prefetch_related("sources", "agent_scenario")
         .order_by(AgentTask.created_at.desc())
         .limit(5)
     )
+
+
+async def _effective_active_ids(recent_tasks) -> set[int]:
+    """Task ids among `recent_tasks` that are effectively active.
+
+    Groups the (possibly multi-tenant, superuser) batch by workspace so the
+    "all active sources" fallback is resolved against the right tenant.
+    """
+    if not recent_tasks:
+        return set()
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    mgr = AgentTaskManager()
+    by_tenant: dict[int, list] = {}
+    for t in recent_tasks:
+        by_tenant.setdefault(t.tenant_id, []).append(t)
+
+    effective: set[int] = set()
+    for tid, tasks in by_tenant.items():
+        with tenant_scope(tid):
+            active = await mgr.get_workspace_active_source_ids()
+        for t in tasks:
+            if mgr._task_effectively_active(t, active):
+                effective.add(t.id)
+    return effective
 
 
 # A path of "" is rejected by FastAPI when the router is included, so the index
@@ -186,6 +217,7 @@ async def dashboard(request: Request):
 
     kpis = await _kpis(tenant_id, is_superuser)
     recent_tasks = await _recent_tasks(tenant_id, is_superuser, filter_tenant_id)
+    effective_active = await _effective_active_ids(recent_tasks)
     analytics = await _analytics(tenant_id, is_superuser)
     return render(
         request,
@@ -193,6 +225,7 @@ async def dashboard(request: Request):
         section="dashboard",
         kpis=kpis,
         recent_tasks=recent_tasks,
+        effective_active=effective_active,
         analytics=analytics,
         cron_to_human=cron_to_human,
         is_superuser=is_superuser,

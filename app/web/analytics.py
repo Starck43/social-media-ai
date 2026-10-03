@@ -87,7 +87,7 @@ async def analytics_page(request: Request):
     raw_days = request.query_params.get("days", "7")
     days = int(raw_days) if raw_days.isdigit() and 1 <= int(raw_days) <= 365 else 7
 
-    filter_tenant_id, tenants = tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
+    filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     data = await _analytics(tenant_id, is_superuser, days, filter_tenant_id)
     return render(

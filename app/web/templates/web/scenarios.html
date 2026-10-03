@@ -25,7 +25,7 @@
                 <th class="px-4 py-3">Описание</th>
                 <th class="px-4 py-3">Типы анализа</th>
                 <th class="px-4 py-3">Контент</th>
-                <th class="px-4 py-3 text-center">Источников</th>
+                <th class="px-4 py-3 text-center">Задач</th>
                 <th class="px-4 py-3 text-center">Статус</th>
                 <th class="px-4 py-3"></th>
             </tr>
@@ -55,7 +55,7 @@
                         {% endif %}
                     </div>
                 </td>
-                <td class="px-4 py-3 text-center text-slate-300">{{ s.source_count }}</td>
+                <td class="px-4 py-3 text-center text-slate-300">{{ s.task_count }}</td>
                 <td class="px-4 py-3 text-center">
                     {% if s.is_active %}
                         <span class="inline-flex items-center gap-1 text-green-400">

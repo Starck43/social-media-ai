@@ -298,6 +298,7 @@ async def _run_task(
     scenario: int | None,
     period: str | None,
     tenant: str | None,
+    force_refresh: bool = False,
 ) -> dict:
     """Run one task now and return the job outcome.
 
@@ -305,6 +306,10 @@ async def _run_task(
     job and for the bookkeeping. Only the job created here is executed — running
     a task never drains an unrelated pending job that happens to be older in the
     queue (which is what `drain()` used to do).
+
+    `--force-refresh` is a full-cycle override: it re-fetches the whole period
+    and (for `collect`) re-analyzes it, overwriting rows by (source, date). It
+    is merged into the job payload only — the task row is left unchanged.
     """
     from rich import print as rprint
 
@@ -355,10 +360,19 @@ async def _run_task(
             if _split_ints(sources):
                 await _set_task_sources(target.id, _split_ints(sources), target.tenant_id)
 
+    # Full-cycle refresh: for `collect` re-fetch + re-analyze (overwrite by
+    # source/date); for other job types just pass the flag so the handler can
+    # decide what it refreshes. Applied only to this job, never to the task row.
+    refresh_extra: dict = {}
+    if force_refresh:
+        refresh_extra = {"force_refresh": True}
+        if job_type == "collect":
+            refresh_extra["force_reanalyze"] = True
+
     where = await tenant_label(target.tenant_id)
-    job = await enqueue_task_run(target)
+    job = await enqueue_task_run(target, extra_payload=refresh_extra)
     rprint(f"[green]Job {job.id} enqueued for task '{target.name}'[/green] in {where}")
-    outcome = await run_job_now(job.id) or {}
+    outcome = await run_job_now(job.id, allow_retry=False) or {}
     if outcome.get("status") == "done":  # "done" is the terminal success status
         rprint(f"[bold green]Finished[/bold green]: {outcome.get('result')}")
     else:
@@ -378,6 +392,11 @@ def _make_task_run_command(job_type: str) -> Callable:
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
         tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id for a one-off run"),
+        force_refresh: bool = typer.Option(
+            False,
+            "--force-refresh",
+            help="Full-cycle refresh: for collect re-fetch + re-analyze the whole period (overwrites rows by source/date)",
+        ),
     ):
         _run_platform(
             _run_task(
@@ -389,6 +408,7 @@ def _make_task_run_command(job_type: str) -> Callable:
                 scenario=scenario,
                 period=period,
                 tenant=tenant,
+                force_refresh=force_refresh,
             )
         )
 

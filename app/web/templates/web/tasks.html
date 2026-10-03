@@ -538,8 +538,14 @@
     <!-- Run-now result modal -->
     <div x-show="runModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
         <div class="w-[95%] max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-            <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold" x-text="runModal.data.label || 'Запуск…'"></h2>
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs uppercase tracking-wider text-slate-500" x-text="runModal.data.title || 'Задание'"></p>
+                    <h2 class="text-lg font-semibold text-slate-100" x-text="runModal.data.label || 'Запуск…'"></h2>
+                    <template x-if="runModal.data.task_name">
+                        <p class="mt-0.5 text-xs text-slate-400" x-text="runModal.data.task_name"></p>
+                    </template>
+                </div>
                 <button type="button" @click="runModal.close()" aria-label="Закрыть" class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
@@ -560,8 +566,54 @@
             <template x-if="!runModal.loading">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
-                        <div class="rounded-lg border border-emerald-700 bg-emerald-950 p-4 text-sm text-emerald-200">
-                            <p x-text="runModal.data.detail || 'Готово'"></p>
+                        <div class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 p-4">
+                            <!-- Headline: the one number that answers "did it work?" -->
+                            <template x-if="runModal.data.headline">
+                                <div>
+                                    <div class="flex items-baseline gap-2">
+                                        <span class="text-3xl font-semibold text-emerald-300"
+                                              x-text="runModal.data.headline.value"></span>
+                                        <span class="text-sm text-emerald-200/70"
+                                              x-text="runModal.data.headline.noun"></span>
+                                    </div>
+                                    <p class="mt-1 text-xs text-emerald-200/60" x-text="runModal.data.headline.label"></p>
+                                </div>
+                            </template>
+                            <template x-if="!runModal.data.headline">
+                                <p class="text-sm text-emerald-200">Готово</p>
+                            </template>
+
+                            <!-- Supporting stats: every number keeps its own noun -->
+                            <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-emerald-900/50 pt-3"
+                                x-show="(runModal.data.stats || []).length > 0">
+                                <template x-for="s in (runModal.data.stats || [])" :key="s.label">
+                                    <div>
+                                        <dt class="text-xs text-emerald-200/60" x-text="s.label"></dt>
+                                        <dd class="text-lg font-medium text-emerald-200" x-text="s.value"></dd>
+                                    </div>
+                                </template>
+                            </dl>
+
+                            <!-- Jump straight to the data: collect → what was gathered,
+                                 analyze → what the agent concluded for that source. -->
+                            <template x-if="(runModal.data.sources || []).length > 0">
+                                <div class="mt-4 border-t border-emerald-900/50 pt-3">
+                                    <p class="text-xs text-emerald-200/60">Результат по источникам</p>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <template x-for="src in runModal.data.sources" :key="src.source_id">
+                                            <a :href="`/app/sources/${src.source_id}`"
+                                               class="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-xs text-slate-200 hover:border-cyan-500 hover:text-cyan-300">
+                                                <span class="max-w-[10rem] truncate" x-text="src.name"></span>
+                                                <span :class="src.error ? 'text-rose-400' : 'text-slate-400'"
+                                                      x-text="src.note"></span>
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3 w-3">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M11 5l-7 7 7 7"/>
+                                                </svg>
+                                            </a>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
                     </template>
                     <template x-if="runModal.data.status === 'failed'">

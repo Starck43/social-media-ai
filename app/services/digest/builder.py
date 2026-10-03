@@ -35,6 +35,8 @@ def period_bounds(period: str, today: date | None = None) -> tuple[date, date]:
     today = today or date.today()
     if period == "week":
         start = today - timedelta(days=6)
+    elif period == "month":
+        start = today - timedelta(days=29)
     else:
         start = today
     return start, today
@@ -79,6 +81,15 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
     engagement = await agg.get_engagement_metrics(days=days)
     llm_stats = await agg.get_llm_provider_stats(days=days)
 
+    # Persist a WEEKLY/MONTHLY rollup row per source so `period_type` reflects
+    # the digest period (reads like get_by_date_range(period_type=WEEKLY) work).
+    if period in ("week", "month"):
+        from app.models.managers.ai_analytics_manager import AIAnalyticsManager
+        from app.types import PeriodType
+
+        period_type = PeriodType.WEEKLY if period == "week" else PeriodType.MONTHLY
+        await AIAnalyticsManager().build_period_rollups(period_type, start, end)
+
     dist = {"positive": 0, "neutral": 0, "negative": 0}
     total_analyses = 0
     for point in sentiment:
@@ -88,7 +99,11 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
         total_analyses += point.get("total_analyses", 0) or 0
 
     data: dict[str, Any] = {
-        "title": "📊 Дайджест" if period == "day" else "📊 Недельный дайджест",
+        "title": {
+            "day": "📊 Дайджест",
+            "week": "📊 Недельный дайджест",
+            "month": "📊 Месячный дайджест",
+        }.get(period, "📊 Дайджест"),
         "period": period,
         "period_start": start,
         "period_end": end,
@@ -105,7 +120,9 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
     return data, start, end
 
 
-async def build_and_publish(period: str = "day", agent_task_id: int | None = None) -> dict[str, Any]:
+async def build_and_publish(
+    period: str = "day", agent_task_id: int | None = None, force: bool = False
+) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
     from app.models.managers.digest_run_manager import DigestRunManager
 
@@ -113,7 +130,7 @@ async def build_and_publish(period: str = "day", agent_task_id: int | None = Non
     start, end = period_bounds(period)
     channel = "auto"
 
-    if agent_task_id is not None and await runs.already_sent(agent_task_id, start, end):
+    if agent_task_id is not None and not force and await runs.already_sent(agent_task_id, start, end):
         logger.info(f"Digest for task {agent_task_id} period {start}..{end} already sent — skipping")
         return {"status": "skipped", "reason": "already_sent"}
 

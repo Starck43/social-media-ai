@@ -13,6 +13,7 @@ from .auth import AdminAuthBackend
 from .views import (
     AIAnalyticsAdmin,
     BotActionAdmin,
+    CollectedItemAdmin,
     AgentScenarioAdmin,
     AgentTaskAdmin,
     LLMModelAdmin,
@@ -85,6 +86,7 @@ def setup_admin(app):
         PermissionAdmin,
         PlatformAdmin,
         SourceAdmin,
+        CollectedItemAdmin,
         AgentScenarioAdmin,
         AgentTaskAdmin,
         BotActionAdmin,

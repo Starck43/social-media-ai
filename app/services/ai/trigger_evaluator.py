@@ -264,25 +264,35 @@ class TriggerEvaluator:
 		try:
 			# Get analytics from last N hours
 			since = datetime.now(timezone.utc) - timedelta(hours=hours)
-			
+
 			# Query analytics for sources using this scenario
 			# Note: This requires source_id in AIAnalytics
 			# For now, approximate with all recent analytics
 			analytics = await AIAnalytics.objects.filter(
 				created_at__gte=since
 			)
-			
+
 			if not analytics:
 				return 0.0
-			
-			# Calculate average content count
-			# Assuming analytics has content_count or similar field
-			# If not available, use amount analytics entries as proxy
+
+			# Prefer real per-run message counts (written by the analyzer under
+			# content_statistics); fall back to the number of analytics rows as
+			# an approximate baseline when a row predates that field.
+			total_messages = 0
+			for a in analytics:
+				stats = (a.summary_data or {}).get("content_statistics") or {}
+				messages = stats.get("messages_count")
+				if messages:
+					total_messages += messages
+			if total_messages > 0:
+				return total_messages / max(1, hours)
+
+			# Fallback: amount analytics entries as proxy
 			total_count = len(analytics)
 			avg_count = total_count / max(1, hours)
-			
+
 			return avg_count
-			
+
 		except Exception as e:
 			logger.error(f"Failed to get baseline: {e}")
 			return 0.0

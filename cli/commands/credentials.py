@@ -202,10 +202,10 @@ def oauth_credential(
         tenant_id = await _resolve_tenant_id(tenant)
         user_id = await _resolve_user_id(user, tenant_id) if user else await _workspace_owner_id(tenant_id)
         try:
-            url = build_authorize_url(tenant_id, user_id=user_id)
+            url = await build_authorize_url(tenant_id, user_id=user_id)
         except RuntimeError as e:
             rprint(f"[red]{e}[/red]")
-            rprint("[dim]Set VK_APP_ID / VK_CLIENT_ACCESS_KEY in .env first[/dim]")
+            rprint("[dim]Set VK_APP_ID / VK_SERVICE_KEY in .env first[/dim]")
             raise typer.Exit(1)
 
         rprint(f"[cyan]Откройте ссылку и авторизуйте приложение VK:[/cyan]\n{url}")

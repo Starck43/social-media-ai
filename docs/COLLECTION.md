@@ -216,6 +216,12 @@ row is skipped with a warning, as before.
 | `collection.filter` | VK wall filter (`all`, `owner`, `others`, `suggests`) |
 | `force_refresh`, `cli_dates` | one-off/CLI date overrides used by the VK client |
 
+> **`force_refresh` has two flavours.** `collect --force-refresh` re-fetches the
+> full window from the API but analysis stays deduped (tokens saved). A
+> `task collect --force-refresh` additionally re-analyzes the whole window
+> (bypasses dedup) and overwrites `ai_analytics` rows by `(source, date)` — see
+> `docs/CLI.md`.
+
 ## Next steps (later milestones)
 
 1. **L3 browser fallback** — Playwright client for sources without an API.

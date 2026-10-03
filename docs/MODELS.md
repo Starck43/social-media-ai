@@ -298,13 +298,16 @@ Content sources (VK groups, Telegram channels, etc.).
 | `date_from` | `DateTime` | Collection start date |
 | `date_to` | `DateTime` | Collection end date |
 | `user_id` | `Integer` FK → `users` | Owner user (nullable) |
-| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Assigned scenario |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
 **Unique constraint:** `(tenant_id, user_id, platform_id, external_id)`
 
-**Relationships:** `user` (owner), `platform`, `agent_scenario`, `analytics` (one-to-many)
+**Relationships:** `user` (owner), `platform`, `analytics` (one-to-many)
+
+> A source does not carry a scenario — the scenario lives on the task that
+> drives it (`agent_tasks.agent_scenario_id`), with the workspace default as
+> the fallback for taskless runs (push ingest, CLI, agent collect).
 
 ---
 

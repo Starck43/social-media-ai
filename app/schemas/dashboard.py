@@ -43,7 +43,6 @@ class SourceSummary(BaseModel):
     is_active: bool
     last_checked: Optional[str] = Field(None, description="Last check timestamp (ISO format)")
     analytics_count: int = Field(..., description="Number of analytics for this source")
-    agent_scenario_name: Optional[str] = Field(None, description="Assigned bot scenario name")
 
 
 class AnalyticsSummary(BaseModel):

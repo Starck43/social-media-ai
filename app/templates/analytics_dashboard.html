@@ -196,13 +196,6 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Сценарий</label>
-                    <select class="form-select" id="scenario-filter">
-                        <option value="">Все сценарии</option>
-                        <!-- Populated dynamically -->
-                    </select>
-                </div>
-                <div class="col-md-3">
                     <button class="btn btn-primary w-100" onclick="loadAllWidgets()">
                         <i class="fas fa-search me-1"></i> Применить
                     </button>
@@ -715,32 +708,10 @@
             }
         }
         
-        // Load scenarios for filter
-        async function loadScenariosFilter() {
-            try {
-                // Fetch scenarios from API - need to create this endpoint or use existing
-                const response = await fetch('/api/v1/dashboard/scenarios');
-                if (response.ok) {
-                    const scenarios = await response.json();
-                    const scenarioFilter = document.getElementById('scenario-filter');
-                    
-                    scenarios.forEach(scenario => {
-                        const option = document.createElement('option');
-                        option.value = scenario.id;
-                        option.textContent = scenario.name;
-                        scenarioFilter.appendChild(option);
-                    });
-                }
-            } catch (error) {
-                console.log('Scenarios endpoint not available yet');
-            }
-        }
-        
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
             // Load filters first
             loadSourcesFilter();
-            loadScenariosFilter();
             
             // Load widgets
             loadAllWidgets();

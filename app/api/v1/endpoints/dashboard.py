@@ -113,7 +113,6 @@ async def get_sources_summary(
 		platform_id: Optional[int] = None,
 		source_type: Optional[SourceType] = None,
 		is_active: Optional[bool] = None,
-		has_scenario: Optional[bool] = None,
 		limit: int = Query(50, ge=1, le=100),
 		offset: int = Query(0, ge=0),
 ):
@@ -124,7 +123,6 @@ async def get_sources_summary(
 	— platform_id: Filter by a platform
 	— source_type: Filter by source type
 	— is_active: Filter by active status
-	— has_scenario: Filter sources with/without bot scenario
 	— limit/offset: Pagination
 	"""
 
@@ -150,20 +148,6 @@ async def get_sources_summary(
 	for a in all_analytics:
 		analytics_count[a.source_id] = analytics_count.get(a.source_id, 0) + 1
 
-	# Filter by scenario if needed
-	if has_scenario is not None:
-		sources = [
-			s
-			for s in sources
-			if (s.agent_scenario_id is not None) == has_scenario
-		]
-
-	# Get bot scenarios
-	from app.models import AgentScenario
-
-	scenarios = await AgentScenario.objects.filter()
-	scenario_map = {s.id: s.name for s in scenarios}
-
 	result = []
 	for source in sources:
 		result.append(
@@ -177,9 +161,6 @@ async def get_sources_summary(
 				if source.last_checked
 				else None,
 				analytics_count=analytics_count.get(source.id, 0),
-				agent_scenario_name=scenario_map.get(source.agent_scenario_id)
-				if source.agent_scenario_id
-				else None,
 			)
 		)
 
@@ -745,7 +726,6 @@ async def debug_single_analytics(analytics_id: int):
 @router.get("/analytics/aggregate/sentiment-trends", response_model=dict)
 async def get_sentiment_trends_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
-	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 	group_by: str = Query('day', description="Group by: day, week"),
 ):
@@ -758,7 +738,6 @@ async def get_sentiment_trends_aggregate(
 	aggregator = ReportAggregator()
 	trends = await aggregator.get_sentiment_trends(
 		source_id=source_id,
-		scenario_id=scenario_id,
 		days=days,
 		group_by=group_by
 	)
@@ -773,7 +752,6 @@ async def get_sentiment_trends_aggregate(
 @router.get("/analytics/aggregate/top-topics", response_model=dict)
 async def get_top_topics_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
-	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 	limit: int = Query(10, ge=1, le=50, description="Max topics to return"),
 ):
@@ -786,7 +764,6 @@ async def get_top_topics_aggregate(
 	aggregator = ReportAggregator()
 	topics = await aggregator.get_top_topics(
 		source_id=source_id,
-		scenario_id=scenario_id,
 		days=days,
 		limit=limit
 	)
@@ -801,7 +778,6 @@ async def get_top_topics_aggregate(
 @router.get("/analytics/aggregate/llm-stats", response_model=dict)
 async def get_llm_provider_stats_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
-	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
 ):
 	"""
@@ -813,7 +789,6 @@ async def get_llm_provider_stats_aggregate(
 	aggregator = ReportAggregator()
 	stats = await aggregator.get_llm_provider_stats(
 		source_id=source_id,
-		scenario_id=scenario_id,
 		days=days
 	)
 	
@@ -823,7 +798,6 @@ async def get_llm_provider_stats_aggregate(
 @router.get("/analytics/aggregate/content-mix", response_model=dict)
 async def get_content_mix_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
-	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 ):
 	"""
@@ -835,7 +809,6 @@ async def get_content_mix_aggregate(
 	aggregator = ReportAggregator()
 	mix = await aggregator.get_content_mix(
 		source_id=source_id,
-		scenario_id=scenario_id,
 		days=days
 	)
 	
@@ -845,7 +818,6 @@ async def get_content_mix_aggregate(
 @router.get("/analytics/aggregate/engagement", response_model=dict)
 async def get_engagement_metrics_aggregate(
 	source_id: Optional[int] = Query(None, description="Filter by source"),
-	scenario_id: Optional[int] = Query(None, description="Filter by scenario"),
 	days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
 ):
 	"""
@@ -857,30 +829,7 @@ async def get_engagement_metrics_aggregate(
 	aggregator = ReportAggregator()
 	metrics = await aggregator.get_engagement_metrics(
 		source_id=source_id,
-		scenario_id=scenario_id,
 		days=days
 	)
 	
 	return metrics
-
-
-@router.get("/scenarios", response_model=list[dict])
-async def get_scenarios_list():
-	"""
-	Get list of bot scenarios for filters.
-	
-	Returns:
-		List of scenarios with id and name
-	"""
-	from app.models import AgentScenario
-	
-	scenarios = await AgentScenario.objects.filter(is_active=True).order_by(AgentScenario.name.asc())
-	
-	return [
-		{
-			"id": scenario.id,
-			"name": scenario.name,
-			"description": scenario.description or ""
-		}
-		for scenario in scenarios
-	]

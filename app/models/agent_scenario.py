@@ -143,9 +143,6 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
         "LLMModel", back_populates="video_scenarios", foreign_keys=[video_llm_model_id]
     )
 
-    # Reverse FK relation: one scenario can be reused by many sources
-    sources = relationship("Source", back_populates="agent_scenario")
-
     # Reverse FK relation: one scenario can be reused by many tasks
     agent_tasks = relationship("AgentTask", back_populates="agent_scenario")
 

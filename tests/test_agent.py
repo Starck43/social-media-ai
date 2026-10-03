@@ -10,7 +10,9 @@ sessions created by the tests.
 """
 
 import asyncio
+import json
 
+import httpx
 import pytest
 
 from app.agent import runtime as agent_runtime
@@ -120,6 +122,99 @@ async def test_plain_reply_no_tools(_clean_sessions, monkeypatch):
 
     reply = await agent_runtime.handle_inbound(_inbound("привет"))
     assert reply == "Привет! Чем помочь?"
+
+
+async def test_a_tool_call_is_replayed_to_the_api_in_wire_shape(_clean_sessions, monkeypatch):
+    """The assistant turn that asked for a tool must go back in API shape.
+
+    The loop dispatches on a flat call (`{"id", "name", "arguments"}` with a
+    dict) and stores exactly that, but the *next* request to the provider has to
+    carry the wire shape: `arguments` nested under `function` and serialized to a
+    JSON string. Replaying the flat one made the provider reject the request
+    with `tool_calls[0].function must be an object`, and the user saw a bare
+    "Ошибка LLM: 400" at the end of every turn that used a tool.
+
+    The second `_chat` call is the one that matters: it is the request carrying
+    the assistant's tool_calls back.
+    """
+    _set_owner(monkeypatch)
+    seen: list[list[dict]] = []
+
+    async def fake_chat(messages, specs):
+        seen.append(messages)
+        if len(seen) == 1:
+            return {
+                "content": "",
+                "tool_calls": [{"id": "c1", "name": "system_status", "arguments": {}}],
+                "usage": {},
+            }
+        return {"content": "Готово", "tool_calls": [], "usage": {}}
+
+    async def fake_tool(name, args):
+        return {"ok": True}
+
+    monkeypatch.setattr(agent_runtime, "_chat", fake_chat)
+    monkeypatch.setattr(agent_runtime, "call_tool", fake_tool)
+    monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+    reply = await agent_runtime.handle_inbound(_inbound("статус"))
+    assert reply == "Готово", "the turn must complete instead of erroring"
+    assert len(seen) == 2, "the tool round-trip must have taken a second request"
+
+    assistant = [m for m in seen[1] if m["role"] == "assistant" and m.get("tool_calls")]
+    assert len(assistant) == 1, f"the replayed assistant turn is missing: {seen[1]!r}"
+
+    call = assistant[0]["tool_calls"][0]
+    assert call["type"] == "function"
+    assert call["id"] == "c1", "the tool result is matched by id, so it must survive"
+    fn = call["function"]
+    assert isinstance(fn, dict), f"function must be an object, got {fn!r}"
+    assert fn["name"] == "system_status"
+    # A JSON string, not a dict — and it must round-trip back to the arguments.
+    assert isinstance(fn["arguments"], str), f"arguments must be a JSON string, got {fn['arguments']!r}"
+    assert json.loads(fn["arguments"]) == {}
+
+
+async def test_llm_failures_reply_short_and_never_leak_the_body(_clean_sessions, monkeypatch):
+    """The chat shows a readable line; the provider's body stays in the log.
+
+    `httpx.HTTPStatusError` stringifies to `<status>: <response text>`, and a
+    provider's text is a JSON error document. Pasting that into the transcript
+    buried the conversation in English JSON, so the reply keeps only the status
+    (the part that says what to do) and points at the logs.
+    """
+    _set_owner(monkeypatch)
+    body = '{"error":{"message":"messages[9].tool_calls[0].function must be an object"}}'
+    cases = {
+        400: "отклонила",
+        401: "API-ключ",
+        429: "лимита запросов",
+        503: "недоступна",
+    }
+
+    for status, expected in cases.items():
+        response = httpx.Response(status, text=body, request=httpx.Request("POST", "http://llm/chat/completions"))
+        error = httpx.HTTPStatusError(f"{status}: {body}", request=response.request, response=response)
+
+        async def failing(messages, specs, _err=error):
+            raise _err
+
+        monkeypatch.setattr(agent_runtime, "_chat", failing)
+        monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+        reply = await agent_runtime.handle_inbound(_inbound(f"вопрос-{status}"))
+        assert reply is not None
+        assert expected in reply, f"status {status}: {reply!r}"
+        assert body not in reply, f"status {status}: the provider body leaked into the chat"
+        assert "{" not in reply and "}" not in reply, f"status {status}: JSON leaked: {reply!r}"
+
+    # A transport failure has no status at all and must still read as a sentence.
+    async def offline(messages, specs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(agent_runtime, "_chat", offline)
+    reply = await agent_runtime.handle_inbound(_inbound("офлайн"))
+    assert reply == "Не удалось обратиться к языковой модели. Подробности в логах."
 
 
 async def test_cost_cap_short_circuits(_clean_sessions, monkeypatch):

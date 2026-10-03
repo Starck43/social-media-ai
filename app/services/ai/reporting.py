@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from app.models import AgentScenario, AIAnalytics, Source
+from app.models import AIAnalytics
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -43,7 +43,6 @@ class ReportAggregator:
     def _analytics_query(
         days: int,
         source_id: Optional[int] = None,
-        scenario_id: Optional[int] = None,
         tenant_id: Optional[int] = None,
     ):
         """Analytics rows for the report, scoped to the ambient tenant.
@@ -56,26 +55,19 @@ class ReportAggregator:
         if source_id:
             qs = qs.filter(source_id=source_id)
 
-        if scenario_id:
-            # Filter by the scenario attached to the analytics' source.
-            qs = qs.join(Source, AIAnalytics.source_id == Source.id).filter(
-                Source.agent_scenario_id == scenario_id
-            )
-
         if tenant_id is not None:
             qs = qs.filter(tenant_id=tenant_id)
 
         return qs.order_by(AIAnalytics.analysis_date.asc())
 
     async def get_sentiment_trends(
-        self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7, group_by: str = "day"
+        self, source_id: Optional[int] = None, days: int = 7, group_by: str = "day"
     ) -> list[dict[str, Any]]:
         """
         Get sentiment trends over time period.
 
         Args:
                 source_id: Filter by specific source
-                scenario_id: Filter by scenario (via source)
                 days: Number of days to look back
                 group_by: Grouping interval ('day', 'week')
 
@@ -83,7 +75,7 @@ class ReportAggregator:
                 List of trend points with date, avg sentiment, counts
         """
         try:
-            analytics = await self._analytics_query(days, source_id, scenario_id)
+            analytics = await self._analytics_query(days, source_id)
 
             # Aggregate by date
             trends = []
@@ -126,7 +118,6 @@ class ReportAggregator:
     async def get_top_topics(
         self,
         source_id: Optional[int] = None,
-        scenario_id: Optional[int] = None,
         days: int = 7,
         limit: int = 10,
         tenant_id: Optional[int] = None,
@@ -136,7 +127,6 @@ class ReportAggregator:
 
         Args:
                 source_id: Filter by specific source
-                scenario_id: Filter by scenario
                 days: Amount days to look back
                 limit: Max amount topics to return
                 tenant_id: Scope to a tenant (via AIAnalytics.tenant_id)
@@ -145,7 +135,7 @@ class ReportAggregator:
                 List of topics with counts, sentiment, example posts
         """
         try:
-            analytics = await self._analytics_query(days, source_id, scenario_id, tenant_id)
+            analytics = await self._analytics_query(days, source_id, tenant_id)
 
             # Extract and count topics
             topic_counter = Counter()
@@ -191,21 +181,20 @@ class ReportAggregator:
             return []
 
     async def get_llm_provider_stats(
-        self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 30
+        self, source_id: Optional[int] = None, days: int = 30
     ) -> dict[str, Any]:
         """
         Get LLM provider usage statistics and costs.
 
         Args:
                 source_id: Filter by specific source
-                scenario_id: Filter by scenario
                 days: Number of days to look back
 
         Returns:
                 Dict with provider stats, costs, token usage
         """
         try:
-            analytics = await self._analytics_query(days, source_id, scenario_id)
+            analytics = await self._analytics_query(days, source_id)
 
             # Aggregate by provider
             provider_stats = defaultdict(
@@ -270,7 +259,6 @@ class ReportAggregator:
     async def get_content_mix(
         self,
         source_id: Optional[int] = None,
-        scenario_id: Optional[int] = None,
         days: int = 7,
         tenant_id: Optional[int] = None,
     ) -> dict[str, Any]:
@@ -279,7 +267,6 @@ class ReportAggregator:
 
         Args:
                 source_id: Filter by specific source
-                scenario_id: Filter by scenario
                 days: Number of days to look back
                 tenant_id: Scope to a tenant (via AIAnalytics.tenant_id)
 
@@ -287,7 +274,7 @@ class ReportAggregator:
                 Dict with counts and percentages per media type
         """
         try:
-            analytics = await self._analytics_query(days, source_id, scenario_id, tenant_id)
+            analytics = await self._analytics_query(days, source_id, tenant_id)
 
             # Count media types
             media_counts = Counter()
@@ -312,21 +299,20 @@ class ReportAggregator:
             return {"media_types": {}, "total_analyses": 0, "total_media_items": 0}
 
     async def get_engagement_metrics(
-        self, source_id: Optional[int] = None, scenario_id: Optional[int] = None, days: int = 7
+        self, source_id: Optional[int] = None, days: int = 7
     ) -> dict[str, Any]:
         """
-        Get engagement metrics from analyzed content.
+        Get engagement metrics (reactions, comments).
 
         Args:
                 source_id: Filter by specific source
-                scenario_id: Filter by scenario
                 days: Number of days to look back
 
         Returns:
-                Dict with avg reactions, comments, engagement rates
+                Dict with average engagement rates per post
         """
         try:
-            analytics = await self._analytics_query(days, source_id, scenario_id)
+            analytics = await self._analytics_query(days, source_id)
 
             # Extract engagement data
             total_reactions = 0
@@ -354,6 +340,47 @@ class ReportAggregator:
         except Exception as e:
             logger.error(f"Error getting engagement metrics: {e}", exc_info=True)
             return {}
+
+    async def get_activity_trend(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Per-day user activity (messages, active users, engagement) for the report.
+
+        Reads the real per-day stats the analyzer writes under
+        `content_statistics` (`active_users`, `messages_count`,
+        `total_posts`, engagement), so the trend reflects actual user activity
+        instead of being empty.
+        """
+        analytics = await self._analytics_query(days, source_id, tenant_id)
+
+        by_date: dict[date, list] = defaultdict(list)
+        for a in analytics:
+            stats = (a.summary_data or {}).get("content_statistics") or {}
+            if stats:
+                by_date[a.analysis_date].append(stats)
+
+        trend: list[dict[str, Any]] = []
+        for d, items in sorted(by_date.items()):
+            posts = sum((i.get("total_posts") or 0) for i in items)
+            messages = sum((i.get("messages_count") or 0) for i in items)
+            users = sum((i.get("active_users") or 0) for i in items)
+            reactions = sum((i.get("total_reactions") or 0) for i in items)
+            comments = sum((i.get("total_comments") or 0) for i in items)
+            views = sum((i.get("total_views") or 0) for i in items)
+            rate = (reactions + comments + views) / posts if posts else 0
+            trend.append(
+                {
+                    "date": d.isoformat(),
+                    "total_posts": posts,
+                    "messages_count": messages,
+                    "active_users": users,
+                    "engagement_rate": round(rate, 2),
+                }
+            )
+        return trend
 
     # Helper methods for data extraction
 

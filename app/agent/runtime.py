@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.agent.prompts import AGENT_SYSTEM_PROMPT
-from app.agent.tools import TOOL_REGISTRY, call_tool, tool_specs
+from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
 from app.core.tenant_context import tenant_scope
@@ -249,8 +249,12 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         try:
             response = await _chat(messages, specs)
         except Exception as e:  # noqa: BLE001
+            # The chat is a channel for the person, not a log: a provider body
+            # ("400: {...json...}") is unreadable there and can be long. The full
+            # exception (type, status, response text) goes to the log; the reply
+            # carries only what the person can act on.
             logger.error(f"Agent LLM call failed: {e}", exc_info=True)
-            reply = f"Ошибка LLM: {e}"
+            reply = _llm_error_reply(e)
             await session.append("assistant", reply)
             break
 
@@ -263,9 +267,18 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             await session.append("assistant", reply)
             break
 
-        # Persist assistant turn, then execute each tool call
+        # Persist assistant turn, then execute each tool call. The in-flight
+        # assistant message goes back to the API on the next iteration, so it
+        # needs the wire shape (`function.arguments` as a JSON string) — the
+        # flat call this loop dispatches on is rejected by the provider.
         await session.append("assistant", content, tool_calls=tool_calls)
-        messages.append({"role": "assistant", "content": content or None, "tool_calls": tool_calls})
+        messages.append(
+            {
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": [to_openai_call(call) for call in tool_calls],
+            }
+        )
 
         stop_loop = False
         tool_output = ""
@@ -308,6 +321,30 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
 
     await session.touch()
     return reply
+
+
+def _llm_error_reply(exc: BaseException) -> str:
+    """A short, actionable LLM failure line for the chat — never the raw body.
+
+    `httpx.HTTPStatusError` stringifies to `<status>: <response text>`, which for
+    a provider is a JSON error document (hundreds of characters, English keys).
+    Dropping it from the reply keeps the transcript readable; the status is the
+    part that tells the person what to do, so it stays. 4xx means our request or
+    the configuration is wrong, 5xx means the provider is unavailable — and the
+    two need different reactions, so they are named rather than both called
+    "ошибка".
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status is None:
+        return "Не удалось обратиться к языковой модели. Подробности в логах."
+
+    if status == 401 or status == 403:
+        return "Языковая модель отклонила запрос: неверный или истёкший API-ключ. Подробности в логах."
+    if status == 429:
+        return "Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."
+    if 400 <= status < 500:
+        return f"Языковая модель отклонила мой запрос ({status}). Подробности в логах."
+    return f"Языковая модель сейчас недоступна ({status}). Подробности в логах."
 
 
 async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) -> str:

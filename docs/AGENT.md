@@ -38,7 +38,7 @@ messenger message
 OpenAI function calling.
 
 Запись/отправка (`confirm=True`): `task_add/remove/pause`, `source_add/disable`,
-`digest_send_now`, `action_send`, `scenario_assign`. Их модель не
+`digest_send_now`, `action_send`. Их модель не
 выполняет сама — runtime кладёт вызов в `session.state['pending_confirmation']`
 и ждёт явного «да»/«нет» от владельца.
 

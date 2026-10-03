@@ -35,7 +35,9 @@ class AIAnalyzer:
     def __init__(self):
         self.theme_matcher = ThemeMatcher()
 
-    async def analyze_content(self, content: list[dict], source: Source, analyze_by: str = None) -> list[AIAnalytics]:
+    async def analyze_content(
+        self, content: list[dict], source: Source, analyze_by: str = None, force_reanalyze: bool = False
+    ) -> list[AIAnalytics]:
         """
         Analyze content based on analyze_by mode.
 
@@ -43,16 +45,31 @@ class AIAnalyzer:
                 content: List of content items
                 source: Source being analyzed
                 analyze_by: Analysis mode: "days" or "themes"
+                force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
 
         Returns:
                 List of AIAnalytics records (one per day with activity)
         """
-        analyze_by = analyze_by or (source.agent_scenario.analyze_type if source.agent_scenario else "themes")
+        analyze_by = analyze_by or (await self._default_scenario_analyze_type(source))
 
         if analyze_by == "themes":
-            return await self._analyze_content_by_themes(content, source)
+            return await self._analyze_content_by_themes(content, source, force_reanalyze=force_reanalyze)
         else:
-            return await self._analyze_content_by_days(content, source)
+            return await self._analyze_content_by_days(content, source, force_reanalyze=force_reanalyze)
+
+    async def _default_scenario_analyze_type(self, source: Source) -> str:
+        """The analysis mode ("days"/"themes") of the workspace default scenario.
+
+        The source no longer owns a scenario, so the default is the only source
+        of the mode for taskless runs; "themes" is the fallback when none set.
+        """
+        try:
+            default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
+            if default_sc is not None and default_sc.analyze_type:
+                return default_sc.analyze_type
+        except Exception:
+            pass
+        return "themes"
 
     async def base_analyze_content(
         self,
@@ -61,6 +78,7 @@ class AIAnalyzer:
         topic_chain_id: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,
         analysis_date: Optional[date] = None,
+        force_reanalyze: bool = False,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
@@ -71,6 +89,9 @@ class AIAnalyzer:
                 topic_chain_id: Optional chain ID for ongoing topics
                 parent_analysis_id: Optional parent analysis ID for threaded analysis
                 analysis_date: Optional date to use for this analysis (defaults to today)
+                force_reanalyze: Bypass dedup and analyze everything (used by a
+                        full-cycle `--force-refresh` task run so stored rows are
+                        overwritten; costs tokens, so it is never the default).
 
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
@@ -81,33 +102,29 @@ class AIAnalyzer:
 
         # Dedup before anything expensive: items already covered by an earlier
         # analysis must never reach the LLM again (fail-open, see dedup.py).
-        content, known = await filter_analyzed(content, source.id)
-        if not content:
-            if known is not None:
-                logger.info(f"Batch for source {source.id} fully covered by analytics {known.id}, returning as-is")
-                return known
-            logger.warning(f"No content to analyze for source {source.id} after dedup filtering")
-            return None
+        # `force_reanalyze` is the deliberate exception: a full-cycle refresh
+        # re-analyzes the whole selected period so its rows get overwritten.
+        if not force_reanalyze:
+            content, known = await filter_analyzed(content, source.id)
+            if not content:
+                if known is not None:
+                    logger.info(f"Batch for source {source.id} fully covered by analytics {known.id}, returning as-is")
+                    return known
+                logger.warning(f"No content to analyze for source {source.id} after dedup filtering")
+                return None
+        else:
+            logger.info(f"Force re-analysis for source {source.id}: bypassing dedup ({len(content)} items)")
 
-        # Load bot scenario if assigned; fallback to tenant default
+        # Load the scenario: the source no longer carries one. Runs without a
+        # task (push ingest, CLI collect, agent collect) use the tenant default.
         agent_scenario = None
-        if source.agent_scenario_id:
-            try:
-                agent_scenario = await AgentScenario.objects.get(id=source.agent_scenario_id)
-                logger.info(
-                    f"Using bot scenario '{agent_scenario.name}' (ID: {agent_scenario.id}) " f"for source {source.id}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to load bot scenario {source.agent_scenario_id}: {e}")
-
-        if not agent_scenario:
-            try:
-                default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
-                if default_sc:
-                    agent_scenario = default_sc
-                    logger.info(f"No scenario on source {source.id}, using tenant default: {agent_scenario.name}")
-            except Exception:
-                pass
+        try:
+            default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
+            if default_sc:
+                agent_scenario = default_sc
+                logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
+        except Exception:
+            pass
 
         # Lazy structured-output schema: derive from analysis_types when the
         # scenario has no explicit output_schema (in-memory, not persisted).
@@ -197,13 +214,16 @@ class AIAnalyzer:
             logger.error(f"Error analyzing content for source {source.id}: {e}", exc_info=True)
             return None
 
-    async def _analyze_content_by_days(self, content: list[dict], source: Source) -> list[AIAnalytics]:
+    async def _analyze_content_by_days(
+        self, content: list[dict], source: Source, force_reanalyze: bool = False
+    ) -> list[AIAnalytics]:
         """
         Group content by days and analyze each day separately.
 
         Args:
                 content: List of content items
                 source: Source being analyzed
+                force_reanalyze: Bypass dedup and re-analyze everything
 
         Returns:
                 List of AIAnalytics records (one per day with activity)
@@ -242,7 +262,9 @@ class AIAnalyzer:
 
             try:
                 # Use base analysis for each day
-                analytics = await self.base_analyze_content(content=day_content, source=source, analysis_date=day)
+                analytics = await self.base_analyze_content(
+                    content=day_content, source=source, analysis_date=day, force_reanalyze=force_reanalyze
+                )
 
                 # Only add non-empty analytics
                 if analytics:
@@ -261,13 +283,16 @@ class AIAnalyzer:
 
         return analytics_list
 
-    async def _analyze_content_by_themes(self, content: list[dict], source: Source) -> list[AIAnalytics]:
+    async def _analyze_content_by_themes(
+        self, content: list[dict], source: Source, force_reanalyze: bool = False
+    ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
 
         Args:
                 content: List of content items
                 source: Source being analyzed
+                force_reanalyze: Bypass dedup and re-analyze everything
 
         Returns:
                 List of AIAnalytics records (typically one record with theme linking)
@@ -277,7 +302,7 @@ class AIAnalyzer:
             return []
 
         # Use base analysis for all content
-        analysis = await self.base_analyze_content(content, source)
+        analysis = await self.base_analyze_content(content, source, force_reanalyze=force_reanalyze)
         if not analysis:
             return []
 
@@ -675,6 +700,21 @@ class AIAnalyzer:
         texts = [item.get("text", "") for item in content]
         reactions = [item.get("reactions", 0) for item in content]
         comments = [item.get("comments", 0) for item in content]
+        views = [item.get("views", 0) for item in content]
+
+        # Distinct authors: VK items carry from_id/owner_id; Telegram comments a
+        # from_id. Any of these is enough to count an active user.
+        authors: set[str] = set()
+        for item in content:
+            for key in ("from_id", "owner_id", "author_id", "user_id"):
+                if item.get(key) is not None:
+                    authors.add(str(item[key]))
+                    break
+
+        total_posts = len(content)
+        total_reactions = sum(reactions)
+        total_comments = sum(comments)
+        total_views = sum(views)
 
         # Extract and parse post dates using existing utility
         post_dates = []
@@ -702,17 +742,17 @@ class AIAnalyzer:
             date_range_dict = {"first": min(dates) if dates else None, "last": max(dates) if dates else None}
 
         # Calculate all statistics
-        total_posts = len(content)
-        total_reactions = sum(reactions)
-        total_comments = sum(comments)
-
         return {
             "total_posts": total_posts,
+            "messages_count": total_posts,
+            "active_users": len(authors),
             "avg_text_length": sum(len(t) for t in texts) / total_posts if texts else 0,
             "total_reactions": total_reactions,
             "total_comments": total_comments,
+            "total_views": total_views,
             "avg_reactions_per_post": total_reactions / total_posts if total_posts else 0,
             "avg_comments_per_post": total_comments / total_posts if total_posts else 0,
+            "engagement_rate": (total_reactions + total_comments + total_views) / total_posts if total_posts else 0,
             "date_range": date_range_dict,  # Context-aware date range
             "content_date_range": content_date_range,  # Actual post dates
         }

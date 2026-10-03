@@ -94,6 +94,9 @@ python -m cli.main collect [options]
 | `--tenant` | — | Workspace slug or id |
 | `--monitored` | — | Usernames to collect for instead of source defaults |
 | `--excluded` | — | Usernames to skip |
+| `--start-date` | — | Start date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
+| `--end-date` | — | End date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
+| `--force-refresh` | `false` | Re-fetch the full date range from the API (default: only what is new since the last check) |
 | `--verbose`, `-v` | `false` | Show detailed collection output |
 
 **Examples:**
@@ -109,7 +112,16 @@ python -m cli.main collect --src vk --verbose
 
 # Collect by source url with monitored/excluded users
 python -m cli.main collect --src https://vk.com/russkikh_natalia --monitored user_a --excluded spam
+
+# Re-fetch the full date range from the API (analysis still deduped, so tokens
+# are only spent on genuinely new/changed content)
+python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ```
+
+> `collect --force-refresh` re-fetches via the API only. Deduplication (by
+> content hash) stays on, so already-seen posts are not re-analyzed — this is
+> the token-saving behaviour. For a full re-analysis that overwrites rows, use
+> `task collect --force-refresh` (below).
 
 ---
 
@@ -194,11 +206,21 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 | `--monitored` | — | Usernames to collect (one-off run) |
 | `--excluded` | — | Usernames to skip (one-off run) |
 | `--scenario` | — | `AgentScenario` ID (one-off run) |
-| `--period` | — | Period for digest/collect: `day`, `week`, `last month` etc. |
+| `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |
 | `--tenant` | — | Workspace slug or id for a one-off run |
+| `--force-refresh` | `false` | Full-cycle refresh (per job type, below); applied to this job only, never persisted on the task row |
 
 A task's own workspace always wins over `--tenant`. Running a task executes
 *its own* job — it never drains an unrelated pending job.
+
+**`--force-refresh` per job type** — what gets updated:
+
+| Job type | Effect |
+|---|---|
+| `collect` | Re-fetch the whole selected period **and** re-analyze it (bypasses dedup), overwriting `ai_analytics` rows by `(source, date)`. Costs tokens — use deliberately. |
+| `digest` | Re-sends the digest even when it was already sent for this task + period (skips the idempotency check). |
+| `analyze` | No extra effect: it already re-evaluates triggers over stored analytics. |
+| `prune`, `learn`, `reflect` | No extra effect beyond a normal run. |
 
 **Examples:**
 ```bash
@@ -210,6 +232,9 @@ python -m cli.main task digest --task 524 --period week
 
 # One-off analyze run
 python -m cli.main task analyze --sources 739 --scenario 3
+
+# Full-cycle refresh: re-fetch + re-analyze the whole period, overwriting rows
+python -m cli.main task collect --task 524 --force-refresh
 ```
 
 ### Pause / Resume Task

@@ -2,7 +2,7 @@
 
 The runtime used to pass the fetched batch straight to the analyser and drop
 it on the floor: the texts lived in a local variable for the length of one call
-and were gone afterwards. Nothing could show *what* was collected, and the only
+and were gone afterward. Nothing could show *what* was collected, and the only
 dedup index was `ai_analytics`, which stays empty for as long as analysis
 fails — so every re-run reported the whole wall as "new" again.
 

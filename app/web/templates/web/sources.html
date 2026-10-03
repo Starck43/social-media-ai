@@ -18,43 +18,29 @@
                         {% endfor %}
                     </select>
                 </label>
-                <label>
-                    <select name="scenario_id" onchange="this.form.submit()"
-                            class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
-                        <option value="">Все сценарии</option>
-                        {% for s in scenarios %}
-                        <option value="{{ s.id }}" {% if filter_scenario_id== s.id %}selected{% endif %}>{{ s.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </label>
-            </form>
-            {% elif scenarios %}
-            <form method="get" class="flex items-center gap-2">
-                <select name="scenario_id" onchange="this.form.submit()"
-                        class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
-                    <option value="">Все сценарии</option>
-                    {% for s in scenarios %}
-                    <option value="{{ s.id }}" {% if filter_scenario_id== s.id %}selected{% endif %}>{{ s.name }}
-                    </option>
-                    {% endfor %}
-                </select>
             </form>
             {% endif %}
             {% if vk_l2.state == "connected" %}
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-950 px-3 py-1.5 text-xs font-medium text-emerald-400">
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>{{ vk_l2.label }}
+            <span class="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-2 py-1.5">
+                <span class="sr-only">VK подключён</span>
+                <svg class="h-5 w-5 rounded-full" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="10" r="10" fill="#3E7D57"/>
+                    <path d="M6.5 10.5l2.5 2.5 4.5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
             </span>
-            {% elif vk_l2.state == "expired" %}
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-950 px-3 py-1.5 text-xs font-medium text-amber-400">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>{{ vk_l2.label }}
-            </span>
-            {% endif %}
+            <form method="post" action="/app/vk/logout" class="inline">
+                <button type="submit"
+                        class="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800">
+                    Выйти из аккаунта ВК
+                </button>
+            </form>
+            {% else %}
             <a href="/app/vk/oauth"
                title="Авторизуйте VK-приложение, чтобы включить сбор через персональный токен (L2)"
                class="rounded-lg border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-950">
                 Войти через VK ID
             </a>
+            {% endif %}
             {% if perms and perms.can('source', 'create') %}
             <button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">

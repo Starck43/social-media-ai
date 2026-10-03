@@ -82,6 +82,31 @@ def to_openai_schemas() -> list[dict[str, Any]]:
     return [t.to_openai() for t in _REGISTRY.values()]
 
 
+def to_openai_call(call: dict[str, Any], call_id: str | None = None) -> dict[str, Any]:
+    """One tool call in the shape a chat API expects inside an assistant message.
+
+    Everywhere else in the agent a call is flat — `{"id", "name", "arguments"}`,
+    which is what tools dispatch on and what `agent_messages.tool_calls` stores.
+    A chat API wants the *wire* shape instead: `arguments` nested under
+    `function` and serialized to a JSON string, never a dict.
+
+    Sending the flat shape back makes the provider reject the whole request with
+    `messages[N].tool_calls[0].function must be an object`, which surfaces to the
+    user as a bare "Ошибка LLM: 400" after any tool call. Both the replayed
+    history and the in-flight loop of a single turn must go through here.
+    """
+    args = call.get("arguments")
+    if isinstance(args, str):
+        arguments = args
+    else:
+        arguments = json.dumps(args or {}, ensure_ascii=False)
+    return {
+        "id": call_id or call.get("id") or call.get("name") or "",
+        "type": "function",
+        "function": {"name": call.get("name") or "", "arguments": arguments},
+    }
+
+
 # Public aliases used by the runtime.
 TOOL_REGISTRY: dict[str, Tool] = _REGISTRY
 

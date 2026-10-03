@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from app.agent.tools import to_openai_call
 from app.core.config import settings
 from app.models import AgentMessage, AgentSession
 from app.models.managers.agent_message_manager import agent_messages
@@ -51,17 +51,7 @@ async def load_history(session: AgentSession) -> list[dict[str, Any]]:
                 cid = _call_id(call, row.id, i)
                 if cid not in valid_ids:
                     continue
-                args = call.get("arguments")
-                calls.append(
-                    {
-                        "id": cid,
-                        "type": "function",
-                        "function": {
-                            "name": call.get("name", ""),
-                            "arguments": args if isinstance(args, str) else json.dumps(args or {}, ensure_ascii=False),
-                        },
-                    }
-                )
+                calls.append(to_openai_call(call, cid))
             if calls:
                 msg["tool_calls"] = calls
         messages.append(msg)

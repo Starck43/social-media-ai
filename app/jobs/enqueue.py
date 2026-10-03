@@ -18,8 +18,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-async def enqueue_task_run(task: Any) -> Any:
+async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = None) -> Any:
     """Enqueue a job for an existing task and mark the task as triggered.
+
+    `extra_payload` merges one-off overrides (e.g. a manual `--force-refresh`)
+    into the job's payload without persisting them on the task row.
 
     Returns the created `Job` so callers can track it (run it now, poll its
     status, show it in a modal).
@@ -29,9 +32,13 @@ async def enqueue_task_run(task: Any) -> Any:
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(task.tenant_id):
+        payload = dict(task.payload or {})
+        if extra_payload:
+            payload.update({k: v for k, v in extra_payload.items() if v is not None})
+
         job = await JobManager().enqueue(
             job_type=task.job_type,
-            payload=task.payload or {},
+            payload=payload,
             agent_task_id=task.id,
             run_at=datetime.now(timezone.utc),
         )

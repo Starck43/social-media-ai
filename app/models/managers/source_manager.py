@@ -58,7 +58,7 @@ class SourceManager(BaseManager["Source"]):
             query = query.filter(external_id=external_id)
 
         # Execute the query with platform eager loading
-        source = await query.select_related("platform", "agent_scenario").first()
+        source = await query.select_related("platform").first()
 
         if not source:
             identifier = f"ID {source_id}" if source_id else f"external_id '{external_id}'"
@@ -237,49 +237,6 @@ class SourceManager(BaseManager["Source"]):
 
         return list(await qs)
 
-    async def get_with_scenario(self, source_id: int) -> Optional["Source"]:
-        """
-        Get source with prefetched agent_scenario relationship.
-
-        Args:
-                source_id: Source ID
-
-        Returns:
-                Source object with agent_scenario loaded
-        """
-        return await self.filter(id=source_id).prefetch_related("agent_scenario").first()
-
-    async def get_by_scenario(self, scenario_id: int, is_active: Optional[bool] = True) -> list["Source"]:
-        """
-        Get sources using a specific bot scenario.
-
-        Args:
-                scenario_id: Bot scenario ID
-                is_active: Filter by active status
-
-        Returns:
-                List of Source objects using the scenario
-        """
-        qs = self.filter(agent_scenario_id=scenario_id)
-
-        if is_active is not None:
-            qs = qs.filter(is_active=is_active)
-
-        return list(await qs)
-
-    async def assign_scenario(self, source_id: int, scenario_id: Optional[int]) -> Optional["Source"]:
-        """
-        Assign or remove a bot scenario from a source.
-
-        Args:
-                source_id: Source ID
-                scenario_id: Bot scenario ID (None to remove)
-
-        Returns:
-                Updated Source object or None if not found
-        """
-        return await self.update_by_id(source_id, agent_scenario_id=scenario_id)
-
     async def update_last_checked(self, source_id: int, timestamp: Optional[datetime] = None) -> Optional["Source"]:
         """
         Update last_checked timestamp for a source.
@@ -316,7 +273,6 @@ class SourceManager(BaseManager["Source"]):
             "by_type": {},
             "by_platform": {},
             "never_checked": len([s for s in all_sources if s.last_checked is None]),
-            "with_scenario": len([s for s in all_sources if s.agent_scenario_id is not None]),
         }
 
         for source in all_sources:

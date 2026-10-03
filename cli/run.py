@@ -29,7 +29,7 @@ async def resolve_sources(src: str | None, tenant_id: int | None) -> list:
     qs = Source.objects.filter(is_active=True)
     if tenant_id:
         qs = qs.filter(tenant_id=tenant_id)
-    qs = qs.select_related("platform", "agent_scenario")
+    qs = qs.select_related("platform")
 
     parts = [p for p in (src or "").replace(",", " ").split() if p.strip()]
     if not parts:
@@ -48,19 +48,15 @@ async def resolve_sources(src: str | None, tenant_id: int | None) -> list:
 
     sources: list[Source] = []
     if ids:
-        sources += await Source.objects.filter(id__in=ids, is_active=True).select_related("platform", "agent_scenario")
+        sources += await Source.objects.filter(id__in=ids, is_active=True).select_related("platform")
     if url_keys:
-        sources += await Source.objects.filter(external_id__in=url_keys, is_active=True).select_related(
-            "platform", "agent_scenario"
-        )
+        sources += await Source.objects.filter(external_id__in=url_keys, is_active=True).select_related("platform")
     if platform_keys:
         platforms = {pl.name.lower(): pl.id for pl in await Platform.objects.all()}
         keys = {("tg" if k == "telegram" else k) for k in platform_keys}
         matched = [pl_id for name, pl_id in platforms.items() if name in keys]
         if matched:
-            sources += await Source.objects.filter(platform_id__in=matched, is_active=True).select_related(
-                "platform", "agent_scenario"
-            )
+            sources += await Source.objects.filter(platform_id__in=matched, is_active=True).select_related("platform")
 
     # De-dupe by id, keep resolution order.
     seen: set[int] = set()

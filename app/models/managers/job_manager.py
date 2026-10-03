@@ -117,6 +117,42 @@ class JobManager(BaseManager["Job"]):
         rows = await self.filter(created_at__gte=day_start)
         return sum(float(row.llm_cost or 0.0) for row in rows)
 
+    @classmethod
+    async def start_running(cls, job_id: int, now: Optional[datetime] = None) -> bool:
+        """Atomically flip one `pending` job to `running`, without claiming it.
+
+        The direct-run path ("Выполнить сейчас" must not queue) needs the row to
+        leave `pending` before anyone else can take it, but it is already
+        *running* — the caller is the one about to execute it. So unlike
+        `claim_job`, which returns the row, this is a single conditional UPDATE:
+
+            UPDATE jobs SET status='running' ... WHERE id=:id AND status='pending'
+
+        One statement, so there is no window in which a worker could observe the
+        row as claimable. Returns False if the job was not pending (already
+        claimed by a worker, or finished).
+        """
+        from sqlalchemy import update
+
+        from app.core.database import async_session_maker
+
+        from ..job import Job as JobModel
+
+        now = now or datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            async with session.begin():
+                result = await session.execute(
+                    update(JobModel)
+                    .where(JobModel.id == job_id, JobModel.status == "pending")
+                    .values(
+                        status="running",
+                        locked_at=now,
+                        attempts=JobModel.attempts + 1,
+                        updated_at=now,
+                    )
+                )
+                return bool(result.rowcount)
+
     async def mark_done(self, job_id: int, result: Optional[dict] = None, llm_cost: Optional[float] = None) -> None:
         job = await self.get(id=job_id)
         updates: dict = {"status": "done", "result": result, "error": None}
@@ -126,17 +162,22 @@ class JobManager(BaseManager["Job"]):
         if job:
             await self._record_task_result(job, status="ok")
 
-    async def mark_failed(self, job_id: int, error: str) -> bool:
+    async def mark_failed(self, job_id: int, error: str, allow_retry: bool = True) -> bool:
         """
         Record failure. Re-schedule with backoff if attempts to remain, else mark failed.
         Returns True if the job will be retried.
+
+        `allow_retry=False` marks it terminal instead. An inline run ("выполнить
+        сейчас") must not leave a retry behind: the caller asked for the work to
+        happen now and get an answer, and a re-scheduled job would silently repeat
+        the whole collection minutes later, on its own, with nobody watching.
         """
         from app.core.config import settings
 
         job = await self.get(id=job_id)
         if not job:
             return False
-        if job.attempts < job.max_attempts:
+        if allow_retry and job.attempts < job.max_attempts:
             delay = settings.JOB_RETRY_BACKOFF_SECONDS * (2 ** (job.attempts - 1))
             await self.update_by_id(
                 job_id,

@@ -66,13 +66,19 @@ def _report(stats: dict) -> None:
 
 
 def collect_cmd(
-    src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max), comma/space separated"),
+    src: str = typer.Option(
+        None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max), comma/space separated"
+    ),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active sources)"),
     monitored: str = typer.Option(None, "--monitored", help="Usernames to collect for instead of source defaults"),
     excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
     start_date: str = typer.Option(None, "--start-date", help="Start date DD-MM-YYYY (with --force-refresh)"),
     end_date: str = typer.Option(None, "--end-date", help="End date DD-MM-YYYY (with --force-refresh)"),
-    force_refresh: bool = typer.Option(False, "--force-refresh", help="Reset analytics + last_checked, full re-analysis"),
+    force_refresh: bool = typer.Option(
+        False,
+        "--force-refresh",
+        help="Re-fetch the full date range from the API (default: only what is new since the last check)",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed collection output"),
 ):
     """Run content collection & AI analysis manually (debug/analyst tool)."""
@@ -91,9 +97,7 @@ def collect_cmd(
                 m.strip().lstrip("@") for m in monitored.replace(",", " ").split() if m.strip()
             ]
         if excluded:
-            payload["excluded_users"] = [
-                e.strip().lstrip("@") for e in excluded.replace(",", " ").split() if e.strip()
-            ]
+            payload["excluded_users"] = [e.strip().lstrip("@") for e in excluded.replace(",", " ").split() if e.strip()]
         if force_refresh or start_date or end_date:
             payload["force_refresh"] = True
             cli_dates = {}
@@ -107,10 +111,8 @@ def collect_cmd(
         rprint(Panel.fit("[bold cyan]🚀 НАЧАЛО СБОРА КОНТЕНТА[/bold cyan]", border_style="cyan"))
         if verbose:
             for s in sources:
-                scenario = s.agent_scenario
                 rprint(
-                    f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name}, "
-                    f"scenario={scenario.name if scenario else 'None'})[/dim]"
+                    f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]"
                 )
 
         return await run_handler("collect", payload, tenant_id)

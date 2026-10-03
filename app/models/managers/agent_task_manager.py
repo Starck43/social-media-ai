@@ -11,6 +11,11 @@ if TYPE_CHECKING:
     from ..agent_task import AgentTask
 
 
+# Job types that operate on concrete sources. The rest (digest, prune, learn,
+# reflect) work at the workspace/memory level and do not require a source.
+SOURCE_BASED_JOB_TYPES = frozenset({"collect", "analyze"})
+
+
 class AgentTaskManager(BaseManager):
     """Manager for AgentTask model: cron validation and next-run computation."""
 
@@ -18,6 +23,11 @@ class AgentTaskManager(BaseManager):
         from ..agent_task import AgentTask
 
         super().__init__(AgentTask)
+
+    @staticmethod
+    def requires_sources(job_type: str) -> bool:
+        """Whether a task of this job type needs at least one active source."""
+        return job_type in SOURCE_BASED_JOB_TYPES
 
     @staticmethod
     def validate_cron(cron_expr: str) -> bool:
@@ -79,22 +89,83 @@ class AgentTaskManager(BaseManager):
         """
         from ..agent_task import agent_task_sources
 
-        return await self._replace_secondary(
-            agent_task_sources, "agent_task_id", task_id, "source_id", source_ids
-        )
+        return await self._replace_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
 
     async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
         """Link sources to the task, keeping the links that already exist."""
         from ..agent_task import agent_task_sources
 
-        return await self._add_secondary(
-            agent_task_sources, "agent_task_id", task_id, "source_id", source_ids
+        return await self._add_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
+
+    @staticmethod
+    def _task_effectively_active(task, workspace_active_source_ids) -> bool:
+        """Whether a task is effectively active — i.e. should be scheduled/shown as active.
+
+        A task is effectively active only when all of:
+          - its own `is_active` flag is set;
+          - its scenario (if one is chosen) is active — a deactivated scenario
+            suspends every task bound to it;
+          - if its job type operates on sources (collect/analyze) it has at
+            least one active source: an explicit linked source that is active,
+            or (with no linked sources, which works over "all active sources")
+            any active source in the workspace. Workspace/memory-level types
+            (digest/prune/learn/reflect) never need a source.
+
+        `workspace_active_source_ids` is the set of active source ids in the task's
+        workspace, used only for the "no linked sources" case.
+        """
+        if not getattr(task, "is_active", False):
+            return False
+        scenario = getattr(task, "agent_scenario", None)
+        if scenario is not None and not scenario.is_active:
+            return False
+        if not AgentTaskManager.requires_sources(getattr(task, "job_type", "") or ""):
+            return True
+        linked = task.sources or []
+        if linked:
+            # Explicit links: active iff at least one is active — no fallback.
+            return any(getattr(s, "is_active", True) for s in linked)
+        # No linked sources -> operates over "all active sources".
+        return bool(workspace_active_source_ids)
+
+    async def get_workspace_active_source_ids(self) -> set[int]:
+        """Active source ids in the current (tenant-scoped) workspace."""
+        from ..source import Source
+
+        rows = await Source.objects.filter(is_active=True).values(Source.id).rows()
+        return {r.id for r in rows}
+
+    async def effective_active_map(
+        self, tasks: list["AgentTask"], workspace_active_source_ids: Optional[set[int]] = None
+    ) -> dict[int, bool]:
+        """`{task_id: is_effectively_active}` for a batch of tasks.
+
+        A task bound to a deactivated scenario, or a source-based task (collect/
+        analyze) with no active source to operate on, is not effectively active,
+        regardless of its `is_active` flag. Pass `workspace_active_source_ids` to
+        avoid a second query when the caller already holds the workspace's active
+        source ids.
+        """
+        active = (
+            workspace_active_source_ids
+            if workspace_active_source_ids is not None
+            else await self.get_workspace_active_source_ids()
         )
+        return {t.id: self._task_effectively_active(t, active) for t in tasks}
 
     async def get_due(self, now: Optional[datetime] = None) -> list["AgentTask"]:
-        """AgentTasks that are active and due for enqueueing (next_run_at stored in UTC)."""
+        """AgentTasks that are active and due for enqueueing (next_run_at stored in UTC).
+
+        Only *effectively* active tasks are returned: one bound to a deactivated
+        scenario, or a source-based task (collect/analyze) with no active source
+        to operate on, is skipped, so the queue is not formed for it.
+        """
         now = now or datetime.now(timezone.utc)
-        return await self.filter(is_active=True, next_run_at__lte=now)
+        due = await self.filter(is_active=True, next_run_at__lte=now).prefetch_related("sources", "agent_scenario")
+        if not due:
+            return []
+        active = await self.get_workspace_active_source_ids()
+        return [t for t in due if self._task_effectively_active(t, active)]
 
     async def mark_triggered(
         self,

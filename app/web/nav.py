@@ -27,11 +27,11 @@ class NavItem(NamedTuple):
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("dashboard", "/app/", "Дашборд"),
     NavItem("sources", "/app/sources", "Источники"),
-    NavItem("tasks", "/app/tasks", "Задачи"),
     NavItem("scenarios", "/app/scenarios", "Сценарии"),
+    NavItem("tasks", "/app/tasks", "Задачи"),
     NavItem("analytics", "/app/analytics", "Аналитика"),
     NavItem("digests", "/app/digests", "Дайджесты"),
-    NavItem("jobs", "/app/jobs", "Задания"),
+    NavItem("jobs", "/app/jobs", "Очередь задач"),
     NavItem("chat", "/app/chat", "Чат с агентом"),
     NavItem("settings", "/app/settings", "Настройки"),
 )

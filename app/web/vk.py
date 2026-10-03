@@ -32,8 +32,30 @@ async def vk_oauth_start(request: Request):
         return RedirectResponse("/app/sources", status_code=302)
 
     try:
-        url = build_authorize_url(tenant_id, user_id=user_id)
+        url = await build_authorize_url(tenant_id, user_id=user_id)
     except RuntimeError as e:
-        add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_CLIENT_ACCESS_KEY в конфигурации")
+        add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_SERVICE_KEY в конфигурации")
         return RedirectResponse("/app/sources", status_code=302)
     return RedirectResponse(url, status_code=302)
+
+
+@router.post("/vk/logout")
+async def vk_logout(request: Request):
+    """Delete the user's VK L2 user token from the personal vault."""
+    user_id = getattr(getattr(request.state, "web_user", None), "id", None)
+    if user_id is None:
+        add_flash(request, "error", "Нет активного пользователя")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    from app.models.managers.user_credential_manager import user_credentials
+
+    rows = await user_credentials.filter(user_id=user_id, platform="vk", kind="user_token")
+    for row in rows:
+        await user_credentials.delete_by_id(row.id)
+
+    rows_pending = await user_credentials.filter(user_id=user_id, platform="vk", kind="oauth_pending")
+    for row in rows_pending:
+        await user_credentials.delete_by_id(row.id)
+
+    add_flash(request, "success", "Аккаунт VK отключён")
+    return RedirectResponse("/app/sources", status_code=302)

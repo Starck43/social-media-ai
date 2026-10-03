@@ -52,17 +52,54 @@ async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: 
     await AgentTaskManager().set_sources(task_id, source_ids)
 
 
-async def enqueue_task_now(task: "AgentTask") -> "Job":
-    """Enqueue the task's job immediately; a one-time task is completed in the process.
+async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], scenario_id: int | None) -> str | None:
+    """Return why the task cannot be activated, or None if it can.
 
-    Thin wrapper over `app.jobs.enqueue.enqueue_task_run` — the shared
-    implementation is also what the CLI and the sqladmin action call, so the
-    three surfaces cannot drift apart. Returns the created Job so the caller can
-    track its result (e.g. show a run-now notification once the worker finishes).
+    A task is only activatable when its scenario (if one is chosen) is active
+    and, for a source-based job type (collect/analyze), it has at least one
+    active source to operate on: an explicit active linked source, or (with no
+    linked sources, which works over "all active sources") any active source in
+    the workspace. Workspace/memory-level types need no source.
     """
-    from app.jobs.enqueue import enqueue_task_run
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
-    return await enqueue_task_run(task)
+    with tenant_scope(tenant_id):
+        if scenario_id is not None:
+            scenario = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
+            if scenario is None or not scenario.is_active:
+                return "выбранный сценарий деактивирован"
+
+        if not AgentTaskManager.requires_sources(job_type):
+            return None
+
+        if source_ids:
+            sources = await Source.objects.filter(id__in=source_ids)
+            if not any(s.is_active for s in sources):
+                return "все привязанные источники деактивированы"
+            return None
+
+        active = await Source.objects.filter(is_active=True).values(Source.id).rows()
+        if not active:
+            return "в воркспейсе нет активных источников"
+        return None
+
+
+async def run_task_now(task: "AgentTask") -> dict[str, Any]:
+    """Run the task's job right now, in this process — it never sits in the queue.
+
+    "Собрать сейчас" has to feel immediate, and a queued job is not: it waits for a
+    worker, and if the worker is down or busy the user just sees a spinner that
+    times out. So the job row is written and executed in the same call — the row
+    still exists (it is the audit trail the result modal and `/app/jobs` read),
+    but it is stamped `running` immediately, so the worker never picks it up.
+
+    Returns the dispatcher's outcome dict plus `job_id` (the callers redirect to
+    `/app/tasks?job_id=…` so the modal can render it).
+    """
+    from app.jobs.dispatcher import run_task_directly
+
+    return await run_task_directly(task)
 
 
 @router.get("")
@@ -92,6 +129,14 @@ async def tasks_list(request: Request):
 
     scenarios = await AgentScenario.objects.filter(tenant_id=tenant_id, is_active=True).order_by(AgentScenario.name)
 
+    # Effective activity: a task bound to a deactivated scenario or with no
+    # active source to operate on is not "active", however its flag is set.
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    active_source_ids = {s.id for s in sources if s.is_active}
+    effective = await AgentTaskManager().effective_active_map(tasks, active_source_ids)
+    effective_active = {tid for tid, ok in effective.items() if ok}
+
     raw_job_id = request.query_params.get("job_id")
     job_id = int(raw_job_id) if raw_job_id and raw_job_id.isdigit() else None
 
@@ -102,6 +147,7 @@ async def tasks_list(request: Request):
         tasks=tasks,
         sources=sources,
         scenarios=scenarios,
+        effective_active=effective_active,
         job_types=JobType.choices(),
         cron_to_human=cron_to_human,
         job_id=job_id,
@@ -178,6 +224,18 @@ async def task_create(
         add_flash(request, "error", str(e))
         return RedirectResponse(back, status_code=302)
 
+    # A task can only be created active when it has an active scenario and, for
+    # a source-based type, at least one active source; otherwise it starts
+    # inactive.
+    activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+    if activation_blocked is not None:
+        add_flash(
+            request,
+            "warning",
+            f"Задача «{name}» создана неактивной: {activation_blocked}",
+        )
+    is_active = activation_blocked is None
+
     with tenant_scope(tenant_id):
         task = await AgentTask.objects.create(
             name=name.strip()[:100],
@@ -186,18 +244,20 @@ async def task_create(
             timezone="Europe/Moscow",
             payload=payload,
             agent_scenario_id=scenario_id,
-            is_active=True,
+            is_active=is_active,
             next_run_at=next_run,
         )
         if parsed_source_ids:
             await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    if run_now:
-        job = await enqueue_task_now(task)
+    if run_now and is_active:
+        outcome = await run_task_now(task)
         add_flash(request, "success", f"Задача «{name}» создана и запущена")
         # The run-status modal lives on the tasks page; from onboarding there is
         # nothing to poll, so land on the caller's page with the flash instead.
-        return RedirectResponse(back if return_to else f"/app/tasks?job_id={job.id}", status_code=302)
+        job_id = (outcome or {}).get("job_id")
+        target = f"/app/tasks?job_id={job_id}" if job_id else "/app/tasks"
+        return RedirectResponse(back if return_to else target, status_code=302)
     else:
         add_flash(request, "success", f"Задача «{name}» создана")
     return RedirectResponse(back, status_code=302)
@@ -225,8 +285,18 @@ async def task_toggle(
         add_flash(request, "error", "Задача не найдена")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    await AgentTask.objects.update_by_id(task.id, is_active=not task.is_active)
-    action = "активирована" if not task.is_active else "деактивирована"
+    new_active = not task.is_active
+    if new_active:
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        linked = await AgentTaskManager().get_sources(task.id)
+        blocked = await _can_activate(tenant_id, task.job_type, linked, task.agent_scenario_id)
+        if blocked is not None:
+            add_flash(request, "error", f"Задача «{task.name}» не активирована: {blocked}")
+            return RedirectResponse("/app/tasks", status_code=302)
+
+    await AgentTask.objects.update_by_id(task.id, is_active=new_active)
+    action = "активирована" if new_active else "деактивирована"
     add_flash(request, "success", f"Задача «{task.name}» {action}")
     return RedirectResponse("/app/tasks", status_code=302)
 
@@ -254,15 +324,15 @@ async def task_run_now(
         add_flash(request, "error", "Задача не найдена")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    job = await enqueue_task_now(task)
-    from app.jobs.dispatcher import run_job_now
-
-    result = await run_job_now(job.id)
-    if result and result.get("status") == "failed":
-        add_flash(request, "error", f"Задача «{task.name}» завершилась с ошибкой: {result.get('error', '?')}")
+    outcome = await run_task_now(task)
+    if outcome and outcome.get("status") == "failed":
+        add_flash(request, "error", f"Задача «{task.name}» завершилась с ошибкой: {outcome.get('error', '?')}")
     else:
         add_flash(request, "success", f"Задача «{task.name}» выполнена")
-    return RedirectResponse(f"/app/tasks?job_id={job.id}", status_code=302)
+    job_id = (outcome or {}).get("job_id")
+    if not job_id:
+        return RedirectResponse("/app/tasks", status_code=302)
+    return RedirectResponse(f"/app/tasks?job_id={job_id}", status_code=302)
 
 
 @router.post("/{task_id}")
@@ -330,6 +400,19 @@ async def task_update(
         add_flash(request, "error", str(e))
         return RedirectResponse("/app/tasks", status_code=302)
 
+    # Activation is allowed only when the task has an active scenario and, for a
+    # source-based type, at least one active source; otherwise it stays inactive.
+    requested_active = is_active == "on"
+    activation_blocked = None
+    if requested_active:
+        activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
+        if activation_blocked is not None:
+            add_flash(
+                request,
+                "warning",
+                f"Задача «{name}» не активирована: {activation_blocked}",
+            )
+
     with tenant_scope(tenant_id):
         await AgentTask.objects.update_by_id(
             task.id,
@@ -339,16 +422,19 @@ async def task_update(
             timezone="Europe/Moscow",
             payload=payload,
             agent_scenario_id=scenario_id,
-            is_active=is_active == "on",
+            is_active=requested_active and activation_blocked is None,
             next_run_at=next_run,
         )
         await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    if run_now:
+    if run_now and activation_blocked is None:
         updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
-        job = await enqueue_task_now(updated)
+        outcome = await run_task_now(updated)
         add_flash(request, "success", f"Задача «{name}» обновлена и запущена")
-        return RedirectResponse(f"/app/tasks?job_id={job.id}", status_code=302)
+        job_id = (outcome or {}).get("job_id")
+        if not job_id:
+            return RedirectResponse("/app/tasks", status_code=302)
+        return RedirectResponse(f"/app/tasks?job_id={job_id}", status_code=302)
     else:
         add_flash(request, "success", f"Задача «{name}» обновлена")
     return RedirectResponse("/app/tasks", status_code=302)
@@ -382,52 +468,179 @@ async def task_delete(
     return RedirectResponse("/app/tasks", status_code=302)
 
 
-def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
-    """Minimal human-readable result summary for a finished job (run-now modal)."""
-    status = job.status
-    if status == "pending" or status == "running":
-        label = f"Выполнение задачи «{task_name}»" if task_name else "Выполнение задачи"
-        return {"status": status, "label": label}
-    if status == "failed":
-        return {"status": "failed", "label": "Ошибка", "error": (job.error or "Неизвестная ошибка")[:300]}
+JOB_TYPE_TITLES = {
+    "collect": "Сбор данных",
+    "analyze": "Анализ данных",
+    "digest": "Дайджест",
+    "prune": "Очистка",
+    "learn": "Обучение",
+    "reflect": "Рефлексия",
+}
 
-    result = job.result or {}
+OUTCOME_HEADLINES = {
+    # `collect`'s headline is the count of *new* items, not the platform's response
+    # size: the platform re-serves the same posts on every run, so "32 collected"
+    # twice in a row said nothing about whether the second run found anything.
+    # The second tuple is the fallback for jobs recorded before `new_items`
+    # existed — better an honest total than a "0 новых" nobody measured.
+    "collect": ("Новых записей", "new_items", ("Записей собрано", "items")),
+    "analyze": ("Проанализировано", "analyzed"),
+    "digest": ("Отправлено сообщений", "messages_sent"),
+    "prune": ("Записей удалено", "deleted"),
+}
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian count form: 1 запись / 2 записи / 5 записей."""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def _stat(value: Any, label: str) -> dict[str, Any]:
+    """One stat tile: the number and the word that explains it.
+
+    The old modal showed `источников: 2, собрано: 1, элементов: 12` — labels
+    that sound like keys of a config, and `собрано` next to `элементов` reads as
+    two versions of the same count. Each tile now carries its own noun so the
+    number is readable without knowing the handler's dict.
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = 0
+    return {"value": number, "label": label}
+
+
+def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
+    """Structured result summary for a finished job (run-now modal).
+
+    Three parts the modal renders: what ran (`title`), the headline number
+    (`headline`) and the supporting stats (`stats`) — task type and outcome only,
+    no per-item detail. Source links are added separately by `job_status`, which
+    has to resolve them from the database.
+    """
+    status = job.status
     job_type = job.job_type
 
+    if status in ("pending", "running"):
+        label = f"Выполнение задачи «{task_name}»" if task_name else "Выполнение задачи"
+        return {"status": status, "label": label, "title": JOB_TYPE_TITLES.get(job_type, job_type)}
+    if status == "failed":
+        return {
+            "status": "failed",
+            "label": "Ошибка",
+            "title": JOB_TYPE_TITLES.get(job_type, job_type),
+            "error": (job.error or "Неизвестная ошибка")[:300],
+        }
+
+    result = job.result or {}
+    title = JOB_TYPE_TITLES.get(job_type, job_type)
+
+    # The headline is the number that answers "did it work?" — the one the user
+    # pressed the button for. Everything else is context.
+    headline = None
+    if job_type in OUTCOME_HEADLINES:
+        spec = OUTCOME_HEADLINES[job_type]
+        word, key = spec[0], spec[1]
+        if len(spec) > 2 and result.get(key) is None:
+            # The counter did not exist for this job — report what *was* recorded
+            # under its own name instead of inventing a zero.
+            word, key = spec[2]
+        try:
+            count = int(result.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        headline = {"value": count, "label": word, "noun": _plural(count, "запись", "записи", "записей")}
+
+    stats: list[dict[str, Any]] = []
     if job_type == "collect":
-        return {
-            "status": "done",
-            "label": "Сбор завершён",
-            "detail": (
-                f"источников: {result.get('sources', 0)}, "
-                f"собрано: {result.get('collected', 0)}, "
-                f"элементов: {result.get('items', 0)}, "
-                f"ошибок: {result.get('failed', 0)}"
-            ),
+        stats = [
+            _stat(result.get("sources", 0), "источников опрошено"),
+            _stat(result.get("collected", 0), "ответили данными"),
+            _stat(result.get("items", 0), "получено записей"),
+            _stat(result.get("empty", 0), "без содержимого"),
+            # `error`, not `failed`: the handler writes `error`, so this counter
+            # used to read 0 for every run that actually had failures.
+            _stat(result.get("error", 0), "ошибок"),
+        ]
+    elif job_type == "analyze":
+        stats = [
+            _stat(result.get("sources", 0), "источников проверено"),
+            _stat(result.get("actions_created", 0), "действий создано"),
+            _stat(result.get("skipped", 0), "пропущено"),
+        ]
+    elif job_type == "digest":
+        stats = [_stat(result.get("period", "—"), "период")]
+    elif job_type == "prune":
+        stats = [_stat(result.get("deleted", 0), "записей удалено")]
+
+    summary: dict[str, Any] = {"status": "done", "label": "Готово", "title": title, "stats": stats}
+    if headline is not None:
+        summary["headline"] = headline
+    if task_name:
+        summary["task_name"] = task_name
+    return summary
+
+
+def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, Any]]:
+    """Sources to jump to from the run-now modal, with what this run got from each.
+
+    The modal is a summary; it is not where you read the data. Each entry is a
+    mini-link to the source page, which shows the collected rows and — for an
+    `analyze` run — the agent's per-item analysis.
+
+    Prefer the run's own `per_source` breakdown (it is what actually ran, with
+    per-source counts). Jobs written before that breakdown existed have none, so
+    fall back to the task's sources with no counts: a link is still useful, a
+    fabricated zero is not.
+    """
+    result = job.result if isinstance(job.result, dict) else {}
+    rows = result.get("per_source") or []
+
+    if not rows:
+        return []
+
+    links = []
+    for entry in rows:
+        source_id = entry.get("source_id")
+        if not source_id:
+            continue
+        outcome = entry.get("outcome") or "empty"
+        if outcome == "error":
+            note = "ошибка"
+        elif outcome == "collected":
+            items = int(entry.get("items") or 0)
+            # Prefer the new count: "32 records" for a source that re-serves the
+            # same 32 every hour reads as 32 new records, which is not what
+            # happened. Older jobs have no counter — fall back to the total.
+            if entry.get("new_items") is not None:
+                new_items = int(entry["new_items"])
+                if new_items:
+                    note = f"{new_items} {_plural(new_items, 'новая', 'новых', 'новых')}"
+                else:
+                    note = "новых нет"
+            else:
+                note = f"{items} {_plural(items, 'запись', 'записи', 'записей')}"
+        else:
+            note = "без новых данных"
+        link = {
+            "source_id": source_id,
+            "name": entry.get("name") or f"Источник {source_id}",
+            "note": note,
+            "error": outcome == "error",
         }
-    if job_type == "digest":
-        return {
-            "status": "done",
-            "label": "Дайджест сформирован",
-            "detail": f"период: {result.get('period', 'day')}, сообщений: {result.get('messages_sent', 0)}",
-        }
-    if job_type == "analyze":
-        return {
-            "status": "done",
-            "label": "Анализ завершён",
-            "detail": (
-                f"источников: {result.get('sources', 0)}, "
-                f"проанализировано: {result.get('analyzed', 0)}, "
-                f"действий: {result.get('actions_created', 0)}"
-            ),
-        }
-    if job_type == "prune":
-        return {
-            "status": "done",
-            "label": "Очистка завершена",
-            "detail": f"удалено записей: {result.get('deleted', 0)}",
-        }
-    return {"status": "done", "label": "Завершено", "detail": str(result)[:300]}
+        # `analyze` records what the agent looked at rather than rows collected,
+        # so the link carries that count instead of the collection wording.
+        analyzed = entry.get("analyzed")
+        if outcome != "error" and analyzed:
+            count = int(analyzed)
+            link["note"] = f"{count} {_plural(count, 'анализ', 'анализа', 'анализов')}"
+        links.append(link)
+    return links
 
 
 @router.get("/job/{job_id}/status")
@@ -440,7 +653,12 @@ async def job_status(request: Request, job_id: int):
     if job is None:
         return JSONResponse({"status": "not_found", "label": "Задача не найдена"})
     task_name = None
+    task = None
     if job.agent_task_id is not None:
         task = await AgentTask.objects.get(id=job.agent_task_id, tenant_id=tenant_id)
         task_name = task.name if task else None
-    return JSONResponse(_job_summary(job, task_name))
+    summary = _job_summary(job, task_name)
+    # Mini-links to the sources this run touched; they need the DB, so they are
+    # resolved here rather than in the pure `_job_summary`.
+    summary["sources"] = _source_links(job)
+    return JSONResponse(summary)

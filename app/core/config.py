@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     VK_SERVICE_KEY: Optional[str] = None  # VK console "Сервисный ключ доступа" — L1 service token
     VK_CLIENT_ACCESS_KEY: Optional[str] = None  # VK console "Защищённый ключ" — OAuth client secret
     VK_API_BASE_URL: str = "https://api.vk.com/method"
-    VK_OAUTH_BASE_URL: str = "https://oauth.vk.com"
+    VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # VK ID (OAuth 2.1): /authorize + /oauth2/auth
     VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # VK OAuth callback (must be public)
     VK_API_VERSION: str = "5.199"
     VK_REQUEST_TIMEOUT: float = 30.0

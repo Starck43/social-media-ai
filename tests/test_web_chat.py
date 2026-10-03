@@ -33,6 +33,12 @@ CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 GREETING = "Спросите агента о ваших данных"
 PASSWORD = "secret-password-1"
 
+# The bubble carries `whitespace-pre-wrap`, so anything between its tags and the
+# message is rendered: a leading newline plus the template's indentation became
+# visible padding that shifted every bubble's first line and broke the
+# left/right alignment. This captures the message's own text — nothing else.
+BUBBLE_RE = re.compile(r'<div class="[^"]*whitespace-pre-wrap[^"]*">(.*?)</div>', re.S)
+
 
 async def _client() -> AsyncClient:
     app = create_application()
@@ -183,6 +189,53 @@ async def test_the_transcript_is_the_same_one_the_messenger_sees() -> None:
             assert page.status_code == 200
             assert "Вопрос из мессенджера" in page.text
             assert "Ответ из мессенджера" in page.text
+        finally:
+            if session_id is not None:
+                with tenant_scope(bypass=True):
+                    await agent_sessions.delete_by_id(session_id)
+            await _drop(user, tenant_id)
+
+
+async def test_a_bubble_renders_the_message_without_template_whitespace() -> None:
+    """The message must reach the bubble with nothing added around it.
+
+    The bubbles are laid out with `justify-end` / `justify-start`, so the visual
+    anchor is the bubble's own padding. `whitespace-pre-wrap` also preserved the
+    newline and the indentation that sat between the template's tags and
+    `{{ message.content }}`, which pushed the first line of every message to the
+    right and made the two sides look misaligned.
+
+    Indentation *inside* a message is content the agent wrote (code blocks,
+    nested lists) and must survive; the template's is not.
+    """
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "ChatBubbl")
+        session_id = None
+        try:
+            with tenant_scope(tenant_id):
+                session = await agent_sessions.create(
+                    tenant_id=tenant_id,
+                    channel=WEB_CHANNEL,
+                    chat_id=str(user.id),
+                )
+                session_id = session.id
+                await agent_messages.append(session_id=session.id, role="user", content="Покажи источники")
+                await agent_messages.append(
+                    session_id=session.id,
+                    role="assistant",
+                    content="Ответ:\n    отступ внутри сообщения",
+                )
+
+            page = await client.get("/app/chat")
+            assert page.status_code == 200
+
+            bubbles = BUBBLE_RE.findall(page.text)
+            assert len(bubbles) == 2, f"expected one bubble per message, got {bubbles!r}"
+
+            # Flush against the tags, and no leftover blank edges.
+            assert bubbles[0] == "Покажи источники"
+            # Internal newlines and indentation are the message's own.
+            assert bubbles[1] == "Ответ:\n    отступ внутри сообщения"
         finally:
             if session_id is not None:
                 with tenant_scope(bypass=True):

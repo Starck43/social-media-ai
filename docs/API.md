@@ -467,31 +467,9 @@ DELETE /api/v1/scenarios/{scenario_id}
 Authorization: Bearer <token>
 ```
 
-Sources using this scenario get `bot_scenario_id` set to NULL. Superuser only.
-
-### Assign Scenario to Source
-
-```
-POST /api/v1/scenarios/assign
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "source_id": 123,
-  "scenario_id": 456
-}
-```
-
-Set `scenario_id` to `null` to remove assignment. Superuser only.
-
-### Get Scenario Sources
-
-```
-GET /api/v1/scenarios/{scenario_id}/sources?is_active=true
-Authorization: Bearer <token>
-```
-
-Returns all sources currently using this scenario.
+Superuser only. A scenario is not owned by sources — a source does not carry a
+scenario (the scenario belongs to the task). Tasks referencing the scenario
+keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 
 ---
 
@@ -631,7 +609,7 @@ Authorization: Bearer <token>
 ### Get Sources Summary
 
 ```
-GET /api/v1/dashboard/sources?platform_id=1&source_type=GROUP&is_active=true&has_scenario=true&limit=50&offset=0
+GET /api/v1/dashboard/sources?platform_id=1&source_type=GROUP&is_active=true&limit=50&offset=0
 Authorization: Bearer <token>
 ```
 
@@ -645,8 +623,7 @@ Authorization: Bearer <token>
     "source_type": "GROUP",
     "is_active": true,
     "last_checked": "2025-10-15T10:00:00",
-    "analytics_count": 30,
-    "bot_scenario_name": "Sentiment Monitoring"
+    "analytics_count": 30
   }
 ]
 ```
@@ -726,7 +703,7 @@ All aggregation endpoints use `ReportAggregator` and require authentication.
 ### Sentiment Trends
 
 ```
-GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&scenario_id=2&days=7&group_by=day
+GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&days=7&group_by=day
 ```
 
 **Response:**

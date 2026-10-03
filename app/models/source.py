@@ -21,7 +21,7 @@ from ..types import SourceType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-	from . import AIAnalytics, AgentScenario, Platform, Tenant
+	from . import AIAnalytics, Platform, Tenant
 	from .managers.source_manager import SourceManager
 
 
@@ -81,16 +81,6 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 	# Owning workspace (tenant)
 	tenant: Mapped["Tenant"] = relationship("Tenant")
 
-	# Assign reusable scenario per source
-	agent_scenario_id: Mapped[int | None] = mapped_column(
-		ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="SET NULL"),
-		nullable=True,
-	)
-	# Link to reusable agent scenario; scenario is preserved on source deletion
-	agent_scenario: Mapped["AgentScenario | None"] = relationship(
-		"AgentScenario",
-		back_populates="sources",
-	)
 	# Reverse relation for analytics entries created for this source
 	analytics: Mapped[list["AIAnalytics"]] = relationship(
 		"AIAnalytics",

@@ -14,8 +14,6 @@ from app.schemas.scenario import (
     ScenarioCreate,
     ScenarioUpdate,
     ScenarioResponse,
-    ScenarioAssign,
-    ScenarioSourcesResponse,
 )
 from app.services.ai.scenario import scenario_service
 from app.services.user.auth import get_authenticated_user
@@ -244,10 +242,11 @@ async def delete_scenario(
 ):
     """
     Delete a bot scenario.
-    
-    Note: Sources using this scenario will have their agent_scenario_id set to NULL
-    (preserved by CASCADE behavior defined in the database).
-    
+
+    Scenario deletion no longer touches sources — a source does not reference a
+    scenario (the scenario belongs to the task). Tasks referencing the scenario
+    keep the FK with `ondelete=SET NULL` and fall back to the tenant default.
+
     Admin access required.
     """
     if not current_user.is_superuser:
@@ -259,76 +258,3 @@ async def delete_scenario(
         raise HTTPException(status_code=404, detail="Scenario not found")
 
     return {"status": "deleted", "scenario_id": scenario_id}
-
-
-@router.post("/scenarios/assign")
-async def assign_scenario(
-    request: ScenarioAssign,
-    current_user: User = Depends(get_authenticated_user)
-):
-    """
-    Assign or remove a bot scenario from a source.
-    
-    When a scenario is assigned, all future content collection from that source
-    will use the scenario's analysis configuration.
-    
-    Set scenario_id to null to remove the assignment and return to default analysis.
-    
-    Example:
-        ```json
-        {
-            "source_id": 123,
-            "scenario_id": 456
-        }
-        ```
-    
-    Admin access required.
-    """
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-    source = await scenario_service.assign_scenario_to_source(request.source_id, request.scenario_id)
-
-    if not source:
-        raise HTTPException(status_code=404, detail="Source not found")
-
-    return {
-        "status": "assigned" if request.scenario_id else "removed",
-        "source_id": source.id,
-        "scenario_id": request.scenario_id,
-    }
-
-
-@router.get("/scenarios/{scenario_id}/sources", response_model=ScenarioSourcesResponse)
-async def get_scenario_sources(
-    scenario_id: int,
-    is_active: Optional[bool] = True,
-    current_user: User = Depends(get_authenticated_user)
-):
-    """
-    Get all sources now using a specific scenario.
-    
-    Useful for understanding, which sources will be affected by scenario changes.
-    Pass is_active=true for active sources only, false for inactive, or null for all.
-    """
-    # Verify scenario exists
-    scenario = await scenario_service.get_scenario_by_id(scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
-    sources = await scenario_service.get_sources_by_scenario(scenario_id, is_active)
-
-    return ScenarioSourcesResponse(
-        scenario_id=scenario_id,
-        scenario_name=scenario.name,
-        sources=[
-            {
-                "id": s.id,
-                "name": s.name,
-                "external_id": s.external_id,
-                "source_type": str(s.source_type) if s.source_type else None,
-                "is_active": s.is_active,
-            }
-            for s in sources
-        ],
-    )

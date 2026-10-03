@@ -28,6 +28,7 @@ from app.models import (
 	AIAnalytics,
 	LLMProvider,
 	LLMModel,
+	CollectedItem,
 )
 from app.tasks.cron import cron_to_human
 from app.types import (
@@ -339,7 +340,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"name",
 		"source_type",
 		"external_id",
-		"agent_scenario",
 		"is_active",
 		"last_checked",
 		"date_from",
@@ -357,7 +357,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 			"source_type": "Тип источника",
 			"external_id": "Внешний ID источника",
 			"params": "Параметры",
-			"agent_scenario": "Сценарий бота",
 			"last_checked": "Последняя проверка",
 			"date_from": "Дата начала сбора",
 			"date_to": "Дата окончания сбора",
@@ -365,7 +364,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 		},
 		**BaseAdmin.column_labels,
 	)
-	column_details_exclude_list = ["platform_id", "agent_scenario_id"]
+	column_details_exclude_list = ["platform_id"]
 
 	form_columns = [
 		"tenant",
@@ -373,7 +372,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"name",
 		"source_type",
 		"external_id",
-		"agent_scenario",
 		"params",
 		"is_active",
 		"date_from",
@@ -417,10 +415,6 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"external_id": {
 			"label": "Внешний ID источника",
 			"description": "Идентификатор на платформе: короткое имя (screen_name) или числовой id",
-		},
-		"agent_scenario": {
-			"label": "Сценарий бота",
-			"description": "Сценарий анализа и реакции; пусто — используется сценарий по умолчанию",
 		},
 		"params": {
 			"label": "Параметры",
@@ -1788,6 +1782,80 @@ class UserCredentialAdmin(BaseAdmin, model=UserCredential):
 		await super().after_model_change(data, model, is_created, request)
 
 
+class CollectedItemAdmin(BaseAdmin, model=CollectedItem):
+	name = "Собранный контент"
+	name_plural = "Собранный контент"
+	icon = "fa fa-database"
+
+	column_list = [
+		"id",
+		"source_id",
+		"platform",
+		"external_id",
+		"text",
+		"media_type",
+		"published_at",
+		"created_at",
+	]
+	column_searchable_list = ["external_id", "platform"]
+	column_sortable_list = ["published_at", "created_at", "id"]
+	column_default_sort = [("created_at", True)]
+	column_details_exclude_list = ["content_hash"]
+
+	column_labels = dict({
+		"id": "ID",
+		"run_id": "ID запуска",
+		"source_id": "Источник",
+		"external_id": "Внешний ID",
+		"content_hash": "Хэш контента",
+		"platform": "Платформа",
+		"published_at": "Дата публикации",
+		"media_type": "Тип медиа",
+		"text": "Текст",
+		"metrics": "Метрики",
+		"author": "Автор",
+		"permalink": "Ссылка",
+	}, **BaseAdmin.column_labels)
+
+	form_excluded_columns = BaseAdmin.form_excluded_columns + ["content_hash"]
+	form_widget_args = {
+		"text": {"rows": 8},
+		"metrics": {"rows": 4, "placeholder": '{"likes": 10, "comments": 3}'}
+	}
+
+	form_args = {
+		"source_id": {"label": "Источник", "description": "ID источника из таблицы sources"},
+		"external_id": {"label": "Внешний ID", "description": "Идентификатор на платформе"},
+		"platform": {"label": "Платформа", "description": "vk, telegram и т.д."},
+		"published_at": {"label": "Дата публикации", "description": "Дата публикации поста на платформе"},
+		"media_type": {"label": "Тип медиа", "description": "post, photo, video и т.д."},
+		"text": {"label": "Текст", "description": "Текстовое содержимое"},
+		"metrics": {
+			"label": "Метрики",
+			"description": "JSON: likes, comments, views, shares",
+		},
+		"author": {
+			"label": "Автор",
+			"description": "JSON: id, name, screen_name, photo",
+		},
+		"permalink": {"label": "Ссылка", "description": "Полная ссылка на пост"},
+		**BaseAdmin.form_args,
+	}
+
+	column_formatters = {
+		"text": lambda m, a: (m.text[:80] + "…") if m.text else "—",
+		"published_at": lambda m, a: format_date(m.published_at),
+		"created_at": lambda m, a: format_date(m.created_at),
+		**BaseAdmin.column_formatters,
+	}
+
+	column_formatters_detail = {
+		"text": lambda m, a: (m.text[:200] + "…") if m.text else "—",
+		"published_at": lambda m, a: format_date(m.published_at),
+		"created_at": lambda m, a: format_date(m.created_at),
+	}
+
+
 class BotActionAdmin(BaseAdmin, model=BotAction):
 	"""
 	Ledger of bot actions, written by the analyze job and action_send.
@@ -1966,6 +2034,37 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         otherwise never become due. Compute it from the cron expression so
         admin-created tasks actually fire (a @once task is scheduled ~1 min out).
         """
+        # Guard: an active source-based task (collect/analyze) needs at least one
+        # active source to operate on. Empty links fall back to "all active
+        # sources", so the check is on the workspace, mirroring the web rule.
+        from app.core.tenant_context import tenant_scope
+
+        from app.models import Source
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        active = data.get("is_active", getattr(model, "is_active", False))
+        job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
+        if active and AgentTaskManager.requires_sources(job_type):
+            tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
+            tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
+            submitted = data.get("sources") or []
+            submitted_ids = [int(v) if isinstance(v, (int, str)) else getattr(v, "id", None) for v in submitted]
+            submitted_ids = [i for i in submitted_ids if i is not None]
+            with tenant_scope(bypass=True):
+                if submitted_ids:
+                    has_active = await Source.objects.filter(
+                        Source.id.in_(submitted_ids), tenant_id=tenant_id, is_active=True
+                    ).values(Source.id).rows()
+                else:
+                    has_active = await Source.objects.filter(
+                        tenant_id=tenant_id, is_active=True
+                    ).values(Source.id).rows()
+            if not has_active:
+                raise ValueError(
+                    "Задача типа «сбор данных»/«анализ» не может быть активной без активного источника: "
+                    "выберите хотя бы один источник или снимите флаг «Активна»"
+                )
+
         cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
         if cron_expr and getattr(model, "next_run_at", None) is None:
             if cron_expr == "@once":
@@ -1995,9 +2094,9 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         add_in_detail=True,
     )
     async def run_now_action(self, request: Request):
-        """Enqueue the selected task's job immediately; completes a @once task."""
+        """Run the selected task's job immediately; completes a @once task."""
         from app.core.tenant_context import tenant_scope
-        from app.jobs.enqueue import enqueue_task_run
+        from app.jobs.dispatcher import run_task_directly
 
         pks = request.query_params.get("pks", "")
         if not pks:
@@ -2009,6 +2108,12 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         with tenant_scope(bypass=True):
             task = await AgentTask.objects.get(id=task_id)
         if task:
-            await enqueue_task_run(task)
-            request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» запущена"}
+            outcome = await run_task_directly(task)
+            if outcome and outcome.get("status") == "failed":
+                request.session["admin_message"] = {
+                    "type": "error",
+                    "message": f"Задача «{task.name}» не выполнена: {outcome.get('error') or '?'}",
+                }
+            else:
+                request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» выполнена"}
         return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)

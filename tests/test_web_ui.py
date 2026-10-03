@@ -269,31 +269,18 @@ async def test_vk_oauth_redirects_to_authorize(client: AsyncClient) -> None:
         await tenants.delete_by_id(tenant_id)
 
 
-async def test_sources_scenario_filter_renders(client: AsyncClient) -> None:
-    """The sources page renders the scenario/workflow dropdown and honours it."""
-    from app.models import AgentScenario
+async def test_sources_page_has_no_scenario_filter(client: AsyncClient) -> None:
+    """The sources page no longer offers a per-source scenario filter.
 
+    The scenario belongs to the task, not the source, so the /app/sources
+    dropdown (and its `scenario_id` query filter) is gone.
+    """
     user, tenant_id = await _register(client, "Scenario Filter Studio")
-    scenario_id = None
     try:
-        with tenant_scope(bypass=True):
-            scenario = await AgentScenario.objects.create(
-                name=_name("scenario"),
-                tenant_id=tenant_id,
-                is_active=True,
-                is_default=False,
-            )
-            scenario_id = scenario.id
         resp = await client.get("/app/sources")
         assert resp.status_code == 200
-        assert "Все сценарии" in resp.text
-        assert "Сценарий" not in resp.text or True  # dropdown label is a placeholder
-        filtered = await client.get(f"/app/sources?scenario_id={scenario_id}")
-        assert filtered.status_code == 200
+        assert "Все сценарии" not in resp.text
     finally:
-        if scenario_id is not None:
-            with tenant_scope(bypass=True):
-                await AgentScenario.objects.delete(id=scenario_id)
         await _delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
 
@@ -348,7 +335,11 @@ async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
 
 
 async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
-    """Creating a @once task with 'Создать и выполнить' enqueues a job and completes it."""
+    """Creating a @once task with 'Создать и выполнить' runs it and completes it.
+
+    The job is executed in the request, so it is already `done` here — it is no
+    longer left `pending` for a worker that may not even be running.
+    """
     async with await _client() as c:
         user, tenant_id = await _register(c, "RunNow Once")
         name = _name("once")
@@ -369,7 +360,8 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             assert task.is_active is False
             assert task.last_run_at is not None
             assert task.next_run_at is None
-            assert job is not None and job.status == "pending"
+            # Ran inline, not queued.
+            assert job is not None and job.status in ("done", "failed")
         finally:
             if user is not None:
                 await _delete_user(user.id)
@@ -379,10 +371,16 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             await tenants.delete_by_id(tenant_id)
 
 
-async def test_run_now_endpoint_enqueues_recurring_task(client: AsyncClient) -> None:
-    """The /run-now action enqueues a job for a recurring task without touching its schedule."""
+async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient) -> None:
+    """Run-now must not leave the job waiting for a worker.
+
+    The button used to enqueue a `pending` job and let the worker pick it up, so
+    "now" depended on a worker being free — and a worker that claimed it first
+    ran the same collection twice while the user watched a spinner. The job now
+    runs in the request itself and is never observable as `pending`.
+    """
     from app.tasks.cron import next_run_at as compute_next
-    from app.web.tasks import enqueue_task_now
+    from app.web.tasks import run_task_now
 
     async with await _client() as c:
         user, tenant_id = await _register(c, "RunNow Recurring")
@@ -392,7 +390,7 @@ async def test_run_now_endpoint_enqueues_recurring_task(client: AsyncClient) -> 
             with tenant_scope(bypass=True):
                 task = await AgentTask.objects.create(
                     name=name,
-                    job_type="collect",
+                    job_type="digest",
                     cron_expr="0 * * * *",
                     timezone="Europe/Moscow",
                     payload={},
@@ -401,17 +399,64 @@ async def test_run_now_endpoint_enqueues_recurring_task(client: AsyncClient) -> 
                 )
                 task_id = task.id
                 next_before = task.next_run_at
-                # enqueue immediately (same path the /run-now endpoint and
-                # 'Сохранить и выполнить' use)
-                await enqueue_task_now(task)
+                # The same path the /run-now endpoint and 'Сохранить и выполнить'
+                # use. `digest` is used deliberately: it has no network side
+                # effect, so the test measures the queueing, not the collection.
+                outcome = await run_task_now(task)
+
+            assert outcome["status"] in ("done", "failed")
+            assert outcome.get("job_id") is not None
 
             with tenant_scope(bypass=True):
-                job = await Job.objects.get(agent_task_id=task_id, job_type="collect")
+                job = await Job.objects.get(id=outcome["job_id"])
                 refreshed = await AgentTask.objects.get(id=task_id)
-            assert job is not None and job.status == "pending"
-            # recurring task keeps its schedule
+
+            # Executed, not queued: the worker had no chance to claim it, and the
+            # row carries its result.
+            assert job.status == "done"
+            assert job.result is not None
+            # A recurring task keeps its schedule either way.
             assert refreshed.next_run_at == next_before
             assert refreshed.is_active is True
+        finally:
+            if user is not None:
+                await _delete_user(user.id)
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            await tenants.delete_by_id(tenant_id)
+
+
+async def test_a_direct_run_job_is_never_claimable_by_the_worker(client: AsyncClient) -> None:
+    """`start_running` must leave nothing a worker's `claim_next` could take.
+
+    This is the property that makes the direct run safe: the row is `running`
+    before the handler is invoked, so there is no window in which a concurrent
+    worker sees it as pending work and duplicates the side effects.
+    """
+    from app.models.managers.job_manager import JobManager
+    from app.web.tasks import run_task_now
+
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "RunNow Claim")
+        task_id = None
+        try:
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.create(
+                    name=_name("direct"),
+                    job_type="digest",
+                    cron_expr="0 * * * *",
+                    timezone="Europe/Moscow",
+                    payload={},
+                    is_active=True,
+                    next_run_at=None,
+                )
+                task_id = task.id
+                outcome = await run_task_now(task)
+
+            # Whatever the outcome, the finished row is not claimable.
+            with tenant_scope(bypass=True):
+                assert await JobManager.claim_job(outcome["job_id"]) is None
         finally:
             if user is not None:
                 await _delete_user(user.id)

@@ -59,7 +59,9 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     # Owning workspace (tenant);
     tenant: Mapped["Tenant"] = relationship("Tenant")
 
-    # Reusable scenario applied when this task runs (mirrors Source.agent_scenario)
+    # Reusable scenario applied when this task runs (the scenario lives on the
+    # task, not the source — a source may be reused across tasks with different
+    # scenarios; the workspace default is the fallback for taskless runs)
     agent_scenario_id: Mapped[int | None] = Column(
         Integer,
         ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="SET NULL"),

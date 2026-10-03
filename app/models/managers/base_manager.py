@@ -261,7 +261,7 @@ class QuerySet(Generic[M]):
 
         Examples:
                         qs.join(Source, AIAnalytics.source_id == Source.id)
-                        qs.join(Source).filter(Source.agent_scenario_id == sid)
+                        qs.join(Source, Source.tenant_id == AIAnalytics.tenant_id)
         """
         targets, onclause = self._split_join_args(targets, onclause)
         specs = list(self._join_specs) + [(target, onclause, is_outer) for target in targets]

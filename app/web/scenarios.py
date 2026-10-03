@@ -10,7 +10,6 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
 from app.models.agent_scenario import AgentScenario
-from app.models.source import Source
 
 from .deps import add_flash, ensure_csrf, guard_web, render
 
@@ -20,10 +19,12 @@ router = APIRouter(prefix="/scenarios")
 @router.get("")
 @router.get("/")
 async def scenarios_list(request: Request):
-    """Scenarios with their source counts (LEFT JOIN — a scenario may have none)."""
+    """Scenarios with their task counts (LEFT JOIN — a scenario may have none)."""
     # No `tenant_id` predicate: the manager's guard already scopes the rows.
+    from app.models import AgentTask
+
     rows = await (
-        AgentScenario.objects.outerjoin(Source, AgentScenario.id == Source.agent_scenario_id)
+        AgentScenario.objects.outerjoin(AgentTask, AgentScenario.id == AgentTask.agent_scenario_id)
         .values(
             AgentScenario.id,
             AgentScenario.name,
@@ -32,7 +33,7 @@ async def scenarios_list(request: Request):
             AgentScenario.is_active,
             AgentScenario.analysis_types,
             AgentScenario.content_types,
-            func.count(Source.id).label("source_count"),
+            func.count(AgentTask.id).label("task_count"),
         )
         .group_by(AgentScenario.id)
         .order_by(AgentScenario.is_default.desc(), AgentScenario.name)
@@ -48,7 +49,7 @@ async def scenarios_list(request: Request):
             "is_active": r.is_active,
             "analysis_types": r.analysis_types or [],
             "content_types": r.content_types or [],
-            "source_count": r.source_count,
+            "task_count": r.task_count,
         }
         for r in rows
     ]

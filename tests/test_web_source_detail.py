@@ -200,7 +200,14 @@ async def test_detail_page_explains_how_the_source_collects() -> None:
             await _drop(user, tenant_id)
 
 
-async def test_collect_now_enqueues_a_job_for_that_source_only() -> None:
+async def test_collect_now_runs_inline_for_that_source_only() -> None:
+    """«Собрать сейчас» must finish before the response, not sit in the queue.
+
+    It used to `enqueue` and flash "поставлен в очередь", redirecting with a
+    `job_id` that this page cannot render (the run modal lives on the tasks
+    page) — so the button only *requested* a collection, and the work happened
+    whenever a worker was free.
+    """
     external_id = secrets.token_hex(6)
     source_id = None
     async with await _client() as client:
@@ -215,8 +222,10 @@ async def test_collect_now_enqueues_a_job_for_that_source_only() -> None:
                 data={"_csrf": token},
             )
             assert resp.status_code == 200
-            assert f"/app/sources/{source_id}" in str(resp.url)
-            assert "в очередь" in resp.text
+            assert str(resp.url).endswith(f"/app/sources/{source_id}")
+            assert "job_id=" not in str(resp.url), "no dead modal parameter"
+            assert "в очередь" not in resp.text
+            assert "завершён" in resp.text
 
             from app.models import Job
 
@@ -224,6 +233,9 @@ async def test_collect_now_enqueues_a_job_for_that_source_only() -> None:
                 job = await Job.objects.filter(job_type="collect").order_by(Job.id.desc()).first()
             assert job is not None
             assert (job.payload or {}).get("source_ids") == [source_id]
+            # Executed, not queued: the worker never saw it as claimable work.
+            assert job.status in ("done", "failed")
+            assert job.result is not None or job.error is not None
         finally:
             if source_id is not None:
                 with tenant_scope(bypass=True):

@@ -95,6 +95,95 @@ async def filter_analyzed(
         return content, None
 
 
+# ---------------------------------------------------------------------------
+# "Have we ever fetched this?" — a separate question from "have we analysed it?"
+# ---------------------------------------------------------------------------
+#
+# The two must not share one index. An item that was fetched and staged for a
+# later analysis has never been analysed (the analyser must still process it),
+# yet it is certainly not new. Merging the ledgers would make the analyser skip
+# staged items and silently drop them; keeping them apart means an item can be
+# "seen but unanalysed", which is exactly the state the collected_items table
+# exists to represent.
+
+# How far back collect runs are consulted for the "seen" answer.
+SEEN_LOOKBACK_DAYS = 30
+SEEN_MAX_JOBS = 100
+
+
+async def seen_hashes(source_id: int) -> set[str]:
+    """Every item hash this source has ever handed us.
+
+    Three sources, deliberately in one place so the "новых" counter can never
+    disagree with what the staging table holds:
+      1. `ai_analytics.summary_data["content_hashes"]` — analysed;
+      2. `collected_items.content_hash` — fetched and waiting for analysis;
+      3. `jobs.result["per_source"][].content_hashes` — fetched inline (analysed
+         immediately, so never staged) — this is what keeps a run that analyses
+         inline from re-reporting the same wall as new forever.
+    """
+    hashes: set[str] = set()
+
+    from app.models import AIAnalytics, CollectedItem, Job
+
+    try:
+        rows = (
+            await AIAnalytics.objects.filter(
+                source_id=source_id,
+                analysis_date__gte=date.today() - timedelta(days=SEEN_LOOKBACK_DAYS),
+            )
+            .order_by(AIAnalytics.analysis_date.desc())
+            .limit(MAX_ANALYSES)
+        )
+        for row in rows:
+            hashes.update((row.summary_data or {}).get("content_hashes") or [])
+            if row.content_hash:
+                hashes.add(row.content_hash)
+    except Exception as e:
+        logger.warning(f"Seen lookup (analytics) failed for source {source_id}: {e}")
+
+    try:
+        hashes.update(await CollectedItem.objects.hashes_for_source(source_id))
+    except Exception as e:
+        logger.warning(f"Seen lookup (staged) failed for source {source_id}: {e}")
+
+    try:
+        jobs = (
+            await Job.objects.filter(job_type="collect")
+            .order_by(Job.created_at.desc())
+            .limit(SEEN_MAX_JOBS)
+        )
+        for job in jobs:
+            result = job.result if isinstance(job.result, dict) else {}
+            for entry in result.get("per_source") or []:
+                if entry.get("source_id") == source_id:
+                    hashes.update(entry.get("content_hashes") or [])
+    except Exception as e:
+        logger.warning(f"Seen lookup (jobs) failed for source {source_id}: {e}")
+
+    return hashes
+
+
+async def count_new_items(content: list[dict], source_id: int) -> int:
+    """How many of `content` this source has never handed us before.
+
+    Reports what a collection actually found, which is not what the analyser
+    will pay for: an item staged by an earlier run is seen (not new) even though
+    it still waits for analysis.
+
+    Fails open to ``len(content)``: over-reporting only makes a run look busier,
+    while under-reporting would claim there was nothing to do when there was.
+    """
+    if not content:
+        return 0
+    try:
+        known = await seen_hashes(source_id)
+        return sum(1 for item in content if item_hash(item) not in known)
+    except Exception as e:  # noqa: BLE001 — a counting problem must not fail the collection
+        logger.warning(f"Could not count new items for source {source_id}: {e}")
+        return len(content)
+
+
 def _split(content: list[dict], rows, source_id: int) -> tuple[list[dict], Optional[object]]:
     """Core matching: split content into not-yet-analyzed items."""
     batch_map: dict[str, object] = {}

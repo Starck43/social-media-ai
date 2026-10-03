@@ -240,6 +240,99 @@
         </div>
     </div>
 
+    <!-- Collected data ───────────────────────────────────────────────── -->
+    {# The count per source lives in `jobs.result["per_source"]`; the analytics
+       table below only shows what the analysis step wrote. This is the answer to
+       "did the collect task actually pull anything from here?" #}
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <h2 class="text-sm font-medium text-slate-300">Что собрано</h2>
+        {% if collections %}
+            <div class="mt-3 overflow-x-auto">
+                <table class="w-full min-w-[30rem] text-left text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
+                            <th class="py-2 pr-4 font-normal">Когда</th>
+                            <th class="py-2 pr-4 font-normal" title="Сколько записей отдали соцсети">Получено</th>
+                            <th class="py-2 pr-4 font-normal" title="Сколько из них ранее не встречались">Новых</th>
+                            <th class="py-2 pr-4 font-normal">Проанализировано</th>
+                            <th class="py-2 pr-4 font-normal" title="Сырые записи, пока они не разобраны анализом">Сырые данные</th>
+                            <th class="py-2 font-normal">Итог</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in collections %}
+                            <tr class="border-b border-slate-800/60 last:border-0">
+                                <td class="py-2.5 pr-4 text-slate-400">
+                                    <a href="/app/jobs" class="hover:text-cyan-400">{{ c["when"] }}</a>
+                                </td>
+                                <td class="py-2.5 pr-4 font-medium text-slate-200">{{ c["items"] }}</td>
+                                <td class="py-2.5 pr-4">
+                                    {% if c["new_items"] is none %}
+                                        <span class="text-slate-600" title="Сбор старше счётчика новых">—</span>
+                                    {% elif c["new_items"] %}
+                                        <span class="font-medium text-emerald-300">{{ c["new_items"] }}</span>
+                                    {% else %}
+                                        <span class="text-slate-600">0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-2.5 pr-4 text-slate-400">
+                                    {{ c["analyzed"] if c["analyzed"] else "—" }}
+                                </td>
+                                <td class="py-2.5 pr-4">
+                                    {% if c["preview"] %}
+                                        <ul class="space-y-1">
+                                            {% for p in c["preview"] %}
+                                                <li class="text-xs leading-relaxed text-slate-400">
+                                                    {% if p["link"] %}
+                                                        <a href="{{ p['link'] }}" target="_blank" rel="noopener"
+                                                           class="hover:text-cyan-400">{{ p["text"] }}</a>
+                                                    {% else %}
+                                                        {{ p["text"] }}
+                                                    {% endif %}
+                                                    {% if p["when"] %}<span class="text-slate-600"> · {{ p["when"] }}</span>{% endif %}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% if c["staged_total"] > c["preview"]|length %}
+                                            <p class="mt-1 text-xs text-slate-600">
+                                                и ещё {{ c["staged_total"] - c["preview"]|length }}
+                                            </p>
+                                        {% endif %}
+                                    {% elif c["staged_total"] %}
+                                        <span class="text-xs text-slate-500">разобрано, ждёт анализа</span>
+                                    {% else %}
+                                        <span class="text-xs text-slate-600" title="разобрано анализом — сырые записи убраны">
+                                            —
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-2.5">
+                                    {% if c["outcome"] == "collected" %}
+                                        <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">собрано</span>
+                                    {% elif c["outcome"] == "error" %}
+                                        <span class="rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                                    {% else %}
+                                        <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">пусто</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="mt-2 text-xs text-slate-500">
+                    «Получено» — сколько записей отдали соцсети. «Новых» — сколько из них ранее
+                    не встречались: соцсеть не помнит, что мы уже забирали, поэтому «Получено»
+                    повторяется от запуска к запуску, а меняется только «Новых». «Сырые данны» — тексты постов, которые ещё не разобран; после анализа они стираются, и выводится только счёты.
+                </p>
+            </div>
+        {% else %}
+            <p class="mt-3 text-sm text-slate-500">
+                Сборов по этому источнику ещё не зафиксировано. Первое значение появится после
+                ближайшего запуска задачи сбора.
+            </p>
+        {% endif %}
+    </div>
+
     <!-- Recent analyses ──────────────────────────────────────────────── -->
     <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
         <h2 class="text-sm font-medium text-slate-300">Последние анализы</h2>

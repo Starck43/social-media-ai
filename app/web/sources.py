@@ -154,20 +154,7 @@ async def sources_list(request: Request):
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
-    raw_scenario = request.query_params.get("scenario_id")
-    filter_scenario_id = int(raw_scenario) if raw_scenario and raw_scenario.isdigit() else None
-
     from app.core.tenant_context import tenant_scope
-    from app.models import AgentScenario
-
-    # Scenarios for the filter dropdown — scoped to the workspace being viewed.
-    if is_superuser:
-        with tenant_scope(filter_tenant_id):
-            scenarios = list(await AgentScenario.objects.order_by(AgentScenario.name))
-    else:
-        scenarios = list(
-            await AgentScenario.objects.filter(tenant_id=request.state.tenant_id).order_by(AgentScenario.name)
-        )
 
     if is_superuser:
         # Superuser sees all tenants' sources, optionally narrowed to one.
@@ -177,13 +164,9 @@ async def sources_list(request: Request):
             query = Source.objects.select_related("platform", "tenant")
             if filter_tenant_id is not None:
                 query = query.filter(tenant_id=filter_tenant_id)
-            if filter_scenario_id is not None:
-                query = query.filter(agent_scenario_id=filter_scenario_id)
             sources = await query.order_by(Source.created_at.desc())
     else:
         query = Source.objects.filter(tenant_id=request.state.tenant_id)
-        if filter_scenario_id is not None:
-            query = query.filter(agent_scenario_id=filter_scenario_id)
         sources = await query.select_related("platform").order_by(Source.created_at.desc())
     vk_l2 = await _vk_l2_status(user)
 
@@ -210,8 +193,6 @@ async def sources_list(request: Request):
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
-        scenarios=scenarios,
-        filter_scenario_id=filter_scenario_id,
     )
 
 
@@ -447,7 +428,7 @@ async def source_detail(request: Request, source_id: int):
 
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
         source = (
-            await Source.objects.filter(id=source_id).select_related("platform", "tenant", "agent_scenario").first()
+            await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
         )
         # A superuser browsing all workspaces may open any source; anyone else is
         # confined to the workspace the middleware opened.
@@ -518,6 +499,12 @@ async def source_detail(request: Request, source_id: int):
     platforms = await _platforms()
     source_types_list = list(SourceType)
 
+    # What the collect jobs actually pulled from *this* source. `jobs.result`
+    # carries a per-source breakdown (`per_source`); older rows written before it
+    # existed only have the run-wide totals, so those are reported as unknown
+    # rather than as zero.
+    collections = await _recent_collections(source.id)
+
     return render(
         request,
         "web/source_detail.html",
@@ -539,6 +526,7 @@ async def source_detail(request: Request, source_id: int):
         cost_usd=float(cost_cents) / 100,
         sentiment_label=sentiment_label,
         last_checked_label=_last_checked_label(source.last_checked),
+        collections=collections,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
         platforms=platforms,
@@ -598,6 +586,116 @@ def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
 
 
+# How many collect runs to scan for a source's history. Deep enough to show a
+# weekly rhythm; the queue page (`/app/jobs`) is the place to debug the schedule
+# itself, so this is a history strip, not a log viewer.
+COLLECTION_HISTORY_LIMIT = 8
+# Raw items shown per unanalysed run in «Что собрано». Enough to recognise what
+# came back without turning the history table into a wall of text; the permalink
+# next to each line is the way to read the rest.
+RAW_PREVIEW_LIMIT = 5
+RAW_PREVIEW_CHARS = 160
+
+
+async def _recent_collections(source_id: int) -> list[dict]:
+    """Recent collect runs for one source, newest first, with what each yielded.
+
+    The collect handler records a per-source breakdown in `jobs.result`
+    (`per_source`), keyed by source id — that is the only place the number of
+    items a *specific* source produced survives, because `result["items"]` is a
+    single total for the whole run. Jobs written before that breakdown existed
+    have no entry for this source and are skipped rather than shown as zero: "we
+    do not know" and "nothing was collected" are different answers.
+    """
+    from app.models.job import Job
+
+    rows = (
+        await Job.objects.filter(job_type="collect")
+        .order_by(Job.created_at.desc())
+        .limit(COLLECTION_HISTORY_LIMIT * 10)
+    )
+
+    out: list[dict] = []
+    for job in rows:
+        result = job.result if isinstance(job.result, dict) else {}
+        for entry in result.get("per_source") or []:
+            if entry.get("source_id") != source_id:
+                continue
+            out.append(
+                {
+                    "job_id": job.id,
+                    "when": human_datetime(job.created_at),
+                    # `items` is what the platform returned, `new_items` what of it
+                    # was unseen. Absent on jobs written before the counter existed
+                    # — None renders as "—" rather than a fabricated zero.
+                    "items": int(entry.get("items") or 0),
+                    "new_items": None if entry.get("new_items") is None else int(entry["new_items"]),
+                    "analyzed": int(entry.get("analyzed") or 0),
+                    "outcome": entry.get("outcome") or "empty",
+                    "failed": job.status == "failed",
+                    # Filled in below, once every run id is known. Both are
+                    # seeded so the template never compares an undefined value.
+                    "preview": [],
+                    "staged_total": 0,
+                }
+            )
+            break
+        if len(out) >= COLLECTION_HISTORY_LIMIT:
+            break
+
+    await _attach_raw_previews(out)
+    return out
+
+
+async def _attach_raw_previews(collections: list[dict]) -> None:
+    """Give each still-unanalysed run its raw items, ready to show.
+
+    Only rows still in `collected_items` are visible here — they are the runs
+    whose content nobody has analysed yet. As soon as an analysis consumes a
+    run its rows are retired, and that run falls back to counters alone, which
+    is the intended behaviour: what was collected stays on record as numbers,
+    the text is only kept while something might still need it.
+    """
+    if not collections:
+        return
+    from app.models import CollectedItem
+
+    run_ids = [c["job_id"] for c in collections]
+    try:
+        rows = await CollectedItem.objects.filter(run_id__in=run_ids).order_by(CollectedItem.published_at.asc())
+    except Exception:
+        return
+
+    grouped: dict[int, list] = {}
+    for row in rows:
+        grouped.setdefault(row.run_id, []).append(row)
+
+    for entry in collections:
+        staged = grouped.get(entry["job_id"], [])
+        entry["preview"] = [
+            {
+                "when": human_datetime(row.published_at) if row.published_at else None,
+                "text": _preview(row.text),
+                "link": row.permalink,
+            }
+            for row in staged[:RAW_PREVIEW_LIMIT]
+        ]
+        entry["staged_total"] = len(staged)
+
+
+def _preview(text: str | None, limit: int = RAW_PREVIEW_CHARS) -> str:
+    """A readable one-line excerpt, with long posts cut at a word boundary."""
+    body = " ".join((text or "").split())
+    if not body:
+        return "(без текста)"
+    if len(body) <= limit:
+        return body
+    cut = body[:limit]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut.rstrip(" .,;:!?—-") + " …"
+
+
 def _readiness(source, schedules) -> tuple[bool, str]:
     """Why nothing is coming out of this source — or True when nothing is wrong.
 
@@ -623,11 +721,16 @@ async def source_collect_now(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Enqueue a collect job for this source only — the UI's "try it now".
+    """Collect this source right now — inline, not through the queue.
 
-    Runs through the queue rather than inline: a collect can take minutes, and
-    blocking an HTTP request on it would time the browser out. The result shows
-    up in the source's job history.
+    This used to `enqueue` and leave the job `pending`, so "Собрать сейчас" only
+    *requested* a collection: the page redirected with a `job_id` that nothing on
+    it could render (the run modal lives on the tasks page), and the work happened
+    whenever a worker happened to be free. The button now runs the job here, so
+    the outcome is known before the response is sent and can be reported plainly.
+
+    A single-source collect is quick enough for this: it is one source, not a
+    whole workspace's worth.
     """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -642,7 +745,7 @@ async def source_collect_now(
         return denied
 
     from app.core.tenant_context import tenant_scope
-    from app.models.managers.job_manager import JobManager
+    from app.jobs.dispatcher import run_job_inline
 
     with tenant_scope(tenant_id):
         source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
@@ -650,10 +753,20 @@ async def source_collect_now(
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
 
-        job = await JobManager().enqueue(job_type="collect", payload={"source_ids": [source.id]})
+        outcome = await run_job_inline("collect", {"source_ids": [source.id]})
 
-    add_flash(request, "success", f"Сбор по источнику '{source.name}' поставлен в очередь")
-    return RedirectResponse(f"/app/sources/{source_id}?job_id={job.id}", status_code=302)
+    name = source.name
+    if not outcome:
+        add_flash(request, "error", f"Сбор по источнику «{name}» не удалось запустить")
+    elif outcome.get("status") == "failed":
+        add_flash(request, "error", f"Сбор по источнику «{name}» не удался: {outcome.get('error') or '?'}")
+    else:
+        items = (outcome.get("result") or {}).get("items", 0)
+        add_flash(request, "success", f"Сбор по источнику «{name}» завершён: записей — {items}")
+    # No `?job_id=` here: the run modal lives on the tasks page, so the parameter
+    # would only produce a URL that renders nothing. The flash carries the result
+    # and the «Что собрано» block on this very page now shows the run.
+    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
 
 @router.post("/{source_id}/delete")

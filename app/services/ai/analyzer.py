@@ -166,7 +166,14 @@ class AIAnalyzer:
             # Auto-generate topic_chain_id if not provided
             # NEW LOGIC: One source + one scenario = one chain (timeline by dates)
             if not topic_chain_id:
-                topic_chain_id = self._generate_topic_chain_id(source, agent_scenario)
+                # The signature is (source, main_topics, agent_scenario): passing
+                # only the scenario bound it to `main_topics`, and the body reads
+                # `main_topics[0]` — so every analysis raised "'AgentScenario'
+                # object is not subscriptable", returned None, and stored
+                # nothing. That is why this workspace had no content hashes at
+                # all and every re-collection looked brand new.
+                main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("main_topics") or []
+                topic_chain_id = self._generate_topic_chain_id(source, main_topics, agent_scenario)
                 logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
 
             # Save comprehensive analysis
@@ -370,7 +377,7 @@ class AIAnalyzer:
             )
 
             # Create LLM client and analyze
-            client = await LLMClientFactory.create(model)
+            client = LLMClientFactory.create(model)
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
@@ -407,7 +414,7 @@ class AIAnalyzer:
             )
 
             # Create LLM client and analyze
-            client = await LLMClientFactory.create(provider)
+            client = LLMClientFactory.create(provider)
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
@@ -442,7 +449,7 @@ class AIAnalyzer:
             )
 
             # Create LLM client and analyze
-            client = await LLMClientFactory.create(provider)
+            client = LLMClientFactory.create(provider)
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
@@ -486,7 +493,7 @@ class AIAnalyzer:
             )
 
             # Create summary
-            client = await LLMClientFactory.create(model)
+            client = LLMClientFactory.create(model)
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens

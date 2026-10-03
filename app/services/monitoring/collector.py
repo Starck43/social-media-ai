@@ -19,11 +19,109 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _build_permalink(source: Source, external_id: str | int | None) -> str | None:
+	"""A public link to one item, or None when the platform has no known shape.
+
+	Kept deliberately dumb: a wrong link is worse than no link, so anything not
+	recognised returns None and the UI simply shows the text without a link.
+	"""
+	if external_id is None:
+		return None
+	eid = str(external_id).strip()
+	if not eid:
+		return None
+	params = source.params or {}
+	try:
+		if "vk" in (params.get("platform") or getattr(source.platform, "code", "") or "").lower():
+			# VK post ids arrive as "{owner_id}_{post_id}".
+			owner = params.get("owner_id") or params.get("group_id") or ""
+			return f"https://vk.com/wall{owner}_{eid}" if owner else f"https://vk.com/wall{eid}"
+		if params.get("mode") == "push" or "telegram" in (params.get("platform") or "").lower():
+			return f"https://t.me/{eid}" if eid.lstrip("-").isdigit() else None
+	except Exception:  # noqa: BLE001 — a link is a nicety, not a reason to fail
+		return None
+	return None
+
+
 class ContentCollector:
 	"""Service for collecting content from social media sources"""
 
 	def __init__(self):
 		self.analyzer = AIAnalyzer()
+
+	async def _count_new_items(self, content: list[dict], source: Source) -> int:
+		"""How many of `content` this source has never handed us before.
+
+		Delegates to the dedup module, which is the only place that knows about
+		all three places a hash can be recorded (analysed, staged, collected
+		inline). Over-reporting is recoverable — the run looks busier than it
+		was — while under-reporting would claim there was nothing to do when
+		there was.
+		"""
+		from app.services.ai.dedup import count_new_items
+
+		return await count_new_items(content, source.id)
+
+	async def _stage_items(
+		self,
+		content: list[dict],
+		source: Source,
+		run_id: Optional[int],
+	) -> int:
+		"""Park a fetched batch in `collected_items` until an analysis takes it.
+
+		Only called when the run will *not* analyse inline: an inline analysis
+		has the batch in hand and records its own ledger in
+		`ai_analytics.summary_data["content_hashes"]`, so writing it out first
+		would only cost an insert and a delete per run.
+
+		Returns the number of rows written. The run's hash ledger lives on the
+		call's result, not here, so it outlives the rows themselves.
+		"""
+		from app.core.database import new_session
+		from app.models import CollectedItem
+		from app.services.ai.dedup import item_hash
+		from app.utils.date_parsing import universal_date_parser
+
+		hashes = [item_hash(item) for item in content]
+		rows: list[dict] = []
+		for item, h in zip(content, hashes):
+			# Platforms hand the publication date over in several shapes (datetime,
+			# unix seconds, "2026-10-02T10:00:00Z"); normalise once here so the
+			# column, the ordering and the UI all agree on what a date is.
+			raw_published = item.get("published_at") or item.get("date") or item.get("created_at")
+			published = universal_date_parser(raw_published) if raw_published is not None else None
+			external_id = item.get("external_id") or item.get("id")
+			permalink = item.get("permalink") or item.get("url")
+			if not permalink and external_id:
+				permalink = _build_permalink(source, external_id)
+			rows.append(
+				{
+					"run_id": run_id,
+					"source_id": source.id,
+					"external_id": str(external_id) if external_id is not None else None,
+					"content_hash": h,
+					"platform": item.get("platform"),
+					"published_at": published,
+					"media_type": item.get("media_type") or item.get("type"),
+					"text": item.get("text"),
+					"metrics": item.get("metrics") if isinstance(item.get("metrics"), dict) else None,
+					"author": item.get("author") if isinstance(item.get("author"), dict) else None,
+					"permalink": permalink,
+				}
+			)
+
+		session = new_session()
+		try:
+			async with session.begin():
+				written = await CollectedItem.objects.store_items(session, rows)
+		except Exception as e:  # noqa: BLE001 — staging must not fail a collection
+			logger.warning(f"Could not stage items for source {source.id}: {e}")
+			return 0
+		finally:
+			await session.close()
+		logger.info(f"Staged {written} raw items for source {source.id} (run {run_id})")
+		return written
 
 	async def collect_from_source(
 			self,
@@ -31,6 +129,8 @@ class ContentCollector:
 			content_type: str = "posts",
 			analyze: bool = True,
 			analyze_by: str = None,
+			force_reanalyze: bool = False,
+			run_id: Optional[int] = None,
 	) -> Optional[dict]:
 		"""
 		Collect content from a single source.
@@ -40,6 +140,7 @@ class ContentCollector:
 			content_type: Type of content to collect (posts, comments, etc.)
 			analyze: Whether to run AI analysis on collected content
 			analyze_by: Analysis method - "days" (group by days) or "themes" (theme-based analysis)
+			force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
 
 		Returns:
 			Dict with collection results or None if failed
@@ -77,19 +178,57 @@ class ContentCollector:
 
 			logger.info(f"Collected {len(content)} items from source {source.id}")
 
-			# Run AI analysis if requested
+			# How many of these the platform handed us are actually new.
+			#
+			# `content_count` is the size of the API response, and the platform
+			# does not remember what we already fetched: re-collecting an unchanged
+			# wall returns the same N posts every single time. Reporting that N as
+			# "records collected" made a run that found nothing new look identical
+			# to a productive one — so the count of unseen items is reported
+			# separately, reusing the dedup index rather than a second query of its
+			# own.
+			#
+			# Computed before the analysis, because that is what decides whether the
+			# analysis is paid for at all.
+			new_count = await self._count_new_items(content, source)
+
+			# The item hashes, whatever happens next.
+			#
+			# These are the run's own record of what the platform handed us, and
+			# they go into `jobs.result` unconditionally. The analyser keeps its
+			# own copy in `ai_analytics.summary_data["content_hashes"]` — but
+			# only if it got as far as saving, so relying on it alone is exactly
+			# how a broken analysis turns every re-collection into "32 new" for
+			# good. Written here, the ledger survives a failed analysis.
+			from app.services.ai.dedup import item_hash
+
+			hashes = [item_hash(item) for item in content]
+
+			# Run AI analysis if requested, otherwise stage the batch for a later
+			# one. An inline analysis already holds the items and records its own
+			# hashes, so writing them out first would buy nothing but inserts.
 			analytics = None
+			staged = 0
 			if analyze and content:
-				analytics = await self.analyzer.analyze_content(content, source)
+				analytics = await self.analyzer.analyze_content(
+					content, source, analyze_by=analyze_by, force_reanalyze=force_reanalyze
+				)
+			else:
+				staged = await self._stage_items(content, source, run_id)
 
 			await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
 			return {
 				"source_id": source.id,
 				"content_count": len(content),
+				"new_items": new_count,
 				"analyzed": analyze,
 				"analyze_by": analyze_by,
-				"analytics_count": len(analytics) if analytics else 0
+				"analytics_count": len(analytics) if analytics else 0,
+				# Rows parked in `collected_items` awaiting an analysis.
+				"staged": staged,
+				# This run's "seen" ledger, carried in the job result.
+				"content_hashes": hashes,
 			}
 
 		except Exception as e:
@@ -153,6 +292,7 @@ class ContentCollector:
 			"successful": 0,
 			"failed": 0,
 			"total_items": 0,
+			"total_new_items": 0,
 			"source_types": source_types_info
 		}
 
@@ -164,13 +304,14 @@ class ContentCollector:
 			if result:
 				results["successful"] += 1
 				results["total_items"] += result["content_count"]
+				results["total_new_items"] += result.get("new_items", result["content_count"])
 			else:
 				results["failed"] += 1
 
 		logger.info(f"Collection complete: {results}")
 		return results
 
-	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None) -> dict:
+	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None, force_reanalyze: bool = False) -> dict:
 		"""
 		Collect content from monitored users of a source.
 
@@ -183,6 +324,7 @@ class ContentCollector:
 			source: Source with monitored_users in params
 			analyze: Whether to run AI analysis
 			monitored_users: Optional explicit username list (overrides params)
+			force_reanalyze: Bypass dedup and re-analyze everything
 
 		Returns:
 			Dict with collection statistics
@@ -216,13 +358,15 @@ class ContentCollector:
 			"successful": 0,
 			"failed": 0,
 			"total_items": 0,
+			"total_new_items": 0,
 		}
 
 		for user in monitored_sources:
-			result = await self.collect_from_source(user, analyze=analyze)
+			result = await self.collect_from_source(user, analyze=analyze, force_reanalyze=force_reanalyze)
 			if result:
 				results["successful"] += 1
 				results["total_items"] += result["content_count"]
+				results["total_new_items"] += result.get("new_items", result["content_count"])
 			else:
 				results["failed"] += 1
 

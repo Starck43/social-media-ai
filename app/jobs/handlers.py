@@ -22,7 +22,7 @@ async def _load_task(task_id: int | None):
 
     task = await (
         AgentTask.objects.filter(id=task_id)
-        .prefetch_related("sources", "sources.platform", "sources.agent_scenario", "agent_scenario")
+        .prefetch_related("sources", "sources.platform", "agent_scenario")
         .first()
     )
     if task is not None:
@@ -56,17 +56,48 @@ async def _resolve_sources(task, payload: dict[str, Any] | None = None) -> list:
         if task_sources:
             return task_sources
         logger.info("_resolve_sources: task has no sources, falling back to all active")
-        return list(await Source.objects.filter(is_active=True).select_related("platform", "agent_scenario"))
+        return list(await Source.objects.filter(is_active=True).select_related("platform"))
 
     source_ids = (payload or {}).get("source_ids") or []
     if source_ids:
-        return list(await Source.objects.filter(id__in=source_ids).select_related("platform", "agent_scenario"))
-    return list(await Source.objects.filter(is_active=True).select_related("platform", "agent_scenario"))
+        return list(await Source.objects.filter(id__in=source_ids).select_related("platform"))
+    return list(await Source.objects.filter(is_active=True).select_related("platform"))
 
 
 def _task_payload(task) -> dict[str, Any]:
     """Payload dict of the task (or empty if there is no task)."""
     return dict(task.payload or {}) if task is not None else {}
+
+
+# How many staged raw items one analyze run takes per source. A collect run
+# stages everything the platform returned, so this is the cap that keeps a
+# single pass bounded and lets the remainder roll into the next run.
+ANALYZE_STAGE_BATCH = 100
+
+
+async def _retire_staged(run_ids: set[int]) -> int:
+    """Drop the raw rows of runs whose analysis has now saved a result.
+
+    Only ever called on the success path: rows belong to the run that fetched
+    them, so retiring by run clears exactly what has been dealt with.
+    """
+    from app.core.database import new_session
+    from app.models import CollectedItem
+
+    if not run_ids:
+        return 0
+    removed = 0
+    session = new_session()
+    try:
+        async with session.begin():
+            for run_id in run_ids:
+                removed += await CollectedItem.objects.delete_for_run(session, run_id)
+    except Exception as e:  # noqa: BLE001 — leftovers are swept by the retention pass
+        logger.warning(f"Could not retire staged rows for runs {sorted(run_ids)}: {e}")
+        return 0
+    finally:
+        await session.close()
+    return removed
 
 
 async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +119,21 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     # reads force_refresh/cli_dates/incremental_mode from source.params).
     force_refresh = task_payload.get("force_refresh") or payload.get("force_refresh")
     cli_dates = task_payload.get("cli_dates") or payload.get("cli_dates")
+    # Full-cycle refresh: re-analyze the whole selected period, overwriting rows
+    # by (source, date). Only ever set by an explicit `--force-refresh` task run.
+    force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
+    # The job's own id, used to tie staged raw content back to this run so it
+    # can be retired once an analysis has consumed it.
+    run_id = payload.get("job_id")
+    # Whether this task wants its freshly collected content analysed right away.
+    # Default True keeps the existing "collect and analyse in one pass" shape:
+    # the analyser holds the items and records its own hashes, so staging them
+    # would cost an insert and a delete per run for nothing. Set
+    # `analyze_inline: false` to park the raw content instead, for a separate
+    # analyze step to pick up — that is the only case that writes rows.
+    analyze_inline = task_payload.get("analyze_inline")
+    if analyze_inline is None:
+        analyze_inline = payload.get("analyze_inline", True)
 
     sources = await _resolve_sources(task, payload)
 
@@ -117,6 +163,15 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         "error_sources": [],
         "excluded_sources": [],
         "error_messages": [],
+        # Items the platforms actually handed over, and how many of those were
+        # never seen before. Platforms do not remember what we fetched, so
+        # `items` repeats itself on every re-run — `new_items` is the number that
+        # answers "did this run find anything".
+        "new_items": 0,
+        # Per-source outcome, keyed by id so the UI can show it on that source's
+        # own page. The aggregate `items` above is a single number for the whole
+        # run, which is what left "what did *this* source yield?" unanswerable.
+        "per_source": [],
     }
     for source in sources:
         if _is_excluded(source):
@@ -127,28 +182,73 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         _apply_params(source)
         try:
             if monitored_users:
-                result = await collector.collect_monitored_users(source, analyze=True, monitored_users=monitored_users)
+                result = await collector.collect_monitored_users(
+                    source, analyze=True, monitored_users=monitored_users, force_reanalyze=force_reanalyze
+                )
+                items = (result or {}).get("total_items", 0)
+                new_items = (result or {}).get("total_new_items", 0)
                 if result and result.get("total_items", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["total_items"]
+                    stats["new_items"] += result.get("total_new_items", 0)
                     stats["collected_sources"].append(source.name)
+                    outcome = "collected"
                 else:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
+                    outcome = "empty"
             else:
-                result = await collector.collect_from_source(source)
+                result = await collector.collect_from_source(
+                    source,
+                    analyze=bool(analyze_inline),
+                    force_reanalyze=force_reanalyze,
+                    run_id=run_id,
+                )
+                items = (result or {}).get("content_count", 0)
+                new_items = (result or {}).get("new_items", 0)
                 if result and result.get("content_count", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["content_count"]
+                    stats["new_items"] += result.get("new_items", 0)
                     stats["collected_sources"].append(source.name)
+                    outcome = "collected"
                 else:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
+                    outcome = "empty"
+            # `analytics_count` is what the collect run *stored*, not what a later
+            # `analyze` task will do — the loop already analyses inline.
+            stats["per_source"].append(
+                {
+                    "source_id": source.id,
+                    "name": source.name,
+                    "items": int(items or 0),
+                    "new_items": int(new_items or 0),
+                    "outcome": outcome,
+                    "analyzed": int((result or {}).get("analytics_count", 0) or 0),
+                    # Raw rows parked for a later analysis (0 when analysed inline).
+                    "staged": int((result or {}).get("staged", 0) or 0),
+                    # This run's "seen" ledger. Written on every collect, whether
+                    # or not the analysis succeeded — that is what stops the next
+                    # collection from re-reporting the same wall as new.
+                    "content_hashes": list((result or {}).get("content_hashes") or []),
+                }
+            )
         except Exception as e:
             logger.error(f"collect failed for source {source.id}: {e}", exc_info=True)
             stats["error"] += 1
             stats["error_sources"].append(source.name)
             stats["error_messages"].append(f"{source.name}: {e}")
+            stats["per_source"].append(
+                {
+                    "source_id": source.id,
+                    "name": source.name,
+                    "items": 0,
+                    "new_items": 0,
+                    "outcome": "error",
+                    "analyzed": 0,
+                }
+            )
     return stats
 
 
@@ -169,9 +269,12 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
     task_payload = _task_payload(task)
 
     period = task_payload.get("period", payload.get("period", "day"))
-    if period not in ("day", "week"):
+    if period not in ("day", "week", "month"):
         return {"status": "failed", "error": f"Invalid period: {period}"}
-    return await build_and_publish(period=period, agent_task_id=payload.get("agent_task_id"))
+    # `--force-refresh` re-sends the digest even when it was already sent for
+    # this task+period (skips the idempotency check).
+    force = bool(task_payload.get("force_refresh") or payload.get("force_refresh"))
+    return await build_and_publish(period=period, agent_task_id=payload.get("agent_task_id"), force=force)
 
 
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
@@ -201,7 +304,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     3. Run TriggerEvaluator.should_act on already-stored analysis result
     4. If action needed, check guards and create BotAction (dry_run=True by default)
     """
-    from app.models import AgentScenario, AIAnalytics, BotAction
+    from app.models import AgentScenario, AIAnalytics, BotAction, CollectedItem
     from app.services.ai.trigger_evaluator import trigger_evaluator
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
@@ -211,7 +314,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
     excluded_users = task_payload.get("excluded_users") or []
 
-    stats = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0}
+    stats: dict[str, Any] = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0, "per_source": []}
 
     sources = await _resolve_sources(task, payload)
 
@@ -219,17 +322,19 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         if (source.external_id or "").lstrip("@") in excluded_users:
             stats["skipped"] += 1
             continue
+        # Per-source counters, so the run-now modal can link to each source and
+        # the source page can show what the agent analysed *here*. `analyzed` and
+        # `actions_created` below stay run-wide; these are this source's share.
+        per: dict[str, Any] = {"source_id": source.id, "name": source.name, "analyzed": 0, "actions": 0}
         try:
             stats["sources"] += 1
 
-            # Resolve scenario — prefer the task's own scenario, then an explicit
-            # override, then the source's scenario, then the tenant default.
+            # Resolve scenario — the task's own scenario, else an explicit
+            # override, else the tenant default. A source carries no scenario.
             if task is not None and getattr(task, "agent_scenario", None):
                 scenario = task.agent_scenario
             elif scenario_id:
                 scenario = await AgentScenario.objects.get(id=scenario_id)
-            elif source.agent_scenario_id:
-                scenario = await AgentScenario.objects.get(id=source.agent_scenario_id)
             else:
                 scenario = None
 
@@ -240,6 +345,35 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             if not scenario or not scenario.is_active:
                 stats["skipped"] += 1
                 continue
+
+            # Drain whatever the collect task staged for this source.
+            #
+            # A collect run set to `analyze_inline: false` parks the raw batch in
+            # `collected_items` instead of analysing it; this is where that work
+            # gets paid for. The rows are retired only after an analysis has
+            # actually saved something — a failed analysis leaves them for the
+            # next attempt rather than dropping the only copy of the content.
+            try:
+                staged = await CollectedItem.objects.for_source(source.id, limit=ANALYZE_STAGE_BATCH)
+                if staged:
+                    from app.services.ai.analyzer import AIAnalyzer
+
+                    items = [row.as_agent_item() for row in staged]
+                    fresh = await AIAnalyzer().analyze_content(items, source)
+                    if fresh:
+                        run_ids = {row.run_id for row in staged if row.run_id}
+                        deleted = await _retire_staged(run_ids)
+                        logger.info(
+                            f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}"
+                        )
+                    else:
+                        # Nothing was saved — keep every row and retry next run.
+                        logger.warning(
+                            f"Analysis of {len(staged)} staged item(s) for source {source.id} produced "
+                            "no result; keeping them staged for a retry"
+                        )
+            except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
+                logger.warning(f"Could not process staged items for source {source.id}: {e}", exc_info=True)
 
             # Get recent analytics for this source
             analytics = (
@@ -273,6 +407,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 continue
 
             stats["analyzed"] += len(filtered_content)
+            per["analyzed"] += len(filtered_content)
 
             # Post-filter: should_act on the already-stored analysis result
             for item in filtered_content:
@@ -325,11 +460,18 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     dry_run=True,
                 )
                 stats["actions_created"] += 1
+                per["actions"] += 1
                 logger.info(f"Created BotAction#{action.id} for source {source.id}")
 
         except Exception as e:
             logger.error(f"analyze failed for source {source.id}: {e}", exc_info=True)
             stats["skipped"] += 1
+        finally:
+            # `finally`, not a line at the end of the body: this loop `continue`s
+            # out early in several places (no scenario, no analytics, nothing to
+            # analyse) and every one of them is still an outcome the user should
+            # be able to reach from the modal.
+            stats["per_source"].append(per)
 
     return stats
 

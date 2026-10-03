@@ -63,7 +63,9 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
 
         called = []
 
-        async def fake_collect(self, source, analyze=True, content_type="posts", analyze_by=None):
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+        ):
             called.append(source.id)
             return _fake_result()
 
@@ -73,6 +75,127 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
         assert called == [sources[0].id]
         assert stats["sources"] == 1
         assert stats["items"] == 3
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+
+
+async def test_the_collect_notification_separates_received_from_new(platform, sources, monkeypatch):
+    """The 'добавлено или обновлено записей' line was never true.
+
+    It printed `items` — the size of the platform's response — under a heading
+    that claims rows were written. For a source that re-serves the same wall
+    every hour it announced "32 added" on every run while writing nothing.
+    """
+    from app.jobs.dispatcher import _job_success_message
+
+    job = type("J", (), {"job_type": "collect"})()
+    job.result = {
+        "sources": 1,
+        "collected": 1,
+        "empty": 0,
+        "error": 0,
+        "items": 32,
+        "new_items": 0,
+        "collected_sources": ["Кигель"],
+    }
+    msg = _job_success_message(job, job.result)
+    assert "добавлено или обновлено" not in msg
+    assert "Получено от источников: 32" in msg
+    assert "Новых нет" in msg
+
+    job.result["new_items"] = 5
+    msg = _job_success_message(job, job.result)
+    assert "новых, ранее не виденных: 5" in msg
+
+
+async def test_the_collect_notification_admits_an_unmeasured_counter(platform, sources, monkeypatch):
+    """A missing `new_items` means 'not measured', not '0 new'."""
+    from app.jobs.dispatcher import _job_success_message
+
+    job = type("J", (), {"job_type": "collect"})()
+    job.result = {"sources": 1, "collected": 1, "items": 12, "collected_sources": ["Кигель"]}
+    msg = _job_success_message(job, job.result)
+    assert "не подсчитано" in msg
+    assert "Новых нет" not in msg
+
+
+async def test_handle_collect_records_a_per_source_breakdown(platform, sources, monkeypatch):
+    """Each source's own yield must survive the run, not just the run total.
+
+    `result["items"]` is a single number for the whole run, so with several
+    sources there was no way to tell *which* one produced what — the question a
+    source page has to answer. `per_source` keeps the breakdown, and a failing
+    source is recorded too (as an error) rather than vanishing from the report.
+    """
+    from app.jobs.handlers import handle_collect
+
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="collect",
+        cron_expr="@once",
+        timezone="Europe/Moscow",
+        payload={},
+        is_active=True,
+    )
+    try:
+        from app.web.tasks import _replace_task_sources
+
+        await _replace_task_sources(task.id, [sources[0].id, sources[1].id], task.tenant_id)
+
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+        ):
+            if source.id == sources[1].id:
+                raise RuntimeError("токен истёк")
+            return {"content_count": 7, "analyzed": True, "analytics_count": 2}
+
+        monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
+
+        stats = await handle_collect({"agent_task_id": task.id})
+
+        by_id = {row["source_id"]: row for row in stats["per_source"]}
+        assert set(by_id) == {sources[0].id, sources[1].id}
+        assert by_id[sources[0].id]["items"] == 7
+        assert by_id[sources[0].id]["outcome"] == "collected"
+        # collect analyses inline, so the stored analysis count is reported here.
+        assert by_id[sources[0].id]["analyzed"] == 2
+        assert by_id[sources[1].id]["outcome"] == "error"
+        # The run-level totals keep working — the breakdown is additive.
+        assert stats["items"] == 7
+        assert stats["error"] == 1
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+
+
+async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources, monkeypatch):
+    """A source that yielded nothing is still an outcome worth recording."""
+    from app.jobs.handlers import handle_collect
+
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="collect",
+        cron_expr="@once",
+        timezone="Europe/Moscow",
+        payload={},
+        is_active=True,
+    )
+    try:
+        from app.web.tasks import _replace_task_sources
+
+        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
+
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+        ):
+            return None
+
+        monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.collect_from_source", fake_collect)
+
+        stats = await handle_collect({"agent_task_id": task.id})
+
+        assert stats["empty"] == 1
+        assert stats["per_source"][0]["outcome"] == "empty"
+        assert stats["per_source"][0]["items"] == 0
     finally:
         await AgentTask.objects.delete_by_id(task.id)
 
@@ -96,7 +219,9 @@ async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
 
         called = []
 
-        async def fake_collect(self, source, analyze=True, content_type="posts", analyze_by=None):
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+        ):
             called.append(source.id)
             return _fake_result()
 
@@ -130,7 +255,7 @@ async def test_handle_collect_passes_monitored_users_override(platform, sources,
 
         seen = {}
 
-        async def fake_monitored(self, source, analyze=True, monitored_users=None):
+        async def fake_monitored(self, source, analyze=True, monitored_users=None, force_reanalyze=False):
             seen["source"] = source.id
             seen["users"] = monitored_users
             return {"total_items": 5, "total_users": 2, "successful": 2, "failed": 0}

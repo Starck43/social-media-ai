@@ -34,6 +34,9 @@ from .model_type import ModelType
 # Notification models
 from .notification import Notification
 
+# Raw collected content (staged until an analysis consumes it)
+from .collected_item import CollectedItem
+
 # Import all models to ensure they are registered with SQLAlchemy
 from .permission import Permission
 
@@ -92,4 +95,6 @@ __all__ = [
     "AgentFeedback",
     # Notification models
     "Notification",
+    # Raw collected content
+    "CollectedItem",
 ]

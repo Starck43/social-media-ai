@@ -380,7 +380,7 @@ async def _run_task(
     refresh_extra: dict = {}
     if force_refresh:
         refresh_extra = {"force_refresh": True}
-        if job_type == "collect":
+        if job_type in ("collect", "analyze"):
             refresh_extra["force_reanalyze"] = True
 
     where = await tenant_label(target.tenant_id)

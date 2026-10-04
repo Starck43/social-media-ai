@@ -54,7 +54,8 @@ async def test_analyze_content_dispatches_sources_mode(monkeypatch, source):
     seen = {}
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                        analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
+                        analysis_date=None, force_reanalyze=False, analyze_type=None,
+                        agent_scenario=None, trigger_condition=None):
         seen["chain"] = topic_chain_id
         seen["analyze_type"] = analyze_type
         seen["len"] = len(content)
@@ -82,7 +83,8 @@ async def test_analyze_content_dispatches_monitored_users_mode(monkeypatch, sour
     chains = []
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                        analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
+                        analysis_date=None, force_reanalyze=False, analyze_type=None,
+                        agent_scenario=None, trigger_condition=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -102,7 +104,8 @@ async def test_monitored_users_groups_by_author_dict(monkeypatch, source):
     chains = []
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
-                      analysis_date=None, force_reanalyze=False, analyze_type=None, agent_scenario=None):
+                      analysis_date=None, force_reanalyze=False, analyze_type=None,
+                      agent_scenario=None, trigger_condition=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -125,7 +128,7 @@ async def test_analyze_content_days_mode_groups_by_day(monkeypatch, source):
 
     called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None):
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
         called.append("days")
         return []
 
@@ -139,7 +142,7 @@ async def test_analyze_content_themes_mode_still_works(monkeypatch, source):
     """themes mode still routes to the theme-grouped analysis (regression guard)."""
     called = []
 
-    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None):
+    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
         called.append("themes")
         return []
 
@@ -201,7 +204,7 @@ async def test_analyze_content_uses_passed_scenario_for_mode(monkeypatch, source
 
     mode_called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None):
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
         mode_called.append(agent_scenario)
         return []
 

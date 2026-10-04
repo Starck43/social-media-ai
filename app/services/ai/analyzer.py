@@ -36,7 +36,8 @@ class AIAnalyzer:
         self.theme_matcher = ThemeMatcher()
 
     async def analyze_content(
-        self, content: list[dict], source: Source, analyze_by: str = None, force_reanalyze: bool = False
+        self, content: list[dict], source: Source, analyze_by: str = None, force_reanalyze: bool = False,
+        agent_scenario=None,
     ) -> list[AIAnalytics]:
         """
         Analyze content based on analyze_by mode.
@@ -46,22 +47,35 @@ class AIAnalyzer:
                 source: Source being analyzed
                 analyze_by: Analysis mode: "days" or "themes"
                 force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
+                agent_scenario: Already-resolved scenario (task's own). When given,
+                        the tenant-default lookup is skipped, so a task's scenario
+                        actually shapes the analysis instead of being silently ignored.
 
         Returns:
                 List of AIAnalytics records (one per day with activity)
         """
-        analyze_by = analyze_by or (await self._default_scenario_analyze_type(source))
+        analyze_by = analyze_by or (
+            agent_scenario.analyze_type
+            if agent_scenario and agent_scenario.analyze_type
+            else await self._default_scenario_analyze_type(source)
+        )
 
         if analyze_by == "themes":
-            return await self._analyze_content_by_themes(content, source, force_reanalyze=force_reanalyze)
+            return await self._analyze_content_by_themes(
+                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+            )
         elif analyze_by == "sources":
-            return await self._analyze_content_by_sources(content, source, force_reanalyze=force_reanalyze)
+            return await self._analyze_content_by_sources(
+                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+            )
         elif analyze_by == "monitored_users":
             return await self._analyze_content_by_monitored_users(
-                content, source, force_reanalyze=force_reanalyze
+                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
             )
         else:
-            return await self._analyze_content_by_days(content, source, force_reanalyze=force_reanalyze)
+            return await self._analyze_content_by_days(
+                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+            )
 
     async def _default_scenario_analyze_type(self, source: Source) -> str:
         """The analysis mode ("days"/"themes") of the workspace default scenario.
@@ -86,6 +100,7 @@ class AIAnalyzer:
         analysis_date: Optional[date] = None,
         force_reanalyze: bool = False,
         analyze_type: Optional[str] = None,
+        agent_scenario: Optional["AgentScenario"] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
@@ -103,6 +118,9 @@ class AIAnalyzer:
                         "sources"/"monitored_users"); when set, it shapes the
                         auto-generated chain id so a mode's records share one
                         stable chain.
+                agent_scenario: Already-resolved scenario (a task's own). When
+                        given, the tenant-default lookup is skipped — the caller
+                        resolved the scenario, so this analysis must use it.
 
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
@@ -126,16 +144,18 @@ class AIAnalyzer:
         else:
             logger.info(f"Force re-analysis for source {source.id}: bypassing dedup ({len(content)} items)")
 
-        # Load the scenario: the source no longer carries one. Runs without a
-        # task (push ingest, CLI collect, agent collect) use the tenant default.
-        agent_scenario = None
-        try:
-            default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
-            if default_sc:
-                agent_scenario = default_sc
-                logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
-        except Exception:
-            pass
+        # Load the scenario: the source no longer carries one. A caller that
+        # resolved a scenario (a task's own) passes it in; everything else
+        # (push ingest, CLI collect, agent collect) falls back to the tenant
+        # default.
+        if agent_scenario is None:
+            try:
+                default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
+                if default_sc:
+                    agent_scenario = default_sc
+                    logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
+            except Exception:
+                pass
 
         # Lazy structured-output schema: derive from analysis_types when the
         # scenario has no explicit output_schema (in-memory, not persisted).
@@ -177,10 +197,23 @@ class AIAnalyzer:
                 if video_result:
                     analysis_results["video_analysis"] = video_result
 
-            # Check if we have any meaningful analysis results
+            # Check if we have any meaningful analysis results.
+            #
+            # A timed-out or errored LLM call still returns a truthy `parsed`
+            # stub (`{"analysis": "Timeout"}` / `{"analysis": "Error: ..."}`),
+            # which would otherwise be saved as a real analysis and mark the
+            # batch as analyzed — silently blocking a retry and leaving the
+            # chain with a stats-only entry and no conclusion. Treat those
+            # stubs as "no result" so the batch stays unanalysed and is retried.
             has_results = False
             for result in analysis_results.values():
-                if result and result.get("parsed"):
+                if not result or not result.get("parsed"):
+                    continue
+                parsed = result["parsed"]
+                text = parsed.get("analysis") if isinstance(parsed, dict) else parsed
+                if isinstance(text, str) and (text.startswith("Timeout") or text.startswith("Error")):
+                    logger.warning(f"LLM result is an error stub ('{text[:40]}'), not saving analysis")
+                    continue
                     has_results = True
                     break
 
@@ -200,7 +233,9 @@ class AIAnalyzer:
                 # object is not subscriptable", returned None, and stored
                 # nothing. That is why this workspace had no content hashes at
                 # all and every re-collection looked brand new.
-                main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("main_topics") or []
+                main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get(
+                    "main_topics"
+                ) or []
                 topic_chain_id = self._generate_topic_chain_id(
                     source, main_topics, agent_scenario, analyze_type=analyze_type
                 )
@@ -228,7 +263,7 @@ class AIAnalyzer:
             return None
 
     async def _analyze_content_by_days(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False
+        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
     ) -> list[AIAnalytics]:
         """
         Group content by days and analyze each day separately.
@@ -276,7 +311,11 @@ class AIAnalyzer:
             try:
                 # Use base analysis for each day
                 analytics = await self.base_analyze_content(
-                    content=day_content, source=source, analysis_date=day, force_reanalyze=force_reanalyze
+                    content=day_content,
+                    source=source,
+                    analysis_date=day,
+                    force_reanalyze=force_reanalyze,
+                    agent_scenario=agent_scenario,
                 )
 
                 # Only add non-empty analytics
@@ -297,7 +336,7 @@ class AIAnalyzer:
         return analytics_list
 
     async def _analyze_content_by_themes(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False
+        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
     ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
@@ -315,7 +354,9 @@ class AIAnalyzer:
             return []
 
         # Use base analysis for all content
-        analysis = await self.base_analyze_content(content, source, force_reanalyze=force_reanalyze)
+        analysis = await self.base_analyze_content(
+            content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+        )
         if not analysis:
             return []
 
@@ -325,7 +366,7 @@ class AIAnalyzer:
         return [analysis]
 
     async def _analyze_content_by_sources(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False
+        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
     ) -> list[AIAnalytics]:
         """Analyze content grouped by its origin source.
 
@@ -359,7 +400,11 @@ class AIAnalyzer:
         for src_key, group in groups.items():
             try:
                 analysis = await self.base_analyze_content(
-                    group, source, force_reanalyze=force_reanalyze, analyze_type="sources"
+                    group,
+                    source,
+                    force_reanalyze=force_reanalyze,
+                    analyze_type="sources",
+                    agent_scenario=agent_scenario,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -374,7 +419,7 @@ class AIAnalyzer:
         return analytics_list
 
     async def _analyze_content_by_monitored_users(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False
+        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
     ) -> list[AIAnalytics]:
         """Analyze content grouped by the tracked user who authored it.
 
@@ -419,7 +464,11 @@ class AIAnalyzer:
             try:
                 chain_id = f"src_{source.id}_user_{author}"
                 analysis = await self.base_analyze_content(
-                    group, source, topic_chain_id=chain_id, force_reanalyze=force_reanalyze
+                    group,
+                    source,
+                    topic_chain_id=chain_id,
+                    force_reanalyze=force_reanalyze,
+                    agent_scenario=agent_scenario,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -557,7 +606,10 @@ class AIAnalyzer:
 
             # Build prompt using new unified system
             prompt = PromptBuilder.get_prompt(
-                MediaType.IMAGE, scenario=agent_scenario, count=len(media_urls), platform_name=platform_name
+                MediaType.IMAGE,
+                scenario=agent_scenario,
+                count=len(media_urls),
+                platform_name=platform_name,
             )
 
             # Create LLM client and analyze
@@ -592,7 +644,10 @@ class AIAnalyzer:
 
             # Build prompt using new unified system
             prompt = PromptBuilder.get_prompt(
-                MediaType.VIDEO, scenario=agent_scenario, count=len(media_urls), platform_name=platform_name
+                MediaType.VIDEO,
+                scenario=agent_scenario,
+                count=len(media_urls),
+                platform_name=platform_name,
             )
 
             # Create LLM client and analyze
@@ -1022,7 +1077,9 @@ class AIAnalyzer:
 
         return None
 
-    def _generate_topic_chain_id(self, source: Source, main_topics: list[str], agent_scenario: AgentScenario = None, analyze_type: str = None):
+    def _generate_topic_chain_id(
+        self, source: Source, main_topics: list[str], agent_scenario: AgentScenario = None, analyze_type: str = None
+    ):
         """
         Generate topic chain ID for source.
 

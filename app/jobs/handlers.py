@@ -357,6 +357,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     task_payload = _task_payload(task)
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
     excluded_users = task_payload.get("excluded_users") or []
+    force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
 
     stats: dict[str, Any] = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0, "per_source": []}
 
@@ -404,7 +405,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     from app.services.ai.analyzer import AIAnalyzer
 
                     items = [row.as_agent_item() for row in staged]
-                    fresh = await AIAnalyzer().analyze_content(items, source)
+                    fresh = await AIAnalyzer().analyze_content(
+                        items, source, agent_scenario=scenario, force_reanalyze=bool(force_reanalyze)
+                    )
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.

@@ -7,7 +7,7 @@ import pytest
 from app.models import BotAction, AgentScenario, Platform, Source
 from app.models.managers.bot_action_manager import BotActionManager
 from app.services.social.guards import GuardsChecker
-from app.types import BotActionStatus, BotActionType, BotTriggerType, PlatformType, SourceType
+from app.types import BotActionStatus, AgentActionType, BotTriggerType, PlatformType, SourceType
 
 
 def _make_platform() -> Platform:
@@ -37,7 +37,7 @@ async def scenario(platform):
         name="Test Scenario",
         trigger_type=BotTriggerType.KEYWORD_MATCH,
         trigger_config={"keywords": ["test"], "mode": "any"},
-        action_type=BotActionType.COMMENT,
+        action_type=AgentActionType.COMMENT,
         rate_limit_per_hour=5,
         cooldown_seconds=60,
         requires_approval=True,
@@ -66,7 +66,7 @@ async def _make_action(scenario_id: int, source_id: int, **overrides):
     params = dict(
         agent_scenario_id=scenario_id,
         source_id=source_id,
-        action_type=BotActionType.COMMENT,
+        action_type=AgentActionType.COMMENT,
         status=BotActionStatus.PENDING,
         payload={"text": "Test comment", "post_id": 123},
         dry_run=True,
@@ -114,7 +114,7 @@ class TestGuardsChecker:
     async def test_whitelist_blocks_unlisted_user(self, platform):
         scenario = await AgentScenario.objects.create(
             name="Whitelist Scenario",
-            action_type=BotActionType.COMMENT,
+            action_type=AgentActionType.COMMENT,
             whitelist=["gooduser"],
             is_active=True,
         )

@@ -145,7 +145,7 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
 
 async def _execute_action(source, platform, action, dry_run: bool) -> dict[str, Any]:
     """Execute a bot action on the source platform."""
-    from app.types import BotActionType, PlatformType
+    from app.types import AgentActionType, PlatformType
 
     action_type = action.action_type
     payload = action.payload or {}
@@ -154,7 +154,7 @@ async def _execute_action(source, platform, action, dry_run: bool) -> dict[str, 
         from app.services.social.vk_client import VKClient
 
         client = VKClient(platform=platform)
-        if action_type == BotActionType.COMMENT:
+        if action_type == AgentActionType.COMMENT:
             return await client.post_comment(
                 owner_id=payload.get("owner_id", 0),
                 post_id=payload.get("post_id", 0),
@@ -168,7 +168,7 @@ async def _execute_action(source, platform, action, dry_run: bool) -> dict[str, 
         from app.services.social.tg_client import TelegramClient
 
         client = TelegramClient(platform=platform)
-        if action_type in (BotActionType.COMMENT, BotActionType.REPLY, BotActionType.DIRECT_MESSAGE):
+        if action_type in (AgentActionType.COMMENT, AgentActionType.REPLY, AgentActionType.DIRECT_MESSAGE):
             return await client.send_message(
                 chat_id=payload.get("chat_id", source.external_id),
                 text=payload.get("text", ""),

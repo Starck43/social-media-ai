@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from app.models import AgentScenario
-from app.types import BotActionType
+from app.types import AgentActionType
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +205,7 @@ class ScenarioService:
         content_types: Optional[list[str]] = None,
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
-        action_type: Optional[BotActionType] = None,
+        action_type: Optional[AgentActionType] = None,
         trigger_type: Optional[str] = None,
         trigger_config: Optional[dict] = None,
         max_tokens: Optional[int] = None,

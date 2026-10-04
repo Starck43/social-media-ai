@@ -6,7 +6,7 @@ from app.utils.db_enums import DatabaseEnum, database_enum
 
 
 @database_enum
-class BotActionType(DatabaseEnum, Enum):
+class AgentActionType(DatabaseEnum, Enum):
     """Action types the AI bot can perform."""
 
     # Format: NAME = ("db_value", "Display Name", "Emoji")

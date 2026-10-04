@@ -9,7 +9,7 @@ from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 
-from app.types import BotActionType, BotTriggerType
+from app.types import AgentActionType, BotTriggerType
 
 
 class ScenarioBase(BaseModel):
@@ -58,7 +58,7 @@ class ScenarioCreate(ScenarioBase):
 		None,
 		description="Configuration for trigger evaluation"
 	)
-	action_type: Optional[BotActionType] = Field(
+	action_type: Optional[AgentActionType] = Field(
 		None,
 		description="Action to perform after analysis (NOTIFICATION, COMMENT, etc.)"
 	)
@@ -86,7 +86,7 @@ class ScenarioUpdate(BaseModel):
 	ai_prompt: Optional[str] = None
 	trigger_type: Optional[BotTriggerType] = None
 	trigger_config: Optional[dict[str, Any]] = None
-	action_type: Optional[BotActionType] = None
+	action_type: Optional[AgentActionType] = None
 	is_active: Optional[bool] = None
 	max_tokens: Optional[int] = Field(None, ge=1)
 	output_schema: Optional[dict[str, Any]] = None

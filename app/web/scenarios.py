@@ -169,7 +169,7 @@ async def scenario_detail(request: Request, scenario_id: int):
         return RedirectResponse("/app/scenarios", status_code=302)
 
     from app.models.llm_model import LLMModel
-    from app.types import AnalysisType, BotActionType, BotTriggerType, ContentType, LLMStrategyType
+    from app.types import AnalysisType, AgentActionType, BotTriggerType, ContentType, LLMStrategyType
     from app.types.enums.bot_types import AnalyzeType
 
     llm_models = [
@@ -186,7 +186,7 @@ async def scenario_detail(request: Request, scenario_id: int):
         analysis_types=list(AnalysisType),
         analyze_types=list(AnalyzeType),
         trigger_types=list(BotTriggerType),
-        action_types=list(BotActionType),
+        action_types=list(AgentActionType),
         llm_strategies=LLMStrategyType.choices(),
         llm_models=llm_models,
         pretty_json=_pretty_json,
@@ -223,14 +223,14 @@ async def _collect_fields(form: dict) -> dict:
     Raises `ValueError` with a user-facing message: the caller flashes it and
     sends the editor back, so a bad JSON box never becomes a 500.
     """
-    from app.types import AnalysisType, BotActionType, BotTriggerType, ContentType, LLMStrategyType
+    from app.types import AnalysisType, AgentActionType, BotTriggerType, ContentType, LLMStrategyType
     from app.types.enums.bot_types import AnalyzeType
 
     trigger_type = _enum_by_value(BotTriggerType, form.get("trigger_type", ""))
     if form.get("trigger_type") and trigger_type is None:
         raise ValueError(f"Неизвестный триггер: {form['trigger_type']}")
 
-    action_type = _enum_by_value(BotActionType, form.get("action_type", ""))
+    action_type = _enum_by_value(AgentActionType, form.get("action_type", ""))
     if form.get("action_type") and action_type is None:
         raise ValueError(f"Неизвестное действие: {form['action_type']}")
 

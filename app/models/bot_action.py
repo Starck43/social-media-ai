@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types import BotActionStatus, BotActionType
+from ..types import BotActionStatus, AgentActionType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 
@@ -36,7 +36,7 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.ai_analytics.id", ondelete="SET NULL"), nullable=True
     )
 
-    action_type: Mapped[BotActionType] = BotActionType.sa_column(
+    action_type: Mapped[AgentActionType] = AgentActionType.sa_column(
         type_name="bot_action_type", nullable=False, store_as_name=True
     )
     status: Mapped[BotActionStatus] = BotActionStatus.sa_column(

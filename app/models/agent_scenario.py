@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types import BotActionType, BotTriggerType, LLMStrategyType
+from ..types import AgentActionType, BotTriggerType, LLMStrategyType
 from ..types.enums.bot_types import AnalyzeType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
@@ -70,7 +70,7 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     trigger_config: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
 
     # Action to perform after analysis
-    action_type: Mapped[BotActionType] = BotActionType.sa_column(
+    action_type: Mapped[AgentActionType] = AgentActionType.sa_column(
         type_name="bot_action_type", nullable=True, store_as_name=True
     )
 

@@ -18,7 +18,16 @@ from app.models import AgentScenario, AgentTask, Job, Source
 from app.tasks.cron import cron_to_human
 from app.types import JobType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, perms_can, render, safe_next, tenant_filter_context
+from .deps import (
+    action_tenant_id,
+    add_flash,
+    ensure_csrf,
+    guard_web,
+    perms_can,
+    render,
+    safe_next,
+    tenant_filter_context,
+)
 
 router = APIRouter(prefix="/tasks")
 
@@ -291,7 +300,12 @@ async def task_create(
         if parsed_source_ids:
             await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    if run_now and is_active:
+    # "Создать и выполнить" runs on request, whether or not the task can carry a
+    # schedule. Gating this on activation meant the button silently did nothing
+    # whenever the workspace had no active source yet — exactly the case where a
+    # user runs a job by hand to see what happens. The manual run-now endpoint
+    # has never checked activation either; this just made the two paths agree.
+    if run_now:
         outcome = await run_task_now(task)
         add_flash(request, "success", f"Задача «{name}» создана и запущена")
         # The run-status modal lives on the tasks page; from onboarding there is
@@ -321,9 +335,7 @@ async def task_detail(request: Request, task_id: int):
 
     source = None
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
-        source = (
-            await AgentTask.objects.filter(id=task_id).select_related("tenant").first()
-        )
+        source = await AgentTask.objects.filter(id=task_id).select_related("tenant").first()
         if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
             source = None
         if source is None:
@@ -336,17 +348,10 @@ async def task_detail(request: Request, task_id: int):
             )
 
         # Recent jobs for this task.
-        recent_jobs = await (
-            Job.objects.filter(agent_task_id=task_id)
-            .order_by(Job.created_at.desc())
-            .limit(10)
-        )
+        recent_jobs = await Job.objects.filter(agent_task_id=task_id).order_by(Job.created_at.desc()).limit(10)
 
         # Linked sources.
-        linked_sources = await (
-            Source.objects.filter(id__in=await _task_source_ids(task_id))
-            .order_by(Source.name)
-        )
+        linked_sources = await Source.objects.filter(id__in=await _task_source_ids(task_id)).order_by(Source.name)
 
         # Scenario.
         scenario = None
@@ -372,9 +377,7 @@ async def _task_source_ids(task_id: int) -> list[int]:
     """Return the source ids linked to a task via the m2m table."""
     from app.models.agent_task import agent_task_sources
 
-    rows = await agent_task_sources.select().where(
-        agent_task_sources.c.task_id == task_id
-    ).fetchall()
+    rows = await agent_task_sources.select().where(agent_task_sources.c.task_id == task_id).fetchall()
     return [r.source_id for r in rows]
 
 
@@ -547,7 +550,8 @@ async def task_update(
         )
         await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    if run_now and activation_blocked is None:
+    # Same reasoning as the create branch: an explicit run-now is not a schedule.
+    if run_now:
         updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
         outcome = await run_task_now(updated)
         add_flash(request, "success", f"Задача «{name}» обновлена и запущена")

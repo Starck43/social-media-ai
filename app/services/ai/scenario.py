@@ -40,33 +40,21 @@ async def _scenario_limit_reason() -> Optional[str]:
     return await check_scenario_limit(tenant)
 
 
-def build_output_schema(analysis_types: Optional[list[str]] = None) -> dict:
+def build_output_schema(analysis_types: Optional[list[str]] = None, scope: Optional[dict] = None) -> dict:
     """Generate a JSON Schema for structured LLM output from analysis_types.
 
     Used lazily at runtime: when a scenario has no explicit output_schema, it is
-    derived from the configured analysis types so the LLM returns a parseable shape.
+    derived from the configured analysis types so the LLM returns a parseable
+    shape. The field contract itself lives in `JSONSchemaBuilder` — this only
+    asks it for the same schema the prompt renders, so the stored contract and
+    the instruction cannot drift apart.
+
+    `scope` is the scenario's, so the placeholders in the descriptions resolve to
+    this scenario's configured vocabularies rather than the defaults.
     """
-    analysis_types = analysis_types or []
-    properties = {"summary": {"type": "string", "description": "Краткое резюме анализа"}}
-    for at in analysis_types:
-        if at == "sentiment":
-            properties["sentiment"] = {
-                "type": "object",
-                "properties": {"label": {"type": "string"}, "score": {"type": "number"}},
-            }
-        elif at == "keywords":
-            properties["keywords"] = {"type": "array", "items": {"type": "string"}}
-        elif at == "topics":
-            properties["topics"] = {"type": "array", "items": {"type": "string"}}
-        elif at == "themes":
-            properties["themes"] = {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {"name": {"type": "string"}, "weight": {"type": "number"}},
-                },
-            }
-    return {"type": "object", "properties": properties, "required": list(properties.keys())}
+    from app.services.ai.json_schema_builder import JSONSchemaBuilder
+
+    return JSONSchemaBuilder.build_json_schema(analysis_types or [], scope or {})
 
 
 
@@ -149,49 +137,37 @@ class ScenarioPromptBuilder:
 
     @staticmethod
     def build_analysis_instructions(analysis_types: list[str], config: dict) -> str:
-        """
-        Build human-readable analysis instructions from a config.
-        Used for logging and debugging.
-        """
+        """Build human-readable analysis instructions from a config."""
         instructions = []
+        config = config or {}
 
-        if 'sentiment' in analysis_types:
-            cfg = config.get('sentiment_config', {})
-            categories = cfg.get('categories', [])
-            instructions.append(f"Sentiment analysis: {', '.join(categories)}")
+        for at_name in analysis_types:
+            cfg = config.get(at_name, {})
+            if at_name == "sentiment":
+                categories = cfg.get("categories", [])
+                instructions.append(f"Sentiment analysis: {', '.join(categories)}")
+            elif at_name == "trends":
+                min_mentions = cfg.get("min_mentions", 5)
+                instructions.append(f"Trends detection (min {min_mentions} mentions)")
+            elif at_name == "engagement":
+                metrics = cfg.get("metrics", [])
+                instructions.append(f"Engagement analysis: {', '.join(metrics)}")
+            elif at_name == "keywords":
+                keywords = cfg.get("keywords", [])
+                if keywords:
+                    instructions.append(f"Keywords tracking: {', '.join(keywords[:5])}")
+                else:
+                    instructions.append("Keywords extraction")
+            elif at_name == "topics":
+                max_topics = cfg.get("max_topics", 5)
+                instructions.append(f"Topics identification (top {max_topics})")
+            elif at_name == "toxicity":
+                threshold = cfg.get("threshold", 0.7)
+                instructions.append(f"Toxicity detection (threshold: {threshold})")
+            elif at_name == "demographics":
+                instructions.append("Demographics analysis")
 
-        if 'trends' in analysis_types:
-            cfg = config.get('trends_config', {})
-            min_mentions = cfg.get('min_mentions', 5)
-            instructions.append(f"Trends detection (min {min_mentions} mentions)")
-
-        if 'engagement' in analysis_types:
-            cfg = config.get('engagement_config', {})
-            metrics = cfg.get('metrics', [])
-            instructions.append(f"Engagement analysis: {', '.join(metrics)}")
-
-        if 'keywords' in analysis_types:
-            cfg = config.get('keywords_config', {})
-            keywords = cfg.get('keywords', [])
-            if keywords:
-                instructions.append(f"Keywords tracking: {', '.join(keywords[:5])}")
-            else:
-                instructions.append("Keywords extraction")
-
-        if 'topics' in analysis_types:
-            cfg = config.get('topics_config', {})
-            max_topics = cfg.get('max_topics', 5)
-            instructions.append(f"Topics identification (top {max_topics})")
-
-        if 'toxicity' in analysis_types:
-            cfg = config.get('toxicity_config', {})
-            threshold = cfg.get('threshold', 0.7)
-            instructions.append(f"Toxicity detection (threshold: {threshold})")
-
-        if 'demographics' in analysis_types:
-            instructions.append("Demographics analysis")
-
-        return '; '.join(instructions) if instructions else "General analysis"
+        return "; ".join(instructions) if instructions else "General analysis"
 
 
 class ScenarioService:
@@ -205,6 +181,11 @@ class ScenarioService:
         content_types: Optional[list[str]] = None,
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
+        text_prompt: Optional[str] = None,
+        image_prompt: Optional[str] = None,
+        video_prompt: Optional[str] = None,
+        audio_prompt: Optional[str] = None,
+        unified_summary_prompt: Optional[str] = None,
         action_type: Optional[AgentActionType] = None,
         trigger_type: Optional[str] = None,
         trigger_config: Optional[dict] = None,
@@ -212,6 +193,12 @@ class ScenarioService:
         output_schema: Optional[dict] = None,
         is_active: bool = True,
         is_default: bool = False,
+        analyze_type: Optional[str] = None,
+        llm_strategy: Optional[str] = None,
+        text_llm_model_id: Optional[int] = None,
+        image_llm_model_id: Optional[int] = None,
+        video_llm_model_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
     ) -> AgentScenario:
         """
         Create a new agent scenario.
@@ -248,17 +235,24 @@ class ScenarioService:
         scenario = await AgentScenario.objects.create(
             name=name,
             description=description,
+            tenant_id=tenant_id,
             analysis_types=analysis_types or [],
             content_types=content_types or [],
             scope=scope or {},
-            ai_prompt=ai_prompt,
-            trigger_type=trigger_type,
-            trigger_config=trigger_config or {},
-            action_type=action_type,
+            ai_prompt=ai_prompt or text_prompt,
+            image_prompt=image_prompt,
+            video_prompt=video_prompt,
+            audio_prompt=audio_prompt,
+            unified_summary_prompt=unified_summary_prompt,
             max_tokens=max_tokens,
             output_schema=output_schema,
             is_active=is_active,
             is_default=is_default,
+            analyze_type=analyze_type,
+            llm_strategy=llm_strategy,
+            text_llm_model_id=text_llm_model_id,
+            image_llm_model_id=image_llm_model_id,
+            video_llm_model_id=video_llm_model_id,
         )
 
         logger.info(

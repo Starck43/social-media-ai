@@ -106,8 +106,10 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
     if not scenario:
         return {"success": False, "error": "Scenario not found"}
 
-    # Check guards (target user from payload feeds blacklist/whitelist)
-    allowed, reason = await guards_checker.check(scenario, target_user=extract_target_user(action.payload))
+    # Check guards (target user from payload feeds blacklist/whitelist). The
+    # guards live on the task the action was created under, so they are resolved
+    # from the row rather than taken from the scenario.
+    allowed, reason = await guards_checker.check_for_action(action, target_user=extract_target_user(action.payload))
     if not allowed:
         return {"success": False, "error": f"Guards blocked: {reason}"}
 

@@ -128,7 +128,7 @@ class PromptBuilder:
 		This method merges:
 		1. Standard variables (text, platform, stats, count, etc.)
 		2. Custom variables from scenario.scope
-		3. Trigger configuration from scenario.trigger_config
+		3. Trigger configuration from the caller's `trigger_config` context key
 		4. Analysis type configs from scope (topics, sentiment, etc.)
 		"""
 		from app.utils.enum_helpers import get_enum_value
@@ -169,9 +169,13 @@ class PromptBuilder:
 				if key not in variables:
 					variables[key] = value
 
-		# Add trigger_config as a separate object (if present)
-		if scenario and scenario.trigger_config:
-			variables['trigger_config'] = scenario.trigger_config
+		# Add trigger_config as a separate object (if present). It arrives in the
+		# context rather than off the scenario: the trigger belongs to the task
+		# now, and the prompt is built from the scenario, which is shared by tasks
+		# whose triggers differ.
+		trigger_config = context.get('trigger_config')
+		if trigger_config:
+			variables['trigger_config'] = trigger_config
 
 		return variables
 

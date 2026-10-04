@@ -1,9 +1,12 @@
 """Background job handlers. Heavy work runs here (worker process)."""
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from app.services.social.credentials import AuthorizationRequired
+
+if TYPE_CHECKING:
+    from app.types import AgentActionType
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +26,7 @@ async def _load_task(task_id: int | None):
     from app.models import AgentTask
 
     task = await (
-        AgentTask.objects.filter(id=task_id)
-        .prefetch_related("sources", "sources.platform", "agent_scenario")
-        .first()
+        AgentTask.objects.filter(id=task_id).prefetch_related("sources", "sources.platform", "agent_scenario").first()
     )
     if task is not None:
         return task
@@ -75,6 +76,19 @@ def _task_payload(task) -> dict[str, Any]:
 # stages everything the platform returned, so this is the cap that keeps a
 # single pass bounded and lets the remainder roll into the next run.
 ANALYZE_STAGE_BATCH = 100
+
+
+def _resolve_action_type(task) -> "AgentActionType | None":
+    """The action this task performs, or None when it performs none.
+
+    `action_type` moved from the scenario to the task, so a task that was never
+    configured has no action to take. Returning None (rather than defaulting to
+    COMMENT) keeps "never configured" from looking like "comment on everything":
+    a default here would create BotAction rows the owner never asked for.
+    """
+    from app.types import AgentActionType
+
+    return getattr(task, "action_type", None) if task is not None else None
 
 
 async def _retire_staged(analytics: Any, source_id: int) -> int:
@@ -276,14 +290,22 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a digest and publish it to configured channels.
 
     Payload:
-        period: 'day' | 'week' (default 'day')
+        period: 'day' | 'week' | 'month' (default 'day')
         agent_task_id: int | None — set when triggered by a task (idempotency)
+        scenario_id: int | None — explicit scenario override
+        analyze_type: str | None — grouping override (themes|days|sources|monitored_users)
+
+    Hybrid flow: step 1 builds the algorithmic brief from the task's own sources
+    grouped by the scenario's `analyze_type`, step 2 asks the LLM for a
+    narrative over that brief, step 3 publishes the result to every tenant
+    channel with `is_digest_target=True` (plus env-configured channels).
 
     # TODO(future): per-source digest. If task.sources is non-empty — filter the
-    # aggregation by them (requires source_ids support in ReportAggregator).
+    # aggregation by them (source_ids support is wired into ReportAggregator).
     # Empty sources list = the whole workspace (current behaviour).
     """
     from app.services.digest.builder import build_and_publish
+    from app.utils.enum_helpers import get_enum_value
 
     task = await _load_task(payload.get("agent_task_id"))
     task_payload = _task_payload(task)
@@ -291,10 +313,28 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
     period = task_payload.get("period", payload.get("period", "day"))
     if period not in ("day", "week", "month"):
         return {"status": "failed", "error": f"Invalid period: {period}"}
+    # The task's own sources scope the aggregation; None = whole workspace (the
+    # ReportAggregator reads through the tenant guard either way).
+    source_ids = [s.id for s in (task.sources or [])] if task is not None else None
+
+    # The scenario's analyze_type tells the aggregator how to group the brief.
+    scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
+    analyze_type = task_payload.get("analyze_type") or payload.get("analyze_type")
+    if task is not None and getattr(task, "agent_scenario", None):
+        scenario_id = scenario_id or task.agent_scenario.id
+        analyze_type = analyze_type or get_enum_value(task.agent_scenario.analyze_type)
+
     # `--force-refresh` re-sends the digest even when it was already sent for
     # this task+period (skips the idempotency check).
     force = bool(task_payload.get("force_refresh") or payload.get("force_refresh"))
-    return await build_and_publish(period=period, agent_task_id=payload.get("agent_task_id"), force=force)
+    return await build_and_publish(
+        period=period,
+        agent_task_id=payload.get("agent_task_id"),
+        force=force,
+        source_ids=source_ids,
+        analyze_type=analyze_type,
+        scenario_id=scenario_id,
+    )
 
 
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
@@ -406,16 +446,20 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
                     items = [row.as_agent_item() for row in staged]
                     fresh = await AIAnalyzer().analyze_content(
-                        items, source, agent_scenario=scenario, force_reanalyze=bool(force_reanalyze)
+                        items,
+                        source,
+                        agent_scenario=scenario,
+                        force_reanalyze=bool(force_reanalyze),
+                        # The trigger belongs to the task, so it reaches the prompt
+                        # from here rather than off the shared scenario.
+                        trigger_config=(task.trigger_config if task is not None else None) or None,
                     )
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.
                     deleted = await _retire_staged(fresh, source.id)
                     if deleted:
-                        logger.info(
-                            f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}"
-                        )
+                        logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
                     else:
                         # Nothing was saved — keep every row and retry next run.
                         logger.warning(
@@ -450,7 +494,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     )
 
             # Pre-filter: should_analyze (rule, not LLM)
-            filtered_content = await trigger_evaluator.should_analyze(content, scenario)
+            filtered_content = await trigger_evaluator.should_analyze(content, task)
 
             if not filtered_content:
                 stats["skipped"] += 1
@@ -460,8 +504,17 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             per["analyzed"] += len(filtered_content)
 
             # Post-filter: should_act on the already-stored analysis result
+            #
+            # A task with no `action_type` analyses and stops there. This is the
+            # path that used to read the action off the scenario, so a run with no
+            # task at all (an ad-hoc one) now creates nothing — it has no
+            # configured action to take.
+            action_type = _resolve_action_type(task)
+            if action_type is None:
+                continue
+
             for item in filtered_content:
-                should_act = await trigger_evaluator.should_act(item.get("result") or {}, scenario)
+                should_act = await trigger_evaluator.should_act(item.get("result") or {}, task)
 
                 if not should_act:
                     continue
@@ -472,7 +525,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
                 # Create BotAction (dry_run=True by default)
                 action_payload = {
-                    "action_type": scenario.action_type.name if scenario.action_type else "COMMENT",
+                    "action_type": action_type.name,
                     "text": (item.get("result") or {}).get("response", ""),
                 }
                 # Add platform-specific target fields
@@ -484,7 +537,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     action_payload["external_id"] = target_post["external_id"]
 
                 # Check guards (target user from the analysis feeds blacklist/whitelist)
-                allowed, reason = await guards_checker.check(scenario, target_user=extract_target_user(action_payload))
+                allowed, reason = await guards_checker.check(task, target_user=extract_target_user(action_payload))
                 if not allowed:
                     logger.info(f"Action blocked by guards: {reason}")
                     continue
@@ -493,18 +546,22 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 analytics_id = item.get("analytics_id")
                 existing = await BotAction.objects.filter(
                     analytics_id=analytics_id,
+                    agent_task_id=task.id if task is not None else None,
                     agent_scenario_id=scenario.id,
                     status=BotActionStatus.PENDING,
                 ).first()
                 if existing:
-                    logger.info(f"BotAction already exists for analytics {analytics_id}, scenario {scenario.id}")
+                    logger.info(
+                        f"BotAction already exists for analytics {analytics_id}, task {task.id if task else None}"
+                    )
                     continue
 
                 action = await BotAction.objects.create(
                     agent_scenario_id=scenario.id,
+                    agent_task_id=task.id if task is not None else None,
                     source_id=source.id,
                     analytics_id=analytics_id,
-                    action_type=scenario.action_type,
+                    action_type=action_type,
                     status=BotActionStatus.PENDING,
                     payload=action_payload,
                     dry_run=True,

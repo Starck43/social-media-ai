@@ -208,30 +208,6 @@
 	</div>
 	{% endif %}
 	
-	<!-- Trigger Config Display -->
-	{% if trigger_config %}
-	<div class="prompt-card">
-		<div class="prompt-header">
-			<span class="prompt-title">⚡ Конфигурация триггера</span>
-		</div>
-		<div class="prompt-section">
-			{% if trigger_config_json %}
-			<div class="prompt-box">{{ trigger_config_json }}</div>
-			<div class="alert alert-info" style="font-size: 13px; padding: 8px; margin-top: 10px;">
-				<i class="fa fa-info-circle"></i> 
-				Доступна в промптах как <code>{trigger_config.параметр}</code>. 
-				Например: <code>{trigger_config.threshold}</code>, <code>{trigger_config.keywords}</code>
-			</div>
-			{% else %}
-			<div class="alert alert-warning" style="font-size: 13px; padding: 8px;">
-				<i class="fa fa-exclamation-triangle"></i> 
-				Конфигурация триггера не задана. Выберите тип триггера и заполните конфигурацию в форме редактирования.
-			</div>
-			{% endif %}
-		</div>
-	</div>
-	{% endif %}
-	
 	<ul class="nav nav-tabs" role="tablist">
 		<li class="nav-item">
 			<a class="nav-link active" data-toggle="tab" href="#text-tab" role="tab">📝 Text</a>

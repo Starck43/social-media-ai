@@ -45,7 +45,6 @@ async def create_scenario(
                 }
             },
             "ai_prompt": "Analyze sentiment: {content}",
-            "action_type": “NOTIFICATION”
         }
         ```
     
@@ -62,9 +61,6 @@ async def create_scenario(
             content_types=request.content_types,
             scope=request.scope,
             ai_prompt=request.ai_prompt,
-            trigger_type=request.trigger_type,
-            trigger_config=request.trigger_config,
-            action_type=request.action_type,
             is_active=request.is_active,
             max_tokens=request.max_tokens,
             output_schema=request.output_schema,
@@ -83,7 +79,6 @@ async def create_scenario(
         content_types=scenario.content_types or [],
         scope=scenario.scope,
         ai_prompt=scenario.ai_prompt,
-        action_type=scenario.action_type,
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
         output_schema=scenario.output_schema,
@@ -121,7 +116,6 @@ async def list_scenarios(
             content_types=s.content_types or [],
             scope=s.scope,
             ai_prompt=s.ai_prompt,
-            action_type=s.action_type,
             is_active=s.is_active,
             max_tokens=s.max_tokens,
             output_schema=s.output_schema,
@@ -156,7 +150,6 @@ async def get_scenario(
         content_types=scenario.content_types or [],
         scope=scenario.scope,
         ai_prompt=scenario.ai_prompt,
-        action_type=scenario.action_type,
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
         output_schema=scenario.output_schema,
@@ -206,12 +199,6 @@ async def update_scenario(
         updates["scope"] = request.scope
     if request.ai_prompt is not None:
         updates["ai_prompt"] = request.ai_prompt
-    if request.trigger_type is not None:
-        updates["trigger_type"] = request.trigger_type
-    if request.trigger_config is not None:
-        updates["trigger_config"] = request.trigger_config
-    if request.action_type is not None:
-        updates["action_type"] = request.action_type
     if request.is_active is not None:
         updates["is_active"] = request.is_active
     if request.max_tokens is not None:
@@ -232,7 +219,6 @@ async def update_scenario(
         content_types=scenario.content_types or [],
         scope=scenario.scope,
         ai_prompt=scenario.ai_prompt,
-        action_type=scenario.action_type,
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
         output_schema=scenario.output_schema,

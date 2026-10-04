@@ -40,9 +40,7 @@ from app.types import (
 	ContentType,
 	AnalysisType,
 	LLMStrategyType,
-	AgentActionType,
 	BotActionStatus,
-	BotTriggerType,
 	JobType,
 	NotificationType,
 )
@@ -613,9 +611,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		"audio_prompt": "Промпт для аудио",
 		"unified_summary_prompt": "Промпт для общего резюме",
 
-		"trigger_type": "Тип триггера",
-		"trigger_config": "Настройки триггера",
-		"action_type": "Действие после анализа",
 		"analysis_types": "Типы анализа",
 		"content_types": "Типы контента",
 		"scope": "Дополнительные параметры",
@@ -637,9 +632,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		"content_types",
 		"analysis_types",
 		"scope",
-		"trigger_type",
-		"action_type",
-		"trigger_config",
 	]
 	form_overrides = {
 		'llm_strategy': SelectField,
@@ -724,16 +716,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
 	# Column formatters
 	column_formatters = {
-		"trigger_type": lambda m, a: (
-			m.trigger_type.label
-			if m.trigger_type and hasattr(m.trigger_type, 'label')
-			else str(m.trigger_type) if m.trigger_type else "—"
-		),
-		"action_type": lambda m, a: (
-			m.action_type.label
-			if m.action_type and hasattr(m.action_type, 'label')
-			else str(m.action_type) if m.action_type else "—"
-		),
 		**BaseAdmin.column_formatters
 	}
 	form_widget_args = {
@@ -777,10 +759,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			)
 		},
 		"description": {"rows": 2},
-		"trigger_config": {
-			"rows": 5,
-			"placeholder": '{\n  "keywords": ["жалоба", "проблема"],\n  "mode": "any"\n}'
-		},
 		"scope": {
 			"rows": 8,
 			"placeholder": '{\n  "event_based": true,\n  "sentiment": {\n    "categories": ["Позитивный", "Негативный", "Нейтральный"]\n  },\n  "keywords": {\n    "max_keywords": 20\n  }\n}'
@@ -793,17 +771,13 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 	async def scaffold_form(self, rules=None):
 		"""Provide enum types and presets to template."""
 		from app.core.scenario_presets import get_all_presets
-		from app.core.trigger_hints import TRIGGER_HINTS, SCOPE_HINTS
+		from app.core.trigger_hints import SCOPE_HINTS
 		from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
-		from app.core.trigger_constants import TRIGGER_CONFIG_DEFAULTS
 
 		form = await super().scaffold_form(rules)
 
 		form.content_types_enum = list(ContentType)
 		form.analysis_types_enum = list(AnalysisType)
-		form.trigger_types_enum = list(BotTriggerType)
-		form.action_types_enum = list(AgentActionType)
-		form.trigger_hints = TRIGGER_HINTS
 		form.scope_hints = SCOPE_HINTS
 
 		# Convert list of presets to dict with keys (for template iteration)
@@ -813,9 +787,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		# Provide analysis defaults and all types for JavaScript
 		form.analysis_defaults = ANALYSIS_TYPE_DEFAULTS
 		form.all_analysis_types = [at.db_value for at in AnalysisType]
-
-		# Provide trigger defaults for JavaScript
-		form.trigger_defaults = TRIGGER_CONFIG_DEFAULTS
 
 		return form
 
@@ -850,44 +821,14 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			except (json.JSONDecodeError, TypeError):
 				data["scope"] = {}
 
-		# Parse trigger_config from a textarea (JSON string)
-		if "trigger_config" in data and isinstance(data["trigger_config"], str):
-			try:
-				data["trigger_config"] = json.loads(data["trigger_config"]) if data["trigger_config"].strip() else {}
-			except (json.JSONDecodeError, TypeError):
-				data["trigger_config"] = {}
-
 	async def _prepare_form_data(self, request: Request, data: dict) -> None:
 		"""Extract and parse excluded fields from request."""
 		form_data = await request.form()
 
 		# Add excluded fields back to data
-		for field in ["content_types", "analysis_types", "scope", "trigger_config"]:
+		for field in ["content_types", "analysis_types", "scope"]:
 			if field in form_data:
 				data[field] = form_data.get(field)
-
-		# Add trigger_type and action_type from hidden fields (they send NAME strings)
-		if "trigger_type" in form_data:
-			trigger_value = form_data.get("trigger_type")
-			if trigger_value:
-				# Convert NAME string to enum object
-				try:
-					data["trigger_type"] = BotTriggerType[trigger_value]
-				except (KeyError, TypeError):
-					data["trigger_type"] = None
-			else:
-				data["trigger_type"] = None
-
-		if "action_type" in form_data:
-			action_value = form_data.get("action_type")
-			if action_value:
-				# Convert NAME string to enum object
-				try:
-					data["action_type"] = AgentActionType[action_value]
-				except (KeyError, TypeError):
-					data["action_type"] = None
-			else:
-				data["action_type"] = None
 
 		# Parse JSON strings to Python objects
 		self._parse_json_fields(data)
@@ -912,7 +853,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		"""View full prompts with JSON instructions."""
 		from starlette.templating import Jinja2Templates
 		from app.services.ai.prompts import PromptBuilder
-		from app.types import MediaType
+		from app.services.ai.scenario_builder import ScenarioBuilder
 		from pathlib import Path
 		import sqladmin
 
@@ -929,74 +870,36 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		except Exception:
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
-		# Build prompts with auto-append JSON
+		# Build prompts with the shared builder core, so the admin preview is
+		# byte-identical to the web wizard's — same production prompt path.
+		draft = ScenarioBuilder.draft_from_scenario(scenario)
+		preview = ScenarioBuilder.preview_blocks(draft)
+
 		prompts_data = {}
-
-		# Text prompt
-		text_prompt = PromptBuilder.get_prompt(
-			MediaType.TEXT,
-			scenario=scenario,
-			text="{text}",
-			platform_name="{platform}",
-			source_type="{source_type}",
-			stats={"total_posts": "{total_posts}", "avg_reactions": "{avg_reactions}"}
-		)
-		prompts_data['text'] = {
-			'custom': scenario.text_prompt if scenario.text_prompt else None,
-			'full': text_prompt,
-			'has_custom': bool(scenario.text_prompt)
+		media_prompt_field = {
+			"text": "text_prompt",
+			"image": "image_prompt",
+			"video": "video_prompt",
+			"audio": "audio_prompt",
 		}
+		for media_value, full in preview["media_previews"].items():
+			custom = getattr(scenario, media_prompt_field[media_value])
+			prompts_data[media_value] = {
+				"custom": custom,
+				"full": full,
+				"has_custom": bool(custom),
+			}
 
-		# Image prompt
-		image_prompt = PromptBuilder.get_prompt(
-			MediaType.IMAGE,
-			scenario=scenario,
-			count="{count}",
-			platform_name="{platform}"
-		)
-		prompts_data['image'] = {
-			'custom': scenario.image_prompt if scenario.image_prompt else None,
-			'full': image_prompt,
-			'has_custom': bool(scenario.image_prompt)
-		}
-
-		# Video prompt
-		video_prompt = PromptBuilder.get_prompt(
-			MediaType.VIDEO,
-			scenario=scenario,
-			count="{count}",
-			platform_name="{platform}"
-		)
-		prompts_data['video'] = {
-			'custom': scenario.video_prompt if scenario.video_prompt else None,
-			'full': video_prompt,
-			'has_custom': bool(scenario.video_prompt)
-		}
-
-		# Audio prompt
-		audio_prompt = PromptBuilder.get_prompt(
-			MediaType.AUDIO,
-			scenario=scenario,
-			count="{count}",
-			platform_name="{platform}"
-		)
-		prompts_data['audio'] = {
-			'custom': scenario.audio_prompt if scenario.audio_prompt else None,
-			'full': audio_prompt,
-			'has_custom': bool(scenario.audio_prompt)
-		}
-
-		# Unified summary prompt
 		unified_prompt = PromptBuilder.get_unified_summary_prompt(
 			text_analysis={},
 			image_analysis={},
 			video_analysis={},
 			scenario=scenario
 		)
-		prompts_data['unified'] = {
-			'custom': scenario.unified_summary_prompt if scenario.unified_summary_prompt else None,
-			'full': unified_prompt,
-			'has_custom': bool(scenario.unified_summary_prompt)
+		prompts_data["unified"] = {
+			"custom": scenario.unified_summary_prompt,
+			"full": unified_prompt,
+			"has_custom": bool(scenario.unified_summary_prompt),
 		}
 
 		# Setup templates
@@ -1007,7 +910,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		]
 		templates = Jinja2Templates(directory=template_dirs)
 
-		# Prepare scope and trigger_config for display
+		# Prepare scope for display
 		scope_display = {}
 		if scenario.scope:
 			# Separate analysis type configs from custom variables
@@ -1041,10 +944,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			for key, value in scope_display['custom_variables'].items():
 				custom_vars_json[key] = json.dumps(value, ensure_ascii=False)
 
-		# Format trigger_config as JSON string
-		trigger_config_json = ""
-		if scenario.trigger_config:
-			trigger_config_json = json.dumps(scenario.trigger_config, indent=2, ensure_ascii=False)
 
 		return templates.TemplateResponse(
 			request=request,
@@ -1056,8 +955,6 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 				"scope_display": scope_display,
 				"analysis_configs_json": analysis_configs_json,
 				"custom_vars_json": custom_vars_json,
-				"trigger_config": scenario.trigger_config if scenario.trigger_config else {},
-				"trigger_config_json": trigger_config_json,
 			}
 		)
 
@@ -1981,9 +1878,23 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "last_error": "Ошибка",
         "sources": "Источники",
         "agent_scenario": "Сценарий агента",
+        "trigger_type": "Тип триггера",
+        "trigger_config": "Настройки триггера",
+        "action_type": "Действие после анализа",
+        "rate_limit_per_hour": "Лимит действий в час",
+        "cooldown_seconds": "Пауза между действиями (сек)",
+        "requires_approval": "Требует подтверждения",
+        "blacklist": "Чёрный список",
+        "whitelist": "Белый список",
     }, **BaseAdmin.column_labels)
 
-    form_columns = ["tenant", "name", "job_type", "cron_expr", "sources", "agent_scenario", "payload", "is_active"]
+    form_columns = [
+        "tenant", "name", "job_type", "cron_expr", "sources", "agent_scenario", "payload", "is_active",
+        # Trigger/action configuration lives here, not on the scenario: it
+        # describes what this run does with its own analyses.
+        "trigger_type", "trigger_config", "action_type",
+        "rate_limit_per_hour", "cooldown_seconds", "requires_approval", "blacklist", "whitelist",
+    ]
 
     form_overrides = {
         "is_active": SelectField,
@@ -1995,6 +1906,10 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "name": {"placeholder": "Например: hourly-collect"},
         "cron_expr": {"placeholder": "0 * * * *"},
         "payload": {"rows": 4, "placeholder": '{"period": "day"}'},
+        "trigger_config": {
+            "rows": 5,
+            "placeholder": '{\n  "keywords": ["жалоба", "проблема"],\n  "mode": "any"\n}',
+        },
     }
 
     form_args = {

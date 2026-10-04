@@ -5,7 +5,7 @@ Seeding a default scenario per tenant, listing scenarios, etc.
 
 import typer
 
-from app.types import BotTriggerType
+from app.types import AnalyzeType
 
 app = typer.Typer(name="scenarios", help="Manage bot scenarios")
 
@@ -87,10 +87,7 @@ def seed_default(
             content_types=["text"],
             analysis_types=["sentiment", "keywords"],
             scope=BASIC_MONITORING_SCOPE,
-            analyze_type="themes",
-            trigger_type=BotTriggerType.KEYWORD_MATCH,
-            trigger_config={},
-            action_type=None,
+            analyze_type=AnalyzeType.THEMES,
             is_active=True,
             is_default=True,
             text_llm_model_id=text_llm_model_id,

@@ -178,7 +178,11 @@ SCENARIO_PRESETS = {
 		"id": "negative_tracking",
 		"name": "⚠️ Отслеживание негатива",
 		"description": "Мониторинг негативных отзывов и токсичности",
-		"analysis_types": ["sentiment", "toxicity", "keywords"],
+		"analysis_types": [
+			AnalysisType.SENTIMENT.db_value,
+			AnalysisType.TOXICITY.db_value,
+			AnalysisType.KEYWORDS.db_value,
+		],
 		"content_types": ["text"],
 		"trigger_type": "SENTIMENT_THRESHOLD",  # Enum NAME
 		"trigger_config": {
@@ -204,7 +208,11 @@ SCENARIO_PRESETS = {
 		"id": "viral_detection",
 		"name": "🔥 Детектор вирусного контента",
 		"description": "Отслеживание вирусного потенциала и всплесков активности",
-		"analysis_types": ["engagement", "viral_detection", "trends"],
+		"analysis_types": [
+			AnalysisType.ENGAGEMENT.db_value,
+			AnalysisType.VIRAL_DETECTION.db_value,
+			AnalysisType.TRENDS.db_value,
+		],
 		"content_types": ["text", "image", "video"],
 		"trigger_type": "ACTIVITY_SPIKE",  # Enum NAME
 		"trigger_config": {
@@ -217,7 +225,11 @@ SCENARIO_PRESETS = {
 		"id": "brand_mentions",
 		"name": "🏷️ Мониторинг бренда",
 		"description": "Отслеживание упоминаний бренда и реакций",
-		"analysis_types": ["brand_mentions", "sentiment", "keywords"],
+		"analysis_types": [
+			AnalysisType.BRAND_MENTIONS.db_value,
+			AnalysisType.SENTIMENT.db_value,
+			AnalysisType.KEYWORDS.db_value,
+		],
 		"content_types": ["text"],
 		"trigger_type": "KEYWORD_MATCH",  # Enum NAME
 		"trigger_config": {

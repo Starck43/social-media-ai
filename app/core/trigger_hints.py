@@ -4,6 +4,7 @@ Hints and documentation for trigger configuration.
 Provides user-friendly explanations for each trigger type and its configuration.
 """
 from app.types import BotTriggerType
+from app.types.enums.analysis_types import AnalysisType
 
 TRIGGER_HINTS = {
 	BotTriggerType.KEYWORD_MATCH: {
@@ -63,8 +64,8 @@ TRIGGER_HINTS = {
 }
 
 
-SCOPE_HINTS = {
-	"sentiment_config": {
+SCOPE_HINTS: dict[str, dict] = {
+	"sentiment": {
 		"description": "Настройки анализа тональности",
 		"parameters": {
 			"categories": {
@@ -81,8 +82,8 @@ SCOPE_HINTS = {
 			}
 		}
 	},
-	
-	"trends_config": {
+
+	"trends": {
 		"description": "Настройки обнаружения трендов",
 		"parameters": {
 			"min_mentions": {
@@ -99,8 +100,8 @@ SCOPE_HINTS = {
 			}
 		}
 	},
-	
-	"engagement_config": {
+
+	"engagement": {
 		"description": "Настройки анализа вовлеченности",
 		"parameters": {
 			"metrics": {
@@ -111,8 +112,8 @@ SCOPE_HINTS = {
 			}
 		}
 	},
-	
-	"keywords_config": {
+
+	"keywords": {
 		"description": "Настройки извлечения ключевых слов",
 		"parameters": {
 			"keywords": {
@@ -129,8 +130,8 @@ SCOPE_HINTS = {
 			}
 		}
 	},
-	
-	"topics_config": {
+
+	"topics": {
 		"description": "Настройки идентификации тем",
 		"parameters": {
 			"max_topics": {
@@ -141,8 +142,8 @@ SCOPE_HINTS = {
 			}
 		}
 	},
-	
-	"toxicity_config": {
+
+	"toxicity": {
 		"description": "Настройки обнаружения токсичности",
 		"parameters": {
 			"threshold": {
@@ -161,9 +162,10 @@ def get_trigger_hint(trigger_type: BotTriggerType) -> dict:
 	return TRIGGER_HINTS.get(trigger_type, {})
 
 
-def get_scope_hint(analysis_type: str) -> dict:
+def get_scope_hint(analysis_type: AnalysisType | str) -> dict:
 	"""Get hint for specific analysis type scope."""
-	return SCOPE_HINTS.get(f"{analysis_type}_config", {})
+	key = analysis_type.db_value if isinstance(analysis_type, AnalysisType) else analysis_type
+	return SCOPE_HINTS.get(key, {})
 
 
 def format_hint_as_html(hint: dict) -> str:

@@ -2,7 +2,7 @@
 
 Covers the pieces that give `ai_analytics.period_type` real meaning and the
 per-user activity metrics the reporting reads:
-- `AIAnalyticsManager.build_period_rollups` folds DAILY rows into WEEKLY/MONTHLY.
+- `AIAnalyticsManager.build_period_rollups` folds DAY rows into WEEK/MONTH.
 - `AIAnalyzer._calculate_content_stats` writes active_users/messages_count/
   engagement_rate into content_statistics.
 - `analyze_content(force_reanalyze=True)` propagates the dedup-bypass to
@@ -45,13 +45,13 @@ async def source(platform):
 
 
 async def test_build_period_rollups_folds_daily_rows(source):
-    """Two daily rows for a source collapse into one WEEKLY rollup row."""
+    """Two DAY rows for a source collapse into one WEEK rollup row."""
     from app.models.managers.ai_analytics_manager import AIAnalyticsManager
 
     await AIAnalytics.objects.create(
         source_id=source.id,
         analysis_date=date(2026, 1, 1),
-        period_type=PeriodType.DAILY,
+        period_type=PeriodType.DAY,
         summary_data={
             "content_statistics": {
                 "total_posts": 5,
@@ -69,7 +69,7 @@ async def test_build_period_rollups_folds_daily_rows(source):
     await AIAnalytics.objects.create(
         source_id=source.id,
         analysis_date=date(2026, 1, 2),
-        period_type=PeriodType.DAILY,
+        period_type=PeriodType.DAY,
         summary_data={
             "content_statistics": {
                 "total_posts": 3,
@@ -85,11 +85,11 @@ async def test_build_period_rollups_folds_daily_rows(source):
         estimated_cost=8,
     )
 
-    written = await AIAnalyticsManager().build_period_rollups(PeriodType.WEEKLY, date(2026, 1, 1), date(2026, 1, 7))
+    written = await AIAnalyticsManager().build_period_rollups(PeriodType.WEEK, date(2026, 1, 1), date(2026, 1, 7))
 
     assert written == 1
     rollup = await AIAnalytics.objects.filter(
-        source_id=source.id, analysis_date=date(2026, 1, 1), period_type=PeriodType.WEEKLY
+        source_id=source.id, analysis_date=date(2026, 1, 1), period_type=PeriodType.WEEK
     ).first()
     assert rollup is not None
     stats = (rollup.summary_data or {}).get("content_statistics", {})
@@ -101,9 +101,9 @@ async def test_build_period_rollups_folds_daily_rows(source):
     assert rollup.estimated_cost == 18
 
     # Idempotent: running again updates, does not duplicate.
-    await AIAnalyticsManager().build_period_rollups(PeriodType.WEEKLY, date(2026, 1, 1), date(2026, 1, 7))
+    await AIAnalyticsManager().build_period_rollups(PeriodType.WEEK, date(2026, 1, 1), date(2026, 1, 7))
     count = await AIAnalytics.objects.filter(
-        source_id=source.id, analysis_date=date(2026, 1, 1), period_type=PeriodType.WEEKLY
+        source_id=source.id, analysis_date=date(2026, 1, 1), period_type=PeriodType.WEEK
     )
     assert len(count) == 1
 
@@ -133,7 +133,16 @@ async def test_analyze_content_forwards_force_reanalyze(monkeypatch, source):
     seen = {}
 
     async def fake_base(
-        self, content, source, topic_chain_id=None, parent_analysis_id=None, analysis_date=None, force_reanalyze=False
+        self,
+        content,
+        source,
+        topic_chain_id=None,
+        parent_analysis_id=None,
+        analysis_date=None,
+        force_reanalyze=False,
+        analyze_type=None,
+        agent_scenario=None,
+        trigger_config=None,
     ):
         seen["force_reanalyze"] = force_reanalyze
         seen["len"] = len(content)

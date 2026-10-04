@@ -136,22 +136,37 @@ HASHTAG_ANALYSIS_DEFAULTS = {
     "analyze_related": True,
 }
 
-# Map analysis type to its default parameters
-ANALYSIS_TYPE_DEFAULTS = {
-    "sentiment": SENTIMENT_DEFAULTS,
-    "trends": TRENDS_DEFAULTS,
-    "engagement": ENGAGEMENT_DEFAULTS,
-    "keywords": KEYWORDS_DEFAULTS,
-    "topics": TOPICS_DEFAULTS,
-    "toxicity": TOXICITY_DEFAULTS,
-    "demographics": DEMOGRAPHICS_DEFAULTS,
-    "viral_detection": VIRAL_DETECTION_DEFAULTS,
-    "influencer": INFLUENCER_ACTIVITY_DEFAULTS,
-    "competitor": COMPETITOR_TRACKING_DEFAULTS,
-    "intent": CUSTOMER_INTENT_DEFAULTS,
-    "brand_mentions": BRAND_MENTIONS_DEFAULTS,
-    "hashtag_analysis": HASHTAG_ANALYSIS_DEFAULTS,
+# Map AnalysisType.db_value → defaults dict name
+_DEFAULTS_SECTION_MAP = {
+    "sentiment": "SENTIMENT_DEFAULTS",
+    "trends": "TRENDS_DEFAULTS",
+    "engagement": "ENGAGEMENT_DEFAULTS",
+    "keywords": "KEYWORDS_DEFAULTS",
+    "topics": "TOPICS_DEFAULTS",
+    "toxicity": "TOXICITY_DEFAULTS",
+    "demographics": "DEMOGRAPHICS_DEFAULTS",
+    "viral_detection": "VIRAL_DETECTION_DEFAULTS",
+    "influencer": "INFLUENCER_ACTIVITY_DEFAULTS",
+    "competitor": "COMPETITOR_TRACKING_DEFAULTS",
+    "intent": "CUSTOMER_INTENT_DEFAULTS",
+    "brand_mentions": "BRAND_MENTIONS_DEFAULTS",
+    "hashtag_analysis": "HASHTAG_ANALYSIS_DEFAULTS",
 }
+
+
+def _build_analysis_type_defaults() -> dict[str, dict]:
+    """Auto-generate from AnalysisType enum + _DEFAULTS_SECTION_MAP."""
+    from app.types.enums.analysis_types import AnalysisType
+
+    defaults: dict[str, dict] = {}
+    for at in AnalysisType:
+        section_name = _DEFAULTS_SECTION_MAP.get(at.db_value)
+        if section_name:
+            defaults[at.db_value] = globals()[section_name]
+    return defaults
+
+
+ANALYSIS_TYPE_DEFAULTS = _build_analysis_type_defaults()
 
 
 def get_analysis_defaults(analysis_type: str) -> dict:

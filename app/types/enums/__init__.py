@@ -7,7 +7,7 @@ This package contains all enum types used in the application.
 from .analysis_types import AnalysisType, PeriodType, SentimentLabel
 
 # Bot types
-from .bot_types import BotActionStatus, AgentActionType, BotTriggerType
+from .bot_types import AgentActionType, AnalyzeType, BotActionStatus, BotTriggerType
 
 # Content types
 from .content_types import ContentType, MediaType
@@ -44,7 +44,8 @@ __all__ = [
     "PeriodType",
     # Bot
     "BotActionStatus",
-	"AgentActionType",
+    "AgentActionType",
+    "AnalyzeType",
     "BotTriggerType",
     # Job
     "JobType",

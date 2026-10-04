@@ -54,19 +54,7 @@
                        every row carry a control for something the row already names. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                         <button type="button"
-                                @click='editTask({
-                                            id: {{ task.id }},
-                                            name: {{ task.name|tojson }},
-                                            job_type: {{ task.job_type|tojson }},
-                                            cron_expr: {{ task.cron_expr|tojson }},
-                                            is_active: {{ ' true
-                        ' if task.id in effective_active else 'false' }},
-                        source_ids: {{ (task.sources|map(attribute='id')|list if task.sources else [])|tojson }},
-                        scenario_id: {{ (task.agent_scenario_id if task.agent_scenario_id else None)|tojson }},
-                        monitored_users: {{ ((task.payload or {}).get("monitored_users", []) or [])|join(", ")|tojson
-                        }},
-                        excluded_users: {{ ((task.payload or {}).get("excluded_users", []) or [])|join(", ")|tojson }}
-                        })'
+                                @click="editTask({{ task.id }})"
                                 class="text-left hover:text-cyan-400 hover:underline">{{ task.name }}</button>
                     {% else %}
                         {{ task.name }}
@@ -368,14 +356,14 @@
 
     <!-- Edit modal -->
     <div x-show="openEdit" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
-         @keydown.escape.window="openEdit = false">
+         @keydown.escape.window="closeEdit()">
         <div class="w-[95%] max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div class="mb-5 flex items-center justify-between">
                 <div>
                     <h2 class="text-lg font-semibold">Редактировать задачу</h2>
                     <p class="mt-1 text-sm text-slate-400">Обновите данные задачи.</p>
                 </div>
-                <button type="button" @click="openEdit = false" aria-label="Закрыть"
+                <button type="button" @click="closeEdit()" aria-label="Закрыть"
                         class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
@@ -554,7 +542,7 @@
                     </button>
                     {% endif %}
                     <div class="ml-auto flex flex-1 gap-2">
-                    <button type="button" @click="openEdit = false"
+                    <button type="button" @click="closeEdit()"
                             class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
                         Отмена
                     </button>
@@ -686,6 +674,13 @@
 
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
+    {# Row data for the editor, keyed by id: the name button and the `?task_id=`
+       deep link both read from here, so the two cannot drift. #}
+    const EDIT_TASKS = {{ edit_tasks|tojson }};
+    {# `null` when the parameter names nothing on this page — an id from another
+       workspace, or one the superuser filtered out — and when the reader has no
+       right to edit, in which case the row has no button to open the editor. #}
+    const OPEN_TASK_ID = {{ (open_task_id if perms and perms.can('agenttask', 'update') else None)|tojson }};
 
     function tasksPage() {
         return {
@@ -715,6 +710,39 @@
             editSched: scheduleBuilder(),
             init() {
                 if (RUN_JOB_ID !== null) this.pollRun()
+                // A shared or reloaded `?task_id=` opens the editor on its own.
+                // Without this the parameter would be a dead link: the page
+                // renders the list and drops the reader where they started.
+                if (OPEN_TASK_ID !== null) this.editTask(OPEN_TASK_ID)
+            },
+            // The editor's address is the URL: opening writes `?task_id=` and
+            // closing drops it, so the address bar always names what is on
+            // screen. `replaceState`, not `pushState` — the modal is not a step
+            // the reader can walk back through, and a history entry per open
+            // would make Back leave the page instead of closing the modal.
+            setTaskParam(id) {
+                const url = new URL(window.location.href)
+                if (id === null) url.searchParams.delete("task_id")
+                else url.searchParams.set("task_id", String(id))
+                window.history.replaceState(null, "", url)
+            },
+            closeEdit() {
+                this.openEdit = false
+                this.setTaskParam(null)
+            },
+            editTask(id) {
+                const data = EDIT_TASKS[String(id)]
+                if (!data) return
+                this.editing = {
+                    ...data,
+                    source_ids: data.source_ids || [],
+                    scenario_id: data.scenario_id || "",
+                    monitored_users: data.monitored_users || "",
+                    excluded_users: data.excluded_users || "",
+                }
+                this.editSched.load(data.cron_expr)
+                this.openEdit = true
+                this.setTaskParam(data.id)
             },
             pollRun() {
                 const start = Date.now()
@@ -744,17 +772,6 @@
                 }
                 poll()
                 this.runModal.pollTimer = setInterval(poll, 2000)
-            },
-            editTask(data) {
-                this.editing = {
-                    ...data,
-                    source_ids: data.source_ids || [],
-                    scenario_id: data.scenario_id || "",
-                    monitored_users: data.monitored_users || "",
-                    excluded_users: data.excluded_users || "",
-                }
-                this.editSched.load(data.cron_expr)
-                this.openEdit = true
             },
         }
     }

@@ -52,6 +52,29 @@ async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: 
     await AgentTaskManager().set_sources(task_id, source_ids)
 
 
+def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]:
+    """Everything the edit modal binds, as the plain object Alpine edits.
+
+    Built here rather than in the template because it has two callers: the row's
+    name button and the `?task_id=` deep link, and the editor must not fill
+    differently depending on how it was opened. `is_active` is the *effective*
+    flag — the one the list column shows — so reopening a task that is active on
+    paper but blocked by a deactivated source does not silently activate it.
+    """
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    return {
+        "id": task.id,
+        "name": task.name,
+        "job_type": task.job_type,
+        "cron_expr": task.cron_expr,
+        "is_active": task.id in effective_active,
+        "source_ids": [s.id for s in task.sources] if task.sources else [],
+        "scenario_id": task.agent_scenario_id,
+        "monitored_users": ", ".join(payload.get("monitored_users") or []),
+        "excluded_users": ", ".join(payload.get("excluded_users") or []),
+    }
+
+
 async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], scenario_id: int | None) -> str | None:
     """Return why the task cannot be activated, or None if it can.
 
@@ -140,6 +163,17 @@ async def tasks_list(request: Request):
     raw_job_id = request.query_params.get("job_id")
     job_id = int(raw_job_id) if raw_job_id and raw_job_id.isdigit() else None
 
+    # The editor is addressed by `?task_id=` so its URL can be shared and survives
+    # a reload. The map is built from the rows this page actually shows, which is
+    # what makes the deep link safe: an id outside the current workspace — or a
+    # filtered-out one for a superuser — is simply not in it, so nothing opens.
+    edit_tasks = {t.id: _edit_payload(t, effective_active) for t in tasks}
+
+    raw_task_id = request.query_params.get("task_id")
+    open_task_id = int(raw_task_id) if raw_task_id and raw_task_id.isdigit() else None
+    if open_task_id not in edit_tasks:
+        open_task_id = None
+
     return render(
         request,
         "web/tasks.html",
@@ -151,6 +185,8 @@ async def tasks_list(request: Request):
         job_types=JobType.choices(),
         cron_to_human=cron_to_human,
         job_id=job_id,
+        edit_tasks=edit_tasks,
+        open_task_id=open_task_id,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,

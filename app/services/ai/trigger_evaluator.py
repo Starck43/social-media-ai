@@ -65,12 +65,8 @@ class TriggerEvaluator:
 			has_spike = await self._detect_activity_spike(content, scenario, trigger_config)
 			filtered = content if has_spike else []
 		
-		elif trigger_type == BotTriggerType.TIME_BASED:
-			# Time-based triggers are handled by the task runner
-			filtered = content
-		
 		else:
-			# SENTIMENT_THRESHOLD, MANUAL - check after analysis
+			# SENTIMENT_THRESHOLD - check after analysis
 			filtered = content
 		
 		logger.info(
@@ -104,10 +100,6 @@ class TriggerEvaluator:
 		# Post-analysis triggers (need LLM results)
 		if trigger_type == BotTriggerType.SENTIMENT_THRESHOLD:
 			return await self._check_sentiment_threshold(analysis_result, trigger_config)
-		
-		elif trigger_type == BotTriggerType.MANUAL:
-			# Manual triggers don't auto-execute
-			return False
 		
 		else:
 			# Other triggers already filtered in pre-analysis

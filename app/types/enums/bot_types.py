@@ -81,8 +81,6 @@ class BotTriggerType(DatabaseEnum, Enum):
     SENTIMENT_THRESHOLD = ("sentiment_threshold", "Порог тональности", "😊")
     ACTIVITY_SPIKE = ("activity_spike", "Всплеск активности", "📈")
     USER_MENTION = ("user_mention", "Упоминание пользователя", "@")
-    TIME_BASED = ("time_based", "По расписанию", "⏰")
-    MANUAL = ("manual", "Вручную", "👆")
 
     def __init__(self, db_value, display_name, emoji):
         self._db_value = db_value

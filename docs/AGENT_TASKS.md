@@ -13,11 +13,15 @@ is never blocked behind a long collection.
 
 ## Tables
 
-- `agent_tasks` — one cron definition: `cron_expr`, `timezone`, `job_type`
+- `agent_tasks` — one cron definition **and the reaction it produces**:
+  `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
   `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`),
   `agent_scenario_id` (FK → `agent_scenarios`, optional), `is_active`,
-  `next_run_at`, `last_run_at`, `last_status`, `last_error`.
+  `next_run_at`, `last_run_at`, `last_status`, `last_error`, plus
+  `trigger_type` / `trigger_config` / `action_type` and the guards
+  (`rate_limit_per_hour`, `cooldown_seconds`, `requires_approval`,
+  `blacklist`, `whitelist`). See "The reaction" below for why they sit here.
 - `agent_task_sources` — many-to-many between tasks and `sources`. A task's
   sources are linked here (not in `payload`); an empty set means all active
   sources. The `sources` relationship is loaded via `task.sources` (a list).
@@ -26,6 +30,40 @@ is never blocked behind a long collection.
   `attempts`, `max_attempts`, `result`, `error`, `llm_cost` (USD spent by the
   job's LLM call — `learn`/`reflect`, NULL when none), plus `agent_task_id` when
   the job came from a task.
+
+## The reaction: when to look and what to do
+
+A task answers "when to look" (`cron_expr`) and "what to do about a match"
+(`trigger_type` + `trigger_config` + `action_type` + the guards). A **scenario**
+answers only "how to analyse" — its interest, prompts, analysis mode and models.
+They are separate because a scenario is reused across tasks: a rule stored on it
+would change meaning every time a differently-scheduled task picked it up.
+
+`app/core/triggers.py` is the single source of truth — each condition's name,
+its config keys, its defaults, and a one-sentence `describe()`. The web task
+editor, the sqladmin form, the agent's `task_list` tool and the analysis prompt's
+`{trigger_condition}` all render from it, so a hint cannot describe a rule the
+evaluator does not apply.
+
+| Condition | Phase | Config | Notes |
+| --- | --- | --- | --- |
+| `KEYWORD_MATCH` | text | `{"keywords": [...], "match": "any"\|"all"}` | Whole-word, case-insensitive. Empty list = no filtering |
+| `USER_MENTION` | text | `{"usernames": [...]}` | Names are matched literally, with or without `@` |
+| `SENTIMENT_THRESHOLD` | analysis | `{"threshold": 0.0–1.0, "direction": "below"\|"above"}` | Reads `sentiment_analysis.sentiment_score` |
+
+`TIME_BASED` and `MANUAL` were removed. The first was a no-op equal to NULL
+(the schedule already lives on the task); the second made `should_act` always
+return `False`, so actions never executed.
+
+**"Phase" is honest about cost.** The `text` conditions decide from the raw post
+without a model call — but in the current pipeline the analysis has already run
+by the time `should_analyze` is called, so they do not save tokens today. They
+decide whether to *act*, not whether to analyse. The UI says so rather than
+implying a saving that does not happen.
+
+A task with no `action_type` analyses and reports and never writes to a
+platform; the guards (`app/services/social/guards.py`) are checked against the
+**task**, so two tasks sharing one scenario get independent hourly budgets.
 
 ## How a run happens
 
@@ -77,6 +115,13 @@ Adding a job type means adding a function to the `HANDLERS` registry in
 no migration is needed. Note that the CLI and the agent's task tool
 currently expose a narrower allowlist than the registry, so not every handler
 is reachable through them yet.
+
+In the web UI (`/app/tasks`) a task is edited in a modal that is addressed by
+`?task_id=<id>`: opening it writes the parameter (`history.replaceState`),
+closing removes it, and loading the URL opens that editor. The row data the
+modal binds comes from `_edit_payload()` (`app/web/tasks.py`), built from the
+rows the page already shows — so a link to a task outside the current
+workspace (or one a superuser filtered out) opens nothing.
 
 ## Default tasks
 

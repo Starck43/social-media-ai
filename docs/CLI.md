@@ -485,8 +485,8 @@ python -m cli.main scenarios seed-default [--tenant <slug_or_id>] [--force]
 ```
 
 Creates a default "Базовый мониторинг" scenario for the workspace if none exists.
-The scenario includes sentiment + keywords analysis, TIME_BASED trigger, and uses the
-workspace's default LLM model.
+The scenario includes sentiment + keywords analysis and uses the workspace's
+default LLM model.
 
 Use `--force` to replace an existing default scenario.
 

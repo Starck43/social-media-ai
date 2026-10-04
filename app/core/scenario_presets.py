@@ -174,16 +174,6 @@ def get_scope_preset(preset_key: str) -> str | dict[
 
 # Complete scenario presets with all settings
 SCENARIO_PRESETS = {
-	"basic_monitoring": {
-		"id": "basic_monitoring",
-		"name": "📊 Базовый мониторинг",
-		"description": "Простой мониторинг с sentiment и keywords по расписанию",
-		"analysis_types": ["sentiment", "keywords"],
-		"content_types": ["text"],
-		"trigger_type": "TIME_BASED",  # Enum NAME, not db_value
-		"trigger_config": {},
-		"scope": EVENT_MONITORING_SCOPE,
-	},
 	"negative_tracking": {
 		"id": "negative_tracking",
 		"name": "⚠️ Отслеживание негатива",
@@ -222,16 +212,6 @@ SCENARIO_PRESETS = {
 			"spike_multiplier": 3.0
 		},
 		"scope": ENGAGEMENT_TRACKING_SCOPE,
-	},
-	"topic_research": {
-		"id": "topic_research",
-		"name": "🎯 Исследование тем",
-		"description": "Глубокий анализ тем, трендов и обсуждений",
-		"analysis_types": ["topics", "trends", "keywords", "sentiment"],
-		"content_types": ["text"],
-		"trigger_type": "TIME_BASED",  # Enum NAME
-		"trigger_config": {},
-		"scope": TOPIC_DETECTION_SCOPE,
 	},
 	"brand_mentions": {
 		"id": "brand_mentions",

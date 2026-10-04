@@ -20,6 +20,7 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
         Index("ix_bot_actions_tenant_id", "tenant_id"),
         Index("ix_bot_actions_status", "status"),
         Index("ix_bot_actions_agent_scenario_id", "agent_scenario_id"),
+        Index("ix_bot_actions_agent_task_id", "agent_task_id"),
         Index("ix_bot_actions_source_id", "source_id"),
         {"schema": settings.DB_SCHEMA},
     )
@@ -28,6 +29,14 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
 
     agent_scenario_id: Mapped[int] = Column(
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.agent_scenarios.id", ondelete="CASCADE"), nullable=False
+    )
+    # The task that produced this action. Rate limiting and cooldown are counted
+    # per task, not per scenario: the guards live on the task now, and one
+    # scenario can be shared by several tasks whose limits must not merge.
+    # Nullable because an action may be created outside a task run (a manual
+    # agent invocation), in which case there is nothing to count against.
+    agent_task_id: Mapped[int | None] = Column(
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="SET NULL"), nullable=True
     )
     source_id: Mapped[int] = Column(
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.sources.id", ondelete="CASCADE"), nullable=False
@@ -60,6 +69,7 @@ class BotAction(Base, TenantScopedMixin, TimestampMixin):
     attempts: Mapped[int] = Column(Integer, nullable=False, default=0, server_default=sa.text("0"))
 
     scenario = relationship("AgentScenario", foreign_keys=[agent_scenario_id])
+    task = relationship("AgentTask", foreign_keys=[agent_task_id])
     source = relationship("Source", foreign_keys=[source_id])
     analytics = relationship("AIAnalytics", foreign_keys=[analytics_id])
 

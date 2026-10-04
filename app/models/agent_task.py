@@ -3,10 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Table, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
+from ..types import AgentActionType, BotTriggerType
 from ..core.decorators import app_label
 from .base import Base, TenantScopedMixin, TimestampMixin
 
@@ -21,7 +35,12 @@ if TYPE_CHECKING:
 agent_task_sources = Table(
     "agent_task_sources",
     Base.metadata,
-    Column("agent_task_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "agent_task_id",
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
     Column("source_id", Integer, ForeignKey(f"{settings.DB_SCHEMA}.sources.id", ondelete="CASCADE"), primary_key=True),
     schema=settings.DB_SCHEMA,
 )
@@ -52,6 +71,35 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     last_run_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str] = Column(String(20), nullable=True)  # ok | failed | skipped
     last_error: Mapped[str] = Column(Text, nullable=True)
+
+    # ── Trigger and action configuration ──────────────────────────────────────
+    # These live on the task, not the scenario. A scenario says *how to analyse*
+    # a piece of content and is meant to be reused; *whether to act on it* belongs
+    # to the run that produced the analysis — two tasks sharing one scenario may
+    # want different keywords, different actions and different safety limits.
+
+    trigger_type: Mapped[BotTriggerType | None] = BotTriggerType.sa_column(
+        type_name="bot_trigger_type", nullable=True, store_as_name=True
+    )
+    # Parameters for trigger evaluation (keywords, threshold, spike multiplier...)
+    trigger_config: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
+
+    action_type: Mapped[AgentActionType | None] = AgentActionType.sa_column(
+        type_name="bot_action_type", nullable=True, store_as_name=True
+    )
+
+    # Guards for action safety
+    rate_limit_per_hour: Mapped[int | None] = Column(
+        Integer, nullable=True, comment="Max actions per hour for this task"
+    )
+    cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
+    requires_approval: Mapped[bool] = Column(
+        Boolean, nullable=False, default=True, server_default="true", comment="Require owner approval before execution"
+    )
+    blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
+    whitelist: Mapped[list[str] | None] = Column(
+        JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"
+    )
 
     # Owning workspace (tenant);
     tenant: Mapped["Tenant"] = relationship("Tenant")

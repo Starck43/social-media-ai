@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
 from ..core.decorators import app_label
-from ..types import AgentActionType, BotTriggerType, LLMStrategyType
+from ..types import LLMStrategyType
 from ..types.enums.bot_types import AnalyzeType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
@@ -29,8 +29,8 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     scope: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
 
     # JSON Schema configuration for LLM response format
-    analyze_type: Mapped[BotTriggerType] = AnalyzeType.sa_column(
-        type_name="analyze_type", nullable=True, store_as_name=False, default=AnalyzeType.THEMES.value
+    analyze_type: Mapped[AnalyzeType | None] = AnalyzeType.sa_column(
+        type_name="analyze_type", nullable=True, store_as_name=False, default=AnalyzeType.THEMES.db_value
     )
 
     # Media-specific AI prompt templates with variable substitution support
@@ -62,30 +62,10 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
         """Legacy setter for backward compatibility."""
         self.text_prompt = value
 
-    # Trigger conditions for when to analyze/act
-    trigger_type: Mapped[BotTriggerType] = BotTriggerType.sa_column(
-        type_name="bot_trigger_type", nullable=True, store_as_name=True
-    )
-    # Trigger configuration: parameters for trigger evaluation
-    trigger_config: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
-
-    # Action to perform after analysis
-    action_type: Mapped[AgentActionType] = AgentActionType.sa_column(
-        type_name="bot_action_type", nullable=True, store_as_name=True
-    )
-
-    # Guards for action safety
-    rate_limit_per_hour: Mapped[int | None] = Column(
-        Integer, nullable=True, comment="Max actions per hour for this scenario"
-    )
-    cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
-    requires_approval: Mapped[bool] = Column(
-        Boolean, nullable=False, default=True, server_default="true", comment="Require owner approval before execution"
-    )
-    blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
-    whitelist: Mapped[list[str] | None] = Column(
-        JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"
-    )
+    # Trigger and action configuration used to live here. It lives on `AgentTask`
+    # now: whether to act on an analysis is a property of the run that produced
+    # it, not of how it was analysed — two tasks may share this scenario and want
+    # different actions or safety limits. See migration 0073.
 
     # LLM constraints
     max_tokens: Mapped[int | None] = Column(

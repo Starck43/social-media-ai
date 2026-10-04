@@ -65,45 +65,68 @@ class BotActionManager(BaseManager):
     async def count_actions_in_window(
         self,
         session: AsyncSession,
-        agent_scenario_id: int,
+        agent_task_id: Optional[int] = None,
         hours: int = 1,
+        agent_scenario_id: Optional[int] = None,
     ) -> int:
-        """Count actions for a scenario within the time window (for rate limiting)."""
+        """Count actions within the time window (for rate limiting).
+
+        Counted by task: the guards that set the limit live on the task now, and
+        two tasks sharing a scenario must not spend one budget between them.
+        `agent_scenario_id` still applies to rows written before that move, which
+        carry a NULL task and would otherwise be invisible to the count.
+        """
         from ..bot_action import BotAction
 
+        if agent_task_id is None and agent_scenario_id is None:
+            return 0
+
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
-        query = select(func.count(BotAction.id)).where(
-            and_(
-                BotAction.agent_scenario_id == agent_scenario_id,
-                BotAction.created_at >= since,
+        if agent_task_id is not None:
+            scope = BotAction.agent_task_id == agent_task_id
+        else:
+            scope = and_(
+                BotAction.agent_task_id.is_(None), BotAction.agent_scenario_id == agent_scenario_id
             )
-        )
+
+        query = select(func.count(BotAction.id)).where(and_(scope, BotAction.created_at >= since))
         result = await session.execute(query)
         return result.scalar() or 0
+
 
     @with_db_session
     async def get_last_action_time(
         self,
         session: AsyncSession,
-        agent_scenario_id: int,
+        agent_task_id: Optional[int] = None,
+        agent_scenario_id: Optional[int] = None,
     ) -> Optional[datetime]:
-        """Get the timestamp of the last executed action for a scenario (for cooldown)."""
+        """Timestamp of the last executed action for a task (for cooldown).
+
+        Scoped per task for the same reason as `count_actions_in_window`;
+        `agent_scenario_id` covers the rows written before the guards moved.
+        """
         from ...types import BotActionStatus
         from ..bot_action import BotAction
 
+        if agent_task_id is not None:
+            scope = BotAction.agent_task_id == agent_task_id
+        elif agent_scenario_id is not None:
+            scope = and_(
+                BotAction.agent_task_id.is_(None), BotAction.agent_scenario_id == agent_scenario_id
+            )
+        else:
+            return None
+
         query = (
             select(BotAction.created_at)
-            .where(
-                and_(
-                    BotAction.agent_scenario_id == agent_scenario_id,
-                    BotAction.status == BotActionStatus.EXECUTED,
-                )
-            )
+            .where(and_(scope, BotAction.status == BotActionStatus.EXECUTED))
             .order_by(BotAction.created_at.desc())
             .limit(1)
         )
         result = await session.execute(query)
         return result.scalar()
+
 
     @with_db_session
     async def approve_action(

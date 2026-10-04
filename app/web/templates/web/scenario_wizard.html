@@ -1,0 +1,344 @@
+{% extends "web/base.html" %}
+{% block title %}{% if create %}Новый сценарий{% else %}{{ draft.name }} | Сценарии{% endif %}{% endblock %}
+{% block content %}
+{% set editable = perms and perms.can('agentscenario', 'create' if create else 'update') %}
+{% set action_url = '/app/scenarios/new' if create else '/app/scenarios/' ~ scenario_id %}
+<div class="mx-auto max-w-4xl">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <a href="/app/scenarios" class="text-sm text-slate-400 hover:text-slate-200">← Все сценарии</a>
+            <h1 class="mt-1 text-2xl font-semibold tracking-tight">
+                {% if create %}Новый сценарий{% else %}{{ draft.name }}{% endif %}
+            </h1>
+            <p class="mt-1 text-sm text-slate-500">
+                {% if not create %}
+                    {% if draft.is_default %}
+                        Сценарий по умолчанию для новых источников.
+                    {% else %}
+                        Назначен тем источникам, которые его выбрали.
+                    {% endif %}
+                {% endif %}
+            </p>
+        </div>
+        {% if editable %}
+            <button type="submit" form="scenario-form"
+                    class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                Сохранить
+            </button>
+        {% endif %}
+    </div>
+
+    {% if not editable %}
+        <div class="mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
+            {% if create %}У вас нет прав создавать сценарии.{% else %}Вы можете читать сценарий, но не менять его — правомочие требуется ролью.{% endif %}
+        </div>
+    {% endif %}
+
+    {% set ro = '' if editable else 'pointer-events-none opacity-60' %}
+    <div x-data="wizard()" x-cloak>
+        <form id="scenario-form" method="post" action="{{ action_url }}" class="space-y-5">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+            {# Steps nav #}
+            <ol class="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/50 p-2 text-sm">
+                {% for n, label in [(1, 'Интерес'), (2, 'Промпт'), (3, 'Модели'), (4, 'Предпросмотр')] %}
+                    <li class="flex-1">
+                        <button type="button" @click="step = {{ n }}"
+                                class="w-full rounded-xl px-3 py-2 text-center transition"
+                                :class="step === {{ n }} ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/40' : 'text-slate-400 hover:bg-slate-800'">
+                            {{ n }}. {{ label }}
+                        </button>
+                    </li>
+                {% endfor %}
+            </ol>
+
+            {# ── Шаг 1: Интерес ─────────────────────────────────────────── #}
+            <section x-show="step === 1" class="space-y-5">
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Основное</legend>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                            <input id="sc-name" name="name" required maxlength="255" value="{{ draft.name }}"
+                                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        </div>
+                        <div>
+                            <label for="sc-desc" class="mb-1 block text-sm text-slate-300">Описание</label>
+                            <textarea id="sc-desc" name="description" rows="2"
+                                      class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">{{ draft.description or '' }}</textarea>
+                        </div>
+                        <div class="flex flex-wrap gap-6">
+                            <label class="flex items-center gap-2 text-sm text-slate-300">
+                                <input type="checkbox" name="is_active" {% if draft.is_active %}checked{% endif %}
+                                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                                Активен
+                            </label>
+                            {% if not create %}
+                            <label class="flex items-center gap-2 text-sm text-slate-300">
+                                <input type="checkbox" name="is_default" {% if draft.is_default %}checked{% endif %}
+                                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                                По умолчанию для новых источников
+                            </label>
+                            {% endif %}
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Что мониторим</legend>
+                    <p class="mb-3 text-xs text-slate-500">Типы контента, которые будут собираться и попадать в анализ.</p>
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {% for ct in content_types %}
+                            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm hover:border-cyan-500">
+                                <input type="checkbox" name="content_types" value="{{ ct.db_value }}"
+                                       class="content-cb h-4 w-4 rounded border-slate-600 bg-slate-950"
+                                       {% if draft.content_types and ct.db_value in draft.content_types %}checked{% endif %}>
+                                <span>{{ ct.emoji }} {{ ct.display_name }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Что анализировать</legend>
+                    <p class="mb-3 text-xs text-slate-500">
+                        Выберите виды анализа — параметры сценария сформируются сами.
+                    </p>
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {% for at in analysis_types %}
+                            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm hover:border-cyan-500">
+                                <input type="checkbox" name="analysis_types" value="{{ at.db_value }}"
+                                       class="analysis-cb h-4 w-4 rounded border-slate-600 bg-slate-950"
+                                       @change="rebuildScope()"
+                                       {% if draft.analysis_types and at.db_value in draft.analysis_types %}checked{% endif %}>
+                                <span>{{ at.emoji }} {{ at.display_name }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mt-4">
+                        <label for="sc-analyze" class="mb-1 block text-sm text-slate-300">Как группировать анализ</label>
+                        <select id="sc-analyze" name="analyze_type"
+                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                            {% for at in analyze_types %}
+                                <option value="{{ at.db_value }}"
+                                        {% if draft.analyze_type == at.db_value %}selected{% endif %}>{{ at.emoji }} {{ at.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {# Advanced: the scope JSON the wizard maintains for the user. #}
+                    <details class="mt-4" @toggle="scopeOpen = $event.target.open">
+                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                            Дополнительные параметры (для продвинутых)
+                        </summary>
+                        <div class="mt-2">
+                            <textarea id="scope-input" name="scope" rows="6" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ pretty_json(draft.scope) }}</textarea>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Параметры обновляются автоматически при выборе типов анализа. Меняйте только если понимаете формат.
+                            </p>
+                        </div>
+                    </details>
+                </fieldset>
+            </section>
+
+            {# ── Шаг 2: Промпт ─────────────────────────────────────────── #}
+            <section x-show="step === 2" class="space-y-5">
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Промпт анализа</legend>
+                    <p class="mb-3 text-xs text-slate-500">
+                        Как модель должна анализировать собранный контент. Пусто — возьмётся промпт по умолчанию.
+                        {% if media_types %}Охватывает: {{ media_types | join(', ') }}.{% endif %}
+                    </p>
+
+                    <div class="mb-2 flex items-center gap-2">
+                        <label for="var-select" class="text-xs text-slate-400">Вставить переменную:</label>
+                        <select id="var-select" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
+                            <option value="">— выберите —</option>
+                            {% for var, desc in available_variables.items() %}
+                                <option value="{{ var }}">{{ '{' ~ var ~ '}' }} — {{ desc }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" @click="insertVar('sc-prompt-text')"
+                                class="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">
+                            Вставить
+                        </button>
+                    </div>
+
+                    <textarea id="sc-prompt-text" name="text_prompt" rows="7"
+                              @input="validate($el)"
+                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                              placeholder="Проанализируй посты из {platform}: {text}. Выдели темы и тональность.">{{ draft.text_prompt or '' }}</textarea>
+                    <p id="var-warnings" class="mt-1 text-xs text-rose-400"></p>
+
+                    <details class="mt-4">
+                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                            Переопределения по типу контента (необязательно)
+                        </summary>
+                        <div class="mt-2 grid gap-3">
+                            {% for field, label, hint in [
+                                ('image_prompt', 'Изображения', 'Переменные: {count}, {platform}'),
+                                ('video_prompt', 'Видео', 'Переменные: {count}, {platform}'),
+                                ('audio_prompt', 'Аудио', 'Переменные: {count}, {platform}'),
+                                ('unified_summary_prompt', 'Сводный анализ', 'Переменные: {text_analysis}, {image_analysis}, {video_analysis}'),
+                            ] %}
+                                <div>
+                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                                    <textarea id="sc-{{ field }}" name="{{ field }}" rows="3"
+                                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                                              placeholder="{{ hint }}">{{ draft[field] or '' }}</textarea>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </details>
+                </fieldset>
+            </section>
+
+            {# ── Шаг 3: Модели ─────────────────────────────────────────── #}
+            <section x-show="step === 3" class="space-y-5">
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Модели LLM</legend>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
+                            <select id="sc-strategy" name="llm_strategy"
+                                    class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                <option value="">Автовыбор (флот платформы)</option>
+                                {% for value, label in llm_strategies %}
+                                    <option value="{{ value }}"
+                                            {% if draft.llm_strategy == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-3">
+                            {% for field, current, label in [
+                                ('text_llm_model_id', draft.text_llm_model_id, 'Текст'),
+                                ('image_llm_model_id', draft.image_llm_model_id, 'Изображения'),
+                                ('video_llm_model_id', draft.video_llm_model_id, 'Видео'),
+                            ] %}
+                                <div>
+                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                                    <select id="sc-{{ field }}" name="{{ field }}"
+                                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                        <option value="">Автовыбор</option>
+                                        {% for m in llm_models if m.model_type == field.split('_')[0] %}
+                                            <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            {% endfor %}
+                        </div>
+                        <div>
+                            <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
+                            <input id="sc-max-tokens" name="max_tokens" type="number" min="0"
+                                   value="{{ draft.max_tokens or '' }}"
+                                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                        </div>
+                    </div>
+                </fieldset>
+            </section>
+
+            {# ── Шаг 4: Предпросмотр ───────────────────────────────────── #}
+            <section x-show="step === 4" class="space-y-5">
+                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <legend class="px-2 text-sm font-medium text-slate-300">Предпросмотр финального промпта</legend>
+                    <p class="mb-3 text-xs text-slate-500">
+                        Здесь видно, что реально уйдёт в модель: ваш промпт, общие поля и схема
+                        ответа от выбранных типов анализа. Ничего не сохраняется и не вызывается.
+                    </p>
+                    {% if editable %}
+                        <button type="button"
+                                hx-post="/app/scenarios/preview"
+                                hx-include="#scenario-form"
+                                hx-target="#preview-panel"
+                                hx-swap="innerHTML"
+                                hx-indicator="#preview-loading"
+                                class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                            Показать предпросмотр
+                        </button>
+                        <span id="preview-loading" class="htmx-indicator ml-2 text-xs text-slate-400">Собираю…</span>
+                    {% endif %}
+                    <div id="preview-panel" class="mt-4"></div>
+                </fieldset>
+            </section>
+
+            {# ── Навигация ─────────────────────────────────────────────── #}
+            <div class="flex items-center justify-between">
+                <button type="button" @click="prev()" x-show="step > 1"
+                        class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                    ← Назад
+                </button>
+                <div class="flex gap-3">
+                    <button type="button" @click="next()" x-show="step < 4"
+                            class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                        Далее →
+                    </button>
+                    <button type="submit" x-show="step === 4"
+                            class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                        {% if create %}Создать сценарий{% else %}Сохранить{% endif %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if editable %}
+<script>
+function wizard() {
+    return {
+        step: 1,
+        scopeOpen: false,
+        known: {{ available_variables | tojson }},
+        allTypes: {{ all_analysis_types | tojson }},
+        defaults: {{ analysis_defaults | tojson }},
+        next() { this.step = Math.min(4, this.step + 1); },
+        prev() { this.step = Math.max(1, this.step - 1); },
+        insertVar(fieldId) {
+            const sel = document.getElementById('var-select');
+            const ta = document.getElementById(fieldId);
+            if (!sel || !ta) return;
+            const varName = sel.value;
+            if (!varName) return;
+            sel.value = '';
+            const start = ta.selectionStart ?? ta.value.length;
+            const end = ta.selectionEnd ?? ta.value.length;
+            ta.value = ta.value.slice(0, start) + '{' + varName + '}' + ta.value.slice(end);
+            ta.focus();
+            ta.setSelectionRange(start + varName.length + 2, start + varName.length + 2);
+            this.validate(ta);
+        },
+        validate(ta) {
+            const el = document.getElementById('var-warnings');
+            if (!el || !ta) return;
+            const names = Array.from((ta.value || '').matchAll(/\{([^}]+)\}/g))
+                .map(m => m[1].split('.')[0])
+                .filter(name => !(name in this.known));
+            const unique = [...new Set(names)];
+            if (unique.length) {
+                el.textContent = 'Неизвестные переменные: ' + unique.map(n => '{' + n + '}').join(', ') +
+                    ' — они не будут подставлены при анализе.';
+                el.classList.add('text-rose-400');
+            } else {
+                el.textContent = '';
+            }
+        },
+        rebuildScope() {
+            const ta = document.getElementById('scope-input');
+            if (!ta) return;
+            let scope = {};
+            try { scope = JSON.parse(ta.value || '{}'); } catch (e) { scope = {}; }
+            const selected = Array.from(document.querySelectorAll('.analysis-cb:checked')).map(cb => cb.value);
+            this.allTypes.forEach(type => { if (!selected.includes(type)) delete scope[type]; });
+            selected.forEach(type => {
+                if (scope[type] === undefined && this.defaults[type]) {
+                    scope[type] = JSON.parse(JSON.stringify(this.defaults[type]));
+                }
+            });
+            ta.value = JSON.stringify(scope, null, 2);
+        }
+    };
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -84,23 +84,26 @@ async def _open_editor(client: AsyncClient, scenario_id: int) -> tuple[int, dict
     return page.status_code, await _editor_payload(page.text)
 
 
-async def test_editor_renders_the_prompts_and_guards_of_a_scenario() -> None:
+async def test_editor_renders_the_prompts_of_a_scenario() -> None:
+    """The guards left the scenario with migration 0073 (they are the task's now),
+    so what this page has to show are the analysis settings."""
     async with await _client() as client:
         user, tenant_id = await _register(client, "ScEdit")
         scenario_id = await _scenario(
             tenant_id,
             _name("edited"),
             text_prompt="original text prompt",
-            blacklist=["spam", "scam"],
-            rate_limit_per_hour=7,
-            cooldown_seconds=900,
+            max_tokens=512,
         )
         try:
             page = await client.get(f"/app/scenarios/{scenario_id}")
             assert page.status_code == 200
             assert "original text prompt" in page.text, "the saved prompt must be visible in the editor"
-            assert "spam" in page.text and "scam" in page.text, "guards must be visible, not hidden in params"
-            assert "7" in page.text and "900" in page.text, "numeric guards must round-trip into the form"
+            assert "512" in page.text, "the analysis limit must round-trip into the form"
+            # The task's own fields must not be offered here: saving this page
+            # would silently drop them if they were.
+            assert 'name="trigger_type"' not in page.text
+            assert 'name="rate_limit_per_hour"' not in page.text
         finally:
             await _drop(user, tenant_id)
 
@@ -166,7 +169,7 @@ async def test_saving_the_editor_writes_the_edited_fields() -> None:
             _, form = await _open_editor(client, scenario_id)
             form["name"] = _name("renamed")
             form["text_prompt"] = PROMPT_SAVED
-            form["rate_limit_per_hour"] = "11"
+            form["max_tokens"] = "11"
             form["is_active"] = "on"
 
             resp = await client.post(f"/app/scenarios/{scenario_id}", data=form)
@@ -177,7 +180,7 @@ async def test_saving_the_editor_writes_the_edited_fields() -> None:
                 row = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
             assert row.name == form["name"]
             assert row.text_prompt == PROMPT_SAVED
-            assert row.rate_limit_per_hour == 11
+            assert row.max_tokens == 11
             assert row.is_active is True
         finally:
             await _drop(user, tenant_id)
@@ -245,18 +248,30 @@ async def test_a_read_only_member_cannot_save_the_scenario() -> None:
 # ── the trigger test run ────────────────────────────────────────────────────
 
 
-async def test_a_trigger_test_run_answers_without_touching_the_scenario() -> None:
+async def test_a_trigger_test_run_answers_without_touching_the_task() -> None:
+    """The preview runs the *task's* trigger — the trigger moved off the
+    scenario — and must leave that task's configuration untouched."""
     from app.core.tenant_context import tenant_scope
-    from app.models import AgentScenario
+    from app.models import AgentScenario, AgentTask
 
     async with await _client() as client:
         user, tenant_id = await _register(client, "ScTest")
-        scenario_id = await _scenario(
-            tenant_id,
-            _name("trigger"),
-            trigger_type="KEYWORD_MATCH",
-            trigger_config={"keywords": ["крипта", "срочно"]},
-        )
+        scenario_id = await _scenario(tenant_id, _name("trigger"))
+        with tenant_scope(tenant_id):
+            task = await AgentTask.objects.create(
+                # tenant_id explicit, like `_scenario` does: the suite runs with
+                # `is_bypass()` patched True, so an unowned row would be missed
+                # by the page's own `tenant_id=` lookup.
+                tenant_id=tenant_id,
+                name=_name("trigger-task"),
+                cron_expr="0 * * * *",
+                job_type="analyze",
+                agent_scenario_id=scenario_id,
+                trigger_type=BotTriggerType.KEYWORD_MATCH,
+                trigger_config={"keywords": ["крипта", "срочно"]},
+                is_active=True,
+            )
+            task_id = task.id
         try:
             _, form = await _open_editor(client, scenario_id)
             resp = await client.post(
@@ -269,10 +284,33 @@ async def test_a_trigger_test_run_answers_without_touching_the_scenario() -> Non
             )
             assert resp.status_code == 200
             body = resp.text.lower()
-            assert any(w in body for w in ("вердикт", "сработал", "сценар")), "the dry run must answer"
+            assert any(w in body for w in ("вердикт", "сработал", "сценар", "задач")), "the dry run must answer"
 
             with tenant_scope(tenant_id):
-                row = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
-            assert row.trigger_type == BotTriggerType.KEYWORD_MATCH, "a dry run must not overwrite the scenario"
+                row = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
+            assert row.trigger_type == BotTriggerType.KEYWORD_MATCH, "a dry run must not overwrite the task"
+            assert row.trigger_config == {"keywords": ["крипта", "срочно"]}
+        finally:
+            with tenant_scope(tenant_id):
+                await AgentTask.objects.delete_by_id(task_id)
+            await _drop(user, tenant_id)
+
+
+async def test_a_trigger_test_run_without_a_task_explains_where_triggers_live() -> None:
+    """A scenario with no active task has no trigger to preview, and the page
+    says so rather than answering from a configuration nothing reads."""
+    from app.models import AgentScenario
+
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "ScNoTask")
+        scenario_id = await _scenario(tenant_id, _name("no-task"))
+        try:
+            _, form = await _open_editor(client, scenario_id)
+            resp = await client.post(
+                f"/app/scenarios/{scenario_id}/test-trigger",
+                data={"_csrf": form["_csrf"], "sample_text": "любой текст"},
+            )
+            assert resp.status_code == 200
+            assert "задач" in resp.text.lower()
         finally:
             await _drop(user, tenant_id)

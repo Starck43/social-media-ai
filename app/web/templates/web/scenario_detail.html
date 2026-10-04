@@ -53,124 +53,19 @@
                            class="h-4 w-4 rounded border-slate-600 bg-slate-950">
                     Активен
                 </label>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
-                    <input type="checkbox" name="requires_approval" {% if scenario.requires_approval %}checked{% endif %}
-                           {% if not editable %}disabled{% endif %}
-                           class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                    Действия требуют подтверждения
-                </label>
             </div>
         </fieldset>
 
         <!-- Что попадает в анализ ────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Что попадает в анализ</legend>
-            <p class="text-xs text-slate-500">
-                Пустой список — «любой тип». Список ограничивает, какие единицы контента вообще рассматриваются.
-            </p>
-            <div>
-                <span class="mb-2 block text-sm text-slate-300">Тип контента</span>
-                <div class="flex flex-wrap gap-2">
-                    {% for ct in content_types %}
-                        <label class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-900">
-                            <input type="checkbox" name="content_types" value="{{ ct.db_value }}"
-                                   {% if scenario.content_types and ct.db_value in scenario.content_types %}checked{% endif %}
-                                   {% if not editable %}disabled{% endif %}
-                                   class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                            {{ ct.display_name }}
-                        </label>
-                    {% endfor %}
-                </div>
-            </div>
-            <div>
-                <span class="mb-2 block text-sm text-slate-300">Тип анализа</span>
-                <div class="flex flex-wrap gap-2">
-                    {% for at in analysis_types %}
-                        <label class="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-900">
-                            <input type="checkbox" name="analysis_types" value="{{ at.db_value }}"
-                                   {% if scenario.analysis_types and at.db_value in scenario.analysis_types %}checked{% endif %}
-                                   {% if not editable %}disabled{% endif %}
-                                   class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                            {{ at.display_name }}
-                        </label>
-                    {% endfor %}
-                </div>
-            </div>
-            <div>
-                <label for="sc-analyze-type" class="mb-1 block text-sm text-slate-300">Режим анализа</label>
-                <select id="sc-analyze-type" name="analyze_type" {% if not editable %}disabled{% endif %}
-                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                    <option value="">По умолчанию</option>
-                    {% for mode in analyze_types %}
-                        <option value="{{ mode.value }}" {% if scenario.analyze_type and scenario.analyze_type.value == mode.value %}selected{% endif %}>
-                            {{ mode.name }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <label for="sc-scope" class="mb-1 block text-sm text-slate-300">Параметры анализа (scope, JSON)</label>
-                <textarea id="sc-scope" name="scope" rows="4"
-                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500 {{ ro }}">{{ pretty_json(scenario.scope) }}</textarea>
-            </div>
-        </fieldset>
 
-        <!-- Триггер и действие ──────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Триггер и действие</legend>
-            <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                    <label for="sc-trigger" class="mb-1 block text-sm text-slate-300">Когда срабатывает</label>
-                    <select id="sc-trigger" name="trigger_type" {% if not editable %}disabled{% endif %}
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                        <option value="">Любой контент</option>
-                        {% for t in trigger_types %}
-                            <option value="{{ t.db_value }}" {% if scenario.trigger_type and scenario.trigger_type.db_value == t.db_value %}selected{% endif %}>
-                                {{ t.display_name }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="sc-action" class="mb-1 block text-sm text-slate-300">Что делает агент</label>
-                    <select id="sc-action" name="action_type" {% if not editable %}disabled{% endif %}
-                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                        <option value="">Ничего</option>
-                        {% for a in action_types %}
-                            <option value="{{ a.db_value }}" {% if scenario.action_type and scenario.action_type.db_value == a.db_value %}selected{% endif %}>
-                                {{ a.display_name }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-            <div>
-                <label for="sc-trigger-config" class="mb-1 block text-sm text-slate-300">Параметры триггера (JSON)</label>
-                <textarea id="sc-trigger-config" name="trigger_config" rows="3"
-                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500 {{ ro }}">{{ pretty_json(scenario.trigger_config) }}</textarea>
-                <p class="mt-1 text-xs text-slate-500">
-                    Словарь и пороги зависят от типа триггера — например, у «по sentiment» это <code class="font-mono">{"min": 0.3}</code>.
-                    {% if trigger_hint %}<span class="text-slate-400">{{ trigger_hint }}</span>{% endif %}
-                </p>
-            </div>
-        </fieldset>
+        <!-- Триггеры и действия задаются в задаче, а не здесь: сценарий отвечает
+             за «как анализировать», и им могут пользоваться несколько задач с
+             разными триггерами. См. раздел «Задачи». -->
 
         <!-- Ограничения ─────────────────────────────────────────────── -->
         <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <legend class="px-2 text-sm font-medium text-slate-300">Ограничения</legend>
             <div class="grid gap-4 sm:grid-cols-3">
-                <div>
-                    <label for="sc-rate" class="mb-1 block text-sm text-slate-300">Не чаще, чем раз в час</label>
-                    <input id="sc-rate" name="rate_limit_per_hour" type="number" min="0"
-                           value="{{ scenario.rate_limit_per_hour or '' }}"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                </div>
-                <div>
-                    <label for="sc-cooldown" class="mb-1 block text-sm text-slate-300">Пауза между действиями, сек</label>
-                    <input id="sc-cooldown" name="cooldown_seconds" type="number" min="0"
-                           value="{{ scenario.cooldown_seconds or '' }}"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                </div>
                 <div>
                     <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
                     <input id="sc-max-tokens" name="max_tokens" type="number" min="0"
@@ -178,23 +73,9 @@
                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
                 </div>
             </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                    <label for="sc-blacklist" class="mb-1 block text-sm text-slate-300">Стоп-слова</label>
-                    <input id="sc-blacklist" name="blacklist" value="{{ (scenario.blacklist or []) | join(', ') }}"
-                           placeholder="спам, реклама"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                    <p class="mt-1 text-xs text-slate-500">Пост с таким словом не обрабатывается.</p>
-                </div>
-                <div>
-                    <label for="sc-whitelist" class="mb-1 block text-sm text-slate-300">Только эти слова</label>
-                    <input id="sc-whitelist" name="whitelist" value="{{ (scenario.whitelist or []) | join(', ') }}"
-                           placeholder="запуск, обновление"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                    <p class="mt-1 text-xs text-slate-500">Сработает только если слово есть в посте.</p>
-                </div>
-            </div>
-<!-- Промпты ──────────────────────────────────────────────────── -->
+        </fieldset>
+
+        <!-- Промпты ──────────────────────────────────────────────────── -->
         <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <legend class="px-2 text-sm font-medium text-slate-300">Промпты</legend>
             <p class="text-xs text-slate-500">
@@ -321,4 +202,3 @@
     {% endif %}
 </div>
 {% endblock %}
-        </fieldset>

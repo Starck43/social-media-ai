@@ -1,12 +1,16 @@
-"""Scenarios `/app/scenarios` — list and manage bot scenarios.
+"""Scenarios `/app/scenarios` — list, create and manage bot scenarios.
 
-M3: list scenarios, set default, view details.
+Creation and editing go through one 4-step wizard (`scenario_wizard.html`)
+that needs no JSON: the user ticks analysis/content types and the scope is
+generated for them; the preview shows the final prompt before it is saved.
+The shared logic lives in `app/services/ai/scenario_builder.py`, which the
+admin form reuses too.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func
 
 from app.models.agent_scenario import AgentScenario
@@ -93,7 +97,7 @@ async def scenarios_set_default(
     return RedirectResponse("/app/scenarios", status_code=302)
 
 
-# ── editor ─────────────────────────────────────────────────────────────────
+# ── editor helpers ──────────────────────────────────────────────────────────
 
 
 def _optional_int(raw: str) -> int | None:
@@ -111,12 +115,7 @@ def _optional_int(raw: str) -> int | None:
 
 
 def _json_object(raw: str, label: str) -> dict:
-    """Parse a JSON object field, with the field name in the error message.
-
-    The UI accepts raw JSON because these columns are JSON by design; a bare
-    `json.JSONDecodeError` would surface as a 500 with no hint about which box
-    was wrong.
-    """
+    """Parse a JSON object field, with the field name in the error message."""
     import json
 
     raw = raw.strip()
@@ -129,10 +128,6 @@ def _json_object(raw: str, label: str) -> dict:
     if not isinstance(parsed, dict):
         raise ValueError(f'{label}: нужен JSON-объект, например {{"keywords": ["встреча"]}}')
     return parsed
-
-
-def _comma_list(raw: str) -> list[str]:
-    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _pretty_json(value: object) -> str:
@@ -156,55 +151,34 @@ async def _own_scenario(request: Request, scenario_id: int) -> "AgentScenario | 
     return await AgentScenario.objects.get(id=scenario_id, tenant_id=request.state.tenant_id)
 
 
-@router.get("/{scenario_id}")
-async def scenario_detail(request: Request, scenario_id: int):
-    """Read + edit one scenario: prompts, scope, triggers, guards.
+async def _own_task(request: Request, scenario_id: int) -> "AgentTask | None":
+    """One active task of this workspace using the scenario, or None.
 
-    The scenario is looked up through the manager, so a foreign id reads as
-    "not found" rather than leaking another workspace's prompts.
+    The trigger now belongs to the task, so a scenario detail page can only
+    preview a trigger by borrowing one of the tasks that actually runs it. With
+    several tasks sharing the scenario they may carry different triggers, and
+    this returns the first — the page says which one it is rather than implying
+    it is the scenario's single behaviour.
     """
-    scenario = await _own_scenario(request, scenario_id)
-    if scenario is None:
-        add_flash(request, "error", "Сценарий не найден")
-        return RedirectResponse("/app/scenarios", status_code=302)
+    from app.models import AgentTask
 
-    from app.models.llm_model import LLMModel
-    from app.types import AnalysisType, AgentActionType, BotTriggerType, ContentType, LLMStrategyType
-    from app.types.enums.bot_types import AnalyzeType
-
-    llm_models = [
-        {"id": m.id, "name": m.name, "model_type": m.model_type}
-        for m in await LLMModel.objects.filter(is_active=True).order_by(LLMModel.name)
-    ]
-
-    return render(
-        request,
-        "web/scenario_detail.html",
-        section="scenarios",
-        scenario=scenario,
-        content_types=list(ContentType),
-        analysis_types=list(AnalysisType),
-        analyze_types=list(AnalyzeType),
-        trigger_types=list(BotTriggerType),
-        action_types=list(AgentActionType),
-        llm_strategies=LLMStrategyType.choices(),
-        llm_models=llm_models,
-        pretty_json=_pretty_json,
+    return await (
+        AgentTask.objects.filter(
+            agent_scenario_id=scenario_id,
+            tenant_id=request.state.tenant_id,
+            is_active=True,
+        )
+        .order_by("id")
+        .first()
     )
 
 
 def _enum_by_value(enum_cls, raw: str):
     """Resolve a form value to its enum member, or None when unknown/blank.
 
-    Scenario enum columns are stored by *name* (`trigger_type`,
-    `action_type`), so writing the raw form string would produce a value the
-    PostgreSQL enum rejects. An unrecognised value is refused here rather than
-    surfacing as an IntegrityError on flush.
-
-    Both shapes are accepted: `DatabaseEnum` exposes `get_by_value`, but
-    `AnalyzeType` is a plain `Enum` (no `db_value`), so fall back to matching
-    `.value` and then `.name` — otherwise selecting a mode would raise
-    AttributeError instead of being validated.
+    Both shapes are accepted — `db_value` (what the select options carry) and
+    `name` — so a form written against either shape keeps working, and the
+    blank option still maps to None rather than raising.
     """
     if not raw:
         return None
@@ -217,42 +191,113 @@ def _enum_by_value(enum_cls, raw: str):
     return member
 
 
-async def _collect_fields(form: dict) -> dict:
-    """Turn the editor form into a column→value dict, validating as it goes.
+# ── the 4-step wizard ───────────────────────────────────────────────────────
 
-    Raises `ValueError` with a user-facing message: the caller flashes it and
-    sends the editor back, so a bad JSON box never becomes a 500.
+
+@router.get("/new")
+async def scenario_new(request: Request):
+    """Start the step-by-step wizard for a new scenario (no JSON required)."""
+    denied = guard_web(request, "agentscenario", "create", back="/app/scenarios")
+    if denied is not None:
+        return denied
+
+    from app.services.ai.scenario_builder import ScenarioDraft
+
+    draft = ScenarioDraft(name="", is_active=True)
+    return await _wizard_page(request, draft=draft, create=True)
+
+
+@router.get("/{scenario_id}")
+async def scenario_detail(request: Request, scenario_id: int):
+    """Read + edit one scenario through the same 4-step wizard as create.
+
+    The scenario is looked up through the manager, so a foreign id reads as
+    "not found" rather than leaking another workspace's prompts. Edit renders
+    the wizard pre-filled with the stored draft.
     """
-    from app.types import AnalysisType, AgentActionType, BotTriggerType, ContentType, LLMStrategyType
+    scenario = await _own_scenario(request, scenario_id)
+    if scenario is None:
+        add_flash(request, "error", "Сценарий не найден")
+        return RedirectResponse("/app/scenarios", status_code=302)
+
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
+    draft = ScenarioBuilder.draft_from_scenario(scenario)
+    return await _wizard_page(request, draft=draft, create=False, scenario_id=scenario.id)
+
+
+@router.get("/{scenario_id}/preview")
+async def scenario_preview(request: Request, scenario_id: int):
+    """The final-prompt preview for an existing scenario."""
+    scenario = await _own_scenario(request, scenario_id)
+    if scenario is None:
+        add_flash(request, "error", "Сценарий не найден")
+        return RedirectResponse("/app/scenarios", status_code=302)
+
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
+    draft = ScenarioBuilder.draft_from_scenario(scenario)
+    blocks = ScenarioBuilder.preview_blocks(draft)
+    return render(
+        request,
+        "web/scenario_preview.html",
+        section="scenarios",
+        scenario=scenario,
+        blocks=blocks,
+        base_media=blocks["base_media"],
+    )
+
+
+@router.post("/preview")
+async def scenario_preview_build(request: Request):
+    """Live final-prompt preview from the current (unsaved) wizard form.
+
+    Reuses the production `PromptBuilder` + `JSONSchemaBuilder`, so the reader
+    sees exactly what the analyzer would send. No write, no LLM call.
+    """
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
+    try:
+        draft = _draft_from_form(await request.form())
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    blocks = ScenarioBuilder.preview_blocks(draft)
+    return render(
+        request,
+        "web/scenario_preview.html",
+        section="scenarios",
+        scenario=None,
+        blocks=blocks,
+        base_media=blocks["base_media"],
+        csrf="",
+        flashes=[],
+        user=getattr(request.state, "web_user", None),
+        memberships=getattr(request.state, "memberships", []) or [],
+        workspaces=getattr(request.state, "workspaces", []) or [],
+        tenant=getattr(request.state, "tenant", None),
+        perms=getattr(request.state, "web_perms", None),
+    )
+
+
+def _draft_from_form(form) -> "ScenarioDraft":
+    """Build a wizard draft from the posted form (create, edit and preview share it).
+
+    The wizard is deliberately JSON-free: analysis types and content types
+    arrive as checkbox values, the scope is re-generated from the ticked
+    analysis types (so the user never writes JSON), and the one base prompt is
+    the text prompt. Raises `ValueError` for unknown enum values.
+    """
+    from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
+    from app.types import AnalysisType, ContentType
     from app.types.enums.bot_types import AnalyzeType
 
-    trigger_type = _enum_by_value(BotTriggerType, form.get("trigger_type", ""))
-    if form.get("trigger_type") and trigger_type is None:
-        raise ValueError(f"Неизвестный триггер: {form['trigger_type']}")
+    def _getlist(key: str) -> list[str]:
+        return form.getlist(key) if hasattr(form, "getlist") else (form.get(key) or [])
 
-    action_type = _enum_by_value(AgentActionType, form.get("action_type", ""))
-    if form.get("action_type") and action_type is None:
-        raise ValueError(f"Неизвестное действие: {form['action_type']}")
+    content_types = [v for v in _getlist("content_types") if v]
+    analysis_types = [v for v in _getlist("analysis_types") if v]
 
-    analyze_type = _enum_by_value(AnalyzeType, form.get("analyze_type", ""))
-    if form.get("analyze_type") and analyze_type is None:
-        raise ValueError(f"Неизвестный режим анализа: {form['analyze_type']}")
-
-    llm_strategy = _enum_by_value(LLMStrategyType, form.get("llm_strategy", ""))
-    if form.get("llm_strategy") and llm_strategy is None:
-        raise ValueError(f"Неизвестная стратегия LLM: {form['llm_strategy']}")
-
-    def _optional_model(raw_key: str) -> int | None:
-        raw = (form.get(raw_key) or "").strip()
-        if not raw:
-            return None
-        if not raw.isdigit():
-            raise ValueError("Выберите модель из списка")
-        return int(raw)
-
-    # Multi-selects arrive as repeated fields; an empty list means "all".
-    content_types = form.getlist("content_types") if hasattr(form, "getlist") else form.get("content_types") or []
-    analysis_types = form.getlist("analysis_types") if hasattr(form, "getlist") else form.get("analysis_types") or []
     for raw, enum_cls, label in (
         (content_types, ContentType, "тип контента"),
         (analysis_types, AnalysisType, "тип анализа"),
@@ -261,34 +306,153 @@ async def _collect_fields(form: dict) -> dict:
         if unknown:
             raise ValueError(f"Неизвестный {label}: {', '.join(unknown)}")
 
-    return {
-        "name": form.get("name", "").strip()[:255],
-        "description": form.get("description", "").strip() or None,
-        "content_types": list(content_types),
-        "analysis_types": list(analysis_types),
-        "scope": _json_object(form.get("scope", ""), "Параметры анализа (scope)"),
-        "trigger_type": trigger_type,
-        "trigger_config": _json_object(form.get("trigger_config", ""), "Параметры триггера"),
-        "action_type": action_type,
-        "analyze_type": analyze_type,
-        "is_active": form.get("is_active") == "on",
-        "requires_approval": form.get("requires_approval") == "on",
-        "is_default": form.get("is_default") == "on",
-        "rate_limit_per_hour": _optional_int(form.get("rate_limit_per_hour", "")),
-        "cooldown_seconds": _optional_int(form.get("cooldown_seconds", "")),
-        "max_tokens": _optional_int(form.get("max_tokens", "")),
-        "blacklist": _comma_list(form.get("blacklist", "")),
-        "whitelist": _comma_list(form.get("whitelist", "")),
-        "text_prompt": form.get("text_prompt", "").strip() or None,
-        "image_prompt": form.get("image_prompt", "").strip() or None,
-        "video_prompt": form.get("video_prompt", "").strip() or None,
-        "audio_prompt": form.get("audio_prompt", "").strip() or None,
-        "unified_summary_prompt": form.get("unified_summary_prompt", "").strip() or None,
-        "llm_strategy": llm_strategy,
-        "text_llm_model_id": _optional_model("text_llm_model_id"),
-        "image_llm_model_id": _optional_model("image_llm_model_id"),
-        "video_llm_model_id": _optional_model("video_llm_model_id"),
-    }
+    analyze_type = None
+    if form.get("analyze_type"):
+        analyze_member = _enum_by_value(AnalyzeType, form.get("analyze_type"))
+        if analyze_member is None:
+            raise ValueError(f"Неизвестный режим анализа: {form['analyze_type']}")
+        analyze_type = analyze_member.db_value
+
+    def _opt_int(key: str) -> int | None:
+        raw = (form.get(key) or "").strip()
+        return _optional_int(raw) if raw else None
+
+    def _opt_model(key: str) -> int | None:
+        raw = (form.get(key) or "").strip()
+        if not raw:
+            return None
+        if not raw.isdigit():
+            raise ValueError("Выберите модель из списка")
+        return int(raw)
+
+    def _opt_prompt(key: str) -> str | None:
+        return (form.get(key) or "").strip() or None
+
+    try:
+        scope_raw = _json_object(form.get("scope", "") or "", "Параметры анализа (scope)")
+    except ValueError:
+        # The wizard stores scope as JSON only as an escape hatch; an invalid
+        # body means the user hand-edited it, which the wizard does not require.
+        scope_raw = {}
+
+    if not scope_raw:
+        # The wizard requires no JSON: with no hand-edited scope the template
+        # is generated from the ticked analysis types.
+        scope = ScenarioBuilder.build_scope_template(analysis_types)
+    else:
+        scope = ScenarioBuilder.sanitize_scope(scope_raw, analysis_types)
+
+    return ScenarioDraft(
+        name=form.get("name", "").strip()[:255],
+        description=form.get("description", "").strip() or None,
+        is_active=form.get("is_active") == "on",
+        is_default=form.get("is_default") == "on",
+        content_types=content_types,
+        analysis_types=analysis_types,
+        analyze_type=analyze_type,
+        scope=scope,
+        text_prompt=_opt_prompt("text_prompt"),
+        image_prompt=_opt_prompt("image_prompt"),
+        video_prompt=_opt_prompt("video_prompt"),
+        audio_prompt=_opt_prompt("audio_prompt"),
+        unified_summary_prompt=_opt_prompt("unified_summary_prompt"),
+        llm_strategy=form.get("llm_strategy", "").strip() or None,
+        text_llm_model_id=_opt_model("text_llm_model_id"),
+        image_llm_model_id=_opt_model("image_llm_model_id"),
+        video_llm_model_id=_opt_model("video_llm_model_id"),
+        max_tokens=_opt_int("max_tokens"),
+    )
+
+
+async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: int | None = None):
+    """Render the 4-step wizard for a new or existing scenario."""
+    from app.core.analysis_constants import ANALYSIS_TYPE_DEFAULTS
+    from app.models.llm_model import LLMModel
+    from app.services.ai.scenario_builder import ScenarioBuilder
+    from app.types import AnalysisType, ContentType, LLMStrategyType
+    from app.types.enums.bot_types import AnalyzeType
+
+    llm_models = [
+        {"id": m.id, "name": m.name, "model_type": m.model_type}
+        for m in await LLMModel.objects.filter(is_active=True).order_by(LLMModel.name)
+    ]
+    return render(
+        request,
+        "web/scenario_wizard.html",
+        section="scenarios",
+        create=create,
+        scenario_id=scenario_id,
+        draft=draft,
+        content_types=list(ContentType),
+        analysis_types=list(AnalysisType),
+        analyze_types=list(AnalyzeType),
+        llm_strategies=LLMStrategyType.choices(),
+        llm_models=llm_models,
+        media_types=ScenarioBuilder.media_types_for(draft.content_types),
+        available_variables=ScenarioBuilder.available_variables(draft.media_type),
+        analysis_defaults=ANALYSIS_TYPE_DEFAULTS,
+        all_analysis_types=[at.db_value for at in AnalysisType],
+        pretty_json=_pretty_json,
+    )
+
+
+@router.post("/new")
+async def scenario_create(
+    request: Request,
+    name: str = Form(...),
+    token: str = Form("", alias="_csrf"),
+):
+    """Create a scenario from the wizard; parsing errors flash and return."""
+    from app.services.ai.scenario import PlanLimitError, scenario_service
+
+    back = "/app/scenarios/new"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+
+    denied = guard_web(request, "agentscenario", "create", back=back)
+    if denied is not None:
+        return denied
+
+    form = await request.form()
+    try:
+        draft = _draft_from_form(form)
+    except ValueError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse(back, status_code=302)
+
+    if not draft.name.strip():
+        add_flash(request, "error", "Введите название сценария")
+        return RedirectResponse(back, status_code=302)
+
+    try:
+        scenario = await scenario_service.create_scenario(
+            name=draft.name,
+            description=draft.description,
+            tenant_id=request.state.tenant_id,
+            analysis_types=draft.analysis_types,
+            content_types=draft.content_types,
+            scope=draft.scope,
+            analyze_type=draft.analyze_type,
+            text_prompt=draft.text_prompt,
+            image_prompt=draft.image_prompt,
+            video_prompt=draft.video_prompt,
+            audio_prompt=draft.audio_prompt,
+            unified_summary_prompt=draft.unified_summary_prompt,
+            is_active=draft.is_active,
+            is_default=draft.is_default,
+            max_tokens=draft.max_tokens,
+            llm_strategy=draft.llm_strategy,
+            text_llm_model_id=draft.text_llm_model_id,
+            image_llm_model_id=draft.image_llm_model_id,
+            video_llm_model_id=draft.video_llm_model_id,
+        )
+    except PlanLimitError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse(back, status_code=302)
+
+    add_flash(request, "success", f"Сценарий «{scenario.name}» создан")
+    return RedirectResponse(f"/app/scenarios/{scenario.id}", status_code=302)
 
 
 @router.post("/{scenario_id}")
@@ -297,7 +461,13 @@ async def scenario_save(
     scenario_id: int,
     token: str = Form("", alias="_csrf"),
 ):
-    """Persist the editor. Parsing errors flash and return to the editor."""
+    """Persist the wizard (edit mode). Parsing errors flash and return.
+
+    The draft preserves any custom scope keys a user added beyond the
+    auto-template, so editing does not silently drop them.
+    """
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
     back = f"/app/scenarios/{scenario_id}"
 
     if not ensure_csrf(request, token):
@@ -313,24 +483,48 @@ async def scenario_save(
         add_flash(request, "error", "Сценарий не найден")
         return RedirectResponse("/app/scenarios", status_code=302)
 
-    # Read the raw body: the editor posts multi-value fields (content_types,
+    # Read the raw body: the wizard posts multi-value fields (content_types,
     # analysis_types), which a plain `Form(...)` signature cannot express.
     form = await request.form()
     try:
-        fields = await _collect_fields(form)
+        draft = _draft_from_form(form)
     except ValueError as e:
         add_flash(request, "error", str(e))
         return RedirectResponse(back, status_code=302)
 
+    # Editing must not destroy custom scope keys the auto-template does not own.
+    draft.scope = {**(scenario.scope or {}), **draft.scope}
+
     # When is_default is toggled on, clear it on every other scenario in this
     # workspace so there is always at most one default.
-    if fields.get("is_default"):
+    if draft.is_default:
         await AgentScenario.objects.filter(tenant_id=request.state.tenant_id, id__ne=scenario.id).update(
             is_default=False
         )
 
-    await AgentScenario.objects.update_by_id(scenario.id, **fields)
-    add_flash(request, "success", f"Сценарий «{fields['name']}» сохранён")
+    ScenarioBuilder.apply_draft(scenario, draft)
+    await AgentScenario.objects.update_by_id(
+        scenario.id,
+        name=scenario.name,
+        description=scenario.description,
+        content_types=scenario.content_types,
+        analysis_types=scenario.analysis_types,
+        scope=scenario.scope,
+        analyze_type=scenario.analyze_type,
+        is_active=scenario.is_active,
+        is_default=scenario.is_default,
+        max_tokens=scenario.max_tokens,
+        text_prompt=scenario.text_prompt,
+        image_prompt=scenario.image_prompt,
+        video_prompt=scenario.video_prompt,
+        audio_prompt=scenario.audio_prompt,
+        unified_summary_prompt=scenario.unified_summary_prompt,
+        llm_strategy=scenario.llm_strategy,
+        text_llm_model_id=scenario.text_llm_model_id,
+        image_llm_model_id=scenario.image_llm_model_id,
+        video_llm_model_id=scenario.video_llm_model_id,
+    )
+    add_flash(request, "success", f"Сценарий «{draft.name}» сохранён")
     return RedirectResponse(back, status_code=302)
 
 
@@ -362,7 +556,14 @@ async def scenario_test_trigger(
         add_flash(request, "error", "Сценарий не найден")
         return RedirectResponse("/app/scenarios", status_code=302)
 
-    if not scenario.trigger_type:
+    # The trigger lives on the task now. Testing against the scenario would test
+    # a configuration that no run reads any more.
+    task = await _own_task(request, scenario.id)
+    if task is None:
+        add_flash(request, "info", "У сценария нет активных задач — триггер проверяется в разделе «Задачи»")
+        return RedirectResponse(back, status_code=302)
+
+    if not task.trigger_type:
         add_flash(request, "info", "Триггер не задан — контент проходит без фильтрации")
         return RedirectResponse(back, status_code=302)
 
@@ -374,7 +575,7 @@ async def scenario_test_trigger(
 
     content = [{"text": sample_text.strip()}]
     evaluator = TriggerEvaluator()
-    kept = await evaluator.should_analyze(content, scenario)
+    kept = await evaluator.should_analyze(content, task)
 
     # Post-analysis triggers (sentiment threshold, manual) only decide after the
     # LLM has run, so the JSON box is what feeds them.
@@ -384,12 +585,12 @@ async def scenario_test_trigger(
         except ValueError as e:
             add_flash(request, "error", str(e))
             return RedirectResponse(back, status_code=302)
-        acts = await evaluator.should_act(result, scenario)
+        acts = await evaluator.should_act(result, task)
         add_flash(request, "success", f"Действие: {'выполнится' if acts else 'пропустится'}")
         return RedirectResponse(back, status_code=302)
 
     if kept:
-        add_flash(request, "success", f"Текст прошёл триггер «{scenario.trigger_type.display_name}»")
+        add_flash(request, "success", f"Текст прошёл триггер «{task.trigger_type.display_name}»")
     else:
-        add_flash(request, "info", f"Текст отсечён триггером «{scenario.trigger_type.display_name}»")
+        add_flash(request, "info", f"Текст отсечён триггером «{task.trigger_type.display_name}»")
     return RedirectResponse(back, status_code=302)

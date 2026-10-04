@@ -1,0 +1,50 @@
+<div class="space-y-4 text-sm">
+    {% if not blocks.has_custom %}
+        <div class="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
+            Свой промпт не задан — используется стандартный промпт для каждого типа контента.
+        </div>
+    {% else %}
+        <div>
+            <p class="mb-1 text-xs font-medium text-slate-400">Ваш промпт (переменные подставлены примерами)</p>
+            <pre class="whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-slate-300">{{ blocks.media_previews[blocks.base_media].split('ВАЖНО:')[0] }}</pre>
+        </div>
+    {% endif %}
+
+    <div>
+        <p class="mb-1 text-xs font-medium text-slate-400">Система добавит автоматически</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+            <div class="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <p class="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Общие поля</p>
+                {% for name, desc in blocks.common_fields.items() %}
+                    <p class="mt-1 font-mono text-xs text-slate-300">
+                        <span class="text-cyan-400">{{ name }}</span> — {{ desc }}
+                    </p>
+                {% endfor %}
+            </div>
+            <div class="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <p class="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Поля выбранных типов анализа</p>
+                {% for name, desc in blocks.type_fields.items() %}
+                    <p class="mt-1 font-mono text-xs text-slate-300">
+                        <span class="text-emerald-400">{{ name }}</span> — {{ desc }}
+                    </p>
+                {% else %}
+                    <p class="mt-1 text-xs text-slate-500">Типы анализа не выбраны — схема не строится.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <p class="mb-1 text-xs font-medium text-slate-400">Итоговый промпт — что реально уйдёт в модель</p>
+        {% for media, prompt in blocks.media_previews.items() %}
+            {% if prompt %}
+                <details class="mt-2" {% if media == blocks.base_media %}open{% endif %}>
+                    <summary class="cursor-pointer rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+                        {{ {'text': 'Текст', 'image': 'Изображения', 'video': 'Видео', 'audio': 'Аудио'}[media] }}
+                    </summary>
+                    <pre class="mt-1 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-slate-300">{{ prompt }}</pre>
+                </details>
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>

@@ -40,7 +40,7 @@ from app.types import (
 	ContentType,
 	AnalysisType,
 	LLMStrategyType,
-	BotActionType,
+	AgentActionType,
 	BotActionStatus,
 	BotTriggerType,
 	JobType,
@@ -395,7 +395,7 @@ class SourceAdmin(BaseAdmin, model=Source):
 	form_args = {
 		"tenant": {
 			"label": "Рабочее пространство",
-			"description": "Владелец источника (тенант); выбирается из списка",
+			"description": "Владелец источника (пространство); выбирается из списка",
 		},
 		"platform": {
 			"label": "Платформа",
@@ -530,8 +530,9 @@ class SourceAdmin(BaseAdmin, model=Source):
 			has_prev = page > 1
 
 			return templates.TemplateResponse(
-				"sqladmin/source_check_results_standalone.html",
-				{
+				request=request,
+				name="sqladmin/source_check_results_standalone.html",
+				context={
 					"request": request,
 					"source": source,
 					"content": content,
@@ -575,8 +576,9 @@ class SourceAdmin(BaseAdmin, model=Source):
 				}
 
 			return templates.TemplateResponse(
-				"sqladmin/source_check_results_standalone.html",
-				{
+				request=request,
+				name="sqladmin/source_check_results_standalone.html",
+				context={
 					"request": request,
 					"source": source,
 					"error": error_msg,
@@ -800,7 +802,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		form.content_types_enum = list(ContentType)
 		form.analysis_types_enum = list(AnalysisType)
 		form.trigger_types_enum = list(BotTriggerType)
-		form.action_types_enum = list(BotActionType)
+		form.action_types_enum = list(AgentActionType)
 		form.trigger_hints = TRIGGER_HINTS
 		form.scope_hints = SCOPE_HINTS
 
@@ -881,7 +883,7 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			if action_value:
 				# Convert NAME string to enum object
 				try:
-					data["action_type"] = BotActionType[action_value]
+					data["action_type"] = AgentActionType[action_value]
 				except (KeyError, TypeError):
 					data["action_type"] = None
 			else:
@@ -1045,8 +1047,9 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			trigger_config_json = json.dumps(scenario.trigger_config, indent=2, ensure_ascii=False)
 
 		return templates.TemplateResponse(
-			"sqladmin/scenario_prompts.html",
-			{
+			request=request,
+			name="sqladmin/scenario_prompts.html",
+			context={
 				"request": request,
 				"scenario": scenario,
 				"prompts": prompts_data,
@@ -1997,7 +2000,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
     form_args = {
         "tenant": {
             "label": "Рабочее пространство",
-            "description": "Владелец задачи: выберите тенант из списка (задача будет видна в его дашборде)",
+            "description": "Владелец задачи: выберите Ваше рабочее пространство из списка",
         },
         "name": {
             "label": "Название",

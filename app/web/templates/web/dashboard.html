@@ -34,7 +34,7 @@
         </div>
     {% endif %}
 
-    <div class="grid grid-cols-2 gap-4 xl:grid-cols-5">
+    <div class="grid grid-cols-2 gap-4 xl:grid-cols-6">
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">Источники активны</p>
             <p class="mt-2 text-3xl font-semibold">{{ kpis.active_sources }}</p>
@@ -60,6 +60,21 @@
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">LLM-расход за сутки</p>
             <p class="mt-2 text-3xl font-semibold">${{ "%.2f"|format(kpis.cost_today_usd) }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-400">Токсичных за 7 дней</p>
+            <p class="mt-2 text-3xl font-semibold
+               {% if not analytics.toxicity.analyzed %}text-slate-600
+               {% elif analytics.toxicity.toxic_percent >= 20 %}text-rose-400
+               {% elif analytics.toxicity.toxic_percent >= 10 %}text-amber-300
+               {% else %}text-emerald-400{% endif %}">
+                {% if analytics.toxicity.analyzed %}{{ "%.1f"|format(analytics.toxicity.toxic_percent) }}%{% else %}—{% endif %}
+            </p>
+            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">
+                {% if analytics.toxicity.analyzed %}
+                    {{ analytics.toxicity.toxic }} из {{ analytics.toxicity.analyzed }}
+                {% else %}появится после анализа{% endif %}
+            </p>
         </div>
     </div>
 
@@ -219,6 +234,21 @@
                                 <span class="text-slate-300">{{ t.topic }}</span>
                                 <span class="text-xs text-slate-500">{{ t.count }}×</span>
                             </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                {% endif %}
+            </div>
+
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-300">Хэштеги за 7 дней</h2>
+                {% if analytics.hashtags %}
+                    <div class="mt-4 flex flex-wrap gap-1.5">
+                        {% for h in analytics.hashtags %}
+                            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+                                #{{ h.hashtag|replace('#', '') }} <span class="text-slate-500">{{ h.count }}</span>
+                            </span>
                         {% endfor %}
                     </div>
                 {% else %}

@@ -128,6 +128,8 @@ async def _analytics_in_scope(tenant_filter: int | None) -> dict:
     agg = ReportAggregator()
     top_topics = await agg.get_top_topics(days=7, limit=6, tenant_id=tenant_filter)
     content_mix = await agg.get_content_mix(days=7, tenant_id=tenant_filter)
+    toxicity = await agg.get_toxicity_summary(days=7, tenant_id=tenant_filter)
+    hashtags = await agg.get_top_hashtags(days=7, limit=8, tenant_id=tenant_filter)
 
     recent = []
     rows = await AIAnalytics.objects.select_related("source").order_by(AIAnalytics.created_at.desc()).limit(8)
@@ -148,6 +150,8 @@ async def _analytics_in_scope(tenant_filter: int | None) -> dict:
     return {
         "top_topics": top_topics,
         "content_mix": content_mix,
+        "toxicity": toxicity,
+        "hashtags": hashtags,
         "recent": recent,
     }
 

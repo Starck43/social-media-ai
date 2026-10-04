@@ -1,8 +1,15 @@
-# Что добавляется автоматически VS что руками в промпте
+# Prompt and Scope System
 
-**Вопрос**: Структура JSON в промпте формируется автоматически или нужно руками указывать?
+> **Status:** historical / reference. The current codebase is migrating to a simplified
+> prompt model: `base_prompt + media_overrides + summary_prompt`.
+> See **[CHAT_BOT_SCENARIOS.md](./CHAT_BOT_SCENARIOS.md)** for the new architecture.
+>
+> This doc still explains how the prompt assembly works today (5-field model,
+> COMMON_FIELDS, scope variables) and is kept as a reference for the migration.
 
-**Ответ**: **ЧАСТИЧНО АВТОМАТИЧЕСКИ** - система умная и добавляет недостающее!
+**Question:** Is the JSON response structure auto-generated or hand-written?
+
+**Answer:** **PARTIALLY AUTOMATIC** — the system is smart and adds what's missing!
 
 ---
 

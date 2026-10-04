@@ -78,12 +78,15 @@ OpenAI function calling.
 Дефолтные cron для обоих заданы в `app/tasks/bootstrap.py`
 (`DEFAULT_TASKS`) — там и смотреть актуальные значения.
 
-Промпты агента живут в `AgentScenario` (`text_prompt` и модальные варианты
-`image/video/audio/unified_summary_prompt`). Правка — через
-`PUT /api/v1/ai/scenarios/{id}` или админку (`AgentScenarioAdmin`);
+Промпты агента живут в `AgentScenario`:
+`base_prompt` (основная инструкция) + `media_overrides` (JSON: `image`/`video`/`audio` для мультимедиа) + `summary_prompt` (сводка).
+Правка — через `PUT /api/v1/ai/scenarios/{id}` или админку (`AgentScenarioAdmin`);
 изменение подхватывается со следующего запуска задачи (сценарий читается
 на каждый run). Автоматическая эволюция промптов **не происходит**:
 `prompt_advice` из `reflect` владелец применяет сам.
+
+Подробности: `docs/CHAT_BOT_SCENARIOS.md` (архитектура, переменные, валидация).
+Исторический контекст: `docs/PROMPT_AND_SCOPE_EXPLAINED.md`.
 
 ## Лимиты и стоимость
 

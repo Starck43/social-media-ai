@@ -1,7 +1,5 @@
 # Chat-Based Scenario Creation System
 
-> **Reference:** `docs/design/chat-bot.md` (source design notes)
-
 ## Architectural Principle
 
 ```

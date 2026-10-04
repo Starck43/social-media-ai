@@ -360,7 +360,7 @@ AI analysis results.
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
 | `source_id` | `Integer` FK → `sources` | |
-| `period_type` | `Enum` | `day`, `week` |
+| `period_type` | `Enum` | `day`, `week`, `month`, `custom` |
 | `analysis_date` | `DateTime` | Date of the analysis period |
 | `summary_data` | `JSON` | AI analysis results (sentiment, topics, etc.) |
 | `response_payload` | `JSON` | Raw LLM response |

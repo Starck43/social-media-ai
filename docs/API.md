@@ -378,7 +378,7 @@ Authorization: Bearer <token>
     {
       "id": 42,
       "analysis_date": "2025-10-15",
-      "period_type": "day",
+      "period_type": "DAY",
       "topic_chain_id": "chain-abc",
       "llm_model": "gpt-4o-mini",
       "summary_data": { "sentiment_score": 0.75, ... },
@@ -602,7 +602,7 @@ Authorization: Bearer <token>
   "unread_notifications": 5,
   "sources_by_platform": {"VK": 7, "Telegram": 3},
   "sources_by_type": {"GROUP": 5, "CHANNEL": 3, "USER": 2},
-  "analytics_by_period": {"day": 100, "week": 50}
+  "analytics_by_period": {"DAY": 100, "WEEK": 50}
 }
 ```
 
@@ -631,7 +631,7 @@ Authorization: Bearer <token>
 ### Get Analytics Summary
 
 ```
-GET /api/v1/dashboard/analytics?source_id=1&period_type=day&since=2025-01-01&limit=50&offset=0
+GET /api/v1/dashboard/analytics?source_id=1&period_type=DAY&since=2025-01-01&limit=50&offset=0
 Authorization: Bearer <token>
 ```
 

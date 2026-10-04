@@ -11,11 +11,14 @@
                     {% call card(extra="transition hover:border-cyan-700") %}
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div class="min-w-0">
-                                <p class="truncate font-medium text-slate-200">{{ chain.chain_id }}</p>
+                                <p class="truncate font-medium text-slate-200">{{ chain.name }}</p>
                                 <p class="mt-1 text-xs text-slate-500">
                                     {{ chain.total_analyses }} анализ(ов)
                                     {% if chain.date_range.start %}
                                         · {{ chain.date_range.start }} — {{ chain.date_range.end }}
+                                    {% endif %}
+                                    {% if chain.chain_id != chain.name %}
+                                        · <span class="font-mono">{{ chain.chain_id }}</span>
                                     {% endif %}
                                 </p>
                             </div>

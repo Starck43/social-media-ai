@@ -1,13 +1,17 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import card, empty_state, page_title %}
-{% block title %}Цепочка {{ chain.chain_id }} — AI Monitor{% endblock %}
+{% block title %}{{ chain.name }} — AI Monitor{% endblock %}
 {% block content %}
-    {{ page_title("Цепочка тем", chain.chain_id) }}
+    {{ page_title(chain.name, chain.chain_id) }}
 
     <div class="mb-6 flex items-center gap-3 text-xs text-slate-400">
         <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
         <span>·</span>
         <span>{{ chain.total_analyses }} анализ(ов)</span>
+        {% if chain.chain_id != chain.name %}
+            <span>·</span>
+            <span class="font-mono">{{ chain.chain_id }}</span>
+        {% endif %}
         {% if chain.date_range.start %}
             <span>·</span>
             <span>{{ chain.date_range.start }} — {{ chain.date_range.end }}</span>

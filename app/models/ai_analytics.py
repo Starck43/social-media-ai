@@ -36,7 +36,7 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     analysis_date: Mapped[Date] = Column(Date, nullable=True, default=date.today, server_default=text("CURRENT_DATE"))
     # Store as PostgreSQL enum matching the existing DB analysis_period_type type
     period_type: Mapped[PeriodType] = PeriodType.sa_column(
-        type_name="analysis_period_type", nullable=False, default=PeriodType.DAILY, store_as_name=True
+        type_name="analysis_period_type", nullable=False, default=PeriodType.DAY, store_as_name=True
     )
     content_hash: Mapped[str | None] = Column(
         String(64),

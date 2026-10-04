@@ -91,7 +91,7 @@ async def get_dashboard_stats(
 	# Count analytics by period
 	analytics_by_period = {}
 	for analytic in analytics:
-		period = str(analytic.period_type) if analytic.period_type else "unknown"
+		period = analytic.period_type.name if analytic.period_type else "unknown"
 		analytics_by_period[period] = analytics_by_period.get(period, 0) + 1
 
 	return DashboardStats(
@@ -192,7 +192,7 @@ async def get_analytics_summary(
 	if source_id:
 		query = query.filter(source_id=source_id)
 	if period_type:
-		query = query.filter(period_type=period_type.value)
+		query = query.filter(period_type=period_type.name)
 	if since:
 		query = query.filter(analysis_date__gte=since)
 
@@ -210,7 +210,7 @@ async def get_analytics_summary(
 			source_id=a.source_id,
 			source_name=source_map.get(a.source_id, f"Source {a.source_id}"),
 			analysis_date=a.analysis_date.isoformat() if a.analysis_date else "",
-			period_type=str(a.period_type) if a.period_type else "unknown",
+			period_type=a.period_type.name if a.period_type else "unknown",
 			topic_chain_id=a.topic_chain_id,
 			llm_model=a.llm_model,
 			created_at=a.created_at.isoformat() if a.created_at else "",

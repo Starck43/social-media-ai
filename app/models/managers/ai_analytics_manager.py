@@ -40,7 +40,7 @@ class AIAnalyticsManager(BaseManager):
         source_id: int,
         start_date: date,
         end_date: date,
-        period_type: PeriodType = PeriodType.DAILY,
+        period_type: PeriodType = PeriodType.DAY,
     ) -> Sequence[Any]:
         """
         Retrieve analytics for a source within date range.
@@ -49,7 +49,7 @@ class AIAnalyticsManager(BaseManager):
                 source_id: ID of the source
                 start_date: Start date of the period
                 end_date: End date of the period
-                period_type: Type of period ('daily', 'weekly')
+                period_type: Type of period ('day', 'week')
 
         Returns:
                 List of AIAnalytics objects
@@ -63,7 +63,7 @@ class AIAnalyticsManager(BaseManager):
 
     async def get_daily_summary(self, analysis_date: date) -> Sequence[Any]:
         """Get all daily summaries for a specific date."""
-        return await self.filter(analysis_date=analysis_date, period_type=PeriodType.DAILY).order_by(
+        return await self.filter(analysis_date=analysis_date, period_type=PeriodType.DAY).order_by(
             self.model.source_id
         )
 
@@ -72,7 +72,7 @@ class AIAnalyticsManager(BaseManager):
         source_id: int,
         analysis_date: date,
         summary_data: dict,
-        period_type: PeriodType = PeriodType.DAILY,
+        period_type: PeriodType = PeriodType.DAY,
         topic_chain_id: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,
         llm_model: Optional[str] = None,
@@ -236,20 +236,20 @@ class AIAnalyticsManager(BaseManager):
         content statistics.
 
         Args:
-                period_type: PeriodType.WEEKLY or PeriodType.MONTHLY
+                period_type: PeriodType.WEEK or PeriodType.MONTH
                 start: First day of the period (also the rollup row's analysis_date)
                 end: Last day of the period (inclusive)
 
         Returns:
                 Number of rollup rows written (created or updated)
         """
-        if period_type not in (PeriodType.WEEKLY, PeriodType.MONTHLY):
+        if period_type not in (PeriodType.WEEK, PeriodType.MONTH):
             return 0
 
         daily = await self.filter(
             analysis_date__gte=start,
             analysis_date__lte=end,
-            period_type=PeriodType.DAILY,
+            period_type=PeriodType.DAY,
         )
 
         by_source: dict[int, list[Any]] = {}

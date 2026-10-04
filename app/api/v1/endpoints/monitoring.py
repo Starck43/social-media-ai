@@ -144,7 +144,7 @@ async def get_source_analytics(
 			{
 				"id": a.id,
 				"analysis_date": a.analysis_date,
-				"period_type": str(a.period_type) if a.period_type else None,
+				"period_type": a.period_type.name if a.period_type else None,
 				"topic_chain_id": a.topic_chain_id,
 				"llm_model": a.llm_model,
 				"summary_data": a.summary_data,

@@ -56,7 +56,7 @@ class AnalyticsSummary(BaseModel):
     source_id: int
     source_name: str = Field(..., description="Name of the source")
     analysis_date: str = Field(..., description="Analysis date (ISO format)")
-    period_type: str = Field(..., description="Period type (DAILY, WEEKLY, etc.)")
+    period_type: str = Field(..., description="Period type (DAY, WEEK, MONTH, CUSTOM)")
     topic_chain_id: Optional[str] = Field(None, description="Topic chain ID for continuity")
     llm_model: Optional[str] = Field(None, description="LLM model used for analysis")
     created_at: str = Field(..., description="Creation timestamp (ISO format)")

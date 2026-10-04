@@ -46,7 +46,9 @@ def _content(*authors):
 
 
 async def test_analyze_type_enum_has_four_modes():
-    assert {m.value for m in AnalyzeType} == {"themes", "days", "sources", "monitored_users"}
+    # `db_value`, not `.value`: the member value is the (db_value, label,
+    # emoji) tuple, and the column stores the db_value string.
+    assert {m.db_value for m in AnalyzeType} == {"themes", "days", "sources", "monitored_users"}
 
 
 async def test_analyze_content_dispatches_sources_mode(monkeypatch, source):
@@ -55,7 +57,7 @@ async def test_analyze_content_dispatches_sources_mode(monkeypatch, source):
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
                         analysis_date=None, force_reanalyze=False, analyze_type=None,
-                        agent_scenario=None, trigger_condition=None):
+                        agent_scenario=None, trigger_config=None, trigger_condition=None):
         seen["chain"] = topic_chain_id
         seen["analyze_type"] = analyze_type
         seen["len"] = len(content)
@@ -84,7 +86,7 @@ async def test_analyze_content_dispatches_monitored_users_mode(monkeypatch, sour
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
                         analysis_date=None, force_reanalyze=False, analyze_type=None,
-                        agent_scenario=None, trigger_condition=None):
+                        agent_scenario=None, trigger_config=None, trigger_condition=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -105,7 +107,7 @@ async def test_monitored_users_groups_by_author_dict(monkeypatch, source):
 
     async def fake_base(self, content, source, topic_chain_id=None, parent_analysis_id=None,
                       analysis_date=None, force_reanalyze=False, analyze_type=None,
-                      agent_scenario=None, trigger_condition=None):
+                      agent_scenario=None, trigger_config=None, trigger_condition=None):
         chains.append(topic_chain_id)
         from app.models import AIAnalytics
 
@@ -128,7 +130,7 @@ async def test_analyze_content_days_mode_groups_by_day(monkeypatch, source):
 
     called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, trigger_condition=None):
         called.append("days")
         return []
 
@@ -142,7 +144,7 @@ async def test_analyze_content_themes_mode_still_works(monkeypatch, source):
     """themes mode still routes to the theme-grouped analysis (regression guard)."""
     called = []
 
-    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
+    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, trigger_condition=None):
         called.append("themes")
         return []
 
@@ -164,7 +166,9 @@ async def test_base_analyze_does_not_save_a_timed_out_llm_stub(monkeypatch, sour
 
     saved = []
 
-    async def fake_analyze_text(self, text_items, agent_scenario, content_stats, platform_name, source):
+    async def fake_analyze_text(
+        self, text_items, agent_scenario, content_stats, platform_name, source, trigger_config=None
+    ):
         return {
             "request": {"model": "m", "prompt": "p", "provider": "openai"},
             "response": {"error": "timeout"},
@@ -204,7 +208,7 @@ async def test_analyze_content_uses_passed_scenario_for_mode(monkeypatch, source
 
     mode_called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_condition=None):
+    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, trigger_condition=None):
         mode_called.append(agent_scenario)
         return []
 

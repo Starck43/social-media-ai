@@ -352,6 +352,68 @@ async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
     return user, memberships[0].tenant_id
 
 
+async def test_dashboard_shows_toxicity_and_hashtags(client: AsyncClient) -> None:
+    """The two stage-3 widgets reach the dashboard with real values.
+
+    `ReportAggregator` grew eight specialized aggregations that only the digest
+    ever called, so two of them had no UI at all. This pins that the dashboard
+    actually renders their readings — a widget that is wired into the template
+    but fed an empty aggregation looks identical to a working one on an empty
+    database, which is why the rows are written here rather than checking only
+    that the headings appear.
+    """
+    from datetime import date
+
+    from app.models import AIAnalytics, Platform, Source
+    from app.types import SourceType
+
+    user, tenant_id = await _register(client, "Tox Studio")
+    platform = await Platform.objects.filter(platform_type="vk").first()
+    source = None
+    try:
+        source = await Source.objects.create(
+            tenant_id=tenant_id,
+            platform_id=platform.id,
+            name="Tox Channel",
+            source_type=SourceType.CHANNEL.name,
+            external_id=f"tox-{secrets.token_hex(6)}",
+            params={},
+            is_active=True,
+        )
+        await AIAnalytics.objects.create(
+            tenant_id=tenant_id,
+            source_id=source.id,
+            analysis_date=date.today(),
+            summary_data={
+                "multi_llm_analysis": {
+                    "text_analysis": {
+                        "toxicity_score": 0.9,
+                        "hashtags": [{"tag": "жалоба", "count": 4}, {"tag": "отзыв", "count": 2}],
+                    }
+                }
+            },
+        )
+
+        resp = await client.get("/app/")
+        assert resp.status_code == 200
+        # The KPI reports the share, not just the count: one toxic row out of
+        # one analysed row is 100%, and a bare "1" would read as one incident.
+        assert "Токсичных за 7 дней" in resp.text
+        assert "100.0%" in resp.text
+        # Hashtags reach the sidebar, normalised to a single leading '#'.
+        assert "Хэштеги за 7 дней" in resp.text
+        assert "#жалоба" in resp.text
+        assert "##" not in resp.text
+    finally:
+        if user is not None:
+            await _delete_user(user.id)
+        if source is not None:
+            with tenant_scope(bypass=True):
+                await AIAnalytics.objects.filter(source_id=source.id).delete()
+                await Source.objects.delete_by_id(source.id)
+        await tenants.delete_by_id(tenant_id)
+
+
 async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
     """Creating a @once task with 'Создать и выполнить' runs it and completes it.
 

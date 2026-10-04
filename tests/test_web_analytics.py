@@ -106,7 +106,7 @@ async def test_analytics_page_shows_real_data(client: AsyncClient) -> None:
             await AIAnalytics.objects.create(
                 source_id=source_id,
                 analysis_date=date.today(),
-                period_type=PeriodType.DAILY,
+                period_type=PeriodType.DAY,
                 summary_data={
                     "content_statistics": {
                         "total_posts": 4,
@@ -124,7 +124,7 @@ async def test_analytics_page_shows_real_data(client: AsyncClient) -> None:
             await AIAnalytics.objects.create(
                 source_id=source_id,
                 analysis_date=date.today() - timedelta(days=1),
-                period_type=PeriodType.DAILY,
+                period_type=PeriodType.DAY,
                 summary_data={
                     "content_statistics": {
                         "total_posts": 2,
@@ -165,7 +165,7 @@ async def test_analytics_detail_shows_single_analysis(client: AsyncClient) -> No
             a = await AIAnalytics.objects.create(
                 source_id=source_id,
                 analysis_date=date.today(),
-                period_type=PeriodType.DAILY,
+                period_type=PeriodType.DAY,
                 topic_chain_id="src_1_scn_2_topic",
                 summary_data={
                     "analysis_title": "Активность за 17 октября",
@@ -219,7 +219,7 @@ async def test_analytics_chains_lists_chain_and_detail_shows_timeline(client: As
                 await AIAnalytics.objects.create(
                     source_id=source_id,
                     analysis_date=date.today() - timedelta(days=day_offset),
-                    period_type=PeriodType.DAILY,
+                    period_type=PeriodType.DAY,
                     topic_chain_id="chain_abc",
                     summary_data={
                         "analysis_title": f"Анализ за день {day_offset}",

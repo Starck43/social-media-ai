@@ -1977,7 +1977,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "last_status": "Статус",
         "last_error": "Ошибка",
         "sources": "Источники",
-        "agent_scenario": "Сценарий бота",
+        "agent_scenario": "Сценарий агента",
     }, **BaseAdmin.column_labels)
 
     form_columns = ["tenant", "name", "job_type", "cron_expr", "sources", "agent_scenario", "payload", "is_active"]

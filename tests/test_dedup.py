@@ -75,7 +75,7 @@ async def _make_analysis(src, items, summary_extra=None):
         summary_data=summary,
         content_hash=dedup.batch_hash(items) if items else None,
         analysis_date=date.today(),
-        period_type=PeriodType.DAILY,
+        period_type=PeriodType.DAY,
     )
 
 
@@ -121,11 +121,77 @@ class TestFilterAnalyzed:
 
 class TestAnalyzerIntegration:
     @pytest.mark.asyncio
+    async def test_a_real_result_is_persisted(self, source, monkeypatch):
+        """A non-stub result must reach `ai_analytics`.
+
+        The dedup tests above all read the saved row, so a save that silently
+        never happens does not fail them — they see an empty table and report it
+        as "the dedup filter did not work". The guard belongs here instead: the
+        "is this a usable result?" loop once `continue`d *before* setting
+        `has_results`, which made every result look unusable, so no analysis was
+        ever saved and no batch was ever marked as covered.
+        """
+
+        async def fake_analyze(
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+        ):
+            return {
+                "request": {"model": "test-model", "prompt": "p"},
+                "response": {"usage": {"prompt_tokens": 10, "completion_tokens": 10}},
+                "parsed": {"main_topics": ["persisted"]},
+            }
+
+        monkeypatch.setattr(AIAnalyzer, "_analyze_text", fake_analyze)
+        monkeypatch.setattr(AIAnalyzer, "_analyze_images", lambda *a, **k: _async_none())
+        monkeypatch.setattr(AIAnalyzer, "_analyze_videos", lambda *a, **k: _async_none())
+        monkeypatch.setattr(
+            AIAnalyzer,
+            "_create_unified_summary",
+            lambda *a, **k: _async_value({"analysis_title": "t", "analysis_summary": "s"}),
+        )
+
+        saved = await AIAnalyzer().base_analyze_content([_item("keep me", "chat_1")], source)
+        assert saved is not None, "a real analysis result must be saved, not dropped"
+
+        rows = await AIAnalytics.objects.filter(source_id=source.id)
+        assert len(rows) == 1
+        assert (rows[0].summary_data or {}).get("content_hashes") == [dedup.item_hash(_item("keep me", "chat_1"))]
+
+    @pytest.mark.asyncio
+    async def test_an_error_stub_is_not_saved(self, source, monkeypatch):
+        """The counterpart: a Timeout/Error stub must leave the batch unanalysed,
+        so the next run retries it instead of treating it as covered."""
+
+        async def fake_analyze(
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+        ):
+            return {
+                "request": {"model": "test-model", "prompt": "p"},
+                "response": {"usage": {"prompt_tokens": 10, "completion_tokens": 10}},
+                "parsed": {"analysis": "Timeout after 30s"},
+            }
+
+        monkeypatch.setattr(AIAnalyzer, "_analyze_text", fake_analyze)
+        monkeypatch.setattr(AIAnalyzer, "_analyze_images", lambda *a, **k: _async_none())
+        monkeypatch.setattr(AIAnalyzer, "_analyze_videos", lambda *a, **k: _async_none())
+        monkeypatch.setattr(
+            AIAnalyzer,
+            "_create_unified_summary",
+            lambda *a, **k: _async_value({"analysis_title": "t", "analysis_summary": "s"}),
+        )
+
+        saved = await AIAnalyzer().base_analyze_content([_item("times out", "chat_1")], source)
+        assert saved is None
+        assert await AIAnalytics.objects.filter(source_id=source.id).rows() == []
+
+    @pytest.mark.asyncio
     async def test_replayed_batch_is_not_paid_for_twice(self, source, monkeypatch):
         """Second identical call returns the first analysis without an LLM call."""
         calls: list[list[dict]] = []
 
-        async def fake_analyze(self, text_items, agent_scenario, content_stats, platform_name, src):
+        async def fake_analyze(
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+        ):
             calls.append(text_items)
             return {
                 "request": {"model": "test-model", "prompt": "p"},
@@ -165,7 +231,9 @@ class TestAnalyzerIntegration:
     async def test_partial_overlap_pays_only_for_new_items(self, source, monkeypatch):
         calls: list[list[dict]] = []
 
-        async def fake_analyze(self, text_items, agent_scenario, content_stats, platform_name, src):
+        async def fake_analyze(
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+        ):
             calls.append(text_items)
             return {
                 "request": {"model": "test-model", "prompt": "p"},

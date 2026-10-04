@@ -13,6 +13,7 @@ from app.services.ai.prompts import PromptBuilder
 from app.services.ai.scenario import build_output_schema
 from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
+from app.types.enums.bot_types import AnalyzeType
 from app.types.enums.llm_types import MediaType
 from app.utils.date_parsing import universal_date_parser
 from app.utils.enum_helpers import get_enum_value
@@ -36,8 +37,13 @@ class AIAnalyzer:
         self.theme_matcher = ThemeMatcher()
 
     async def analyze_content(
-        self, content: list[dict], source: Source, analyze_by: str = None, force_reanalyze: bool = False,
+        self,
+        content: list[dict],
+        source: Source,
+        analyze_by: str = None,
+        force_reanalyze: bool = False,
         agent_scenario=None,
+        trigger_config=None,
     ) -> list[AIAnalytics]:
         """
         Analyze content based on analyze_by mode.
@@ -59,22 +65,43 @@ class AIAnalyzer:
             if agent_scenario and agent_scenario.analyze_type
             else await self._default_scenario_analyze_type(source)
         )
+        # `analyze_type` reads back as an `AnalyzeType` member from the ORM, but
+        # callers (and the CLI) pass the plain db_value string, so normalise
+        # both shapes before dispatching — comparing a member to "themes" is
+        # always False and would silently fall through to the by-days mode.
+        analyze_by = get_enum_value(analyze_by)
 
         if analyze_by == "themes":
             return await self._analyze_content_by_themes(
-                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+                content,
+                source,
+                force_reanalyze=force_reanalyze,
+                agent_scenario=agent_scenario,
+                trigger_config=trigger_config,
             )
         elif analyze_by == "sources":
             return await self._analyze_content_by_sources(
-                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+                content,
+                source,
+                force_reanalyze=force_reanalyze,
+                agent_scenario=agent_scenario,
+                trigger_config=trigger_config,
             )
         elif analyze_by == "monitored_users":
             return await self._analyze_content_by_monitored_users(
-                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+                content,
+                source,
+                force_reanalyze=force_reanalyze,
+                agent_scenario=agent_scenario,
+                trigger_config=trigger_config,
             )
         else:
             return await self._analyze_content_by_days(
-                content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+                content,
+                source,
+                force_reanalyze=force_reanalyze,
+                agent_scenario=agent_scenario,
+                trigger_config=trigger_config,
             )
 
     async def _default_scenario_analyze_type(self, source: Source) -> str:
@@ -86,7 +113,7 @@ class AIAnalyzer:
         try:
             default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
             if default_sc is not None and default_sc.analyze_type:
-                return default_sc.analyze_type
+                return get_enum_value(default_sc.analyze_type)
         except Exception:
             pass
         return "themes"
@@ -101,9 +128,14 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         analyze_type: Optional[str] = None,
         agent_scenario: Optional["AgentScenario"] = None,
+        trigger_config: Optional[dict[str, Any]] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
+
+        `trigger_config` is passed in rather than read off the scenario: the
+        trigger lives on the task that runs this analysis, and the scenario is
+        shared by tasks whose triggers differ.
 
         Args:
                 content: List of normalized content items
@@ -160,7 +192,7 @@ class AIAnalyzer:
         # Lazy structured-output schema: derive from analysis_types when the
         # scenario has no explicit output_schema (in-memory, not persisted).
         if agent_scenario is not None and not agent_scenario.output_schema:
-            agent_scenario.output_schema = build_output_schema(agent_scenario.analysis_types)
+            agent_scenario.output_schema = build_output_schema(agent_scenario.analysis_types, agent_scenario.scope)
 
         # Prepare metadata
         content_stats = self._calculate_content_stats(content, analysis_date)
@@ -176,7 +208,12 @@ class AIAnalyzer:
             # Text analysis
             if classified[MediaType.TEXT.db_value]:
                 text_result = await self._analyze_text(
-                    classified[MediaType.TEXT.db_value], agent_scenario, content_stats, platform_name, source
+                    classified[MediaType.TEXT.db_value],
+                    agent_scenario,
+                    content_stats,
+                    platform_name,
+                    source,
+                    trigger_config,
                 )
                 if text_result:
                     analysis_results["text_analysis"] = text_result
@@ -184,7 +221,7 @@ class AIAnalyzer:
             # Image analysis
             if classified[MediaType.IMAGE.db_value]:
                 image_result = await self._analyze_images(
-                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name
+                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config
                 )
                 if image_result:
                     analysis_results["image_analysis"] = image_result
@@ -192,7 +229,7 @@ class AIAnalyzer:
             # Video analysis
             if classified[MediaType.VIDEO.db_value]:
                 video_result = await self._analyze_videos(
-                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name
+                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config
                 )
                 if video_result:
                     analysis_results["video_analysis"] = video_result
@@ -214,8 +251,8 @@ class AIAnalyzer:
                 if isinstance(text, str) and (text.startswith("Timeout") or text.startswith("Error")):
                     logger.warning(f"LLM result is an error stub ('{text[:40]}'), not saving analysis")
                     continue
-                    has_results = True
-                    break
+                has_results = True
+                break
 
             if not has_results:
                 logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
@@ -263,7 +300,12 @@ class AIAnalyzer:
             return None
 
     async def _analyze_content_by_days(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
+        self,
+        content: list[dict],
+        source: Source,
+        force_reanalyze: bool = False,
+        agent_scenario: "AgentScenario" = None,
+        trigger_config: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """
         Group content by days and analyze each day separately.
@@ -316,6 +358,7 @@ class AIAnalyzer:
                     analysis_date=day,
                     force_reanalyze=force_reanalyze,
                     agent_scenario=agent_scenario,
+                    trigger_config=trigger_config,
                 )
 
                 # Only add non-empty analytics
@@ -336,7 +379,12 @@ class AIAnalyzer:
         return analytics_list
 
     async def _analyze_content_by_themes(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
+        self,
+        content: list[dict],
+        source: Source,
+        force_reanalyze: bool = False,
+        agent_scenario: "AgentScenario" = None,
+        trigger_config: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
@@ -355,7 +403,11 @@ class AIAnalyzer:
 
         # Use base analysis for all content
         analysis = await self.base_analyze_content(
-            content, source, force_reanalyze=force_reanalyze, agent_scenario=agent_scenario
+            content,
+            source,
+            force_reanalyze=force_reanalyze,
+            agent_scenario=agent_scenario,
+            trigger_config=trigger_config,
         )
         if not analysis:
             return []
@@ -366,7 +418,12 @@ class AIAnalyzer:
         return [analysis]
 
     async def _analyze_content_by_sources(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
+        self,
+        content: list[dict],
+        source: Source,
+        force_reanalyze: bool = False,
+        agent_scenario: "AgentScenario" = None,
+        trigger_config: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """Analyze content grouped by its origin source.
 
@@ -405,6 +462,7 @@ class AIAnalyzer:
                     force_reanalyze=force_reanalyze,
                     analyze_type="sources",
                     agent_scenario=agent_scenario,
+                    trigger_config=trigger_config,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -419,7 +477,12 @@ class AIAnalyzer:
         return analytics_list
 
     async def _analyze_content_by_monitored_users(
-        self, content: list[dict], source: Source, force_reanalyze: bool = False, agent_scenario: "AgentScenario" = None
+        self,
+        content: list[dict],
+        source: Source,
+        force_reanalyze: bool = False,
+        agent_scenario: "AgentScenario" = None,
+        trigger_config: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """Analyze content grouped by the tracked user who authored it.
 
@@ -469,6 +532,7 @@ class AIAnalyzer:
                     topic_chain_id=chain_id,
                     force_reanalyze=force_reanalyze,
                     agent_scenario=agent_scenario,
+                    trigger_config=trigger_config,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -547,6 +611,7 @@ class AIAnalyzer:
         content_stats: dict[str, Any],
         platform_name: str,
         source: Source,
+        trigger_config: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze text content using text LLM provider."""
         try:
@@ -570,6 +635,7 @@ class AIAnalyzer:
                 stats=content_stats,
                 platform_name=platform_name,
                 source_type=stype,
+                trigger_config=trigger_config,
             )
 
             # Create LLM client and analyze
@@ -589,7 +655,11 @@ class AIAnalyzer:
             return None
 
     async def _analyze_images(
-        self, image_items: list[dict], agent_scenario: Optional[AgentScenario], platform_name: str
+        self,
+        image_items: list[dict],
+        agent_scenario: Optional[AgentScenario],
+        platform_name: str,
+        trigger_config: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze images using image LLM provider."""
         try:
@@ -610,6 +680,7 @@ class AIAnalyzer:
                 scenario=agent_scenario,
                 count=len(media_urls),
                 platform_name=platform_name,
+                trigger_config=trigger_config,
             )
 
             # Create LLM client and analyze
@@ -627,7 +698,11 @@ class AIAnalyzer:
             return None
 
     async def _analyze_videos(
-        self, video_items: list[dict], agent_scenario: Optional[AgentScenario], platform_name: str
+        self,
+        video_items: list[dict],
+        agent_scenario: Optional[AgentScenario],
+        platform_name: str,
+        trigger_config: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze videos using video LLM provider."""
         try:
@@ -648,6 +723,7 @@ class AIAnalyzer:
                 scenario=agent_scenario,
                 count=len(media_urls),
                 platform_name=platform_name,
+                trigger_config=trigger_config,
             )
 
             # Create LLM client and analyze
@@ -1107,9 +1183,13 @@ class AIAnalyzer:
 
         scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
 
-        if analyze_type == "sources":
+        # The mode may arrive as an `AnalyzeType` member (straight off the ORM)
+        # or as its db_value string (the CLI, the by-sources/by-users branches),
+        # so compare on the normalised value.
+        mode = get_enum_value(analyze_type)
+        if mode == AnalyzeType.SOURCES.db_value:
             return f"src_{source.id}_{scn}_all"
-        if analyze_type == "monitored_users":
+        if mode == AnalyzeType.MONITORED_USERS.db_value:
             return f"src_{source.id}_{scn}_users"
         if agent_scenario and agent_scenario.id:
             return f"src_{source.id}_scn_{agent_scenario.id}_{normalized_topic}"
@@ -1295,7 +1375,7 @@ class AIAnalyzer:
 
         # Check if analysis already exists for this date
         existing_analysis = await AIAnalytics.objects.filter(
-            source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAILY
+            source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
         ).first()
 
         if existing_analysis:
@@ -1343,7 +1423,7 @@ class AIAnalyzer:
             prompt_text=prompt_text if settings.DEBUG else None,
             response_payload=self._make_json_serializable(response_payload) if response_payload else None,
             analysis_date=analysis_date,
-            period_type=PeriodType.DAILY,
+            period_type=PeriodType.DAY,
             topic_chain_id=topic_chain_id,
             parent_analysis_id=parent_analysis_id,
             # Cost tracking fields

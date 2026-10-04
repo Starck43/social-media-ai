@@ -17,7 +17,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from app.agent.prompts import AGENT_SYSTEM_PROMPT
+from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
@@ -404,13 +404,16 @@ async def _build_messages(session: Any) -> list[dict]:
 
 
 async def build_system_prompt() -> str:
-    """AGENT_SYSTEM_PROMPT + tenant's agent_style contract + learned facts."""
+    """System prompt (+ style and learned memory) and session history."""
     from app.agent.prompts import render_style_block
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.agent_memory_manager import agent_memory
     from app.models.managers.tenant_manager import tenants
 
-    sections = [AGENT_SYSTEM_PROMPT]
+    # Use env var if set, otherwise fall back to the built-in default.
+    system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
+
+    sections = [system_prompt]
 
     tenant = None
     tid = current_tenant_id()

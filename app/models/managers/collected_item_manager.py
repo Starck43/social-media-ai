@@ -91,15 +91,57 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         self,
         source_id: int,
         limit: int = 50,
+        *,
+        include_exhausted: bool = False,
     ) -> list[CollectedItem]:
-        """The raw items waiting for this source, newest first."""
+        """The raw items waiting for this source, newest first.
+
+        Rows that have burned their `give_up_after_attempts` are skipped by
+        default: an item the LLM cannot process (a timeout stores no analysis,
+        so the row is never retired) would otherwise be handed out on every
+        single run, each time costing a full request timeout and holding the
+        batch back. They stay on disk — `include_exhausted` still reads them, and
+        `handle_prune` is what reclaims them.
+        """
         from app.models.collected_item import CollectedItem
 
-        return list(
+        query = self.filter(source_id=source_id)
+        if not include_exhausted:
+            query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
+        return list(await query.order_by(CollectedItem.published_at.desc().nullslast()).limit(limit))
+
+    async def exhausted_count(self, source_id: int) -> int:
+        """How many staged rows for a source have burned their ceiling."""
+        from app.models.collected_item import CollectedItem
+
+        # Both columns are read because the ceiling is per row: one workspace may
+        # have widened it while another kept the default.
+        rows = (
             await self.filter(source_id=source_id)
-            .order_by(CollectedItem.published_at.desc().nullslast())
-            .limit(limit)
+            .values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts)
+            .rows()
         )
+        return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
+
+    async def record_attempts(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
+        """Count one failed analysis attempt against the given staged rows.
+
+        Called when an analysis of `hashes` produced nothing to store, so the
+        next runs stop offering the same rows once the ceiling is reached.
+        Never deletes anything: a failing row still holds the only copy of its
+        content, and dropping it here would lose data the collect step fetched.
+        """
+        wanted = [h for h in dict.fromkeys(hashes) if h]
+        if not wanted:
+            return 0
+        result = await session.execute(
+            sa_text(
+                f"UPDATE {settings.DB_SCHEMA}.collected_items SET analyze_attempts = analyze_attempts + 1 "
+                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)"
+            ),
+            {"source_id": source_id, "hashes": list(wanted)},
+        )
+        return int(result.rowcount or 0)
 
     async def for_run(self, run_id: int, limit: int = 50) -> list[CollectedItem]:
         """Raw items of one collect run, newest first."""

@@ -121,6 +121,36 @@ async def _retire_staged(analytics: Any, source_id: int) -> int:
         await session.close()
 
 
+async def _count_failed_staged(source_id: int, staged: list) -> int:
+    """Count one failed analysis attempt against the staged rows that produced nothing.
+
+    The counterpart to `_retire_staged`: a row that was analysed but saved
+    nothing (an LLM timeout stores no `content_hash`, so it is never retired)
+    would otherwise be handed out again on every run, each time burning a full
+    request timeout and stopping the batch from draining. After
+    `give_up_after_attempts` such failures `for_source` stops offering the row.
+
+    Increments only — a row that keeps failing stays on disk, because it still
+    holds the only copy of its content and `handle_prune` is what reclaims it.
+    Never raises: losing the count would only mean the old retry behaviour.
+    """
+    from app.core.database import new_session
+    from app.models import CollectedItem
+
+    hashes = [row.content_hash for row in staged if getattr(row, "content_hash", None)]
+    if not hashes:
+        return 0
+    session = new_session()
+    try:
+        async with session.begin():
+            return await CollectedItem.objects.record_attempts(session, source_id, hashes)
+    except Exception as e:  # noqa: BLE001 — a lost count only restores the old retry loop
+        logger.warning(f"Could not count a failed attempt for source {source_id}: {e}")
+        return 0
+    finally:
+        await session.close()
+
+
 async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Collect content from sources.
@@ -461,10 +491,14 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
                     else:
-                        # Nothing was saved — keep every row and retry next run.
+                        # Nothing was saved — keep every row, but count the miss
+                        # so a row the LLM cannot process stops being offered
+                        # after `give_up_after_attempts` instead of retrying (and
+                        # timing out) on every future run.
+                        counted = await _count_failed_staged(source.id, staged)
                         logger.warning(
                             f"Analysis of {len(staged)} staged item(s) for source {source.id} produced "
-                            "no result; keeping them staged for a retry"
+                            f"no result; keeping them staged for a retry ({counted} attempt(s) counted)"
                         )
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
                 logger.warning(f"Could not process staged items for source {source.id}: {e}", exc_info=True)

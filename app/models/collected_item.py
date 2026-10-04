@@ -89,6 +89,15 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
     # Link back to the original, so a truncated preview can be read in full.
     permalink: Mapped[str | None] = Column(String(500), nullable=True)
 
+    # How many times analysis of this row has been attempted and failed, and the
+    # ceiling after which it is no longer handed out (`CollectedItemManager
+    # .for_source`). A timeout stores no analysis, so without a counter the row
+    # is retried on every run and keeps costing a full request timeout — the
+    # batch never drains. The row is never deleted for failing: the raw copy is
+    # the only copy, and `handle_prune` is what eventually reclaims it.
+    analyze_attempts: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")
+    give_up_after_attempts: Mapped[int] = Column(Integer, nullable=False, default=3, server_default="3")
+
     if TYPE_CHECKING:
         from .managers.base_manager import BaseManager
         from .managers.collected_item_manager import CollectedItemManager

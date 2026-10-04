@@ -192,7 +192,9 @@
                 </button>
             </div>
 
-            <form method="post" action="/app/tasks" class="mt-5 space-y-4">
+            <form method="post" action="/app/tasks" class="mt-5 space-y-4"
+                  x-data="{ sending: false }"
+                  x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ task_fields(job_types, "add") }}
@@ -341,12 +343,12 @@
                             class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
                         Отмена
                     </button>
-                    <button type="submit"
-                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                    <button type="submit" x-bind:disabled="sending"
+                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed">
                         Создать задачу
                     </button>
-                    <button type="submit" name="run_now" value="on"
-                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500">
+                    <button type="submit" name="run_now" value="on" x-bind:disabled="sending"
+                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed">
                         Создать и выполнить
                     </button>
                 </div>
@@ -371,7 +373,9 @@
                     </svg>
                 </button>
             </div>
-            <form method="post" :action="'/app/tasks/' + editing.id" class="mt-5 space-y-4">
+            <form method="post" :action="'/app/tasks/' + editing.id" class="mt-5 space-y-4"
+                  x-data="{ sending: false }"
+                  x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                  value="{{ filter_tenant_id }}">{% endif %}
@@ -547,11 +551,13 @@
                         Отмена
                     </button>
                     <button type="submit"
-                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                            x-bind:disabled="sending">
                         Сохранить
                     </button>
                     <button type="submit" name="run_now" value="on"
-                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500">
+                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            x-bind:disabled="sending">
                         Сохранить и выполнить
                     </button>
                     </div>

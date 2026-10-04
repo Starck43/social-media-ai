@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from app.models import AgentScenario, AgentTask, Job, Source
 from app.tasks.cron import cron_to_human
@@ -117,6 +117,31 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
         return None
 
 
+async def _duplicate_name(request: Request, back: str, name: str, exclude_id: int | None = None) -> Response | None:
+    """Refuse a task name already taken in this workspace.
+
+    `(tenant_id, name)` is unique, so the insert would raise `IntegrityError`
+    and surface as a 500 — which is what a second click on "Сохранить и
+    выполнить" produced: the first click had already created the row and was
+    still running its job, so the retry collided with itself and the operator
+    saw a stack trace instead of a message. Checked here so the collision is
+    reported as what it is; the unique constraint stays the real guard, since a
+    check and an insert cannot be made atomic from here.
+    """
+    query = AgentTask.objects.filter(name=name, tenant_id=request.state.tenant_id)
+    if exclude_id is not None:
+        query = query.exclude(id=exclude_id)
+    existing = await query.first()
+    if existing is None:
+        return None
+    add_flash(
+        request,
+        "error",
+        f"Задача «{name}» уже существует. Выберите другое название или откройте её для повторного запуска.",
+    )
+    return RedirectResponse(back, status_code=302)
+
+
 async def run_task_now(task: "AgentTask") -> dict[str, Any]:
     """Run the task's job right now, in this process — it never sits in the queue.
 
@@ -132,6 +157,30 @@ async def run_task_now(task: "AgentTask") -> dict[str, Any]:
     from app.jobs.dispatcher import run_task_directly
 
     return await run_task_directly(task)
+
+
+async def queue_task_now(task: "AgentTask") -> dict[str, Any]:
+    """Queue the task's job for the worker instead of running it in this request.
+
+    "Сохранить и выполнить" used to call `run_task_now`, which executes the
+    handler synchronously and only then returns. For a long job that is minutes
+    of an open spinner with no way to tell a slow run from a hung one — an
+    `analyze` task draining a backlog took over ten minutes, and the operator's
+    natural reaction was to click again, which collided with the row the first
+    click had already written.
+
+    Queueing returns as soon as the job row exists, so the page reloads at once
+    and the run-status modal (which already polls `/app/tasks/job/<id>/status`)
+    follows the job to completion. The job is a normal `pending` row here, so
+    the worker picks it up — that is the difference from `run_task_now`, which
+    deliberately stamps its row `running` to keep the worker away.
+
+    Returns the same `{job_id, status}` shape so both callers read alike.
+    """
+    from app.jobs.enqueue import enqueue_task_run
+
+    job = await enqueue_task_run(task)
+    return {"job_id": job.id, "status": job.status}
 
 
 @router.get("")
@@ -236,6 +285,13 @@ async def task_create(
 
     cron_expr = cron_custom.strip()
 
+    # Before anything is written: a repeat of the same form (a second click on
+    # "Создать и выполнить" while the first is still running) must not reach the
+    # unique constraint as an IntegrityError.
+    clash = await _duplicate_name(request, back, name.strip()[:100])
+    if clash is not None:
+        return clash
+
     from app.models.managers.agent_task_manager import AgentTaskManager
 
     tasks_mgr = AgentTaskManager()
@@ -300,14 +356,14 @@ async def task_create(
         if parsed_source_ids:
             await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    # "Создать и выполнить" runs on request, whether or not the task can carry a
-    # schedule. Gating this on activation meant the button silently did nothing
-    # whenever the workspace had no active source yet — exactly the case where a
-    # user runs a job by hand to see what happens. The manual run-now endpoint
-    # has never checked activation either; this just made the two paths agree.
+    # "Создать и выполнить" only queues the job. It used to run the handler
+    # inside this request, which for a long job (an `analyze` task draining a
+    # backlog) meant minutes of a frozen page — and a second click, which then
+    # collided with the row the first click had written. The run-status modal
+    # follows the queued job instead.
     if run_now:
-        outcome = await run_task_now(task)
-        add_flash(request, "success", f"Задача «{name}» создана и запущена")
+        outcome = await queue_task_now(task)
+        add_flash(request, "success", f"Задача «{name}» создана и поставлена в очередь на выполнение")
         # The run-status modal lives on the tasks page; from onboarding there is
         # nothing to poll, so land on the caller's page with the flash instead.
         job_id = (outcome or {}).get("job_id")
@@ -485,6 +541,13 @@ async def task_update(
         return RedirectResponse("/app/tasks", status_code=302)
 
     cron_expr = cron_expr.strip()
+
+    # Saving under a name another task already holds would fail the unique
+    # constraint; `exclude_id` keeps a task from clashing with its own row.
+    clash = await _duplicate_name(request, "/app/tasks", name.strip()[:100], exclude_id=task_id)
+    if clash is not None:
+        return clash
+
     from app.models.managers.agent_task_manager import AgentTaskManager
 
     tasks_mgr = AgentTaskManager()
@@ -498,7 +561,9 @@ async def task_update(
         if s.isdigit():
             parsed_source_ids.append(int(s))
 
-    payload: dict = {}
+    # Merge into existing payload instead of replacing — keys like "period",
+    # "days", "min_messages" set via CLI or agent tool must survive a web edit.
+    payload = task.payload.copy() if isinstance(task.payload, dict) else {}
     if monitored_users:
         payload["monitored_users"] = _split_names(monitored_users)
     if excluded_users:
@@ -550,11 +615,12 @@ async def task_update(
         )
         await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 
-    # Same reasoning as the create branch: an explicit run-now is not a schedule.
+    # Queued, not run in-request, for the same reason as the create branch: a long
+    # job froze the page and invited the second click that hit the unique name.
     if run_now:
         updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
-        outcome = await run_task_now(updated)
-        add_flash(request, "success", f"Задача «{name}» обновлена и запущена")
+        outcome = await queue_task_now(updated)
+        add_flash(request, "success", f"Задача «{name}» обновлена и поставлена в очередь на выполнение")
         job_id = (outcome or {}).get("job_id")
         if not job_id:
             return RedirectResponse("/app/tasks", status_code=302)

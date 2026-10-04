@@ -415,10 +415,13 @@ async def test_dashboard_shows_toxicity_and_hashtags(client: AsyncClient) -> Non
 
 
 async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
-    """Creating a @once task with 'Создать и выполнить' runs it and completes it.
+    """Creating a @once task with 'Создать и выполнить' queues it and completes it.
 
-    The job is executed in the request, so it is already `done` here — it is no
-    longer left `pending` for a worker that may not even be running.
+    The job used to execute inside the request, so it was already `done` here.
+    It is now left `pending` for the worker: a long job froze the page for
+    minutes, and the operator's second click collided with the row the first
+    click had already written. The trigger bookkeeping is unchanged — the task
+    is still disarmed and marked as triggered.
     """
     async with await _client() as c:
         user, tenant_id = await _register(c, "RunNow Once")
@@ -440,8 +443,8 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             assert task.is_active is False
             assert task.last_run_at is not None
             assert task.next_run_at is None
-            # Ran inline, not queued.
-            assert job is not None and job.status in ("done", "failed")
+            # Queued for the worker, not run inside the request.
+            assert job is not None and job.status == "pending"
         finally:
             if user is not None:
                 await _delete_user(user.id)

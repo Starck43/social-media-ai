@@ -1,5 +1,7 @@
 """Integration tests for digest builder against real DB (mocked channels/LLM)."""
 
+import uuid
+
 import pytest
 
 from app.models import AgentTask, DigestRun
@@ -201,3 +203,106 @@ async def test_retry_accumulates_llm_cost(monkeypatch):
     rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
     assert len(rows) == 1
     assert rows[0].llm_cost == pytest.approx(0.2)
+
+
+async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
+    """The handler passes the task's sources and scenario analyze_type into the builder."""
+    from app.jobs.handlers import handle_digest
+    from app.models import AgentScenario, AgentTask, Platform, Source
+    from app.types import SourceType
+    from app.web.tasks import _replace_task_sources
+
+    platform = await Platform.objects.create(
+        name=f"vk_{uuid.uuid4().hex[:8]}",
+        platform_type="vk",
+        base_url="https://vk.com",
+        params={},
+    )
+    source = await Source.objects.create(
+        platform_id=platform.id,
+        name="digest-source",
+        source_type=SourceType.CHANNEL,
+        external_id="digest-source",
+        is_active=True,
+    )
+    scenario = await AgentScenario.objects.create(
+        name="digest-scn",
+        analyze_type="sources",
+        analysis_types=["toxicity", "brand_mentions"],
+    )
+    task = await AgentTask.objects.create(
+        name=f"t_{uuid.uuid4().hex[:6]}",
+        job_type="digest",
+        cron_expr="@once",
+        payload={"period": "week"},
+        agent_scenario_id=scenario.id,
+        is_active=True,
+    )
+    try:
+        await _replace_task_sources(task.id, [source.id], task.tenant_id)
+
+        captured = {}
+
+        async def fake_build(period, agent_task_id, force, source_ids, analyze_type, scenario_id):
+            captured.update(
+                period=period,
+                agent_task_id=agent_task_id,
+                force=force,
+                source_ids=source_ids,
+                analyze_type=analyze_type,
+                scenario_id=scenario_id,
+            )
+            return {"status": "sent", "results": {}}
+
+        monkeypatch.setattr("app.services.digest.builder.build_and_publish", fake_build)
+        await handle_digest({"agent_task_id": task.id})
+
+        assert captured["period"] == "week"
+        assert captured["source_ids"] == [source.id]
+        assert captured["analyze_type"] == "sources"
+        assert captured["scenario_id"] == scenario.id
+    finally:
+        await AgentTask.objects.delete_by_id(task.id)
+        await AgentScenario.objects.delete_by_id(scenario.id)
+        await Source.objects.delete_by_id(source.id)
+        await Platform.objects.delete_by_id(platform.id)
+
+
+async def test_broadcast_digest_sends_to_tenant_digest_targets(monkeypatch):
+    """Step 3: every active tenant channel with is_digest_target=True gets the digest."""
+    from app.channels import registry as registry_module
+    from app.core.tenant_context import tenant_scope
+    from app.models import Tenant, TenantChannel
+
+    sent = []
+
+    class StubChannel:
+        async def send(self, chat_id, text, parse_mode=None):
+            sent.append((chat_id, text))
+            return {"success": True, "message_id": 1}
+
+    monkeypatch.setattr(registry_module.settings, "TELEGRAM_DIGEST_CHANNEL_ID", "")
+    monkeypatch.setattr(registry_module.settings, "MAX_CHANNEL_ID", "")
+    monkeypatch.setattr(registry_module, "get_channel", lambda name: StubChannel())
+
+    tenant = await Tenant.objects.get(slug="owner")
+    rows = [
+        await TenantChannel.objects.create(
+            tenant_id=tenant.id, channel="telegram", chat_id="111", kind="channel", is_digest_target=True
+        ),
+        await TenantChannel.objects.create(
+            tenant_id=tenant.id, channel="max", chat_id="222", kind="channel", is_digest_target=True
+        ),
+        await TenantChannel.objects.create(
+            tenant_id=tenant.id, channel="telegram", chat_id="333", kind="private", is_digest_target=False
+        ),
+    ]
+    try:
+        with tenant_scope(tenant.id):
+            results = await registry_module.broadcast_digest("hello")
+        assert len(sent) == 2
+        assert ("111", "hello") in sent and ("222", "hello") in sent
+        assert len(results) == 2
+    finally:
+        for row in rows:
+            await TenantChannel.objects.delete_by_id(row.id)

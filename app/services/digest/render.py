@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html as html_escape
+import re
 from typing import Any
 
 from app.channels.max import MAX_TEXT_LEN
@@ -13,12 +14,58 @@ def escape(text: str) -> str:
     return html_escape.escape(str(text), quote=False)
 
 
+_MD_NUMBERED = re.compile(r"^(\d+)\.\s+(.*)$")
+
+
+def _inline_md(text: str) -> str:
+    """Escape a line, then turn **bold** and *italic* into HTML tags."""
+    out = escape(text)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
+    out = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", out)
+    return out
+
+
+def _md_to_html(text: str) -> str:
+    """Render the small Markdown subset the brief uses as Telegram/MAX HTML.
+
+    Vocabulary: `## ` headings, `**bold**`, `*italic*`, `- ` bullets and
+    `1. ` numbered items. Everything else is escaped verbatim.
+    """
+    lines = (text or "").splitlines()
+    # The brief is self-contained (it also feeds the LLM narrative step), so it
+    # carries its own title and period line — drop them here, render_digest
+    # already printed the header above.
+    if lines and lines[0].lstrip().startswith("## "):
+        lines = lines[1:]
+        if lines and lines[0].lstrip().startswith("**Период:**"):
+            lines = lines[1:]
+
+    out = []
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped:
+            out.append("")
+            continue
+        if stripped.startswith("## "):
+            out.append(f"<b>{_inline_md(stripped[3:])}</b>")
+        elif stripped.startswith("- "):
+            out.append(f"• {_inline_md(stripped[2:])}")
+        else:
+            m = _MD_NUMBERED.match(stripped)
+            if m:
+                out.append(f"{m.group(1)}. {_inline_md(m.group(2))}")
+            else:
+                out.append(_inline_md(stripped))
+    return "\n".join(out)
+
+
 def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
     """
     Render digest parts into HTML message.
 
     data keys: title, period_start, period_end, stats (dict), sentiment (dict),
-    topics (list[dict]), engagement (dict|None), content_mix (dict|None), llm (dict|None)
+    topics (list[dict]), engagement (dict|None), content_mix (dict|None),
+    llm (dict|None), brief (str|None — the algorithmic Markdown body)
     """
     parts: list[str] = [
         f"<b>{escape(data.get('title', 'Digest'))}</b>",
@@ -50,6 +97,10 @@ def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
 
     if summary:
         parts.append(f"<blockquote>{escape(summary)}</blockquote>")
+
+    brief = data.get("brief")
+    if brief:
+        parts.append(_md_to_html(brief))
 
     llm = data.get("llm") or {}
     if llm:

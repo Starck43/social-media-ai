@@ -18,14 +18,15 @@ class DigestDeliveryError(RuntimeError):
     """Raised when a digest was built but could not be delivered to a channel."""
 
 
-DIGEST_PROMPT_TEMPLATE = """Ты — персональный аналитик. Составь краткую сводку на основе агрегированных данных.
+DIGEST_PROMPT_TEMPLATE = """Ты — персональный аналитик. На основе брифа (агрегированные данные за период) составь краткую связную сводку-нарратив.
 
 Правила:
 - Пиши на русском языке, живым и понятным языком
 - Выдели 2-4 самых важных тренда или наблюдения
+- Не пересказывай бриф дословно, а обобщай
 - Если данных мало, просто скажи об этом
 
-Данные:
+Бриф:
 {data}
 
 Верни JSON: {{\"summary\": \"...\"}}"""
@@ -57,7 +58,11 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         return None, {"model": None}
     try:
         client = LLMClientFactory.create(model)
-        prompt = DIGEST_PROMPT_TEMPLATE.format(data=str(data)[:6000])
+        # Hybrid step 2: the LLM narrates the algorithm's brief, not a raw dict.
+        # The brief is already a structured Markdown digest; the model's job is
+        # to turn it into 2-4 sentences of connected narrative.
+        context = data.get("brief") or data
+        prompt = DIGEST_PROMPT_TEMPLATE.format(data=str(context)[:6000])
         result = await client.analyze(prompt, max_tokens=500, temperature=0.3)
         cost = float((result.get("usage") or {}).get("cost") or 0.0)
         parsed = result.get("parsed") or {}
@@ -70,7 +75,12 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         return None, {"model": getattr(model, "name", None), "error": str(e)}
 
 
-async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
+async def aggregate(
+    period: str,
+    source_ids: list[int] | None = None,
+    analyze_type: str | None = None,
+    scenario_id: int | None = None,
+) -> tuple[dict[str, Any], date, date]:
     start, end = period_bounds(period)
     days = (end - start).days + 1
     agg = ReportAggregator()
@@ -81,13 +91,19 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
     engagement = await agg.get_engagement_metrics(days=days)
     llm_stats = await agg.get_llm_provider_stats(days=days)
 
+    # Hybrid step 1: the algorithmic brief, grouped by the scenario's analyze_type
+    # and extended with the scenario's analysis_types sections. No LLM here.
+    brief = await agg.generate_digest_brief(
+        period=period, source_ids=source_ids, analyze_type=analyze_type, scenario_id=scenario_id
+    )
+
     # Persist a WEEKLY/MONTHLY rollup row per source so `period_type` reflects
     # the digest period (reads like get_by_date_range(period_type=WEEKLY) work).
     if period in ("week", "month"):
         from app.models.managers.ai_analytics_manager import AIAnalyticsManager
         from app.types import PeriodType
 
-        period_type = PeriodType.WEEKLY if period == "week" else PeriodType.MONTHLY
+        period_type = PeriodType.WEEK if period == "week" else PeriodType.MONTH
         await AIAnalyticsManager().build_period_rollups(period_type, start, end)
 
     dist = {"positive": 0, "neutral": 0, "negative": 0}
@@ -107,6 +123,7 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
         "period": period,
         "period_start": start,
         "period_end": end,
+        "brief": brief,
         "stats": {
             "analyses": total_analyses,
             "content_items": content_mix.get("total", None) if isinstance(content_mix, dict) else content_mix,
@@ -121,7 +138,12 @@ async def aggregate(period: str) -> tuple[dict[str, Any], date, date]:
 
 
 async def build_and_publish(
-    period: str = "day", agent_task_id: int | None = None, force: bool = False
+    period: str = "day",
+    agent_task_id: int | None = None,
+    force: bool = False,
+    source_ids: list[int] | None = None,
+    analyze_type: str | None = None,
+    scenario_id: int | None = None,
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
     from app.models.managers.digest_run_manager import DigestRunManager
@@ -141,7 +163,7 @@ async def build_and_publish(
         return {"status": "failed", "error": "Could not create digest run"}
 
     try:
-        data, _start, _end = await aggregate(period)
+        data, _start, _end = await aggregate(period, source_ids, analyze_type, scenario_id)
         summary, llm_info = await _summarize(data)
         if llm_info.get("cost"):
             # Accumulate: a retried run really paid for every summary attempt.

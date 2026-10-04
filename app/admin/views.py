@@ -1982,6 +1982,15 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
         tenant_val = data.get("tenant") or getattr(model, "tenant_id", None)
         tenant_id = tenant_val.id if hasattr(tenant_val, "id") else tenant_val
+        # The form delivers the workspace as a string ("1"), and a `tenant_id`
+        # compared against `sources.tenant_id` as VARCHAR fails with
+        # `operator does not exist: integer = character varying`. Coerce once,
+        # here, rather than trusting every caller to pass an int.
+        if tenant_id is not None:
+            try:
+                tenant_id = int(tenant_id)
+            except (TypeError, ValueError):
+                tenant_id = None
         if active and AgentTaskManager.requires_sources(job_type):
             submitted = data.get("sources") or []
             submitted_ids = [int(v) if isinstance(v, (int, str)) else getattr(v, "id", None) for v in submitted]

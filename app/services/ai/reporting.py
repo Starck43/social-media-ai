@@ -39,26 +39,83 @@ class ReportAggregator:
     own, which is why they needed a hand-written tenant clause to stay safe.
     """
 
+    # Every specialized aggregation is keyed by the field names the current
+    # `JSONSchemaBuilder` contract asks for. Rows analysed before that contract
+    # landed carry the previous names instead, so each logical field maps to the
+    # ordered list of keys to try, newest first.
+    #
+    # This is the single place a field rename has to be recorded: without it a
+    # rename would silently empty the matching aggregation, since the LLM would
+    # start writing the new name and the reader would only look for the old one.
+    FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+        "toxicity_level": ("toxicity_level", "toxicity_category"),
+        "brand": ("brand", "brand_name"),
+        "sentiment": ("sentiment", "mention_sentiment"),
+        "viral_score": ("viral_score", "viral_potential"),
+        "trend_name": ("trend_name", "trending_topics"),
+        "engagement_rate": ("engagement_rate", "engagement_score"),
+        "intent_type": ("intent_type", "primary_intent"),
+        "influencer_name": ("influencer_name", "name"),
+        "impact_score": ("impact_score", "impact"),
+        "competitor": ("competitor", "name"),
+    }
+
+    # Bands that mean "not toxic". `toxicity_level` is a severity, so "low" is
+    # clean — the opposite of the older `toxicity_category`, where anything that
+    # was not literally "чистый" meant the row had flagged something.
+    CLEAN_LEVELS = frozenset({"low", "чистый", "clean", "0", "нет", "ноль", "none"})
+
     @staticmethod
-    def _analytics_query(
+    async def _analytics_query(
         days: int,
         source_id: Optional[int] = None,
         tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
     ):
         """Analytics rows for the report, scoped to the ambient tenant.
 
         `tenant_id` narrows further (a superuser previewing another workspace);
-        it never widens what the ambient scope already allows.
+        it never widens what the ambient scope already allows. `source_ids`
+        filters to a task's linked sources; the whole workspace when None.
+
+        `scenario_id` filters through the JSON document in Python: `ai_analytics`
+        has no scenario column, the id is recorded in
+        `summary_data.scenario_metadata` (see the analyzer), and the column is
+        `postgresql.JSON` rather than JSONB, so it cannot be filtered with a
+        jsonb operator. Rows written before that metadata existed match no
+        scenario, which is correct — they were not produced by one.
         """
         qs = AIAnalytics.objects.filter(analysis_date__gte=date.today() - timedelta(days=days))
 
         if source_id:
             qs = qs.filter(source_id=source_id)
+        elif source_ids:
+            qs = qs.filter(source_id__in=source_ids)
+
+        if scenario_id is not None:
+            # Filtered in Python, not in SQL. `summary_data` is declared as
+            # `postgresql.JSON`, so the document is stored as text and the jsonb
+            # operators (`->>`, containment) do not apply to it — see migration
+            # 0009. Upcasting the column just to reach one nested id would cost
+            # more than it saves, and the rows are already narrowed to the period
+            # and to the tenant by the time this runs.
+            wanted = str(scenario_id)
+            rows = [
+                row
+                for row in await qs
+                if str(((row.summary_data or {}).get("scenario_metadata") or {}).get("scenario_id", "")) == wanted
+            ]
+            return rows
 
         if tenant_id is not None:
             qs = qs.filter(tenant_id=tenant_id)
 
-        return qs.order_by(AIAnalytics.analysis_date.asc())
+        # Awaited here rather than by the caller: this is an `async def`, so a
+        # returned QuerySet would reach them unresolved and iterating it would
+        # raise. Returns a list in both branches so the callers iterate a list
+        # either way.
+        return list(await qs.order_by(AIAnalytics.analysis_date.asc()))
 
     async def get_sentiment_trends(
         self, source_id: Optional[int] = None, days: int = 7, group_by: str = "day"
@@ -180,9 +237,7 @@ class ReportAggregator:
             logger.error(f"Error getting top topics: {e}", exc_info=True)
             return []
 
-    async def get_llm_provider_stats(
-        self, source_id: Optional[int] = None, days: int = 30
-    ) -> dict[str, Any]:
+    async def get_llm_provider_stats(self, source_id: Optional[int] = None, days: int = 30) -> dict[str, Any]:
         """
         Get LLM provider usage statistics and costs.
 
@@ -298,9 +353,7 @@ class ReportAggregator:
             logger.error(f"Error getting content mix: {e}", exc_info=True)
             return {"media_types": {}, "total_analyses": 0, "total_media_items": 0}
 
-    async def get_engagement_metrics(
-        self, source_id: Optional[int] = None, days: int = 7
-    ) -> dict[str, Any]:
+    async def get_engagement_metrics(self, source_id: Optional[int] = None, days: int = 7) -> dict[str, Any]:
         """
         Get engagement metrics (reactions, comments).
 
@@ -382,7 +435,875 @@ class ReportAggregator:
             )
         return trend
 
+    # ── specialized aggregations (one per new analysis_type) ────────────────
+    # Each reads the period's `summary_data` JSONB and returns plain dicts /
+    # lists, so the digest brief can render them without an LLM call. A row that
+    # carries none of the keys for a type is simply skipped, which keeps the
+    # methods safe on data written by any pipeline version.
+
+    # The old `toxicity_category` values were words like "Чистый"/"Слегка
+    # токсичный"; the new contract's `toxicity_level` is one of low/medium/high.
+    # Map the new levels to scores so one threshold drives the toxic flag.
+    TOXICITY_LEVEL_SCORES = {"low": 0.2, "medium": 0.5, "high": 0.9}
+
+    async def get_toxicity_summary(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        threshold: float = 0.7,
+        scenario_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Toxicity stats over the period: share, average score, categories.
+
+        Reads both the score and the level/category: a row with either counts. The
+        new contract's `toxicity_level` (low/medium/high) takes precedence and is
+        mapped to a score, because a row can carry a stale `toxicity_score` next
+        to a freshly-read level and the score alone would misreport it. Legacy
+        `toxicity_category` words fall back to the category check.
+        """
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            total = 0
+            toxic = 0
+            scores: list[float] = []
+            categories: Counter = Counter()
+
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                score = text.get("toxicity_score")
+                level = self._field(text, "toxicity_level")
+                if level is not None:
+                    # The level wins over the score. Both describe the same
+                    # judgment, and a row can carry a stale score next to a
+                    # freshly-read level (the fields are separate prompts), so
+                    # trusting the score would report a "low" row as toxic. The
+                    # level is mapped to a score so the average stays numeric.
+                    # An unmappable level (a legacy free-text category like
+                    # "Очень токсичный") keeps the row's own score, since
+                    # dropping it would lose the only numeric reading there is.
+                    mapped = self.TOXICITY_LEVEL_SCORES.get(str(level).lower())
+                    if mapped is not None:
+                        score = mapped
+                if score is None and level is None:
+                    continue
+                total += 1
+                if score is not None:
+                    try:
+                        score_f = float(score)
+                    except (TypeError, ValueError):
+                        score_f = None
+                else:
+                    score_f = None
+                if score_f is not None:
+                    scores.append(score_f)
+                    if score_f >= threshold:
+                        toxic += 1
+                elif str(level).lower() not in self.CLEAN_LEVELS:
+                    # No numeric score to go by: fall back to the band. A level
+                    # that is not clean counts as toxic.
+                    toxic += 1
+                if level:
+                    categories[str(level)] += 1
+
+            return {
+                "analyzed": total,
+                "toxic": toxic,
+                "toxic_percent": round((toxic / total * 100), 1) if total else 0.0,
+                "avg_score": round(sum(scores) / len(scores), 2) if scores else 0.0,
+                "categories": dict(categories.most_common(6)),
+            }
+        except Exception as e:
+            logger.error(f"Error getting toxicity summary: {e}", exc_info=True)
+            return {}
+
+    async def get_top_hashtags(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        limit: int = 10,
+        scenario_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Top hashtags by occurrence count over the period."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            counter: Counter = Counter()
+            for a in analytics:
+                for tag in self._extract_hashtags(a.summary_data):
+                    counter[tag.lower()] += 1
+            return [{"hashtag": tag, "count": count} for tag, count in counter.most_common(limit)]
+        except Exception as e:
+            logger.error(f"Error getting top hashtags: {e}", exc_info=True)
+            return []
+
+    async def get_brand_mention_stats(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Brand mention volume and its sentiment split.
+
+        Two shapes reach here. The current contract emits one `brand`/`context`/
+        `sentiment` per analysis — a name plus a 0..1 score — while rows written
+        before it carry `mention_count` (an integer) and `mention_sentiment`
+        (a category label). Counting mentions means summing the old integer and
+        simply counting the new rows, so both are read here rather than assuming
+        one of them.
+        """
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            rows_with_mentions = 0
+            total_mentions = 0
+            sentiment: Counter = Counter()
+            positive = neutral = negative = 0
+
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                legacy_count = text.get("mention_count")
+                brand = self._field(text, "brand")
+
+                if legacy_count is not None:
+                    try:
+                        total_mentions += int(legacy_count)
+                        rows_with_mentions += 1
+                    except (TypeError, ValueError):
+                        continue
+                    label = self._field(text, "sentiment")
+                    if label:
+                        sentiment[str(label)] += 1
+                    continue
+
+                if not brand:
+                    continue
+                rows_with_mentions += 1
+                total_mentions += 1
+                score = self._field(text, "sentiment")
+                if isinstance(score, (int, float)):
+                    if score > 0.6:
+                        positive += 1
+                    elif score < 0.4:
+                        negative += 1
+                    else:
+                        neutral += 1
+                elif score:
+                    sentiment[str(score)] += 1
+
+            result: dict[str, Any] = {
+                "rows_with_mentions": rows_with_mentions,
+                "total_mentions": total_mentions,
+                "avg_per_analysis": round(total_mentions / rows_with_mentions, 1) if rows_with_mentions else 0.0,
+                "sentiment": dict(sentiment.most_common(5)),
+            }
+            if positive or neutral or negative:
+                result["sentiment_split"] = {"positive": positive, "neutral": neutral, "negative": negative}
+            return result
+        except Exception as e:
+            logger.error(f"Error getting brand mention stats: {e}", exc_info=True)
+            return {}
+
+    async def get_viral_content(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        limit: int = 5,
+        scenario_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Rows flagged viral: potential, growth rate, sorted by rank."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            items = []
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                potential = self._field(text, "viral_score")
+                growth = text.get("growth_rate")
+                if potential is None and growth is None:
+                    reach = text.get("predicted_reach")
+                    if reach is not None:
+                        potential = reach
+                if potential is None and growth is None:
+                    legacy = (a.summary_data or {}).get("ai_analysis") or {}
+                    potential = (legacy.get("engagement_analysis") or {}).get("viral_potential")
+                if potential is None and growth is None:
+                    continue
+                try:
+                    growth_f = float(growth) if growth is not None else 0.0
+                except (TypeError, ValueError):
+                    growth_f = 0.0
+                # A numeric viral_score is a score, not a label, so rank on its
+                # own value; a label (the older contract) maps to a rank.
+                if isinstance(potential, (int, float)) and not isinstance(potential, bool):
+                    rank = 3 if potential >= 0.7 else 2 if potential >= 0.4 else 1
+                    sort_key = float(potential)
+                else:
+                    rank = {
+                        "высокий": 3,
+                        "high": 3,
+                        "средний": 2,
+                        "medium": 2,
+                        "низкий": 1,
+                        "low": 1,
+                    }.get(str(potential).lower(), 0)
+                    sort_key = float(rank)
+                items.append(
+                    {
+                        "analysis_title": (a.summary_data or {}).get("analysis_title") or "",
+                        "date": a.analysis_date.isoformat() if a.analysis_date else "",
+                        "source_id": a.source_id,
+                        "viral_potential": potential,
+                        "growth_rate": growth_f,
+                        "predicted_reach": text.get("predicted_reach"),
+                        "viral_factors": text.get("viral_factors") or [],
+                        "rank": rank,
+                        "_sort": sort_key,
+                    }
+                )
+            items.sort(key=lambda x: (x["_sort"], x["growth_rate"]), reverse=True)
+            for item in items:
+                item.pop("_sort", None)
+            return items[:limit]
+        except Exception as e:
+            logger.error(f"Error getting viral content: {e}", exc_info=True)
+            return []
+
+    async def get_influencer_impact(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        limit: int = 5,
+        scenario_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Influencer activity captured by the analysis, if the pipeline wrote it."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            items: dict[str, dict[str, Any]] = {}
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                # The current contract writes the influencer flat on the text
+                # analysis; earlier ones nested a list under `influencers`.
+                flat_name = self._field(text, "influencer_name")
+                flat_impact = self._field(text, "impact_score")
+                candidates: list[tuple[Any, Any]] = []
+                if flat_name:
+                    candidates.append((flat_name, flat_impact))
+                raw = self._digest_value(a.summary_data, ("influencers", "influencer_impact"))
+                if raw:
+                    entries = raw if isinstance(raw, list) else [raw]
+                    for entry in entries:
+                        if isinstance(entry, dict):
+                            candidates.append(
+                                (
+                                    entry.get("name") or entry.get("author") or entry.get("username"),
+                                    entry.get("impact") or entry.get("engagement_rate") or entry.get("score"),
+                                )
+                            )
+                        else:
+                            candidates.append((entry, None))
+                for name, impact in candidates:
+                    if not name:
+                        continue
+                    key = str(name)
+                    current = items.setdefault(
+                        key,
+                        {"name": key, "impact": "", "source_id": a.source_id, "_score": 0.0, "_label": ""},
+                    )
+                    # A numeric impact is a score to sum; a word ("высокое") is a
+                    # label and must survive as-is, since there is nothing to add.
+                    try:
+                        current["_score"] += float(impact) if impact is not None else 0.0
+                    except (TypeError, ValueError):
+                        if impact:
+                            current["_label"] = str(impact)
+            for item in items.values():
+                score = item.pop("_score")
+                label = item.pop("_label")
+                item["impact"] = round(score, 2) if score else label
+                # `impact` is a number on current rows and a word on older ones,
+                # so it cannot be compared across rows as-is; rank by the number
+                # it sums to, which is 0 for a label.
+                item["_rank"] = score
+            ranked = sorted(items.values(), key=lambda x: x["_rank"], reverse=True)
+            for item in ranked:
+                item.pop("_rank", None)
+            return ranked[:limit]
+        except Exception as e:
+            logger.error(f"Error getting influencer impact: {e}", exc_info=True)
+            return []
+
+    async def get_competitor_activity(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Competitor mentions: names and how often they surfaced."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            counter: Counter = Counter()
+            threats: Counter = Counter()
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                flat = self._field(text, "competitor")
+                if flat:
+                    counter[str(flat)] += 1
+                    threat = self._field(text, "threat_level")
+                    if threat:
+                        threats[str(threat)] += 1
+                raw = self._digest_value(a.summary_data, ("competitors", "competitor_activity"))
+                if isinstance(raw, list):
+                    names = [
+                        str(x) if isinstance(x, str) else (x.get("name") if isinstance(x, dict) else "") for x in raw
+                    ]
+                elif isinstance(raw, dict):
+                    names = [str(raw["name"])] if raw.get("name") else []
+                else:
+                    names = []
+                for name in names:
+                    if name:
+                        counter[name] += 1
+            result: dict[str, Any] = {
+                "competitors": [{"name": name, "mentions": count} for name, count in counter.most_common(8)],
+                "total": sum(counter.values()),
+            }
+            if threats:
+                result["threat_levels"] = dict(threats.most_common(6))
+            return result
+        except Exception as e:
+            logger.error(f"Error getting competitor activity: {e}", exc_info=True)
+            return {}
+
+    async def get_intent_distribution(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Customer-intent distribution (primary + secondary intents)."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            counter: Counter = Counter()
+            confidences: list[float] = []
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                # Keyed on the exact name, not an alias: a legacy row also has
+                # `primary_intent`, and treating that as the current shape would
+                # skip its `secondary_intents`.
+                flat = text.get("intent_type")
+                if flat:
+                    counter[str(flat).lower()] += 1
+                    try:
+                        confidence = float(text.get("confidence"))  # type: ignore[arg-type]
+                    except (TypeError, ValueError):
+                        confidence = None
+                    if confidence is not None:
+                        confidences.append(confidence)
+                    continue
+                primary = self._digest_value(a.summary_data, ("primary_intent", "user_intent"))
+                if primary:
+                    counter[str(primary).lower()] += 1
+                secondary = self._digest_value(a.summary_data, ("secondary_intents",))
+                if isinstance(secondary, list):
+                    for s in secondary:
+                        if s:
+                            counter[str(s).lower()] += 1
+            result: dict[str, Any] = {"distribution": dict(counter.most_common(8)), "total": sum(counter.values())}
+            if confidences:
+                result["avg_confidence"] = round(sum(confidences) / len(confidences), 2)
+            return result
+        except Exception as e:
+            logger.error(f"Error getting intent distribution: {e}", exc_info=True)
+            return {}
+
+    async def get_demographics_breakdown(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Audience demographics the analysis captured (age / locations / interests)."""
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            age: Counter = Counter()
+            locations: Counter = Counter()
+            interests: Counter = Counter()
+            for a in analytics:
+                text = self._text_analysis(a.summary_data)
+                # Current contract: flat age_range / gender_dist / top_locations.
+                flat_age = text.get("age_range")
+                if flat_age:
+                    age[str(flat_age)] += 1
+                flat_locations = text.get("top_locations") or []
+                if isinstance(flat_locations, list):
+                    for loc in flat_locations:
+                        if isinstance(loc, str):
+                            locations[loc] += 1
+                raw = self._digest_value(a.summary_data, ("demographics", "demographic"))
+                if not isinstance(raw, dict):
+                    continue
+                for group in raw.get("age_groups") or raw.get("age") or []:
+                    if isinstance(group, str):
+                        age[group] += 1
+                for loc in raw.get("locations") or raw.get("location") or []:
+                    if isinstance(loc, str):
+                        locations[loc] += 1
+                for interest in raw.get("interests") or raw.get("interest") or []:
+                    if isinstance(interest, str):
+                        interests[interest] += 1
+            return {
+                "age_groups": dict(age.most_common(6)),
+                "locations": dict(locations.most_common(6)),
+                "interests": dict(interests.most_common(8)),
+            }
+        except Exception as e:
+            logger.error(f"Error getting demographics breakdown: {e}", exc_info=True)
+            return {}
+
+    # ── hybrid digest brief ─────────────────────────────────────────────────
+
+    _DIGEST_METHOD_MAP: dict[str, tuple[str, str]] = {
+        "toxicity": ("Токсичность", "get_toxicity_summary"),
+        "hashtag_analysis": ("Хэштеги", "get_top_hashtags"),
+        "brand_mentions": ("Упоминания бренда", "get_brand_mention_stats"),
+        "viral_detection": ("Вирусный контент", "get_viral_content"),
+        "influencer": ("Инфлюенсеры", "get_influencer_impact"),
+        "competitor": ("Конкуренты", "get_competitor_activity"),
+        "intent": ("Намерения пользователей", "get_intent_distribution"),
+        "demographics": ("Демография", "get_demographics_breakdown"),
+    }
+
+    # Aliased rather than a @property: both `_specialized_sections()` (a
+    # classmethod, reached as `cls.DIGEST_SPECIALIZED`) and the contract test
+    # (`ReportAggregator.DIGEST_SPECIALIZED`) read it off the class, and a
+    # property does not resolve through `cls`/`Class` — it would surface the
+    # descriptor, not the dict. A plain class attribute serves both.
+    DIGEST_SPECIALIZED: dict[str, tuple[str, str]] = _DIGEST_METHOD_MAP
+
+    async def generate_digest_brief(
+        self,
+        period: str = "day",  # "day" | "week"
+        source_ids: Optional[list[int]] = None,
+        analyze_type: Optional[str] = None,  # themes | days | sources | monitored_users
+        scenario_id: Optional[int] = None,
+    ) -> str:
+        """Structured Markdown brief for the digest period — pure algorithm, no LLM.
+
+        Hybrid digest step 1. It aggregates the period's `ai_analytics` rows into
+        a human-readable brief, groups them by the scenario's `analyze_type`
+        (themes → top themes, days → per-day dynamics, sources → per source,
+        monitored_users → per tracked person) and appends a section for each
+        `analysis_types` the scenario enables. The narrative step turns this
+        brief into the final digest text.
+
+        Returns an empty string when there is nothing to report; the digest
+        still ships, the LLM step just gets a sparse context.
+        """
+        from datetime import timedelta
+
+        days = {"day": 1, "week": 7, "month": 30}.get(period, 1)
+        end = date.today()
+        start = end - timedelta(days=days - 1)
+
+        analytics = await self._analytics_query(days=days, source_ids=source_ids, scenario_id=scenario_id)
+        if not analytics:
+            return ""
+
+        enabled: Optional[set[str]] = None
+        if scenario_id:
+            from app.models import AgentScenario
+
+            scenario = await AgentScenario.objects.get(id=scenario_id)
+            enabled = {str(t) for t in (scenario.analysis_types or [])}
+
+        lines: list[str] = []
+        title = {"day": "Дайджест за день", "week": "Дайджест за неделю", "month": "Дайджест за месяц"}.get(
+            period, "Дайджест"
+        )
+        lines.append(f"## {title}")
+        lines.append(f"**Период:** {start.isoformat()} — {end.isoformat()}")
+
+        mode = get_enum_value(analyze_type) or "themes"
+        section = await self._brief_base_group(analytics, mode)
+        if section:
+            lines.extend(section)
+
+        for name, label, method_name in self._specialized_sections():
+            if enabled is not None and name not in enabled:
+                continue
+            method = getattr(self, method_name)
+            # Same scenario filter as the base group: a row written by another
+            # scenario's analysis_types must not leak into this brief's sections.
+            result = await method(days=days, source_ids=source_ids, scenario_id=scenario_id)
+            section = self._format_specialized_section(label, name, result)
+            if section:
+                lines.extend(section)
+
+        # Movement against the preceding window. The sections above each describe
+        # the period in isolation — "12 toxic posts" says nothing about whether
+        # that is worse than usual, which is the part a reader acts on.
+        dynamics = await self._brief_dynamics(days, source_ids, scenario_id)
+        if dynamics:
+            lines.extend(dynamics)
+
+        return "\n".join(lines)
+
+    async def _brief_dynamics(
+        self,
+        days: int,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> list[str]:
+        """Compare the period against the one before it.
+
+        Reads the previous window directly rather than through the reporting
+        methods: those take a look-back `days`, not a date range, so reusing them
+        would compare "the last 7 days" against "the 7 days before now" — an
+        overlapping window that dilutes every delta by half and would report no
+        change in a period that moved a lot.
+        """
+        end = date.today() - timedelta(days=days)
+        start = end - timedelta(days=days - 1)
+
+        current = await self._window_sentiment_toxicity(date.today() - timedelta(days=days - 1), date.today())
+        previous = await self._window_sentiment_toxicity(start, end)
+        if not current or not previous:
+            return []
+
+        lines = ["", "## Динамика к прошлому периоду"]
+        for line in self._sentiment_delta(current, previous):
+            lines.append(line)
+        for line in self._toxicity_delta(current, previous):
+            lines.append(line)
+        return lines if len(lines) > 2 else []
+
+    async def _window_sentiment_toxicity(self, start: date, end: date) -> Optional[dict[str, Any]]:
+        """Average sentiment and toxicity share for one date range."""
+        try:
+            qs = AIAnalytics.objects.filter(analysis_date__gte=start, analysis_date__lte=end)
+            analytics = await qs
+            if not analytics:
+                return None
+
+            scores: list[float] = []
+            toxic = 0
+            scored = 0
+            for a in analytics:
+                sentiment = self._extract_sentiment(a.summary_data)
+                if sentiment and sentiment.get("score") is not None:
+                    try:
+                        scores.append(float(sentiment["score"]))
+                    except (TypeError, ValueError):
+                        pass
+
+                text = self._text_analysis(a.summary_data)
+                score = text.get("toxicity_score")
+                level = self._field(text, "toxicity_level")
+                if level is not None:
+                    mapped = self.TOXICITY_LEVEL_SCORES.get(str(level).lower())
+                    if mapped is not None:
+                        score = mapped
+                if score is None and level is None:
+                    continue
+                scored += 1
+                try:
+                    if float(score) >= 0.7:
+                        toxic += 1
+                except (TypeError, ValueError):
+                    pass
+
+            if not scores and not scored:
+                return None
+            return {
+                "avg_sentiment": sum(scores) / len(scores) if scores else None,
+                "toxic_percent": (toxic / scored * 100) if scored else None,
+            }
+        except Exception as e:
+            logger.warning(f"Dynamics window {start}..{end} unavailable: {e}")
+            return None
+
+    def _sentiment_delta(self, current: dict, previous: dict) -> list[str]:
+        """The sentiment movement, if both windows carry a score."""
+        cur, prev = current.get("avg_sentiment"), previous.get("avg_sentiment")
+        if cur is None or prev is None:
+            return []
+        diff = cur - prev
+        if abs(diff) < 0.02:
+            return [f"- Тональность без изменений (средняя {cur:.2f})"]
+        direction = "упала" if diff < 0 else "выросла"
+        return [
+            f"- Тональность {direction}: {prev:.2f} → {cur:.2f} ({diff:+.2f})",
+        ]
+
+    def _toxicity_delta(self, current: dict, previous: dict) -> list[str]:
+        """The toxicity movement, if both windows carry a share.
+
+        A share is only compared when the previous window had enough rows to mean
+        anything: one toxic post out of one is a 100% share that would read as a
+        catastrophe and send the reader after a non-event.
+        """
+        cur, prev = current.get("toxic_percent"), previous.get("toxic_percent")
+        if cur is None or prev is None:
+            return []
+        diff = cur - prev
+        if abs(diff) < 1.0:
+            return [f"- Токсичность без изменений ({cur:.1f}%)"]
+        direction = "выросла" if diff > 0 else "снизилась"
+        return [
+            f"- Токсичность {direction}: {prev:.1f}% → {cur:.1f}% ({diff:+.1f} п.п.)",
+        ]
+
+    @classmethod
+    def _specialized_sections(cls):
+        return [(name, label, method) for name, (label, method) in cls.DIGEST_SPECIALIZED.items()]
+
+    async def _brief_base_group(self, analytics, mode: str) -> list[str]:
+        """Group the period's analytics by `analyze_type` into markdown lines."""
+        if mode == "days":
+            return self._group_by_days(analytics)
+        if mode == "sources":
+            return await self._group_by_sources(analytics)
+        if mode == "monitored_users":
+            return self._group_by_monitored_users(analytics)
+        return self._group_by_themes(analytics)
+
+    def _group_by_themes(self, analytics, limit: int = 8) -> list[str]:
+        counter: Counter = Counter()
+        for a in analytics:
+            for topic in self._extract_topics(a.summary_data):
+                counter[topic] += 1
+        if not counter:
+            return []
+        lines = ["", "## По темам"]
+        for i, (topic, count) in enumerate(counter.most_common(limit), 1):
+            lines.append(f"{i}. **{topic}** — {count} упом.")
+        return lines
+
+    def _group_by_days(self, analytics) -> list[str]:
+        by_date: dict[date, list] = defaultdict(list)
+        for a in analytics:
+            by_date[a.analysis_date].append(a)
+        if not by_date:
+            return []
+        lines = ["", "## По дням"]
+        for d in sorted(by_date):
+            rows = by_date[d]
+            posts = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
+            )
+            messages = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) or 0) for r in rows
+            )
+            users = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("active_users", 0) or 0) for r in rows
+            )
+            lines.append(
+                f"- **{d.isoformat()}** — {len(rows)} анализ(ов), {posts} постов, {messages} сообщений, {users} польз."
+            )
+        return lines
+
+    async def _group_by_sources(self, analytics) -> list[str]:
+        by_source: dict[int, list] = defaultdict(list)
+        for a in analytics:
+            by_source[a.source_id].append(a)
+        if not by_source:
+            return []
+        names = await self._source_name_map(list(by_source))
+        lines = ["", "## По источникам"]
+        for sid, rows in sorted(by_source.items(), key=lambda kv: -len(kv[1])):
+            posts = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
+            )
+            name = names.get(sid, f"Источник #{sid}")
+            lines.append(f"- **{name}** — {len(rows)} анализ(ов), {posts} постов")
+        return lines
+
+    def _group_by_monitored_users(self, analytics) -> list[str]:
+        by_author: dict[str, list] = defaultdict(list)
+        for a in analytics:
+            author = self._chain_author(a.topic_chain_id)
+            if author is not None:
+                by_author[author].append(a)
+        if not by_author:
+            return []
+        lines = ["", "## По отслеживаемым пользователям"]
+        for author, rows in sorted(by_author.items(), key=lambda kv: -len(kv[1])):
+            posts = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
+            )
+            messages = sum(
+                int((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) or 0) for r in rows
+            )
+            lines.append(f"- **{author}** — {len(rows)} анализ(ов), {posts} постов, {messages} сообщений")
+        return lines
+
+    @staticmethod
+    def _chain_author(chain_id: Optional[str]) -> Optional[str]:
+        """Extract the tracked user from a chain id like `src_5_user_123`.
+
+        Only the `monitored_users` mode builds per-person chains; rows produced
+        by the other modes return None and are skipped by the grouping.
+        """
+        if not chain_id:
+            return None
+        marker = "_user_"
+        if marker in chain_id:
+            return chain_id.split(marker, 1)[1]
+        return None
+
+    async def _source_name_map(self, source_ids: list[int]) -> dict[int, str]:
+        if not source_ids:
+            return {}
+        from app.models import Source
+
+        rows = await Source.objects.filter(id__in=source_ids)
+        return {s.id: s.name for s in rows}
+
+    def _format_specialized_section(self, label: str, name: str, result: Any) -> list[str]:
+        """Turn an aggregation result into markdown lines ([] when empty)."""
+        if not result:
+            return []
+        lines = ["", f"## {label}"]
+        if name == "toxicity":
+            lines.append(f"**Проанализировано:** {result.get('analyzed', 0)}")
+            lines.append(f"**Токсичных:** {result.get('toxic', 0)} ({result.get('toxic_percent', 0)}%)")
+            lines.append(f"**Средний балл:** {result.get('avg_score', 0)}")
+            categories = result.get("categories") or {}
+            if categories:
+                lines.append("**Категории:** " + ", ".join(f"{k} — {v}" for k, v in list(categories.items())[:5]))
+        elif name == "hashtag_analysis":
+            for i, item in enumerate(result[:10], 1):
+                lines.append(f"{i}. **{item.get('hashtag', '?')}** — {item.get('count', 0)}")
+        elif name == "brand_mentions":
+            lines.append(f"**Всего упоминаний:** {result.get('total_mentions', 0)}")
+            lines.append(f"**Строк с упоминаниями:** {result.get('rows_with_mentions', 0)}")
+            lines.append(f"**В среднем на анализ:** {result.get('avg_per_analysis', 0)}")
+            sentiment = result.get("sentiment") or {}
+            if sentiment:
+                lines.append("**Тональность:** " + ", ".join(f"{k} — {v}" for k, v in list(sentiment.items())[:5]))
+            split = result.get("sentiment_split") or {}
+            if split:
+                lines.append("**Распределение:** " + ", ".join(f"{k} — {v}" for k, v in list(split.items())[:5]))
+        elif name == "viral_detection":
+            for i, item in enumerate(result[:5], 1):
+                title = item.get("analysis_title") or item.get("date") or "?"
+                potential = item.get("viral_potential") or "?"
+                growth = item.get("growth_rate") or 0
+                reach = item.get("predicted_reach")
+                suffix = f", охват {reach}" if reach is not None else ""
+                lines.append(f"{i}. **{title}** — потенциал {potential}, рост ×{growth}{suffix}")
+        elif name == "influencer":
+            for i, item in enumerate(result[:5], 1):
+                impact = f", влияние {item['impact']}" if item.get("impact") else ""
+                lines.append(f"{i}. **{item.get('name', '?')}**{impact}")
+        elif name == "competitor":
+            lines.append(f"**Всего упоминаний:** {result.get('total', 0)}")
+            for item in result.get("competitors", [])[:8]:
+                lines.append(f"- **{item.get('name', '?')}** — {item.get('mentions', 0)}")
+            threat_levels = result.get("threat_levels") or {}
+            if threat_levels:
+                lines.append(
+                    "**Уровни угрозы:** " + ", ".join(f"{k} — {v}" for k, v in list(threat_levels.items())[:5])
+                )
+        elif name == "intent":
+            lines.append(f"**Всего:** {result.get('total', 0)}")
+            if result.get("avg_confidence") is not None:
+                lines.append(f"**Средняя уверенность:** {result.get('avg_confidence')}")
+            for intent, count in (result.get("distribution") or {}).items():
+                lines.append(f"- **{intent}** — {count}")
+        elif name == "demographics":
+            for key in ("age_groups", "locations", "interests"):
+                values = result.get(key) or {}
+                if values:
+                    lines.append(f"**{key}:** " + ", ".join(f"{k} — {v}" for k, v in list(values.items())[:6]))
+        return lines
+
     # Helper methods for data extraction
+
+    def _field(self, nest: dict, logical_name: str):
+        """One logical field of a nest, tolerating the previous field names.
+
+        Tries every alias in `FIELD_ALIASES` (newest first) and returns the first
+        value that is actually present, so a row written before a rename keeps
+        counting instead of dropping out of the aggregation.
+        """
+        if not isinstance(nest, dict):
+            return None
+        for key in self.FIELD_ALIASES.get(logical_name, (logical_name,)):
+            value = nest.get(key)
+            if value is not None and value != "":
+                return value
+        return None
+
+    def _text_analysis(self, summary_data: dict) -> dict:
+        """Parsed text-analysis payload (the LLM's JSON for the text content)."""
+        return ((summary_data or {}).get("multi_llm_analysis") or {}).get("text_analysis") or {}
+
+    def _digest_value(self, summary_data: dict, keys: tuple[str, ...]):
+        """First non-empty value for `keys` across the known JSONB shapes.
+
+        The same logical field lands in different nests depending on the analysis
+        version: the v3 `multi_llm_analysis.text_analysis` object, the
+        `unified_summary`, the legacy `ai_analysis`/`ai_analysis` nested object,
+        or the top level. Reading all of them keeps the digest correct for rows
+        written by any pipeline.
+        """
+        if not summary_data:
+            return None
+        nests = [
+            (summary_data.get("multi_llm_analysis") or {}).get("text_analysis"),
+            summary_data.get("unified_summary"),
+            summary_data.get("ai_analysis"),
+            summary_data,
+        ]
+        for nest in nests:
+            if not isinstance(nest, dict):
+                continue
+            for key in keys:
+                value = nest.get(key)
+                if value is not None and value != "" and value != []:
+                    return value
+        return None
+
+    def _extract_hashtags(self, summary_data: dict) -> list[str]:
+        """Explicit hashtags from the analysis, else `#`-prefixed keywords.
+
+        The current contract writes hashtags as objects — `{"tag": "тег",
+        "count": 5, "sentiment": 0.8}` — so the name is taken from the `tag`
+        key. Plain strings (the earlier contract, and rows derived from content)
+        still pass through, which is why this accepts both rather than assuming.
+        """
+        text = self._text_analysis(summary_data)
+        raw = text.get("hashtags") or []
+        if not raw:
+            legacy = (summary_data or {}).get("ai_analysis") or {}
+            raw = (legacy.get("content_analysis") or {}).get("hashtags") or []
+        out: list[str] = []
+        for h in raw:
+            if isinstance(h, str) and h:
+                out.append(h)
+            elif isinstance(h, dict):
+                tag = h.get("tag") or h.get("hashtag") or h.get("name")
+                if tag:
+                    out.append(str(tag))
+        if not out:
+            keywords = self._digest_value(summary_data, ("keywords",))
+            if isinstance(keywords, list):
+                out = [str(k) for k in keywords if isinstance(k, str) and k.startswith("#")]
+        return out
 
     def _extract_sentiment(self, summary_data: dict) -> Optional[dict]:
         """Extract sentiment data from summary_data JSON."""

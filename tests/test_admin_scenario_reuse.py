@@ -42,7 +42,7 @@ async def test_view_prompts_renders_the_shared_builder_prompt() -> None:
     scenario_id = await _scenario(
         content_types=["posts"],
         analysis_types=["sentiment", "keywords"],
-        text_prompt="Тональность из {platform}: {text}",
+        base_prompt="Тональность из {platform}: {text}",
     )
 
     async with _signed_in(await _operator(await _role("SUPERUSER"))) as client:

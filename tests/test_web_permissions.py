@@ -208,7 +208,7 @@ async def test_owner_may_create_a_task_and_sees_the_button() -> None:
             token = CSRF_RE.search(page.text).group(1)
             resp = await client.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "_csrf": token},
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
             )
             assert resp.status_code == 200
             assert DENIED not in resp.text
@@ -280,7 +280,7 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
             token = CSRF_RE.search(page.text).group(1)
             resp = await m.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "_csrf": token},
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
             )
             assert resp.status_code == 200
             assert DENIED in resp.text
@@ -339,7 +339,7 @@ async def test_platform_role_decides_for_a_non_owner() -> None:
             token = CSRF_RE.search(tasks_page.text).group(1)
             resp = await m.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "_csrf": token},
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
             )
             assert DENIED in resp.text
             with tenant_scope(bypass=True):

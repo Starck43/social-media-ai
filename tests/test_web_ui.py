@@ -431,7 +431,8 @@ async def test_run_now_on_once_completes_task(client: AsyncClient) -> None:
             csrf = await _csrf(c, "/app/tasks")
             resp = await c.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "run_now": "on", "_csrf": csrf},
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "run_now": "on",
+                      "start_date": "2026-09-01", "_csrf": csrf},
             )
             assert resp.status_code == 200
 

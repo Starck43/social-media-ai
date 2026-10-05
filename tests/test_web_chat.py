@@ -15,6 +15,7 @@ below pin the three things that would otherwise drift:
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 
@@ -37,7 +38,14 @@ PASSWORD = "secret-password-1"
 # message is rendered: a leading newline plus the template's indentation became
 # visible padding that shifted every bubble's first line and broke the
 # left/right alignment. This captures the message's own text — nothing else.
-BUBBLE_RE = re.compile(r'<div class="[^"]*whitespace-pre-wrap[^"]*">(.*?)</div>', re.S)
+# The assistant bubble has no inner text at all: Markdown is rendered
+# client-side, so the message travels in the `x-html` argument instead.
+BUBBLE_RE = re.compile(
+    r'<div class="[^"]*whitespace-pre-wrap[^"]*"(?:\s+x-html=\'([^\']*)\')?>(.*?)</div>',
+    re.S,
+)
+# What sits in `x-html` is the Alpine expression; the message is its argument.
+XHTML_ARG_RE = re.compile(r"^renderMarkdown\((.*)\)$", re.S)
 
 
 async def _client() -> AsyncClient:
@@ -100,6 +108,27 @@ async def test_opening_the_page_creates_no_session() -> None:
 
             with tenant_scope(bypass=True):
                 assert await agent_sessions.get(channel=WEB_CHANNEL, chat_id=str(user.id)) is None
+        finally:
+            await _drop(user, tenant_id)
+
+
+async def test_the_page_ships_the_markdown_renderer() -> None:
+    """`marked` has to reach the browser, or every reply renders as plain text.
+
+    The chat template pulls it in through `{% block extra_head %}`, which
+    `base.html` must declare — an undeclared block is dropped silently by Jinja.
+    That is exactly what happened: `marked` stayed undefined, `renderMarkdown()`
+    fell through to its `<br>` fallback, and the reply was visible but the
+    Markdown was not converted.
+    """
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "ChatMd")
+        try:
+            page = await client.get("/app/chat")
+            assert page.status_code == 200
+            assert "marked.min.js" in page.text, "marked.js never reaches the browser"
+            assert "marked.setOptions" in page.text, "marked loads but is never configured"
+            assert ".msg-prose" in page.text, "the bubble styles ride in the same block"
         finally:
             await _drop(user, tenant_id)
 
@@ -233,9 +262,16 @@ async def test_a_bubble_renders_the_message_without_template_whitespace() -> Non
             assert len(bubbles) == 2, f"expected one bubble per message, got {bubbles!r}"
 
             # Flush against the tags, and no leftover blank edges.
-            assert bubbles[0] == "Покажи источники"
+            user_html, user_text = bubbles[0]
+            assert not user_html and user_text == "Покажи источники"
+            # The assistant side is Markdown rendered client-side: what sits in
+            # the bubble is the Alpine expression, the message is its argument.
+            assistant_html, assistant_text = bubbles[1]
+            assert assistant_text == ""
+            arg = XHTML_ARG_RE.match((assistant_html or "").strip())
+            assert arg, f"expected a renderMarkdown(...) bubble, got {assistant_html!r}"
             # Internal newlines and indentation are the message's own.
-            assert bubbles[1] == "Ответ:\n    отступ внутри сообщения"
+            assert json.loads(arg.group(1)) == "Ответ:\n    отступ внутри сообщения"
         finally:
             if session_id is not None:
                 with tenant_scope(bypass=True):

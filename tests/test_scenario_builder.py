@@ -44,7 +44,7 @@ def test_final_prompt_with_custom_substitutes_and_appends_schema() -> None:
         name="t",
         content_types=["posts"],
         analysis_types=["sentiment", "keywords"],
-        text_prompt="Тональность из {platform}: {text}",
+        base_prompt="Тональность из {platform}: {text}",
     )
     prompt = scenario_builder.final_prompt(draft, MediaType.TEXT)
     assert "VK" in prompt
@@ -81,7 +81,9 @@ def test_draft_scenario_round_trip() -> None:
         content_types=["posts", "videos"],
         analysis_types=["toxicity"],
         scope={"toxicity": {"threshold": 0.8}},
-        text_prompt="custom",
+        base_prompt="custom",
+        media_overrides={"image": "over"},
+        summary_prompt="summary",
         llm_strategy="cost_efficient",
         max_tokens=256,
     )
@@ -94,7 +96,9 @@ def test_draft_scenario_round_trip() -> None:
     other = AgentScenario(name="blank")
     scenario_builder.apply_draft(other, draft)
     assert other.name == "stored"
-    assert other.text_prompt == "custom"
+    assert other.base_prompt == "custom"
+    assert other.media_overrides == {"image": "over"}
+    assert other.summary_prompt == "summary"
     assert other.llm_strategy == "cost_efficient"
     assert other.max_tokens == 256
 

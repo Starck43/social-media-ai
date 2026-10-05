@@ -92,7 +92,7 @@ async def test_editor_renders_the_prompts_of_a_scenario() -> None:
         scenario_id = await _scenario(
             tenant_id,
             _name("edited"),
-            text_prompt="original text prompt",
+            base_prompt="original text prompt",
             max_tokens=512,
         )
         try:
@@ -168,7 +168,7 @@ async def test_saving_the_editor_writes_the_edited_fields() -> None:
         try:
             _, form = await _open_editor(client, scenario_id)
             form["name"] = _name("renamed")
-            form["text_prompt"] = PROMPT_SAVED
+            form["base_prompt"] = PROMPT_SAVED
             form["max_tokens"] = "11"
             form["is_active"] = "on"
 
@@ -179,7 +179,7 @@ async def test_saving_the_editor_writes_the_edited_fields() -> None:
             with tenant_scope(tenant_id):
                 row = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
             assert row.name == form["name"]
-            assert row.text_prompt == PROMPT_SAVED
+            assert row.base_prompt == PROMPT_SAVED
             assert row.max_tokens == 11
             assert row.is_active is True
         finally:

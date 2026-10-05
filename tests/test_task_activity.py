@@ -149,10 +149,165 @@ async def test_get_due_skips_task_with_inactive_scenario(client: AsyncClient) ->
         if task is not None:
             with tenant_scope(bypass=True):
                 await AgentTask.objects.delete(id=task.id)
-        if scenario is not None:
+            if scenario is not None:
+                with tenant_scope(bypass=True):
+                    await AgentScenario.objects.delete(id=scenario.id)
+            await _drop(user, tenant_id)
+
+
+# ── content window: collect/analyze need a start date, not others ─────────
+
+
+async def test_create_collect_without_start_date_is_refused(client: AsyncClient) -> None:
+    """A collect task has no lower bound without `start_date`: the first run
+    would drain the whole history from the first post, so the web form refuses
+    to save it instead of silently creating a task that over-collects."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "NeedDate")
+        name = _name("task")
+        try:
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                "/app/tasks",
+                data={"name": name, "job_type": "collect", "cron_custom": "@once", "_csrf": csrf},
+            )
+            assert resp.status_code == 200
             with tenant_scope(bypass=True):
-                await AgentScenario.objects.delete(id=scenario.id)
-        await _drop(user, tenant_id)
+                assert await AgentTask.objects.get(name=name) is None
+            assert "дату начала сбора" in resp.text
+        finally:
+            await _drop(user, tenant_id)
+
+
+async def test_create_collect_stores_dates_and_force_flags(client: AsyncClient) -> None:
+    """The form's date window lands in the payload as `cli_dates` +
+    `force_refresh`, the same keys the CLI and the collectors read."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "StoreDate")
+        name = _name("task")
+        task_id = None
+        try:
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                "/app/tasks",
+                data={
+                    "name": name,
+                    "job_type": "collect",
+                    "cron_custom": "@once",
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-30",
+                    "force_refresh": "on",
+                    "_csrf": csrf,
+                },
+            )
+            assert resp.status_code == 200
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.get(name=name)
+                task_id = task.id
+                assert task.payload["cli_dates"] == {"start_date": "2026-09-01", "end_date": "2026-09-30"}
+                assert task.payload["force_refresh"] is True
+        finally:
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            await _drop(user, tenant_id)
+
+
+async def test_create_analyze_stores_trigger_and_action(client: AsyncClient) -> None:
+    """An analyze task keeps its trigger/action columns: trigger_config is
+    built from the selected type's own fields, and the guards are stored."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "StoreTrig")
+        name = _name("task")
+        task_id = None
+        try:
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                "/app/tasks",
+                data={
+                    "name": name,
+                    "job_type": "analyze",
+                    "cron_custom": "@once",
+                    "start_date": "2026-09-01",
+                    "trigger_type": "KEYWORD_MATCH",
+                    "trigger_keywords": "жалоба, срочно",
+                    "trigger_match": "all",
+                    "action_type": "COMMENT",
+                    "blacklist": "spammer",
+                    "whitelist": "client",
+                    "rate_limit_per_hour": "5",
+                    "cooldown_seconds": "60",
+                    "_csrf": csrf,
+                },
+            )
+            assert resp.status_code == 200
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.get(name=name)
+                task_id = task.id
+                assert task.trigger_type is not None and task.trigger_type.name == "KEYWORD_MATCH"
+                assert task.trigger_config["keywords"] == ["жалоба", "срочно"]
+                assert task.trigger_config["match"] == "all"
+                assert task.action_type is not None and task.action_type.name == "COMMENT"
+                assert task.blacklist == ["spammer"]
+                assert task.whitelist == ["client"]
+                assert task.rate_limit_per_hour == 5
+                assert task.cooldown_seconds == 60
+        finally:
+            if task_id is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task_id)
+            await _drop(user, tenant_id)
+
+
+async def test_edit_preserves_stored_dates_and_trigger(client: AsyncClient) -> None:
+    """Editing a task merges the new form values over the stored payload and
+    keeps the trigger/action columns — a web edit must not drop them."""
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "EditKeep")
+        task = None
+        try:
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.create(
+                    name=_name("task"),
+                    job_type="analyze",
+                    cron_expr="0 * * * *",
+                    payload={
+                        "period": "day",
+                        "cli_dates": {"start_date": "2026-09-01"},
+                        "force_refresh": True,
+                    },
+                    trigger_type="KEYWORD_MATCH",
+                    trigger_config={"keywords": ["old"]},
+                    action_type="COMMENT",
+                    tenant_id=tenant_id,
+                )
+            csrf = await _csrf(c, "/app/tasks")
+            resp = await c.post(
+                f"/app/tasks/{task.id}",
+                data={
+                    "name": task.name,
+                    "job_type": "analyze",
+                    "cron_expr": "0 * * * *",
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-15",
+                    "trigger_type": "USER_MENTION",
+                    "trigger_usernames": "user_a, user_b",
+                    "_csrf": csrf,
+                },
+            )
+            assert resp.status_code == 200
+            with tenant_scope(bypass=True):
+                updated = await AgentTask.objects.get(id=task.id)
+                # unknown payload key survives; dates updated; trigger replaced
+                assert updated.payload["period"] == "day"
+                assert updated.payload["cli_dates"] == {"start_date": "2026-09-01", "end_date": "2026-09-15"}
+                assert updated.trigger_type is not None and updated.trigger_type.name == "USER_MENTION"
+                assert updated.trigger_config["usernames"] == ["user_a", "user_b"]
+        finally:
+            if task is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task.id)
+            await _drop(user, tenant_id)
 
 
 async def test_get_due_skips_task_with_no_active_linked_sources(client: AsyncClient) -> None:
@@ -305,6 +460,7 @@ async def test_create_collect_task_without_sources_starts_inactive(client: Async
                     "name": name,
                     "job_type": "collect",
                     "cron_custom": "@once",
+                    "start_date": "2026-09-01",
                     "_csrf": csrf,
                 },
             )
@@ -336,6 +492,7 @@ async def test_create_with_inactive_scenario_starts_inactive(client: AsyncClient
                     "job_type": "collect",
                     "cron_custom": "@once",
                     "scenario_id": str(scenario.id),
+                    "start_date": "2026-09-01",
                     "_csrf": csrf,
                 },
             )

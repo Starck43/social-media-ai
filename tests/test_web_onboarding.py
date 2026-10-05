@@ -305,6 +305,7 @@ async def test_wizard_creates_a_schedule() -> None:
                     "job_type": "collect",
                     "cron_custom": "0 9 * * *",
                     "next": "/app/onboarding",
+                    "start_date": "2026-09-01",
                     "_csrf": token,
                 },
             )

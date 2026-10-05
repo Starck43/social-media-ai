@@ -110,6 +110,48 @@ async def test_confirmation_cancel(_clean_sessions, monkeypatch):
     assert second == "Отменено."
 
 
+async def test_scenario_create_waits_for_confirmation(_clean_sessions, monkeypatch):
+    """A scenario is never written on the first message — only after «да».
+
+    The chat agent creates scenarios from what the owner says, so the staging is
+    the only thing standing between a misheard wish and a saved row. This drives
+    the real loop (no stubbed `call_tool`) and checks both halves: the first
+    message writes nothing, the second writes the scenario.
+    """
+    from app.models import AgentScenario
+
+    _set_owner(monkeypatch)
+    before = await AgentScenario.objects.count()
+
+    async def fake_chat(messages, specs):
+        return {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "name": "scenario_create",
+                    "arguments": {"name": "Бренд из чата", "template_key": "brand_monitoring"},
+                }
+            ],
+            "usage": {},
+        }
+
+    monkeypatch.setattr(agent_runtime, "_chat", fake_chat)
+    monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+    first = await agent_runtime.handle_inbound(_inbound("сделай сценарий по бренду"))
+    assert "подтверждение" in first.lower()
+    assert await AgentScenario.objects.count() == before, "nothing may be written before «да»"
+
+    second = await agent_runtime.handle_inbound(_inbound("да"))
+    assert second.startswith("Выполнено")
+    created = await AgentScenario.objects.filter(name="Бренд из чата").first()
+    assert created is not None, "the confirmed call must create the scenario"
+    assert "brand_mentions" in created.analysis_types, "the preset must have been expanded"
+
+    await AgentScenario.objects.delete(id=created.id)
+
+
 async def test_plain_reply_no_tools(_clean_sessions, monkeypatch):
     """A normal answer without tool calls is persisted and returned as-is."""
     _set_owner(monkeypatch)

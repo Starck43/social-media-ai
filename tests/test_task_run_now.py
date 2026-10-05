@@ -92,6 +92,7 @@ async def _create(client: AsyncClient, task_name: str, source_id: int, run_now: 
         "name": task_name,
         "job_type": "analyze",
         "source_ids": str(source_id),
+        "start_date": "2026-09-01",
         "_csrf": await _csrf(client, "/app/tasks"),
     }
     # The create form names the field `cron_custom`, the update form `cron_expr`.
@@ -314,4 +315,70 @@ async def test_a_healthy_source_shows_no_such_warning(client):
         assert "не удалось проанализировать" not in page.text
     finally:
         await _drop(user, tenant_id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_the_task_form_source_names_link_to_the_source_page(client):
+    """The task editor names sources as links, so one click opens the source."""
+    user, tenant_id = await _register(client, "srclink")
+    source = await _make_source(tenant_id)
+    try:
+        page = await client.get("/app/tasks")
+        assert page.status_code == 200
+        assert f'href="/app/sources/{source.id}"' in page.text
+        assert source.name in page.text
+    finally:
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_checking_a_deactivated_source_activates_it_and_the_task(client):
+    """A ticked-but-off source becomes active with the save.
+
+    The operator checked it for a reason — it is the source this task should
+    collect from — so it must not stay off, which would leave the task
+    unactivatable and produce a "deactivated sources" warning right after the
+    form flipped the exact thing that caused it.
+    """
+    user, tenant_id = await _register(client, "autoon")
+    source = await _make_source(tenant_id)
+    with tenant_scope(bypass=True):
+        await Source.objects.update_by_id(source.id, is_active=False)
+    task_name = _name("auto")
+    try:
+        resp = await _create(client, task_name, source.id)
+        assert resp.status_code == 200
+        assert "деактивированы" not in resp.text, "auto-activation must not leave a contradiction warning"
+
+        with tenant_scope(bypass=True):
+            fresh = await Source.objects.get(id=source.id)
+            assert fresh.is_active, "the checked source must be active after the save"
+            task = await AgentTask.objects.filter(name=task_name).first()
+            assert task is not None and task.is_active, "the task must be activatable now"
+    finally:
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_toggling_a_task_with_only_deactivated_sources_names_them(client):
+    """The row power switch says *which* sources block activation, not a vague reason."""
+    user, tenant_id = await _register(client, "toggle")
+    source = await _make_source(tenant_id)
+    task_name = _name("tog")
+    try:
+        await _create(client, task_name, source.id)
+        with tenant_scope(bypass=True):
+            task = await AgentTask.objects.filter(name=task_name).first()
+            assert task is not None
+            await AgentTask.objects.update_by_id(task.id, is_active=False)
+            await Source.objects.update_by_id(source.id, is_active=False)
+
+        token = await _csrf(client, "/app/tasks")
+        resp = await client.post(f"/app/tasks/{task.id}/toggle", data={"_csrf": token})
+        assert resp.status_code == 200
+        assert "не активирована" in resp.text
+        assert "все привязанные источники деактивированы" in resp.text
+        assert source.name in resp.text, "the message must name the source that blocks activation"
+    finally:
         await _drop(user, tenant_id)

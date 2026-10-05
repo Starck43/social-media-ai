@@ -295,9 +295,11 @@ async def run_pending_once() -> int:
     pick up any workspace's job (it is a raw cross-tenant SELECT ... SKIP
     LOCKED).
     """
-    # Queue maintenance is cross-tenant by nature: reap stragglers everywhere.
+    # Queue maintenance is cross-tenant by nature: reap stragglers everywhere
+    # and prune old "done" rows.
     with tenant_scope(bypass=True):
         await jobs.reap_stale()
+        await jobs.cleanup_done()
 
     job = await jobs.claim_next()
     if not job:

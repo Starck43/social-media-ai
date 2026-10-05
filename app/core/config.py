@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     AGENT_HISTORY_LIMIT: int = 20  # messages kept in agent context per session
     AGENT_MAX_ITERATIONS: int = 6  # max tool-call rounds per user message
     AGENT_DAILY_COST_LIMIT: float = 5.0  # USD cap across agent + digests per day
-    AGENT_MAX_TOKENS: int = 1024  # reply size cap for chat (analysis uses LLM_DEFAULT_MAX_TOKENS)
+    AGENT_MAX_TOKENS: int = 2048  # reply size cap for chat (analysis uses LLM_DEFAULT_MAX_TOKENS)
     AGENT_TEMPERATURE: float = 0.3
     AGENT_SYSTEM_PROMPT: Optional[str] = None  # system prompt for agent chat; falls back to built-in default
 
@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     JOB_MAX_ATTEMPTS: int = 3
     JOB_RETRY_BACKOFF_SECONDS: int = 300
 
-    LOG_LEVEL: str = "ERROR"
+    LOG_LEVEL: str = "WARNING"
 
     def telegram_owner_ids(self) -> list[int]:
         """Parse TELEGRAM_OWNER_IDS ('1, 2, 3') into a list of ints."""

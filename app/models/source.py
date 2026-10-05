@@ -63,18 +63,6 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
 		comment="Watermark of the newest ingested item for push-based sources (Telegram Bot API)",
 	)
 
-	# Time range for data collection (optional boundaries)
-	date_from: Mapped[datetime | None] = mapped_column(
-		DateTime(timezone=True),
-		nullable=True,
-		comment="Start date for data collection (inclusive)",
-	)
-	date_to: Mapped[datetime | None] = mapped_column(
-		DateTime(timezone=True),
-		nullable=True,
-		comment="End date for data collection (inclusive)",
-	)
-
 	# Relationships
 	platform: Mapped["Platform"] = relationship("Platform", back_populates="sources")
 

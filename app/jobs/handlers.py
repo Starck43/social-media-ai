@@ -483,6 +483,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                         # The trigger belongs to the task, so it reaches the prompt
                         # from here rather than off the shared scenario.
                         trigger_config=(task.trigger_config if task is not None else None) or None,
+                        # Task-specific TARGET parameters: brands, competitors, hashtags.
+                        # These are injected into the prompt instruction, not the response schema.
+                        task_payload=task_payload,
                     )
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at

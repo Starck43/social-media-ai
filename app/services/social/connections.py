@@ -250,7 +250,7 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
         return ConnectionStatus(
             platform,
             "renewable",
-            "Продлится автоматически",
+            "Авторизован",
             f"{spec.title} · {_human_expiry(expires_at)}, продление без повторного входа",
             False,
             True,

@@ -15,7 +15,8 @@ log_format = logging.Formatter(
 
 # Создаем логгер
 logger = logging.getLogger("app")
-logger.setLevel(logging.INFO)
+# Используем LOG_LEVEL из настроек (по умолчанию WARNING)
+logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.WARNING))
 
 # Консольный обработчик
 console_handler = logging.StreamHandler()

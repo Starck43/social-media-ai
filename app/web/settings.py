@@ -266,7 +266,7 @@ async def workspace_update(
     # `action_tenant_id` is what makes this safe for a superuser: it resolves the
     # workspace the form was rendered for, not the one in the session.
     if await tenants.get(id=tenant_id) is None:
-        add_flash(request, "error", "Воркспейс не найден")
+        add_flash(request, "error", "Пространство не найдено")
         return RedirectResponse(BACK, status_code=302)
 
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -320,7 +320,7 @@ async def agent_settings_update(
     from app.models.managers.tenant_manager import tenants
 
     if await tenants.get(id=tenant_id) is None:
-        add_flash(request, "error", "Воркспейс не найден")
+        add_flash(request, "error", "Пространство не найдено")
         return RedirectResponse(BACK, status_code=302)
 
     # Parse and validate numeric fields
@@ -524,7 +524,7 @@ async def plan_update(
     target_id = action_tenant_id(request, tenant_id) or request.state.tenant_id
     tenant = await tenants.get(id=target_id)
     if tenant is None:
-        add_flash(request, "error", "Воркспейс не найден")
+        add_flash(request, "error", "Пространство не найдено")
         return RedirectResponse(BACK, status_code=302)
 
     requested = (plan or "").strip().lower()

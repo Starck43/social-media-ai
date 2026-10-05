@@ -2,6 +2,10 @@
 {% block title %}Чат с агентом{% endblock %}
 
 {% block extra_head %}
+<script>
+    // Pass initial server-rendered messages to Alpine
+    window.__chatMessages = {{ (messages | default([])) | tojson }};
+</script>
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script>
     /* Configure marked.js — must be JS, not CSS: it used to live inside <style> */
@@ -203,14 +207,11 @@
             </p>
         </div>
         {% if messages %}
-        <form method="post" action="/app/chat">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <input type="hidden" name="text" value="/stop">
-            <button
-                class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors">
-                Очистить историю
-            </button>
-        </form>
+        <button
+            x-on:click="clearHistory()"
+            class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors">
+            Очистить историю
+        </button>
         {% endif %}
     </div>
 
@@ -219,8 +220,8 @@
          x-ref="messages"
          @scroll="onScroll()">
         <!-- Empty state -->
-        {% if not messages %}
-        <div class="flex h-full min-h-48 flex-col items-center justify-center text-center">
+        <div x-show="messages.length === 0"
+             class="flex h-full min-h-48 flex-col items-center justify-center text-center">
             <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24"
                      stroke-width="1.5" stroke="currentColor">
@@ -234,92 +235,81 @@
                 можно с «/help».
             </p>
         </div>
-        {% else %}
         <!-- Message list -->
-        {% for message in messages %}
-        <div class="flex msg-enter {% if message.role == 'user' %}justify-end{% else %}justify-start{% endif %}">
+        <template x-for="message in messages" :key="message.id">
+            <div class="flex msg-enter" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
             <!-- Avatar for assistant -->
-            {% if message.role != 'user' %}
-            <div class="mr-2 mt-auto shrink-0">
+            <div x-show="message.role !== 'user'"
+                 class="mr-2 mt-auto shrink-0">
                 <div
                     class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-400">
                     AI
                 </div>
             </div>
-            {% endif %}
 
             <div class="max-w-[80%]">
                 <!-- Message bubble -->
                 <div
-                    class="rounded-2xl px-3.5 py-2 text-sm {% if message.role == 'user' %}bg-cyan-600/25 text-cyan-50 rounded-tr-none{% else %}bg-slate-800/80 text-slate-200 rounded-tl-none{% endif %}">
-                    {% if message.role != 'user' %}
-                    <div class="agent-msg break-words msg-prose"
-                         x-html='renderMarkdown({{ (message.content or "") | tojson | trim }})'></div>
-                    {% else %}
-                    <div class="whitespace-pre-wrap break-words">{{ (message.content or "") | trim }}</div>
-                    {% endif %}
+                    class="rounded-2xl px-3.5 py-2 text-sm"
+                    :class="message.role === 'user' ? 'bg-cyan-600/25 text-cyan-50 rounded-tr-none' : 'bg-slate-800/80 text-slate-200 rounded-tl-none'">
+                    <div x-show="message.role !== 'user'"
+                         class="agent-msg break-words msg-prose"
+                         x-html="renderMarkdown(message.content || '')"></div>
+                    <div x-show="message.role === 'user'"
+                         class="whitespace-pre-wrap break-words"
+                         x-text="message.content || ''"></div>
                 </div>
 
                 <!-- Timestamp + actions -->
                 <div class="mt-0.5 flex items-center justify-end gap-1.5 px-1">
                     <!-- User message: always show date+time, with delete button -->
-                    {% if message.role == 'user' %}
-                    <span class="text-[10px] text-slate-600">{{ message.created_at }}</span>
-                    <form method="post" action="/app/chat/message/{{ message.id }}/delete" class="inline"
-                          @submit="return confirm('Удалить сообщение?')">
-                        <input type="hidden" name="_csrf" value="{{ csrf }}">
-                        <button type="submit" class="text-slate-600 hover:text-rose-400 transition-colors"
-                                title="Удалить" aria-label="Удалить сообщение">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                                 stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                      d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                        </button>
-                    </form>
-                    {% endif %}
+                    <span x-show="message.role === 'user'"
+                          class="text-[10px] text-slate-600"
+                          x-text="message.created_at"></span>
+                    <button x-show="message.role === 'user'"
+                            x-on:click="deleteMessage(message.id)"
+                            class="text-slate-600 hover:text-rose-400 transition-colors"
+                            title="Удалить" aria-label="Удалить сообщение">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+                             stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                    </button>
                     <!-- Assistant message: show copy + delete buttons -->
-                    {% if message.role != 'user' %}
-                    <button
-                        x-data="{}"
-                        x-on:click='copyText({{ (message.content or "") | tojson | trim }})'
-                        class="text-slate-600 hover:text-slate-300 transition-colors"
-                        title="Копировать"
-                        aria-label="Копировать сообщение">
+                    <button x-show="message.role !== 'user'"
+                            x-on:click="copyText(message.content || '')"
+                            class="text-slate-600 hover:text-slate-300 transition-colors"
+                            title="Копировать"
+                            aria-label="Копировать сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
                              stroke-width="1.5" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round"
                                   d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
                         </svg>
                     </button>
-                    <form method="post" action="/app/chat/message/{{ message.id }}/delete" class="inline"
-                          @submit="return confirm('Удалить сообщение агента?')">
-                        <input type="hidden" name="_csrf" value="{{ csrf }}">
-                        <button type="submit" class="text-slate-600 hover:text-rose-400 transition-colors"
-                                title="Удалить" aria-label="Удалить сообщение">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                                 stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                      d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                        </button>
-                    </form>
-                    {% endif %}
+                    <button x-on:click="deleteMessage(message.id, 'Удалить сообщение агента?')"
+                            class="text-slate-600 hover:text-rose-400 transition-colors"
+                            title="Удалить" aria-label="Удалить сообщение">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+                             stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 
             <!-- Avatar for user -->
-            {% if message.role == 'user' %}
-            <div class="ml-2 mt-auto shrink-0">
+            <div x-show="message.role === 'user'"
+                 class="ml-2 mt-auto shrink-0">
                 <div
                     class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/30 text-xs font-bold text-cyan-300">
                     Вы
                 </div>
             </div>
-            {% endif %}
         </div>
-        {% endfor %}
-        {% endif %}
+        </template>
 
         <!-- Scroll anchor -->
         <div x-ref="end"></div>
@@ -345,13 +335,12 @@
     </div>
 
     <!-- Composer -->
-    <form method="post" action="/app/chat"
+    <form @submit.prevent="sendMessage()"
           class="mt-3 flex items-end gap-2"
           x-ref="form">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <textarea name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
                   x-ref="input"
-                  @keydown.enter.prevent="sendMessage()"
                   @keydown.shift.enter="insertNewLine"
                   class="min-h-[2.5rem] flex-1 resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none placeholder-slate-500 focus:border-cyan-500 transition-colors"></textarea>
         <button type="submit"
@@ -384,27 +373,206 @@
             pending: false,
             autoScroll: true,
             messages: [],
+            csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
+                // Event delegation for JSON copy buttons (added via x-html)
+                document.addEventListener('click', (e) => {
+                    const btn = e.target.closest('[data-copy-json]')
+                    if (btn) {
+                        const json = btn.getAttribute('data-copy-json')
+                            .replace(/&amp;/g, '&')
+                            .replace(/&quot;/g, '"')
+                            .replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>')
+                        navigator.clipboard.writeText(json).then(() => {
+                            const orig = btn.innerHTML
+                            btn.innerHTML = '✓'
+                            setTimeout(() => { btn.innerHTML = orig }, 1500)
+                        }).catch(() => {})
+                    }
+                })
+                // Initialize messages from server-rendered data
+                this.messages = window.__chatMessages || []
                 // Scroll to bottom on page load
                 this.$nextTick(() => this.scrollToBottom())
             },
 
             renderMarkdown(text) {
                 if (!text) return ""
-                try {
-                    return marked.parse(text)
-                } catch (e) {
-                    return text.replace(/\n/g, "<br>")
+
+                // Extract ```json ... ``` blocks and standalone JSON, replace with placeholders
+                const jsonBlocks = []
+                let id = 0
+
+                // 1) ```json blocks
+                text = text.replace(/```json\s*([\s\S]*?)```/g, (match, code) => {
+                    const idx = id++
+                    jsonBlocks.push({ type: 'fenced', code: code })
+                    return `%%JSON_BLOCK_${idx}%%`
+                })
+
+                // 2) Standalone JSON (entire message is one object/array)
+                const stripped = text.trim()
+                if ((stripped.startsWith("{") || stripped.startsWith("[")) && !stripped.startsWith("<")) {
+                    try {
+                        JSON.parse(stripped)
+                        const idx = id++
+                        jsonBlocks.push({ type: 'standalone', code: stripped })
+                        text = `%%JSON_BLOCK_${idx}%%`
+                    } catch (e) {
+                        // Not valid JSON, fall through to markdown
+                    }
                 }
+
+                let html
+                try {
+                    html = marked.parse(text)
+                } catch (e) {
+                    html = text.replace(/\n/g, "<br>")
+                }
+
+                // Restore JSON blocks — use data-* + event delegation to avoid escaping hell
+                html = html.replace(/%%JSON_BLOCK_(\d+)%%/g, (match, num) => {
+                    const block = jsonBlocks[parseInt(num)]
+                    if (!block) return match
+                    const display = block.code
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                    const attrSafe = block.code
+                        .replace(/&/g, '&amp;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                    return (
+                        '<div class="json-block">' +
+                        '<div class="json-block-header">' +
+                        '<span class="json-block-label">JSON</span>' +
+                        '<button type="button" class="json-copy-btn" data-copy-json="' + attrSafe + '">Копировать</button>' +
+                        '</div>' +
+                        '<pre class="whitespace-pre-wrap break-all text-xs text-cyan-200">' +
+                        display +
+                        '</pre></div>'
+                    )
+                })
+
+                return html
             },
 
             async sendMessage() {
                 const textarea = this.$refs.input
-                if (!textarea.value.trim()) return
+                const text = textarea.value.trim()
+                if (!text) return
+
                 this.pending = true
-                // Submit the form — server processes and redirects back with new messages
-                this.$refs.form.requestSubmit()
+
+                // Optimistic: show user message immediately
+                const userMsg = {
+                    role: 'user',
+                    content: text,
+                    created_at: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                }
+                this.messages.push(userMsg)
+                textarea.value = ''
+                textarea.style.height = 'auto'
+
+                try {
+                    const response = await fetch('/app/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json, text/plain, */*',
+                        },
+                        body: new URLSearchParams({
+                            '_csrf': this.csrf,
+                            'text': text,
+                        }),
+                    })
+
+                    const data = await response.json()
+
+                    if (!response.ok || data.error) {
+                        throw new Error(data.error || 'Ошибка отправки')
+                    }
+
+                    // Replace with full transcript from server (includes user msg + assistant replies)
+                    this.messages = data.messages || []
+                    this.$nextTick(() => this.scrollToBottom())
+                } catch (err) {
+                    console.error('Chat send error:', err)
+                    // Remove the optimistic user message and show error
+                    this.messages.pop()
+                    this.messages.push({
+                        role: 'assistant',
+                        content: err.message || 'Не удалось отправить сообщение. Попробуйте ещё раз.',
+                        created_at: '',
+                    })
+                    this.$nextTick(() => this.scrollToBottom())
+                } finally {
+                    this.pending = false
+                }
+            },
+
+            async clearHistory() {
+                if (!confirm('Очистить историю диалога?')) return
+                this.pending = true
+                try {
+                    const response = await fetch('/app/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json, text/plain, */*',
+                        },
+                        body: new URLSearchParams({
+                            '_csrf': this.csrf,
+                            'text': '/stop',
+                        }),
+                    })
+                    const data = await response.json()
+                    if (!response.ok || data.error) throw new Error(data.error)
+                    this.messages = data.messages || []
+                    this.$nextTick(() => this.scrollToBottom())
+                } catch (err) {
+                    console.error('Clear history error:', err)
+                    alert('Не удалось очистить историю: ' + (err.message || ''))
+                } finally {
+                    this.pending = false
+                }
+            },
+
+            async deleteMessage(messageId, confirmMsg = 'Удалить сообщение?') {
+                if (!confirm(confirmMsg)) return
+                try {
+                    const response = await fetch(`/app/chat/message/${messageId}/delete`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json, text/plain, */*',
+                        },
+                        body: new URLSearchParams({
+                            '_csrf': this.csrf,
+                        }),
+                    })
+                    const data = await response.json()
+                    if (!response.ok || data.error) throw new Error(data.error)
+                    // Reload transcript
+                    const refresh = await fetch('/app/chat', {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json, text/plain, */*',
+                        },
+                    })
+                    const refreshData = await refresh.json()
+                    this.messages = refreshData.messages || []
+                    this.$nextTick(() => this.scrollToBottom())
+                } catch (err) {
+                    console.error('Delete message error:', err)
+                    alert('Не удалось удалить сообщение: ' + (err.message || ''))
+                }
             },
 
             insertNewLine() {

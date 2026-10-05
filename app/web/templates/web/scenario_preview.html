@@ -38,7 +38,9 @@
         <p class="mb-1 text-xs font-medium text-slate-400">Итоговый промпт — что реально уйдёт в модель</p>
         {% for media, prompt in blocks.media_previews.items() %}
             {% if prompt %}
-                <details class="mt-2" {% if media == blocks.base_media %}open{% endif %}>
+                {# Open by default: the step is «что реально уйдёт в модель», and a
+                   collapsed block hides exactly that behind a click. #}
+                <details class="mt-2" open>
                     <summary class="cursor-pointer rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
                         {{ {'text': 'Текст', 'image': 'Изображения', 'video': 'Видео', 'audio': 'Аудио'}[media] }}
                     </summary>

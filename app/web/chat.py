@@ -13,12 +13,13 @@ polling a job.
 
 from __future__ import annotations
 
+import json as json_mod
 import re
 from datetime import datetime, timezone
 
 from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from .deps import add_flash, ensure_csrf, render
 
@@ -84,34 +85,14 @@ def _json_block_html(json_text: str) -> str:
 
 
 def _render_assistant_content(content: str | None) -> str:
-    """Render assistant content with JSON block support.
+    """Return plain text for AJAX; the client renders markdown + JSON blocks.
 
-    Detects ```json ... ``` blocks and wraps them in a styled container.
-    Also detects standalone JSON (starts with { or [) and formats it.
+    For non-AJAX (redirect) responses we'd need HTML, but those are gone now
+    — all responses are JSON.  Keep the function for API stability.
     """
-    if not content:
-        return ""
-
-    # Match ```json ... ``` blocks (more flexible pattern)
-    content = re.sub(
-        r"```json\s*([\s\S]*?)```",
-        lambda m: _json_block_html(m.group(1)),
-        content,
-    )
-
-    # If the content is a standalone JSON object/array (trimmed), wrap it
-    stripped = content.strip()
-    if (stripped.startswith("{") or stripped.startswith("[")) and not stripped.startswith("<"):
-        import json as json_mod
-
-        try:
-            json_mod.loads(stripped)
-            # Valid JSON — escape and wrap
-            return _json_block_html(stripped)
-        except (json_mod.JSONDecodeError, ValueError):
-            pass  # Not valid JSON, leave as-is
-
-    return content
+    # Send raw text; client's renderMarkdown() handles markdown,
+    # client-side JS handles JSON blocks.
+    return content or ""
 
 
 def _enrich_message(msg) -> dict:
@@ -136,12 +117,22 @@ def _membership_role(request: Request) -> str:
 @router.get("")
 @router.get("/")
 async def chat_page(request: Request):
-    """Render the transcript; opens no session and spends nothing."""
+    """Render the transcript; opens no session and spends nothing.
+
+    For AJAX requests returns JSON so the client can update the DOM.
+    """
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("accept") or "")
+    )
+
     from app.agent.runtime import web_session_id
 
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
+        if is_ajax:
+            return JSONResponse({"messages": [], "is_owner": False})
         return render(request, "web/chat.html", section="chat", messages=[], is_owner=False)
 
     messages = []
@@ -153,6 +144,11 @@ async def chat_page(request: Request):
 
     # Enrich messages with formatted fields
     enriched = [_enrich_message(msg) for msg in messages]
+
+    if is_ajax:
+        return JSONResponse(
+            {"messages": enriched, "is_owner": _membership_role(request) == "owner"}
+        )
 
     return render(
         request,
@@ -169,18 +165,36 @@ async def chat_send(
     text: str = Form(""),
     token: str = Form("", alias="_csrf"),
 ):
-    """Run one agent turn and show the answer on the same page."""
+    """Run one agent turn and show the answer on the same page.
+
+    For AJAX requests (X-Requested-With / Accept: application/json) returns
+    JSON with the enriched transcript so the browser can append messages
+    without a full page reload.
+    """
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("accept") or "")
+    )
+
     if not ensure_csrf(request, token):
+        if is_ajax:
+            return JSONResponse(
+                {"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403
+            )
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/chat", status_code=302)
 
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
+        if is_ajax:
+            return JSONResponse({"error": "Не авторизован"}, status_code=401)
         return RedirectResponse("/app/chat", status_code=302)
 
     text = (text or "").strip()
     if not text:
+        if is_ajax:
+            return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
 
     from app.agent.runtime import handle_web_message
@@ -196,10 +210,20 @@ async def chat_send(
     )
 
     if reply is None:
+        if is_ajax:
+            return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
         add_flash(request, "error", "Агент не ответил — попробуйте ещё раз")
 
     raw_messages = await _transcript(user.id)
     enriched = [_enrich_message(msg) for msg in raw_messages]
+
+    if is_ajax:
+        return JSONResponse(
+            {
+                "messages": enriched,
+                "is_owner": _membership_role(request) == "owner",
+            }
+        )
 
     return render(
         request,
@@ -229,13 +253,22 @@ async def chat_message_delete(
     token: str = Form("", alias="_csrf"),
 ):
     """Delete a single message from the transcript."""
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("accept") or "")
+    )
+
     if not ensure_csrf(request, token):
+        if is_ajax:
+            return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/chat", status_code=302)
 
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
     if user is None or tenant_id is None:
+        if is_ajax:
+            return JSONResponse({"error": "Не авторизован"}, status_code=401)
         return RedirectResponse("/app/chat", status_code=302)
 
     from app.agent.runtime import web_session_id
@@ -247,14 +280,22 @@ async def chat_message_delete(
     ).first()
 
     if msg is None:
+        if is_ajax:
+            return JSONResponse({"error": "Сообщение не найдено"}, status_code=404)
         add_flash(request, "error", "Сообщение не найдено")
         return RedirectResponse("/app/chat", status_code=302)
 
     # Allow deleting own messages; anyone in workspace can delete assistant messages
     if msg.role == "user" and msg.session_id != await web_session_id(user.id):
+        if is_ajax:
+            return JSONResponse({"error": "Можно удалять только свои сообщения"}, status_code=403)
         add_flash(request, "error", "Можно удалять только свои сообщения")
         return RedirectResponse("/app/chat", status_code=302)
 
     await AgentMessage.objects.delete(id=message_id)
+
+    if is_ajax:
+        return JSONResponse({"ok": True})
+
     add_flash(request, "success", "Сообщение удалено")
     return RedirectResponse("/app/chat", status_code=302)

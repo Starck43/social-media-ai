@@ -516,15 +516,29 @@ async def source_detail(request: Request, source_id: int):
     members = {u.id: u for u in await _workspace_members(source.tenant_id)}
     owner_id = (source.params or {}).get("token_owner")
     token_owner = members.get(int(owner_id)) if str(owner_id or "").isdigit() else None
+
+    # Check whether the current user IS the workspace owner.
+    user_is_owner = False
+    if user is not None and source.tenant_id is not None:
+        from app.models.tenant import TenantUser
+
+        membership = await TenantUser.objects.filter(
+            tenant_id=source.tenant_id, user_id=user.id, role="owner", is_active=True
+        ).first()
+        user_is_owner = membership is not None
+
     if token_owner is not None:
         owner_label = f"{token_owner.username} (личный токен)"
-        owner_hint = "Сбор идёт под аккаунтом этого участника workspace."
+        owner_hint = "Сбор идёт под аккаунтом для текущего пространства пользователя"
+    elif user_is_owner:
+        owner_label = "Вы (владелец workspace)"
+        owner_hint = "Токен владельца используется по умолчанию. Можно задать явно для другого участника."
     elif members:
         owner_label = "Владелец workspace"
         owner_hint = "Явно не выбран — используется токен владельца. Можно задать явно."
     else:
         owner_label = "Не определён"
-        owner_hint = "В workspace нет участников с веб-доступом — сбор пойдёт на переменные окружения."
+        owner_hint = "В этом пространстве нет пользователя с веб-доступом."
 
     is_ready, readiness_hint = await _readiness(source, schedules)
 
@@ -566,7 +580,6 @@ async def source_detail(request: Request, source_id: int):
         owner_hint=owner_hint,
         owner_connection=owner_connection,
         token_owner=token_owner,
-        window_label=_window_label(source),
         schedules=[_schedule_view(s) for s in schedules],
         usage_count=usage_count,
         can_delete=perms_can(request, "source", "delete"),

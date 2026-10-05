@@ -478,6 +478,7 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.types import AnalysisType, ContentType, LLMStrategyType
     from app.types.enums.bot_types import AnalyzeType
 
+    perms = getattr(request.state, "web_perms", None)
     llm_models = [
         {"id": m.id, "name": m.name, "model_type": m.model_type}
         for m in await LLMModel.objects.filter(is_active=True).order_by(LLMModel.name)
@@ -486,6 +487,8 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         request,
         "web/scenario_wizard.html",
         section="scenarios",
+        # Step 4 («Предпросмотр») belongs to a platform role above ADMIN.
+        show_preview_step=perms is not None and perms.is_superuser_role,
         create=create,
         scenario_id=scenario_id,
         draft=draft,

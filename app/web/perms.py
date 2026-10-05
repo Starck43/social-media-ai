@@ -68,6 +68,17 @@ class WebPerms:
         return bool(self._user is not None and self._user.is_superuser)
 
     @property
+    def is_superuser_role(self) -> bool:
+        """A platform role above `UserRoleType.ADMIN`: the operator's own
+        `is_superuser` flag or the SUPERUSER role (`User._is_superuser_role`).
+
+        Sections that expose infrastructure (the job queue) gate on this, not on
+        `can()` — a workspace owner passes every model right they have anyway,
+        and the queue is still not theirs to see. Fail-closed: no user, no answer.
+        """
+        return self._user is not None and bool(self._user._is_superuser_role())
+
+    @property
     def workspace_role(self) -> str | None:
         """Membership role in the active workspace (`owner`, `member`, ...)."""
         for membership in self._memberships:

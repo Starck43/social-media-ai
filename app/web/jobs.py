@@ -17,6 +17,11 @@ underneath a live claim loses the audit trail of work in flight and leaves the
 dispatcher updating a row that no longer exists. Everything else is history (or
 scheduled work the operator is cancelling on purpose) and may go — which is
 what the per-row trash button and «Очистить всё» do.
+
+The whole section is gated to a platform role above ADMIN (`UserRoleType.SUPERUSER`):
+the queue exposes every workspace's internals, so a workspace owner sees it only
+when their platform role says so. `guard_superuser` runs on every route after the
+CSRF check; the sidebar drops the item for everyone else — which is not the check.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from fastapi.responses import RedirectResponse
 
 from app.models.job import Job
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, plural, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_superuser, guard_web, plural, render, tenant_filter_context
 
 router = APIRouter(prefix="/jobs")
 
@@ -52,9 +57,12 @@ async def _jobs_for(tenant_id: int | None) -> list[Job]:
     return list(await query)
 
 
-def _stats(rows: list[Job]) -> dict[str, int]:
-    """Queue health. `failed` and `pending` are the two numbers that matter:
-    pending says the scheduler will get to it, failed says it needs a human."""
+async def _all_stats(tenant_id: int | None) -> dict[str, int]:
+    """Queue health across the *entire* history, not just the last HISTORY_LIMIT rows."""
+    query = Job.objects
+    if tenant_id is not None:
+        query = query.filter(tenant_id=tenant_id)
+    rows = list(await query)
     return {
         "pending": sum(1 for j in rows if j.status == "pending"),
         "running": sum(1 for j in rows if j.status == "running"),
@@ -67,6 +75,10 @@ def _stats(rows: list[Job]) -> dict[str, int]:
 @router.get("/")
 async def jobs_list(request: Request):
     """Job history for the active workspace, with the queue's health on top."""
+    gated = guard_superuser(request, back="/app/")
+    if gated is not None:
+        return gated
+
     user = getattr(request.state, "web_user", None)
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
@@ -87,7 +99,7 @@ async def jobs_list(request: Request):
         "web/jobs.html",
         section="jobs",
         jobs=rows,
-        stats=_stats(rows),
+        stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
         retryable=RETRYABLE,
         deletable=DELETABLE,
         is_superuser=is_superuser,
@@ -121,6 +133,10 @@ async def jobs_clear(
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
+
+    gated = guard_superuser(request, back="/app/")
+    if gated is not None:
+        return gated
 
     denied = guard_web(request, "agenttask", "delete", back="/app/jobs")
     if denied is not None:
@@ -166,6 +182,10 @@ async def job_delete(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
 
+    gated = guard_superuser(request, back="/app/")
+    if gated is not None:
+        return gated
+
     denied = guard_web(request, "agenttask", "delete", back="/app/jobs")
     if denied is not None:
         return denied
@@ -207,6 +227,10 @@ async def job_run(
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
+
+    gated = guard_superuser(request, back="/app/")
+    if gated is not None:
+        return gated
 
     tenant_id = action_tenant_id(request, tenant_id)
 

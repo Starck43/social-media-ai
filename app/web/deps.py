@@ -13,13 +13,18 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader
 
 from app.models import Tenant
 from app.types import ActionType
 
 from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 
-templates = Jinja2Templates(directory="app/web/templates")
+_j2_env = Environment(
+    loader=FileSystemLoader("app/web/templates", encoding="UTF-8"),
+    auto_reload=True,  # recompile templates on change
+)
+templates = Jinja2Templates(env=_j2_env)
 # Keep Cyrillic readable in the HTML source: |tojson escapes non-ASCII to \uXXXX
 # by default, which turns every reply into escape noise in the markup.
 # `<`, `>`, `&` and `'` are still escaped by Jinja's htmlsafe_json_dumps.

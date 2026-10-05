@@ -529,6 +529,22 @@ async def task_create(
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
 
+	# Warn about missing target params for the scenario's analysis types.
+	# Non-blocking: the task is still created, but analysis will have nothing
+	# specific to look for without these.
+	if scenario_id:
+		sc = await AgentScenario.objects.filter(id=scenario_id).first()
+		if sc and sc.analysis_types:
+			from app.services.ai.param_registry import missing_target_params
+
+			missing = missing_target_params(sc.analysis_types, payload)
+			if missing:
+				add_flash(
+					request,
+					"warning",
+					f"⚠️ Для сценария «{sc.name}» укажите в параметрах задачи: " + ", ".join(missing),
+				)
+
 	trigger_action_fields = _trigger_and_action_fields(
 		job_type,
 		trigger_type,
@@ -1024,6 +1040,20 @@ async def task_update(
 	# "days", "min_messages" set via CLI or agent tool must survive a web edit.
 	payload = task.payload.copy() if isinstance(task.payload, dict) else {}
 	payload.update(new_payload)
+
+	# Warn about missing target params for the scenario's analysis types.
+	if task.agent_scenario_id:
+		sc = await AgentScenario.objects.filter(id=task.agent_scenario_id).first()
+		if sc and sc.analysis_types:
+			from app.services.ai.param_registry import missing_target_params
+
+			missing = missing_target_params(sc.analysis_types, payload)
+			if missing:
+				add_flash(
+					request,
+					"warning",
+					f"⚠️ Для сценария «{sc.name}» укажите в параметрах задачи: " + ", ".join(missing),
+				)
 
 	from app.core.tenant_context import tenant_scope
 	from app.models.managers.tenant_manager import tenants

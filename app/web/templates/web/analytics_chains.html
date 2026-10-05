@@ -4,37 +4,63 @@
 {% block content %}
     {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
 
+    <div class="mb-4 flex items-center justify-end">
+        <form method="get" class="flex items-center gap-2">
+            <label for="sort" class="text-xs text-slate-500">Сортировка</label>
+            <select name="sort" id="sort" onchange="this.form.submit()"
+                    class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                {% for value, label in sorts %}
+                    <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
     {% if chains %}
         <div class="space-y-4">
             {% for chain in chains %}
-                <a href="/app/analytics/chains/{{ chain.chain_id }}" class="block">
-                    {% call card(extra="transition hover:border-cyan-700") %}
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <div class="min-w-0">
-                                <p class="truncate font-medium text-slate-200">{{ chain.name }}</p>
-                                <p class="mt-1 text-xs text-slate-500">
-                                    {{ chain.total_analyses }} анализ(ов)
-                                    {% if chain.date_range.start %}
-                                        · {{ chain.date_range.start }} — {{ chain.date_range.end }}
-                                    {% endif %}
-                                    {% if chain.chain_id != chain.name %}
-                                        · <span class="font-mono">{{ chain.chain_id }}</span>
-                                    {% endif %}
-                                </p>
-                            </div>
-                            <span class="shrink-0 text-xs text-cyan-400">Открыть →</span>
+                {% call card(extra="transition hover:border-cyan-700") %}
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <a href="/app/analytics/chains/{{ chain.chain_id }}" class="min-w-0">
+                            <p class="truncate font-medium text-slate-200">{{ chain.name }}</p>
+                            <p class="mt-1 text-xs text-slate-500">
+                                {{ chain.total_analyses }} анализ(ов)
+                                {% if chain.date_range.start %}
+                                    · {{ chain.date_range.start }} — {{ chain.date_range.end }}
+                                {% endif %}
+                                {% if chain.chain_id != chain.name %}
+                                    · <span class="font-mono">{{ chain.chain_id }}</span>
+                                {% endif %}
+                            </p>
+                        </a>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <a href="/app/analytics/chains/{{ chain.chain_id }}" class="text-xs text-cyan-400">Открыть →</a>
+                            {% if perms_can(request, 'aianalytics', 'delete') %}
+                                <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">
+                                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                    <button type="submit" title="Удалить цепочку" aria-label="Удалить цепочку {{ chain.name }}"
+                                            @click="if (!confirm('Удалить цепочку «{{ chain.name }}» и все её анализы?')) $event.preventDefault()"
+                                            class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                             stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.171-.204.357-.406.546-.608m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            {% endif %}
                         </div>
-                        {% if chain.evolution %}
-                            <div class="mt-3 flex flex-wrap gap-1.5">
-                                {% for step in chain.evolution[:4] %}
-                                    {% for t in step.topics[:3] %}
-                                        <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
-                                    {% endfor %}
+                    </div>
+                    {% if chain.evolution %}
+                        <div class="mt-3 flex flex-wrap gap-1.5">
+                            {% for step in chain.evolution[:4] %}
+                                {% for t in step.topics[:3] %}
+                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
                                 {% endfor %}
-                            </div>
-                        {% endif %}
-                    {% endcall %}
-                </a>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endcall %}
             {% endfor %}
         </div>
     {% else %}

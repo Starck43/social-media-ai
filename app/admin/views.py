@@ -372,22 +372,16 @@ class SourceAdmin(BaseAdmin, model=Source):
 		"external_id",
 		"params",
 		"is_active",
-		"date_from",
-		"date_to",
 	]
 	form_widget_args = {
 		"last_checked": {
 			"readonly": True,
 		},
-		"date_from": {"placeholder": "ДД.ММ.ГГГГ"},
-		"date_to": {"placeholder": "ДД.ММ.ГГГГ"},
 	}
 	form_overrides = {
 		# SelectField override keeps the choices from form_args below (the default
 		# enum converter would replace them with raw DB values)
 		"source_type": SelectField,
-		"date_from": EuropeanDateField,
-		"date_to": EuropeanDateField,
 		**BaseAdmin.form_overrides,
 	}
 	form_args = {
@@ -424,23 +418,11 @@ class SourceAdmin(BaseAdmin, model=Source):
 				"force_refresh и cli_dates — разовые переопределения дат"
 			),
 		},
-		"date_from": {
-			"label": "Дата начала сбора",
-			"description": "Дата начала мониторинга источника",
-		},
-		"date_to": {
-			"label": "Дата окончания сбора",
-			"description": "Дата окончания мониторинга источника. Оставьте пустым для бессрочного мониторинга",
-		},
 		**BaseAdmin.form_args,
 	}
 	column_formatters = {
 		# Localized labels come from the shared enums (never duplicated as string maps)
 		"source_type": lambda m, a: m.source_type.label if m.source_type is not None else "—",
-		# last_checked is a DateTime column and inherits the shared DD.MM.YYYY HH:MM
-		# formatter; date_from/date_to are DateTime in DB but date-only for the operator
-		"date_from": lambda m, a: format_date(m.date_from),
-		"date_to": lambda m, a: format_date(m.date_to),
 		**BaseAdmin.column_formatters,
 	}
 
@@ -1981,6 +1963,25 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                     "Задача типа «сбор данных»/«анализ» не может быть активной без активного источника: "
                     "выберите хотя бы один источник или снимите флаг «Активна»"
                 )
+
+        # Guard: missing target params for the scenario's analysis types.
+        # Non-blocking warning: a task is still valid without them, but analysis
+        # will have nothing specific to look for.
+        scenario_id_val = data.get("agent_scenario") or getattr(model, "agent_scenario_id", None)
+        if scenario_id_val is not None:
+            scenario_pk = int(scenario_id_val) if isinstance(scenario_id_val, (int, str)) else getattr(scenario_id_val, "id", None)
+            if scenario_pk and request is not None:
+                with tenant_scope(bypass=True):
+                    scenario = await AgentScenario.objects.filter(id=scenario_pk).first()
+                if scenario and scenario.analysis_types:
+                    from app.services.ai.param_registry import missing_target_params
+
+                    task_payload = data.get("payload") or {}
+                    missing = missing_target_params(scenario.analysis_types, task_payload)
+                    if missing:
+                        msg = "⚠️ Для сценария «" + (scenario.name or str(scenario_pk)) + "» укажите в параметрах задачи: " + ", ".join(missing)
+                        if hasattr(request, "session") and request.session:
+                            request.session.flash(msg, "warning")
 
         cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
         if cron_expr and getattr(model, "next_run_at", None) is None:

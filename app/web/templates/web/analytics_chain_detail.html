@@ -2,19 +2,29 @@
 {% from "web/_macros.html" import card, empty_state, page_title %}
 {% block title %}{{ chain.name }} — AI Monitor{% endblock %}
 {% block content %}
-    {{ page_title(chain.name, chain.chain_id) }}
-
-    <div class="mb-6 flex items-center gap-3 text-xs text-slate-400">
-        <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
-        <span>·</span>
-        <span>{{ chain.total_analyses }} анализ(ов)</span>
-        {% if chain.chain_id != chain.name %}
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
             <span>·</span>
-            <span class="font-mono">{{ chain.chain_id }}</span>
-        {% endif %}
-        {% if chain.date_range.start %}
-            <span>·</span>
-            <span>{{ chain.date_range.start }} — {{ chain.date_range.end }}</span>
+            <span>{{ chain.total_analyses }} анализ(ов)</span>
+            {% if chain.chain_id != chain.name %}
+                <span>·</span>
+                <span class="font-mono">{{ chain.chain_id }}</span>
+            {% endif %}
+            {% if chain.date_range.start %}
+                <span>·</span>
+                <span>{{ chain.date_range.start }} — {{ chain.date_range.end }}</span>
+            {% endif %}
+        </div>
+        {% if perms_can(request, 'aianalytics', 'delete') %}
+            <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button type="submit"
+                        @click="if (!confirm('Удалить цепочку «{{ chain.name }}» и все её анализы?')) $event.preventDefault()"
+                        class="rounded-lg border border-rose-900/70 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/40">
+                    Удалить цепочку
+                </button>
+            </form>
         {% endif %}
     </div>
 
@@ -24,11 +34,27 @@
             {% for step in chain.evolution %}
                 <div class="relative pl-12 pb-8">
                     <span class="absolute left-2.5 top-1 h-3.5 w-3.5 rounded-full border-2 border-cyan-500 bg-slate-950"></span>
-                    <div>
-                        <p class="text-sm font-medium text-slate-200">
-                            {{ step.date }}
-                            {% if step.analysis_title %} — {{ step.analysis_title }}{% endif %}
-                        </p>
+                    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <p class="text-sm font-medium text-slate-200">
+                                {{ step.date }}
+                                {% if step.analysis_title %} — {{ step.analysis_title }}{% endif %}
+                            </p>
+                            {% if perms_can(request, 'aianalytics', 'delete') and step.id %}
+                                <form method="post" action="/app/analytics/{{ step.id }}/delete">
+                                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                    <button type="submit" title="Удалить запись" aria-label="Удалить анализ за {{ step.date }}"
+                                            @click="if (!confirm('Удалить этот анализ?')) $event.preventDefault()"
+                                            class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                             stroke-width="1.5" stroke="currentColor" class="h-3.5 w-3.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.171-.204.357-.406.546-.608m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
                         {% if step.analysis_summary %}
                             <p class="mt-2 text-sm leading-relaxed text-slate-400">{{ step.analysis_summary }}</p>
                         {% endif %}

@@ -73,11 +73,98 @@ def _format_tool_result(name: str, result: Any) -> str:
         return str(result)
 
 
-def _confirmation_text(call_name: str, args: dict) -> str:
+def _join_replies(*parts: Any) -> str:
+    """Join reply fragments (e.g. a confirmed tool's result and the next turn)."""
+    return "\n\n".join(p for p in parts if p)
+
+
+# Human labels for the confirmation previews — write tools must read as a
+# sentence to a non-technical owner, never as a JSON parameter dump.
+_PLATFORM_LABELS = {"vk": "ВКонтакте", "telegram": "Телеграм", "max": "MAX"}
+_SOURCE_TYPE_LABELS = {
+    "user": "пользователь",
+    "channel": "канал",
+    "group": "группа",
+    "public": "сообщество",
+    "page": "страница",
+    "chat": "чат",
+}
+_JOB_TYPE_LABELS = {
+    "collect": "сбор контента",
+    "digest": "ежедневный отчёт",
+    "analyze": "анализ",
+    "prune": "очистка",
+    "learn": "обучение",
+    "reflect": "рефлексия",
+}
+
+
+def _human_cron(args: dict) -> str:
+    """Human-readable schedule for task_* previews; falls back to a plain line."""
+    from app.tasks.cron import cron_to_human
+
+    cron = args.get("cron") or args.get("cron_expr")
+    if not cron:
+        return "по расписанию"
+    return cron_to_human(cron)
+
+
+def _human_confirmation(name: str, args: dict) -> str:
+    """One human sentence describing what a confirmed write tool will do."""
+    renderers = {
+        "source_add": lambda a: (
+            f"добавить источник «{a.get('name') or a.get('external_id')}» — "
+            f"{_PLATFORM_LABELS.get(str(a.get('platform')).lower(), a.get('platform') or '?')}, "
+            f"{_SOURCE_TYPE_LABELS.get(str(a.get('source_type')).lower(), a.get('source_type') or '?')}, "
+            f"@{a.get('external_id')}"
+        ),
+        "source_disable": lambda a: f"отключить источник №{a.get('source_id')}",
+        "task_add": lambda a: (
+            f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
+            f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
+        ),
+        "task_remove": lambda a: f"удалить задачу «{a.get('name')}»",
+        "task_pause": lambda a: (
+            f"{'возобновить' if a.get('pause') is False else 'поставить на паузу'} задачу «{a.get('name')}»"
+        ),
+        "scenario_create": lambda a: f"создать сценарий «{a.get('name')}»",
+        "scenario_update": lambda a: f"изменить сценарий «{a.get('name') or a.get('id')}»",
+        "scenario_clone": lambda a: f"создать копию сценария №{a.get('source_id')} с именем «{a.get('new_name')}»",
+        "scenario_delete": lambda a: f"удалить сценарий №{a.get('id')}",
+        "digest_send_now": lambda a: f"отправить сводку за «{a.get('period') or 'day'}» в настроенные каналы",
+        "action_send": lambda a: (
+            f"{'показать превью действия' if a.get('dry_run') else 'опубликовать действие'} №{a.get('action_id')}"
+        ),
+    }
+    render = renderers.get(name)
+    if render is not None:
+        return f"Требуется подтверждение: {render(args)}. Ответьте «да» или «нет»."
     preview = json.dumps(args, ensure_ascii=False, default=str)
     if len(preview) > 500:
         preview = preview[:500] + "..."
-    return f"Требуется подтверждение: {call_name} с параметрами {preview}. Ответьте «да» или «нет»."
+    return f"Требуется подтверждение: {name} с параметрами {preview}. Ответьте «да» или «нет»."
+
+
+async def _write_tool_result(session: Any, pending: dict, content: str) -> None:
+    """Replace a staged «Требуется подтверждение» tool row with the real result.
+
+    The loop persists the confirmation text as the tool's result while the call
+    is pending; once the owner confirms we overwrite it with the actual outcome
+    so a resumed model loop sees the tool as executed, not as still waiting.
+    """
+    call_id = pending.get("tool_call_id")
+    if not call_id:
+        return
+    from app.models import AgentMessage
+
+    row = (
+        await AgentMessage.objects.filter(session_id=session.id, role="tool", tool_name=call_id)
+        .order_by(AgentMessage.id.desc())
+        .first()
+    )
+    if row is None:
+        return
+    await AgentMessage.objects.update_by_id(row.id, content=content)
 
 
 async def handle_inbound(inbound: Any) -> Optional[str]:
@@ -218,13 +305,21 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             try:
                 result = await call_tool(pending["name"], pending["args"])
                 body = _format_tool_result(pending["name"], result)
-                reply = f"Выполнено: {pending['name']}\n{body[:3000]}"
+                seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
-                reply = f"Ошибка выполнения {pending['name']}: {e}"
-            await session.append("assistant", reply)
+                body = str(e)
+                seed = f"Ошибка выполнения {pending['name']}: {e}"
+            # Overwrite the staged «Требуется подтверждение» tool row so a
+            # resumed model loop sees the tool as executed, not still pending.
+            await _write_tool_result(session, pending, body)
+            await session.append("assistant", seed)
             await session.touch()
-            return reply
+            # Resume the model loop: the owner's «да» completes one step of the
+            # plan, and the agent keeps going (create source -> create task)
+            # instead of waiting for the next message.
+            messages = await _build_messages(session)
+            return await _run_tool_loop(session, messages, tool_specs(), limit, seed_reply=seed)
         if verdict in ("нет", "no", "n", "-", "отменяю"):
             await _clear_pending(session)
             await session.append("user", text)
@@ -238,12 +333,27 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     # 2) Model loop with tool calling
     await session.append("user", text)
     messages = await _build_messages(session)
-    specs = tool_specs()
+    return await _run_tool_loop(session, messages, tool_specs(), limit)
 
-    reply: Optional[str] = None
+
+async def _run_tool_loop(
+    session: Any,
+    messages: list[dict],
+    specs: list[dict],
+    limit: Optional[float],
+    *,
+    seed_reply: Optional[str] = None,
+) -> str:
+    """Model loop: ask, execute tools, ask again — bounded by AGENT_MAX_ITERATIONS.
+
+    `seed_reply` prefixes the final answer without being persisted by this
+    function (the caller already wrote it to the transcript) — it is how a
+    confirmed tool's «Выполнено: …» survives a resumed plan.
+    """
+    reply: Optional[str] = seed_reply
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
         if limit and await _cost_today() >= limit:
-            reply = "Дневной лимит расходов исчерпан во время обработки запроса."
+            reply = _join_replies(reply, "Дневной лимит расходов исчерпан во время обработки запроса.")
             break
 
         try:
@@ -254,8 +364,9 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             # exception (type, status, response text) goes to the log; the reply
             # carries only what the person can act on.
             logger.error(f"Agent LLM call failed: {e}", exc_info=True)
-            reply = _llm_error_reply(e)
-            await session.append("assistant", reply)
+            error_reply = _llm_error_reply(e)
+            reply = _join_replies(reply, error_reply)
+            await session.append("assistant", error_reply)
             break
 
         tool_calls = response.get("tool_calls") or []
@@ -263,8 +374,9 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         await _record_usage(session, response.get("usage") or {})
 
         if not tool_calls:
-            reply = content or "Готово."
-            await session.append("assistant", reply)
+            text = content or "Готово."
+            reply = _join_replies(reply, text)
+            await session.append("assistant", text)
             break
 
         # Persist assistant turn, then execute each tool call. The in-flight
@@ -294,10 +406,11 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
                     {
                         "name": name,
                         "args": args,
+                        "tool_call_id": call.get("id"),
                         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                     },
                 )
-                tool_output = _confirmation_text(name, args)
+                tool_output = _human_confirmation(name, args)
                 stop_loop = True
             else:
                 try:
@@ -310,12 +423,12 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": tool_output})
 
         if stop_loop:
-            reply = tool_output
+            reply = _join_replies(reply, tool_output)
             break
     else:
-        reply = reply or "Достигнут лимит итераций агента."
+        reply = _join_replies(reply, "Достигнут лимит итераций агента.")
 
-    if reply is None:
+    if not reply:
         reply = "Не удалось получить ответ агента."
         await session.append("assistant", reply)
 
@@ -405,7 +518,7 @@ async def _build_messages(session: Any) -> list[dict]:
 
 async def build_system_prompt() -> str:
     """System prompt (+ style and learned memory) and session history."""
-    from app.agent.prompts import SCENARIO_SECTION, render_style_block
+    from app.agent.prompts import SCENARIO_SECTION, TASK_SECTION, render_style_block
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.agent_memory_manager import agent_memory
     from app.models.managers.tenant_manager import tenants
@@ -413,7 +526,7 @@ async def build_system_prompt() -> str:
     # Use env var if set, otherwise fall back to the built-in default.
     system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
 
-    sections = [system_prompt, SCENARIO_SECTION]
+    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION]
 
     tenant = None
     tid = current_tenant_id()

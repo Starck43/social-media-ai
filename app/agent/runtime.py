@@ -405,7 +405,7 @@ async def _build_messages(session: Any) -> list[dict]:
 
 async def build_system_prompt() -> str:
     """System prompt (+ style and learned memory) and session history."""
-    from app.agent.prompts import render_style_block
+    from app.agent.prompts import SCENARIO_SECTION, render_style_block
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.agent_memory_manager import agent_memory
     from app.models.managers.tenant_manager import tenants
@@ -413,7 +413,7 @@ async def build_system_prompt() -> str:
     # Use env var if set, otherwise fall back to the built-in default.
     system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
 
-    sections = [system_prompt]
+    sections = [system_prompt, SCENARIO_SECTION]
 
     tenant = None
     tid = current_tenant_id()
@@ -422,6 +422,10 @@ async def build_system_prompt() -> str:
     style_block = render_style_block(getattr(tenant, "agent_style", None) if tenant else None)
     if style_block:
         sections.append(style_block)
+
+    # Append custom system prompt override from workspace settings
+    if tenant and tenant.agent_system_prompt:
+        sections.append(tenant.agent_system_prompt)
 
     facts = await agent_memory.snapshot(limit=20)
     if facts:
@@ -433,13 +437,28 @@ async def build_system_prompt() -> str:
 
 async def _chat(messages: list[dict], specs: list[dict]) -> dict:
     """Call the LLM with tool specs + provider fallback; returns {content, tool_calls, usage}."""
+    from app.core.tenant_context import current_tenant_id
+    from app.models.managers.tenant_manager import tenants
     from app.services.ai.llm_client import chat_with_fallback
+
+    # Get workspace-level overrides
+    max_tokens = settings.AGENT_MAX_TOKENS
+    temperature = settings.AGENT_TEMPERATURE
+
+    tid = current_tenant_id()
+    if tid is not None:
+        tenant = await tenants.get(id=tid)
+        if tenant:
+            if tenant.agent_max_tokens is not None:
+                max_tokens = tenant.agent_max_tokens
+            if tenant.agent_temperature is not None:
+                temperature = tenant.agent_temperature
 
     return await chat_with_fallback(
         messages,
         tools=specs,
-        max_tokens=settings.AGENT_MAX_TOKENS,
-        temperature=settings.AGENT_TEMPERATURE,
+        max_tokens=max_tokens,
+        temperature=temperature,
     )
 
 

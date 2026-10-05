@@ -41,7 +41,9 @@ async def task_list() -> list[dict[str, Any]]:
         "Создать cron-задачу. Примеры: «каждый день в 9:00» → '0 9 * * *', "
         "«каждый час» → '0 * * * *'. Тип задачи: collect, digest, prune, analyze, learn, reflect."
         " Источники задаются списком source_ids (связываются с задачей); пустой список = все активные. "
-        "Для collect можно задать monitored_users (кого отслеживать) и excluded_users (кого игнорировать)."
+        "Для collect можно задать monitored_users (кого отслеживать) и excluded_users (кого игнорировать). "
+        "Для collect/analyze ОБЯЗАТЕЛЬНО указать start_date (с какой даты собирать контент, YYYY-MM-DD) — "
+        "иначе первый запуск вытянет всё с первого поста."
     ),
     confirm=True,
     parameters={
@@ -67,6 +69,19 @@ async def task_list() -> list[dict[str, Any]]:
             },
             "scenario_id": {"type": "integer", "description": "Опционально: ID сценария агента"},
             "period": {"type": "string", "description": "Период для digest: day | week (default day)"},
+            "start_date": {
+                "type": "string",
+                "description": "Обязательно для collect/analyze: с какой даты собирать контент (YYYY-MM-DD)",
+            },
+            "end_date": {"type": "string", "description": "Опционально: до какой даты собирать контент (YYYY-MM-DD)"},
+            "force_refresh": {
+                "type": "boolean",
+                "description": "Перетирать данные за период на каждом запуске (collect)",
+            },
+            "force_reanalyze": {
+                "type": "boolean",
+                "description": "Принудительно повторно анализировать уже обработанные записи (analyze)",
+            },
         },
         "required": ["name", "cron", "job_type"],
     },
@@ -80,6 +95,10 @@ async def task_add(
     excluded_users: list[str] | None = None,
     scenario_id: int | None = None,
     period: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    force_refresh: bool = False,
+    force_reanalyze: bool = False,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
@@ -101,6 +120,17 @@ async def task_add(
         payload["excluded_users"] = list(excluded_users)
     if period:
         payload["period"] = period
+
+    # collect/analyze need a content start date — without it a fresh source
+    # drains the whole history from the first post (same rule as the web form).
+    if AgentTaskManager.requires_content_dates(job_type):
+        start = AgentTaskManager.parse_date(start_date)
+        if start is None:
+            return {"error": "Для задачи этого типа укажите start_date (с какой даты собирать контент, YYYY-MM-DD)"}
+        end = AgentTaskManager.parse_date(end_date)
+        payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
+        if force_reanalyze:
+            payload["force_reanalyze"] = True
 
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.

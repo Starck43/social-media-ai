@@ -8,18 +8,37 @@
             Очередь выполнения: что ждёт запуска, что упало и с какой ошибкой.
         </p>
     </div>
-    {% if is_superuser and tenants %}
-        <form method="get" class="flex items-center gap-2">
-            <label for="f-tenant" class="text-xs text-slate-500">Пространство</label>
-            <select id="f-tenant" name="tenant_id" onchange="this.form.submit()"
-                    class="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs">
-                <option value="">Все</option>
-                {% for t in tenants %}
-                    <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
-                {% endfor %}
-            </select>
-        </form>
-    {% endif %}
+    <div class="flex items-center gap-2">
+        {% if is_superuser and tenants %}
+            <form method="get" class="flex items-center gap-2">
+                <label for="f-tenant" class="text-xs text-slate-500">Пространство</label>
+                <select id="f-tenant" name="tenant_id" onchange="this.form.submit()"
+                        class="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs">
+                    <option value="">Все</option>
+                    {% for t in tenants %}
+                        <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        {% endif %}
+        {# «Очистить всё» is a queue reset, not a page filter: it removes rows
+           server-side, so it gets the same CSRF + `agenttask.delete` gate as any
+           other mutation and a confirm that names what survives (`running`).
+           Hidden while the list is empty so the destructive control is not the
+           most eye-catching thing on an idle page. #}
+        {% if jobs and perms and perms.can('agenttask', 'delete') %}
+            <form method="post" action="/app/jobs/clear"
+                  @submit="return confirm('Удалить все задания этого пространства? Выполняющиеся задания останутся.')">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}
+                    <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
+                {% endif %}
+                <button class="rounded-lg border border-rose-900/70 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/40">
+                    Очистить всё
+                </button>
+            </form>
+        {% endif %}
+    </div>
 </div>
 
 <!-- Queue health ──────────────────────────────────────────────────────── -->
@@ -68,7 +87,12 @@
                 <td class="px-4 py-3">
                     <div class="font-medium text-slate-200">#{{ job.id }}</div>
                     {% if job.agent_task_id %}
-                        <a href="/app/tasks" class="text-xs text-cyan-400 hover:text-cyan-300">
+                        {# Points at the task's own page, not the task list: this row
+                           is the answer to "which task ran and what happened", so
+                           the link has to land on that task. `from=jobs` lets the
+                           card send the reader back where they came from. #}
+                        <a href="/app/tasks/{{ job.agent_task_id }}?from=jobs"
+                           class="text-xs text-cyan-400 hover:text-cyan-300">
                             Задача #{{ job.agent_task_id }}
                         </a>
                     {% else %}
@@ -95,7 +119,7 @@
                 {% endif %}
                 <td class="px-4 py-3 text-xs text-slate-500">{{ job.created_at|human_dt }}</td>
                 <td class="px-4 py-3">
-                    <div class="flex items-center justify-end gap-3">
+                    <div class="flex items-center justify-end gap-2">
                         {% if job.error %}
                             <button @click="open = !open" class="text-xs text-rose-300 hover:text-rose-200">
                                 <span x-show="!open">Причина</span>
@@ -110,6 +134,27 @@
                                 {% endif %}
                                 <button class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-900">
                                     Перезапустить
+                                </button>
+                            </form>
+                        {% endif %}
+                        {# A running row is claimed by the worker right now, so it is
+                           the one row without a trash button — see `DELETABLE`.
+                           The confirm is what makes an icon-only control safe:
+                           without it a stray click is an unrecoverable delete. #}
+                        {% if job.status in deletable and perms and perms.can('agenttask', 'delete') %}
+                            <form method="post" action="/app/jobs/{{ job.id }}/delete">
+                                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                {% if is_superuser and filter_tenant_id %}
+                                    <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
+                                {% endif %}
+                                <button type="submit" title="Удалить задание" aria-label="Удалить задание #{{ job.id }}"
+                                        @click="if (!confirm('Удалить задание #{{ job.id }}?')) $event.preventDefault()"
+                                        class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                         stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                              d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+                                    </svg>
                                 </button>
                             </form>
                         {% endif %}

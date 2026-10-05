@@ -10,6 +10,13 @@ Re-running is not "run now" for a task (that is on `/app/tasks`): it re-executes
 *this exact job row* through the dispatcher's claim, so the retry counter and
 the attempt log stay honest. A `running` job cannot be re-run — it is already
 claimed, and a second claim would run the same work twice.
+
+The same `running` row is also the one row that cannot be *deleted*: the worker
+holds it and will call `mark_done`/`mark_failed` on it, so removing the row
+underneath a live claim loses the audit trail of work in flight and leaves the
+dispatcher updating a row that no longer exists. Everything else is history (or
+scheduled work the operator is cancelling on purpose) and may go — which is
+what the per-row trash button and «Очистить всё» do.
 """
 
 from __future__ import annotations
@@ -19,7 +26,7 @@ from fastapi.responses import RedirectResponse
 
 from app.models.job import Job
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, plural, render, tenant_filter_context
 
 router = APIRouter(prefix="/jobs")
 
@@ -31,6 +38,10 @@ HISTORY_LIMIT = 50
 # Statuses a re-run is meaningful for. `pending` already runs on its own, and
 # `running` is claimed (see the module docstring).
 RETRYABLE = frozenset({"failed"})
+
+# Statuses a delete may touch. `running` is claimed by the worker *right now* —
+# see the module docstring for why that row is off limits.
+DELETABLE = frozenset({"pending", "done", "failed"})
 
 
 async def _jobs_for(tenant_id: int | None) -> list[Job]:
@@ -78,10 +89,111 @@ async def jobs_list(request: Request):
         jobs=rows,
         stats=_stats(rows),
         retryable=RETRYABLE,
+        deletable=DELETABLE,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
     )
+
+
+@router.post("/clear")
+async def jobs_clear(
+    request: Request,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Drop the whole queue history of one workspace.
+
+    Two deliberate limits:
+
+    * **One workspace at a time.** `action_tenant_id` returns None for a
+      superuser with no active workspace, and "delete every job of every
+      workspace" is not a button anyone should be one misclick away from — so a
+      superuser has to pick a workspace in the filter first.
+    * **`running` rows survive.** A claimed row belongs to the worker until it
+      reports back (see the module docstring); the rest is history, and history
+      is what grows without bound.
+
+    The count in the flash is the number of rows actually removed, and the
+    number left behind is stated too — a «очистил всё» that silently kept the
+    running job would read as a bug.
+    """
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse("/app/jobs", status_code=302)
+
+    denied = guard_web(request, "agenttask", "delete", back="/app/jobs")
+    if denied is not None:
+        return denied
+
+    tenant_id = action_tenant_id(request, tenant_id)
+    if tenant_id is None:
+        add_flash(request, "error", "Выберите пространство — очистка очереди по всем сразу недоступна")
+        return RedirectResponse("/app/jobs", status_code=302)
+
+    from app.core.tenant_context import tenant_scope
+
+    with tenant_scope(tenant_id):
+        # The tenant is an explicit filter, not just the manager's guard: the guard
+        # is what keeps the *page* honest, and a mutation that trusted it alone
+        # would be one refactor away from deleting another workspace's row.
+        kept = await Job.objects.filter(tenant_id=tenant_id, status="running").count()
+        deleted = await Job.objects.filter(tenant_id=tenant_id).exclude(status="running").delete()
+
+    noun = plural(deleted, "задание", "задания", "заданий")
+    text = f"Очищено: {deleted} {noun}"
+    if kept:
+        text += f", выполняющихся оставлено — {kept}"
+    add_flash(request, "success", text)
+    return RedirectResponse("/app/jobs", status_code=302)
+
+
+@router.post("/{job_id}/delete")
+async def job_delete(
+    request: Request,
+    job_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Delete one job row — the per-row trash button.
+
+    Same two limits as `jobs_clear`, resolved per row: an explicit workspace for
+    a superuser, and no deleting a `running` row (the worker owns it until it
+    reports back). A job of another workspace is not reachable at all — the
+    lookup filters on `tenant_id` explicitly, not only through `tenant_scope`.
+    """
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse("/app/jobs", status_code=302)
+
+    denied = guard_web(request, "agenttask", "delete", back="/app/jobs")
+    if denied is not None:
+        return denied
+
+    tenant_id = action_tenant_id(request, tenant_id)
+
+    from app.core.tenant_context import tenant_scope
+
+    # `bypass` only for the superuser-without-workspace case: there is no
+    # tenant to scope to, and the row is addressed by its own id, so the delete
+    # still lands on exactly one row.
+    with tenant_scope(tenant_id, bypass=tenant_id is None):
+        # Same rule as `jobs_clear`: the workspace is an explicit filter, so the
+        # handler's own boundary does not rest on the manager guard alone.
+        filters: dict = {"id": job_id} if tenant_id is None else {"id": job_id, "tenant_id": tenant_id}
+        job = await Job.objects.get(**filters)
+        if job is None:
+            add_flash(request, "error", "Задание не найдено")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+        if job.status not in DELETABLE:
+            add_flash(request, "error", f"Задание #{job.id} выполняется — его нельзя удалить")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+        await Job.objects.delete(**filters)
+
+    add_flash(request, "success", f"Задание #{job_id} удалено")
+    return RedirectResponse("/app/jobs", status_code=302)
 
 
 @router.post("/{job_id}/run")

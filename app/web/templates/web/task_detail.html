@@ -11,7 +11,17 @@
 <div x-data="{ openEdit: false }">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
-            <a href="/app/tasks" class="text-sm text-slate-500 hover:text-slate-300">← Задачи</a>
+            {# `?from=jobs` — the queue links here per task, so when the reader
+               arrived from there the breadcrumb goes back to the queue instead of
+               the task list. A single link, not two: two crumbs side by side
+               would leave the reader guessing which one is «back». An unknown
+               value is ignored rather than turned into a link — the parameter
+               names a page, not an arbitrary URL. #}
+            {% if request.query_params.get('from') == 'jobs' %}
+                <a href="/app/jobs" class="text-sm text-slate-500 hover:text-slate-300">← Очередь заданий</a>
+            {% else %}
+                <a href="/app/tasks" class="text-sm text-slate-500 hover:text-slate-300">← Задачи</a>
+            {% endif %}
             <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ task.name }}</h1>
             <p class="mt-1 text-sm text-slate-400">
                 {{ JOB_TYPE_TITLES.get(task.job_type, task.job_type) }} ·

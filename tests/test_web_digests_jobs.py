@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -27,6 +28,9 @@ from app.models.managers.tenant_manager import TenantUserManager
 from app.types import UserRoleType
 from app.web.digests import valid_period
 from app.web.jobs import RETRYABLE
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.models.agent_task import AgentTask
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 DENIED = "Недостаточно прав"
@@ -146,7 +150,13 @@ async def _cleanup(*users: User | None) -> None:
             await tenants.delete_by_id(tenant_id)
 
 
-async def _seed_job(tenant_id: int, status: str, job_type: str = "collect", error: str | None = None) -> Job:
+async def _seed_job(
+    tenant_id: int,
+    status: str,
+    job_type: str = "collect",
+    error: str | None = None,
+    agent_task_id: int | None = None,
+) -> Job:
     """A job row in an explicit workspace (bypass: the tests disable the guard)."""
     with tenant_scope(bypass=True):
         return await Job.objects.create(
@@ -155,6 +165,20 @@ async def _seed_job(tenant_id: int, status: str, job_type: str = "collect", erro
             status=status,
             run_at=datetime.now(timezone.utc),
             error=error,
+            agent_task_id=agent_task_id,
+        )
+
+
+async def _seed_task(tenant_id: int, name: str = "Сбор VK") -> "AgentTask":
+    from app.models.agent_task import AgentTask
+
+    with tenant_scope(bypass=True):
+        return await AgentTask.objects.create(
+            tenant_id=tenant_id,
+            name=name,
+            job_type="collect",
+            cron_expr="0 * * * *",
+            is_active=False,
         )
 
 
@@ -365,3 +389,277 @@ async def test_read_only_member_cannot_rerun_a_job() -> None:
                 assert list(await DigestRun.objects.filter(tenant_id=tenant_id)) == []
     finally:
         await _cleanup(viewer, owner)
+
+
+# ── /app/jobs — cleanup ─────────────────────────────────────────────────────
+
+
+async def test_row_delete_button_on_every_row_but_a_running_one() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobDel")
+            pending = await _seed_job(tenant_id, "pending")
+            failed = await _seed_job(tenant_id, "failed", error="boom")
+            done = await _seed_job(tenant_id, "done")
+            running = await _seed_job(tenant_id, "running")
+
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            for job in (pending, failed, done):
+                assert f'action="/app/jobs/{job.id}/delete"' in page.text
+            # A claimed row belongs to the worker — no button, and the handler
+            # refuses it too (see the next test).
+            assert f'action="/app/jobs/{running.id}/delete"' not in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_row_delete_removes_only_that_job() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobDelOne")
+            target = await _seed_job(tenant_id, "done")
+            neighbour = await _seed_job(tenant_id, "done")
+
+            token = await _csrf(client, "/app/jobs")
+            resp = await client.post(f"/app/jobs/{target.id}/delete", data={"_csrf": token})
+            assert resp.status_code == 200
+            assert f"#{target.id} удалено" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert await Job.objects.get(id=target.id) is None
+                assert await Job.objects.get(id=neighbour.id) is not None
+    finally:
+        await _cleanup(owner)
+
+
+async def test_row_delete_refuses_a_running_job() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobDelRun")
+            job = await _seed_job(tenant_id, "running")
+
+            token = await _csrf(client, "/app/jobs")
+            resp = await client.post(f"/app/jobs/{job.id}/delete", data={"_csrf": token})
+            assert resp.status_code == 200
+            assert "нельзя удалить" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert (await Job.objects.get(id=job.id)).status == "running"
+    finally:
+        await _cleanup(owner)
+
+
+async def test_clear_empties_the_queue_but_keeps_running_jobs() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobClear")
+            await _seed_job(tenant_id, "done")
+            await _seed_job(tenant_id, "failed", error="boom")
+            await _seed_job(tenant_id, "pending")
+            running = await _seed_job(tenant_id, "running")
+
+            token = await _csrf(client, "/app/jobs")
+            resp = await client.post("/app/jobs/clear", data={"_csrf": token})
+            assert resp.status_code == 200
+            # The count is what was removed, and the survivor is named — a
+            # «clean slate» that silently kept a row would read as a bug.
+            assert "Очищено: 3 задания" in resp.text
+            assert "выполняющихся оставлено — 1" in resp.text
+
+            with tenant_scope(bypass=True):
+                left = list(await Job.objects.filter(tenant_id=tenant_id))
+            assert [j.id for j in left] == [running.id]
+    finally:
+        await _cleanup(owner)
+
+
+async def test_clear_does_not_reach_another_workspace() -> None:
+    owner: User | None = None
+    other: User | None = None
+    try:
+        async with await _client() as mine, await _client() as theirs:
+            owner, _my_tenant = await _register(mine, "JobClearMine")
+            other, their_tenant = await _register(theirs, "JobClearTheirs")
+            await _seed_job(their_tenant, "done")
+
+            token = await _csrf(mine, "/app/jobs")
+            resp = await mine.post("/app/jobs/clear", data={"_csrf": token})
+            assert resp.status_code == 200
+            assert "Очищено: 0 заданий" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert len(list(await Job.objects.filter(tenant_id=their_tenant))) == 1
+    finally:
+        await _cleanup(other, owner)
+
+
+async def test_clear_button_is_hidden_on_an_empty_queue() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, _tenant_id = await _register(client, "JobClearEmpty")
+
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            # Nothing to clear → no destructive control on an idle page.
+            assert 'action="/app/jobs/clear"' not in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_read_only_member_can_neither_delete_rows_nor_clear() -> None:
+    owner: User | None = None
+    viewer: User | None = None
+    tenant_id = None
+    job_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobDelOwner")
+            viewer = await _invitee("JobDelViewer", UserRoleType.VIEWER, tenant_id)
+            job = await _seed_job(tenant_id, "done")
+            job_id = job.id
+
+        async with await _client() as client:
+            await _login(client, viewer.username)
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            assert f'action="/app/jobs/{job_id}/delete"' not in page.text
+            assert 'action="/app/jobs/clear"' not in page.text
+
+            # The button is not the check: a crafted POST is refused, row stays.
+            token = CSRF_RE.search(page.text).group(1)
+            resp = await client.post(f"/app/jobs/{job_id}/delete", data={"_csrf": token})
+            assert DENIED in resp.text
+            resp = await client.post("/app/jobs/clear", data={"_csrf": token})
+            assert DENIED in resp.text
+
+            with tenant_scope(bypass=True):
+                assert await Job.objects.get(id=job_id) is not None
+    finally:
+        await _cleanup(viewer, owner)
+
+
+async def test_cleanup_without_csrf_is_refused() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobDelCsrf")
+            job = await _seed_job(tenant_id, "done")
+
+            resp = await client.post(f"/app/jobs/{job.id}/delete", data={"_csrf": ""})
+            assert resp.status_code == 200
+            assert "Сессия истекла" in resp.text
+
+            resp = await client.post("/app/jobs/clear", data={"_csrf": ""})
+            assert "Сессия истекла" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert await Job.objects.get(id=job.id) is not None
+    finally:
+        await _cleanup(owner)
+
+
+async def test_row_delete_does_not_reach_another_workspace() -> None:
+    owner: User | None = None
+    other: User | None = None
+    try:
+        async with await _client() as mine, await _client() as theirs:
+            owner, _my_tenant = await _register(mine, "JobDelMine")
+            other, their_tenant = await _register(theirs, "JobDelTheirs")
+            theirs_job = await _seed_job(their_tenant, "done")
+
+            token = await _csrf(mine, "/app/jobs")
+            resp = await mine.post(f"/app/jobs/{theirs_job.id}/delete", data={"_csrf": token})
+            assert resp.status_code == 200
+            assert "не найдено" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert await Job.objects.get(id=theirs_job.id) is not None
+    finally:
+        await _cleanup(other, owner)
+
+
+# ── /app/jobs → the task's own page ─────────────────────────────────────────
+
+
+async def test_queue_row_links_to_that_task_not_to_the_task_list() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobLink")
+            task = await _seed_task(tenant_id)
+            await _seed_job(tenant_id, "done", agent_task_id=task.id)
+
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            # The row answers «which task ran and what happened», so the link has
+            # to land on that task — `/app/tasks` alone dropped the reader on the
+            # list with nothing selected.
+            assert f'href="/app/tasks/{task.id}?from=jobs"' in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_a_one_off_job_says_so_instead_of_a_broken_link() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobOneOff")
+            await _seed_job(tenant_id, "done")
+
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            # No `agent_task_id` → there is no task page to link to.
+            assert "разовая" in page.text
+            assert 'href="/app/tasks?' not in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_task_card_opens_and_sends_you_back_to_the_queue() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobCard")
+            task = await _seed_task(tenant_id)
+            await _seed_job(tenant_id, "done", agent_task_id=task.id)
+
+            link = re.search(r'href="(/app/tasks/\d+\?from=jobs)"', (await client.get("/app/jobs")).text).group(1)
+
+            card = await client.get(link)
+            assert card.status_code == 200
+            # Regression: the card used to 500 here for EVERY task — the m2m
+            # lookup read a column that does not exist.
+            assert task.name in card.text
+            # Arrived from the queue → the way back is the queue, not the list.
+            assert "← Очередь заданий" in card.text
+            assert "← Задачи" not in card.text
+
+            # Opened directly, the breadcrumb is the task list as before.
+            direct = await client.get(f"/app/tasks/{task.id}")
+            assert "← Задачи" in direct.text
+            assert "← Очередь заданий" not in direct.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_unknown_from_parameter_does_not_become_a_link() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobSpoof")
+            task = await _seed_task(tenant_id)
+
+            resp = await client.get(f"/app/tasks/{task.id}?from=../../etc/passwd")
+            assert resp.status_code == 200
+            # The parameter names a page, not a URL: an unknown value falls back
+            # to the task list instead of being echoed into an href.
+            assert "← Задачи" in resp.text
+            assert "/etc/passwd" not in resp.text
+    finally:
+        await _cleanup(owner)

@@ -1,8 +1,15 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import check_card, switch_toggle %}
 {% block title %}{% if create %}Новый сценарий{% else %}{{ draft.name }} | Сценарии{% endif %}{% endblock %}
 {% block content %}
 {% set editable = perms and perms.can('agentscenario', 'create' if create else 'update') %}
 {% set action_url = '/app/scenarios/new' if create else '/app/scenarios/' ~ scenario_id %}
+{# Step 4 («Предпросмотр») belongs to a platform role above ADMIN — for everyone
+   else the wizard is three steps wide and «Сохранить» lands on step 3. #}
+{% set show_preview = show_preview_step | default(false) %}
+{% set max_step = 4 if show_preview else 3 %}
+{% set steps = [(1, 'Интерес'), (2, 'Промпт'), (3, 'Модели')] %}
+{% if show_preview %}{% set steps = steps + [(4, 'Предпросмотр')] %}{% endif %}
 <div class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -41,7 +48,7 @@
 
             {# Steps nav #}
             <ol class="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/50 p-2 text-sm">
-                {% for n, label in [(1, 'Интерес'), (2, 'Промпт'), (3, 'Модели'), (4, 'Предпросмотр')] %}
+                {% for n, label in steps %}
                     <li class="flex-1">
                         <button type="button" @click="step = {{ n }}"
                                 class="w-full rounded-xl px-3 py-2 text-center transition"
@@ -53,9 +60,10 @@
             </ol>
 
             {# ── Шаг 1: Интерес ─────────────────────────────────────────── #}
-            <section x-show="step === 1" class="space-y-5">
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Основное</legend>
+            <section x-show="step === 1" class="space-y-8">
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Основное</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <div class="space-y-4">
                         <div>
                             <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
@@ -68,53 +76,50 @@
                                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">{{ draft.description or '' }}</textarea>
                         </div>
                         <div class="flex flex-wrap gap-6">
-                            <label class="flex items-center gap-2 text-sm text-slate-300">
-                                <input type="checkbox" name="is_active" {% if draft.is_active %}checked{% endif %}
-                                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                                Активен
-                            </label>
+                            {{ switch_toggle("is_active", "Активен", checked=draft.is_active, disabled=not editable) }}
                             {% if not create %}
-                            <label class="flex items-center gap-2 text-sm text-slate-300">
-                                <input type="checkbox" name="is_default" {% if draft.is_default %}checked{% endif %}
-                                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                                По умолчанию для новых источников
-                            </label>
+                            {{ switch_toggle("is_default", "По умолчанию для новых источников", checked=draft.is_default, disabled=not editable) }}
                             {% endif %}
                         </div>
                     </div>
-                </fieldset>
+                    </fieldset>
+                </div>
 
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Что мониторим</legend>
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Что мониторим</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <p class="mb-3 text-xs text-slate-500">Типы контента, которые будут собираться и попадать в анализ.</p>
-                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {% for ct in content_types %}
-                            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm hover:border-cyan-500">
-                                <input type="checkbox" name="content_types" value="{{ ct.db_value }}"
-                                       class="content-cb h-4 w-4 rounded border-slate-600 bg-slate-950"
-                                       {% if draft.content_types and ct.db_value in draft.content_types %}checked{% endif %}>
-                                <span>{{ ct.emoji }} {{ ct.display_name }}</span>
-                            </label>
+                            {{ check_card(
+                                "sc-ct-" ~ ct.db_value, "content_types", ct.db_value,
+                                ct.emoji ~ " " ~ ct.display_name,
+                                checked=(draft.content_types and ct.db_value in draft.content_types),
+                                cls="content-cb"
+                            ) }}
                         {% endfor %}
-                    </div>
-                </fieldset>
+                    </ul>
+                    </fieldset>
+                </div>
 
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Что анализировать</legend>
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Что анализировать</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <p class="mb-3 text-xs text-slate-500">
                         Выберите виды анализа — параметры сценария сформируются сами.
                     </p>
-                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {% for at in analysis_types %}
-                            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm hover:border-cyan-500">
-                                <input type="checkbox" name="analysis_types" value="{{ at.db_value }}"
-                                       class="analysis-cb h-4 w-4 rounded border-slate-600 bg-slate-950"
-                                       @change="rebuildScope()"
-                                       {% if draft.analysis_types and at.db_value in draft.analysis_types %}checked{% endif %}>
-                                <span>{{ at.emoji }} {{ at.display_name }}</span>
-                            </label>
+                            {# `.analysis-cb` is read by rebuildScope() to rebuild the scope JSON. #}
+                            {{ check_card(
+                                "sc-at-" ~ at.db_value, "analysis_types", at.db_value,
+                                at.emoji ~ " " ~ at.display_name,
+                                checked=(draft.analysis_types and at.db_value in draft.analysis_types),
+                                cls="analysis-cb",
+                                attrs='@change="rebuildScope()"'
+                            ) }}
                         {% endfor %}
-                    </div>
+                    </ul>
 
                     <div class="mt-4">
                         <label for="sc-analyze" class="mb-1 block text-sm text-slate-300">Как группировать анализ</label>
@@ -139,13 +144,15 @@
                             </p>
                         </div>
                     </details>
-                </fieldset>
+                    </fieldset>
+                </div>
             </section>
 
             {# ── Шаг 2: Промпт ─────────────────────────────────────────── #}
-            <section x-show="step === 2" class="space-y-5">
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Промпт анализа</legend>
+            <section x-show="step === 2" class="space-y-8">
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Промпт анализа</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <p class="mb-3 text-xs text-slate-500">
                         Как модель должна анализировать собранный контент. Пусто — возьмётся промпт по умолчанию.
                         {% if media_types %}Охватывает: {{ media_types | join(', ') }}.{% endif %}
@@ -220,13 +227,15 @@
                                       placeholder="Переменные: {text_analysis}, {image_analysis}, {video_analysis}">{{ draft.summary_prompt or '' }}</textarea>
                         </div>
                     </details>
-                </fieldset>
+                    </fieldset>
+                </div>
             </section>
 
             {# ── Шаг 3: Модели ─────────────────────────────────────────── #}
-            <section x-show="step === 3" class="space-y-5">
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Модели LLM</legend>
+            <section x-show="step === 3" class="space-y-8">
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Модели LLM</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <div class="space-y-4">
                         <div>
                             <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
@@ -264,19 +273,26 @@
                                    class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
                         </div>
                     </div>
-                </fieldset>
+                    </fieldset>
+                </div>
             </section>
 
+            {% if show_preview %}
             {# ── Шаг 4: Предпросмотр ───────────────────────────────────── #}
-            <section x-show="step === 4" class="space-y-5">
-                <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <legend class="px-2 text-sm font-medium text-slate-300">Предпросмотр финального промпта</legend>
+            {# Entering the step fires the preview once — the reader should see the
+               final prompt without an extra click; the button stays for a manual
+               refresh after edits (no-op for a read-only user: no button). #}
+            <section x-show="step === 4" class="space-y-8"
+                     x-effect="step === 4 && document.getElementById('preview-btn')?.click()">
+                <div>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Предпросмотр финального промпта</h2>
+                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
                     <p class="mb-3 text-xs text-slate-500">
                         Здесь видно, что реально уйдёт в модель: ваш промпт, общие поля и схема
                         ответа от выбранных типов анализа. Ничего не сохраняется и не вызывается.
                     </p>
                     {% if editable %}
-                        <button type="button"
+                        <button type="button" id="preview-btn"
                                 hx-post="/app/scenarios/preview"
                                 hx-include="#scenario-form"
                                 hx-target="#preview-panel"
@@ -288,8 +304,10 @@
                         <span id="preview-loading" class="htmx-indicator ml-2 text-xs text-slate-400">Собираю…</span>
                     {% endif %}
                     <div id="preview-panel" class="mt-4"></div>
-                </fieldset>
+                    </fieldset>
+                </div>
             </section>
+            {% endif %}
 
             {# ── Навигация ─────────────────────────────────────────────── #}
             <div class="flex items-center justify-between">
@@ -298,11 +316,11 @@
                     ← Назад
                 </button>
                 <div class="flex gap-3">
-                    <button type="button" @click="next()" x-show="step < 4"
+                    <button type="button" @click="next()" x-show="step < {{ max_step }}"
                             class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
                         Далее →
                     </button>
-                    <button type="submit" x-show="step === 4"
+                    <button type="submit" x-show="step === {{ max_step }}"
                             class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                         {% if create %}Создать сценарий{% else %}Сохранить{% endif %}
                     </button>
@@ -322,7 +340,8 @@ function wizard() {
         known: {{ available_variables | tojson }},
         allTypes: {{ all_analysis_types | tojson }},
         defaults: {{ analysis_defaults | tojson }},
-        next() { this.step = Math.min(4, this.step + 1); },
+        max: {{ max_step }},
+        next() { this.step = Math.min(this.max, this.step + 1); },
         prev() { this.step = Math.max(1, this.step - 1); },
         insertVar(fieldId) {
             const sel = document.getElementById('var-select');

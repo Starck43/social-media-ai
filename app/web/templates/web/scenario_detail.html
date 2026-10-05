@@ -1,4 +1,5 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import switch_toggle %}
 {% block title %}{{ scenario.name }} | Сценарии{% endblock %}
 {% block content %}
 {% set editable = perms and perms.can('agentscenario', 'update') %}
@@ -30,12 +31,13 @@
     {% endif %}
 
     {% set ro = '' if editable else 'pointer-events-none opacity-60' %}
-    <form id="scenario-form" method="post" action="/app/scenarios/{{ scenario.id }}" class="space-y-5">
+    <form id="scenario-form" method="post" action="/app/scenarios/{{ scenario.id }}" class="space-y-8">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
 
         <!-- Основное ─────────────────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Основное</legend>
+        <div>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Основное</h2>
+            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <div>
                 <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
                 <input id="sc-name" name="name" required maxlength="255" value="{{ scenario.name }}"
@@ -47,14 +49,10 @@
                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">{{ scenario.description or '' }}</textarea>
             </div>
             <div class="flex flex-wrap gap-6">
-                <label class="flex items-center gap-2 text-sm text-slate-300">
-                    <input type="checkbox" name="is_active" {% if scenario.is_active %}checked{% endif %}
-                           {% if not editable %}disabled{% endif %}
-                           class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                    Активен
-                </label>
+                {{ switch_toggle("is_active", "Активен", checked=scenario.is_active, disabled=not editable) }}
             </div>
-        </fieldset>
+            </fieldset>
+        </div>
 
         <!-- Что попадает в анализ ────────────────────────────────────── -->
 
@@ -63,8 +61,9 @@
              разными триггерами. См. раздел «Задачи». -->
 
         <!-- Ограничения ─────────────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Ограничения</legend>
+        <div>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Ограничения</h2>
+            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <div class="grid gap-4 sm:grid-cols-3">
                 <div>
                     <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
@@ -73,11 +72,13 @@
                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
                 </div>
             </div>
-        </fieldset>
+            </fieldset>
+        </div>
 
         <!-- Промпты ──────────────────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Промпты</legend>
+        <div>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Промпты</h2>
+            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-xs text-slate-500">
                 Пустое поле — берётся промпт по умолчанию из
                 <code class="text-slate-400">app/agent/prompts</code>.
@@ -109,11 +110,13 @@
                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.unified_summary_prompt or '' }}</textarea>
                 </div>
             </div>
-        </fieldset>
+            </fieldset>
+        </div>
 
         <!-- Модели ───────────────────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">Модели LLM</legend>
+        <div>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Модели LLM</h2>
+            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <div>
                 <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
                 <select id="sc-strategy" name="llm_strategy" {{ ro }}
@@ -143,18 +146,17 @@
                     </div>
                 {% endfor %}
             </div>
-        </fieldset>
+            </fieldset>
+        </div>
 
         <!-- По умолчанию ─────────────────────────────────────────────── -->
-        <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <legend class="px-2 text-sm font-medium text-slate-300">По умолчанию</legend>
-            <label class="flex items-center gap-2 text-sm text-slate-300">
-                <input type="checkbox" name="is_default" {% if scenario.is_default %}checked{% endif %}
-                       {% if not editable %}disabled{% endif %}
-                       class="h-4 w-4 rounded border-slate-600 bg-slate-950">
-                Сценарий по умолчанию для новых источников
-            </label>
-        </fieldset>
+        <div>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">По умолчанию</h2>
+            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            {{ switch_toggle("is_default", "Сценарий по умолчанию для новых источников",
+                            checked=scenario.is_default, disabled=not editable) }}
+            </fieldset>
+        </div>
 
 <div class="flex justify-end gap-3">
             <a href="/app/scenarios" class="rounded-lg border border-slate-700 px-5 py-2 text-sm text-slate-300 hover:bg-slate-900">

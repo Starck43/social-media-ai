@@ -426,16 +426,17 @@
 {# One selectable card, meant to sit in a `<ul class="grid">`.
 
    `checked` is a plain boolean rather than a string so a caller cannot
-   accidentally render the attribute by passing the string "false". `attrs`
-   carries what only this call site knows — Alpine handlers, extra classes for
-   the wizard's `.analysis-cb` hook. #}
-{% macro check_card(cid, name, value, content, checked=False, attrs="") -%}
+   accidentally render the attribute by passing the string "false". `cls` is for
+   a hook class the caller needs to find the box later (`content-cb`,
+   `analysis-cb`); it merges into the one class attribute rather than adding a
+   second, which the parser would drop. `attrs` carries Alpine handlers. #}
+{% macro check_card(cid, name, value, content, checked=False, cls="", attrs="") -%}
     <li class="group relative flex items-center rounded-lg border border-slate-700 bg-slate-950 transition
                hover:border-cyan-500
                has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 has-[:checked]:text-cyan-200
                has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan-500/60">
         <input type="checkbox" id="{{ cid }}" name="{{ name }}" value="{{ value }}"
-               class="peer sr-only" {{ attrs }} {% if checked %}checked{% endif %}>
+               class="{{ cls }} peer sr-only" {{ attrs }} {% if checked %}checked{% endif %}>
         <span class="pointer-events-none flex-1 px-3 py-2 text-sm text-slate-300">{{ content }}</span>
         {{ check_mark("peer-checked:text-cyan-500") }}
         <label for="{{ cid }}" class="absolute inset-0 cursor-pointer"></label>
@@ -443,17 +444,31 @@
 {%- endmacro %}
 
 
-{# The inline variant, for a lone toggle («Активен», «По умолчанию») that never
-   became a grid. Same tick, same colour rule; only the framing differs — there
-   is no card border to agree with, so the hover tint lands on the text. #}
-{% macro check_toggle(name, content, checked=False, disabled=False, attrs="") -%}
-    <label class="group relative flex cursor-pointer items-center gap-2 pr-8 text-sm text-slate-300 transition
+{# The inline switch, for a lone toggle («Активен», «По умолчанию») that never
+   became a grid: the control sits LEFT of its label — a rounded track whose
+   knob slides and turns cyan when checked.
+
+   The input stays `peer sr-only`: a real checkbox the POST carries (`name=...`)
+   without a second styling mechanism. Every colour derives from `checked` —
+   the label text through `has-[:checked]:`, the track and knob through
+   `group-has-[:checked]:` (the knob is a *descendant* of the group, not a
+   sibling of the input, so `peer-checked:` cannot reach it). The focus ring
+   lives on the track via `peer-focus-visible:`: `:focus-visible` propagates to
+   the ancestor tree, `peer-*` only reaches siblings. #}
+{% macro switch_toggle(name, content, checked=False, disabled=False, attrs="") -%}
+    <label class="group inline-flex cursor-pointer items-center gap-2 text-sm text-slate-300 transition
                   hover:text-cyan-200 has-[:checked]:text-cyan-200
                   {% if disabled %}pointer-events-none opacity-60{% endif %}">
         <input type="checkbox" name="{{ name }}" class="peer sr-only" {{ attrs }}
                {% if checked %}checked{% endif %} {% if disabled %}disabled{% endif %}>
+        <span aria-hidden="true"
+              class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-slate-700 bg-slate-900 p-0.5
+                     transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-500/60
+                     group-has-[:checked]:border-cyan-500 group-has-[:checked]:bg-cyan-500">
+            <span class="block h-3.5 w-3.5 rounded-full bg-slate-500 shadow transition-transform
+                         group-has-[:checked]:translate-x-[18px] group-has-[:checked]:bg-slate-950"></span>
+        </span>
         <span class="pointer-events-none">{{ content }}</span>
-        {{ check_mark("peer-checked:text-cyan-500") }}
     </label>
 {%- endmacro %}
 

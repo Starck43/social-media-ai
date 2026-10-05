@@ -52,7 +52,7 @@ def create_application() -> FastAPI:
     application = FastAPI(
         title="Social Media AI Manager",
         description="API для управления социальными сетями с AI аналитикой",
-        version="0.3.0",
+        version="0.4.0",
         debug=settings.DEBUG,
         lifespan=lifespan,
     )

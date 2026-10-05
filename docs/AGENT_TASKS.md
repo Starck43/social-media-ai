@@ -31,6 +31,28 @@ is never blocked behind a long collection.
   job's LLM call — `learn`/`reflect`, NULL when none), plus `agent_task_id` when
   the job came from a task.
 
+### Clearing the queue (`/app/jobs`)
+
+The page shows the last 50 rows and can delete them: a trash icon per row
+(`POST /app/jobs/{id}/delete`) and «Очистить всё» (`POST /app/jobs/clear`).
+Both are gated on `agenttask.delete` — the same right as the task delete on
+`/app/tasks`, since the rows are the tasks' run history — plus CSRF and a
+`confirm()`.
+
+Two limits are deliberate:
+
+- **`running` rows are never deleted.** A claimed row belongs to the worker
+  until it reports back through `mark_done`/`mark_failed`; removing it loses the
+  audit trail of live work and leaves the dispatcher updating a row that no
+  longer exists. The «Очистить всё» flash says how many were kept.
+- **One workspace at a time.** A superuser without a workspace selected is
+  refused, rather than offered a "delete every job of every workspace" button.
+
+Both handlers filter on `tenant_id` explicitly instead of relying on the
+manager's tenant guard alone — the guard is what keeps the *page* honest, and a
+mutation that trusted it alone would be one refactor away from deleting another
+workspace's row.
+
 ## The reaction: when to look and what to do
 
 A task answers "when to look" (`cron_expr`) and "what to do about a match"
@@ -122,6 +144,19 @@ closing removes it, and loading the URL opens that editor. The row data the
 modal binds comes from `_edit_payload()` (`app/web/tasks.py`), built from the
 rows the page already shows — so a link to a task outside the current
 workspace (or one a superuser filtered out) opens nothing.
+
+A task's own page is `/app/tasks/{id}`. The queue links to it per row
+(`/app/tasks/{id}?from=jobs`), and `?from=jobs` swaps the card's breadcrumb for
+«← Очередь заданий» so the reader returns to the row they came from. Only the
+literal value `jobs` is honoured — the parameter names a page, never an
+arbitrary URL.
+
+The card's linked sources come from `_task_source_ids()`, which reads the
+`AgentTask.sources` relationship (`secondary=agent_task_sources`) with a
+`prefetch_related`. Reaching for the m2m table directly is what broke the page:
+the join column is `agent_task_id`, and a declarative `Table.select()` produces
+a core `Select` with no `.fetchall()`. Either mistake 500s the card for every
+task, and nothing on the task list noticed — the list never opens a card.
 
 ## Default tasks
 

@@ -158,6 +158,17 @@ the join column is `agent_task_id`, and a declarative `Table.select()` produces
 a core `Select` with no `.fetchall()`. Either mistake 500s the card for every
 task, and nothing on the task list noticed — the list never opens a card.
 
+**Content window is mandatory for collect/analyze.** A task of these types
+cannot be saved without a `cli_dates.start_date`: without it, a fresh source
+has no lower bound and the first run drains the whole history from the first
+post. The web form, the agent's `task_add` tool and the CLI's `--start-date`
+all enforce/store it the same way (`AgentTaskManager.parse_date` +
+`build_dates_payload`). `force_refresh` (collect: overwrite the window on each
+run) and `force_reanalyze` (analyze: re-run the model on stored rows) are the
+operator's explicit choices. The CLI `task <job_type>` command runs a task
+with its stored dates unless flags override — the job payload is built from
+the task payload, so a task that saved a window keeps it.
+
 ## Default tasks
 
 `app/tasks/bootstrap.py::ensure_all_default_tasks()` seeds every active

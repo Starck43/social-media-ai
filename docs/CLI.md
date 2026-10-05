@@ -159,6 +159,9 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--monitored` | — | Usernames to collect for (collect only) |
 | `--excluded` | — | Usernames to skip (collect/analyze) |
 | `--scenario` | — | `AgentScenario` ID to apply when the task runs |
+| `--start-date` | — | Content start date `DD-MM-YYYY` (collect/analyze) — stored on the task as `cli_dates.start_date` |
+| `--end-date` | — | Content end date `DD-MM-YYYY` — stored on the task as `cli_dates.end_date` |
+| `--force-refresh` | `false` | Overwrite the window on every run (collect) — stored on the task as `payload.force_refresh` |
 | `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
 
 **Examples:**
@@ -209,6 +212,8 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 | `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |
 | `--tenant` | — | Workspace slug or id for a one-off run |
 | `--force-refresh` | `false` | Full-cycle refresh (per job type, below); applied to this job only, never persisted on the task row |
+| `--start-date` | — | Content start date `DD-MM-YYYY` (one-off only) |
+| `--end-date` | — | Content end date `DD-MM-YYYY` (one-off only) |
 
 A task's own workspace always wins over `--tenant`. Running a task executes
 *its own* job — it never drains an unrelated pending job.

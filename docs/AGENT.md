@@ -37,13 +37,10 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-Запись/отправка (`confirm=True`): `task_add/remove/pause`, `source_add/disable`,
-`digest_send_now`, `action_send`. Их модель не
-выполняет сама — runtime кладёт вызов в `session.state['pending_confirmation']`
-и ждёт явного «да»/«нет» от владельца.
-
-Чтение/эфемерные: `collect_now`, `sources_list`, `scenario_list`,
-`report_period`, `system_status`, `memory_get/set`, `task_list`, `actions_log`.
+Запись/отправление (`confirm=True`): `task_add/remove/pause`, `source_add/disable`,
+`digest_send_now`, `action_send`, `scenario_create/update/clone/delete`. Их модель
+не выполняет сама — runtime кладёт вызов в
+`session.state['pending_confirmation']` и ждёт явного «да»/«нет» от владельца.
 
 ## Команды чата
 
@@ -80,10 +77,39 @@ OpenAI function calling.
 
 Промпты агента живут в `AgentScenario`:
 `base_prompt` (основная инструкция) + `media_overrides` (JSON: `image`/`video`/`audio` для мультимедиа) + `summary_prompt` (сводка).
-Правка — через `PUT /api/v1/ai/scenarios/{id}` или админку (`AgentScenarioAdmin`);
-изменение подхватывается со следующего запуска задачи (сценарий читается
-на каждый run). Автоматическая эволюция промптов **не происходит**:
-`prompt_advice` из `reflect` владелец применяет сам.
+Правка — через чат (`scenario_*`), `PUT /api/v1/ai/scenarios/{id}`, веб-мастер
+(`/app/scenarios/new`) или админку (`AgentScenarioAdmin`); изменение
+подхватывается со следующего запуска задачи (сценарий читается на каждый
+run). Автоматическая эволюция промптов **не происходит**: `prompt_advice` из
+`reflect` владелец применяет сам.
+
+## Сценарии в чате
+
+Инструменты в `app/agent/toolset/scenarios.py` (см. `docs/CHAT_BOT_SCENARIOS.md`):
+
+| Tool | Назначение | Confirm |
+|---|---|---|
+| `scenario_list` / `scenario_get` | список и полная карточка сценария | нет |
+| `scenario_templates` | готовые пресеты (`app/services/ai/scenario_templates.py`) | нет |
+| `scenario_suggest_prompt` | описание задачи → `base_prompt` через LLM | нет |
+| `scenario_validate_prompt` | неизвестные переменные в промпте | нет |
+| `scenario_create` | из пресета или с нуля | да |
+| `scenario_update` | частичное обновление, `scope` сливается по типам | да |
+| `scenario_clone` | копия под новым именем (без флага default) | да |
+| `scenario_delete` | удаление; возвращает число задач, оставшихся без сценария | да |
+
+Подтверждение — общее для всех write-tools: runtime кладёт вызов в
+`session.state['pending_confirmation']` и ждёт «да».
+
+Предпочтения сценариев (`app/services/ai/scenario_prefs.py`) пишутся в
+`agent_memory(scope=scenario_prefs)`: режим группировки и список брендов/конкурентов.
+Читаются как дефолты в `scenario_create` и в первом шаге веб-мастера — пустые
+поля заполняются, явно выбранные — нет.
+
+Порядок работы с новым сценарием описан в системном промпте
+(`SCENARIO_SECTION` в `app/agent/prompts.py`, добавляется в
+`build_system_prompt()` независимо от `AGENT_SYSTEM_PROMPT`): цель → шаблон →
+поля → промпт → валидация → превью → подтверждение.
 
 Подробности: `docs/CHAT_BOT_SCENARIOS.md` (архитектура, переменные, валидация).
 Исторический контекст: `docs/PROMPT_AND_SCOPE_EXPLAINED.md`.

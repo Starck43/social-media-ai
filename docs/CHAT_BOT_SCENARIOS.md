@@ -94,7 +94,11 @@ Warning: unknown variable {foo}. Available: text, platform, date_range, ...
 
 ## Scenario Templates (Presets)
 
-Location: `app/services/ai/scenario_templates.py`
+Location: `app/services/ai/scenario_templates.py`. Implemented as
+`TEMPLATES: dict[str, dict]` — slug → the same fields a scenario stores — plus
+`get_template`, `list_templates` and `expand_template` (the last one validates
+the enums, generates the scope and merges the caller's overrides, so the tool
+and the wizard produce the same row).
 
 ```python
 TEMPLATES = {
@@ -145,7 +149,8 @@ TEMPLATES = {
 
 ## Agent Tools for Scenario Management
 
-All tools registered in `app/agent/tools/`. Each returns structured JSON. Dangerous actions use `pending_confirmation` flow.
+All tools live in `app/agent/toolset/scenarios.py` and register into
+`TOOL_REGISTRY` by the usual side-effecting import. Each returns structured JSON. Dangerous actions use `pending_confirmation` flow.
 
 | Tool | Purpose | Confirm? |
 |---|---|---|
@@ -154,22 +159,23 @@ All tools registered in `app/agent/tools/`. Each returns structured JSON. Danger
 | `scenario_templates` | Available presets | No |
 | `scenario_suggest_prompt(description)` | LLM generates a prompt from a description | No |
 | `scenario_validate_prompt(prompt)` | Check variables | No |
-| `scenario_create(template_key, name, overrides)` | Create from preset or full fields | Yes |
+| `scenario_create(name, template_key?, overrides)` | Create from preset or full fields | Yes |
 | `scenario_update(id, changes)` | Partial update | Yes |
 | `scenario_clone(source_id, new_name, changes)` | Clone with modifications | Yes |
 | `scenario_delete(id)` | Delete | Yes |
 
 ### Confirmation Flow
 
-Uses existing `agent_sessions.state['pending_confirmation']`:
+Uses the existing `agent_sessions.state['pending_confirmation']` — the runtime
+gates every `confirm=True` tool the same way, so a scenario write waits for an
+explicit «да» exactly like `task_add` or `source_add`:
 
 ```json
 {
   "pending_confirmation": {
-    "action": "scenario_create",
-    "payload": {"name": "...", "analysis_types": [...]},
-    "preview": "Scenario '...' will be created with analysis types: ...",
-    "created_at": "2026-10-05T12:00:00Z"
+    "name": "scenario_create",
+    "args": {"name": "...", "template_key": "brand_monitoring"},
+    "expires_at": "2026-10-05T13:00:00+00:00"
   }
 }
 ```
@@ -178,7 +184,8 @@ User replies "yes"/"no" — agent executes or cancels.
 
 ### Agent Memory for Preferences
 
-Store user preferences in `agent_memory`:
+Store user preferences in `agent_memory` under `scope=scenario_prefs`
+(`app/services/ai/scenario_prefs.py`):
 
 ```
 scope=scenario_prefs, key=default_language, value=ru
@@ -186,26 +193,36 @@ scope=scenario_prefs, key=preferred_analyze_type, value=days
 scope=scenario_prefs, key=brands, value=["Fanta","Sprite"]
 ```
 
-On next scenario creation, the agent auto-fills these values.
+Lists are stored as JSON text (`value` is a `Text` column). `remember()` writes
+after a successful create/update, `apply_to_draft()` fills the *empty* fields of
+the next draft — in `scenario_create` and in the first step of the web wizard —
+so an explicit choice from the current conversation always outranks a remembered
+one.
 
 ### System Prompt Fragment
 
+`SCENARIO_SECTION` in `app/agent/prompts.py`, appended by
+`build_system_prompt()` (appended *after* the base prompt, so a deployment that
+overrides the prompt via `AGENT_SYSTEM_PROMPT` still gets the procedure — the
+tools are registered either way):
+
 ```markdown
-## Scenario Creation
-When the user wants to create or modify a scenario:
+## Создание сценариев
+1. СНАЧАЛА узнай цель: что анализировать и зачем.
+2. Предложи подходящий шаблон из scenario_templates.
+3. Нет подходящего — проведи мастер: content_types → analysis_types →
+   analyze_type → описание задачи.
+4. Сгенерируй промпт через scenario_suggest_prompt.
+5. Проверь переменные через scenario_validate_prompt.
+6. Покажи превью и запроси подтверждение.
+7. Вызови scenario_create — владелец подтвердит вызов отдельным «да».
 
-1. FIRST understand the goal: what to analyse and why
-2. Propose a matching template from `scenario_templates`
-3. If no template fits — run the interactive wizard:
-   content_types → analysis_types → analyze_type → task description
-4. Generate a prompt via `scenario_suggest_prompt`
-5. Validate variables via `scenario_validate_prompt`
-6. Show a preview and request confirmation
-7. Use `scenario_create` with confirmation flow
-
-NEVER create a scenario silently — always show a preview.
-Use agent_memory to remember preferences across sessions.
+НИКОГДА не создавай сценарий молча: превью и подтверждение обязательны.
 ```
+
+The fragment is written in Russian like the rest of the prompt: the agent
+answers the owner in their language, and a procedure the model has to translate
+before following is a procedure it follows less reliably.
 
 ---
 
@@ -284,25 +301,25 @@ Bot: Scope is a JSON config for each analysis type.
 
 ### MUST HAVE
 
-- [ ] Replace 5 prompt fields with `base_prompt + media_overrides + summary_prompt`
-- [ ] Create `prompt_variables.py` with `AVAILABLE_VARIABLES`
-- [ ] Prompt variable validation on scenario save
-- [ ] JSON detection via regex parsing (not keyword matching)
+- [x] Replace 5 prompt fields with `base_prompt + media_overrides + summary_prompt`
+- [x] Create `prompt_variables.py` with `AVAILABLE_VARIABLES`
+- [x] Prompt variable validation on scenario save
+- [x] JSON detection via regex parsing (not keyword matching)
 
 ### SHOULD HAVE
 
-- [ ] `scenario_templates.py` with 5+ presets
-- [ ] Tools: `scenario_list`, `scenario_get`, `scenario_templates`
-- [ ] Tools: `scenario_create`, `scenario_update`, `scenario_clone`, `scenario_delete`
-- [ ] Tool: `scenario_suggest_prompt` (LLM-generated prompt)
-- [ ] Tool: `scenario_validate_prompt`
-- [ ] Confirmation flow for create/update/delete
-- [ ] Agent memory for preferences (`scope=scenario_prefs`)
-- [ ] Update agent system prompt — scenario section
+- [x] `scenario_templates.py` with 5+ presets
+- [x] Tools: `scenario_list`, `scenario_get`, `scenario_templates`
+- [x] Tools: `scenario_create`, `scenario_update`, `scenario_clone`, `scenario_delete`
+- [x] Tool: `scenario_suggest_prompt` (LLM-generated prompt)
+- [x] Tool: `scenario_validate_prompt`
+- [x] Confirmation flow for create/update/delete
+- [x] Agent memory for preferences (`scope=scenario_prefs`)
+- [x] Update agent system prompt — scenario section
 
 ### NICE TO HAVE
 
-- [ ] Web UI: scenario creation wizard (matching chat UX)
+- [x] Web UI: scenario creation wizard (matching chat UX)
 - [ ] Gallery of public/community templates
 - [ ] A/B testing of prompts (save both variants)
 - [ ] Scenario quality metrics (which give best results)

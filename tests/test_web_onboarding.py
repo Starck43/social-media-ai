@@ -280,10 +280,12 @@ async def test_wizard_creates_a_source_and_returns_to_the_wizard() -> None:
             assert source is not None
             source_id = source.id
 
-            # The step reads as done for everyone the wizard is shown to.
+            # The step reads as done for everyone the wizard is shown to: the
+            # source form is gone, the schedule form legitimately keeps its
+            # return-to-wizard marker until a schedule exists.
             page = await client.get("/app/onboarding")
             assert DONE in page.text
-            assert WIZARD_MARKER not in page.text
+            assert page.text.count(WIZARD_MARKER) == 1, "only the schedule form keeps the marker"
         finally:
             if source_id is not None:
                 with tenant_scope(bypass=True):

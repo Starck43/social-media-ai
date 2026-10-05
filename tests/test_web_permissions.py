@@ -49,6 +49,11 @@ class _StubUser:
     def has_perm_for(self, model_name: str, action: ActionType) -> bool:
         return (model_name.lower(), action) in self._rights
 
+    def _is_superuser_role(self) -> bool:
+        # The flag half of `User._is_superuser_role`; the SUPERUSER-role half is
+        # the real User's contract (tests/test_permissions.py) and needs a db row.
+        return self.is_superuser
+
 
 class _StubMembership:
     def __init__(self, tenant_id: int, role: str) -> None:
@@ -59,6 +64,15 @@ class _StubMembership:
 def _perms(user, *, role: str = "member", same_tenant: bool = True) -> WebPerms:
     memberships = [_StubMembership(1 if same_tenant else 999, role)] if user is not None else []
     return WebPerms(user, memberships, 1)
+
+
+def test_section_gate_asks_who_the_user_is_and_fails_closed() -> None:
+    # Whole-section gates (the job queue) ask *who* the caller is, not *what*
+    # they may do — owning a workspace is not an operator role.
+    assert not _perms(None).is_superuser_role
+    assert not _perms(_StubUser()).is_superuser_role
+    assert not _perms(_StubUser(), role="owner").is_superuser_role
+    assert _perms(_StubUser(superuser=True)).is_superuser_role
 
 
 def test_workspace_owner_writes_his_own_workspace_regardless_of_platform_role() -> None:

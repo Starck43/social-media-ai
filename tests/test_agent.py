@@ -403,5 +403,123 @@ async def test_chat_uses_agent_limits(_clean_sessions, monkeypatch):
     assert captured.get("temperature") == 0.5
 
 
+async def test_confirmed_tool_resumes_the_plan(_clean_sessions, monkeypatch):
+    """«да» no longer ends the turn: the agent continues its multi-step plan.
+
+    The reported failure: the owner asked for a task, confirmed `source_add`,
+    and the agent stopped — the task was only created after a follow-up
+    «а где сама задача?». After «да» the loop must resume so the plan
+    (create source -> create task) continues on its own.
+    """
+    _set_owner(monkeypatch)
+    calls = []
+
+    async def fake_chat(messages, specs):
+        calls.append(1)
+        if len(calls) == 1:
+            return {
+                "content": "Создаю источник, затем задачу.",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "name": "source_add",
+                        "arguments": {
+                            "platform": "vk",
+                            "source_type": "user",
+                            "external_id": "annastrizhovadesign",
+                            "name": "Анна Стрижова",
+                        },
+                    }
+                ],
+                "usage": {},
+            }
+        return {
+            "content": "Теперь создаю задачу.",
+            "tool_calls": [
+                {
+                    "id": "c2",
+                    "name": "task_add",
+                    "arguments": {
+                        "name": "Слежение за Анной",
+                        "cron": "0 21 * * 1",
+                        "job_type": "collect",
+                        "scenario_id": 8,
+                        "source_ids": [2939],
+                        "start_date": "2026-07-01",
+                    },
+                }
+            ],
+            "usage": {},
+        }
+
+    async def fake_tool(name, args):
+        if name == "source_add":
+            return {"status": "created", "source_id": 2939, "name": "Анна Стрижова"}
+        if name == "task_add":
+            return {"status": "created", "name": args["name"], "next_run_at": "2026-10-12T18:00:00+00:00"}
+        raise AssertionError(f"unexpected tool {name}")
+
+    monkeypatch.setattr(agent_runtime, "_chat", fake_chat)
+    monkeypatch.setattr(agent_runtime, "call_tool", fake_tool)
+    monkeypatch.setattr(agent_runtime, "_cost_today", _zero_cost)
+
+    first = await agent_runtime.handle_inbound(_inbound("создай задачу для слежения за Анной"))
+    assert "подтверждение" in first.lower()
+    assert "источник" in first.lower()
+    assert "{" not in first and "}" not in first, f"raw JSON leaked into the preview: {first!r}"
+
+    # «да» executes source_add AND immediately asks for the next step — the
+    # owner does not have to nudge with «а где сама задача?».
+    second = await agent_runtime.handle_inbound(_inbound("да"))
+    assert second.startswith("Выполнено"), second
+    assert "подтверждение" in second.lower(), second
+    assert "задачу" in second.lower(), second
+    assert "0 21" not in second, f"cron must read as human text, not as an expression: {second!r}"
+    assert "Еженедельно" in second, f"cron must read as human text: {second!r}"
+
+    # The staged tool message must now carry the real result, not the
+    # «Требуется подтверждение» text the model would have replayed.
+    session = await AgentSession.objects.get(channel="telegram", chat_id="7")
+    tool_rows = [
+        m.content
+        for m in await AgentMessage.objects.filter(session_id=session.id, role="tool").all()
+        if m.tool_name == "c1"
+    ]
+    assert tool_rows, "the staged tool message must exist"
+    assert "source_id" in tool_rows[-1], f"the tool result must overwrite the confirmation text: {tool_rows[-1]!r}"
+    assert "Требуется подтверждение" not in tool_rows[-1]
+
+    # A second «да» runs task_add — the staged next step fires.
+    third = await agent_runtime.handle_inbound(_inbound("да"))
+    assert third.startswith("Выполнено"), third
+    assert "Слежение за Анной" in third, third
+
+
+async def test_confirmation_previews_are_human(_clean_sessions):
+    """Write-tool confirmations read as sentences, never as JSON dumps."""
+    from app.agent.runtime import _human_confirmation
+
+    source = _human_confirmation(
+        "source_add",
+        {"platform": "vk", "source_type": "user", "external_id": "annastrizhovadesign", "name": "Анна Стрижова"},
+    )
+    assert "добавить источник «Анна Стрижова»" in source
+    assert "ВКонтакте" in source
+    assert "пользователь" in source
+    assert "{" not in source and "}" not in source
+
+    task = _human_confirmation(
+        "task_add",
+        {"name": "Слежение за Анной", "cron": "0 21 * * 1", "job_type": "collect", "start_date": "2026-07-01"},
+    )
+    assert "создать задачу «Слежение за Анной»" in task
+    assert "сбор контента" in task
+    assert "Еженедельно" in task
+    assert "0 21" not in task and "{" not in task
+
+    cancel = _human_confirmation("task_remove", {"name": "Слежение за Анной"})
+    assert "удалить задачу «Слежение за Анной»" in cancel
+
+
 async def _noop_async(*args, **kwargs):
     return object()

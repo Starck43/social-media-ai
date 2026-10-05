@@ -133,7 +133,7 @@ class TestAnalyzerIntegration:
         """
 
         async def fake_analyze(
-            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None, task_payload=None, **kwargs
         ):
             return {
                 "request": {"model": "test-model", "prompt": "p"},
@@ -163,7 +163,7 @@ class TestAnalyzerIntegration:
         so the next run retries it instead of treating it as covered."""
 
         async def fake_analyze(
-            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None, task_payload=None, **kwargs
         ):
             return {
                 "request": {"model": "test-model", "prompt": "p"},
@@ -190,7 +190,7 @@ class TestAnalyzerIntegration:
         calls: list[list[dict]] = []
 
         async def fake_analyze(
-            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None, task_payload=None, **kwargs
         ):
             calls.append(text_items)
             return {
@@ -232,7 +232,7 @@ class TestAnalyzerIntegration:
         calls: list[list[dict]] = []
 
         async def fake_analyze(
-            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None
+            self, text_items, agent_scenario, content_stats, platform_name, src, trigger_config=None, task_payload=None, **kwargs
         ):
             calls.append(text_items)
             return {

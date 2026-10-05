@@ -162,6 +162,12 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--start-date` | — | Content start date `DD-MM-YYYY` (collect/analyze) — stored on the task as `cli_dates.start_date` |
 | `--end-date` | — | Content end date `DD-MM-YYYY` — stored on the task as `cli_dates.end_date` |
 | `--force-refresh` | `false` | Overwrite the window on every run (collect) — stored on the task as `payload.force_refresh` |
+| `--brands` | — | Comma/space separated brands to track (brand_mentions scenario) |
+| `--competitors` | — | Comma/space separated competitors to analyze (competitor scenario) |
+| `--hashtags` | — | Comma/space separated hashtags to track (hashtag_analysis scenario) |
+| `--influencers` | — | Comma/space separated authors/influencers (influencer scenario) |
+| `--keywords` | — | Comma/space separated keywords (keywords scenario) |
+| `--topics` | — | Comma/space separated topics (topics scenario) |
 | `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
 
 **Examples:**
@@ -187,6 +193,46 @@ python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --sc
 
 ```bash
 python -m cli.main task remove <name>
+```
+
+### Update Task
+
+```bash
+python -m cli.main task update <name> [options]
+```
+
+Only provided options are changed; all others keep their current values.
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--job-type` | New job type: `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
+| `--cron` | New cron expression (5 fields) or `@once` |
+| `--sources` | New comma/space separated source IDs (empty = all active) |
+| `--monitored` | New comma/space separated monitored usernames (collect) |
+| `--excluded` | New comma/space separated excluded usernames (collect/analyze) |
+| `--scenario` | New `AgentScenario` ID |
+| `--period` | Period for digest: `day`, `week` |
+| `--start-date` | New start date `YYYY-MM-DD` (collect/analyze) |
+| `--end-date` | New end date `YYYY-MM-DD` |
+| `--force-refresh` | New `force_refresh` value (collect) |
+| `--force-reanalyze` | New `force_reanalyze` value (analyze) |
+| `--brands` | New comma/space separated brands (brand_mentions scenario) |
+| `--competitors` | New comma/space separated competitors (competitor scenario) |
+| `--hashtags` | New comma/space separated hashtags (hashtag_analysis) |
+| `--influencers` | New comma/space separated authors/influencers (influencer scenario) |
+| `--keywords` | New comma/space separated keywords (keywords scenario) |
+| `--topics` | New comma/space separated topics (topics scenario) |
+
+**Example:**
+
+```bash
+# Change schedule and add brands for an existing task
+python -m cli.main task update nightly-analyze --cron "0 3 * * *" --brands "Coca-Cola, Sprite"
+
+# Switch scenario and add competitors
+python -m cli.main task update brand-watch --scenario 7 --competitors "Pepsi, Fanta"
 ```
 
 ### Run Task

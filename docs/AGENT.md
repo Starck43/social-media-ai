@@ -37,7 +37,7 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-Запись/отправление (`confirm=True`): `task_add/remove/pause`, `source_add/disable`,
+Запись/отправление (`confirm=True`): `task_add/remove/update/pause`, `source_add/disable`,
 `digest_send_now`, `action_send`, `scenario_create/update/clone/delete`. Их модель
 не выполняет сама — runtime кладёт вызов в
 `session.state['pending_confirmation']` и ждёт явного «да»/«нет» от владельца.
@@ -100,6 +100,24 @@ run). Автоматическая эволюция промптов **не пр
 
 Подтверждение — общее для всех write-tools: runtime кладёт вызов в
 `session.state['pending_confirmation']` и ждёт «да».
+
+## Задачи в чате
+
+Инструменты в `app/agent/toolset/tasks.py`:
+
+| Tool | Назначение | Confirm |
+|---|---|---|
+| `task_list` | список всех cron-задач с активностью и следующим запуском | нет |
+| `task_add` | создать задачу: cron, job_type, sources, payload (brands, competitors, hashtags, influencer_names, keywords_list, topic_list) | да |
+| `task_update` | изменить задачу: job_type, cron, payload, scenario_id, source_ids (частичное, только переданные поля) | да |
+| `task_remove` | удалить по имени | да |
+| `task_pause` | поставить на паузу / возобновить | да |
+
+При создании/изменении задачи проверяется соответствие payload сценарию:
+если сценарий использует `brand_mentions`, а `brands` не переданы — возвращается
+`warnings` (не ошибка). Это позволяет анализу работать без фокуса, просто шире.
+
+## Источники в чате
 
 Предпочтения сценариев (`app/services/ai/scenario_prefs.py`) пишутся в
 `agent_memory(scope=scenario_prefs)`: режим группировки и список брендов/конкурентов.

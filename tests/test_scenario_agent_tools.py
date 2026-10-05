@@ -45,11 +45,15 @@ async def _clean_state():
     "Scenario blocked for tenant ... on plan pro".
     """
     before = {s.id for s in await AgentScenario.objects.all()}
+    tasks_before = {t.id for t in await AgentTask.objects.all()}
     yield
     with tenant_scope(bypass=True):
         created = [s.id for s in await AgentScenario.objects.all() if s.id not in before]
         if created:
             await AgentScenario.objects.filter(id__in=created).delete()
+        created_tasks = [t.id for t in await AgentTask.objects.all() if t.id not in tasks_before]
+        if created_tasks:
+            await AgentTask.objects.filter(id__in=created_tasks).delete()
         await agent_memory.filter(scope=scenario_prefs.SCOPE).delete()
 
 
@@ -349,3 +353,97 @@ async def test_system_prompt_carries_the_scenario_procedure() -> None:
     for step in ("scenario_templates", "scenario_suggest_prompt", "scenario_validate_prompt", "scenario_create"):
         assert step in prompt, f"{step} must be named in the procedure"
     assert SCENARIO_SECTION in prompt
+
+
+# ── methodology vs specifics ────────────────────────────────────────────────
+
+
+async def test_create_rejects_targets_in_scope() -> None:
+    """Specific targets (brands, competitors, …) must not be stored on a scenario.
+
+    The scenario is a reusable methodology; the targets belong on the task's
+    payload. A scope that carries them would turn one scenario into a
+    one-brand template, so the tool refuses with guidance instead.
+    """
+    result = await tools.scenario_create(
+        name=_name("sc-brands"),
+        analysis_types=["brand_mentions"],
+        content_types=["posts"],
+        base_prompt="Анализ упоминаний {brands}",
+        scope={"brand_mentions": {"brands": ["Арт-Сервис"]}},
+    )
+    assert result.get("status") != "created"
+    assert "payload" in result["error"].lower()
+    assert "brands" in result["error"]
+
+    nested = await tools.scenario_create(
+        name=_name("sc-comp"),
+        analysis_types=["competitor"],
+        content_types=["posts"],
+        base_prompt="Сравни {competitors}",
+        scope={"competitors": ["Конкурент1"]},
+    )
+    assert nested.get("status") != "created"
+    assert "competitors" in nested["error"]
+
+
+async def test_update_rejects_targets_in_scope() -> None:
+    row = await _scenario(analysis_types=["brand_mentions"])
+    result = await tools.scenario_update(row.id, {"scope": {"brand_mentions": {"brands": ["Арт-Сервис"]}}})
+    assert result.get("status") != "updated"
+    assert "payload" in result["error"].lower()
+
+    stored = await AgentScenario.objects.get(id=row.id)
+    assert "brands" not in str(stored.scope), "the refused edit must not be persisted"
+
+
+async def test_task_add_stores_targets_in_payload_and_warns() -> None:
+    """The chat-created task carries its targets in `payload`, not the scenario.
+
+    `brands` etc. flow into `AgentTask.payload` so the scheduled analyze job
+    feeds them into the prompt; when the bound scenario asks for a target the
+    task does not provide, the tool returns a `warnings` hint the agent relays
+    to the owner.
+    """
+    from app.agent.toolset import tasks as task_tools
+    from app.core.config import settings
+    from app.models.managers.tenant_manager import tenants
+
+    tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
+    scenario = await tools.scenario_create(
+        name=_name("sc-mon"), analysis_types=["brand_mentions"], content_types=["posts"], base_prompt="Ищи {brands}"
+    )
+    scenario_id = scenario["scenario"]["id"]
+    name = _name("task-anna")
+
+    with tenant_scope(tenant.id):
+        ok = await task_tools.task_add(
+            name=name,
+            cron="0 21 * * 1",
+            job_type="analyze",
+            scenario_id=scenario_id,
+            source_ids=[],
+            start_date="2026-07-01",
+            brands=["Арт-Сервис"],
+        )
+        stored = await AgentTask.objects.get(name=name)
+        stored_payload = dict(stored.payload or {})
+
+    assert ok["status"] == "created"
+    assert stored_payload["brands"] == ["Арт-Сервис"]
+    assert not ok.get("warnings"), f"brands supplied, nothing to warn about: {ok!r}"
+    assert stored.agent_scenario_id == scenario_id
+
+    # Same scenario, no brands -> a hint that the analysis has nothing to aim at.
+    with tenant_scope(tenant.id):
+        hinted = await task_tools.task_add(
+            name=_name("task-no-targets"),
+            cron="0 21 * * 1",
+            job_type="analyze",
+            scenario_id=scenario_id,
+            source_ids=[],
+            start_date="2026-07-01",
+        )
+    assert hinted["status"] == "created"
+    assert hinted.get("warnings"), "the missing target must surface as a warning"
+    assert any("бренды" in w for w in hinted["warnings"])

@@ -14,6 +14,7 @@ from tests.test_web_permissions import (  # noqa: F401 — shared web harness
     CSRF_RE,
     DENIED,
     AsyncClient,
+    Role,
     User,
     UserRoleType,
     _client,
@@ -39,14 +40,22 @@ async def _scenario(tenant_id: int, name: str, **overrides) -> int:
 # ── reading the wizard ──────────────────────────────────────────────────────
 
 
-async def test_wizard_new_page_renders_all_four_steps() -> None:
+async def test_wizard_is_three_steps_below_the_admin_role() -> None:
+    """«Предпросмотр» (step 4) belongs to a platform role above ADMIN.
+
+    For everyone else the tab and the panel are gone server-side — not merely
+    `x-show`-hidden — and the save button waits on the last step they can see,
+    step 3.
+    """
     async with await _client() as client:
         user, tenant_id = await _register(client, "WizNew")
         try:
             page = await client.get("/app/scenarios/new")
             assert page.status_code == 200
-            for label in ("Интерес", "Промпт", "Модели", "Предпросмотр"):
+            for label in ("Интерес", "Промпт", "Модели"):
                 assert label in page.text
+            assert "Предпросмотр" not in page.text, "step 4 is not offered"
+            assert 'x-show="step === 3"' in page.text, "«Сохранить» lands on the last visible step"
             assert 'name="content_types"' in page.text
             assert 'name="analysis_types"' in page.text
             assert 'name="scope"' in page.text
@@ -54,6 +63,26 @@ async def test_wizard_new_page_renders_all_four_steps() -> None:
             assert 'id="prompt-description"' in page.text, "the LLM assist box must render"
             assert 'name="media_overrides_image"' in page.text
             assert 'name="summary_prompt"' in page.text
+        finally:
+            await _drop(user, tenant_id)
+
+
+async def test_wizard_keeps_the_preview_step_above_the_admin_role() -> None:
+    """The SUPERUSER role (above ADMIN) keeps all four steps, preview included."""
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "WizSuper")
+        try:
+            role = await Role.objects.get(codename=UserRoleType.SUPERUSER.name)
+            assert role is not None, "the SUPERUSER platform role is seeded"
+            await User.objects.filter(id=user.id).update(role_id=role.id)
+
+            page = await client.get("/app/scenarios/new")
+            assert page.status_code == 200
+            for label in ("Интерес", "Промпт", "Модели", "Предпросмотр"):
+                assert label in page.text
+            assert 'id="preview-btn"' in page.text, "the preview panel must be reachable"
+            assert 'id="preview-panel"' in page.text
+            assert 'x-show="step === 4"' in page.text, "save waits on the last step"
         finally:
             await _drop(user, tenant_id)
 

@@ -16,7 +16,9 @@ is never blocked behind a long collection.
 - `agent_tasks` — one cron definition **and the reaction it produces**:
   `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`),
+  `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`,
+  **target parameters**: `brands`, `competitors`, `hashtags`, `influencer_names`,
+  `keywords_list`),
   `agent_scenario_id` (FK → `agent_scenarios`, optional), `is_active`,
   `next_run_at`, `last_run_at`, `last_status`, `last_error`, plus
   `trigger_type` / `trigger_config` / `action_type` and the guards
@@ -119,18 +121,20 @@ python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "wee
 python -m cli.main task add hourly-collect "0 * * * *" collect \
   --sources "1 2 3" --monitored "user_a, user_b" --excluded "spam_user"
 python -m cli.main task add nightly-analyze "0 2 * * *" analyze \
-  --sources "1" --scenario 5
+  --sources "1" --scenario 5 --brands "Coca-Cola, Sprite"
 python -m cli.main task list
 python -m cli.main task pause weekly-digest
 python -m cli.main task remove weekly-digest
+python -m cli.main task update hourly-collect --brands "Coca-Cola, Fanta" --cron "0 */2 * * *"
 ```
 
 Task sources are linked via the `agent_task_sources` m2m table
 (`--sources`); `--monitored`/`--excluded` become the flat `monitored_users` /
-`excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Use
-`task <job_type> --task <name|id>` (e.g. `task collect --task 524`) to run an
-existing task now, or pass the same direct params to create and run a one-off
-`@once` task.
+`excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Specific
+analysis targets (`--brands`, `--competitors`, `--hashtags`, `--influencers`,
+`--keywords`, `--topics`) go into the task `payload`, not the shared scenario.
+Use `task update <name> [options]` to change any field on an existing task —
+only the fields you pass are modified.
 
 Adding a job type means adding a function to the `HANDLERS` registry in
 `app/jobs/handlers.py`; `job_type` values are otherwise free-form strings, so

@@ -171,6 +171,31 @@ async def test_task_add_rejects_a_foreign_source():
         assert await AgentTask.objects.filter(name=name) == []
 
 
+async def test_task_add_persists_target_params_in_payload():
+    """The CLI's `--brands/--competitors/…` land on the task payload.
+
+    Targets (brands, competitors, hashtags, …) belong on the task, not on the
+    shared scenario — the CLI stores them in `payload` so a scheduled analyze
+    job can feed them into the prompt instruction.
+    """
+    name = _uniq("task-targets-")
+    await _cli(
+        _add_task,
+        name=name,
+        cron="@once",
+        job_type="analyze",
+        parsed_payload={"brands": ["Арт-Сервис"], "keywords_list": ["клей"]},
+        parsed_source_ids=[],
+        scenario_id=None,
+        tenant=None,
+    )
+
+    task = await _all(AgentTask.objects.get(name=name))
+    payload = dict(task.payload or {})
+    assert payload["brands"] == ["Арт-Сервис"]
+    assert payload["keywords_list"] == ["клей"]
+
+
 async def test_task_remove_covers_every_workspace_with_that_name():
     name = _uniq("dup-")
     await _make_task(None, name)

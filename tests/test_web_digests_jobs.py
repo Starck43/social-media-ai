@@ -198,6 +198,16 @@ async def _seed_digest_run(tenant_id: int, status: str, channel: str = "telegram
         )
 
 
+async def _as_admin_plus(user: User) -> User:
+    """`/app/jobs` is gated to a platform role above ADMIN — the queue tests act as one.
+
+    The account stays the workspace owner it was; only the platform flag moves,
+    which is exactly the half `User._is_superuser_role` checks first.
+    """
+    await User.objects.filter(id=user.id).update(is_superuser=True)
+    return user
+
+
 # ── /app/digests ───────────────────────────────────────────────────────────
 
 
@@ -268,104 +278,6 @@ async def test_unknown_preview_period_degrades_to_day() -> None:
 
 async def test_read_only_member_cannot_send_a_digest() -> None:
     owner: User | None = None
-
-
-# ── /app/jobs ──────────────────────────────────────────────────────────────
-
-
-async def test_jobs_page_lists_queue_health_and_failures() -> None:
-    owner: User | None = None
-    try:
-        async with await _client() as client:
-            owner, tenant_id = await _register(client, "JobOwner")
-            await _seed_job(tenant_id, "pending")
-            await _seed_job(tenant_id, "failed", error="connection reset by peer")
-
-            page = await client.get("/app/jobs")
-            assert page.status_code == 200
-            assert "Задания" in page.text
-            # The error text is the whole point of the page.
-            assert "connection reset by peer" in page.text
-    finally:
-        await _cleanup(owner)
-
-
-async def test_jobs_page_does_not_leak_another_workspace() -> None:
-    owner: User | None = None
-    other: User | None = None
-    try:
-        async with await _client() as mine, await _client() as theirs:
-            owner, _my_tenant = await _register(mine, "JobMine")
-            other, their_tenant = await _register(theirs, "JobTheirs")
-            await _seed_job(their_tenant, "failed", error="СОСЕДНИЙ-ВОРКСПЕЙС")
-
-            page = await mine.get("/app/jobs")
-            assert page.status_code == 200
-            assert "СОСЕДНИЙ-ВОРКСПЕЙС" not in page.text
-    finally:
-        await _cleanup(other, owner)
-
-
-async def test_only_failed_jobs_offer_a_rerun_button() -> None:
-    owner: User | None = None
-    try:
-        async with await _client() as client:
-            owner, tenant_id = await _register(client, "JobBtn")
-            failed = await _seed_job(tenant_id, "failed", error="boom")
-            done = await _seed_job(tenant_id, "done")
-
-            page = await client.get("/app/jobs")
-            assert f'action="/app/jobs/{failed.id}/run"' in page.text
-            # A finished job is not offered a re-run — that would be a no-op.
-            assert f'action="/app/jobs/{done.id}/run"' not in page.text
-    finally:
-        await _cleanup(owner)
-
-
-async def test_rerun_refuses_a_job_that_is_not_failed() -> None:
-    owner: User | None = None
-    try:
-        async with await _client() as client:
-            owner, tenant_id = await _register(client, "JobNoRun")
-            done = await _seed_job(tenant_id, "done")
-
-            token = await _csrf(client, "/app/jobs")
-            resp = await client.post(f"/app/jobs/{done.id}/run", data={"_csrf": token})
-            assert resp.status_code == 200
-            assert "перезапуск не требуется" in resp.text
-
-            with tenant_scope(bypass=True):
-                assert (await Job.objects.get(id=done.id)).status == "done"
-    finally:
-        await _cleanup(owner)
-
-
-async def test_read_only_member_cannot_rerun_a_job() -> None:
-    owner: User | None = None
-    viewer: User | None = None
-    tenant_id = None
-    job_id = None
-    try:
-        async with await _client() as client:
-            owner, tenant_id = await _register(client, "JobROwner")
-            viewer = await _invitee("JobRViewer", UserRoleType.VIEWER, tenant_id)
-            job = await _seed_job(tenant_id, "failed", error="boom")
-            job_id = job.id
-
-        async with await _client() as client:
-            await _login(client, viewer.username)
-            page = await client.get("/app/jobs")
-            assert page.status_code == 200
-            assert f'action="/app/jobs/{job_id}/run"' not in page.text
-
-            # Refused, and the failed row stays failed — no execution happened.
-            token = CSRF_RE.search(page.text).group(1)
-            resp = await client.post(f"/app/jobs/{job_id}/run", data={"_csrf": token})
-            assert DENIED in resp.text
-            with tenant_scope(bypass=True):
-                assert (await Job.objects.get(id=job_id)).status == "failed"
-    finally:
-        await _cleanup(viewer, owner)
     viewer: User | None = None
     tenant_id = None
     try:
@@ -391,6 +303,139 @@ async def test_read_only_member_cannot_rerun_a_job() -> None:
         await _cleanup(viewer, owner)
 
 
+# ── /app/jobs ──────────────────────────────────────────────────────────────
+
+
+async def test_queue_is_closed_below_the_admin_role() -> None:
+    """Operator-only: the sidebar never offers the queue, the route refuses it."""
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobGate")
+            await _seed_job(tenant_id, "failed", error="hidden")
+
+            refused = await client.get("/app/jobs", follow_redirects=False)
+            assert refused.status_code == 302
+            assert refused.headers["location"] == "/app/"
+            dash = await client.get("/app/")
+            assert DENIED in dash.text, "the refusal says why"
+            assert "Очередь задач" not in dash.text, "the sidebar must not offer the queue"
+
+            # A platform role above ADMIN opens both — same account, no re-login.
+            await _as_admin_plus(owner)
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            assert "hidden" in page.text
+            assert "Очередь задач" in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_jobs_page_lists_queue_health_and_failures() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobOwner")
+            await _as_admin_plus(owner)
+            await _seed_job(tenant_id, "pending")
+            await _seed_job(tenant_id, "failed", error="connection reset by peer")
+
+            page = await client.get("/app/jobs")
+            assert page.status_code == 200
+            assert "Задания" in page.text
+            # The error text is the whole point of the page.
+            assert "connection reset by peer" in page.text
+            # The workspace column wears the product word — shown because this
+            # owner now holds a role above ADMIN (the gate's own proof).
+            assert ">Пространство<" in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_jobs_page_does_not_leak_another_workspace() -> None:
+    owner: User | None = None
+    other: User | None = None
+    try:
+        async with await _client() as mine, await _client() as theirs:
+            owner, _my_tenant = await _register(mine, "JobMine")
+            await _as_admin_plus(owner)
+            other, their_tenant = await _register(theirs, "JobTheirs")
+            await _seed_job(their_tenant, "failed", error="СОСЕДНИЙ-ВОРКСПЕЙС")
+
+            page = await mine.get("/app/jobs")
+            assert page.status_code == 200
+            assert "СОСЕДНИЙ-ВОРКСПЕЙС" not in page.text
+    finally:
+        await _cleanup(other, owner)
+
+
+async def test_only_failed_jobs_offer_a_rerun_button() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobBtn")
+            await _as_admin_plus(owner)
+            failed = await _seed_job(tenant_id, "failed", error="boom")
+            done = await _seed_job(tenant_id, "done")
+
+            page = await client.get("/app/jobs")
+            assert f'action="/app/jobs/{failed.id}/run"' in page.text
+            # A finished job is not offered a re-run — that would be a no-op.
+            assert f'action="/app/jobs/{done.id}/run"' not in page.text
+    finally:
+        await _cleanup(owner)
+
+
+async def test_rerun_refuses_a_job_that_is_not_failed() -> None:
+    owner: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobNoRun")
+            await _as_admin_plus(owner)
+            done = await _seed_job(tenant_id, "done")
+
+            token = await _csrf(client, "/app/jobs")
+            resp = await client.post(f"/app/jobs/{done.id}/run", data={"_csrf": token})
+            assert resp.status_code == 200
+            assert "перезапуск не требуется" in resp.text
+
+            with tenant_scope(bypass=True):
+                assert (await Job.objects.get(id=done.id)).status == "done"
+    finally:
+        await _cleanup(owner)
+
+
+async def test_read_only_member_cannot_rerun_a_job() -> None:
+    """Below the admin role the queue is closed: no page, no nav item, no POST."""
+    owner: User | None = None
+    viewer: User | None = None
+    tenant_id = None
+    job_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobROwner")
+            viewer = await _invitee("JobRViewer", UserRoleType.VIEWER, tenant_id)
+            job = await _seed_job(tenant_id, "failed", error="boom")
+            job_id = job.id
+
+        async with await _client() as client:
+            await _login(client, viewer.username)
+            # The page itself refuses — hiding the sidebar item is not the check.
+            refused = await client.get("/app/jobs", follow_redirects=False)
+            assert refused.status_code == 302
+            dash = await client.get("/app/")
+            assert "Очередь задач" not in dash.text, "the sidebar must not offer the queue"
+            token = CSRF_RE.search(dash.text).group(1)
+
+            # Refused, and the failed row stays failed — no execution happened.
+            resp = await client.post(f"/app/jobs/{job_id}/run", data={"_csrf": token})
+            assert DENIED in resp.text
+            with tenant_scope(bypass=True):
+                assert (await Job.objects.get(id=job_id)).status == "failed"
+    finally:
+        await _cleanup(viewer, owner)
+
+
 # ── /app/jobs — cleanup ─────────────────────────────────────────────────────
 
 
@@ -399,6 +444,7 @@ async def test_row_delete_button_on_every_row_but_a_running_one() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDel")
+            await _as_admin_plus(owner)
             pending = await _seed_job(tenant_id, "pending")
             failed = await _seed_job(tenant_id, "failed", error="boom")
             done = await _seed_job(tenant_id, "done")
@@ -420,6 +466,7 @@ async def test_row_delete_removes_only_that_job() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDelOne")
+            await _as_admin_plus(owner)
             target = await _seed_job(tenant_id, "done")
             neighbour = await _seed_job(tenant_id, "done")
 
@@ -440,6 +487,7 @@ async def test_row_delete_refuses_a_running_job() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDelRun")
+            await _as_admin_plus(owner)
             job = await _seed_job(tenant_id, "running")
 
             token = await _csrf(client, "/app/jobs")
@@ -458,6 +506,7 @@ async def test_clear_empties_the_queue_but_keeps_running_jobs() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobClear")
+            await _as_admin_plus(owner)
             await _seed_job(tenant_id, "done")
             await _seed_job(tenant_id, "failed", error="boom")
             await _seed_job(tenant_id, "pending")
@@ -484,6 +533,7 @@ async def test_clear_does_not_reach_another_workspace() -> None:
     try:
         async with await _client() as mine, await _client() as theirs:
             owner, _my_tenant = await _register(mine, "JobClearMine")
+            await _as_admin_plus(owner)
             other, their_tenant = await _register(theirs, "JobClearTheirs")
             await _seed_job(their_tenant, "done")
 
@@ -503,6 +553,7 @@ async def test_clear_button_is_hidden_on_an_empty_queue() -> None:
     try:
         async with await _client() as client:
             owner, _tenant_id = await _register(client, "JobClearEmpty")
+            await _as_admin_plus(owner)
 
             page = await client.get("/app/jobs")
             assert page.status_code == 200
@@ -526,13 +577,13 @@ async def test_read_only_member_can_neither_delete_rows_nor_clear() -> None:
 
         async with await _client() as client:
             await _login(client, viewer.username)
-            page = await client.get("/app/jobs")
-            assert page.status_code == 200
-            assert f'action="/app/jobs/{job_id}/delete"' not in page.text
-            assert 'action="/app/jobs/clear"' not in page.text
+            # The queue page itself is closed below the admin role...
+            refused = await client.get("/app/jobs", follow_redirects=False)
+            assert refused.status_code == 302
 
-            # The button is not the check: a crafted POST is refused, row stays.
-            token = CSRF_RE.search(page.text).group(1)
+            # ...and a crafted POST is refused too — the hidden nav is not the check.
+            dash = await client.get("/app/")
+            token = CSRF_RE.search(dash.text).group(1)
             resp = await client.post(f"/app/jobs/{job_id}/delete", data={"_csrf": token})
             assert DENIED in resp.text
             resp = await client.post("/app/jobs/clear", data={"_csrf": token})
@@ -570,6 +621,7 @@ async def test_row_delete_does_not_reach_another_workspace() -> None:
     try:
         async with await _client() as mine, await _client() as theirs:
             owner, _my_tenant = await _register(mine, "JobDelMine")
+            await _as_admin_plus(owner)
             other, their_tenant = await _register(theirs, "JobDelTheirs")
             theirs_job = await _seed_job(their_tenant, "done")
 
@@ -592,6 +644,7 @@ async def test_queue_row_links_to_that_task_not_to_the_task_list() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobLink")
+            await _as_admin_plus(owner)
             task = await _seed_task(tenant_id)
             await _seed_job(tenant_id, "done", agent_task_id=task.id)
 
@@ -610,6 +663,7 @@ async def test_a_one_off_job_says_so_instead_of_a_broken_link() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobOneOff")
+            await _as_admin_plus(owner)
             await _seed_job(tenant_id, "done")
 
             page = await client.get("/app/jobs")
@@ -626,6 +680,7 @@ async def test_task_card_opens_and_sends_you_back_to_the_queue() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobCard")
+            await _as_admin_plus(owner)
             task = await _seed_task(tenant_id)
             await _seed_job(tenant_id, "done", agent_task_id=task.id)
 

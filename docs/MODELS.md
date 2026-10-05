@@ -323,7 +323,7 @@ AI analysis contracts per source.
 | `description` | `Text` | Description |
 | `content_types` | `JSON` | What to collect: `["posts", "comments"]` |
 | `analysis_types` | `JSON` | What to analyze: `["sentiment", "keywords"]` |
-| `scope` | `JSON` | Config params for analysis types |
+| `scope` | `JSON` | METHODOLOGY config only: categories, scale, max_keywords, context_window, etc. Specific targets (brands, competitors) go in `AgentTask.payload`, not here. |
 | `analyze_type` | `Enum` | Analysis mode: `themes`, `days`, `sources`, `monitored_users` |
 | `text_prompt` | `Text` | Custom text analysis prompt |
 | `image_prompt` | `Text` | Custom image analysis prompt |
@@ -390,7 +390,7 @@ Agent cron task definitions.
 | `cron_expr` | `String(50)` | Cron expression |
 | `timezone` | `String(50)` | Task timezone |
 | `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | Task-specific parameters (flat keys: `period`, `monitored_users`, `excluded_users`, ...) |
+| `payload` | `JSON` | TASK-SPECIFIC TARGET parameters: `period`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, etc. These are injected into the analysis prompt, NOT into the response schema. Scenario methodology (categories, limits) stays in `AgentScenario.scope`. |
 | `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Reusable scenario applied when the task runs (nullable, `SET NULL`) |
 | `is_active` | `Boolean` | Active flag |
 | `next_run_at` | `DateTime` | Next scheduled run (UTC) |

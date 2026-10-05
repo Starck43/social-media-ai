@@ -7,6 +7,47 @@
 > This doc still explains how the prompt assembly works today (5-field model,
 > COMMON_FIELDS, scope variables) and is kept as a reference for the migration.
 
+---
+
+## 🎯 Methodology vs Specifics
+
+A key principle: **never bake specific targets into the scenario's `scope`**.
+The scenario is a **reusable methodology template**; targets are **per-task
+configuration**.
+
+| Where | What | Examples |
+|-------|------|----------|
+| `AgentScenario.scope` | HOW to analyse — methodology config | `categories`, `scale`, `max_keywords`, `context_window` |
+| `AgentTask.payload` | WHAT to look for — specific targets | `brands`, `competitors`, `hashtags`, `influencer_names` |
+
+**Why this matters:** one scenario (e.g. "Brand Monitoring") works for any
+set of brands — task A tracks Coca-Cola + Sprite, task B tracks Nike + Adidas.
+Without this split, every brand needs its own scenario, duplicating
+methodology.
+
+**Rules:**
+
+1. **Never change the LLM response schema based on payload.** The schema is
+   derived from `analysis_types` only — a `brand_mentions` response always has
+   `{"brand", "context", "sentiment"}`, regardless of how many brands exist.
+2. **Payload values go into the prompt instruction**, producing text like:
+   `"Отслеживай бренды: Coca-Cola, Sprite"` — the LLM knows to look for them
+   without the JSON structure changing.
+3. **Backward compatible:** if `payload` doesn't contain a needed param, `scope`
+   is checked as a fallback. Existing scenarios with targets in scope still work.
+
+**Variable injection order** (highest priority wins):
+
+```
+system context > task_payload > scenario.scope
+```
+
+The `_prepare_variables()` function in `prompts.py` merges all three, so a
+prompt can use `{brands}` directly or reference `{payload_instruction}` for a
+pre-rendered composite line.
+
+---
+
 **Question:** Is the JSON response structure auto-generated or hand-written?
 
 **Answer:** **PARTIALLY AUTOMATIC** — the system is smart and adds what's missing!

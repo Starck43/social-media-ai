@@ -82,6 +82,26 @@ def _validate(changes: dict[str, Any]) -> dict[str, Any]:
     return checked
 
 
+def _reject_targets_in_scope(scope: dict[str, Any]) -> None:
+    """Raise when a scenario's scope carries specific targets instead of methodology.
+
+    Methodology (categories, limits, scales) lives in `AgentScenario.scope`; the
+    specific objects to look for (brands, competitors, hashtags, influencers,
+    keywords, topics) live on the task's `payload`. A scope that stores targets
+    turns a reusable scenario into a one-brand template — reject it with guidance
+    instead of silently building that.
+    """
+    from app.services.ai.param_registry import target_params_in_scope
+
+    found = target_params_in_scope(scope)
+    if found:
+        raise ValueError(
+            "Конкретные цели анализа хранятся в задаче (payload: brands, competitors, "
+            "hashtags, influencer_names, keywords_list, topic_list), а не в сценарии — сценарий "
+            "это методика. Укажите цели при создании задачи (task_add). Найдено в scope: " + ", ".join(found)
+        )
+
+
 def _unknown_variables(draft: Any) -> list[str]:
     """Placeholders in a draft's prompts that no variable will fill.
 
@@ -128,6 +148,7 @@ def _draft_from_fields(fields: dict[str, Any]) -> Any:
     checked = _validate(fields)
     analysis_types = checked.get("analysis_types") or []
     scope = checked.get("scope") or ScenarioBuilder.build_scope_template(analysis_types)
+    _reject_targets_in_scope(scope)
     return ScenarioDraft(
         name=(checked.get("name") or "").strip()[:255],
         description=checked.get("description"),
@@ -413,6 +434,10 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
         merged = {**(scenario.scope or {})}
         for analysis_type, config in (checked.pop("scope") or {}).items():
             merged[analysis_type] = {**(merged.get(analysis_type) or {}), **config}
+        try:
+            _reject_targets_in_scope(merged)
+        except ValueError as e:
+            return {"error": str(e)}
         checked["scope"] = merged
     for field, value in checked.items():
         setattr(draft, field, value)

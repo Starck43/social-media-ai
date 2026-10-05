@@ -189,7 +189,7 @@
                         <div class="rounded-2xl px-3.5 py-2 text-sm {% if message.role == 'user' %}bg-cyan-600/25 text-cyan-50 rounded-tr-none{% else %}bg-slate-800/80 text-slate-200 rounded-tl-none{% endif %}">
                             {% if message.role != 'user' %}
                             <div class="whitespace-pre-wrap break-words msg-prose"
-                                 x-html="renderMarkdown('{{ (message.content or "") | trim | replace('"', '\\"') | replace('\\', '\\\\') }}')"></div>
+                                 x-html="renderMarkdown({{ (message.content or '') | tojson | trim }})"></div>
                             {% else %}
                             <div class="whitespace-pre-wrap break-words">{{ (message.content or "") | trim }}</div>
                             {% endif %}
@@ -212,7 +212,8 @@
                             <!-- Assistant message: show copy + delete buttons -->
                             {% if message.role != 'user' %}
                             <button
-                                @click="copyText('{{ (message.content or "") | striptags | trim | replace('"', '\\"') | replace('\\', '\\\\') }}')"
+                                x-data="{}"
+                                x-on:click="copyText({{ (message.content or '') | tojson | trim }})"
                                 class="text-slate-600 hover:text-slate-300 transition-colors"
                                 title="Копировать"
                                 aria-label="Копировать сообщение">

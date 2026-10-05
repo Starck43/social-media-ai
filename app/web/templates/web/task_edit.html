@@ -1,0 +1,371 @@
+{% from "web/_macros.html" import control, task_dates, task_trigger_actions %}
+{% extends "web/base.html" %}
+{% block title %}Задача — AI Monitor{% endblock %}
+{% block content %}
+{# The task editor as a full page, not a modal: the form already needed a
+   scroll inside a modal bounded by the screen, so it lives at its own URI
+   (/app/tasks/{id}/edit) and the row's name button links here. #}
+<div x-data="taskEditPage()" class="mx-auto max-w-4xl">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <p class="text-xs uppercase tracking-wider text-slate-500">Редактирование задачи</p>
+            <h1 class="text-2xl font-semibold tracking-tight" x-text="editing.name || 'Задача'"></h1>
+        </div>
+        <a href="/app/tasks"
+           class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+            ← К списку задач
+        </a>
+    </div>
+
+    <form method="post" :action="'/app/tasks/' + editing.id"
+          class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-6"
+          x-data="{ sending: false }"
+          x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
+                                                         value="{{ filter_tenant_id }}">{% endif %}
+        <div>
+            <label class="mb-1 block text-sm text-slate-300">Название</label>
+            <input name="name" required maxlength="100" x-model="editing.name"
+                   class="{{ control() }}">
+        </div>
+        <div>
+            <label class="mb-1 block text-sm text-slate-300">Тип задачи</label>
+            <select name="job_type" required x-model="editing.job_type"
+                    class="{{ control() }}">
+                {% for value, label in job_types %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-sm text-slate-300">Расписание</label>
+            <div x-data="editSched" class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" @click="applyPreset('daily')"
+                            class="rounded-lg border px-3 py-1.5 text-sm"
+                            :class="isPreset('daily') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                        Ежедневно 9:00
+                    </button>
+                    <button type="button" @click="applyPreset('weekly')"
+                            class="rounded-lg border px-3 py-1.5 text-sm"
+                            :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                        Еженедельно (пн 9:00)
+                    </button>
+                    <button type="button" @click="applyPreset('every_6_hours')"
+                            class="rounded-lg border px-3 py-1.5 text-sm"
+                            :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                        Каждые 6 часов
+                    </button>
+                    <button type="button" @click="applyPreset('once')"
+                            class="rounded-lg border px-3 py-1.5 text-sm"
+                            :class="isPreset('once') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                        Разово
+                    </button>
+                </div>
+
+                <template x-if="!isOnce">
+                    <div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-400">Время</label>
+                                <input type="time" name="sched_time" x-model="time"
+                                       class="{{ control() }}">
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
+                                <select x-model="freq"
+                                        class="{{ control() }}">
+                                    <option value="daily">Каждый день</option>
+                                    <option value="weekly">По дням недели</option>
+                                    <option value="monthly">Каждый месяц</option>
+                                    <option value="interval">Каждые N часов</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <template x-if="freq === 'weekly'">
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-400">Дни недели</label>
+                                <div class="flex gap-2">
+                                    <template x-for="d in days" :key="d.value">
+                                        <button type="button" @click="toggleDay(d.value)"
+                                                class="h-9 w-9 rounded-lg text-sm font-medium"
+                                                :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'">
+                                            <span x-text="d.label"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="freq === 'monthly'">
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-400">День месяца</label>
+                                <select x-model.number="monthday"
+                                        class="{{ control() }}">
+                                    <template x-for="d in 28" :key="d">
+                                        <option :value="d" x-text="d"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </template>
+
+                        <template x-if="freq === 'interval'">
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-400">Интервал</label>
+                                <select x-model.number="everyHours"
+                                        class="{{ control() }}">
+                                    <template x-for="h in intervalOptions" :key="h">
+                                        <option :value="h" x-text="h + ' ч'"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <input type="hidden" name="cron_expr" :value="cron">
+            </div>
+        </div>
+        {% if sources %}
+        <div>
+            <label class="mb-1 block text-sm text-slate-300">Источники</label>
+            <div class="max-h-40 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-2 space-y-1">
+                {% for source in sources %}
+                <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
+                    <input type="checkbox" name="source_ids" value="{{ source.id }}"
+                           :checked="editing.source_ids.includes({{ source.id }})"
+                           class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                    <a href="/app/sources/{{ source.id }}"
+                       class="truncate hover:text-cyan-400 hover:underline">{{ source.name }}</a>
+                    {% if not source.is_active %}
+                    <span class="shrink-0 rounded bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-400">неактивен</span>
+                    {% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            <p class="mt-1 text-xs text-slate-500">Отметка деактивированного источника активирует его.</p>
+        </div>
+        {% endif %}
+        {% if scenarios %}
+        <div>
+            <label class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
+            <select name="scenario_id" x-model="editing.scenario_id"
+                    class="{{ control() }}">
+                <option value="">— не выбран —</option>
+                {% for scenario in scenarios %}
+                <option :value="{{ scenario.id }}">{{ scenario.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        {{ task_dates("editing", "editing.job_type") }}
+
+        <div class="grid grid-cols-2 gap-3">
+            <div x-show="editing.job_type === 'collect'">
+                <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                <input name="monitored_users" x-model="editing.monitored_users"
+                       placeholder="username1, username2"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+            </div>
+            <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
+                <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+            </div>
+        </div>
+
+        {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+            <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
+            <input type="checkbox" x-model="editing.is_active"
+                   class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+            Активна
+        </label>
+        <div class="flex flex-wrap items-center gap-2 pt-2">
+            {# Delete lives with the edit form, not in the row: it is the one
+               action that cannot be undone, and a bare trash icon next to
+               «Выполнить сейчас» was one misclick away from a task the reader
+               had not opened. `formaction` keeps it a plain POST to the delete
+               endpoint without nesting a second form. #}
+            {% if perms and perms.can('agenttask', 'delete') %}
+            <button type="submit" formnovalidate
+                    :formaction="'/app/tasks/' + editing.id + '/delete'"
+                    @click="if (!confirm('Удалить задачу «' + editing.name + '»?')) $event.preventDefault()"
+                    class="rounded-lg border border-rose-900/70 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/40">
+                Удалить
+            </button>
+            {% endif %}
+            <div class="ml-auto flex flex-1 gap-2">
+            <a href="/app/tasks"
+                    class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 text-center">
+                Отмена
+            </a>
+            <button type="submit"
+                    class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    x-bind:disabled="sending">
+                Сохранить
+            </button>
+            <button type="submit" name="run_now" value="on"
+                    class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    x-bind:disabled="sending">
+                Сохранить и выполнить
+            </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    const TASK_EDIT = {{ edit|tojson }};
+
+    function scheduleBuilder() {
+        const pad = n => String(n).padStart(2, "0")
+        const toCron = (h, m, day, dow) => `${pad(m)} ${pad(h)} ${day} * ${dow}`
+        const parseCron = (cron) => {
+            const st = { isOnce: cron === "@once" }
+            if (st.isOnce) return st
+            const [min, hour, dom, mon, dow] = (cron || "").split(/\s+/)
+            const h = parseInt(hour, 10)
+            const m = parseInt(min, 10)
+            const t = `${pad(isNaN(h) ? 9 : h)}:${pad(isNaN(m) ? 0 : m)}`
+            Object.assign(st, { time: t, weekdays: [1], monthday: 1, everyHours: 6 })
+            if (hour.startsWith("*/")) {
+                st.freq = "interval"
+                st.everyHours = parseInt(hour.slice(2), 10) || 6
+            } else if (dow && dow !== "*") {
+                st.freq = "weekly"
+                st.weekdays = dow.split(",").map(Number).filter(n => n >= 1 && n <= 7)
+                if (!st.weekdays.length) st.weekdays = [1]
+            } else if (dom && dom !== "*") {
+                st.freq = "monthly"
+                st.monthday = parseInt(dom, 10) || 1
+            } else {
+                st.freq = "daily"
+            }
+            return st
+        }
+        return {
+            time: "09:00",
+            freq: "daily",
+            isOnce: false,
+            weekdays: [1],
+            monthday: 1,
+            everyHours: 6,
+            days: [
+                { value: 1, label: "Пн" }, { value: 2, label: "Вт" }, { value: 3, label: "Ср" },
+                { value: 4, label: "Чт" }, { value: 5, label: "Пт" }, { value: 6, label: "Сб" }, {
+                    value: 7,
+                    label: "Вс",
+                },
+            ],
+            intervalOptions: [1, 2, 3, 4, 6, 8, 12],
+            get cron() {
+                if (this.isOnce) return "@once"
+                const [h, m] = this.time.split(":")
+                switch (this.freq) {
+                    case "weekly":
+                        return toCron(h, m, "*", this.weekdays.slice().sort((a, b) => a - b).join(","))
+                    case "monthly":
+                        return toCron(h, m, this.monthday, "*")
+                    case "interval":
+                        return `0 */${this.everyHours} * * *`
+                    default:
+                        return toCron(h, m, "*", "*")
+                }
+            },
+            load(cron) {
+                Object.assign(this, parseCron(cron))
+            },
+            presetCron(key) {
+                if (key === "daily") return toCron(9, 0, "*", "*")
+                if (key === "weekly") return toCron(9, 0, "*", "1")
+                if (key === "every_6_hours") return "0 */6 * * *"
+                if (key === "once") return "@once"
+                return null
+            },
+            isPreset(key) {
+                return this.cron === this.presetCron(key)
+            },
+            applyPreset(key) {
+                this.isOnce = false
+                if (key === "daily") {
+                    this.freq = "daily"
+                    this.time = "09:00"
+                } else if (key === "weekly") {
+                    this.freq = "weekly"
+                    this.time = "09:00"
+                    this.weekdays = [1]
+                } else if (key === "every_6_hours") {
+                    this.freq = "interval"
+                    this.everyHours = 6
+                } else if (key === "once") {
+                    this.isOnce = true
+                }
+            },
+            toggleDay(v) {
+                const i = this.weekdays.indexOf(v)
+                if (i === -1) this.weekdays.push(v)
+                else this.weekdays.splice(i, 1)
+                if (!this.weekdays.length) this.weekdays.push(v)
+            },
+        }
+    }
+
+    function taskEditPage() {
+        const defaults = {
+            id: 0,
+            name: "",
+            job_type: "",
+            cron_expr: "",
+            is_active: true,
+            source_ids: [],
+            scenario_id: "",
+            monitored_users: "",
+            excluded_users: "",
+            start_date: "",
+            end_date: "",
+            force_refresh: false,
+            force_reanalyze: false,
+            trigger_type: "",
+            trigger_keywords: "",
+            trigger_match: "any",
+            trigger_usernames: "",
+            trigger_threshold: 0.5,
+            trigger_direction: "below",
+            trigger_baseline_hours: 24,
+            trigger_spike_multiplier: 3.0,
+            action_type: "",
+            blacklist: "",
+            whitelist: "",
+            rate_limit_per_hour: "",
+            cooldown_seconds: "",
+            requires_approval: true,
+        }
+        return {
+            editing: { ...defaults },
+            editSched: scheduleBuilder(),
+            init() {
+                this.editing = {
+                    ...defaults,
+                    ...TASK_EDIT,
+                    source_ids: TASK_EDIT.source_ids || [],
+                    scenario_id: TASK_EDIT.scenario_id || "",
+                    monitored_users: TASK_EDIT.monitored_users || "",
+                    excluded_users: TASK_EDIT.excluded_users || "",
+                    start_date: TASK_EDIT.start_date || "",
+                    end_date: TASK_EDIT.end_date || "",
+                    trigger_keywords: TASK_EDIT.trigger_keywords || "",
+                    trigger_usernames: TASK_EDIT.trigger_usernames || "",
+                    blacklist: TASK_EDIT.blacklist || "",
+                    whitelist: TASK_EDIT.whitelist || "",
+                }
+                this.editSched.load(this.editing.cron_expr)
+            },
+        }
+    }
+</script>
+{% endblock %}

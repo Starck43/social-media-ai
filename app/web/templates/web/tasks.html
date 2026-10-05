@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_fields, tenant_field %}
+{% from "web/_macros.html" import control, task_dates, task_fields, task_trigger_actions, tenant_field %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block content %}
@@ -50,12 +50,11 @@
             <tr class="hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
                     {# The name is the way into the editor, the same way the sources
-                       and scenarios lists do it. A pencil icon in the far column made
-                       every row carry a control for something the row already names. #}
+                       and scenarios lists do it. The editor is a page, so the name
+                       is a link, not a button opening a modal. #}
                     {% if perms and perms.can('agenttask', 'update') %}
-                        <button type="button"
-                                @click="editTask({{ task.id }})"
-                                class="text-left hover:text-cyan-400 hover:underline">{{ task.name }}</button>
+                        <a href="/app/tasks/{{ task.id }}/edit"
+                           class="text-left hover:text-cyan-400 hover:underline">{{ task.name }}</a>
                     {% else %}
                         {{ task.name }}
                     {% endif %}
@@ -193,11 +192,11 @@
             </div>
 
             <form method="post" action="/app/tasks" class="mt-5 space-y-4"
-                  x-data="{ sending: false }"
+                  x-data="{ sending: false, task: { job_type: 'collect', start_date: '', end_date: '', force_refresh: false, force_reanalyze: false, trigger_type: '', trigger_keywords: '', trigger_match: 'any', trigger_usernames: '', trigger_threshold: 0.5, trigger_direction: 'below', trigger_baseline_hours: 24, trigger_spike_multiplier: 3.0, action_type: '', blacklist: '', whitelist: '', rate_limit_per_hour: '', cooldown_seconds: '', requires_approval: true } }"
                   x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
-                {{ task_fields(job_types, "add") }}
+                {{ task_fields(job_types, "add", "task.job_type") }}
 
                 <div>
                     <label class="mb-1 block text-sm text-slate-300">Расписание</label>
@@ -299,11 +298,15 @@
                         <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
                             <input type="checkbox" name="source_ids" value="{{ source.id }}"
                                    class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
-                            {{ source.name }}
+                            <a href="/app/sources/{{ source.id }}"
+                               class="truncate hover:text-cyan-400 hover:underline">{{ source.name }}</a>
+                            {% if not source.is_active %}
+                            <span class="shrink-0 rounded bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-400">неактивен</span>
+                            {% endif %}
                         </label>
                         {% endfor %}
                     </div>
-                    <p class="mt-1 text-xs text-slate-500">Оставьте пустым для всех источников</p>
+                    <p class="mt-1 text-xs text-slate-500">Оставьте пустым для всех источников. Отметка деактивированного источника активирует его.</p>
                 </div>
                 {% endif %}
 
@@ -321,15 +324,17 @@
                 </div>
                 {% endif %}
 
+                {{ task_dates("task", "task.job_type") }}
+
                 <div class="grid grid-cols-2 gap-3">
-                    <div>
+                    <div x-show="task.job_type === 'collect'">
                         <label for="add-monitored" class="mb-1 block text-sm text-slate-300">Отслеживать
                             пользователей</label>
                         <input id="add-monitored" name="monitored_users" placeholder="username1, username2"
                                class="{{ control() }}">
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
                     </div>
-                    <div>
+                    <div x-show="task.job_type === 'collect' || task.job_type === 'analyze'">
                         <label for="add-excluded" class="mb-1 block text-sm text-slate-300">Исключить
                             пользователей</label>
                         <input id="add-excluded" name="excluded_users" placeholder="username1, username2"
@@ -337,6 +342,8 @@
                         <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
                     </div>
                 </div>
+
+                {{ task_trigger_actions("task", "task.job_type", trigger_types, action_types) }}
 
                 <div class="flex gap-2 pt-2">
                     <button type="button" @click="openAdd = false"
@@ -351,216 +358,6 @@
                             class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed">
                         Создать и выполнить
                     </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Edit modal -->
-    <div x-show="openEdit" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
-         @keydown.escape.window="closeEdit()">
-        <div class="w-[95%] max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-            <div class="mb-5 flex items-center justify-between">
-                <div>
-                    <h2 class="text-lg font-semibold">Редактировать задачу</h2>
-                    <p class="mt-1 text-sm text-slate-400">Обновите данные задачи.</p>
-                </div>
-                <button type="button" @click="closeEdit()" aria-label="Закрыть"
-                        class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                         stroke="currentColor" class="h-5 w-5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            <form method="post" :action="'/app/tasks/' + editing.id" class="mt-5 space-y-4"
-                  x-data="{ sending: false }"
-                  x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
-                                                                 value="{{ filter_tenant_id }}">{% endif %}
-                <div>
-                    <label class="mb-1 block text-sm text-slate-300">Название</label>
-                    <input name="name" required maxlength="100" x-model="editing.name"
-                           class="{{ control() }}">
-                </div>
-                <div>
-                    <label class="mb-1 block text-sm text-slate-300">Тип задачи</label>
-                    <select name="job_type" required x-model="editing.job_type"
-                            class="{{ control() }}">
-                        {% for value, label in job_types %}
-                        <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label class="mb-1 block text-sm text-slate-300">Расписание</label>
-                    <div x-data="editSched" class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
-                        <div class="flex flex-wrap gap-2">
-                            <button type="button" @click="applyPreset('daily')"
-                                    class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('daily') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
-                                Ежедневно 9:00
-                            </button>
-                            <button type="button" @click="applyPreset('weekly')"
-                                    class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
-                                Еженедельно (пн 9:00)
-                            </button>
-                            <button type="button" @click="applyPreset('every_6_hours')"
-                                    class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
-                                Каждые 6 часов
-                            </button>
-                            <button type="button" @click="applyPreset('once')"
-                                    class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('once') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
-                                Разово
-                            </button>
-                        </div>
-
-                        <template x-if="!isOnce">
-                            <div>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Время</label>
-                                        <input type="time" name="sched_time" x-model="time"
-                                               class="{{ control() }}">
-                                    </div>
-                                    <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
-                                        <select x-model="freq"
-                                                class="{{ control() }}">
-                                            <option value="daily">Каждый день</option>
-                                            <option value="weekly">По дням недели</option>
-                                            <option value="monthly">Каждый месяц</option>
-                                            <option value="interval">Каждые N часов</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <template x-if="freq === 'weekly'">
-                                    <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Дни недели</label>
-                                        <div class="flex gap-2">
-                                            <template x-for="d in days" :key="d.value">
-                                                <button type="button" @click="toggleDay(d.value)"
-                                                        class="h-9 w-9 rounded-lg text-sm font-medium"
-                                                        :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'">
-                                                    <span x-text="d.label"></span>
-                                                </button>
-                                            </template>
-                                        </div>
-                                    </div>
-                                </template>
-
-                                <template x-if="freq === 'monthly'">
-                                    <div>
-                                        <label class="mb-1 block text-xs text-slate-400">День месяца</label>
-                                        <select x-model.number="monthday"
-                                                class="{{ control() }}">
-                                            <template x-for="d in 28" :key="d">
-                                                <option :value="d" x-text="d"></option>
-                                            </template>
-                                        </select>
-                                    </div>
-                                </template>
-
-                                <template x-if="freq === 'interval'">
-                                    <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Интервал</label>
-                                        <select x-model.number="everyHours"
-                                                class="{{ control() }}">
-                                            <template x-for="h in intervalOptions" :key="h">
-                                                <option :value="h" x-text="h + ' ч'"></option>
-                                            </template>
-                                        </select>
-                                    </div>
-                                </template>
-                            </div>
-                        </template>
-
-                        <input type="hidden" name="cron_expr" :value="cron">
-                    </div>
-                </div>
-                {% if sources %}
-                <div>
-                    <label class="mb-1 block text-sm text-slate-300">Источники</label>
-                    <div class="max-h-32 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-2 space-y-1">
-                        {% for source in sources %}
-                        <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
-                            <input type="checkbox" name="source_ids" value="{{ source.id }}"
-                                   :checked="editing.source_ids.includes({{ source.id }})"
-                                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
-                            {{ source.name }}
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
-                {% if scenarios %}
-                <div>
-                    <label class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
-                    <select name="scenario_id" x-model="editing.scenario_id"
-                            class="{{ control() }}">
-                        <option value="">— не выбран —</option>
-                        {% for scenario in scenarios %}
-                        <option :value="{{ scenario.id }}">{{ scenario.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                {% endif %}
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
-                        <input name="monitored_users" x-model="editing.monitored_users"
-                               placeholder="username1, username2"
-                               class="{{ control() }}">
-                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
-                        <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
-                               class="{{ control() }}">
-                        <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
-                    </div>
-                </div>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
-                    <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
-                    <input type="checkbox" x-model="editing.is_active"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                    Активна
-                </label>
-                <div class="flex flex-wrap items-center gap-2 pt-2">
-                    {# Delete lives with the edit form, not in the row: it is the one
-                       action that cannot be undone, and a bare trash icon next to
-                       «Выполнить сейчас» was one misclick away from a task the
-                       reader had not opened. `formaction` keeps it a plain POST to
-                       the delete endpoint without nesting a second form. #}
-                    {% if perms and perms.can('agenttask', 'delete') %}
-                    <button type="submit" formnovalidate
-                            :formaction="'/app/tasks/' + editing.id + '/delete'"
-                            @click="if (!confirm('Удалить задачу «' + editing.name + '»?')) $event.preventDefault()"
-                            class="rounded-lg border border-rose-900/70 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/40">
-                        Удалить
-                    </button>
-                    {% endif %}
-                    <div class="ml-auto flex flex-1 gap-2">
-                    <button type="button" @click="closeEdit()"
-                            class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
-                        Отмена
-                    </button>
-                    <button type="submit"
-                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                            x-bind:disabled="sending">
-                        Сохранить
-                    </button>
-                    <button type="submit" name="run_now" value="on"
-                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                            x-bind:disabled="sending">
-                        Сохранить и выполнить
-                    </button>
-                    </div>
                 </div>
             </form>
         </div>
@@ -680,29 +477,10 @@
 
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
-    {# Row data for the editor, keyed by id: the name button and the `?task_id=`
-       deep link both read from here, so the two cannot drift. #}
-    const EDIT_TASKS = {{ edit_tasks|tojson }};
-    {# `null` when the parameter names nothing on this page — an id from another
-       workspace, or one the superuser filtered out — and when the reader has no
-       right to edit, in which case the row has no button to open the editor. #}
-    const OPEN_TASK_ID = {{ (open_task_id if perms and perms.can('agenttask', 'update') else None)|tojson }};
 
     function tasksPage() {
         return {
             openAdd: false,
-            openEdit: false,
-            editing: {
-                id: 0,
-                name: "",
-                job_type: "",
-                cron_expr: "",
-                is_active: true,
-                source_ids: [],
-                scenario_id: "",
-                monitored_users: "",
-                excluded_users: "",
-            },
             runModal: {
                 open: RUN_JOB_ID !== null,
                 loading: RUN_JOB_ID !== null,
@@ -713,42 +491,8 @@
                     if (this.pollTimer) clearInterval(this.pollTimer)
                 },
             },
-            editSched: scheduleBuilder(),
             init() {
                 if (RUN_JOB_ID !== null) this.pollRun()
-                // A shared or reloaded `?task_id=` opens the editor on its own.
-                // Without this the parameter would be a dead link: the page
-                // renders the list and drops the reader where they started.
-                if (OPEN_TASK_ID !== null) this.editTask(OPEN_TASK_ID)
-            },
-            // The editor's address is the URL: opening writes `?task_id=` and
-            // closing drops it, so the address bar always names what is on
-            // screen. `replaceState`, not `pushState` — the modal is not a step
-            // the reader can walk back through, and a history entry per open
-            // would make Back leave the page instead of closing the modal.
-            setTaskParam(id) {
-                const url = new URL(window.location.href)
-                if (id === null) url.searchParams.delete("task_id")
-                else url.searchParams.set("task_id", String(id))
-                window.history.replaceState(null, "", url)
-            },
-            closeEdit() {
-                this.openEdit = false
-                this.setTaskParam(null)
-            },
-            editTask(id) {
-                const data = EDIT_TASKS[String(id)]
-                if (!data) return
-                this.editing = {
-                    ...data,
-                    source_ids: data.source_ids || [],
-                    scenario_id: data.scenario_id || "",
-                    monitored_users: data.monitored_users || "",
-                    excluded_users: data.excluded_users || "",
-                }
-                this.editSched.load(data.cron_expr)
-                this.openEdit = true
-                this.setTaskParam(data.id)
             },
             pollRun() {
                 const start = Date.now()

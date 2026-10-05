@@ -15,8 +15,9 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse, Response
 
 from app.models import AgentScenario, AgentTask, Job, Source
+from app.models.managers.agent_task_manager import AgentTaskManager
 from app.tasks.cron import cron_to_human
-from app.types import JobType
+from app.types import AgentActionType, BotTriggerType, JobType
 
 from .deps import (
     action_tenant_id,
@@ -36,6 +37,181 @@ router = APIRouter(prefix="/tasks")
 def _split_names(raw: str) -> list[str]:
     """Split a comma/space separated username string into a clean list."""
     return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
+
+
+def _build_trigger_config(
+    trigger_type: str,
+    keywords: str,
+    match: str,
+    usernames: str,
+    threshold: str,
+    direction: str,
+    baseline_hours: str,
+    spike_multiplier: str,
+) -> dict:
+    """The `trigger_config` dict the selected trigger type's own fields describe.
+
+    Only the active type's keys are collected — the other types' fields are
+    submitted anyway (they share the modal), so a hidden keyword list must not
+    leak into a SENTIMENT_THRESHOLD rule.
+    """
+    if trigger_type == "KEYWORD_MATCH":
+        cfg: dict = {"match": match if match in ("any", "all") else "any"}
+        keywords_list = _split_names(keywords)
+        if keywords_list:
+            cfg["keywords"] = keywords_list
+        return cfg
+    if trigger_type == "USER_MENTION":
+        usernames_list = _split_names(usernames)
+        return {"usernames": usernames_list} if usernames_list else {}
+    if trigger_type == "SENTIMENT_THRESHOLD":
+        cfg = {"direction": direction if direction in ("below", "above") else "below"}
+        try:
+            cfg["threshold"] = float(threshold) if threshold else 0.5
+        except ValueError:
+            cfg["threshold"] = 0.5
+        return cfg
+    if trigger_type == "ACTIVITY_SPIKE":
+        cfg = {}
+        try:
+            cfg["baseline_period_hours"] = int(baseline_hours) if baseline_hours else 24
+        except ValueError:
+            cfg["baseline_period_hours"] = 24
+        try:
+            cfg["spike_multiplier"] = float(spike_multiplier) if spike_multiplier else 3.0
+        except ValueError:
+            cfg["spike_multiplier"] = 3.0
+        return cfg
+    return {}
+
+
+def _payload_from_form(
+    job_type, monitored_users, excluded_users, start_date, end_date, force_refresh, force_reanalyze
+) -> dict:
+    """The flat payload keys a task of this type needs.
+
+    For collect/analyze a `cli_dates.start_date` is mandatory: without it a
+    fresh source has no lower bound and the first run drains the whole history
+    from the first post. `force_refresh` (collect: overwrite the window) and
+    `force_reanalyze` (analyze: re-run the model on stored rows) are the
+    operator's own choices.
+    """
+    payload: dict = {}
+    if monitored_users:
+        payload["monitored_users"] = _split_names(monitored_users)
+    if excluded_users:
+        payload["excluded_users"] = _split_names(excluded_users)
+    if AgentTaskManager.requires_content_dates(job_type):
+        start = AgentTaskManager.parse_date(start_date)
+        if start is None:
+            raise ValueError("Укажите дату начала сбора контента — иначе первый запуск вытянет всё с первого поста")
+        end = AgentTaskManager.parse_date(end_date)
+        payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
+        if force_reanalyze:
+            payload["force_reanalyze"] = True
+    return payload
+
+
+def _trigger_and_action_fields(
+    job_type: str,
+    trigger_type: str,
+    trigger_keywords: str,
+    trigger_match: str,
+    trigger_usernames: str,
+    trigger_threshold: str,
+    trigger_direction: str,
+    trigger_baseline_hours: str,
+    trigger_spike_multiplier: str,
+    action_type: str,
+    blacklist: str,
+    whitelist: str,
+    rate_limit_per_hour: str,
+    cooldown_seconds: str,
+    requires_approval: str,
+) -> dict:
+    """The model columns (not payload) an analyze task carries.
+
+    No-op for every other job type — the fields are only rendered for
+    `analyze`. Explicitly (re)setting blacklist/whitelist/guards lets the
+    operator clear them: an update that omits the key keeps the old value,
+    which is what the "merge into payload" rule is *not* meant to apply to.
+    """
+    fields: dict = {}
+    if job_type != "analyze":
+        return fields
+
+    trigger = BotTriggerType.get_by_name(trigger_type) if trigger_type else None
+    fields["trigger_type"] = trigger
+    fields["trigger_config"] = (
+        _build_trigger_config(
+            trigger_type,
+            trigger_keywords,
+            trigger_match,
+            trigger_usernames,
+            trigger_threshold,
+            trigger_direction,
+            trigger_baseline_hours,
+            trigger_spike_multiplier,
+        )
+        or None
+    )
+
+    fields["action_type"] = AgentActionType.get_by_name(action_type) if action_type else None
+    fields["blacklist"] = _split_names(blacklist) or None
+    fields["whitelist"] = _split_names(whitelist) or None
+    try:
+        fields["rate_limit_per_hour"] = int(rate_limit_per_hour) if rate_limit_per_hour else None
+        fields["cooldown_seconds"] = int(cooldown_seconds) if cooldown_seconds else None
+    except ValueError:
+        fields["rate_limit_per_hour"] = None
+        fields["cooldown_seconds"] = None
+    fields["requires_approval"] = requires_approval == "on"
+    return fields
+
+
+def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]:
+    """Everything the edit modal binds, as the plain object Alpine edits.
+
+    Built here rather than in the template because it has two callers: the row's
+    name button and the `?task_id=` deep link, and the editor must not fill
+    differently depending on how it was opened. `is_active` is the *effective*
+    flag — the one the list column shows — so reopening a task that is active on
+    paper but blocked by a deactivated source does not silently activate it.
+    The trigger/action and date fields are bound too, so editing a task shows
+    what it is configured with instead of dropping the sections empty.
+    """
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    cli_dates = payload.get("cli_dates") or {}
+    trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
+    return {
+        "id": task.id,
+        "name": task.name,
+        "job_type": task.job_type,
+        "cron_expr": task.cron_expr,
+        "is_active": task.id in effective_active,
+        "source_ids": [s.id for s in task.sources] if task.sources else [],
+        "scenario_id": task.agent_scenario_id,
+        "monitored_users": ", ".join(payload.get("monitored_users") or []),
+        "excluded_users": ", ".join(payload.get("excluded_users") or []),
+        "start_date": cli_dates.get("start_date") or "",
+        "end_date": cli_dates.get("end_date") or "",
+        "force_refresh": bool(payload.get("force_refresh")),
+        "force_reanalyze": bool(payload.get("force_reanalyze")),
+        "trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
+        "trigger_keywords": ", ".join(trigger_config.get("keywords") or []),
+        "trigger_match": trigger_config.get("match", "any"),
+        "trigger_usernames": ", ".join(trigger_config.get("usernames") or []),
+        "trigger_threshold": trigger_config.get("threshold", 0.5),
+        "trigger_direction": trigger_config.get("direction", "below"),
+        "trigger_baseline_hours": trigger_config.get("baseline_period_hours", 24),
+        "trigger_spike_multiplier": trigger_config.get("spike_multiplier", 3.0),
+        "action_type": getattr(task, "action_type", None).name if getattr(task, "action_type", None) else "",
+        "blacklist": ", ".join(task.blacklist or []),
+        "whitelist": ", ".join(task.whitelist or []),
+        "rate_limit_per_hour": task.rate_limit_per_hour or "",
+        "cooldown_seconds": task.cooldown_seconds or "",
+        "requires_approval": task.requires_approval if task.requires_approval is not None else True,
+    }
 
 
 async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
@@ -60,6 +236,27 @@ async def _replace_task_sources(task_id: int, source_ids: list[int], tenant_id: 
 
     await _check_task_sources(source_ids, tenant_id)
     await AgentTaskManager().set_sources(task_id, source_ids)
+
+
+async def _activate_selected_sources(tenant_id: int, source_ids: list[int]) -> None:
+    """Flip a checked-but-deactivated source active.
+
+    The operator ticked the source for a reason — it is the source this task
+    should collect from — so a checked row that stays off would either keep the
+    task unactivatable or make it run over "all active" and ignore exactly the
+    source that was picked. Checked sources become active, inside the workspace
+    scope. Runs *before* `_can_activate`, so a task whose only flaw was a
+    deactivated source becomes activatable in the same save.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import Source
+
+    if not source_ids:
+        return
+    with tenant_scope(tenant_id):
+        for source in await Source.objects.filter(id__in=source_ids):
+            if not source.is_active:
+                await Source.objects.update_by_id(source.id, is_active=True)
 
 
 def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]:
@@ -108,13 +305,15 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
 
         if source_ids:
             sources = await Source.objects.filter(id__in=source_ids)
-            if not any(s.is_active for s in sources):
-                return "все привязанные источники деактивированы"
+            inactive = sorted(s.name for s in sources if not s.is_active)
+            if inactive and not any(s.is_active for s in sources):
+                names = ", ".join(inactive)
+                return f"все привязанные источники деактивированы: {names}"
             return None
 
         active = await Source.objects.filter(is_active=True).values(Source.id).rows()
         if not active:
-            return "в воркспейсе нет активных источников"
+            return f"для типа «{job_type}» не выбран ни один источник, а в воркспейсе нет активных источников"
         return None
 
 
@@ -222,16 +421,16 @@ async def tasks_list(request: Request):
     raw_job_id = request.query_params.get("job_id")
     job_id = int(raw_job_id) if raw_job_id and raw_job_id.isdigit() else None
 
-    # The editor is addressed by `?task_id=` so its URL can be shared and survives
-    # a reload. The map is built from the rows this page actually shows, which is
-    # what makes the deep link safe: an id outside the current workspace — or a
-    # filtered-out one for a superuser — is simply not in it, so nothing opens.
-    edit_tasks = {t.id: _edit_payload(t, effective_active) for t in tasks}
-
     raw_task_id = request.query_params.get("task_id")
     open_task_id = int(raw_task_id) if raw_task_id and raw_task_id.isdigit() else None
-    if open_task_id not in edit_tasks:
-        open_task_id = None
+    if open_task_id is not None:
+        # The editor moved from a modal to its own page; the shared `?task_id=`
+        # link must land there, not open a modal the page no longer carries.
+        can_edit = perms_can(request, "agenttask", "update")
+        return RedirectResponse(
+            f"/app/tasks/{open_task_id}/edit" if can_edit else "/app/tasks",
+            status_code=303,
+        )
 
     return render(
         request,
@@ -242,10 +441,10 @@ async def tasks_list(request: Request):
         scenarios=scenarios,
         effective_active=effective_active,
         job_types=JobType.choices(),
+        trigger_types=BotTriggerType.choices(),
+        action_types=AgentActionType.choices(),
         cron_to_human=cron_to_human,
         job_id=job_id,
-        edit_tasks=edit_tasks,
-        open_task_id=open_task_id,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -262,6 +461,24 @@ async def task_create(
     scenario_id: int = Form(default=None),
     monitored_users: str = Form(""),
     excluded_users: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    force_refresh: str = Form(""),
+    force_reanalyze: str = Form(""),
+    trigger_type: str = Form(""),
+    trigger_keywords: str = Form(""),
+    trigger_match: str = Form("any"),
+    trigger_usernames: str = Form(""),
+    trigger_threshold: str = Form(""),
+    trigger_direction: str = Form("below"),
+    trigger_baseline_hours: str = Form(""),
+    trigger_spike_multiplier: str = Form(""),
+    action_type: str = Form(""),
+    blacklist: str = Form(""),
+    whitelist: str = Form(""),
+    rate_limit_per_hour: str = Form(""),
+    cooldown_seconds: str = Form(""),
+    requires_approval: str = Form("on"),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
@@ -306,11 +523,37 @@ async def task_create(
         if s.isdigit():
             parsed_source_ids.append(int(s))
 
-    payload: dict = {}
-    if monitored_users:
-        payload["monitored_users"] = _split_names(monitored_users)
-    if excluded_users:
-        payload["excluded_users"] = _split_names(excluded_users)
+    try:
+        payload = _payload_from_form(
+            job_type,
+            monitored_users,
+            excluded_users,
+            start_date,
+            end_date,
+            force_refresh,
+            force_reanalyze,
+        )
+    except ValueError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse(back, status_code=302)
+
+    trigger_action_fields = _trigger_and_action_fields(
+        job_type,
+        trigger_type,
+        trigger_keywords,
+        trigger_match,
+        trigger_usernames,
+        trigger_threshold,
+        trigger_direction,
+        trigger_baseline_hours,
+        trigger_spike_multiplier,
+        action_type,
+        blacklist,
+        whitelist,
+        rate_limit_per_hour,
+        cooldown_seconds,
+        requires_approval,
+    )
 
     from app.core.tenant_context import tenant_scope
     from app.models.managers.tenant_manager import tenants
@@ -331,6 +574,12 @@ async def task_create(
     except ValueError as e:
         add_flash(request, "error", str(e))
         return RedirectResponse(back, status_code=302)
+
+    # A ticked-but-off source activates with the save: the operator named the
+    # source the task should run on, so it must not stay off and block the
+    # activation check right below.
+    if AgentTaskManager.requires_sources(job_type):
+        await _activate_selected_sources(tenant_id, parsed_source_ids)
 
     # A task can only be created active when it has an active scenario and, for
     # a source-based type, at least one active source; otherwise it starts
@@ -353,6 +602,7 @@ async def task_create(
             agent_scenario_id=scenario_id,
             is_active=is_active,
             next_run_at=next_run,
+            **trigger_action_fields,
         )
         if parsed_source_ids:
             await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
@@ -381,8 +631,8 @@ async def task_detail(request: Request, task_id: int):
     from contextlib import nullcontext
 
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_task import AgentTask
     from app.models.agent_scenario import AgentScenario
+    from app.models.agent_task import AgentTask
     from app.models.job import Job
     from app.models.source import Source
 
@@ -430,12 +680,85 @@ async def task_detail(request: Request, task_id: int):
     )
 
 
-async def _task_source_ids(task_id: int) -> list[int]:
-    """Return the source ids linked to a task via the m2m table."""
-    from app.models.agent_task import agent_task_sources
+@router.get("/{task_id}/edit")
+async def task_edit_page(request: Request, task_id: int):
+    """The task editor as a page, not a modal.
 
-    rows = await agent_task_sources.select().where(agent_task_sources.c.task_id == task_id).fetchall()
-    return [r.source_id for r in rows]
+    The edit form outgrew the viewport — a modal's height is bounded by the
+    screen, this form already scrolls — so the editor lives at its own URI
+    (`/app/tasks/{id}/edit`) like every other editor. The row's name button
+    links here, and the old `?task_id=` parameter on the list page redirects
+    here. The superuser branch mirrors `task_detail`: the task is read under
+    bypass and its own tenant decides the page's sources and scenarios.
+    """
+    from contextlib import nullcontext
+
+    from app.core.tenant_context import tenant_scope
+
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _ = await tenant_filter_context(request, is_superuser)
+
+    denied = guard_web(request, "agenttask", "update", back="/app/tasks")
+    if denied is not None:
+        return denied
+
+    with tenant_scope(bypass=True) if is_superuser else nullcontext():
+        task = await AgentTask.objects.filter(id=task_id).first()
+        if task is not None and not is_superuser and task.tenant_id != request.state.tenant_id:
+            task = None
+        if task is None:
+            add_flash(request, "error", "Задача не найдена")
+            return RedirectResponse("/app/tasks", status_code=302)
+        sources = await Source.objects.filter(tenant_id=task.tenant_id).order_by(Source.name)
+        scenarios = await AgentScenario.objects.filter(tenant_id=task.tenant_id, is_active=True).order_by(AgentScenario.name)
+
+    active_source_ids = {s.id for s in sources if s.is_active}
+    effective = await AgentTaskManager().effective_active_map([task], active_source_ids)
+    edit = _edit_payload(task, {tid for tid, ok in effective.items() if ok})
+
+    return render(
+        request,
+        "web/task_edit.html",
+        section="tasks",
+        task=task,
+        edit=edit,
+        sources=sources,
+        scenarios=scenarios,
+        job_types=JobType.choices(),
+        trigger_types=BotTriggerType.choices(),
+        action_types=AgentActionType.choices(),
+        cron_to_human=cron_to_human,
+        is_superuser=is_superuser,
+        filter_tenant_id=filter_tenant_id,
+    )
+
+
+async def _task_source_ids(task_id: int) -> list[int]:
+    """Return the source ids linked to a task via the m2m table.
+
+    Two mistakes lived here, and both were fatal to *every* task page —
+    `/app/tasks/{id}` raised 500 for any task at all, so the queue's link to a
+    task had nothing to land on:
+
+    * the join column is `agent_task_id` (see `agent_task_sources`), not
+      `task_id` — the rest of the codebase spells it the same way as here
+      (`AgentTaskManager`), this was the lone outlier;
+    * `agent_task_sources` is a declarative `Table`, so `.select()` produces a
+      core `Select` — there is no `.fetchall()` on it.
+
+    Rather than reach for the table again, read the relationship the model
+    already declares (`AgentTask.sources`, `secondary=agent_task_sources`): the
+    secondary table stays an implementation detail of the mapping, and the
+    tenant guard of `AgentTask.objects` still applies to the task we load.
+    `prefetch_related` is not optional here — `sources` is a lazy m2m, and the
+    row comes back detached, so touching it without a prefetch raises
+    `DetachedInstanceError` rather than issuing a query.
+    """
+    from app.models.agent_task import AgentTask
+
+    task = await AgentTask.objects.filter(id=task_id).prefetch_related("sources").first()
+    return [source.id for source in task.sources] if task else []
 
 
 @router.post("/{task_id}/toggle")
@@ -522,6 +845,24 @@ async def task_update(
     scenario_id: int = Form(default=None),
     monitored_users: str = Form(""),
     excluded_users: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    force_refresh: str = Form(""),
+    force_reanalyze: str = Form(""),
+    trigger_type: str = Form(""),
+    trigger_keywords: str = Form(""),
+    trigger_match: str = Form("any"),
+    trigger_usernames: str = Form(""),
+    trigger_threshold: str = Form(""),
+    trigger_direction: str = Form("below"),
+    trigger_baseline_hours: str = Form(""),
+    trigger_spike_multiplier: str = Form(""),
+    action_type: str = Form(""),
+    blacklist: str = Form(""),
+    whitelist: str = Form(""),
+    rate_limit_per_hour: str = Form(""),
+    cooldown_seconds: str = Form(""),
+    requires_approval: str = Form("on"),
     run_now: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
@@ -562,13 +903,42 @@ async def task_update(
         if s.isdigit():
             parsed_source_ids.append(int(s))
 
+    try:
+        new_payload = _payload_from_form(
+            job_type,
+            monitored_users,
+            excluded_users,
+            start_date,
+            end_date,
+            force_refresh,
+            force_reanalyze,
+        )
+    except ValueError as e:
+        add_flash(request, "error", str(e))
+        return RedirectResponse("/app/tasks", status_code=302)
+
+    trigger_action_fields = _trigger_and_action_fields(
+        job_type,
+        trigger_type,
+        trigger_keywords,
+        trigger_match,
+        trigger_usernames,
+        trigger_threshold,
+        trigger_direction,
+        trigger_baseline_hours,
+        trigger_spike_multiplier,
+        action_type,
+        blacklist,
+        whitelist,
+        rate_limit_per_hour,
+        cooldown_seconds,
+        requires_approval,
+    )
+
     # Merge into existing payload instead of replacing — keys like "period",
     # "days", "min_messages" set via CLI or agent tool must survive a web edit.
     payload = task.payload.copy() if isinstance(task.payload, dict) else {}
-    if monitored_users:
-        payload["monitored_users"] = _split_names(monitored_users)
-    if excluded_users:
-        payload["excluded_users"] = _split_names(excluded_users)
+    payload.update(new_payload)
 
     from app.core.tenant_context import tenant_scope
     from app.models.managers.tenant_manager import tenants
@@ -589,6 +959,11 @@ async def task_update(
     except ValueError as e:
         add_flash(request, "error", str(e))
         return RedirectResponse("/app/tasks", status_code=302)
+
+    # Same rule as create: a ticked-but-off source activates with the save, so
+    # the activation check below sees the sources as the operator intends them.
+    if AgentTaskManager.requires_sources(job_type):
+        await _activate_selected_sources(tenant_id, parsed_source_ids)
 
     # Activation is allowed only when the task has an active scenario and, for a
     # source-based type, at least one active source; otherwise it stays inactive.
@@ -613,6 +988,7 @@ async def task_update(
             agent_scenario_id=scenario_id,
             is_active=requested_active and activation_blocked is None,
             next_run_at=next_run,
+            **trigger_action_fields,
         )
         await _replace_task_sources(task.id, parsed_source_ids, tenant_id)
 

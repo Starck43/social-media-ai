@@ -38,6 +38,8 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
     status: Mapped[str] = Column(String(20), default="pending", nullable=False, server_default="pending")
     run_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=False)
     locked_at: Mapped[DateTime] = Column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[DateTime | None] = Column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[DateTime | None] = Column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = Column(Integer, default=0, nullable=False, server_default="0")
     max_attempts: Mapped[int] = Column(Integer, default=settings.JOB_MAX_ATTEMPTS, nullable=False, server_default="3")
     result: Mapped[dict[str, Any]] = Column(JSON, nullable=True)

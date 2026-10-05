@@ -8,6 +8,11 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
     from ..job import Job
 
+# Remove jobs that finished more than this ago to keep the queue readable.
+# Running/pending/failed rows survive — they need human attention or are in
+# flight. Only "done" rows older than the threshold are pruned.
+JOB_CLEANUP_AFTER_HOURS = 24
+
 
 class JobManager(BaseManager["Job"]):
     """Manager for the Job queue: enqueue, atomic claim, retries."""
@@ -74,6 +79,7 @@ class JobManager(BaseManager["Job"]):
                     return None
                 job.status = "running"
                 job.locked_at = now
+                job.started_at = now
                 job.attempts = (job.attempts or 0) + 1
                 await session.flush()
                 # Detach-safe: return after commit, expire_on_commit handles state
@@ -147,6 +153,7 @@ class JobManager(BaseManager["Job"]):
                     .values(
                         status="running",
                         locked_at=now,
+                        started_at=now,
                         attempts=JobModel.attempts + 1,
                         updated_at=now,
                     )
@@ -155,7 +162,13 @@ class JobManager(BaseManager["Job"]):
 
     async def mark_done(self, job_id: int, result: Optional[dict] = None, llm_cost: Optional[float] = None) -> None:
         job = await self.get(id=job_id)
-        updates: dict = {"status": "done", "result": result, "error": None}
+        now = datetime.now(timezone.utc)
+        updates: dict = {
+            "status": "done",
+            "result": result,
+            "error": None,
+            "finished_at": now,
+        }
         if llm_cost is not None:
             updates["llm_cost"] = float(llm_cost)
         await self.update_by_id(job_id, **updates)
@@ -186,7 +199,13 @@ class JobManager(BaseManager["Job"]):
                 error=error[:2000],
             )
             return True
-        await self.update_by_id(job_id, status="failed", error=error[:2000])
+        now = datetime.now(timezone.utc)
+        await self.update_by_id(
+            job_id,
+            status="failed",
+            error=error[:2000],
+            finished_at=now,
+        )
         await self._record_task_result(job, status="failed", error=error[:2000])
         return False
 
@@ -197,3 +216,18 @@ class JobManager(BaseManager["Job"]):
         for job in stale:
             await self.update_by_id(job.id, status="pending", locked_at=None)
         return len(stale)
+
+    async def cleanup_done(self, older_than_hours: int | None = None) -> int:
+        """Delete successfully finished jobs older than `older_than_hours`.
+
+        Keeps the queue page readable — a few hundred "done" rows makes it
+        impossible to spot new failures. `running`/`pending`/`failed` rows
+        survive because they need human attention or are in flight.
+        """
+        hours = older_than_hours or JOB_CLEANUP_AFTER_HOURS
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        done = await self.filter(status="done", finished_at__lt=cutoff)
+        count = len(done)
+        for job in done:
+            await self.delete(id=job.id)
+        return count

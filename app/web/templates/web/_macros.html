@@ -392,6 +392,72 @@
 {%- endmacro %}
 
 
+{# ── checkbox as a card ──────────────────────────────────────────────────────
+
+   The native box stays in the DOM — it is what the form posts, what the tests
+   read and what the keyboard drives — but it is invisible. What the reader sees
+   is an SVG stroked in `currentColor`, so the tick always matches the frame it
+   sits in: slate while unselected, cyan on hover, cyan when checked.
+
+   Two details make it work with no JavaScript:
+
+   - The `<li>` carries `has-[:checked]:`, which recolours the border and the
+     text together. Colouring the frame on the label instead would leave the
+     two able to disagree.
+   - The SVG is a *sibling* of the input, never a descendant of the label.
+     `peer-checked:` only reaches siblings, so a tick nested inside the label
+     would stay grey forever.
+
+   The `<label>` is stretched over the whole card, which makes the text, the
+   padding and the tick a single hit target — the reader asked for the entire
+   element to toggle, and a label around just the words leaves the tick inert.
+   `cid` must be unique per card; it is what binds the label to the box. #}
+{% macro check_mark(state="") -%}
+    <svg class="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-700
+                    transition group-hover:text-cyan-500/60 {{ state }}"
+         viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd"
+              d="M16.7 4.15a.75.75 0 0 1 .14 1.05l-8 10.5a.75.75 0 0 1-1.13.08l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.9 3.89 7.47-9.82a.75.75 0 0 1 1.05-.14Z"
+              clip-rule="evenodd"/>
+    </svg>
+{%- endmacro %}
+
+
+{# One selectable card, meant to sit in a `<ul class="grid">`.
+
+   `checked` is a plain boolean rather than a string so a caller cannot
+   accidentally render the attribute by passing the string "false". `attrs`
+   carries what only this call site knows — Alpine handlers, extra classes for
+   the wizard's `.analysis-cb` hook. #}
+{% macro check_card(cid, name, value, content, checked=False, attrs="") -%}
+    <li class="group relative flex items-center rounded-lg border border-slate-700 bg-slate-950 transition
+               hover:border-cyan-500
+               has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 has-[:checked]:text-cyan-200
+               has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan-500/60">
+        <input type="checkbox" id="{{ cid }}" name="{{ name }}" value="{{ value }}"
+               class="peer sr-only" {{ attrs }} {% if checked %}checked{% endif %}>
+        <span class="pointer-events-none flex-1 px-3 py-2 text-sm text-slate-300">{{ content }}</span>
+        {{ check_mark("peer-checked:text-cyan-500") }}
+        <label for="{{ cid }}" class="absolute inset-0 cursor-pointer"></label>
+    </li>
+{%- endmacro %}
+
+
+{# The inline variant, for a lone toggle («Активен», «По умолчанию») that never
+   became a grid. Same tick, same colour rule; only the framing differs — there
+   is no card border to agree with, so the hover tint lands on the text. #}
+{% macro check_toggle(name, content, checked=False, disabled=False, attrs="") -%}
+    <label class="group relative flex cursor-pointer items-center gap-2 pr-8 text-sm text-slate-300 transition
+                  hover:text-cyan-200 has-[:checked]:text-cyan-200
+                  {% if disabled %}pointer-events-none opacity-60{% endif %}">
+        <input type="checkbox" name="{{ name }}" class="peer sr-only" {{ attrs }}
+               {% if checked %}checked{% endif %} {% if disabled %}disabled{% endif %}>
+        <span class="pointer-events-none">{{ content }}</span>
+        {{ check_mark("peer-checked:text-cyan-500") }}
+    </label>
+{%- endmacro %}
+
+
 {% macro page_title(title, subtitle="") -%}
     <div class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">{{ title }}</h1>

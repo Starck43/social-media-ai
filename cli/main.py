@@ -215,6 +215,11 @@ def task_add(
         None, "--excluded", help="Comma/space separated usernames to skip (collect/analyze)"
     ),
     scenario_id: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply when the task runs"),
+    start_date: str = typer.Option(None, "--start-date", help="Collect content from this date (DD-MM-YYYY) for collect/analyze"),
+    end_date: str = typer.Option(None, "--end-date", help="Collect content until this date (DD-MM-YYYY)"),
+    force_refresh: bool = typer.Option(
+        False, "--force-refresh", help="Re-fetch the whole window on every run (collect); stored on the task"
+    ),
     payload: str = typer.Option("{}", "--payload", "-p", help='Extra JSON payload, e.g. \'{"period": "week"}\''),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id to create the task in"),
 ):
@@ -239,6 +244,16 @@ def task_add(
         parsed_payload["monitored_users"] = _split_names(monitored_users)
     if excluded_users:
         parsed_payload["excluded_users"] = _split_names(excluded_users)
+
+    # Stored on the task the same way the web form does — a collect/analyze task
+    # without a `cli_dates.start_date` would drain a fresh source from the first
+    # post. `--force-refresh` marks the whole window for overwrite on each run.
+    if start_date or end_date or force_refresh:
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        start = AgentTaskManager.parse_date(start_date) if start_date else None
+        end = AgentTaskManager.parse_date(end_date) if end_date else None
+        parsed_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=force_refresh))
 
     _run_platform(
         _add_task(
@@ -316,6 +331,8 @@ async def _run_task(
     period: str | None,
     tenant: str | None,
     force_refresh: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
     """Run one task now and return the job outcome.
 
@@ -326,7 +343,10 @@ async def _run_task(
 
     `--force-refresh` is a full-cycle override: it re-fetches the whole period
     and (for `collect`) re-analyzes it, overwriting rows by (source, date). It
-    is merged into the job payload only — the task row is left unchanged.
+    is merged into the job payload only — the task row is left unchanged. A task
+    that already stores `cli_dates`/`force_refresh` in its payload keeps them
+    unless the command-line flags override them (the stored values flow through
+    the task payload either way).
     """
     from rich import print as rprint
 
@@ -355,6 +375,14 @@ async def _run_task(
             payload["excluded_users"] = _split_names(excluded)
         if period:
             payload["period"] = period
+        if start_date or end_date:
+            from app.models.managers.agent_task_manager import AgentTaskManager
+
+            start = AgentTaskManager.parse_date(start_date) if start_date else None
+            end = AgentTaskManager.parse_date(end_date) if end_date else None
+            payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=force_refresh))
+        elif force_refresh:
+            payload["force_refresh"] = True
         with tenant_scope(tenant_id) if tenant_id else nullcontext():
             # `@once` is created disarmed: a still-armed one-shot would be picked
             # up by the scheduler tick and enqueue a duplicate job. The name
@@ -411,6 +439,8 @@ def _make_task_run_command(job_type: str) -> Callable:
             "--force-refresh",
             help="Full-cycle refresh: for collect re-fetch + re-analyze the whole period (overwrites rows by source/date)",
         ),
+        start_date: str = typer.Option(None, "--start-date", help="Collect from this date (DD-MM-YYYY) — one-off only"),
+        end_date: str = typer.Option(None, "--end-date", help="Collect until this date (DD-MM-YYYY) — one-off only"),
     ):
         _run_platform(
             _run_task(
@@ -423,6 +453,8 @@ def _make_task_run_command(job_type: str) -> Callable:
                 period=period,
                 tenant=tenant,
                 force_refresh=force_refresh,
+                start_date=start_date,
+                end_date=end_date,
             )
         )
 

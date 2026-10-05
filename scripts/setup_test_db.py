@@ -183,6 +183,32 @@ async def _create_tables() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def _missing_columns(conn, metadata, schema: str) -> list[str]:
+    """Model columns the test schema does not have.
+
+    ``Base.metadata.create_all(checkfirst=True)`` adds missing *tables* but never
+    missing *columns*, so a schema built before a column was added stays silently
+    behind the models and every test that writes it fails with a bare
+    ``column "x" of relation "y" does not exist`` until someone drops the schema
+    by hand. Read back what actually exists from ``information_schema.columns``
+    and diff it against the models, so the report names the exact columns.
+    """
+    result = await conn.execute(
+        text("select table_name, column_name from information_schema.columns " "where table_schema = :schema"),
+        {"schema": schema},
+    )
+    present = {(table_name, column_name) for table_name, column_name in result}
+
+    missing: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.schema not in (None, schema):
+            continue
+        for column in table.columns:
+            if (table.name, column.name) not in present:
+                missing.append(f"{table.name}.{column.name}")
+    return missing
+
+
 def _stamp_head(url: str) -> None:
     """Mark the database as being at the latest revision.
 
@@ -376,6 +402,25 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
     # (`create_all` is idempotent/checkfirst, so this only adds missing tables).
     await _create_schema()
     await _create_tables()
+
+    # A schema that predates a model change is worse than a missing one: the
+    # tables exist, so nothing is created, and the drift only surfaces later as
+    # `column "x" does not exist` from a random test. Fail here instead, naming
+    # the columns — `create_all` cannot add them, so the remedy is to drop the
+    # schema and let this run rebuild it from the models.
+    from app.core.config import settings
+    from app.core.database import async_engine
+    from app.models import Base
+
+    async with async_engine.connect() as conn:
+        missing = await _missing_columns(conn, Base.metadata, settings.DB_SCHEMA)
+    if missing:
+        raise RuntimeError(
+            "The test schema is behind the models (missing columns): "
+            + ", ".join(sorted(missing))
+            + ". `create_all` only adds tables, never columns — rebuild the schema, e.g.:\n"
+            f"    psql -c 'drop schema \"{settings.DB_SCHEMA}\" cascade' && pytest"
+        )
 
     await _seed_reference_rows()
     say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")

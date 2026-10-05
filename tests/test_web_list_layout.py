@@ -216,7 +216,7 @@ async def _drop_task(task_id: int | None) -> None:
 
 @pytest.mark.tenancy
 async def test_the_task_name_opens_the_editor() -> None:
-    """The pencil column is gone; the name carries the same call."""
+    """The pencil column is gone; the name links to the editor page."""
     task_id = None
     async with await _client() as client:
         user, tenant_id = await _register(client, "TaskNameLink")
@@ -228,7 +228,7 @@ async def test_the_task_name_opens_the_editor() -> None:
 
             assert 'aria-label="Настроить задачу"' not in page.text
             row = next(r for r in _table_rows(page.text) if "byname" in r)
-            assert f'@click="editTask({task_id})"' in row, "the name must reach the editor"
+            assert f'href="/app/tasks/{task_id}/edit"' in row, "the name must link to the editor page"
         finally:
             await _drop_task(task_id)
             await _drop(user, tenant_id)
@@ -236,14 +236,13 @@ async def test_the_task_name_opens_the_editor() -> None:
 
 @pytest.mark.tenancy
 async def test_the_editor_is_addressable_by_url() -> None:
-    """Opening the editor puts the task id in the URL, and that URL reopens it.
+    """The editor lives at its own URI, and the old `?task_id=` link lands there.
 
-    The modal is the only way into a task's settings, so its address has to name
-    the task: a reload, a bookmark or a link pasted to a colleague must land on
-    the open editor rather than on the bare list. The same id therefore has to
-    travel both ways — out through `history.replaceState`, back in through
-    `?task_id=` — and a link naming a task this page does not show must open
-    nothing rather than something from another workspace.
+    The modal was bounded by the viewport and the form outgrew it, so the editor
+    moved to a real page (`/app/tasks/{id}/edit`): the row's name links there,
+    and the shared `?task_id=` deep link — a reload, a bookmark, a link pasted to
+    a colleague — redirects to it rather than opening a modal. A task another
+    workspace owns must not open.
     """
     task_id = None
     other_task_id = None
@@ -257,22 +256,22 @@ async def test_the_editor_is_addressable_by_url() -> None:
 
             page = await client.get("/app/tasks")
             assert page.status_code == 200
-            # Opening writes the id; closing takes it away, so the address bar
-            # never names a task whose editor is not on screen.
-            assert "setTaskParam" in page.text
-            assert 'searchParams.set("task_id"' in page.text
-            assert 'searchParams.delete("task_id"' in page.text
-            assert "replaceState" in page.text, "the id must not spam the history stack"
-            close = re.search(r'x-show="openEdit".*?</form>', page.text, re.S)
-            assert close and "closeEdit()" in close.group(0), "closing must clear the parameter"
+            assert f'href="/app/tasks/{task_id}/edit"' in page.text, "the name links to the editor page"
 
-            # A direct link opens that editor, and only that one.
+            # The old `?task_id=` deep link still works — it redirects to the page.
             deep = await client.get(f"/app/tasks?task_id={task_id}")
-            assert deep.status_code == 200
-            assert f"const OPEN_TASK_ID = {task_id}" in deep.text
+            assert "Редактирование задачи" in deep.text, "the deep link must land on the editor page"
+            assert f'"id":{task_id}' in deep.text.replace(" ", ""), "the editor binds this task's payload"
 
-            stranger = await client.get(f"/app/tasks?task_id={foreign + 100_000}")
-            assert "const OPEN_TASK_ID = null" in stranger.text
+            # The editor page itself is reachable and bound.
+            editor = await client.get(f"/app/tasks/{task_id}/edit")
+            assert editor.status_code == 200
+            assert "taskEditPage" in editor.text
+
+            # A task another workspace owns does not open.
+            stranger = await client.get(f"/app/tasks/{foreign + 100_000}/edit")
+            assert stranger.status_code == 200
+            assert "Задача не найдена" in stranger.text
         finally:
             await _drop_task(task_id)
             await _drop_task(other_task_id)
@@ -285,6 +284,7 @@ async def test_delete_lives_in_the_task_form_not_the_row() -> None:
 
     A bare trash icon one misclick from «Выполнить» was the old arrangement;
     the edit form is where a reader has already decided this task is theirs.
+    The form lives on the editor page now, not in a modal over the list.
     """
     task_id = None
     async with await _client() as client:
@@ -298,10 +298,10 @@ async def test_delete_lives_in_the_task_form_not_the_row() -> None:
             row = next(r for r in _table_rows(page.text) if "delme" in r)
             assert f"/app/tasks/{task_id}/delete" not in row, "delete is back in the row"
 
-            form = re.search(r'x-show="openEdit".*?</form>', page.text, re.S)
-            assert form, "no edit form on the page"
-            assert ":formaction=\"'/app/tasks/' + editing.id + '/delete'\"" in form.group(0)
-            assert re.search(r">\s*Удалить\s*<", form.group(0))
+            editor = await client.get(f"/app/tasks/{task_id}/edit")
+            assert editor.status_code == 200
+            assert ":formaction=\"'/app/tasks/' + editing.id + '/delete'\"" in editor.text
+            assert re.search(r">\s*Удалить\s*<", editor.text)
         finally:
             await _drop_task(task_id)
             await _drop(user, tenant_id)
@@ -352,8 +352,10 @@ async def test_activate_does_not_wear_the_run_now_glyph() -> None:
 @pytest.mark.parametrize(
     "path",
     # The dashboard's router is mounted at `/app/` itself, so that is its URL —
-    # `/app/dashboard` is a 404, not a second entry point.
-    ["/app/sources", "/app/tasks", "/app/", "/app/analytics", "/app/jobs", "/app/digests"],
+    # `/app/dashboard` is a 404, not a second entry point. `/app/jobs` is not
+    # listed: the queue is gated to a platform role above ADMIN and would only
+    # redirect here (its «Пространство» label is asserted in the queue's own test).
+    ["/app/sources", "/app/tasks", "/app/", "/app/analytics", "/app/digests"],
 )
 async def test_no_page_still_calls_the_workspace_a_tenant(path: str) -> None:
     """«Тенант» was the column header on three pages; «Пространство» is the word.
@@ -369,7 +371,7 @@ async def test_no_page_still_calls_the_workspace_a_tenant(path: str) -> None:
             assert page.status_code == 200, path
             assert ">Тенант<" not in page.text, f"{path} still says «Тенант»"
             assert "Все тенанты" not in page.text, f"{path} still says «Все тенанты»"
-            # The jobs/digests filter labelled the very same control «Workspace».
+            # The digests filter labelled the very same control «Workspace».
             assert ">Workspace<" not in page.text, f"{path} still says «Workspace»"
         finally:
             await _drop(user, tenant_id)

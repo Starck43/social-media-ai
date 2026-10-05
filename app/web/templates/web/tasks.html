@@ -115,6 +115,19 @@
                        the reader's attention. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                     <div class="flex items-center gap-1">
+                        {# Show a running indicator if a job is already in progress #}
+                        {% if task.id in running_jobs %}
+                        <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
+                           title="Job #{{ running_jobs[task.id] }} выполняется"
+                           class="rounded-md border border-amber-700 p-1.5 text-amber-400 hover:bg-amber-950"
+                           aria-label="Job выполняется">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                 stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                      d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                            </svg>
+                        </a>
+                        {% else %}
                         <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
@@ -127,6 +140,7 @@
                                 </svg>
                             </button>
                         </form>
+                        {% endif %}
                         {# «Активировать» is a power switch, not a play triangle: the
                            triangle is what «Выполнить сейчас» is, and the two
                            identical glyphs side by side meant the eye had to read

@@ -491,14 +491,21 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
                     else:
-                        # Nothing was saved — keep every row, but count the miss
-                        # so a row the LLM cannot process stops being offered
-                        # after `give_up_after_attempts` instead of retrying (and
-                        # timing out) on every future run.
-                        counted = await _count_failed_staged(source.id, staged)
                         logger.warning(
                             f"Analysis of {len(staged)} staged item(s) for source {source.id} produced "
-                            f"no result; keeping them staged for a retry ({counted} attempt(s) counted)"
+                            "no result; keeping them staged for a retry"
+                        )
+                    # Count a miss against whatever survived the retirement.
+                    # `record_attempts` is an UPDATE keyed on the hash, so rows
+                    # that were just retired are simply not there any more — a
+                    # partial result still counts only the rows that failed,
+                    # which would otherwise never accrue an attempt and would be
+                    # offered again on every run at a full timeout each.
+                    counted = await _count_failed_staged(source.id, staged)
+                    if counted:
+                        logger.warning(
+                            f"{counted} staged item(s) of source {source.id} went unanalysed; "
+                            "counting the attempt so they stop being retried eventually"
                         )
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
                 logger.warning(f"Could not process staged items for source {source.id}: {e}", exc_info=True)

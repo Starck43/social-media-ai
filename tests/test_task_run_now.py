@@ -231,3 +231,46 @@ async def test_an_exhausted_item_is_no_longer_offered_for_analysis(client):
         with tenant_scope(bypass=True):
             await CollectedItem.objects.delete_by_id(row.id)
         await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_partially_analysed_batch_still_counts_the_rows_it_missed(client):
+    """A partial result must not exempt the failed rows from the retry ceiling.
+
+    The counter used to be recorded only when nothing at all was saved. On a
+    partial analysis the rows that failed kept `analyze_attempts = 0` forever, so
+    `for_source` kept handing them out on every run — each one costing a full
+    request timeout, which is exactly the loop the ceiling exists to stop.
+    `record_attempts` is an UPDATE keyed on the hash, so retiring the rows that
+    did succeed leaves only the failures to be counted.
+    """
+    user, tenant_id = await _register(client, "partial")
+    source = await _make_source(tenant_id)
+    good, bad = secrets.token_hex(16), secrets.token_hex(16)
+    try:
+        with tenant_scope(bypass=True):
+            saved = await CollectedItem.objects.create(
+                source_id=source.id, content_hash=good, text="analysable", tenant_id=tenant_id
+            )
+            missed = await CollectedItem.objects.create(
+                source_id=source.id, content_hash=bad, text="unanalysable", tenant_id=tenant_id
+            )
+
+            session = new_session()
+            try:
+                async with session.begin():
+                    # The analysis stored only `good`, so only it is retired...
+                    assert await CollectedItem.objects.delete_hashes(session, source.id, [good]) == 1
+                    # ...and counting the batch touches only the row still there.
+                    assert await CollectedItem.objects.record_attempts(session, source.id, [good, bad]) == 1
+            finally:
+                await session.close()
+
+            remaining = await CollectedItem.objects.for_source(source.id, include_exhausted=True)
+            assert [r.id for r in remaining] == [missed.id]
+            assert remaining[0].analyze_attempts == 1, "the row that failed must accrue the attempt"
+    finally:
+        with tenant_scope(bypass=True):
+            for digest in (good, bad):
+                await CollectedItem.objects.delete(content_hash=digest, source_id=source.id)
+        await _drop(user, tenant_id)

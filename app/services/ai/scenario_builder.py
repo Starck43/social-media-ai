@@ -23,7 +23,6 @@ Pieces:
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -49,11 +48,9 @@ class ScenarioDraft:
     analysis_types: list[str] = field(default_factory=list)
     analyze_type: Optional[str] = None
     scope: dict[str, Any] = field(default_factory=dict)
-    text_prompt: Optional[str] = None
-    image_prompt: Optional[str] = None
-    video_prompt: Optional[str] = None
-    audio_prompt: Optional[str] = None
-    unified_summary_prompt: Optional[str] = None
+    base_prompt: Optional[str] = None
+    media_overrides: dict[str, str] = field(default_factory=dict)
+    summary_prompt: Optional[str] = None
     llm_strategy: Optional[str] = None
     text_llm_model_id: Optional[int] = None
     image_llm_model_id: Optional[int] = None
@@ -102,14 +99,13 @@ class ScenarioDraft:
 class ScenarioBuilder:
     """Pure helpers shared by the web wizard and the admin form."""
 
-    #: The prompt fields a scenario carries, in wizard order — the base prompt
-    #: is `text_prompt`, the rest are optional per-media overrides.
+    #: The prompt fields a scenario carries — the base prompt is what every
+    #: media type falls back to, `media_overrides` replace it per media type,
+    #: `summary_prompt` drives the unified summary.
     PROMPT_FIELDS: tuple[str, ...] = (
-        "text_prompt",
-        "image_prompt",
-        "video_prompt",
-        "audio_prompt",
-        "unified_summary_prompt",
+        "base_prompt",
+        "media_overrides",
+        "summary_prompt",
     )
 
     @classmethod
@@ -133,7 +129,7 @@ class ScenarioBuilder:
 
     @classmethod
     def available_variables(cls, media_type: MediaType) -> dict[str, str]:
-        """Variable name → description, the dropdown a prompt editor offers.
+        """Variable name → description for one media type's overrides.
 
         Delegates to `PromptVariables`, the single registry the substitution
         code reads, so the offered list cannot drift from what actually
@@ -144,33 +140,38 @@ class ScenarioBuilder:
         return dict(PromptVariables.get_variables_for_media_type(media_type))
 
     @classmethod
-    def unknown_variables(cls, prompt: str) -> list[str]:
-        """Placeholders in `prompt` that no known variable will fill.
+    def base_variables(cls) -> dict[str, str]:
+        """The full variable registry the *base* prompt may use.
 
-        Only the *text* variable set is checked here — the media overrides use
-        the same names (`count`, `platform`), so one set covers the wizard's
-        base prompt. Scope-derived custom variables are resolved from the
-        draft's scope at build time and cannot be validated statically.
+        Unlike the per-media sets, the base prompt is media-agnostic, so the
+        offered list is the whole `AVAILABLE_VARIABLES` — the documented set
+        including `date_range`, `source_name`, `scenario_name` and the
+        scope-derived names.
         """
         from app.services.ai.prompt_variables import PromptVariables
 
-        known = set(PromptVariables.TEXT_VARIABLES)
-        found: list[str] = []
-        for match in re.findall(r"\{([^}]+)\}", prompt or ""):
-            # Nested paths ({stats.total_posts}) are legitimate; the check is
-            # for the top-level name only.
-            name = match.split(".")[0]
-            if name not in known and name not in found:
-                found.append(name)
-        return found
+        return dict(PromptVariables.AVAILABLE_VARIABLES)
+
+    @classmethod
+    def unknown_variables(cls, prompt: str) -> list[str]:
+        """Placeholders in `prompt` that no known variable will fill.
+
+        Delegates to `PromptVariables.validate_prompt` over the documented
+        `AVAILABLE_VARIABLES` set, so the wizard's base prompt and the admin's
+        preview agree with the validation on save.
+        """
+        from app.services.ai.prompt_variables import PromptVariables
+
+        return PromptVariables.validate_prompt(prompt)
 
     @classmethod
     def transient_scenario(cls, draft: ScenarioDraft):
         """An in-memory `AgentScenario` from the draft, no DB row.
 
-        `PromptBuilder.get_prompt` reads `text_prompt`, `scope`,
-        `analysis_types` and the model ids off the scenario, so a transient
-        instance lets the preview reuse the exact production prompt path.
+        `PromptBuilder.get_prompt` reads `base_prompt`, `media_overrides`,
+        `scope`, `analysis_types` and the model ids off the scenario, so a
+        transient instance lets the preview reuse the exact production prompt
+        path.
         """
         from app.models import AgentScenario
 
@@ -180,11 +181,9 @@ class ScenarioBuilder:
             content_types=draft.content_types,
             analysis_types=draft.analysis_types,
             scope=draft.scope or {},
-            text_prompt=draft.text_prompt,
-            image_prompt=draft.image_prompt,
-            video_prompt=draft.video_prompt,
-            audio_prompt=draft.audio_prompt,
-            unified_summary_prompt=draft.unified_summary_prompt,
+            base_prompt=draft.base_prompt,
+            media_overrides=dict(draft.media_overrides or {}),
+            summary_prompt=draft.summary_prompt,
             llm_strategy=draft.llm_strategy,
             text_llm_model_id=draft.text_llm_model_id,
             image_llm_model_id=draft.image_llm_model_id,
@@ -252,9 +251,11 @@ class ScenarioBuilder:
             "common_fields": common,
             "type_fields": type_fields,
             "media_previews": media_previews,
-            "custom_prompt": draft.text_prompt or None,
-            "has_custom": bool(draft.text_prompt),
+            "custom_prompt": draft.base_prompt or None,
+            "has_custom": bool(draft.base_prompt),
             "base_media": get_enum_value(draft.media_type),
+            "media_overrides": dict(draft.media_overrides or {}),
+            "summary_prompt": draft.summary_prompt or None,
         }
 
     @classmethod
@@ -269,11 +270,9 @@ class ScenarioBuilder:
             analysis_types=list(scenario.analysis_types or []),
             analyze_type=getattr(scenario.analyze_type, "db_value", None) if scenario.analyze_type else None,
             scope=dict(scenario.scope or {}),
-            text_prompt=scenario.text_prompt,
-            image_prompt=scenario.image_prompt,
-            video_prompt=scenario.video_prompt,
-            audio_prompt=scenario.audio_prompt,
-            unified_summary_prompt=scenario.unified_summary_prompt,
+            base_prompt=scenario.base_prompt,
+            media_overrides=dict(scenario.media_overrides or {}),
+            summary_prompt=scenario.summary_prompt,
             llm_strategy=scenario.llm_strategy if isinstance(scenario.llm_strategy, str) else (
                 scenario.llm_strategy.value if scenario.llm_strategy else None
             ),
@@ -294,11 +293,9 @@ class ScenarioBuilder:
         scenario.analysis_types = list(draft.analysis_types)
         scenario.scope = dict(draft.scope or {})
         scenario.analyze_type = draft.analyze_type
-        scenario.text_prompt = draft.text_prompt
-        scenario.image_prompt = draft.image_prompt
-        scenario.video_prompt = draft.video_prompt
-        scenario.audio_prompt = draft.audio_prompt
-        scenario.unified_summary_prompt = draft.unified_summary_prompt
+        scenario.base_prompt = draft.base_prompt
+        scenario.media_overrides = dict(draft.media_overrides or {})
+        scenario.summary_prompt = draft.summary_prompt
         scenario.llm_strategy = draft.llm_strategy
         scenario.text_llm_model_id = draft.text_llm_model_id
         scenario.image_llm_model_id = draft.image_llm_model_id

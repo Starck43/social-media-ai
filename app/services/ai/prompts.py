@@ -5,7 +5,9 @@ This module contains prompt builders for text, image, and video analysis.
 Supports both default templates and custom prompts with variable substitution.
 """
 
+import re
 from typing import Dict, Any, Optional, TYPE_CHECKING
+
 from app.types import MediaType
 from app.services.ai.prompt_variables import PromptSubstitution
 
@@ -33,7 +35,7 @@ class PromptBuilder:
 		
 		Args:
 			media_type: Type of media (TEXT, IMAGE, VIDEO, AUDIO)
-			scenario: Optional AgentScenario with custom prompts
+			scenario: Optional AgentScenario with base_prompt and media_overrides
 			**context: Context variables for prompt (text, platform, stats, count, etc.)
 		
 		Returns:
@@ -43,7 +45,7 @@ class PromptBuilder:
 			# With custom prompt
 			prompt = PromptBuilder.get_prompt(
 				MediaType.TEXT,
-				scenario=my_scenario,  # has text_prompt = "Analyze {text} from {platform}"
+				scenario=my_scenario,  # has base_prompt = "Analyze {text} from {platform}"
 				text="content here",
 				platform="VK"
 			)
@@ -58,19 +60,17 @@ class PromptBuilder:
 		"""
 		from app.utils.enum_helpers import get_enum_value
 
-		# Try to get custom prompt from scenario
+		# Try to get the custom prompt from the scenario: the base prompt is the
+		# core instruction for every media type, and a per-media override from
+		# `media_overrides` replaces it for that media only.
 		custom_prompt = None
 		if scenario:
 			media_value = get_enum_value(media_type)
-
-			if media_value == 'text':
-				custom_prompt = scenario.text_prompt
-			elif media_value == 'image':
-				custom_prompt = scenario.image_prompt
-			elif media_value == 'video':
-				custom_prompt = scenario.video_prompt
-			elif media_value == 'audio':
-				custom_prompt = scenario.audio_prompt
+			media_overrides = scenario.media_overrides or {}
+			if media_value in media_overrides:
+				custom_prompt = media_overrides[media_value]
+			elif scenario.base_prompt:
+				custom_prompt = scenario.base_prompt
 
 		# Use custom prompt if available
 		if custom_prompt:
@@ -99,17 +99,17 @@ class PromptBuilder:
 			text_analysis: Results from text analysis
 			image_analysis: Results from image analysis
 			video_analysis: Results from video analysis
-			scenario: Optional AgentScenario with custom unified_summary_prompt
+			scenario: Optional AgentScenario with custom summary_prompt
 		
 		Returns:
 			Complete prompt for unified summary
 		"""
 		# Check for custom prompt
-		if scenario and scenario.unified_summary_prompt:
+		if scenario and scenario.summary_prompt:
 			variables = PromptSubstitution.prepare_unified_variables(
 				text_analysis, image_analysis, video_analysis
 			)
-			prompt = PromptSubstitution.substitute(scenario.unified_summary_prompt, variables)
+			prompt = PromptSubstitution.substitute(scenario.summary_prompt, variables)
 
 			# Auto-append JSON instruction if not present
 			prompt = PromptBuilder._ensure_unified_json_instruction(prompt)
@@ -169,6 +169,24 @@ class PromptBuilder:
 				if key not in variables:
 					variables[key] = value
 
+			# Expose documented scope-derived names at top level: {max_keywords},
+			# {max_topics}, {sentiment_categories}. The raw scope keys stay too
+			# ({keywords.max_keywords} via nested access), so nothing existing
+			# stops working.
+			for var_name, value in PromptBuilder._flatten_scope_variables(scenario.scope).items():
+				if value is not None and var_name not in variables:
+					variables[var_name] = value
+
+		# Documented context variables. They resolve only when the caller
+		# provides the data (or the scenario carries it); otherwise the
+		# placeholder is left as-is by substitution.
+		variables.setdefault('source_name', context.get('source_name'))
+		variables.setdefault('trigger_condition', context.get('trigger_condition'))
+		if scenario:
+			variables.setdefault('scenario_name', scenario.name)
+		elif context.get('scenario_name') is not None:
+			variables['scenario_name'] = context['scenario_name']
+
 		# Add trigger_config as a separate object (if present). It arrives in the
 		# context rather than off the scenario: the trigger belongs to the task
 		# now, and the prompt is built from the scenario, which is shared by tasks
@@ -178,6 +196,27 @@ class PromptBuilder:
 			variables['trigger_config'] = trigger_config
 
 		return variables
+
+	@staticmethod
+	def _flatten_scope_variables(scope: dict) -> dict[str, str]:
+		"""The documented scope-derived names, from a scenario's scope.
+
+		`{max_keywords}` is a friendlier alias for `{keywords.max_keywords}`.
+		Only the names the docs promise are flattened; everything else keeps the
+		existing `{analysis_type}` object + nested-access behaviour.
+		"""
+		flattened: dict[str, str] = {}
+		keywords = scope.get('keywords') or {}
+		if isinstance(keywords, dict) and keywords.get('max_keywords') is not None:
+			flattened['max_keywords'] = str(keywords['max_keywords'])
+		topics = scope.get('topics') or {}
+		if isinstance(topics, dict) and topics.get('max_topics') is not None:
+			flattened['max_topics'] = str(topics['max_topics'])
+		sentiment = scope.get('sentiment') or {}
+		categories = sentiment.get('categories') if isinstance(sentiment, dict) else None
+		if isinstance(categories, (list, tuple)) and categories:
+			flattened['sentiment_categories'] = ', '.join(str(c) for c in categories)
+		return flattened
 
 	@staticmethod
 	def _ensure_json_instruction(
@@ -199,10 +238,12 @@ class PromptBuilder:
 		from app.utils.enum_helpers import get_enum_value
 		from app.services.ai.json_schema_builder import JSONSchemaBuilder
 
-		# Check if prompt already mentions JSON format
-		prompt_lower = prompt.lower()
-		if any(keyword in prompt_lower for keyword in ['json', 'формате json', 'верни в формате']):
-			# Already has JSON instruction
+		# JSON detection: a user-written JSON structure (an object whose keys are
+		# quoted strings) means the prompt already says what fields to return, so
+		# the auto-generated schema is skipped. `{text}` placeholders are not JSON
+		# (no quotes), so they never trigger this.
+		if re.search(r'\{[^{}]*"[^"]+"\s*:', prompt or ''):
+			# Already has a JSON instruction
 			return prompt
 
 		# If scenario provided, use dynamic schema builder
@@ -285,16 +326,16 @@ class PromptBuilder:
 	def _ensure_unified_json_instruction(prompt: str) -> str:
 		"""
 		Ensure unified summary prompt has JSON format instruction.
-		
+
 		Args:
 			prompt: Original unified summary prompt
-		
+
 		Returns:
 			Prompt with JSON instruction appended if needed
 		"""
-		# Check if prompt already mentions JSON format
-		prompt_lower = prompt.lower()
-		if any(keyword in prompt_lower for keyword in ['json', 'формате json', 'верни в формате']):
+		# JSON detection: a user-written JSON structure means the prompt already
+		# says what to return, so the auto schema is skipped.
+		if re.search(r'\{[^{}]*"[^"]+"\s*:', prompt or ''):
 			return prompt
 
 		# Append unified JSON instruction

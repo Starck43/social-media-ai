@@ -33,21 +33,19 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
         type_name="analyze_type", nullable=True, store_as_name=False, default=AnalyzeType.THEMES.db_value
     )
 
-    # Media-specific AI prompt templates with variable substitution support
-    # Variables: {text}, {platform}, {source_type}, {stats}, {count}, etc.
-    text_prompt: Mapped[str | None] = Column(
-        Text, nullable=True, comment="Custom prompt for text analysis. If null, uses default."
+    # One base prompt for every media type, optional per-media overrides and a
+    # summary prompt. Variables: {text}, {platform}, {source_type}, {stats},
+    # {count}, {date_range}, {source_name}, {scenario_name}, scope-derived, etc.
+    base_prompt: Mapped[str | None] = Column(
+        Text, nullable=True, comment="Core LLM instruction for analysis. If null, uses default."
     )
-    image_prompt: Mapped[str | None] = Column(
-        Text, nullable=True, comment="Custom prompt for image analysis. If null, uses default."
+    media_overrides: Mapped[dict[str, str] | None] = Column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment='Per-media-type prompt overrides, e.g. {"image": "...", "video": "..."}',
     )
-    video_prompt: Mapped[str | None] = Column(
-        Text, nullable=True, comment="Custom prompt for video analysis. If null, uses default."
-    )
-    audio_prompt: Mapped[str | None] = Column(
-        Text, nullable=True, comment="Custom prompt for audio analysis. If null, uses default."
-    )
-    unified_summary_prompt: Mapped[str | None] = Column(
+    summary_prompt: Mapped[str | None] = Column(
         Text, nullable=True, comment="Custom prompt for unified summary. If null, uses default."
     )
 
@@ -55,12 +53,12 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     @property
     def ai_prompt(self) -> str | None:
         """Legacy property for backward compatibility."""
-        return self.text_prompt
+        return self.base_prompt
 
     @ai_prompt.setter
     def ai_prompt(self, value: str | None):
         """Legacy setter for backward compatibility."""
-        self.text_prompt = value
+        self.base_prompt = value
 
     # Trigger and action configuration used to live here. It lives on `AgentTask`
     # now: whether to act on an analysis is a property of the run that produced

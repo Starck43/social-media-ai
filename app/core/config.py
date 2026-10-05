@@ -141,11 +141,11 @@ class Settings(BaseSettings):
         return [int(x) for x in self.MAX_OWNER_ID.replace(" ", "").split(",") if x]
 
     # LLM rate limiting
-    LLM_REQUEST_DELAY: int = 3000  # Default rate limit delay in milliseconds
+    LLM_REQUEST_DELAY: int = 1000  # Default rate limit delay in milliseconds
     LLM_DEFAULT_TEMPERATURE: float = 0.3  # Conservative temperature for analysis tasks
     LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
     LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing
-    LLM_DEFAULT_TIMEOUT: float = 90.0  # Request timeout in seconds
+    LLM_DEFAULT_TIMEOUT: float = 60.0  # Request timeout in seconds
 
 
 settings = Settings()

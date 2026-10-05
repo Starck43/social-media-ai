@@ -169,8 +169,9 @@
 	
 	<div class="info-box">
 		<p>
-			<strong>💡 Подсказка:</strong> Здесь показаны полные промпты, которые будут отправлены в LLM API. 
-			Если у сценария есть кастомный промпт, он показан отдельно. JSON инструкции добавляются автоматически.
+			<strong>💡 Подсказка:</strong> Здесь показаны полные промпты, которые будут отправлены в LLM API.
+			Базовый промпт (вкладка Text) используется для всех типов контента; переопределения из
+			<code>media_overrides</code> заменяют его для конкретного типа. JSON инструкции добавляются автоматически.
 		</p>
 	</div>
 	
@@ -231,7 +232,7 @@
 		<div class="tab-pane fade show active" id="text-tab" role="tabpanel">
 			<div class="prompt-card">
 				<div class="prompt-header">
-					<span class="prompt-title">Промпт для текста</span>
+					<span class="prompt-title">Базовый промпт (текст и всё, что не переопределено)</span>
 					<span class="badge {% if prompts.text.has_custom %}badge-custom{% else %}badge-default{% endif %}">
 						{% if prompts.text.has_custom %}Кастомный{% else %}Дефолтный{% endif %}
 					</span>

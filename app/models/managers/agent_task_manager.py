@@ -30,6 +30,51 @@ class AgentTaskManager(BaseManager):
         return job_type in SOURCE_BASED_JOB_TYPES
 
     @staticmethod
+    def requires_content_dates(job_type: str) -> bool:
+        """Whether a task of this job type needs a content start date.
+
+        Same set as `requires_sources`: collect/analyze pull content from the
+        platforms, and without a `cli_dates.start_date` the first run falls
+        back to "no date filters" and drains the whole history from the first
+        post. digest/prune/learn/reflect work on what is already stored.
+        """
+        return job_type in SOURCE_BASED_JOB_TYPES
+
+    @staticmethod
+    def parse_date(value: str | None):
+        """Parse a form/CLI date to a `date`, or None when absent/invalid.
+
+        Accepts the same formats the CLI's `--start-date` does (DD-MM-YYYY,
+        DD.MM.YYYY, ISO). Stored as `YYYY-MM-DD` so the JSON payload stays
+        serialisable and every reader (`universal_date_parser`) can parse it.
+        """
+        if not value:
+            return None
+        from app.utils.date_parsing import universal_date_parser
+
+        parsed = universal_date_parser(value)
+        return parsed.date() if parsed else None
+
+    @staticmethod
+    def build_dates_payload(start_date, end_date=None, force_refresh: bool = True) -> dict:
+        """The payload keys a collect/analyze run needs for its date window.
+
+        Mirrors the CLI: `force_refresh` plus `cli_dates` with the explicit
+        bounds, so a fresh source is not drained from the first post. The CLI
+        always refreshes (its whole point is a one-off full window); the web
+        passes the operator's checkbox so it can run incrementally instead.
+        """
+        cli_dates: dict[str, str] = {}
+        if start_date:
+            cli_dates["start_date"] = str(start_date)
+        if end_date:
+            cli_dates["end_date"] = str(end_date)
+        payload: dict[str, Any] = {"force_refresh": bool(force_refresh)}
+        if cli_dates:
+            payload["cli_dates"] = cli_dates
+        return payload
+
+    @staticmethod
     def validate_cron(cron_expr: str) -> bool:
         """Return True if cron expression is valid (5-field) or @once."""
         if cron_expr == "@once":

@@ -48,6 +48,54 @@ class PromptVariables:
 		'image_analysis': 'Results from image analysis',
 		'video_analysis': 'Results from video analysis',
 	}
+
+	# Variables any prompt may use regardless of media, on top of the per-media
+	# sets — the documented registry (docs/CHAT_BOT_SCENARIOS.md). Scope-derived
+	# names (max_keywords, max_topics, sentiment_categories) resolve only once
+	# the scenario's scope is known, but they are *known* names: a prompt using
+	# them must not be flagged as containing unknown variables.
+	COMMON_VARIABLES = {
+		'date_range': 'Analysis period (2026-09-28 - 2026-10-05)',
+		'source_name': 'Source name',
+		'scenario_name': 'Scenario name',
+		'trigger_condition': 'Reaction condition description (from AgentTask)',
+		'max_keywords': 'scope.keywords.max_keywords',
+		'max_topics': 'scope.topics.max_topics',
+		'sentiment_categories': 'scope.sentiment.categories (comma-separated)',
+	}
+
+	AVAILABLE_VARIABLES = {
+		**TEXT_VARIABLES,
+		**IMAGE_VARIABLES,
+		**VIDEO_VARIABLES,
+		**AUDIO_VARIABLES,
+		**UNIFIED_VARIABLES,
+		**COMMON_VARIABLES,
+	}
+
+	@classmethod
+	def validate_prompt(cls, prompt: str) -> list[str]:
+		"""
+		Unknown variable names in a prompt, per the `AVAILABLE_VARIABLES` registry.
+
+		Nested paths (`{stats.total_posts}`) validate against the top-level name
+		only, matching how substitution resolves them. Scope-derived names are
+		part of the registry, so a prompt using `{max_keywords}` passes even
+		though the value only exists once the scenario's scope is known.
+
+		Args:
+			prompt: The prompt template to check.
+
+		Returns:
+			List of unknown variable names (deduplicated, in order of appearance).
+		"""
+		known = set(cls.AVAILABLE_VARIABLES)
+		found: list[str] = []
+		for match in re.findall(r"\{([^}]+)\}", prompt or ""):
+			name = match.split(".")[0]
+			if name not in known and name not in found:
+				found.append(name)
+		return found
 	
 	@classmethod
 	def get_variables_for_media_type(cls, media_type: MediaType) -> dict[str, str]:
@@ -200,6 +248,7 @@ class PromptSubstitution:
 			'avg_comments': stats.get('avg_comments_per_post', 0),
 			'date_range_first': date_range.get('first', ''),
 			'date_range_last': date_range.get('last', ''),
+			'date_range': _format_date_range(date_range),
 		}
 	
 	@staticmethod
@@ -238,3 +287,12 @@ class PromptSubstitution:
 			'image_analysis': image_analysis,
 			'video_analysis': video_analysis,
 		}
+
+
+def _format_date_range(date_range: dict) -> str:
+	"""A single '{first} — {last}' string from a stats date_range dict."""
+	first = date_range.get('first') or ''
+	last = date_range.get('last') or ''
+	if not first and not last:
+		return ''
+	return f"{first} — {last}"

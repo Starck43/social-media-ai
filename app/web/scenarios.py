@@ -9,6 +9,8 @@ admin form reuses too.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func
@@ -16,6 +18,8 @@ from sqlalchemy import func
 from app.models.agent_scenario import AgentScenario
 
 from .deps import add_flash, ensure_csrf, guard_web, render
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scenarios")
 
@@ -196,14 +200,20 @@ def _enum_by_value(enum_cls, raw: str):
 
 @router.get("/new")
 async def scenario_new(request: Request):
-    """Start the step-by-step wizard for a new scenario (no JSON required)."""
+    """Start the step-by-step wizard for a new scenario (no JSON required).
+
+    Empty fields start from what the owner chose before (`scenario_prefs`), so a
+    second scenario is a couple of clicks rather than a re-type: the grouping
+    mode and the brand list are usually the same.
+    """
     denied = guard_web(request, "agentscenario", "create", back="/app/scenarios")
     if denied is not None:
         return denied
 
+    from app.services.ai import scenario_prefs
     from app.services.ai.scenario_builder import ScenarioDraft
 
-    draft = ScenarioDraft(name="", is_active=True)
+    draft = await scenario_prefs.apply_to_draft(ScenarioDraft(name="", is_active=True))
     return await _wizard_page(request, draft=draft, create=True)
 
 
@@ -280,13 +290,51 @@ async def scenario_preview_build(request: Request):
     )
 
 
+@router.post("/suggest-prompt")
+async def scenario_suggest_prompt(request: Request):
+    """Turn a plain description into a `base_prompt` via the LLM (Step 4).
+
+    The user writes what they want to monitor in their own words; the model
+    answers with a ready analysis prompt. The fleet may be unconfigured or a
+    call may time out — then the response says so and the wizard falls back to
+    the manual field. Nothing is written here, only a prompt is generated.
+    """
+    form = await request.form()
+    token = form.get("_csrf") or ""
+    if not ensure_csrf(request, token):
+        return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=400)
+
+    description = (form.get("description") or "").strip()
+    if not description:
+        return JSONResponse({"error": "Опишите задачу — так модели будет что превратить в промпт"}, status_code=400)
+
+    generated = await _suggest_base_prompt(description)
+    if not generated:
+        return JSONResponse({"fallback": True, "message": "Модель сейчас недоступна — напишите промпт вручную."})
+    return JSONResponse({"fallback": False, "prompt": generated})
+
+
+async def _suggest_base_prompt(description: str) -> str | None:
+    """Ask the fleet for a base_prompt; None when no model answers.
+
+    Delegates to `scenario_prompt_suggest`, the same helper the chat tool
+    `scenario_suggest_prompt` calls, so the wizard and the agent phrase the
+    request identically and degrade the same way.
+    """
+    from app.services.ai.scenario_prompt_suggest import suggest_base_prompt
+
+    return await suggest_base_prompt(description)
+
+
 def _draft_from_form(form) -> "ScenarioDraft":
     """Build a wizard draft from the posted form (create, edit and preview share it).
 
     The wizard is deliberately JSON-free: analysis types and content types
     arrive as checkbox values, the scope is re-generated from the ticked
-    analysis types (so the user never writes JSON), and the one base prompt is
-    the text prompt. Raises `ValueError` for unknown enum values.
+    analysis types (so the user never writes JSON), and the prompt is a
+    media-agnostic `base_prompt` plus optional per-media `media_overrides`
+    textareas (assembled into the JSON column here). Raises `ValueError` for
+    unknown enum values.
     """
     from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
     from app.types import AnalysisType, ContentType
@@ -351,17 +399,75 @@ def _draft_from_form(form) -> "ScenarioDraft":
         analysis_types=analysis_types,
         analyze_type=analyze_type,
         scope=scope,
-        text_prompt=_opt_prompt("text_prompt"),
-        image_prompt=_opt_prompt("image_prompt"),
-        video_prompt=_opt_prompt("video_prompt"),
-        audio_prompt=_opt_prompt("audio_prompt"),
-        unified_summary_prompt=_opt_prompt("unified_summary_prompt"),
+        base_prompt=_opt_prompt("base_prompt"),
+        media_overrides={
+            media: prompt
+            for media, prompt in (
+                ("image", _opt_prompt("media_overrides_image")),
+                ("video", _opt_prompt("media_overrides_video")),
+                ("audio", _opt_prompt("media_overrides_audio")),
+            )
+            if prompt
+        },
+        summary_prompt=_opt_prompt("summary_prompt"),
         llm_strategy=form.get("llm_strategy", "").strip() or None,
         text_llm_model_id=_opt_model("text_llm_model_id"),
         image_llm_model_id=_opt_model("image_llm_model_id"),
         video_llm_model_id=_opt_model("video_llm_model_id"),
         max_tokens=_opt_int("max_tokens"),
     )
+
+
+def _prompt_warnings(draft: "ScenarioDraft") -> list[str]:
+    """Unknown prompt variables across the draft's prompt fields (Phase 1.5).
+
+    The docs' validation contract is a *warning*: the scenario is saved, but the
+    caller is told which `{var}` names will not be substituted. One message per
+    field, Russian (the web UI language).
+    """
+    from app.services.ai.prompt_variables import PromptVariables
+
+    def _message(label: str, prompt: str) -> str | None:
+        unknown = PromptVariables.validate_prompt(prompt)
+        if not unknown:
+            return None
+        names = ", ".join(f"{{{name}}}" for name in unknown)
+        return f"{label}: незнакомые переменные {names} — не будут подставлены при анализе"
+
+    messages = [
+        m
+        for m in (
+            _message("Промпт анализа", draft.base_prompt),
+            _message("Сводный промпт", draft.summary_prompt),
+            *[
+                _message(f"Переопределение для {media}", prompt)
+                for media, prompt in (draft.media_overrides or {}).items()
+            ],
+        )
+        if m
+    ]
+    return messages
+
+
+async def _remember_preferences(scenario) -> None:
+    """Store what this scenario was saved with as defaults for the next one.
+
+    Same source the chat tools write, so a scenario made in the browser and one
+    made in the chat teach the agent the same preferences. Best-effort: a
+    preference row that fails to write must not fail the save the owner asked
+    for.
+    """
+    from app.services.ai import scenario_prefs
+    from app.services.ai.scenario_builder import ScenarioBuilder
+
+    try:
+        draft = ScenarioBuilder.draft_from_scenario(scenario)
+        await scenario_prefs.remember(
+            preferred_analyze_type=draft.analyze_type,
+            brands=(draft.scope or {}).get("competitor", {}).get("competitor_list") or [],
+        )
+    except Exception:  # noqa: BLE001 — preferences are a convenience, not the work
+        logger.warning("Could not store scenario preferences", exc_info=True)
 
 
 async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: int | None = None):
@@ -389,7 +495,7 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         llm_strategies=LLMStrategyType.choices(),
         llm_models=llm_models,
         media_types=ScenarioBuilder.media_types_for(draft.content_types),
-        available_variables=ScenarioBuilder.available_variables(draft.media_type),
+        available_variables=ScenarioBuilder.base_variables(),
         analysis_defaults=ANALYSIS_TYPE_DEFAULTS,
         all_analysis_types=[at.db_value for at in AnalysisType],
         pretty_json=_pretty_json,
@@ -425,6 +531,9 @@ async def scenario_create(
         add_flash(request, "error", "Введите название сценария")
         return RedirectResponse(back, status_code=302)
 
+    for warning in _prompt_warnings(draft):
+        add_flash(request, "warning", warning)
+
     try:
         scenario = await scenario_service.create_scenario(
             name=draft.name,
@@ -434,11 +543,9 @@ async def scenario_create(
             content_types=draft.content_types,
             scope=draft.scope,
             analyze_type=draft.analyze_type,
-            text_prompt=draft.text_prompt,
-            image_prompt=draft.image_prompt,
-            video_prompt=draft.video_prompt,
-            audio_prompt=draft.audio_prompt,
-            unified_summary_prompt=draft.unified_summary_prompt,
+            base_prompt=draft.base_prompt,
+            media_overrides=draft.media_overrides,
+            summary_prompt=draft.summary_prompt,
             is_active=draft.is_active,
             is_default=draft.is_default,
             max_tokens=draft.max_tokens,
@@ -452,6 +559,7 @@ async def scenario_create(
         return RedirectResponse(back, status_code=302)
 
     add_flash(request, "success", f"Сценарий «{scenario.name}» создан")
+    await _remember_preferences(scenario)
     return RedirectResponse(f"/app/scenarios/{scenario.id}", status_code=302)
 
 
@@ -495,6 +603,9 @@ async def scenario_save(
     # Editing must not destroy custom scope keys the auto-template does not own.
     draft.scope = {**(scenario.scope or {}), **draft.scope}
 
+    for warning in _prompt_warnings(draft):
+        add_flash(request, "warning", warning)
+
     # When is_default is toggled on, clear it on every other scenario in this
     # workspace so there is always at most one default.
     if draft.is_default:
@@ -514,17 +625,16 @@ async def scenario_save(
         is_active=scenario.is_active,
         is_default=scenario.is_default,
         max_tokens=scenario.max_tokens,
-        text_prompt=scenario.text_prompt,
-        image_prompt=scenario.image_prompt,
-        video_prompt=scenario.video_prompt,
-        audio_prompt=scenario.audio_prompt,
-        unified_summary_prompt=scenario.unified_summary_prompt,
+        base_prompt=scenario.base_prompt,
+        media_overrides=scenario.media_overrides,
+        summary_prompt=scenario.summary_prompt,
         llm_strategy=scenario.llm_strategy,
         text_llm_model_id=scenario.text_llm_model_id,
         image_llm_model_id=scenario.image_llm_model_id,
         video_llm_model_id=scenario.video_llm_model_id,
     )
     add_flash(request, "success", f"Сценарий «{draft.name}» сохранён")
+    await _remember_preferences(scenario)
     return RedirectResponse(back, status_code=302)
 
 

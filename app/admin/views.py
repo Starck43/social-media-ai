@@ -604,12 +604,10 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		"name": "Название",
 		"description": "Описание сценария",
 
-		# Media prompts
-		"text_prompt": "Промпт для текста",
-		"image_prompt": "Промпт для изображений",
-		"video_prompt": "Промпт для видео",
-		"audio_prompt": "Промпт для аудио",
-		"unified_summary_prompt": "Промпт для общего резюме",
+		# Prompt fields
+		"base_prompt": "Базовый промпт анализа",
+		"media_overrides": "Переопределения по типам контента",
+		"summary_prompt": "Промпт общего резюме",
 
 		"analysis_types": "Типы анализа",
 		"content_types": "Типы контента",
@@ -672,33 +670,24 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			'label': 'Модель для видео',
 			'description': 'Конкретная модель для анализа видео. Если не указана, выбирается по стратегии сценария',
 		},
-		'text_prompt': {
+		'base_prompt': {
 			'description': (
-				'Кастомный промпт для анализа текста. Оставьте пустым для дефолтного. '
-				'Переменные: {text}, {platform}, {source_type}, {total_posts}, {avg_reactions}, {avg_comments}'
+				'Базовый промпт для анализа любого контента. Оставьте пустым для дефолтного. '
+				'Переменные: {text}, {platform}, {source_type}, {total_posts}, {date_range}, '
+				'{source_name}, {scenario_name}, {max_keywords}, {max_topics}, {sentiment_categories}'
 			)
 		},
-		'image_prompt': {
+		'media_overrides': {
 			'description': (
-				'Кастомный промпт для анализа изображений. Оставьте пустым для дефолтного. '
-				'Переменные: {count}, {platform}'
+				'Переопределения промпта для отдельных типов контента: '
+				'{"image": "…", "video": "…", "audio": "…"}. Оставьте пустым, чтобы для всех типов '
+				'использовался базовый промпт.'
 			)
 		},
-		'video_prompt': {
+		'summary_prompt': {
 			'description': (
-				'Кастомный промпт для анализа видео. Оставьте пустым для дефолтного. '
-				'Переменные: {count}, {platform}'
-			)
-		},
-		'audio_prompt': {
-			'description': (
-				'Кастомный промпт для анализа аудио. Оставьте пустым для дефолтного. '
-				'Переменные: {count}, {platform}'
-			)
-		},
-		'unified_summary_prompt': {
-			'description': (
-				'Кастомный промпт для создания общего резюме из мультимедийного анализа. Оставьте пустым для дефолтного.'
+				'Кастомный промпт для создания общего резюме из мультимедийного анализа. '
+				'Оставьте пустым для дефолтного.'
 			)
 		},
 		'scope': {
@@ -719,38 +708,24 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		**BaseAdmin.column_formatters
 	}
 	form_widget_args = {
-		# Media prompts with placeholders
-		"text_prompt": {
+		# Prompt fields with placeholders
+		"base_prompt": {
 			"rows": 10,
 			"placeholder": (
-				"Проанализируй следующий текстовый контент из {platform}.\n\n"
+				"Проанализируй следующий контент из {platform}.\n\n"
 				"Контент: {text}\n"
-				"Всего постов: {total_posts}\n\n"
+				"Период: {date_range}\n\n"
 				"Определи основные темы, тональность и ключевые моменты."
 			)
 		},
-		"image_prompt": {
-			"rows": 10,
+		"media_overrides": {
+			"rows": 8,
 			"placeholder": (
-				"Проанализируй {count} изображений из {platform}.\n\n"
-				"Опиши визуальные элементы, стиль, основные объекты и общую тематику."
+				'{\n  "image": "Проанализируй {count} изображений из {platform}.",\n'
+				'  "video": "Проанализируй {count} видео из {platform}."\n}'
 			)
 		},
-		"video_prompt": {
-			"rows": 10,
-			"placeholder": (
-				"Проанализируй {count} видео из {platform}.\n\n"
-				"Опиши контент видео, основные темы, стиль подачи."
-			)
-		},
-		"audio_prompt": {
-			"rows": 10,
-			"placeholder": (
-				"Проанализируй {count} аудиозаписей из {platform}.\n\n"
-				"Определи темы обсуждения, тональность речи, ключевые моменты."
-			)
-		},
-		"unified_summary_prompt": {
+		"summary_prompt": {
 			"rows": 10,
 			"placeholder": (
 				"Создай единое резюме на основе следующих анализов:\n\n"
@@ -876,14 +851,11 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 		preview = ScenarioBuilder.preview_blocks(draft)
 
 		prompts_data = {}
-		media_prompt_field = {
-			"text": "text_prompt",
-			"image": "image_prompt",
-			"video": "video_prompt",
-			"audio": "audio_prompt",
-		}
+		media_overrides = scenario.media_overrides or {}
 		for media_value, full in preview["media_previews"].items():
-			custom = getattr(scenario, media_prompt_field[media_value])
+			# The base prompt drives text; image/video/audio fall back to it
+			# unless a `media_overrides` key replaces it.
+			custom = scenario.base_prompt if media_value == "text" else media_overrides.get(media_value)
 			prompts_data[media_value] = {
 				"custom": custom,
 				"full": full,
@@ -897,9 +869,9 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 			scenario=scenario
 		)
 		prompts_data["unified"] = {
-			"custom": scenario.unified_summary_prompt,
+			"custom": scenario.summary_prompt,
 			"full": unified_prompt,
-			"has_custom": bool(scenario.unified_summary_prompt),
+			"has_custom": bool(scenario.summary_prompt),
 		}
 
 		# Setup templates

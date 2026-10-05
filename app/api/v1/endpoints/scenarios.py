@@ -60,7 +60,9 @@ async def create_scenario(
             analysis_types=request.analysis_types,
             content_types=request.content_types,
             scope=request.scope,
-            ai_prompt=request.ai_prompt,
+            base_prompt=request.base_prompt or request.ai_prompt,
+            media_overrides=request.media_overrides,
+            summary_prompt=request.summary_prompt,
             is_active=request.is_active,
             max_tokens=request.max_tokens,
             output_schema=request.output_schema,
@@ -78,7 +80,11 @@ async def create_scenario(
         analysis_types=scenario.analysis_types or [],
         content_types=scenario.content_types or [],
         scope=scenario.scope,
+        base_prompt=scenario.base_prompt,
+        media_overrides=scenario.media_overrides,
+        summary_prompt=scenario.summary_prompt,
         ai_prompt=scenario.ai_prompt,
+        validation_warnings=getattr(request, "_validation_warnings", []),
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
         output_schema=scenario.output_schema,
@@ -115,6 +121,9 @@ async def list_scenarios(
             analysis_types=s.analysis_types or [],
             content_types=s.content_types or [],
             scope=s.scope,
+            base_prompt=s.base_prompt,
+            media_overrides=s.media_overrides,
+            summary_prompt=s.summary_prompt,
             ai_prompt=s.ai_prompt,
             is_active=s.is_active,
             max_tokens=s.max_tokens,
@@ -149,6 +158,9 @@ async def get_scenario(
         analysis_types=scenario.analysis_types or [],
         content_types=scenario.content_types or [],
         scope=scenario.scope,
+        base_prompt=scenario.base_prompt,
+        media_overrides=scenario.media_overrides,
+        summary_prompt=scenario.summary_prompt,
         ai_prompt=scenario.ai_prompt,
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
@@ -197,8 +209,12 @@ async def update_scenario(
         updates["content_types"] = request.content_types
     if request.scope is not None:
         updates["scope"] = request.scope
-    if request.ai_prompt is not None:
-        updates["ai_prompt"] = request.ai_prompt
+    if request.base_prompt is not None or request.ai_prompt is not None:
+        updates["base_prompt"] = request.base_prompt if request.base_prompt is not None else request.ai_prompt
+    if request.media_overrides is not None:
+        updates["media_overrides"] = request.media_overrides
+    if request.summary_prompt is not None:
+        updates["summary_prompt"] = request.summary_prompt
     if request.is_active is not None:
         updates["is_active"] = request.is_active
     if request.max_tokens is not None:
@@ -218,7 +234,11 @@ async def update_scenario(
         analysis_types=scenario.analysis_types or [],
         content_types=scenario.content_types or [],
         scope=scenario.scope,
+        base_prompt=scenario.base_prompt,
+        media_overrides=scenario.media_overrides,
+        summary_prompt=scenario.summary_prompt,
         ai_prompt=scenario.ai_prompt,
+        validation_warnings=getattr(request, "_validation_warnings", []),
         is_active=scenario.is_active,
         max_tokens=scenario.max_tokens,
         output_schema=scenario.output_schema,

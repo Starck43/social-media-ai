@@ -151,6 +151,23 @@
                         {% if media_types %}Охватывает: {{ media_types | join(', ') }}.{% endif %}
                     </p>
 
+                    {% if editable %}
+                    <div class="mb-4 rounded-xl border border-slate-700 bg-slate-950 p-3">
+                        <p class="mb-1 text-sm text-slate-300">Сгенерировать промпт по описанию</p>
+                        <textarea id="prompt-description" rows="2"
+                                  class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                                  placeholder="Например: следить за упоминаниями бренда и тональностью, выделять главные темы, ловить негатив"></textarea>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <button type="button" @click="suggestPrompt()" :disabled="generating"
+                                    class="rounded-lg border border-cyan-700 px-3 py-1.5 text-xs text-cyan-300 hover:bg-slate-800">
+                                Сгенерировать
+                            </button>
+                            <span x-show="generating" class="text-xs text-slate-400">Модель думает…</span>
+                            <span id="suggest-result" class="text-xs"></span>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <div class="mb-2 flex items-center gap-2">
                         <label for="var-select" class="text-xs text-slate-400">Вставить переменную:</label>
                         <select id="var-select" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
@@ -165,10 +182,10 @@
                         </button>
                     </div>
 
-                    <textarea id="sc-prompt-text" name="text_prompt" rows="7"
+                    <textarea id="sc-prompt-text" name="base_prompt" rows="7"
                               @input="validate($el)"
                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
-                              placeholder="Проанализируй посты из {platform}: {text}. Выдели темы и тональность.">{{ draft.text_prompt or '' }}</textarea>
+                              placeholder="Проанализируй посты из {platform}: {text}. Выдели темы и тональность.">{{ draft.base_prompt or '' }}</textarea>
                     <p id="var-warnings" class="mt-1 text-xs text-rose-400"></p>
 
                     <details class="mt-4">
@@ -177,18 +194,30 @@
                         </summary>
                         <div class="mt-2 grid gap-3">
                             {% for field, label, hint in [
-                                ('image_prompt', 'Изображения', 'Переменные: {count}, {platform}'),
-                                ('video_prompt', 'Видео', 'Переменные: {count}, {platform}'),
-                                ('audio_prompt', 'Аудио', 'Переменные: {count}, {platform}'),
-                                ('unified_summary_prompt', 'Сводный анализ', 'Переменные: {text_analysis}, {image_analysis}, {video_analysis}'),
+                                ('media_overrides_image', 'Изображения', 'Переменные: {count}, {platform}'),
+                                ('media_overrides_video', 'Видео', 'Переменные: {count}, {platform}'),
+                                ('media_overrides_audio', 'Аудио', 'Переменные: {count}, {platform}'),
                             ] %}
                                 <div>
                                     <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
                                     <textarea id="sc-{{ field }}" name="{{ field }}" rows="3"
+                                              @input="validate($el)"
                                               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
-                                              placeholder="{{ hint }}">{{ draft[field] or '' }}</textarea>
+                                              placeholder="{{ hint }}">{{ draft.media_overrides.get(field.removeprefix('media_overrides_')) or '' }}</textarea>
                                 </div>
                             {% endfor %}
+                        </div>
+                    </details>
+
+                    <details class="mt-4">
+                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                            Сводный промпт для общего резюме (необязательно)
+                        </summary>
+                        <div class="mt-2">
+                            <textarea id="sc-summary-prompt" name="summary_prompt" rows="3"
+                                      @input="validate($el)"
+                                      class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                                      placeholder="Переменные: {text_analysis}, {image_analysis}, {video_analysis}">{{ draft.summary_prompt or '' }}</textarea>
                         </div>
                     </details>
                 </fieldset>
@@ -289,6 +318,7 @@ function wizard() {
     return {
         step: 1,
         scopeOpen: false,
+        generating: false,
         known: {{ available_variables | tojson }},
         allTypes: {{ all_analysis_types | tojson }},
         defaults: {{ analysis_defaults | tojson }},
@@ -321,6 +351,43 @@ function wizard() {
                 el.classList.add('text-rose-400');
             } else {
                 el.textContent = '';
+            }
+        },
+        async suggestPrompt() {
+            const desc = document.getElementById('prompt-description');
+            const out = document.getElementById('suggest-result');
+            const ta = document.getElementById('sc-prompt-text');
+            if (!desc || !out || !ta) return;
+            const description = desc.value.trim();
+            if (!description) {
+                out.textContent = 'Сначала опишите задачу.';
+                out.classList.add('text-rose-400');
+                return;
+            }
+            this.generating = true;
+            out.textContent = '';
+            out.classList.remove('text-rose-400', 'text-emerald-400');
+            const csrf = document.querySelector('input[name="_csrf"]')?.value || '';
+            try {
+                const resp = await fetch('/app/scenarios/suggest-prompt', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({description, _csrf: csrf})
+                });
+                const data = await resp.json();
+                if (data.fallback || data.error) {
+                    out.textContent = data.message || data.error || 'Модель недоступна — напишите вручную.';
+                } else {
+                    ta.value = data.prompt;
+                    this.validate(ta);
+                    out.textContent = 'Промпт сгенерирован — проверьте и сохраните.';
+                    out.classList.add('text-emerald-400');
+                }
+            } catch (e) {
+                out.textContent = 'Не удалось сгенерировать — напишите промпт вручную.';
+                out.classList.add('text-rose-400');
+            } finally {
+                this.generating = false;
             }
         },
         rebuildScope() {

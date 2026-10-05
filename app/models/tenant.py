@@ -20,6 +20,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -150,6 +151,28 @@ class Tenant(Base, TimestampMixin):
         JSON,
         nullable=True,
         comment="Owner's reply style contract: {tone, length, language, quiet_hours}; rendered into the system prompt",
+    )
+    agent_model: Mapped[str | None] = Column(
+        String(100),
+        nullable=True,
+        comment="LLM model name override for agent chat (e.g. 'gpt-4o', 'claude-3-sonnet')",
+    )
+    agent_max_tokens: Mapped[int | None] = Column(
+        Integer,
+        nullable=True,
+        default=1024,
+        comment="Max tokens for agent replies (overrides AGENT_MAX_TOKENS)",
+    )
+    agent_temperature: Mapped[float | None] = Column(
+        Float,
+        nullable=True,
+        default=0.3,
+        comment="Temperature for agent replies (overrides AGENT_TEMPERATURE)",
+    )
+    agent_system_prompt: Mapped[str | None] = Column(
+        Text,
+        nullable=True,
+        comment="Custom system prompt override (appended to built-in DEFAULT_SYSTEM_PROMPT)",
     )
 
     if TYPE_CHECKING:

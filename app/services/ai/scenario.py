@@ -181,11 +181,9 @@ class ScenarioService:
         content_types: Optional[list[str]] = None,
         scope: Optional[dict] = None,
         ai_prompt: Optional[str] = None,
-        text_prompt: Optional[str] = None,
-        image_prompt: Optional[str] = None,
-        video_prompt: Optional[str] = None,
-        audio_prompt: Optional[str] = None,
-        unified_summary_prompt: Optional[str] = None,
+        base_prompt: Optional[str] = None,
+        media_overrides: Optional[dict] = None,
+        summary_prompt: Optional[str] = None,
         action_type: Optional[AgentActionType] = None,
         trigger_type: Optional[str] = None,
         trigger_config: Optional[dict] = None,
@@ -209,10 +207,10 @@ class ScenarioService:
             analysis_types: List of analysis type names (e.g., [“sentiment”, “trends”])
             content_types: List of content type values (e.g., [“posts”, “comments”])
             scope: Configuration parameters for analysis (no analysis_types here!)
-            ai_prompt: AI prompt template with variables
-            action_type: Action to perform after analysis
-            trigger_type: Trigger condition for when to analyze/act
-            trigger_config: Configuration for trigger evaluation
+            ai_prompt: [Deprecated] Legacy single prompt, maps to base_prompt
+            base_prompt: Core LLM instruction for analysis (media-agnostic)
+            media_overrides: Per-media prompt overrides: {"image": "...", "video": "..."}
+            summary_prompt: Custom prompt for the unified summary
             max_tokens: Max tokens for LLM responses
             output_schema: JSON Schema for structured output
             is_active: Whether scenario is active
@@ -239,11 +237,9 @@ class ScenarioService:
             analysis_types=analysis_types or [],
             content_types=content_types or [],
             scope=scope or {},
-            ai_prompt=ai_prompt or text_prompt,
-            image_prompt=image_prompt,
-            video_prompt=video_prompt,
-            audio_prompt=audio_prompt,
-            unified_summary_prompt=unified_summary_prompt,
+            base_prompt=base_prompt or ai_prompt,
+            media_overrides=media_overrides or {},
+            summary_prompt=summary_prompt,
             max_tokens=max_tokens,
             output_schema=output_schema,
             is_active=is_active,

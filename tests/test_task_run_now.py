@@ -273,4 +273,45 @@ async def test_a_partially_analysed_batch_still_counts_the_rows_it_missed(client
         with tenant_scope(bypass=True):
             for digest in (good, bad):
                 await CollectedItem.objects.delete(content_hash=digest, source_id=source.id)
+
+
+@pytest.mark.asyncio
+async def test_the_source_page_says_how_much_content_the_model_could_not_analyse(client):
+    """Content that gave up must be visible, or it just looks like it was never collected.
+
+    The retry ceiling stops handing the same unanalysable row to the model, which
+    is the point — but a day that silently disappears from the source reads as
+    "nothing was ever collected here". The page states the count instead.
+    """
+    user, tenant_id = await _register(client, "givenup")
+    source = await _make_source(tenant_id)
+    digest = secrets.token_hex(16)
+    try:
+        with tenant_scope(bypass=True):
+            row = await CollectedItem.objects.create(
+                source_id=source.id, content_hash=digest, text="never analysed", tenant_id=tenant_id
+            )
+            await CollectedItem.objects.update_by_id(row.id, give_up_after_attempts=0)
+
+        page = await client.get(f"/app/sources/{source.id}")
+        assert page.status_code == 200
+        assert "не удалось проанализировать" in page.text
+        assert "1 запись" in page.text, "the count must read as a person writes it"
+    finally:
+        with tenant_scope(bypass=True):
+            await CollectedItem.objects.delete_by_id(row.id)
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_healthy_source_shows_no_such_warning(client):
+    """The notice is for an exception, not a permanent fixture on the page."""
+    user, tenant_id = await _register(client, "healthy")
+    source = await _make_source(tenant_id)
+    try:
+        page = await client.get(f"/app/sources/{source.id}")
+        assert page.status_code == 200
+        assert "не удалось проанализировать" not in page.text
+    finally:
+        await _drop(user, tenant_id)
         await _drop(user, tenant_id)

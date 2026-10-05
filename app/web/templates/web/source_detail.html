@@ -256,6 +256,22 @@
     </div>
 
     <!-- Collected data ───────────────────────────────────────────────── -->
+    {# Content the model could not analyse at all. These rows stay staged (the
+       raw copy is never dropped) but are no longer offered once they burn
+       `give_up_after_attempts`, so without this note the content would simply
+       be missing and look like it was never collected. #}
+    {% if given_up %}
+        <div class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-950/20 p-4">
+            <p class="text-sm text-amber-200">
+                {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
+            </p>
+            <p class="mt-1 text-xs text-amber-300/70">
+                Сырые данные сохранены и ждут. Повторная попытка прекратится автоматически;
+                чтобы разобраться, проверьте модель этого источника или поднимите лимит попыток
+                в <code>collected_items.give_up_after_attempts</code>.
+            </p>
+        </div>
+    {% endif %}
     {# The count per source lives in `jobs.result["per_source"]`; the analytics
        table below only shows what the analysis step wrote. This is the answer to
        "did the collect task actually pull anything from here?" #}

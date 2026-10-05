@@ -35,6 +35,7 @@ from .deps import (
     guard_web,
     human_datetime,
     perms_can,
+    plural,
     render,
     safe_next,
     tenant_filter_context,
@@ -540,11 +541,23 @@ async def source_detail(request: Request, source_id: int):
     # rather than as zero.
     collections = await _recent_collections(source.id)
 
+    # Content staged for analysis that the model could not process. Rows leave
+    # the staging table only once an analysis stores them, so one that keeps
+    # failing is retried until it burns `give_up_after_attempts` and then stops
+    # being offered. Without surfacing the count, that day simply vanishes from
+    # the source with no trace — the ceiling is doing its job, but silently.
+    from app.models import CollectedItem
+
+    given_up = await CollectedItem.objects.exhausted_count(source.id)
+    given_up_label = plural(given_up, "запись", "записи", "записей")
+
     return render(
         request,
         "web/source_detail.html",
         section="sources",
         source=source,
+        given_up=given_up,
+        given_up_label=given_up_label,
         filter_tenant_id=filter_tenant_id,
         mode=_mode_view(mode_key),
         mode_label=dict(COLLECTION_MODES)[mode_key],

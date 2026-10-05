@@ -24,6 +24,7 @@ from .deps import (
     ensure_csrf,
     guard_web,
     perms_can,
+    plural,
     render,
     safe_next,
     tenant_filter_context,
@@ -681,13 +682,12 @@ OUTCOME_HEADLINES = {
 
 
 def _plural(n: int, one: str, few: str, many: str) -> str:
-    """Russian count form: 1 запись / 2 записи / 5 записей."""
-    n = abs(int(n))
-    if n % 10 == 1 and n % 100 != 11:
-        return one
-    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return few
-    return many
+    """Russian count form: 1 запись / 2 записи / 5 записей.
+
+    Now `deps.plural`; kept as a local alias so the call sites below read the
+    way they were written.
+    """
+    return plural(n, one, few, many)
 
 
 def _stat(value: Any, label: str) -> dict[str, Any]:

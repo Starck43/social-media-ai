@@ -22,6 +22,21 @@ from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 templates = Jinja2Templates(directory="app/web/templates")
 
 
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian count form: 1 запись / 2 записи / 5 записей.
+
+    Lives here rather than in one page because every count in the UI needs it,
+    and a hand-written conditional in a template gets it wrong the same way
+    every time (there is no simple `n == 1` rule in Russian).
+    """
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
 def human_datetime(value: Any, *, empty: str = "—") -> str:
     """Render a timestamp the way a person reads it: `сегодня, 14:30`.
 

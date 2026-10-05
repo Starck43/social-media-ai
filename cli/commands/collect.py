@@ -1,9 +1,12 @@
 """Direct content collection via CLI.
 
 A thin wrapper over the `collect` job handler: resolves `--src`, builds the
-handler payload and runs it now (no task, no queue). The handler runs the same
-`ContentCollector` pipeline the runtime uses, so what you test here is exactly
-what the cron/agent path runs.
+handler payload and runs it now (no task, no queue). Running through
+`run_job_inline` gives the run a real `jobs` row, so `run_id` is set on the
+staged raw items and the run shows up in the source page's «Что собрано»
+preview — a collection that only exists as a background fact would otherwise be
+invisible there. The handler runs the same `ContentCollector` pipeline the
+runtime uses, so what you test here is exactly what the cron/agent path runs.
 
 Run as: python -m cli.main collect --src 739,740 [--tenant ...]
 """
@@ -17,7 +20,7 @@ from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
-from cli.run import resolve_sources, run_handler
+from cli.run import resolve_sources
 
 
 def _run(coro):
@@ -43,6 +46,9 @@ def _parse_date(value: Optional[str]):
 
 
 def _report(stats: dict) -> None:
+    if stats.get("error"):
+        rprint(Panel.fit(f"[bold red]🚨 СБОР НЕ УДАЛСЯ: {stats['error']}[/bold red]", border_style="red"))
+        return
     table = Table(show_header=True, header_style="bold blue")
     table.add_column("Метрика", style="cyan")
     table.add_column("Значение", style="white")
@@ -111,9 +117,22 @@ def collect_cmd(
         rprint(Panel.fit("[bold cyan]🚀 НАЧАЛО СБОРА КОНТЕНТА[/bold cyan]", border_style="cyan"))
         if verbose:
             for s in sources:
-                rprint(
-                    f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]"
-                )
+                rprint(f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]")
+
+        # A resolved workspace gets a real job row (and thus a `run_id` on the
+        # staged items, visible in the source page's «Что собрано» preview).
+        # Without one the run has no single owner, so it stays bookkeeping-free.
+        if tenant_id is not None:
+            from app.jobs.dispatcher import run_job_inline
+
+            outcome = await run_job_inline("collect", payload, tenant_id=tenant_id)
+            if not outcome:
+                return {"error": "не удалось запустить сбор"}
+            if outcome.get("status") == "failed":
+                return {"error": outcome.get("error") or "сбор завершился с ошибкой"}
+            return outcome.get("result") or {}
+
+        from cli.run import run_handler
 
         return await run_handler("collect", payload, tenant_id)
 

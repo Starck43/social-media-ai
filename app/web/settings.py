@@ -36,7 +36,7 @@ router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("workspace", "team", "connections", "channels")
+TABS: tuple[str, ...] = ("workspace", "team", "connections", "agent", "channels")
 
 # Personal kinds a user may store themselves, per platform. `bot_token`,
 # `app_id` and `client_secret` are per-deployment config, so they are not here:
@@ -166,6 +166,19 @@ async def settings_page(request: Request):
 
     channels = await TenantChannelManager().filter(tenant_id=tenant_id)
 
+    # Active LLM models for the agent dropdown
+    from app.models.llm_model import LLMModel
+
+    active_models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.is_default.desc(), LLMModel.id)
+    model_options = []
+    for m in active_models:
+        provider_name = m.provider.name if m.provider else "?"
+        cost = f"${m.input_cost_per_1k:.4f}/${m.output_cost_per_1k:.4f}/1K"
+        label = f"{provider_name}/{m.model_id} ({cost})"
+        if m.is_default:
+            label += " ★"
+        model_options.append({"id": m.name, "label": label})
+
     # What this workspace has already consumed, so the plan column can show
     # "3 / 3" instead of a bare ceiling the reader has to count rows to match.
     usage = await _plan_usage(tenant_id, channels, memberships)
@@ -188,6 +201,7 @@ async def settings_page(request: Request):
         plan_labels=_plan_labels(),
         plan_rows=_plan_table(),
         plan_usage=usage,
+        agent_model_options=model_options,
     )
 
 
@@ -280,6 +294,71 @@ async def workspace_update(
     )
     add_flash(request, "success", "Настройки воркспейса сохранены")
     return RedirectResponse(BACK, status_code=302)
+
+
+@router.post("/agent")
+async def agent_settings_update(
+    request: Request,
+    agent_model: str = Form(""),
+    agent_max_tokens: str = Form(""),
+    agent_temperature: str = Form(""),
+    agent_system_prompt: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Update agent chat settings for this workspace."""
+    tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "tenant", "update", back=BACK)
+    if denied is not None:
+        return denied
+
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+
+    if await tenants.get(id=tenant_id) is None:
+        add_flash(request, "error", "Воркспейс не найден")
+        return RedirectResponse(BACK, status_code=302)
+
+    # Parse and validate numeric fields
+    max_tokens = None
+    if agent_max_tokens.strip():
+        try:
+            max_tokens = int(agent_max_tokens)
+            if max_tokens < 64 or max_tokens > 8192:
+                add_flash(request, "error", "Max tokens должно быть от 64 до 8192")
+                return RedirectResponse(BACK, status_code=302)
+        except ValueError:
+            add_flash(request, "error", "Max tokens должно быть числом")
+            return RedirectResponse(BACK, status_code=302)
+
+    temperature = None
+    if agent_temperature.strip():
+        try:
+            temperature = float(agent_temperature)
+            if temperature < 0 or temperature > 2:
+                add_flash(request, "error", "Temperature должно быть от 0 до 2")
+                return RedirectResponse(BACK, status_code=302)
+        except ValueError:
+            add_flash(request, "error", "Temperature должно быть числом")
+            return RedirectResponse(BACK, status_code=302)
+
+    # Clean string fields
+    model = agent_model.strip() or None
+    prompt = agent_system_prompt.strip() or None
+
+    await tenants.update_by_id(
+        tenant_id,
+        agent_model=model,
+        agent_max_tokens=max_tokens,
+        agent_temperature=temperature,
+        agent_system_prompt=prompt,
+    )
+    add_flash(request, "success", "Настройки агента сохранены")
+    return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
 
 
 @router.post("/credentials")

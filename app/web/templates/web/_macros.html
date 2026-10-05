@@ -84,8 +84,9 @@
    page builds it interactively (preset buttons + a frequency picker feeding a
    hidden `cron_custom`), while the wizard offers a plain select of ready-made
    crons. Two widgets, one field name — `tasks.task_create` reads `cron_custom`
-   either way. #}
-{% macro task_fields(job_types, idp) -%}
+   either way. `model` optionally binds the type select to Alpine so the rest
+   of the form can show/hide fields per type. #}
+{% macro task_fields(job_types, idp, model=None) -%}
     <div>
         <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-300">Название</label>
         <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
@@ -94,13 +95,167 @@
     <div>
         <label for="{{ idp }}-job_type" class="mb-1 block text-sm text-slate-300">Тип задачи</label>
         <select id="{{ idp }}-job_type" name="job_type" required
-                class="{{ control() }}">
+                class="{{ control() }}"{% if model %} x-model="{{ model }}"{% endif %}>
             {% for value, label in job_types %}
                 <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </div>
 {%- endmacro %}
+
+{# The content window a collect/analyze task operates on. `m` is the Alpine
+   object path that holds the field values ("task" in the add modal, "editing"
+   in the edit modal); `model` is the path to the bound job_type, so the whole
+   block (and its required start date) appears only for the source-based types. #}
+{% macro task_dates(m, model) -%}
+    <div x-show="{{ model }} === 'collect' || {{ model }} === 'analyze'"
+         class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+        <p class="text-sm text-slate-300">Период сбора контента</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Дата начала *</label>
+                <input type="date" name="start_date" required :value="{{ m }}.start_date"
+                       class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-500">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Дата окончания</label>
+                <input type="date" name="end_date" :value="{{ m }}.end_date" class="{{ control() }}">
+                <p class="mt-1 text-xs text-slate-500">Необязательно.</p>
+            </div>
+        </div>
+        <label x-show="{{ model }} === 'collect'" class="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" name="force_refresh" :checked="{{ m }}.force_refresh"
+                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+            Перетирать данные за этот период
+            <span class="text-xs text-slate-500">перезаписывать на каждом запуске (иначе — только новые)</span>
+        </label>
+        <label x-show="{{ model }} === 'analyze'" class="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" name="force_reanalyze" :checked="{{ m }}.force_reanalyze"
+                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+            Принудительный повторный анализ
+            <span class="text-xs text-slate-500">перепрогнать модель по уже обработанным записям</span>
+        </label>
+    </div>
+{%- endmacro %}
+
+
+{# The trigger + action section, rendered only for `analyze` tasks. `m` and
+   `model` are the same paths as in `task_dates`. The per-trigger fields are
+   inside `x-if` templates so only the active type's config is submitted. #}
+{% macro task_trigger_actions(m, model, trigger_types, action_types) -%}
+    <div x-show="{{ model }} === 'analyze'" class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+        <p class="text-sm text-slate-300">Условие срабатывания</p>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Тип триггера</label>
+                <select name="trigger_type" x-model="{{ m }}.trigger_type" class="{{ control() }}">
+                    <option value="">не задан</option>
+                    {% for value, label in trigger_types %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex items-end">
+                <p class="text-xs text-slate-500">Без триггера контент проходит без фильтрации.</p>
+            </div>
+        </div>
+
+        <template x-if="{{ m }}.trigger_type === 'KEYWORD_MATCH'">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Ключевые слова</label>
+                    <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
+                           class="{{ control() }}">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Совпадение</label>
+                    <select name="trigger_match" :value="{{ m }}.trigger_match" class="{{ control() }}">
+                        <option value="any">любое из слов</option>
+                        <option value="all">все слова</option>
+                    </select>
+                </div>
+            </div>
+        </template>
+        <template x-if="{{ m }}.trigger_type === 'USER_MENTION'">
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Пользователи</label>
+                <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
+                       class="{{ control() }}">
+            </div>
+        </template>
+        <template x-if="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Порог</label>
+                    <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
+                           :value="{{ m }}.trigger_threshold" class="{{ control() }}">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Направление</label>
+                    <select name="trigger_direction" :value="{{ m }}.trigger_direction" class="{{ control() }}">
+                        <option value="below">ниже порога</option>
+                        <option value="above">выше порога</option>
+                    </select>
+                </div>
+            </div>
+        </template>
+        <template x-if="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Базовый период, ч</label>
+                    <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
+                           class="{{ control() }}">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs text-slate-400">Коэффициент всплеска</label>
+                    <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
+                           :value="{{ m }}.trigger_spike_multiplier" class="{{ control() }}">
+                </div>
+            </div>
+        </template>
+
+        <p class="text-sm text-slate-300">Действие после анализа</p>
+        <div>
+            <label class="mb-1 block text-xs text-slate-400">Тип действия</label>
+            <select name="action_type" x-model="{{ m }}.action_type" class="{{ control() }}">
+                <option value="">не выполнять</option>
+                {% for value, label in action_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Чёрный список</label>
+                <input name="blacklist" placeholder="user1, user2" :value="{{ m }}.blacklist" class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Белый список</label>
+                <input name="whitelist" placeholder="user1, user2" :value="{{ m }}.whitelist" class="{{ control() }}">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Лимит действий в час</label>
+                <input name="rate_limit_per_hour" type="number" min="0" :value="{{ m }}.rate_limit_per_hour"
+                       class="{{ control() }}">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-slate-400">Пауза между действиями, сек</label>
+                <input name="cooldown_seconds" type="number" min="0" :value="{{ m }}.cooldown_seconds"
+                       class="{{ control() }}">
+            </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" name="requires_approval" :checked="{{ m }}.requires_approval"
+                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+            Требовать подтверждение перед выполнением
+        </label>
+    </div>
+{%- endmacro %}
+
 
 {# A connection state as a badge. One place, because the tone→colour mapping was
    hand-written in three templates and had already drifted: the settings cards

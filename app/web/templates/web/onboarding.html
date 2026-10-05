@@ -75,6 +75,16 @@
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     <input type="hidden" name="next" value="/app/onboarding">
                     {{ task_fields(job_types, "ob") }}
+                    {# The wizard only ever creates a `collect` task (the default
+                       type), which needs a content start date — without it the
+                       first run would drain the whole history from the first
+                       post. Default to the last 30 days. #}
+                    <div class="sm:col-span-2">
+                        <label for="ob-start_date" class="mb-1 block text-sm text-slate-300">С какого периода собирать</label>
+                        <input type="date" id="ob-start_date" name="start_date"
+                               value="{{ default_start_date }}" class="{{ control() }}">
+                        <p class="mt-1 text-xs text-slate-500">С этой даты будет собран контент из источников.</p>
+                    </div>
                     <div class="sm:col-span-2">
                         <label for="ob-cron" class="mb-1 block text-sm text-slate-300">Когда</label>
                         <select id="ob-cron" name="cron_custom" required class="{{ control() }}">

@@ -39,6 +39,8 @@ async def onboarding(request: Request):
     """Checklist for a workspace that has no source or no schedule yet."""
     # No `tenant_id` predicate: the manager's guard already scopes the rows to
     # the workspace `TenantUIMiddleware` opened for this request.
+    from datetime import date, timedelta
+
     sources_count = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar(0)
     tasks_count = await AgentTask.objects.values(func.count(AgentTask.id)).scalar(0)
 
@@ -56,4 +58,7 @@ async def onboarding(request: Request):
         job_types=JobType.choices(),
         presets=SCHEDULE_PRESETS,
         cron_to_human=cron_to_human,
+        # A collect/analyze task needs a content start date; the wizard defaults
+        # to the last 30 days rather than forcing a bare empty input.
+        default_start_date=date.today() - timedelta(days=30),
     )

@@ -8,6 +8,10 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>[x-cloak]{display:none!important}</style>
+    {# Child pages add their own <head> content here (scripts, styles). Without
+       this block a child's `{% block extra_head %}` is silently dropped by Jinja —
+       that is how the chat page ended up without marked.js. #}
+    {% block extra_head %}{% endblock %}
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
 <div class="flex min-h-screen">

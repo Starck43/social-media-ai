@@ -20,6 +20,10 @@ from app.types import ActionType
 from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 
 templates = Jinja2Templates(directory="app/web/templates")
+# Keep Cyrillic readable in the HTML source: |tojson escapes non-ASCII to \uXXXX
+# by default, which turns every reply into escape noise in the markup.
+# `<`, `>`, `&` and `'` are still escaped by Jinja's htmlsafe_json_dumps.
+templates.env.policies["json.dumps_kwargs"] = {"sort_keys": True, "ensure_ascii": False}
 
 
 def plural(n: int, one: str, few: str, many: str) -> str:
@@ -40,7 +44,7 @@ def plural(n: int, one: str, few: str, many: str) -> str:
 def human_datetime(value: Any, *, empty: str = "—") -> str:
     """Render a timestamp the way a person reads it: `сегодня, 14:30`.
 
-    The pages had five hand-written `strftime` formats between them — a task
+    The pages had five handwritten `strftime` formats between them — a task
     list showing `01.10.2026 09:00` next to a digest list showing `01.10 09:00`
     for the same kind of event. One filter keeps them comparable, and "сегодня"
     answers the only question a reader has about a recent run.

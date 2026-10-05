@@ -85,11 +85,22 @@ def _json_block_html(json_text: str) -> str:
 
 
 def _render_assistant_content(content: str | None) -> str:
-    """Return plain text for AJAX; the client renders markdown + JSON blocks.
+    """Return content for display; if it's JSON, format it nicely.
 
-    For non-AJAX (redirect) responses we'd need HTML, but those are gone now
-    — all responses are JSON.  Keep the function for API stability.
+    If the content looks like a JSON array or object, wrap it in a
+    ```json ``` block so the client renders it with pretty formatting.
+    Otherwise return as-is.
     """
+    if not content:
+        return ""
+    # Try to parse as JSON; if it works, format with indentation
+    try:
+        parsed = json_mod.loads(content)
+        # Only format arrays and objects, not plain strings that happen to be valid JSON
+        if isinstance(parsed, (list, dict)):
+            return json_mod.dumps(parsed, ensure_ascii=False, indent=2)
+    except (json_mod.JSONDecodeError, ValueError):
+        pass
     # Send raw text; client's renderMarkdown() handles markdown,
     # client-side JS handles JSON blocks.
     return content or ""

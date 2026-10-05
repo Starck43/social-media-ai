@@ -68,7 +68,7 @@ def _format_tool_result(name: str, result: Any) -> str:
     if isinstance(result, str):
         return result
     try:
-        return json.dumps(result, ensure_ascii=False, default=str)
+        return json.dumps(result, ensure_ascii=False, default=str, indent=2)
     except (TypeError, ValueError):
         return str(result)
 

@@ -13,6 +13,7 @@
         'workspace': 'Воркспейс',
         'team': 'Команда',
         'connections': 'Подключения',
+        'agent': 'Агент',
         'channels': 'Каналы',
     } %}
     <div class="mt-6 flex flex-wrap gap-2 border-b border-slate-800 pb-3">
@@ -112,6 +113,86 @@
                 </button>
             </form>
         {% endif %}
+
+    {# ── agent ───────────────────────────────────────────────────────── #}
+    {% elif tab == 'agent' %}
+        <form method="post" action="/app/settings/agent" class="mt-6 max-w-2xl space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            {% if is_superuser and tenant %}<input type="hidden" name="tenant_id" value="{{ tenant.id }}">{% endif %}
+            <h2 class="text-lg font-semibold">Настройки агента для чата</h2>
+            <p class="text-sm text-slate-400">Персональные параметры LLM-вызовов для этого воркспейса. Оставленные поля используют глобальные настройки из .env.</p>
+
+            <!-- Модель -->
+            <div>
+                <label for="ag-model" class="mb-1 block text-sm text-slate-300">Модель LLM</label>
+                <select id="ag-model" name="agent_model" {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                    <option value="">Автовыбор (первая активная)</option>
+                    {% for opt in agent_model_options %}
+                        <option value="{{ opt.id }}" {% if tenant and tenant.agent_model == opt.id %}selected{% endif %}>
+                            {{ opt.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <p class="mt-1 text-xs text-slate-500">Оставьте пустым для автовыбора первой активной модели. ★ — модель по умолчанию.</p>
+            </div>
+
+            <!-- Max tokens -->
+            <div>
+                <label for="ag-max-tokens" class="mb-1 block text-sm text-slate-300">Макс. токенов в ответе</label>
+                <input id="ag-max-tokens" name="agent_max_tokens" type="number" min="64" max="8192"
+                       value="{{ tenant.agent_max_tokens if tenant else '' }}" 
+                       placeholder="1024 (по умолчанию)"
+                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-500">Глобальный: AGENT_MAX_TOKENS (1024). Увеличьте для длинных ответов.</p>
+            </div>
+
+            <!-- Temperature -->
+            <div>
+                <label for="ag-temp" class="mb-1 block text-sm text-slate-300">Температура</label>
+                <input id="ag-temp" name="agent_temperature" type="number" min="0" max="2" step="0.1"
+                       value="{{ tenant.agent_temperature if tenant else '' }}" 
+                       placeholder="0.3 (по умолчанию)"
+                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-500">Глобальный: AGENT_TEMPERATURE (0.3). 0 = детерминировано, 1 = креативно.</p>
+            </div>
+
+            <!-- System prompt override -->
+            <div>
+                <label for="ag-prompt" class="mb-1 block text-sm text-slate-300">Дополнительный системный промпт</label>
+                <textarea id="ag-prompt" name="agent_system_prompt" rows="6"
+                          placeholder="Дополнительные инструкции для агента..."
+                          {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">{{ tenant.agent_system_prompt or '' }}</textarea>
+                <p class="mt-1 text-xs text-slate-500">Добавляется после встроенного системного промпта. Оставьте пустым для использования стандартного промпта.</p>
+            </div>
+
+            <div class="pt-2">
+                {% if perms.can('tenant', 'update') %}
+                    <button type="submit" class="rounded-xl bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                        Сохранить настройки агента
+                    </button>
+                {% else %}
+                    <p class="text-sm text-slate-500">Изменение настроек недоступно</p>
+                {% endif %}
+            </div>
+        </form>
+
+        <script>
+        // Enter in non-textarea fields submits the agent settings form
+        (function() {
+            var form = document.querySelector('form[action*="/settings/agent"]');
+            if (!form) return;
+            form.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    form.dispatchEvent(new Event('submit', { cancelable: true }));
+                }
+            });
+        })();
+        </script>
 
     {# ── team ────────────────────────────────────────────────────────── #}
     {% elif tab == 'team' %}

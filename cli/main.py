@@ -195,6 +195,19 @@ async def _add_task(
         )
         if parsed_source_ids:
             await _set_task_sources(task.id, parsed_source_ids, task.tenant_id)
+
+        # Hint when the bound scenario wants specific targets the task does not
+        # carry — the analysis would otherwise have nothing to aim at.
+        if scenario_id:
+            from app.models import AgentScenario
+            from app.services.ai.param_registry import missing_target_params
+
+            scenario = await AgentScenario.objects.get(id=scenario_id)
+            if scenario is not None:
+                for missing in missing_target_params(scenario.analysis_types, parsed_payload):
+                    rprint(
+                        f"[yellow]Hint: сценарий «{scenario.name}» использует {missing}, но в задаче не указан.[/yellow]"
+                    )
     where = await tenant_label(task.tenant_id)
     rprint(f"[green]AgentTask '{name}' created in {where} ({cron}, {job_type})[/green]")
     return task
@@ -222,6 +235,18 @@ def task_add(
     ),
     payload: str = typer.Option("{}", "--payload", "-p", help='Extra JSON payload, e.g. \'{"period": "week"}\''),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id to create the task in"),
+    # Specific analysis targets — they belong on the task (payload), not the
+    # scenario (methodology), see app/services/ai/param_registry.py.
+    brands: str = typer.Option(None, "--brands", help="Comma/space separated brands to track (brand_mentions)"),
+    competitors: str = typer.Option(
+        None, "--competitors", help="Comma/space separated competitors to analyze (competitor)"
+    ),
+    hashtags: str = typer.Option(None, "--hashtags", help="Comma/space separated hashtags to track (hashtag_analysis)"),
+    influencers: str = typer.Option(
+        None, "--influencers", help="Comma/space separated authors/influencers to analyze (influencer)"
+    ),
+    keywords: str = typer.Option(None, "--keywords", help="Comma/space separated keywords to search (keywords)"),
+    topics: str = typer.Option(None, "--topics", help="Comma/space separated topics to analyze (topics)"),
 ):
     """Add a task."""
     import json as _json
@@ -244,6 +269,16 @@ def task_add(
         parsed_payload["monitored_users"] = _split_names(monitored_users)
     if excluded_users:
         parsed_payload["excluded_users"] = _split_names(excluded_users)
+    for raw, key in (
+        (brands, "brands"),
+        (competitors, "competitors"),
+        (hashtags, "hashtags"),
+        (influencers, "influencer_names"),
+        (keywords, "keywords_list"),
+        (topics, "topic_list"),
+    ):
+        if raw:
+            parsed_payload[key] = [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
 
     # Stored on the task the same way the web form does — a collect/analyze task
     # without a `cli_dates.start_date` would drain a fresh source from the first
@@ -321,6 +356,134 @@ def task_pause(name: str = typer.Argument(...), resume: bool = typer.Option(Fals
     _run_platform(_run())
 
 
+@task_app.command("update")
+def task_update(
+    name: str = typer.Argument(..., help="Task name to update"),
+    job_type: str = typer.Option(None, "--job-type", help="New job type: collect | digest | prune | analyze | learn | reflect"),
+    cron: str = typer.Option(None, "--cron", help="New cron expression (5 fields) or @once"),
+    source_ids: str = typer.Option(
+        None, "--sources", "-s", help="New comma/space separated source IDs (empty = all active)"
+    ),
+    monitored_users: str = typer.Option(
+        None, "--monitored", help="New comma/space separated monitored usernames (collect)"
+    ),
+    excluded_users: str = typer.Option(
+        None, "--excluded", help="New comma/space separated excluded usernames (collect/analyze)"
+    ),
+    scenario_id: int = typer.Option(None, "--scenario", help="New AgentScenario ID"),
+    period: str = typer.Option(None, "--period", help="Period for digest: day | week"),
+    start_date: str = typer.Option(None, "--start-date", help="New start_date (YYYY-MM-DD) for collect/analyze"),
+    end_date: str = typer.Option(None, "--end-date", help="New end_date (YYYY-MM-DD)"),
+    force_refresh: bool = typer.Option(
+        None, "--force-refresh", help="New force_refresh value (collect)"
+    ),
+    force_reanalyze: bool = typer.Option(
+        None, "--force-reanalyze", help="New force_reanalyze value (analyze)"
+    ),
+    brands: str = typer.Option(None, "--brands", help="New comma/space separated brands"),
+    competitors: str = typer.Option(
+        None, "--competitors", help="New comma/space separated competitors"
+    ),
+    hashtags: str = typer.Option(None, "--hashtags", help="New comma/space separated hashtags"),
+    influencers: str = typer.Option(
+        None, "--influencers", help="New comma/space separated authors/influencers"
+    ),
+    keywords: str = typer.Option(None, "--keywords", help="New comma/space separated keywords"),
+    topics: str = typer.Option(None, "--topics", help="New comma/space separated topics"),
+    tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (for global lookup)"),
+):
+    """Update an existing task. Only provided fields are changed."""
+    from rich import print as rprint
+
+    from app.core.tenant_context import tenant_scope
+    from app.models import AgentTask, Tenant
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.tasks.cron import next_run_at, resolve_tz
+
+    from ._tenant import resolve_tenant_id
+
+    async def _run():
+        tenant_id = await resolve_tenant_id(tenant)
+        with tenant_scope(tenant_id) if tenant_id else nullcontext():
+            matches: list[AgentTask] = await AgentTask.objects.filter(name=name)
+            if not matches:
+                rprint("[yellow]Not found[/yellow]")
+                raise typer.Exit(1)
+
+            from app.jobs.handlers import HANDLERS
+
+            if job_type is not None and job_type not in HANDLERS:
+                rprint(f"[red]job_type must be one of: {', '.join(HANDLERS.keys())}[/red]")
+                raise typer.Exit(1)
+            if cron is not None and not AgentTaskManager.validate_cron(cron):
+                rprint(f"[red]Invalid cron expression: {cron}[/red]")
+                raise typer.Exit(1)
+
+            for task in matches:
+                updated_payload = dict(task.payload) if task.payload else {}
+                if monitored_users is not None:
+                    updated_payload["monitored_users"] = _split_names(monitored_users)
+                if excluded_users is not None:
+                    updated_payload["excluded_users"] = _split_names(excluded_users)
+                if period is not None:
+                    updated_payload["period"] = period
+                for raw, key in (
+                    (brands, "brands"),
+                    (competitors, "competitors"),
+                    (hashtags, "hashtags"),
+                    (influencers, "influencer_names"),
+                    (keywords, "keywords_list"),
+                    (topics, "topic_list"),
+                ):
+                    if raw is not None:
+                        updated_payload[key] = [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
+
+                # Handle date fields for collect/analyze
+                new_job_type = job_type if job_type is not None else task.job_type
+                if AgentTaskManager.requires_content_dates(new_job_type):
+                    start = AgentTaskManager.parse_date(start_date) if start_date else None
+                    end = AgentTaskManager.parse_date(end_date) if end_date else None
+                    fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
+                    updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
+                    if force_reanalyze is not None:
+                        updated_payload["force_reanalyze"] = force_reanalyze
+                elif start_date or end_date or force_refresh is not None:
+                    start = AgentTaskManager.parse_date(start_date) if start_date else None
+                    end = AgentTaskManager.parse_date(end_date) if end_date else None
+                    fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
+                    updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
+                    if force_reanalyze is not None:
+                        updated_payload["force_reanalyze"] = force_reanalyze
+
+                new_cron = cron if cron is not None else task.cron_expr
+                updates: dict = {
+                    "job_type": new_job_type,
+                    "payload": updated_payload,
+                    "agent_scenario_id": scenario_id,
+                }
+                if cron is not None:
+                    tenant_row = await Tenant.objects.get(id=task.tenant_id)
+                    updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant_row))
+
+                await AgentTask.objects.update_by_id(task.id, **updates)
+
+                # Update sources if provided
+                if source_ids is not None:
+                    parsed = _split_ints(source_ids)
+                    await _check_task_sources(parsed, task.tenant_id)
+                    await AgentTaskManager().add_sources(task.id, parsed)
+
+                where = await tenant_label(task.tenant_id)
+                changes = [f"{k}={v}" for k, v in {
+                    "job_type": new_job_type,
+                    "cron": new_cron,
+                    "scenario": scenario_id,
+                }.items() if {k: {"job_type": job_type, "cron": cron, "scenario": scenario_id}.get(k)}]
+                rprint(f"[green]Updated '{name}' in {where}[/green]")
+
+    _run_platform(_run())
+
+
 async def _run_task(
     task: str | None,
     job_type: str,
@@ -333,6 +496,12 @@ async def _run_task(
     force_refresh: bool = False,
     start_date: str | None = None,
     end_date: str | None = None,
+    brands: str | None = None,
+    competitors: str | None = None,
+    hashtags: str | None = None,
+    influencers: str | None = None,
+    keywords: str | None = None,
+    topics: str | None = None,
 ) -> dict:
     """Run one task now and return the job outcome.
 
@@ -383,6 +552,16 @@ async def _run_task(
             payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=force_refresh))
         elif force_refresh:
             payload["force_refresh"] = True
+        for raw, key in (
+            (brands, "brands"),
+            (competitors, "competitors"),
+            (hashtags, "hashtags"),
+            (influencers, "influencer_names"),
+            (keywords, "keywords_list"),
+            (topics, "topic_list"),
+        ):
+            if raw:
+                payload[key] = [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
         with tenant_scope(tenant_id) if tenant_id else nullcontext():
             # `@once` is created disarmed: a still-armed one-shot would be picked
             # up by the scheduler tick and enqueue a duplicate job. The name
@@ -441,6 +620,12 @@ def _make_task_run_command(job_type: str) -> Callable:
         ),
         start_date: str = typer.Option(None, "--start-date", help="Collect from this date (DD-MM-YYYY) — one-off only"),
         end_date: str = typer.Option(None, "--end-date", help="Collect until this date (DD-MM-YYYY) — one-off only"),
+        brands: str = typer.Option(None, "--brands", help="Brands to track (one-off run)"),
+        competitors: str = typer.Option(None, "--competitors", help="Competitors to analyze (one-off run)"),
+        hashtags: str = typer.Option(None, "--hashtags", help="Hashtags to track (one-off run)"),
+        influencers: str = typer.Option(None, "--influencers", help="Authors/influencers to analyze (one-off run)"),
+        keywords: str = typer.Option(None, "--keywords", help="Keywords to search (one-off run)"),
+        topics: str = typer.Option(None, "--topics", help="Topics to analyze (one-off run)"),
     ):
         _run_platform(
             _run_task(
@@ -455,6 +640,12 @@ def _make_task_run_command(job_type: str) -> Callable:
                 force_refresh=force_refresh,
                 start_date=start_date,
                 end_date=end_date,
+                brands=brands,
+                competitors=competitors,
+                hashtags=hashtags,
+                influencers=influencers,
+                keywords=keywords,
+                topics=topics,
             )
         )
 

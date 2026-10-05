@@ -44,6 +44,7 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         agent_scenario=None,
         trigger_config=None,
+        task_payload: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content based on analyze_by mode.
@@ -56,6 +57,7 @@ class AIAnalyzer:
                 agent_scenario: Already-resolved scenario (task's own). When given,
                         the tenant-default lookup is skipped, so a task's scenario
                         actually shapes the analysis instead of being silently ignored.
+                task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
                 List of AIAnalytics records (one per day with activity)
@@ -65,10 +67,6 @@ class AIAnalyzer:
             if agent_scenario and agent_scenario.analyze_type
             else await self._default_scenario_analyze_type(source)
         )
-        # `analyze_type` reads back as an `AnalyzeType` member from the ORM, but
-        # callers (and the CLI) pass the plain db_value string, so normalise
-        # both shapes before dispatching — comparing a member to "themes" is
-        # always False and would silently fall through to the by-days mode.
         analyze_by = get_enum_value(analyze_by)
 
         if analyze_by == "themes":
@@ -78,6 +76,7 @@ class AIAnalyzer:
                 force_reanalyze=force_reanalyze,
                 agent_scenario=agent_scenario,
                 trigger_config=trigger_config,
+                task_payload=task_payload,
             )
         elif analyze_by == "sources":
             return await self._analyze_content_by_sources(
@@ -86,6 +85,7 @@ class AIAnalyzer:
                 force_reanalyze=force_reanalyze,
                 agent_scenario=agent_scenario,
                 trigger_config=trigger_config,
+                task_payload=task_payload,
             )
         elif analyze_by == "monitored_users":
             return await self._analyze_content_by_monitored_users(
@@ -94,6 +94,7 @@ class AIAnalyzer:
                 force_reanalyze=force_reanalyze,
                 agent_scenario=agent_scenario,
                 trigger_config=trigger_config,
+                task_payload=task_payload,
             )
         else:
             return await self._analyze_content_by_days(
@@ -102,6 +103,7 @@ class AIAnalyzer:
                 force_reanalyze=force_reanalyze,
                 agent_scenario=agent_scenario,
                 trigger_config=trigger_config,
+                task_payload=task_payload,
             )
 
     async def _default_scenario_analyze_type(self, source: Source) -> str:
@@ -129,13 +131,14 @@ class AIAnalyzer:
         analyze_type: Optional[str] = None,
         agent_scenario: Optional["AgentScenario"] = None,
         trigger_config: Optional[dict[str, Any]] = None,
+        task_payload: Optional[dict[str, Any]] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
 
-        `trigger_config` is passed in rather than read off the scenario: the
-        trigger lives on the task that runs this analysis, and the scenario is
-        shared by tasks whose triggers differ.
+        `trigger_config` and `task_payload` are passed in rather than read off
+        the scenario: they live on the task that runs this analysis, and the
+        scenario is shared by tasks whose payloads differ.
 
         Args:
                 content: List of normalized content items
@@ -153,6 +156,9 @@ class AIAnalyzer:
                 agent_scenario: Already-resolved scenario (a task's own). When
                         given, the tenant-default lookup is skipped — the caller
                         resolved the scenario, so this analysis must use it.
+                task_payload: Task-specific TARGET parameters (brands,
+                        competitors, hashtags); injected into the prompt
+                        instruction, never into the response schema.
 
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
@@ -214,6 +220,7 @@ class AIAnalyzer:
                     platform_name,
                     source,
                     trigger_config,
+                    task_payload,
                 )
                 if text_result:
                     analysis_results["text_analysis"] = text_result
@@ -221,7 +228,7 @@ class AIAnalyzer:
             # Image analysis
             if classified[MediaType.IMAGE.db_value]:
                 image_result = await self._analyze_images(
-                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config
+                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
                 if image_result:
                     analysis_results["image_analysis"] = image_result
@@ -229,7 +236,7 @@ class AIAnalyzer:
             # Video analysis
             if classified[MediaType.VIDEO.db_value]:
                 video_result = await self._analyze_videos(
-                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config
+                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
                 if video_result:
                     analysis_results["video_analysis"] = video_result
@@ -306,6 +313,7 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
+        task_payload: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """
         Group content by days and analyze each day separately.
@@ -314,6 +322,7 @@ class AIAnalyzer:
                 content: List of content items
                 source: Source being analyzed
                 force_reanalyze: Bypass dedup and re-analyze everything
+                task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
                 List of AIAnalytics records (one per day with activity)
@@ -324,34 +333,25 @@ class AIAnalyzer:
             logger.warning(f"No content to analyze for source {source.id}")
             return []
 
-        # Group content by day
         content_by_day = defaultdict(list)
 
         for item in content:
-            # Extract publication date
             pub_date = item.get("published_at") or item.get("date") or item.get("created_at")
-
-            # Convert to datetime
             pub_date = universal_date_parser(pub_date)
-
-            # Group by date
             if pub_date:
                 day = pub_date.date()
             else:
                 day = date.today()
-
             content_by_day[day].append(item)
 
         logger.info(f"Grouped {len(content)} items into {len(content_by_day)} days for source {source.id}")
 
-        # Analyze each day using base analysis
         analytics_list = []
 
         for day, day_content in sorted(content_by_day.items()):
             logger.info(f"Analyzing {len(day_content)} items for source {source.id} on {day}")
 
             try:
-                # Use base analysis for each day
                 analytics = await self.base_analyze_content(
                     content=day_content,
                     source=source,
@@ -359,9 +359,9 @@ class AIAnalyzer:
                     force_reanalyze=force_reanalyze,
                     agent_scenario=agent_scenario,
                     trigger_config=trigger_config,
+                    task_payload=task_payload,
                 )
 
-                # Only add non-empty analytics
                 if analytics:
                     analytics_list.append(analytics)
                 else:
@@ -385,6 +385,7 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
+        task_payload: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
@@ -393,6 +394,7 @@ class AIAnalyzer:
                 content: List of content items
                 source: Source being analyzed
                 force_reanalyze: Bypass dedup and re-analyze everything
+                task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
                 List of AIAnalytics records (typically one record with theme linking)
@@ -401,13 +403,13 @@ class AIAnalyzer:
             logger.warning(f"No content to analyze for source {source.id}")
             return []
 
-        # Use base analysis for all content
         analysis = await self.base_analyze_content(
             content,
             source,
             force_reanalyze=force_reanalyze,
             agent_scenario=agent_scenario,
             trigger_config=trigger_config,
+            task_payload=task_payload,
         )
         if not analysis:
             return []
@@ -424,6 +426,7 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
+        task_payload: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """Analyze content grouped by its origin source.
 
@@ -437,6 +440,7 @@ class AIAnalyzer:
                 content: List of content items
                 source: The primary source being analyzed (fallback chain owner)
                 force_reanalyze: Bypass dedup and re-analyze everything
+                task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
                 List of AIAnalytics records (one per source group)
@@ -463,6 +467,7 @@ class AIAnalyzer:
                     analyze_type="sources",
                     agent_scenario=agent_scenario,
                     trigger_config=trigger_config,
+                    task_payload=task_payload,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -483,6 +488,7 @@ class AIAnalyzer:
         force_reanalyze: bool = False,
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
+        task_payload: "dict | None" = None,
     ) -> list[AIAnalytics]:
         """Analyze content grouped by the tracked user who authored it.
 
@@ -496,6 +502,7 @@ class AIAnalyzer:
                 content: List of content items
                 source: The source being analyzed
                 force_reanalyze: Bypass dedup and re-analyze everything
+                task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
                 List of AIAnalytics records (one per monitored user group)
@@ -533,6 +540,7 @@ class AIAnalyzer:
                     force_reanalyze=force_reanalyze,
                     agent_scenario=agent_scenario,
                     trigger_config=trigger_config,
+                    task_payload=task_payload,
                 )
                 if analysis:
                     analytics_list.append(analysis)
@@ -612,6 +620,7 @@ class AIAnalyzer:
         platform_name: str,
         source: Source,
         trigger_config: Optional[dict[str, Any]] = None,
+        task_payload: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze text content using text LLM provider."""
         try:
@@ -631,6 +640,7 @@ class AIAnalyzer:
             prompt = PromptBuilder.get_prompt(
                 MediaType.TEXT,
                 scenario=agent_scenario,
+                task_payload=task_payload,
                 text=text_content,
                 stats=content_stats,
                 platform_name=platform_name,
@@ -660,6 +670,7 @@ class AIAnalyzer:
         agent_scenario: Optional[AgentScenario],
         platform_name: str,
         trigger_config: Optional[dict[str, Any]] = None,
+        task_payload: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze images using image LLM provider."""
         try:
@@ -678,6 +689,7 @@ class AIAnalyzer:
             prompt = PromptBuilder.get_prompt(
                 MediaType.IMAGE,
                 scenario=agent_scenario,
+                task_payload=task_payload,
                 count=len(media_urls),
                 platform_name=platform_name,
                 trigger_config=trigger_config,
@@ -703,6 +715,7 @@ class AIAnalyzer:
         agent_scenario: Optional[AgentScenario],
         platform_name: str,
         trigger_config: Optional[dict[str, Any]] = None,
+        task_payload: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze videos using video LLM provider."""
         try:
@@ -721,6 +734,7 @@ class AIAnalyzer:
             prompt = PromptBuilder.get_prompt(
                 MediaType.VIDEO,
                 scenario=agent_scenario,
+                task_payload=task_payload,
                 count=len(media_urls),
                 platform_name=platform_name,
                 trigger_config=trigger_config,

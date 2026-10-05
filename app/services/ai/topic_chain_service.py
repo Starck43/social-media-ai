@@ -151,6 +151,7 @@ class TopicChainService:
 				toxicity_category = text_analysis.get("toxicity_category", "Нормальный")
 
 				chain_evolution.append({
+					"id": getattr(analytics, "id", None),
 					"date": analytics.analysis_date.isoformat()
 					if hasattr(analytics.analysis_date, 'isoformat')
 					else str(analytics.analysis_date),

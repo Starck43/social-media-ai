@@ -62,6 +62,14 @@ class PromptVariables:
 		'max_keywords': 'scope.keywords.max_keywords',
 		'max_topics': 'scope.topics.max_topics',
 		'sentiment_categories': 'scope.sentiment.categories (comma-separated)',
+		# Task-payload TARGET parameters (from AgentTask.payload)
+		'brands': 'payload.brands — specific brands to track',
+		'competitors': 'payload.competitors — specific competitors to analyze',
+		'hashtags': 'payload.hashtags — specific hashtags to track',
+		'influencer_names': 'payload.influencer_names — specific authors to analyze',
+		'keywords_list': 'payload.keywords_list — specific keywords to search',
+		'topic_list': 'payload.topic_list — specific topics to analyze',
+		'payload_instruction': 'Rendered instruction line from all payload targets',
 	}
 
 	AVAILABLE_VARIABLES = {

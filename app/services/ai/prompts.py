@@ -22,34 +22,37 @@ class PromptBuilder:
 	def get_prompt(
 			media_type: MediaType,
 			scenario: Optional['AgentScenario'] = None,
+			task_payload: Optional[dict[str, Any]] = None,
 			**context
 	) -> str:
 		"""
 		Get prompt for media type, using custom or default template.
-		
+
 		This is the main entry point for getting prompts. It will:
 		1. Check if scenario has custom prompt for this media type
 		2. If yes, use custom prompt with variable substitution
 		3. If no, fallback to default hardcoded prompt
 		4. Auto-append JSON format instruction if not present
-		
+
 		Args:
 			media_type: Type of media (TEXT, IMAGE, VIDEO, AUDIO)
 			scenario: Optional AgentScenario with base_prompt and media_overrides
+			task_payload: Task-specific parameters (brands, competitors, etc.)
 			**context: Context variables for prompt (text, platform, stats, count, etc.)
-		
+
 		Returns:
 			Complete prompt string ready for LLM
-		
+
 		Example:
 			# With custom prompt
 			prompt = PromptBuilder.get_prompt(
 				MediaType.TEXT,
 				scenario=my_scenario,  # has base_prompt = "Analyze {text} from {platform}"
+				task_payload={"brands": ["Coca-Cola", "Sprite"]},
 				text="content here",
 				platform="VK"
 			)
-			
+
 			# Without custom prompt (uses default)
 			prompt = PromptBuilder.get_prompt(
 				MediaType.IMAGE,
@@ -74,8 +77,10 @@ class PromptBuilder:
 
 		# Use custom prompt if available
 		if custom_prompt:
-			# Prepare variables based on media type (includes scope and trigger_config)
-			variables = PromptBuilder._prepare_variables(media_type, scenario=scenario, **context)
+			# Prepare variables based on media type (includes scope, task_payload, trigger_config)
+			variables = PromptBuilder._prepare_variables(
+				media_type, scenario=scenario, task_payload=task_payload, **context
+			)
 			prompt = PromptSubstitution.substitute(custom_prompt, variables)
 
 			# Auto-append JSON instruction if not present (with scenario for dynamic schema)
@@ -121,15 +126,23 @@ class PromptBuilder:
 		)
 
 	@staticmethod
-	def _prepare_variables(media_type: MediaType, scenario: Optional['AgentScenario'] = None, **context) -> dict[str, Any]:
+	def _prepare_variables(
+			media_type: MediaType,
+			scenario: Optional['AgentScenario'] = None,
+			task_payload: Optional[dict[str, Any]] = None,
+			**context
+	) -> dict[str, Any]:
 		"""
 		Prepare variables for substitution based on media type.
-		
+
 		This method merges:
 		1. Standard variables (text, platform, stats, count, etc.)
 		2. Custom variables from scenario.scope
-		3. Trigger configuration from the caller's `trigger_config` context key
-		4. Analysis type configs from scope (topics, sentiment, etc.)
+		3. Task-specific payload (brands, competitors, hashtags)
+		4. Trigger configuration from the caller's `trigger_config` context key
+		5. Analysis type configs from scope (topics, sentiment, etc.)
+
+		Priority order: system > task_payload > scope
 		"""
 		from app.utils.enum_helpers import get_enum_value
 
@@ -163,23 +176,27 @@ class PromptBuilder:
 
 		# Add custom variables from scenario.scope (if present)
 		if scenario and scenario.scope:
-			# Merge scope variables (brand_name, competitors, etc.)
 			for key, value in scenario.scope.items():
-				# Skip analysis type configs (they're handled separately)
 				if key not in variables:
 					variables[key] = value
 
-			# Expose documented scope-derived names at top level: {max_keywords},
-			# {max_topics}, {sentiment_categories}. The raw scope keys stay too
-			# ({keywords.max_keywords} via nested access), so nothing existing
-			# stops working.
 			for var_name, value in PromptBuilder._flatten_scope_variables(scenario.scope).items():
 				if value is not None and var_name not in variables:
 					variables[var_name] = value
 
-		# Documented context variables. They resolve only when the caller
-		# provides the data (or the scenario carries it); otherwise the
-		# placeholder is left as-is by substitution.
+		# Merge task_payload variables with higher priority than scope
+		# Priority: task_payload > scope for the same key
+		if task_payload:
+			for key, value in task_payload.items():
+				if value is not None:
+					variables[key] = value
+
+			# Build instruction text from payload for target types
+			payload_instruction = PromptBuilder._build_payload_instruction(task_payload, scenario)
+			if payload_instruction:
+				variables['payload_instruction'] = payload_instruction
+
+		# Documented context variables
 		variables.setdefault('source_name', context.get('source_name'))
 		variables.setdefault('trigger_condition', context.get('trigger_condition'))
 		if scenario:
@@ -187,10 +204,7 @@ class PromptBuilder:
 		elif context.get('scenario_name') is not None:
 			variables['scenario_name'] = context['scenario_name']
 
-		# Add trigger_config as a separate object (if present). It arrives in the
-		# context rather than off the scenario: the trigger belongs to the task
-		# now, and the prompt is built from the scenario, which is shared by tasks
-		# whose triggers differ.
+		# Add trigger_config as a separate object (if present)
 		trigger_config = context.get('trigger_config')
 		if trigger_config:
 			variables['trigger_config'] = trigger_config
@@ -217,6 +231,55 @@ class PromptBuilder:
 		if isinstance(categories, (list, tuple)) and categories:
 			flattened['sentiment_categories'] = ', '.join(str(c) for c in categories)
 		return flattened
+
+	@staticmethod
+	def _build_payload_instruction(
+			task_payload: dict[str, Any],
+			scenario: Optional['AgentScenario'] = None
+	) -> str:
+		"""Build instruction text from payload target values.
+
+		Extracts specific targets (brands, competitors, hashtags, etc.)
+		from task_payload and formats them as instruction text for the prompt.
+		"""
+		from app.services.ai.param_registry import PAYLOAD_PARAMS
+
+		instructions = []
+		analysis_types = scenario.analysis_types if scenario else []
+
+		if 'brands' in task_payload and task_payload['brands']:
+			brands = task_payload['brands']
+			brand_list = ", ".join(f'"{b}"' for b in brands) if isinstance(brands, list) else str(brands)
+			instructions.append(f"Отслеживай бренды: {brands}")
+
+		if 'competitors' in task_payload and task_payload['competitors']:
+			competitors = task_payload['competitors']
+			comp_list = ", ".join(f'"{c}"' for c in competitors) if isinstance(competitors, list) else str(competitors)
+			instructions.append(f"Анализируй конкурентов: {comp_list}")
+
+		if 'hashtags' in task_payload and task_payload['hashtags']:
+			hashtags = task_payload['hashtags']
+			ht_list = ", ".join(f'#{h}' if not h.startswith('#') else h for h in hashtags) if isinstance(hashtags, list) else str(hashtags)
+			instructions.append(f"Отслеживай хэштеги: {ht_list}")
+
+		if 'influencer_names' in task_payload and task_payload['influencer_names']:
+			influencers = task_payload['influencer_names']
+			inf_list = ", ".join(f'@{i}' if not i.startswith('@') else i for i in influencers) if isinstance(influencers, list) else str(influencers)
+			instructions.append(f"Анализируй авторов: {inf_list}")
+
+		if 'keywords_list' in task_payload and task_payload['keywords_list']:
+			keywords = task_payload['keywords_list']
+			kw_list = ", ".join(f'"{k}"' for k in keywords) if isinstance(keywords, list) else str(keywords)
+			instructions.append(f"Ищи ключевые слова: {kw_list}")
+
+		if 'topic_list' in task_payload and task_payload['topic_list']:
+			topics = task_payload['topic_list']
+			top_list = ", ".join(f'"{t}"' for t in topics) if isinstance(topics, list) else str(topics)
+			instructions.append(f"Анализируй темы: {top_list}")
+
+		if instructions:
+			return "УКАЗАНИЯ К АНАЛИЗУ: " + "; ".join(instructions) + "."
+		return ""
 
 	@staticmethod
 	def _ensure_json_instruction(

@@ -423,10 +423,21 @@ async def chat_with_fallback(
             client = LLMClientFactory.create(model)
             return await client.chat(messages, tools=tools, **kwargs)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code < 500:
+            code = e.response.status_code
+            if code == 429:
+                # Rate-limited — transient, try the next provider
+                last_err = e
+                logger.warning(
+                    f"{model.provider.name}/{model.model_id} rate-limited (429), trying next"
+                )
+            elif code < 500:
+                # 4xx (auth, quota, bad request) — config problem, surface immediately
                 raise
-            last_err = e
-            logger.warning(f"{model.provider.name}/{model.model_id} failed ({e.response.status_code}), trying next")
+            else:
+                last_err = e
+                logger.warning(
+                    f"{model.provider.name}/{model.model_id} failed ({code}), trying next"
+                )
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_err = e
             logger.warning(f"{model.provider.name}/{model.model_id} timeout/transport, trying next")

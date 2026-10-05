@@ -155,7 +155,7 @@
                     class="{{ control() }}">
                 <option value="">— не выбран —</option>
                 {% for scenario in scenarios %}
-                <option :value="{{ scenario.id }}">{{ scenario.name }}</option>
+                <option value="{{ scenario.id }}" {% if scenario.id == task.agent_scenario_id %}selected{% endif %}>{{ scenario.name }}</option>
                 {% endfor %}
             </select>
         </div>

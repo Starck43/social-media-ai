@@ -578,3 +578,42 @@ async def test_list_marks_task_with_inactive_scenario_as_inactive(client: AsyncC
                 with tenant_scope(bypass=True):
                     await AgentScenario.objects.delete(id=scenario.id)
             await _drop(user, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_editor_shows_bound_inactive_scenario(client: AsyncClient) -> None:
+    """A task's scenario must render in the web editor even when it is inactive.
+
+    The dropdown lists active scenarios only; without the bound scenario added
+    to that list, a task whose scenario was deactivated (e.g. via the admin)
+    opened in the web editor as if it had no scenario — and saving could
+    silently detach it. The editor has to show what the task is bound to.
+    """
+    async with await _client() as c:
+        user, tenant_id = await _register(c, "EditInactive")
+        scenario = await _make_scenario(tenant_id, is_active=False)
+        task = None
+        try:
+            with tenant_scope(bypass=True):
+                task = await AgentTask.objects.create(
+                    name=_name("task"),
+                    job_type="digest",
+                    cron_expr="@once",
+                    payload={},
+                    is_active=True,
+                    agent_scenario_id=scenario.id,
+                    tenant_id=tenant_id,
+                )
+            page = await c.get(f"/app/tasks/{task.id}/edit")
+            assert page.status_code == 200, page.text[:500]
+            # the bound (inactive) scenario is listed and rendered selected
+            assert f'value="{scenario.id}"' in page.text, "bound scenario missing from the editor dropdown"
+            assert f'value="{scenario.id}" selected' in page.text, "bound scenario must render selected"
+        finally:
+            if task is not None:
+                with tenant_scope(bypass=True):
+                    await AgentTask.objects.delete(id=task.id)
+            if scenario is not None:
+                with tenant_scope(bypass=True):
+                    await AgentScenario.objects.delete(id=scenario.id)
+            await _drop(user, tenant_id)

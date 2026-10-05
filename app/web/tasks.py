@@ -729,6 +729,14 @@ async def task_edit_page(request: Request, task_id: int):
 		scenarios = await AgentScenario.objects.filter(tenant_id=task.tenant_id, is_active=True).order_by(
 			AgentScenario.name
 		)
+		# The dropdown lists active scenarios, but the task's own scenario must
+		# show even when it is inactive: it was set (via admin/CLI) and the
+		# editor must render what the task is bound to, not silently read as
+		# empty. Without this a deactivated scenario made the field look blank.
+		if task.agent_scenario_id is not None and not any(s.id == task.agent_scenario_id for s in scenarios):
+			bound = await AgentScenario.objects.get(id=task.agent_scenario_id, tenant_id=task.tenant_id)
+			if bound is not None:
+				scenarios = [bound, *scenarios]
 
 	# Eager-load sources into a plain list so _edit_payload doesn't hit a lazy
 	# loader on a detached instance (DetachedInstanceError).

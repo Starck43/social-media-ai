@@ -11,26 +11,57 @@
         </p>
     </div>
 
-    {% if not kpis.active_sources or not kpis.active_tasks %}
+    {% if show_welcome %}
         <div class="mb-6 rounded-2xl border border-cyan-900/60 bg-cyan-950/30 p-5">
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-sm font-medium text-cyan-200">Добро пожаловать</h2>
-                    <p class="mt-1 text-sm text-slate-400">
+                    <h2 class="text-sm font-medium text-cyan-200">
                         {% if not kpis.active_sources and not kpis.active_tasks %}
-                            Подключите источник и поставьте расписание — дальше конвейер работает сам.
+                            Добро пожаловать — собранный контент никуда не попадёт
                         {% elif not kpis.active_sources %}
-                            Не хватает источника: без него нечего собирать.
+                            Не хватает источника: без него нечего собирать
                         {% else %}
-                            Нет расписания — собранный контент никуда не попадёт.
+                            Нет расписания — собранный контент никуда не попадёт
                         {% endif %}
-                    </p>
+                    </h2>
+                    <p class="mt-1 text-sm text-slate-400">Четыре шага, и конвейер работает сам.</p>
                 </div>
                 <a href="/app/onboarding"
                    class="shrink-0 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                     Пройти шаги →
                 </a>
             </div>
+
+            <ol class="mt-4 grid gap-2 sm:grid-cols-2">
+                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-400' if kpis.active_sources else 'text-slate-600' }}">✓</span>
+                    <div class="min-w-0">
+                        <a href="/app/sources" class="font-medium text-cyan-400 hover:text-cyan-300">Подключите источник</a>
+                        {% if not kpis.active_sources %}<span class="ml-2 text-slate-500">с него начнётся сбор</span>{% endif %}
+                    </div>
+                </li>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-400' if scenarios_count else 'text-slate-600' }}">✓</span>
+                    <div class="min-w-0">
+                        <a href="/app/scenarios/new" class="font-medium text-cyan-400 hover:text-cyan-300">Создайте сценарий агента</a>
+                        {% if not scenarios_count %}<span class="ml-2 text-slate-500">как агент анализирует контент</span>{% endif %}
+                    </div>
+                </li>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-400' if kpis.active_tasks else 'text-slate-600' }}">✓</span>
+                    <div class="min-w-0">
+                        <a href="/app/tasks" class="font-medium text-cyan-400 hover:text-cyan-300">Создайте задачу по расписанию</a>
+                        {% if not kpis.active_tasks %}<span class="ml-2 text-slate-500">сбор и анализ по cron</span>{% endif %}
+                    </div>
+                </li>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 text-slate-600">✓</span>
+                    <div class="min-w-0">
+                        <a href="/app/digests" class="font-medium text-cyan-400 hover:text-cyan-300">Получайте дайджест</a>
+                        <span class="ml-2 text-slate-500">ежедневные сводки в канале</span>
+                    </div>
+                </li>
+            </ol>
         </div>
     {% endif %}
 

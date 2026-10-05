@@ -461,3 +461,57 @@ def test_form_controls_come_from_one_macro() -> None:
     # so rendering it yields nothing: ask the template's module for the macro.
     macros = templates.get_template("web/_macros.html").module
     assert RAW_CONTROL_CLASS in macros.control()
+
+
+# ── the dashboard welcome walkthrough ───────────────────────────────────────
+
+
+def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
+    """Render the dashboard with explicit welcome state (see `_render`)."""
+    return _render(
+        "web/dashboard.html",
+        kpis=kpis,
+        analytics=SimpleNamespace(
+            toxicity=SimpleNamespace(analyzed=0, toxic=0, toxic_percent=0.0),
+            content_mix=[],
+            top_topics=[],
+            hashtags=[],
+            recent=[],
+        ),
+        recent_tasks=[],
+        effective_active=set(),
+        cron_to_human=SimpleNamespace(__call__=lambda e: ""),
+        show_welcome=show_welcome,
+        scenarios_count=scenarios_count,
+        # `plan_badge` reads this; the route gets it from `render()`.
+        plan_labels={"free": "Free"},
+    )
+
+
+def test_welcome_walkthrough_lists_all_four_steps() -> None:
+    """A fresh workspace sees the step-through, each step linking to its page.
+
+    The walkthrough names the four places a newcomer has to find: the source,
+    the agent scenario (the web wizard entry point), the scheduled task and the
+    digest channel — "собранный контент никуда не попадёт" is the reason it is
+    shown at all.
+    """
+    empty = SimpleNamespace(
+        active_sources=0, active_tasks=0, posts_today=0, avg_sentiment=0.0, sentiment_analyzed=False, cost_today_usd=0.0
+    )
+    html = _dashboard(empty, show_welcome=True, scenarios_count=0)
+
+    assert "Добро пожаловать — собранный контент никуда не попадёт" in html
+    assert 'href="/app/onboarding"' in html, "the guided path stays reachable"
+    for href in ("/app/sources", "/app/scenarios/new", "/app/tasks", "/app/digests"):
+        assert f'href="{href}"' in html, f"the walkthrough must link to {href}"
+
+
+def test_welcome_hidden_once_the_workspace_is_set_up() -> None:
+    """Sources, scenario and schedule in place — no welcome, the KPIs are it."""
+    set_up = SimpleNamespace(
+        active_sources=2, active_tasks=1, posts_today=3, avg_sentiment=0.5, sentiment_analyzed=True, cost_today_usd=0.1
+    )
+    html = _dashboard(set_up, show_welcome=False, scenarios_count=2)
+    assert "Добро пожаловать" not in html
+    assert "Пройти шаги" not in html

@@ -223,6 +223,19 @@ async def dashboard(request: Request):
     recent_tasks = await _recent_tasks(tenant_id, is_superuser, filter_tenant_id)
     effective_active = await _effective_active_ids(recent_tasks)
     analytics = await _analytics(tenant_id, is_superuser)
+
+    # The welcome walkthrough is a workspace concern: a fresh workspace gets the
+    # step-through, a superuser's global dashboard never does. It needs to know
+    # whether the scenario step is already done, which the KPI set does not carry.
+    from app.models.agent_scenario import AgentScenario
+
+    show_welcome = not is_superuser and (kpis["active_sources"] == 0 or kpis["active_tasks"] == 0)
+    scenarios_count = (
+        await AgentScenario.objects.filter(tenant_id=tenant_id).values(func.count(AgentScenario.id)).scalar(0)
+        if show_welcome
+        else 0
+    )
+
     return render(
         request,
         "web/dashboard.html",
@@ -235,4 +248,6 @@ async def dashboard(request: Request):
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
+        show_welcome=show_welcome,
+        scenarios_count=scenarios_count,
     )

@@ -151,6 +151,33 @@
         </div>
 
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-300">Упоминания сущностей</h2>
+            {% if analytics.entities %}
+                <div class="mt-4 space-y-2">
+                    {% for e in analytics.entities %}
+                        <div class="flex items-center justify-between gap-2 text-sm">
+                            <span class="min-w-0">
+                                <span class="truncate text-slate-300">{{ e.name }}</span>
+                                <span class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">{{ e.type }}</span>
+                            </span>
+                            <span class="shrink-0 text-xs text-slate-500">
+                                {% if e.avg_sentiment is not none %}
+                                    {{ "%.2f"|format(e.avg_sentiment) }} ·
+                                {% endif %}
+                                {{ e.count }}×
+                            </span>
+                        </div>
+                        {% if e.context %}
+                            <p class="truncate text-xs text-slate-500">{{ e.context }}</p>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <h2 class="text-sm font-medium text-slate-300">Типы контента</h2>
             {% if analytics.content_mix.media_types %}
                 <div class="mt-4 space-y-2">

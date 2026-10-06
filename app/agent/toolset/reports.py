@@ -56,3 +56,57 @@ async def digest_send_now(period: str = "day") -> dict[str, Any]:
     if period not in ("day", "week"):
         return {"error": f"Unknown period: {period!r}. Use day or week"}
     return await build_and_publish(period=period)
+
+
+@tool(
+    name="analytics_chains",
+    description=(
+        "Список тематических цепочек аналитики: label, число анализов, период, "
+        "средняя тональность и топ-темы. Полезно, чтобы подсказать группировку "
+        "нового анализа по уже существующим цепочкам."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "source_id": {"type": "integer", "description": "ID источника; пусто = все источники"},
+            "days": {"type": "integer", "description": "Смотреть анализы за последние N дней (по умолчанию 30)"},
+        },
+        "required": [],
+    },
+    required_permission="aianalytics.view",
+)
+async def analytics_chains(source_id: int | None = None, days: int = 30) -> dict[str, Any]:
+    from datetime import date, timedelta
+
+    from app.models.managers.ai_analytics_manager import AIAnalyticsManager
+
+    end = date.today()
+    start = end - timedelta(days=days)
+    chains = await AIAnalyticsManager().get_chains_summary(source_id=source_id, start_date=start, end_date=end)
+    if not chains:
+        return {"chains": [], "total": 0}
+    return {"chains": chains, "total": len(chains)}
+
+
+@tool(
+    name="analytics_chain_detail",
+    description=(
+        "Хронология одной тематической цепочки: все анализы с датами, темами и "
+        "метриками. Вход — topic_chain_id (см. analytics_chains)."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "chain_id": {"type": "string", "description": "topic_chain_id из analytics_chains"},
+        },
+        "required": ["chain_id"],
+    },
+    required_permission="aianalytics.view",
+)
+async def analytics_chain_detail(chain_id: str) -> dict[str, Any]:
+    from app.models.managers.ai_analytics_manager import AIAnalyticsManager
+
+    detail = await AIAnalyticsManager().get_chain_detail(chain_id)
+    if not detail:
+        return {"error": f"Цепочка {chain_id!r} не найдена"}
+    return detail

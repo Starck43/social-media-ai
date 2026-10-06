@@ -60,6 +60,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     # workspace); the rest are scoped by the manager guard to the ambient scope.
     sentiment = await agg.get_sentiment_trends(days=days)
     topics = await agg.get_top_topics(days=days, limit=10, tenant_id=tenant_id)
+    entities = await agg.get_entity_mentions(days=days, limit=20, tenant_id=tenant_id)
     content_mix = await agg.get_content_mix(days=days, tenant_id=tenant_id)
     engagement = await agg.get_engagement_metrics(days=days)
     llm = await agg.get_llm_provider_stats(days=days)
@@ -131,6 +132,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
         "sentiment": sentiment,
         "sentiment_dist": dist,
         "topics": topics,
+        "entities": entities,
         "content_mix": content_mix,
         "engagement": engagement,
         "llm": llm,

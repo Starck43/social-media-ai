@@ -1530,6 +1530,85 @@ class ReportAggregator:
 
         return topics
 
+    def _extract_entities(self, summary_data: dict) -> list[dict]:
+        """Extract mentioned entities from `summary_data` JSON.
+
+        Contract: `[{"name": str, "type": "person|brand|org", "context": str}]`
+        under `multi_llm_analysis.text_analysis.entities` (topics/trends types).
+        Rows that predate the field or stored entities elsewhere contribute
+        nothing — the widget groups by `name`/`type` across rows.
+        """
+        if not summary_data:
+            return []
+        text_analysis = (summary_data.get("multi_llm_analysis") or {}).get("text_analysis") or {}
+        entities = text_analysis.get("entities") or []
+        result: list[dict] = []
+        for e in entities:
+            if not isinstance(e, dict):
+                continue
+            name = str(e.get("name") or "").strip()
+            if not name:
+                continue
+            result.append(
+                {
+                    "name": name[:255],
+                    "type": str(e.get("type") or "org").strip()[:50] or "org",
+                    "context": str(e.get("context") or "").strip()[:300],
+                }
+            )
+        return result
+
+    async def get_entity_mentions(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        limit: int = 20,
+        tenant_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Aggregate entity mentions from analyses of the period.
+
+        Groups the flat `entities` arrays by (name, type): each row may mention
+        an entity once, so the mention count is how many analyses named it.
+        Returns entities sorted by mention count with the average sentiment of
+        the analyses they appear in.
+        """
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id)
+
+            counter = Counter()
+            types: dict[str, str] = {}
+            sentiments: dict[str, list[float]] = defaultdict(list)
+            contexts: dict[str, str] = {}
+
+            for a in analytics:
+                sentiment = self._extract_sentiment(a.summary_data)
+                for e in self._extract_entities(a.summary_data):
+                    key = e["name"]
+                    counter[key] += 1
+                    types[key] = e["type"]
+                    if sentiment and sentiment.get("score") is not None:
+                        sentiments[key].append(sentiment["score"])
+                    if e["context"] and not contexts.get(key):
+                        contexts[key] = e["context"]
+
+            result = []
+            for name, count in counter.most_common(limit):
+                scores = sentiments.get(name, [])
+                result.append(
+                    {
+                        "name": name,
+                        "type": types.get(name, "org"),
+                        "count": count,
+                        "avg_sentiment": round(sum(scores) / len(scores), 2) if scores else None,
+                        "context": contexts.get(name),
+                    }
+                )
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting entity mentions: {e}", exc_info=True)
+            return []
+
     def _extract_example_text(self, summary_data: dict) -> Optional[str]:
         """Extract example text from summary_data."""
         if not summary_data:

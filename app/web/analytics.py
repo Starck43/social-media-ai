@@ -144,6 +144,38 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     }
 
 
+# Default analytics period: a month. Chosen via the `days` filter, remembered in
+# the session so it survives navigating away and back.
+DEFAULT_ANALYTICS_DAYS = "30"
+SESSION_DAYS_KEY = "analytics_days"
+
+
+def _resolve_days(request: Request) -> tuple[int | None, str]:
+    """The look-back window for this request: query param → session → default.
+
+    Returns `(days, days_key)`, where `days` is `None` for "всё" and `days_key`
+    is the string the template uses to highlight the selected `<option>`. A
+    valid `?days=` wins and is remembered; otherwise the remembered choice is
+    used; otherwise the default month.
+    """
+    raw = request.query_params.get("days")
+    if raw is None:
+        raw = request.session.get(SESSION_DAYS_KEY, DEFAULT_ANALYTICS_DAYS)
+
+    if raw == "all":
+        days: int | None = None
+        days_key = "all"
+    elif raw.isdigit() and 1 <= int(raw) <= 365:
+        days = int(raw)
+        days_key = str(days)
+    else:
+        days = None if DEFAULT_ANALYTICS_DAYS == "all" else int(DEFAULT_ANALYTICS_DAYS)
+        days_key = DEFAULT_ANALYTICS_DAYS
+
+    request.session[SESSION_DAYS_KEY] = days_key
+    return days, days_key
+
+
 @router.get("")
 @router.get("/")
 async def analytics_page(request: Request):
@@ -151,10 +183,7 @@ async def analytics_page(request: Request):
     user = getattr(request.state, "web_user", None)
     is_superuser = bool(user and user.is_superuser)
 
-    raw_days = request.query_params.get("days", "7")
-    # "all" = no date cutoff; a number is the look-back window in days.
-    days = None if raw_days == "all" else (int(raw_days) if raw_days.isdigit() and 1 <= int(raw_days) <= 365 else 7)
-    days_key = "all" if days is None else str(days)
+    days, days_key = _resolve_days(request)
 
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 

@@ -890,11 +890,12 @@ class AIAnalyzer:
 
         # Get all active providers and their models
         all_providers = await LLMProvider.objects.filter(is_active=True)
-        all_models = await LLMModel.objects.filter(provider__is_active=True, is_active=True)
+        all_models = await LLMModel.objects.select_related("provider").filter(is_active=True)
+        active_models = [m for m in all_models if m.provider.is_active]
 
         # Group models by provider and find best model for each provider
         provider_best_models = {}
-        for model in all_models:
+        for model in active_models:
             provider_id = model.provider_id
             if provider_id not in provider_best_models:
                 provider_best_models[provider_id] = model

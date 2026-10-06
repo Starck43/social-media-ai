@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import plan_badge with context %}
+{% from "web/_macros.html" import plan_badge, empty_state with context %}
 {% block title %}Дашборд — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-6">
@@ -201,7 +201,6 @@
                     </table>
                 </div>
             {% else %}
-                {% from "web/_macros.html" import empty_state %}
                 {{ empty_state("Пока нет задач.", height="h-24", radius="rounded-xl") }}
                 <div class="mt-2 text-center">
                     <a href="/app/tasks" class="text-sm text-cyan-400 hover:underline">Создайте первую</a>

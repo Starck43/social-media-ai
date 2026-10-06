@@ -24,6 +24,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
+from app.models.collected_item import CollectedItem
 from app.models.source import Source
 from app.services.social.connections import source_connection_status, source_connection_statuses
 from app.types import SourceType
@@ -560,10 +561,11 @@ async def source_detail(request: Request, source_id: int):
     # failing is retried until it burns `give_up_after_attempts` and then stops
     # being offered. Without surfacing the count, that day simply vanishes from
     # the source with no trace — the ceiling is doing its job, but silently.
-    from app.models import CollectedItem
-
     given_up = await CollectedItem.objects.exhausted_count(source.id)
     given_up_label = plural(given_up, "запись", "записи", "записей")
+
+    # Check whether a collect or analyze job is currently running for this source.
+    is_running = await _source_has_running_job(source.id)
 
     return render(
         request,
@@ -593,7 +595,19 @@ async def source_detail(request: Request, source_id: int):
         readiness_hint=readiness_hint,
         platforms=platforms,
         source_types=source_types_list,
+        is_running=is_running,
     )
+async def _source_has_running_job(source_id: int) -> bool:
+    """Whether a collect/analyze job is currently running for this source."""
+    from app.models.job import Job
+
+    running = await Job.objects.filter(status="running")
+    for job in running:
+        payload = job.payload or {}
+        source_ids = payload.get("source_ids", [])
+        if source_id in source_ids:
+            return True
+    return False
 
 
 def _mode_view(mode_key: str) -> dict:
@@ -838,6 +852,65 @@ async def source_collect_now(
     # No `?job_id=` here: the run modal lives on the tasks page, so the parameter
     # would only produce a URL that renders nothing. The flash carries the result
     # and the «Что собрано» block on this very page now shows the run.
+    return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+
+@router.post("/{source_id}/analyze")
+async def source_analyze_now(
+    request: Request,
+    source_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Analyze staged collected items for this source right now.
+
+    Enqueues an `analyze` job so the background worker drains the
+    `collected_items` queue through the same `handle_analyze` path.
+    Exhausted rows (burned `give_up_after_attempts`) are reset so the
+    operator can retry after fixing the model or raising the ceiling.
+    """
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+    tenant_id = action_tenant_id(request, tenant_id)
+
+    denied = guard_web(request, "source", "analyze", back=f"/app/sources/{source_id}")
+    if denied is not None:
+        return denied
+
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.job_manager import JobManager
+
+    with tenant_scope(tenant_id):
+        source = await Source.objects.get(id=source_id, tenant_id=tenant_id)
+        if source is None:
+            add_flash(request, "error", "Источник не найден")
+            return RedirectResponse("/app/sources", status_code=302)
+
+        # Reset attempts on exhausted rows so they are offered again.
+        reset_count = 0
+        session = new_session()
+        try:
+            async with session.begin():
+                reset_count = await CollectedItem.objects.reset_attempts(session, source_id)
+        except Exception:
+            pass
+        finally:
+            await session.close()
+
+        # Enqueue — the worker loop picks it up; no HTTP timeout.
+        await JobManager().enqueue(
+            job_type="analyze",
+            payload={"source_ids": [source.id]},
+            tenant_id=tenant_id,
+        )
+
+    name = source.name
+    if reset_count:
+        add_flash(request, "info", f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново")
+    add_flash(request, "success", f"Задача анализа по источнику «{name}» поставлена в очередь")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
 

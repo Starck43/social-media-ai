@@ -207,3 +207,20 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             {"cutoff": cutoff},
         )
         return int(result.rowcount or 0)
+
+    async def reset_attempts(self, session: Any, source_id: int) -> int:
+        """Reset `analyze_attempts` to 0 for all staged rows of a source.
+
+        Used when an operator triggers a manual retry (e.g. after fixing the LLM
+        model or raising `give_up_after_attempts`). Returns the number of rows
+        affected.
+        """
+        result = await session.execute(
+            sa_text(
+                f"UPDATE {settings.DB_SCHEMA}.collected_items "
+                "SET analyze_attempts = 0 "
+                "WHERE source_id = :source_id AND analyze_attempts > 0"
+            ),
+            {"source_id": source_id},
+        )
+        return int(result.rowcount or 0)

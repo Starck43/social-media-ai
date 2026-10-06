@@ -20,11 +20,18 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
         {% if perms and perms.can('source', 'analyze') %}
+            <form method="post" action="/app/sources/{{ source.id }}/analyze">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400" {% if is_running %}disabled{% endif %}>
+                    {% if is_running %}⏳ Выполняется…{% else %}Выполнить анализ{% endif %}
+                </button>
+            </form>
             <form method="post" action="/app/sources/{{ source.id }}/collect">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-                    Собрать сейчас
+                <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400" {% if is_running %}disabled{% endif %}>
+                    {% if is_running %}⏳ Выполняется…{% else %}Собрать сейчас{% endif %}
                 </button>
             </form>
         {% endif %}
@@ -256,14 +263,25 @@
        be missing and look like it was never collected. #}
     {% if given_up %}
         <div class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-950/20 p-4">
-            <p class="text-sm text-amber-200">
-                {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
-            </p>
-            <p class="mt-1 text-xs text-amber-300/70">
-                Сырые данные сохранены и ждут. Повторная попытка прекратится автоматически;
-                чтобы разобраться, проверьте модель этого источника или поднимите лимит попыток
-                в <code>collected_items.give_up_after_attempts</code>.
-            </p>
+            <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                    <p class="text-sm text-amber-200">
+                        {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
+                    </p>
+                    <p class="mt-1 text-xs text-amber-300/70">
+                        Сырые данные сохранены и ждут. Повторная попытка прекратится автоматически;
+                        чтобы разобраться, проверьте модель этого источника или поднимите лимит попыток
+                        в <code>collected_items.give_up_after_attempts</code>.
+                    </p>
+                </div>
+                <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                    <button class="rounded-lg border border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-800/40" {% if is_running %}disabled{% endif %}>
+                        {% if is_running %}⏳ Выполняется…{% else %}Повторить анализ{% endif %}
+                    </button>
+                </form>
+            </div>
         </div>
     {% endif %}
     {# The count per source lives in `jobs.result["per_source"]`; the analytics

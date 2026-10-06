@@ -1031,6 +1031,15 @@ class AIAnalyzer:
             dates = [item.get("date") for item in content if item.get("date")]
             date_range_dict = {"first": min(dates) if dates else None, "last": max(dates) if dates else None}
 
+        # Build user activity summary from available data
+        user_activity_summary = ""
+        if authors:
+            user_activity_summary = (
+                f"Активных пользователей: {len(authors)}. "
+                f"Всего постов: {total_posts}, реакций: {total_reactions}, "
+                f"комментариев: {total_comments}"
+            )
+
         # Calculate all statistics
         return {
             "total_posts": total_posts,
@@ -1045,6 +1054,9 @@ class AIAnalyzer:
             "engagement_rate": (total_reactions + total_comments + total_views) / total_posts if total_posts else 0,
             "date_range": date_range_dict,  # Context-aware date range
             "content_date_range": content_date_range,  # Actual post dates
+            "user_activity_summary": user_activity_summary,
+            "liked_posts_count": 0,  # Данные о лайках пользователя недоступны
+            "comments_to_others_count": 0,  # Данные о комментариях к чужим постам недоступны
         }
 
     def _make_json_serializable(self, obj):

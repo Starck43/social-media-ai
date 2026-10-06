@@ -15,17 +15,20 @@ class PromptVariables:
 	"""Registry of available variables for prompt templates."""
 	
 	TEXT_VARIABLES = {
-		'text': 'Prepared text content for analysis',
-		'platform': 'Platform name (VK, Telegram, etc.)',
-		'source_type': 'Type of source (user, group, channel, etc.)',
-		'stats': 'Content statistics dictionary',
-		'total_posts': 'Total number of posts analyzed',
-		'total_reactions': 'Total reactions count',
-		'total_comments': 'Total comments count',
-		'avg_reactions': 'Average reactions per post',
-		'avg_comments': 'Average comments per post',
-		'date_range_first': 'First date in content range',
-		'date_range_last': 'Last date in content range',
+		'text': 'Подготовленный текст для анализа',
+		'platform': 'Название платформы (VK, Telegram и т.д.)',
+		'source_type': 'Тип источника (пользователь, группа, канал и т.д.)',
+		'stats': 'Словарь со статистикой контента',
+		'total_posts': 'Общее количество проанализированных постов',
+		'total_reactions': 'Общее количество реакций',
+		'total_comments': 'Общее количество комментариев',
+		'avg_reactions': 'Среднее количество реакций на пост',
+		'avg_comments': 'Среднее количество комментариев на пост',
+		'date_range_first': 'Первая дата в диапазоне контента',
+		'date_range_last': 'Последняя дата в диапазоне контента',
+		'user_activity_summary': 'Краткая сводка активности пользователя (количество постов, комментариев, лайков)',
+		'liked_posts_count': 'Количество постов, которыми лайкнул пользователь',
+		'comments_to_others_count': 'Количество комментариев пользователя к чужим постам',
 	}
 	
 	IMAGE_VARIABLES = {
@@ -257,6 +260,9 @@ class PromptSubstitution:
 			'date_range_first': date_range.get('first', ''),
 			'date_range_last': date_range.get('last', ''),
 			'date_range': _format_date_range(date_range),
+			'user_activity_summary': stats.get('user_activity_summary', ''),
+			'liked_posts_count': stats.get('liked_posts_count', 0),
+			'comments_to_others_count': stats.get('comments_to_others_count', 0),
 		}
 	
 	@staticmethod

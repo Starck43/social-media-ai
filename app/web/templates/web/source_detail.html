@@ -20,20 +20,35 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
         {% if perms and perms.can('source', 'analyze') %}
-            <form method="post" action="/app/sources/{{ source.id }}/analyze">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400" {% if is_running %}disabled{% endif %}>
-                    {% if is_running %}⏳ Выполняется…{% else %}Выполнить анализ{% endif %}
-                </button>
-            </form>
-            <form method="post" action="/app/sources/{{ source.id }}/collect">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400" {% if is_running %}disabled{% endif %}>
-                    {% if is_running %}⏳ Выполняется…{% else %}Собрать сейчас{% endif %}
-                </button>
-            </form>
+            {% if running.collect or running.analyze %}
+                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-400" title="Анализ выполняется">
+                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <span class="ml-1">Анализ…</span>
+                </span>
+                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-400" title="Сбор выполняется">
+                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <span class="ml-1">Сбор…</span>
+                </span>
+            {% else %}
+                <form method="post" action="/app/sources/{{ source.id }}/analyze">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                    <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400">
+                        Выполнить анализ
+                    </button>
+                </form>
+                <form method="post" action="/app/sources/{{ source.id }}/collect">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                    <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                        Собрать сейчас
+                    </button>
+                </form>
+            {% endif %}
         {% endif %}
         {% if perms and perms.can('source', 'update') %}
             <button @click="openEdit = true"
@@ -274,13 +289,22 @@
                         в <code>collected_items.give_up_after_attempts</code>.
                     </p>
                 </div>
-                <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button class="rounded-lg border border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-800/40" {% if is_running %}disabled{% endif %}>
-                        {% if is_running %}⏳ Выполняется…{% else %}Повторить анализ{% endif %}
-                    </button>
-                </form>
+                {% if running.analyze %}
+                    <span class="shrink-0 rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-400" title="Анализ выполняется">
+                        <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                        <span class="ml-1">Анализ…</span>
+                    </span>
+                {% else %}
+                    <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                        <button class="rounded-lg border border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-800/40">
+                            Повторить анализ
+                        </button>
+                    </form>
+                {% endif %}
             </div>
         </div>
     {% endif %}

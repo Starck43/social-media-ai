@@ -474,6 +474,7 @@ async def source_detail(request: Request, source_id: int):
                 section="sources",
                 source=None,
                 filter_tenant_id=filter_tenant_id,
+                running={"collect": False, "analyze": False},
             )
 
         analytics = await (
@@ -565,7 +566,7 @@ async def source_detail(request: Request, source_id: int):
     given_up_label = plural(given_up, "запись", "записи", "записей")
 
     # Check whether a collect or analyze job is currently running for this source.
-    is_running = await _source_has_running_job(source.id)
+    running = await _source_has_running_job(source.id)
 
     return render(
         request,
@@ -595,19 +596,27 @@ async def source_detail(request: Request, source_id: int):
         readiness_hint=readiness_hint,
         platforms=platforms,
         source_types=source_types_list,
-        is_running=is_running,
+        running=running,
     )
-async def _source_has_running_job(source_id: int) -> bool:
-    """Whether a collect/analyze job is currently running for this source."""
+async def _source_has_running_job(source_id: int) -> dict:
+    """Whether a collect or analyze job is currently running for this source.
+
+    Returns ``{"collect": bool, "analyze": bool}`` so the template can show
+    the right label — "Сбор…" vs "Анализ…" — instead of a generic "Выполняется".
+    """
     from app.models.job import Job
 
+    result = {"collect": False, "analyze": False}
     running = await Job.objects.filter(status="running")
     for job in running:
         payload = job.payload or {}
         source_ids = payload.get("source_ids", [])
         if source_id in source_ids:
-            return True
-    return False
+            if job.job_type == "collect":
+                result["collect"] = True
+            elif job.job_type == "analyze":
+                result["analyze"] = True
+    return result
 
 
 def _mode_view(mode_key: str) -> dict:

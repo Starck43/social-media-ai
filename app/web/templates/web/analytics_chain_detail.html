@@ -74,9 +74,10 @@
                             </div>
                         {% endif %}
                         {% if step.source_info and step.source_info.source_id %}
+                            {% set src_name = source_names.get(step.source_info.source_id) %}
                             <a href="/app/sources/{{ step.source_info.source_id }}"
                                class="mt-2 inline-block text-xs text-cyan-400 hover:underline">
-                                Источник #{{ step.source_info.source_id }}
+                                {% if src_name %}Источник: {{ src_name }}{% else %}Источник #{{ step.source_info.source_id }}{% endif %}
                             </a>
                         {% endif %}
                     </div>

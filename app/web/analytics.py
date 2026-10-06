@@ -204,6 +204,16 @@ async def analytics_page(request: Request):
     )
 
 
+async def _source_names(source_ids: set[int]) -> dict[int, str]:
+    """id → name for a set of source ids, so chain views link by name."""
+    if not source_ids:
+        return {}
+    from app.models import Source
+
+    rows = await Source.objects.filter(Source.id.in_(source_ids))
+    return {s.id: s.name for s in rows}
+
+
 @router.get("/chains")
 async def analytics_chains(request: Request):
     """All theme chains with a chronological retrospective per chain.
@@ -224,6 +234,11 @@ async def analytics_chains(request: Request):
     rows = await AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None)).order_by(AIAnalytics.analysis_date)
     chain_data = TopicChainService().build_topic_chain(rows)
 
+    # Source names for every source a chain's steps touch, so the list can show
+    # "по источнику" instead of a bare #id.
+    source_ids = {step["source_info"]["source_id"] for ch in chain_data.values() for step in ch.get("evolution", []) if step.get("source_info", {}).get("source_id")}
+    names = await _source_names(source_ids)
+
     # Order chains by their latest analysis (most recent first by default).
     chains = sorted(
         chain_data.values(),
@@ -235,6 +250,7 @@ async def analytics_chains(request: Request):
         "web/analytics_chains.html",
         section="analytics",
         chains=chains,
+        source_names=names,
         total_chains=len(chains),
         sort=sort,
         sorts=CHAIN_SORTS,
@@ -256,11 +272,15 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     if chain_data is None:
         chain_data = {"chain_id": chain_id, "evolution": [], "total_analyses": 0, "date_range": {}}
 
+    source_ids = {step["source_info"]["source_id"] for step in chain_data.get("evolution", []) if step.get("source_info", {}).get("source_id")}
+    names = await _source_names(source_ids)
+
     return render(
         request,
         "web/analytics_chain_detail.html",
         section="analytics",
         chain=chain_data,
+        source_names=names,
         perms_can=perms_can,
     )
 

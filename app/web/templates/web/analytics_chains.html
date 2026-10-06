@@ -32,6 +32,21 @@
                                     · {{ chain.date_range.start }} — {{ chain.date_range.end }}
                                 {% endif %}
                             </p>
+                            {% set src_ids = chain.evolution | map(attribute='source_info') | selectattr('source_id') | map(attribute='source_id') | list | unique | list %}
+                            {% if src_ids %}
+                                <p class="mt-1.5 flex flex-wrap gap-1">
+                                    {% for sid in src_ids[:3] %}
+                                        {% set src_name = source_names.get(sid) %}
+                                        <a href="/app/sources/{{ sid }}"
+                                           class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-cyan-300">
+                                            {% if src_name %}{{ src_name }}{% else %}Источник #{{ sid }}{% endif %}
+                                        </a>
+                                    {% endfor %}
+                                    {% if src_ids|length > 3 %}
+                                        <span class="text-[11px] text-slate-600">+{{ src_ids|length - 3 }}</span>
+                                    {% endif %}
+                                </p>
+                            {% endif %}
                         </a>
                         <div class="flex shrink-0 items-center gap-2">
                             <a href="/app/analytics/chains/{{ chain.chain_id }}" class="text-xs text-cyan-400">Открыть →</a>

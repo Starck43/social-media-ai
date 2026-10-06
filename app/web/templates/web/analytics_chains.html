@@ -28,9 +28,6 @@
                                 {% if chain.date_range.start %}
                                     · {{ chain.date_range.start }} — {{ chain.date_range.end }}
                                 {% endif %}
-                                {% if chain.chain_id != chain.name %}
-                                    · <span class="font-mono">{{ chain.chain_id }}</span>
-                                {% endif %}
                             </p>
                         </a>
                         <div class="flex shrink-0 items-center gap-2">

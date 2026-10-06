@@ -7,10 +7,6 @@
             <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
             <span>·</span>
             <span>{{ chain.total_analyses }} анализ(ов)</span>
-            {% if chain.chain_id != chain.name %}
-                <span>·</span>
-                <span class="font-mono">{{ chain.chain_id }}</span>
-            {% endif %}
             {% if chain.date_range.start %}
                 <span>·</span>
                 <span>{{ chain.date_range.start }} — {{ chain.date_range.end }}</span>

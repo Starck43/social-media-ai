@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from app.models import AIAnalytics
+from app.services.ai.chain_resolver import human_chain_label
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -1185,7 +1186,15 @@ class ReportAggregator:
 
         lines = ["", "## Цепочки"]
         for chain_id, rows in sorted(by_chain.items(), key=lambda kv: -len(kv[1]))[:limit]:
-            label = next((r.chain_label for r in rows if getattr(r, "chain_label", None)), chain_id)
+            label = next(
+                (r.chain_label for r in rows if getattr(r, "chain_label", None)),
+                None,
+            )
+            if not label:
+                label = next(
+                    (human_chain_label(r.summary_data) for r in rows if human_chain_label(r.summary_data)),
+                    chain_id,
+                )
             dates = [r.analysis_date for r in rows if r.analysis_date]
             scores = []
             for r in rows:
@@ -1271,10 +1280,11 @@ class ReportAggregator:
         rows = await qs
         stats: dict[str, dict[str, Any]] = {}
         for r in rows:
-            entry = stats.setdefault(r.topic_chain_id, {"count": 0, "label": r.chain_label or r.topic_chain_id})
+            label = r.chain_label or human_chain_label(r.summary_data) or r.topic_chain_id
+            entry = stats.setdefault(r.topic_chain_id, {"count": 0, "label": label})
             entry["count"] += 1
-            if getattr(r, "chain_label", None):
-                entry["label"] = r.chain_label
+            if label:
+                entry["label"] = label
         return stats
 
     @staticmethod

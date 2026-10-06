@@ -407,7 +407,7 @@ async def get_topic_chains(
             elif len(top_topics) >= 3:
                 title = f"Темы: {', '.join(top_topics[:2])} и другие"
             else:
-                title = f"Цепочка {chain['chain_id']}"
+                title = chain.get("title") or chain.get("analysis_title") or "Цепочка тем"
 
             if chain["analyses_count"] > 5:
                 title += f" ({chain['analyses_count']} анализов)"

@@ -5,9 +5,10 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.models import LLMProvider, User
+from app.api.deps import require_model_perm
+from app.models import LLMProvider
 from app.schemas.llm_provider import LLMProviderCreate, LLMProviderList, LLMProviderResponse, LLMProviderUpdate
-from app.services.user.auth import get_authenticated_user
+from app.types import ActionType
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/llm-providers", tags=["LLM Providers"])
@@ -24,9 +25,11 @@ def _provider_response(p: LLMProvider) -> LLMProviderResponse:
 
 
 @router.post("/", response_model=LLMProviderResponse, status_code=status.HTTP_201_CREATED)
-async def create_llm_provider(request: LLMProviderCreate, current_user: User = Depends(get_authenticated_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def create_llm_provider(
+    request: LLMProviderCreate,
+    _user = Depends(require_model_perm("llmprovider", ActionType.CREATE)),
+):
+    """Create a new LLM provider."""
     try:
         data = request.model_dump()
         provider = await LLMProvider.objects.create(**data)
@@ -38,7 +41,11 @@ async def create_llm_provider(request: LLMProviderCreate, current_user: User = D
 
 
 @router.get("/", response_model=LLMProviderList)
-async def list_llm_providers(is_active: bool = None, current_user: User = Depends(get_authenticated_user)):
+async def list_llm_providers(
+    is_active: bool = None,
+    _user = Depends(require_model_perm("llmprovider", ActionType.VIEW)),
+):
+    """List all LLM providers."""
     try:
         providers = await LLMProvider.objects.filter(is_active=is_active) if is_active is not None else await LLMProvider.objects.all()
         return LLMProviderList(providers=[_provider_response(p) for p in providers], total=len(providers))
@@ -48,7 +55,11 @@ async def list_llm_providers(is_active: bool = None, current_user: User = Depend
 
 
 @router.get("/{provider_id}", response_model=LLMProviderResponse)
-async def get_llm_provider(provider_id: int, current_user: User = Depends(get_authenticated_user)):
+async def get_llm_provider(
+    provider_id: int,
+    _user = Depends(require_model_perm("llmprovider", ActionType.VIEW)),
+):
+    """Get a specific LLM provider by ID."""
     try:
         provider = await LLMProvider.objects.get(id=provider_id)
         if not provider:
@@ -62,10 +73,12 @@ async def get_llm_provider(provider_id: int, current_user: User = Depends(get_au
 
 
 @router.patch("/{provider_id}", response_model=LLMProviderResponse)
-async def update_llm_provider(provider_id: int, request: LLMProviderUpdate,
-                              current_user: User = Depends(get_authenticated_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def update_llm_provider(
+    provider_id: int,
+    request: LLMProviderUpdate,
+    _user = Depends(require_model_perm("llmprovider", ActionType.UPDATE)),
+):
+    """Update an LLM provider."""
     try:
         provider = await LLMProvider.objects.get(id=provider_id)
         if not provider:
@@ -85,9 +98,11 @@ async def update_llm_provider(provider_id: int, request: LLMProviderUpdate,
 
 
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_llm_provider(provider_id: int, current_user: User = Depends(get_authenticated_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def delete_llm_provider(
+    provider_id: int,
+    _user = Depends(require_model_perm("llmprovider", ActionType.DELETE)),
+):
+    """Delete an LLM provider."""
     try:
         provider = await LLMProvider.objects.get(id=provider_id)
         if not provider:

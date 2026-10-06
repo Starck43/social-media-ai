@@ -119,6 +119,22 @@ the API, the console and the role editor cannot drift apart. See
 `docs/ADMIN.md` for the console's mapping of these rights onto buttons, and
 `docs/TENANCY.md` for how the workspace itself is resolved.
 
+### Permission matrix by endpoint
+
+| Endpoint group | Model | Actions |
+|---|---|---|
+| `GET /users` | — | `require_platform_role(ADMIN)` |
+| `PUT/DELETE /users/{id}`, `POST /users/{id}/change-password` | `user` | `UPDATE` / `DELETE` / `UPDATE` |
+| `GET /users/me` | — | authenticated only |
+| `GET/POST/PUT/DELETE /ai/scenarios` | `agentscenario` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
+| `GET/POST/DELETE /notifications`, `POST /notifications/{id}/mark-read`, `POST /notifications/mark-all-read`, `POST /notifications/cleanup` | `notification` | `VIEW` / `CREATE` / `DELETE` / `UPDATE` / `UPDATE` / `DELETE` |
+| `POST /monitoring/collect/{source,platform,monitored}`, `GET /monitoring/analytics/source/{id}` | `source` | `UPDATE` / `VIEW` |
+| `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
+| `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
+| `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
+| `GET/POST/PATCH/DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
+| Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
+
 **Not enforced yet:** most `/api/*` endpoints authenticate but do not declare a
 model right, so any authenticated member may call them. The building blocks are
 in place — adopting a right is one `Depends(require_model_perm(...))` on the
@@ -174,7 +190,7 @@ Authorization: Bearer <token>
 ]
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `require_platform_role(ADMIN)`
 
 ### Get Current User
 
@@ -199,7 +215,9 @@ Content-Type: application/json
 }
 ```
 
-**Permissions:** superuser or the user themselves.
+**Permissions:** `user.update`
+
+Admins can update any user, users can update themselves.
 
 ### Delete User
 
@@ -210,7 +228,7 @@ Authorization: Bearer <token>
 
 **Response** `204 No Content`.
 
-**Permissions:** superuser only.
+**Permissions:** `user.delete`
 
 ### Change Password
 
@@ -231,6 +249,8 @@ Content-Type: application/json
   "detail": "Password updated successfully"
 }
 ```
+
+**Permissions:** `user.update`
 
 **Validation:** new password must be ≥8 chars, contain uppercase, lowercase, digit.
 
@@ -309,7 +329,7 @@ Content-Type: application/json
 
 ## Monitoring
 
-All monitoring endpoints require **superuser** access and run collection in
+All monitoring endpoints require authentication and run collection in
 background tasks.
 
 ### Collect from Source
@@ -335,6 +355,8 @@ Content-Type: application/json
 }
 ```
 
+**Permissions:** `source.update`
+
 ### Collect from Platform
 
 ```
@@ -349,6 +371,8 @@ Content-Type: application/json
 }
 ```
 
+**Permissions:** `source.update`
+
 ### Collect Monitored Users
 
 ```
@@ -362,12 +386,16 @@ Content-Type: application/json
 }
 ```
 
+**Permissions:** `source.update`
+
 ### Get Source Analytics
 
 ```
 GET /api/v1/monitoring/analytics/source/{source_id}
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `source.view`
 
 **Response** `200 OK`:
 ```json
@@ -397,7 +425,7 @@ Bot scenarios define how AI analyzes content from sources.
 ### Create Scenario
 
 ```
-POST /api/v1/scenarios
+POST /api/v1/ai/scenarios
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -422,12 +450,12 @@ Content-Type: application/json
 
 **Response** `201 Created`: `ScenarioResponse` object.
 
-**Permissions:** superuser only.
+**Permissions:** `agentscenario.create`
 
 ### List Scenarios
 
 ```
-GET /api/v1/scenarios?is_active=true
+GET /api/v1/ai/scenarios?is_active=true
 Authorization: Bearer <token>
 ```
 
@@ -436,17 +464,21 @@ Authorization: Bearer <token>
 |---|---|---|
 | `is_active` | bool | Filter: `true` / `false` / omit for all |
 
+**Permissions:** `agentscenario.view`
+
 ### Get Scenario
 
 ```
-GET /api/v1/scenarios/{scenario_id}
+GET /api/v1/ai/scenarios/{scenario_id}
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `agentscenario.view`
 
 ### Update Scenario
 
 ```
-PUT /api/v1/scenarios/{scenario_id}
+PUT /api/v1/ai/scenarios/{scenario_id}
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -458,16 +490,20 @@ Content-Type: application/json
 }
 ```
 
-All fields are optional (partial update). Superuser only.
+All fields are optional (partial update).
+
+**Permissions:** `agentscenario.update`
 
 ### Delete Scenario
 
 ```
-DELETE /api/v1/scenarios/{scenario_id}
+DELETE /api/v1/ai/scenarios/{scenario_id}
 Authorization: Bearer <token>
 ```
 
-Superuser only. A scenario is not owned by sources — a source does not carry a
+**Permissions:** `agentscenario.delete`
+
+A scenario is not owned by sources — a source does not carry a
 scenario (the scenario belongs to the task). Tasks referencing the scenario
 keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 
@@ -478,7 +514,7 @@ keep the FK with `ondelete=SET NULL` and fall back to the workspace default.
 ### List Notifications
 
 ```
-GET /api/v1/notifications?is_read=false&type=alert&since=2025-01-01&limit=50&offset=0
+GET /api/v1/notifications?is_read=false&notification_type=alert&since=2025-01-01&limit=50&offset=0
 Authorization: Bearer <token>
 ```
 
@@ -491,12 +527,16 @@ Authorization: Bearer <token>
 | `limit` | int | Max 100 |
 | `offset` | int | Pagination offset |
 
+**Permissions:** `notification.view`
+
 ### Get Notification Stats
 
 ```
 GET /api/v1/notifications/stats?since=2025-01-01
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `notification.view`
 
 **Response:**
 ```json
@@ -514,6 +554,8 @@ GET /api/v1/notifications/{notification_id}
 Authorization: Bearer <token>
 ```
 
+**Permissions:** `notification.view`
+
 ### Create Notification
 
 ```
@@ -530,7 +572,7 @@ Content-Type: application/json
 }
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `notification.create`
 
 ### Mark as Read
 
@@ -539,12 +581,16 @@ POST /api/v1/notifications/{notification_id}/mark-read
 Authorization: Bearer <token>
 ```
 
+**Permissions:** `notification.update`
+
 ### Mark All as Read
 
 ```
 POST /api/v1/notifications/mark-all-read
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `notification.update`
 
 **Response:**
 ```json
@@ -561,7 +607,7 @@ DELETE /api/v1/notifications/{notification_id}
 Authorization: Bearer <token>
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `notification.delete`
 
 ### Cleanup Old Notifications
 
@@ -570,7 +616,9 @@ POST /api/v1/notifications/cleanup?days=30
 Authorization: Bearer <token>
 ```
 
-Deletes read notifications older than `days` (1–365). Superuser only.
+Deletes read notifications older than `days` (1–365).
+
+**Permissions:** `notification.delete`
 
 ---
 
@@ -589,6 +637,8 @@ Authorization: Bearer <token>
 | `platform_id` | int | Filter by platform |
 | `source_type` | string | Filter by source type |
 | `since` | date | Stats since this date |
+
+**Permissions:** `source.view`
 
 **Response:**
 ```json
@@ -613,6 +663,8 @@ GET /api/v1/dashboard/sources?platform_id=1&source_type=GROUP&is_active=true&lim
 Authorization: Bearer <token>
 ```
 
+**Permissions:** `source.view`
+
 **Response:**
 ```json
 [
@@ -635,6 +687,8 @@ GET /api/v1/dashboard/analytics?source_id=1&period_type=DAY&since=2025-01-01&lim
 Authorization: Bearer <token>
 ```
 
+**Permissions:** `aianalytics.view`
+
 ### Get Source Trends
 
 ```
@@ -647,6 +701,8 @@ Authorization: Bearer <token>
 |---|---|---|---|
 | `days` | int | 30 | Days to analyze (1–365) |
 | `metric` | string | sentiment | `sentiment`, `activity`, `engagement` |
+
+**Permissions:** `source.view`
 
 **Response:**
 ```json
@@ -666,33 +722,34 @@ GET /api/v1/dashboard/notifications/recent?limit=10
 Authorization: Bearer <token>
 ```
 
+**Permissions:** `notification.view`
+
 ### Get Topic Chains
 
 ```
 GET /api/v1/dashboard/topic-chains?source_id=1&limit=50
+Authorization: Bearer <token>
 ```
 
-No auth required. Returns topic chain summaries with source info and topics.
+**Permissions:** `aianalytics.view`
 
 ### Get Topic Chain Details
 
 ```
 GET /api/v1/dashboard/topic-chains/{chain_id}
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 ### Get Topic Chain Evolution
 
 ```
 GET /api/v1/dashboard/topic-chains/{chain_id}/evolution
+Authorization: Bearer <token>
 ```
 
-### Get Scenarios List
-
-```
-GET /api/v1/dashboard/scenarios
-```
-
-Returns active scenarios (no auth required).
+**Permissions:** `aianalytics.view`
 
 ---
 
@@ -704,7 +761,10 @@ All aggregation endpoints use `ReportAggregator` and require authentication.
 
 ```
 GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&days=7&group_by=day
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 **Response:**
 ```json
@@ -730,7 +790,10 @@ GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&days=7&gr
 
 ```
 GET /api/v1/dashboard/analytics/aggregate/top-topics?source_id=1&days=7&limit=10
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 **Response:**
 ```json
@@ -752,7 +815,10 @@ GET /api/v1/dashboard/analytics/aggregate/top-topics?source_id=1&days=7&limit=10
 
 ```
 GET /api/v1/dashboard/analytics/aggregate/llm-stats?source_id=1&days=30
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 **Response:**
 ```json
@@ -783,13 +849,19 @@ GET /api/v1/dashboard/analytics/aggregate/llm-stats?source_id=1&days=30
 
 ```
 GET /api/v1/dashboard/analytics/aggregate/content-mix?source_id=1&days=7
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 ### Engagement Metrics
 
 ```
 GET /api/v1/dashboard/analytics/aggregate/engagement?source_id=1&days=7
+Authorization: Bearer <token>
 ```
+
+**Permissions:** `aianalytics.view`
 
 ---
 
@@ -798,7 +870,7 @@ GET /api/v1/dashboard/analytics/aggregate/engagement?source_id=1&days=7
 ### Create Provider
 
 ```
-POST /api/v1/llm-providers/
+POST /api/v1/llm/llm-providers/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -813,26 +885,30 @@ Content-Type: application/json
 }
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `llmprovider.create`
 
 ### List Providers
 
 ```
-GET /api/v1/llm-providers/?is_active=true
+GET /api/v1/llm/llm-providers/?is_active=true
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `llmprovider.view`
 
 ### Get Provider
 
 ```
-GET /api/v1/llm-providers/{provider_id}
+GET /api/v1/llm/llm-providers/{provider_id}
 Authorization: Bearer <token>
 ```
+
+**Permissions:** `llmprovider.view`
 
 ### Update Provider
 
 ```
-PATCH /api/v1/llm-providers/{provider_id}
+PATCH /api/v1/llm/llm-providers/{provider_id}
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -841,18 +917,331 @@ Content-Type: application/json
 }
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `llmprovider.update`
 
 ### Delete Provider
 
 ```
-DELETE /api/v1/llm-providers/{provider_id}
+DELETE /api/v1/llm/llm-providers/{provider_id}
 Authorization: Bearer <token>
 ```
 
-**Permissions:** superuser only.
+**Permissions:** `llmprovider.delete`
 
 ---
+
+## Sources
+
+### List Sources
+
+```
+GET /api/v1/sources
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`:
+```json
+[
+  {
+    "id": 1,
+    "name": "My VK Group",
+    "platform_id": 1,
+    "source_type": "GROUP",
+    "external_id": "group_123456",
+    "params": {},
+    "is_active": true,
+    "last_checked": "2025-10-15T10:00:00",
+    "last_item_id": 999,
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00"
+  }
+]
+```
+
+**Permissions:** `source.view`
+
+### Get Source
+
+```
+GET /api/v1/sources/{source_id}
+Authorization: Bearer <token>
+```
+
+**Permissions:** `source.view`
+
+### Create Source
+
+```
+POST /api/v1/sources
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "platform_id": 1,
+  "name": "My VK Group",
+  "source_type": "GROUP",
+  "external_id": "group_123456",
+  "params": {}
+}
+```
+
+**Response** `201 Created`.
+
+**Permissions:** `source.create`
+
+### Update Source
+
+```
+PATCH /api/v1/sources/{source_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "is_active": false
+}
+```
+
+**Permissions:** `source.update`
+
+### Delete Source
+
+```
+DELETE /api/v1/sources/{source_id}
+Authorization: Bearer <token>
+```
+
+**Response** `204 No Content`.
+
+**Permissions:** `source.delete`
+
+## Tasks
+
+### List Tasks
+
+```
+GET /api/v1/tasks
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`:
+```json
+[
+  {
+    "id": 1,
+    "name": "Daily Sentiment",
+    "cron_expr": "0 9 * * *",
+    "job_type": "collect_and_analyze",
+    "payload": {},
+    "is_active": true,
+    "next_run_at": "2025-10-16T09:00:00",
+    "last_run_at": "2025-10-15T09:00:00",
+    "last_status": "success",
+    "last_error": null,
+    "agent_scenario_id": 1,
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00"
+  }
+]
+```
+
+**Permissions:** `agenttask.view`
+
+### Get Task
+
+```
+GET /api/v1/tasks/{task_id}
+Authorization: Bearer <token>
+```
+
+**Permissions:** `agenttask.view`
+
+### Create Task
+
+```
+POST /api/v1/tasks
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Daily Sentiment",
+  "cron_expr": "0 9 * * *",
+  "job_type": "collect_and_analyze",
+  "payload": {},
+  "agent_scenario_id": 1,
+  "is_active": true,
+  "source_ids": [1, 2]
+}
+```
+
+**Response** `201 Created`.
+
+**Permissions:** `agenttask.create`
+
+### Update Task
+
+```
+PATCH /api/v1/tasks/{task_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "is_active": false
+}
+```
+
+**Permissions:** `agenttask.update`
+
+### Delete Task
+
+```
+DELETE /api/v1/tasks/{task_id}
+Authorization: Bearer <token>
+```
+
+**Response** `204 No Content`.
+
+**Permissions:** `agenttask.delete`
+
+### Pause/Resume Task
+
+```
+PATCH /api/v1/tasks/{task_id}/pause?resume=true
+Authorization: Bearer <token>
+```
+
+Set `resume=true` to resume, `resume=false` (default) to pause.
+
+**Permissions:** `agenttask.update`
+
+### Run Task (by ID)
+
+```
+POST /api/v1/tasks/{task_id}/run
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "payload": {"extra_param": "value"}
+}
+```
+
+**Response** `200 OK`:
+```json
+{
+  "job_id": 42,
+  "task_id": 1,
+  "status": "success",
+  "result": {...},
+  "error": null
+}
+```
+
+**Permissions:** `agenttask.update`
+
+### Run One-off Task
+
+```
+POST /api/v1/tasks/run
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "job_type": "collect_and_analyze",
+  "payload": {},
+  "source_ids": [1],
+  "scenario_id": 1
+}
+```
+
+Creates a temporary `@once` task and runs it immediately.
+
+**Permissions:** `agenttask.update`
+
+## Credentials
+
+### List Credentials
+
+```
+GET /api/v1/credentials
+Authorization: Bearer <token>
+```
+
+Returns the current user's personal credentials (secrets are encrypted, never returned).
+
+**Permissions:** `credential.view`
+
+### Disable Credential
+
+```
+PATCH /api/v1/credentials/{credential_id}/disable
+Authorization: Bearer <token>
+```
+
+Deactivates a credential (row kept for audit).
+
+**Permissions:** `credential.update`
+
+### Login Credential (interactive)
+
+```
+POST /api/v1/credentials/login
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "platform": "telegram"
+}
+```
+
+Initiates interactive login for a platform (e.g. telegram MTProto). Only `telegram` is supported.
+
+**Response** `201 Created`: `CredentialResponse` object.
+
+**Permissions:** `credential.configure`
+
+### OAuth Credential
+
+```
+POST /api/v1/credentials/oauth
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "platform": "vk"
+}
+```
+
+Initiates OAuth flow for a platform (e.g. VK PKCE). Only `vk` is supported.
+
+**Response** `200 OK`:
+```json
+{
+  "authorize_url": "https://vk.com/...",
+  "tenant_id": 1
+}
+```
+
+**Permissions:** `credential.configure`
+
+### Test Credentials
+
+```
+GET /api/v1/credentials/test
+Authorization: Bearer <token>
+```
+
+Tests all platform credentials and reports status.
+
+**Response** `200 OK`:
+```json
+[
+  {"platform": "vk", "source": "api_hash", "status": "ok"},
+  {"platform": "telegram", "source": "api_hash", "status": "ok"},
+  {"platform": "telegram", "source": "mtproto", "status": "ok (bot @...)}
+]
+```
+
+**Permissions:** `credential.view`
 
 ## Error Responses
 

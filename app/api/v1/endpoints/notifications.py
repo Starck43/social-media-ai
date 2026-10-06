@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.deps import require_model_perm
 from app.models import User, Notification
-from app.services.user.auth import get_authenticated_user
 from app.services.notifications.service import notify
-from app.types import NotificationType
+from app.types import NotificationType, ActionType
 from app.schemas.notification import (
     NotificationResponse,
     NotificationCreate,
@@ -27,24 +27,14 @@ async def list_notifications(
     since: Optional[datetime] = Query(None, description="Show notifications since this date"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(get_authenticated_user),
+    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
 ):
-    """
-    List notifications with filters.
-    
-    Filters:
-    — is_read: Filter by read status
-    — notification_type: Filter by type
-    — since: Show notifications created after this date
-    — limit: Max amount notifications to return
-    — offset: Pagination offset
-    """
+    """List notifications with optional filters."""
     logger.info(
         f"User {current_user.username} listing notifications "
         f"(is_read={is_read}, type={notification_type}, since={since})"
     )
 
-    # Build query
     query = Notification.objects.filter()
 
     if is_read is not None:
@@ -56,7 +46,6 @@ async def list_notifications(
     if since:
         query = query.filter(created_at__gte=since)
 
-    # Apply ordering and pagination
     notifications = await (
         query.order_by(Notification.created_at.desc())
         .offset(offset)
@@ -81,16 +70,11 @@ async def list_notifications(
 @router.get("/notifications/stats", response_model=NotificationStats)
 async def get_notification_stats(
     since: Optional[datetime] = Query(None, description="Stats since this date"),
-    current_user: User = Depends(get_authenticated_user),
+    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
 ):
-    """
-    Get notification statistics.
-    
-    Returns total count, unread count, and breakdown by type.
-    """
+    """Get notification statistics."""
     logger.info(f"User {current_user.username} requesting notification stats")
 
-    # Build query
     query = Notification.objects.filter()
     if since:
         query = query.filter(created_at__gte=since)
@@ -100,7 +84,6 @@ async def get_notification_stats(
     total = len(all_notifications)
     unread = len([n for n in all_notifications if not n.is_read])
 
-    # Count by type
     by_type = {}
     for n in all_notifications:
         ntype = str(n.notification_type) if n.notification_type else "unknown"
@@ -111,7 +94,8 @@ async def get_notification_stats(
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
 async def get_notification(
-    notification_id: int, current_user: User = Depends(get_authenticated_user)
+    notification_id: int,
+    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
 ):
     """Get a specific notification by ID."""
     notification = await Notification.objects.get(id=notification_id)
@@ -138,19 +122,10 @@ async def get_notification(
 
 @router.post("/notifications", response_model=NotificationResponse)
 async def create_notification(
-    request: NotificationCreate, current_user: User = Depends(get_authenticated_user)
+    request: NotificationCreate,
+    current_user: User = Depends(require_model_perm("notification", ActionType.CREATE)),
 ):
-    """
-    Create a new notification.
-    
-    Admin access required.
-    """
-    if not current_user.is_superuser:
-        logger.warning(
-            f"User {current_user.username} attempted to create notification without permission"
-        )
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+    """Create a new notification."""
     logger.info(
         f"User {current_user.username} creating notification: {request.title} "
         f"(type={request.notification_type})"
@@ -180,7 +155,8 @@ async def create_notification(
 
 @router.post("/notifications/{notification_id}/mark-read")
 async def mark_notification_as_read(
-    notification_id: int, current_user: User = Depends(get_authenticated_user)
+    notification_id: int,
+    current_user: User = Depends(require_model_perm("notification", ActionType.UPDATE)),
 ):
     """Mark a notification as read."""
     notification = await Notification.objects.get(id=notification_id)
@@ -199,7 +175,9 @@ async def mark_notification_as_read(
 
 
 @router.post("/notifications/mark-all-read")
-async def mark_all_as_read(current_user: User = Depends(get_authenticated_user)):
+async def mark_all_as_read(
+    current_user: User = Depends(require_model_perm("notification", ActionType.UPDATE)),
+):
     """Mark all unread notifications as read."""
     unread = await Notification.objects.filter(is_read=False)
 
@@ -215,19 +193,10 @@ async def mark_all_as_read(current_user: User = Depends(get_authenticated_user))
 
 @router.delete("/notifications/{notification_id}")
 async def delete_notification(
-    notification_id: int, current_user: User = Depends(get_authenticated_user)
+    notification_id: int,
+    current_user: User = Depends(require_model_perm("notification", ActionType.DELETE)),
 ):
-    """
-    Delete a notification.
-    
-    Admin access required.
-    """
-    if not current_user.is_superuser:
-        logger.warning(
-            f"User {current_user.username} attempted to delete notification without permission"
-        )
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+    """Delete a notification."""
     notification = await Notification.objects.get(id=notification_id)
 
     if not notification:
@@ -243,19 +212,9 @@ async def delete_notification(
 @router.post("/notifications/cleanup")
 async def cleanup_old_notifications(
     days: int = Query(30, ge=1, le=365, description="Delete notifications older than X days"),
-    current_user: User = Depends(get_authenticated_user),
+    current_user: User = Depends(require_model_perm("notification", ActionType.DELETE)),
 ):
-    """
-    Delete old notifications.
-    
-    Admin access required. Deletes read notifications older than specified days.
-    """
-    if not current_user.is_superuser:
-        logger.warning(
-            f"User {current_user.username} attempted cleanup without permission"
-        )
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+    """Delete old read notifications older than specified days."""
     cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
     old_notifications = await Notification.objects.filter(

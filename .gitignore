@@ -50,6 +50,7 @@ logs/
 # Agent workspace (local-only, never commit)
 .agent/
 .gigacode/
+.kilo/
 
 # Backup artifacts
 *.backup

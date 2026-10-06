@@ -68,6 +68,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     # Chains: group ai_analytics rows by topic_chain_id (Phase 4 display)
     from datetime import date, timedelta
     from app.models import AIAnalytics
+    from app.services.ai.chain_resolver import human_chain_label
 
     chain_query = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
     if days is not None:
@@ -82,7 +83,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
         if cid not in chains_map:
             chains_map[cid] = {
                 "chain_id": cid,
-                "chain_label": row.chain_label or cid,
+                "chain_label": row.chain_label or human_chain_label(row.summary_data) or cid,
                 "entry_count": 0,
                 "first_date": None,
                 "last_date": None,

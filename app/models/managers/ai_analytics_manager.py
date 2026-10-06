@@ -258,6 +258,8 @@ class AIAnalyticsManager(BaseManager):
 
         rows = await q.order_by(self.model.topic_chain_id, self.model.analysis_date.desc())
 
+        from app.services.ai.chain_resolver import human_chain_label
+
         by_chain: dict[str, dict[str, Any]] = {}
         for row in rows:
             cid = row.topic_chain_id
@@ -266,7 +268,7 @@ class AIAnalyticsManager(BaseManager):
             if cid not in by_chain:
                 by_chain[cid] = {
                     "topic_chain_id": cid,
-                    "chain_label": row.chain_label or cid,
+                    "chain_label": row.chain_label or human_chain_label(row.summary_data) or cid,
                     "total_analyses": 0,
                     "first_date": row.analysis_date.isoformat() if row.analysis_date else None,
                     "last_date": None,

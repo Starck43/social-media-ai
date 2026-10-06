@@ -173,10 +173,19 @@ class TopicChainService:
 					}
 				})
 
-			# Human-readable chain name = the agent's earliest analysis title
-			# in this chain, so a freshly created chain gets a name the moment
-			# its first analysis succeeds. Falls back to the raw chain_id.
-			name = next((s["analysis_title"] for s in chain_evolution if s.get("analysis_title")), chain_id)
+			# Human-readable chain name: the explicit chain_label when present
+			# (the analyzer's `_resolve_chain_label` / `resolve_chain` writes it),
+			# else the agent's earliest analysis title in this chain, so a freshly
+			# created chain gets a name the moment its first analysis succeeds.
+			# Falls back to the raw chain_id for legacy rows.
+			labeled = next((a.chain_label for a in sorted_analytics if a.chain_label), None)
+			if labeled:
+				name = labeled
+			else:
+				name = next(
+					(s["analysis_title"] for s in chain_evolution if s.get("analysis_title")),
+					chain_id,
+				)
 
 			result[chain_id] = {
 				"chain_id": chain_id,

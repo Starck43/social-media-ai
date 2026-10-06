@@ -20,6 +20,32 @@ def _normalize(text: str) -> str:
     return " ".join(cleaned.split())[:20]
 
 
+def human_chain_label(summary_data: dict | None) -> str | None:
+    """Human-readable chain label from a stored `summary_data` document.
+
+    Handles both the current contract (topics under
+    `multi_llm_analysis.text_analysis.parsed`) and the legacy layout (topics
+    directly under `multi_llm_analysis.text_analysis`, written before the
+    JSON schema gained `parsed`). Prefers the top topic, then any analysis
+    title, then returns None so callers fall back to the chain id.
+    """
+    if not summary_data:
+        return None
+    text_analysis = (summary_data.get("multi_llm_analysis") or {}).get("text_analysis") or {}
+    parsed = text_analysis.get("parsed") or {}
+    topics = parsed.get("main_topics") or text_analysis.get("main_topics") or []
+    if topics:
+        return str(topics[0]).strip()[:255]
+    title = (
+        parsed.get("analysis_title")
+        or text_analysis.get("analysis_title")
+        or summary_data.get("analysis_title")
+    )
+    if title:
+        return str(title).strip()[:255]
+    return None
+
+
 def resolve_chain(
     tenant_id: int,
     source_id: int,
@@ -74,7 +100,7 @@ def resolve_chain(
             summary = row.summary_data or {}
             existing_hint = summary.get("topic_hint") or ""
             if _normalize(existing_hint) == normalized_hint:
-                return row.topic_chain_id, row.chain_label or row.topic_chain_id
+                return row.topic_chain_id, row.chain_label or human_chain_label(summary) or row.topic_chain_id
 
         return None
 
@@ -128,7 +154,7 @@ async def resolve_chain_async(
             .get("topic_hint")
         ) or summary.get("topic_hint") or ""
         if _normalize(existing_hint) == normalized_hint:
-            return row.topic_chain_id, row.chain_label or row.topic_chain_id
+            return row.topic_chain_id, row.chain_label or human_chain_label(summary) or row.topic_chain_id
 
     new_id = f"ch_{uuid.uuid4().hex[:12]}"
     return new_id, topic_hint[:255]

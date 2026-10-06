@@ -46,6 +46,22 @@ The `_prepare_variables()` function in `prompts.py` merges all three, so a
 prompt can use `{brands}` directly or reference `{payload_instruction}` for a
 pre-rendered composite line.
 
+### Scope keys for relevance filtering
+
+Two **scenario-level** (top-level, not per-analysis-type) scope keys control
+whether `_save_analysis` drops noise before writing a row — see
+[ANALYTICS_CHAINS.md](./ANALYTICS_CHAINS.md):
+
+| Key | Type | Default | Effect |
+|-----|------|---------|--------|
+| `relevance_filter` | `bool` | `false` | When `true`, rows whose LLM answer says `is_meaningful == false`, or whose `confidence < min_confidence`, are not saved |
+| `min_confidence` | `number` | `0.6` | Confidence threshold used when `relevance_filter` is on |
+
+The schema fields behind them — `topic_hint`, `confidence`, `is_meaningful` —
+are `COMMON_FIELDS` (always asked for); `entities` is a per-type field on
+`topics`/`trends`. Templates `brand_monitoring` and `customer_support` ship with
+the filter enabled.
+
 ---
 
 **Question:** Is the JSON response structure auto-generated or hand-written?

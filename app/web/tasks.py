@@ -675,8 +675,8 @@ async def task_detail(request: Request, task_id: int):
 			# The running job may be outside the recent-10 window.
 			running_job = await Job.objects.filter(
 				agent_task_id=task_id,
-			).where(Job.status.in_(["pending", "running"]))
-			running_job = await running_job.first()
+				status__in=["pending", "running"],
+			).first()
 			if running_job is not None:
 				running_job_id = running_job.id
 
@@ -916,8 +916,8 @@ async def task_run_now(
 
 	existing = await Job.objects.filter(
 		agent_task_id=task_id,
-	).where(Job.status.in_(["pending", "running"]))
-	existing = await existing.first()
+		status__in=["pending", "running"],
+	).first()
 	if existing is not None:
 		add_flash(
 			request,

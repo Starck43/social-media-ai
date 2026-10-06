@@ -14,6 +14,7 @@ polling a job.
 from __future__ import annotations
 
 import json as json_mod
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -235,37 +236,47 @@ async def chat_send(
     # No permission gate here: talking to the agent is a read-ish action every
     # workspace member may do, and the agent's own tool layer already applies
     # `WebPerms`-equivalent rules (owner-only writes via `Resolution.is_owner`).
-    reply = await handle_web_message(
-        text,
-        tenant_id=tenant_id,
-        user_id=user.id,
-        role_id=_membership_role_id(request),
-        role_codename=_membership_role(request),
-    )
-
-    if reply is None:
-        if is_ajax:
-            return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
-        add_flash(request, "error", "Агент не ответил — попробуйте ещё раз")
-
-    raw_messages = await _transcript(user.id)
-    enriched = [_enrich_message(msg) for msg in raw_messages]
-
-    if is_ajax:
-        return JSONResponse(
-            {
-                "messages": enriched,
-                "is_owner": _membership_role(request) == "owner",
-            }
+    try:
+        reply = await handle_web_message(
+            text,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            role_id=_membership_role_id(request),
+            role_codename=_membership_role(request),
         )
 
-    return render(
-        request,
-        "web/chat.html",
-        section="chat",
-        messages=enriched,
-        is_owner=_membership_role(request) == "owner",
-    )
+        if reply is None:
+            if is_ajax:
+                return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
+            add_flash(request, "error", "Агент не ответил — попробуйте ещё раз")
+
+        raw_messages = await _transcript(user.id)
+        enriched = [_enrich_message(msg) for msg in raw_messages]
+
+        if is_ajax:
+            return JSONResponse(
+                {
+                    "messages": enriched,
+                    "is_owner": _membership_role(request) == "owner",
+                }
+            )
+
+        return render(
+            request,
+            "web/chat.html",
+            section="chat",
+            messages=enriched,
+            is_owner=_membership_role(request) == "owner",
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Chat POST failed")
+        if is_ajax:
+            return JSONResponse(
+                {"error": "Не удалось обработать сообщение. Подробности в логах."},
+                status_code=500,
+            )
+        add_flash(request, "error", "Не удалось обработать сообщение. Подробности в логах.")
+        return RedirectResponse("/app/chat", status_code=302)
 
 
 async def _transcript(user_id: int) -> list:

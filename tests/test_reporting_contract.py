@@ -54,11 +54,13 @@ SCHEMA_FIELDS = {
     "hashtags": "hashtags",
 }
 
-# Read by an aggregation outside `DIGEST_SPECIALIZED` (see above).
+# Read by an aggregation outside `DIGEST_SPECIALIZED` (see above), or by the
+# chains tool/grouping rather than a specialized digest section.
 FIELDS_OWNED_ELSEWHERE = {
     "sentiment_score",
     "sentiment_label",
     "main_topics",
+    "entities",
     "keywords",
     "likes",
     "comments",
@@ -361,3 +363,19 @@ async def test_every_specialized_method_accepts_scenario_id():
         params = inspect.signature(method).parameters
         assert "scenario_id" in params, name
         assert "days" in params, name
+
+
+# ── chain fields the schema now asks for ──────────────────────────────────────
+
+
+def test_common_fields_include_the_chain_fields():
+    """COMMON_FIELDS carries the chain of relevance fields the analyzer reads
+    for `_save_analysis` filtering and `_resolve_chain_label`."""
+    for field in ("topic_hint", "confidence", "is_meaningful"):
+        assert field in JSONSchemaBuilder.COMMON_FIELDS, field
+
+
+def test_entities_appear_in_the_schema_for_types_that_need_it():
+    schema = JSONSchemaBuilder.build_schema(["topics", "trends"], {})
+    assert "entities" in schema
+    assert "person|brand|org" in schema["entities"]

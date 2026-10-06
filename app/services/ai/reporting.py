@@ -941,6 +941,14 @@ class ReportAggregator:
         if section:
             lines.extend(section)
 
+        # Theme chains — an independent cross-mode grouping. A chain (one
+        # `topic_chain_id`) groups the analyses of one ongoing theme/source/user
+        # over time, so it answers "what kept happening across the period" in a
+        # way the mode grouping (which re-reads topics from each row) does not.
+        chains_section = self._group_by_chains(analytics)
+        if chains_section:
+            lines.extend(chains_section)
+
         for name, label, method_name in self._specialized_sections():
             if enabled is not None and name not in enabled:
                 continue
@@ -958,6 +966,12 @@ class ReportAggregator:
         dynamics = await self._brief_dynamics(days, source_ids, scenario_id)
         if dynamics:
             lines.extend(dynamics)
+
+        # Chain movement against the preceding window: which chains are new and
+        # which continued with more entries.
+        chain_dynamics = await self._chain_dynamics(days, source_ids, scenario_id)
+        if chain_dynamics:
+            lines.extend(chain_dynamics)
 
         return "\n".join(lines)
 
@@ -1149,6 +1163,115 @@ class ReportAggregator:
             )
             lines.append(f"- **{author}** — {len(rows)} анализ(ов), {posts} постов, {messages} сообщений")
         return lines
+
+    def _group_by_chains(self, analytics, limit: int = 8) -> list[str]:
+        """Top chains by entry count — the "Цепочки" section of the brief.
+
+        Groups the period's analytics by `topic_chain_id` (the only cross-row
+        link, per the analytics-chains contract). The label comes from the row's
+        `chain_label` (falls back to the raw chain id); each entry reports the
+        date range and average sentiment of the chain in the period.
+        """
+        by_chain: dict[str, list[Any]] = defaultdict(list)
+        for a in analytics:
+            if a.topic_chain_id:
+                by_chain[a.topic_chain_id].append(a)
+        if not by_chain:
+            return []
+
+        lines = ["", "## Цепочки"]
+        for chain_id, rows in sorted(by_chain.items(), key=lambda kv: -len(kv[1]))[:limit]:
+            label = next((r.chain_label for r in rows if getattr(r, "chain_label", None)), chain_id)
+            dates = [r.analysis_date for r in rows if r.analysis_date]
+            scores = []
+            for r in rows:
+                sent = self._extract_sentiment(r.summary_data)
+                if sent and sent.get("score") is not None:
+                    scores.append(float(sent["score"]))
+            span = ""
+            if dates:
+                span = f" ({min(dates).isoformat()} — {max(dates).isoformat()})"
+            mood = f", ср. тональность {sum(scores) / len(scores):.2f}" if scores else ""
+            lines.append(f"- **{label}** — {len(rows)} записей{span}{mood}")
+        return lines
+
+    async def _chain_dynamics(
+        self,
+        days: int,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ) -> list[str]:
+        """New vs continued chains, compared against the preceding window.
+
+        A chain that has entries in the current period but none in the one
+        before is "new"; a chain present in both windows whose current count is
+        higher is "continued" (with the delta). Mirrors the dynamics section's
+        non-overlapping windows.
+        """
+        from datetime import timedelta
+
+        end = date.today()
+        start = end - timedelta(days=days - 1)
+        prev_end = start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=days - 1)
+
+        current = await self._chain_stats(start, end, source_ids, scenario_id)
+        previous = await self._chain_stats(prev_start, prev_end, source_ids, scenario_id)
+        if not current:
+            return []
+
+        def _label(cid: str) -> str:
+            return current[cid]["label"] or cid
+
+        lines = ["", "## Динамика цепочек"]
+        wrote = False
+
+        new_chains = sorted(
+            ((cid, n["count"]) for cid, n in current.items() if cid not in previous),
+            key=lambda kv: -kv[1],
+        )[:5]
+        for cid, n in new_chains:
+            lines.append(f"- Новая цепочка: **{_label(cid)}** ({n} записей)")
+            wrote = True
+
+        continued = sorted(
+            (
+                (cid, n["count"])
+                for cid, n in current.items()
+                if cid in previous and n["count"] > previous[cid]["count"]
+            ),
+            key=lambda kv: kv[1] - previous[kv[0]]["count"],
+            reverse=True,
+        )[:5]
+        for cid, n in continued:
+            lines.append(f"- Продолжение: **{_label(cid)}** (+{n - previous[cid]['count']} записей)")
+            wrote = True
+
+        return lines if wrote else []
+
+    async def _chain_stats(
+        self,
+        start: date,
+        end: date,
+        source_ids: Optional[list[int]],
+        scenario_id: Optional[int],
+    ) -> dict[str, dict[str, Any]]:
+        """Chain id → {count, label} for one date range (tenant-scoped read)."""
+        qs = AIAnalytics.objects.filter(
+            AIAnalytics.topic_chain_id.isnot(None),
+            analysis_date__gte=start,
+            analysis_date__lte=end,
+        )
+        if source_ids:
+            qs = qs.filter(source_id__in=source_ids)
+        rows = await qs
+        stats: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            entry = stats.setdefault(r.topic_chain_id, {"count": 0, "label": r.chain_label or r.topic_chain_id})
+            entry["count"] += 1
+            if getattr(r, "chain_label", None):
+                entry["label"] = r.chain_label
+        return stats
 
     @staticmethod
     def _chain_author(chain_id: Optional[str]) -> Optional[str]:

@@ -4,7 +4,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
 from app.core.config import settings
+from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
+from app.services.ai.chain_resolver import resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
 from app.services.ai.llm_client import LLMClientFactory
@@ -35,6 +37,9 @@ class AIAnalyzer:
 
     def __init__(self):
         self.theme_matcher = ThemeMatcher()
+        # Rows skipped by the scenario's relevance_filter since this instance was
+        # created — the job handler reads it off to report in the job result.
+        self.filtered_skipped = 0
 
     async def analyze_content(
         self,
@@ -269,21 +274,32 @@ class AIAnalyzer:
             unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
 
             # Auto-generate topic_chain_id if not provided
-            # NEW LOGIC: One source + one scenario = one chain (timeline by dates)
+            # Phase 1: use resolve_chain_async for proper lookup by topic_hint
+            main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get(
+                "main_topics"
+            ) or []
+            # Extract topic_hint from LLM response (Phase 1: normalize + lookup existing)
+            text_parsed = (analysis_results.get("text_analysis", {}) or {}).get("parsed") or {}
+            topic_hint: str | None = text_parsed.get("topic_hint")
+            if unified_summary:
+                topic_hint = unified_summary.get("topic_hint") or topic_hint
+
             if not topic_chain_id:
-                # The signature is (source, main_topics, agent_scenario): passing
-                # only the scenario bound it to `main_topics`, and the body reads
-                # `main_topics[0]` — so every analysis raised "'AgentScenario'
-                # object is not subscriptable", returned None, and stored
-                # nothing. That is why this workspace had no content hashes at
-                # all and every re-collection looked brand new.
-                main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get(
-                    "main_topics"
-                ) or []
-                topic_chain_id = self._generate_topic_chain_id(
-                    source, main_topics, agent_scenario, analyze_type=analyze_type
-                )
-                logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
+                if topic_hint:
+                    # resolve_chain does normalization + lookup in ai_analytics by topic_hint
+                    topic_chain_id, chain_label = await resolve_chain_async(
+                        source.tenant_id, source.id, topic_hint
+                    )
+                    logger.info(f"Chain resolved: {topic_chain_id} for source {source.id} via hint={topic_hint!r}")
+                else:
+                    # Fallback to source+scenario-based ID (no topic_hint in LLM response)
+                    topic_chain_id = self._generate_topic_chain_id(
+                        source, main_topics, agent_scenario, analyze_type=analyze_type
+                    )
+                    chain_label = self._resolve_chain_label(main_topics, analysis_results)
+                    logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
+            else:
+                chain_label = self._resolve_chain_label(main_topics, analysis_results)
 
             # Save comprehensive analysis
             analysis = await self._save_analysis(
@@ -294,8 +310,9 @@ class AIAnalyzer:
                 platform_name,
                 agent_scenario,
                 topic_chain_id,
-                parent_analysis_id,
-                analysis_date,
+                chain_label,
+                parent_analysis_id=parent_analysis_id,
+                analysis_date=analysis_date,
                 content_hash=batch_hash(content),
                 content_hashes=[item_hash(i) for i in content],
             )
@@ -581,7 +598,11 @@ class AIAnalyzer:
 
             if similar_analytics and similar_analytics.topic_chain_id:
                 # Link to existing theme chain
-                await AIAnalytics.objects.update_by_id(analysis.id, topic_chain_id=similar_analytics.topic_chain_id)
+                await AIAnalytics.objects.update_by_id(
+                    analysis.id,
+                    topic_chain_id=similar_analytics.topic_chain_id,
+                    chain_label=similar_analytics.chain_label or similar_analytics.topic_chain_id,
+                )
                 logger.info(
                     f"Auto-linked analysis {analysis.id} to existing theme chain: "
                     f"{similar_analytics.topic_chain_id}"
@@ -1210,6 +1231,21 @@ class AIAnalyzer:
         else:
             return f"src_{source.id}_{normalized_topic}"
 
+    @staticmethod
+    def _resolve_chain_label(main_topics: list[str], analysis_results: dict[str, Any]) -> str:
+        """Human-readable name for the topic chain.
+
+        Prefers the top ``main_topics`` entry (the theme the chain follows),
+        falls back to the text analysis ``analysis_title``, then to a generic
+        label. Truncated so it fits the ``chain_label`` column.
+        """
+        if main_topics:
+            label = str(main_topics[0]).strip()
+        else:
+            title = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("analysis_title")
+            label = str(title).strip() if title else "Общая тема"
+        return label[:255]
+
     async def _save_analysis(
         self,
         analysis_results: dict[str, Any],
@@ -1219,11 +1255,12 @@ class AIAnalyzer:
         platform_name: str,
         agent_scenario: Optional["AgentScenario"] = None,
         topic_chain_id: Optional[str] = None,
+        chain_label: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,
         analysis_date: Optional[date] = None,
         content_hash: Optional[str] = None,
         content_hashes: Optional[list[str]] = None,
-    ) -> AIAnalytics:
+    ) -> Any | None:
         """Save comprehensive analysis results to database."""
         from datetime import date as date_class
         from datetime import datetime
@@ -1231,6 +1268,29 @@ class AIAnalyzer:
         # Use provided date or default to today
         if analysis_date is None:
             analysis_date = date_class.today()
+
+        # Relevance filtering (Phase 3): when the scenario's scope asks for it,
+        # drop rows the model itself flagged as noise (`is_meaningful == false`)
+        # or too uncertain (`confidence < min_confidence`). Happens BEFORE any
+        # write, so a filtered day leaves no row behind and stays unanalysed.
+        if agent_scenario is not None:
+            scope = agent_scenario.scope or {}
+            if scope.get("relevance_filter"):
+                text_parsed = (analysis_results.get("text_analysis") or {}).get("parsed", {}) or {}
+                is_meaningful = text_parsed.get("is_meaningful", True)
+                confidence = text_parsed.get("confidence", 1.0)
+                try:
+                    confidence = float(confidence)
+                except (TypeError, ValueError):
+                    confidence = 1.0
+                min_confidence = float(scope.get("min_confidence", DEFAULT_ANALYSIS_PARAMS["min_confidence"]))
+                if not is_meaningful or confidence < min_confidence:
+                    logger.info(
+                        f"Relevance filter skipped source {source.id}: "
+                        f"is_meaningful={is_meaningful}, confidence={confidence:.2f} < {min_confidence:.2f}"
+                    )
+                    self.filtered_skipped += 1
+                    return None
 
         # Extract LLM tracing info from first available analysis
         llm_model = None
@@ -1412,6 +1472,7 @@ class AIAnalyzer:
                 prompt_text=prompt_text if settings.DEBUG else None,
                 response_payload=self._make_json_serializable(response_payload) if response_payload else None,
                 topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
+                chain_label=chain_label or existing_analysis.chain_label,
                 # Preserve existing chain_id or set new one
                 parent_analysis_id=parent_analysis_id,
                 request_tokens=total_request_tokens if total_request_tokens > 0 else None,
@@ -1439,6 +1500,7 @@ class AIAnalyzer:
             analysis_date=analysis_date,
             period_type=PeriodType.DAY,
             topic_chain_id=topic_chain_id,
+            chain_label=chain_label,
             parent_analysis_id=parent_analysis_id,
             # Cost tracking fields
             request_tokens=total_request_tokens if total_request_tokens > 0 else None,

@@ -43,7 +43,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["brand_mentions", "sentiment", "keywords"],
         "analyze_type": "themes",
-        "scope": {"keywords": {"max_keywords": 10}},
+        "scope": {"keywords": {"max_keywords": 10}, "relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
             "Ты — бренд-аналитик. Найди упоминания бренда в контенте, "
             "определи тональность каждого упоминания и выдели ключевые слова, "
@@ -70,7 +70,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["sentiment", "keywords", "intent"],
         "analyze_type": "themes",
-        "scope": {},
+        "scope": {"relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
             "Ты — аналитик службы поддержки. Собери обращения и жалобы клиентов, "
             "определи их тональность и тему обращения, отдели реальные проблемы "
@@ -212,6 +212,13 @@ def expand_template(key: str, overrides: Optional[dict[str, Any]] = None) -> "Sc
         preset_config = (preset.get("scope") or {}).get(analysis_type)
         if preset_config:
             scope[analysis_type] = {**scope.get(analysis_type, {}), **preset_config}
+
+    # Scenario-level (top-level) scope keys — relevance_filter, min_confidence —
+    # are not tied to one analysis type; carry them through alongside the
+    # per-type configs.
+    for key, value in (preset.get("scope") or {}).items():
+        if key not in merged["analysis_types"]:
+            scope[key] = value
 
     for field, value in overrides.items():
         if field == "scope":

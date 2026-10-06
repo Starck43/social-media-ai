@@ -400,11 +400,14 @@ async def task_update(
             updated_payload[key] = list(value)
 
     # Handle date fields for collect/analyze
+    _existing_cli_dates = (task.payload or {}).get("cli_dates", {})
     if job_type is not None and AgentTaskManager.requires_content_dates(job_type):
         start = AgentTaskManager.parse_date(start_date)
         if start is None:
-            return {"error": "Для задачи этого типа укажите start_date (с какой даты собирать контент, YYYY-MM-DD)"}
+            start = AgentTaskManager.parse_date(_existing_cli_dates.get("start_date"))
         end = AgentTaskManager.parse_date(end_date)
+        if end is None:
+            end = AgentTaskManager.parse_date(_existing_cli_dates.get("end_date"))
         fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
         updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
         if force_reanalyze is not None:

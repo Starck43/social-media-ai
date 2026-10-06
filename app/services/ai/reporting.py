@@ -343,8 +343,11 @@ class ReportAggregator:
             for a in analytics:
                 if a.media_types:
                     for media_type in a.media_types:
-                        media_counts[media_type] += 1
-                        total += 1
+                        if isinstance(media_type, dict):
+                            media_type = media_type.get("type") or media_type.get("name") or media_type.get("media_type")
+                        if isinstance(media_type, str) and media_type.strip():
+                            media_counts[media_type.strip()] += 1
+                            total += 1
 
             # Calculate percentages
             media_mix = {}
@@ -439,6 +442,100 @@ class ReportAggregator:
                 }
             )
         return trend
+
+    async def get_sentiment_by_user(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        limit: int = 20,
+        tenant_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Per-user sentiment over the period.
+
+        Only the `monitored_users` mode builds per-person chains
+        (`topic_chain_id = src_{source}_user_{author}`); rows from other modes
+        have no author and are skipped. Each user's analyses are averaged into
+        one sentiment score, sorted by volume.
+        """
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id)
+
+            by_user: dict[str, list[float]] = defaultdict(list)
+            counts: Counter = Counter()
+            for a in analytics:
+                author = self._chain_author(a.topic_chain_id)
+                if author is None:
+                    continue
+                sentiment = self._extract_sentiment(a.summary_data)
+                if sentiment and sentiment.get("score") is not None:
+                    by_user[author].append(sentiment["score"])
+                counts[author] += 1
+
+            result = []
+            for author, scores in by_user.items():
+                result.append(
+                    {
+                        "user": author,
+                        "count": counts[author],
+                        "avg_sentiment": round(sum(scores) / len(scores), 2) if scores else None,
+                    }
+                )
+            result.sort(key=lambda x: x["count"], reverse=True)
+            return result[:limit]
+        except Exception as e:
+            logger.error(f"Error getting sentiment by user: {e}", exc_info=True)
+            return []
+
+    async def get_activity_by_user(
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        limit: int = 20,
+        tenant_id: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Per-user activity over the period.
+
+        Only the `monitored_users` mode builds per-person chains; rows from other
+        modes are skipped. Each user's `content_statistics` are summed into one
+        row, sorted by message volume.
+        """
+        try:
+            analytics = await self._analytics_query(days, source_id, tenant_id)
+
+            by_user: dict[str, dict[str, Any]] = defaultdict(
+                lambda: {"messages": 0, "posts": 0, "reactions": 0, "comments": 0, "views": 0, "days": 0}
+            )
+            for a in analytics:
+                author = self._chain_author(a.topic_chain_id)
+                if author is None:
+                    continue
+                stats = (a.summary_data or {}).get("content_statistics") or {}
+                entry = by_user[author]
+                entry["messages"] += int(stats.get("messages_count") or 0)
+                entry["posts"] += int(stats.get("total_posts") or 0)
+                entry["reactions"] += int(stats.get("total_reactions") or 0)
+                entry["comments"] += int(stats.get("total_comments") or 0)
+                entry["views"] += int(stats.get("total_views") or 0)
+                entry["days"] += 1
+
+            result = []
+            for author, entry in by_user.items():
+                posts = entry["posts"]
+                rate = (entry["reactions"] + entry["comments"] + entry["views"]) / posts if posts else 0
+                result.append(
+                    {
+                        "user": author,
+                        "days": entry["days"],
+                        "messages": entry["messages"],
+                        "posts": posts,
+                        "engagement_rate": round(rate, 2),
+                    }
+                )
+            result.sort(key=lambda x: x["messages"], reverse=True)
+            return result[:limit]
+        except Exception as e:
+            logger.error(f"Error getting activity by user: {e}", exc_info=True)
+            return []
 
     # ── specialized aggregations (one per new analysis_type) ────────────────
     # Each reads the period's `summary_data` JSONB and returns plain dicts /
@@ -1491,11 +1588,28 @@ class ReportAggregator:
         return None
 
     def _extract_topics(self, summary_data: dict) -> list[str]:
-        """Extract topics/keywords from summary_data JSON."""
+        """Extract topics/keywords from summary_data JSON.
+
+        Each topic is reduced to a single string so it can be a Counter key.
+        A topic may arrive as a plain string ("россия") or as a structured
+        object ({"name": "россия", "confidence": 0.9}) depending on which
+        analysis contract wrote the row — both are flattened here, and any
+        non-string/non-dict value is skipped rather than crashing the widget.
+        """
         if not summary_data:
             return []
 
-        topics = []
+        topics: list[str] = []
+
+        def _coerce(topic: Any) -> str | None:
+            if isinstance(topic, str) and topic.strip():
+                return topic.strip()
+            if isinstance(topic, dict):
+                for key in ("name", "topic", "keyword", "label", "title"):
+                    val = topic.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val.strip()
+            return None
 
         # Try new structure first (v3.0-multi-llm)
         multi_llm = summary_data.get("multi_llm_analysis", {})
@@ -1505,12 +1619,18 @@ class ReportAggregator:
         if "main_topics" in text_analysis:
             main_topics = text_analysis["main_topics"]
             if isinstance(main_topics, list):
-                topics.extend(main_topics)
+                for topic in main_topics:
+                    coerced = _coerce(topic)
+                    if coerced:
+                        topics.append(coerced)
 
         if "highlights" in text_analysis:
             highlights = text_analysis["highlights"]
             if isinstance(highlights, list):
-                topics.extend(highlights)
+                for topic in highlights:
+                    coerced = _coerce(topic)
+                    if coerced:
+                        topics.append(coerced)
 
         if topics:
             return topics
@@ -1519,14 +1639,13 @@ class ReportAggregator:
         ai_analysis = summary_data.get("ai_analysis", {})
 
         # Extract from various fields
-        if "key_topics" in ai_analysis:
-            topics.extend(ai_analysis["key_topics"])
-
-        if "categories" in ai_analysis:
-            topics.extend(ai_analysis["categories"])
-
-        if "keywords" in ai_analysis:
-            topics.extend(ai_analysis["keywords"])
+        for field in ("key_topics", "categories", "keywords"):
+            values = ai_analysis.get(field)
+            if isinstance(values, list):
+                for topic in values:
+                    coerced = _coerce(topic)
+                    if coerced:
+                        topics.append(coerced)
 
         return topics
 
@@ -1570,7 +1689,8 @@ class ReportAggregator:
         Groups the flat `entities` arrays by (name, type): each row may mention
         an entity once, so the mention count is how many analyses named it.
         Returns entities sorted by mention count with the average sentiment of
-        the analyses they appear in.
+        the analyses they appear in. Each entry carries the id of the most recent
+        analysis that mentioned it, so the widget can link to that record.
         """
         try:
             analytics = await self._analytics_query(days, source_id, tenant_id)
@@ -1579,6 +1699,8 @@ class ReportAggregator:
             types: dict[str, str] = {}
             sentiments: dict[str, list[float]] = defaultdict(list)
             contexts: dict[str, str] = {}
+            latest_analysis_id: dict[str, int] = {}
+            latest_analysis_date: dict[str, Any] = {}
 
             for a in analytics:
                 sentiment = self._extract_sentiment(a.summary_data)
@@ -1590,6 +1712,12 @@ class ReportAggregator:
                         sentiments[key].append(sentiment["score"])
                     if e["context"] and not contexts.get(key):
                         contexts[key] = e["context"]
+                    # Track the most recent analysis that mentioned this entity,
+                    # so the widget can link to it.
+                    if a.id is not None:
+                        if key not in latest_analysis_id or (a.analysis_date and latest_analysis_date.get(key) and a.analysis_date >= latest_analysis_date[key]):
+                            latest_analysis_id[key] = a.id
+                            latest_analysis_date[key] = a.analysis_date
 
             result = []
             for name, count in counter.most_common(limit):
@@ -1601,6 +1729,7 @@ class ReportAggregator:
                         "count": count,
                         "avg_sentiment": round(sum(scores) / len(scores), 2) if scores else None,
                         "context": contexts.get(name),
+                        "analysis_id": latest_analysis_id.get(name),
                     }
                 )
             return result

@@ -379,3 +379,58 @@ def test_entities_appear_in_the_schema_for_types_that_need_it():
     schema = JSONSchemaBuilder.build_schema(["topics", "trends"], {})
     assert "entities" in schema
     assert "person|brand|org" in schema["entities"]
+
+
+# ── topic coercion: structured objects vs bare strings ───────────────────────
+
+
+def test_extract_topics_coerces_dict_objects_to_strings():
+    """The JSON schema may emit structured topic objects
+    ({"name": "россия", "confidence": 0.9}); the dashboard only needs the label.
+    A Counter-keyed widget must never see a dict as a key."""
+    agg = ReportAggregator()
+    sd = {
+        "multi_llm_analysis": {
+            "text_analysis": {
+                "main_topics": [
+                    {"name": "россия", "confidence": 0.9},
+                    {"topic": "экономика", "score": 0.7},
+                ],
+                "highlights": ["plain highlight", {"label": "dict highlight"}],
+            }
+        }
+    }
+    topics = agg._extract_topics(sd)
+    assert "россия" in topics
+    assert "экономика" in topics
+    assert "plain highlight" in topics
+    assert "dict highlight" in topics
+
+
+def test_extract_topics_accepts_bare_strings():
+    agg = ReportAggregator()
+    sd = {"multi_llm_analysis": {"text_analysis": {"main_topics": ["alpha", "beta"]}}}
+    assert agg._extract_topics(sd) == ["alpha", "beta"]
+
+
+async def test_extract_topics_legacy_shape_with_dicts(source):
+    """The old `key_topics`/`categories`/`keywords` fields may also carry objects."""
+    await _seed_raw(
+        source,
+        [
+            {"ai_analysis": {"key_topics": ["строка", {"name": "из_объекта"}]}},
+            {"ai_analysis": {"keywords": [{"keyword": "_kw"}]}},
+            {"ai_analysis": {"categories": [{"title": "_cat"}]}},
+        ],
+    )
+    result = await ReportAggregator().get_top_topics(days=70, limit=10)
+    labels = {t["topic"] for t in result}
+    assert {"строка", "из_объекта", "_kw", "_cat"} <= labels
+
+
+async def test_get_top_topics_does_not_crash_on_dict_entries(source):
+    """Regression: a dict topic crashed `topic_counter[topic]` with
+    'unhashable type: dict' — the dashboard never rendered."""
+    await _seed_raw(source, [_summary({"main_topics": [{"name": "dict_topic", "confidence": 0.9}]})])
+    result = await ReportAggregator().get_top_topics(days=70, limit=10)
+    assert result[0]["topic"] == "dict_topic"

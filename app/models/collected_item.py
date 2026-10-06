@@ -30,7 +30,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    text,
 )
 from sqlalchemy.orm import Mapped
 
@@ -53,14 +52,15 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
         Index("ix_collected_items_source_published", "source_id", "published_at"),
         # A platform never hands over the same item twice within a live window;
         # the unique key makes a double insert (retry, overlapping run) a no-op
-        # instead of a duplicate. Partial, because items without a platform id
-        # fall back to the content hash.
+        # instead of a duplicate. A regular (non-partial) unique index is used
+        # because PostgreSQL treats NULLs as distinct in UNIQUE indexes, so
+        # multiple rows with a NULL external_id stay legal — and only a non-partial
+        # index can serve as an ON CONFLICT DO NOTHING target.
         Index(
             "uq_collected_items_source_external",
             "source_id",
             "external_id",
             unique=True,
-            postgresql_where=text("external_id IS NOT NULL"),
         ),
         {"schema": settings.DB_SCHEMA},
     )

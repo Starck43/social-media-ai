@@ -88,14 +88,15 @@ def upgrade() -> None:
         ["source_id", "published_at"],
         schema=settings.DB_SCHEMA,
     )
-    # Partial: items without a platform id fall back to the content hash, so
-    # several NULL external_ids per source must stay legal.
+    # A regular (non-partial) unique index: PostgreSQL treats NULLs as distinct
+    # in UNIQUE indexes, so multiple rows with a NULL external_id stay legal —
+    # and only a non-partial index can serve as an ON CONFLICT DO NOTHING target
+    # (the partial variant is not usable by asyncpg/asyncpg's ON CONFLICT).
     op.create_index(
         "uq_collected_items_source_external",
         "collected_items",
         ["source_id", "external_id"],
         unique=True,
-        postgresql_where=sa.text("external_id IS NOT NULL"),
         schema=settings.DB_SCHEMA,
     )
 

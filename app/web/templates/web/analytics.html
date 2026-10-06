@@ -21,7 +21,7 @@
             <select name="days" onchange="this.form.submit()"
                     class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
                 {% for value, label in periods %}
-                    <option value="{{ value }}" {% if days == value|int %}selected{% endif %}>{{ label }}</option>
+                    <option value="{{ value }}" {% if days == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </form>

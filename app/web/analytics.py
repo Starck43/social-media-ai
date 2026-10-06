@@ -30,14 +30,14 @@ from .deps import (
 
 router = APIRouter(prefix="/analytics")
 
-PERIODS = (("7", "7 дней"), ("30", "30 дней"), ("90", "3 месяца"))
+PERIODS = (("7", "7 дней"), ("30", "30 дней"), ("90", "3 месяца"), ("180", "полгода"), ("365", "год"), ("all", "всё"))
 
 # Chain-list sort orders: `desc` is the default ("сначала новые" — the latest
 # analysis in the chain decides the position); `asc` flips the timeline.
 CHAIN_SORTS = (("desc", "Сначала новые"), ("asc", "Сначала старые"))
 
 
-async def _analytics(tenant_id: int | None, is_superuser: bool, days: int, filter_tenant_id: int | None) -> dict:
+async def _analytics(tenant_id: int | None, is_superuser: bool, days: int | None, filter_tenant_id: int | None) -> dict:
     """Aggregate the analytics widgets for the ambient scope.
 
     A superuser without an active workspace sees global aggregates; a superuser
@@ -55,7 +55,7 @@ async def _analytics(tenant_id: int | None, is_superuser: bool, days: int, filte
     return await _aggregate(agg, days, filter_tenant_id)
 
 
-async def _aggregate(agg: ReportAggregator, days: int, tenant_id: int | None) -> dict:
+async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | None) -> dict:
     # tenant_id narrows the methods that accept it (a superuser previewing one
     # workspace); the rest are scoped by the manager guard to the ambient scope.
     sentiment = await agg.get_sentiment_trends(days=days)
@@ -69,10 +69,11 @@ async def _aggregate(agg: ReportAggregator, days: int, tenant_id: int | None) ->
     from datetime import date, timedelta
     from app.models import AIAnalytics
 
-    cutoff = date.today() - timedelta(days=days)
-    chain_rows = await AIAnalytics.objects.filter(
-        AIAnalytics.topic_chain_id.isnot(None), AIAnalytics.analysis_date >= cutoff
-    )
+    chain_query = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
+    if days is not None:
+        cutoff = date.today() - timedelta(days=days)
+        chain_query = chain_query.filter(AIAnalytics.analysis_date >= cutoff)
+    chain_rows = await chain_query
     chains_map: dict[str, dict[str, Any]] = {}
     for row in chain_rows:
         cid = row.topic_chain_id
@@ -93,10 +94,9 @@ async def _aggregate(agg: ReportAggregator, days: int, tenant_id: int | None) ->
             entry["first_date"] = row.analysis_date
         if not entry["last_date"] or (row.analysis_date and row.analysis_date > entry["last_date"]):
             entry["last_date"] = row.analysis_date
-        from app.services.ai.reporting import _chain_sentiment
-        score = _chain_sentiment(row.summary_data)
-        if score is not None:
-            entry["scores"].append(score)
+        sent = agg._extract_sentiment(row.summary_data)
+        if sent and sent.get("score") is not None:
+            entry["scores"].append(sent["score"])
 
     chains_result = []
     for cid, entry in chains_map.items():
@@ -152,7 +152,9 @@ async def analytics_page(request: Request):
     is_superuser = bool(user and user.is_superuser)
 
     raw_days = request.query_params.get("days", "7")
-    days = int(raw_days) if raw_days.isdigit() and 1 <= int(raw_days) <= 365 else 7
+    # "all" = no date cutoff; a number is the look-back window in days.
+    days = None if raw_days == "all" else (int(raw_days) if raw_days.isdigit() and 1 <= int(raw_days) <= 365 else 7)
+    days_key = "all" if days is None else str(days)
 
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
@@ -162,7 +164,7 @@ async def analytics_page(request: Request):
         "web/analytics.html",
         section="analytics",
         analytics=data,
-        days=days,
+        days=days_key,
         periods=PERIODS,
         is_superuser=is_superuser,
         tenants=tenants,

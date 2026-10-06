@@ -67,13 +67,15 @@ class ReportAggregator:
 
     @staticmethod
     async def _analytics_query(
-        days: int,
+        days: Optional[int],
         source_id: Optional[int] = None,
         tenant_id: Optional[int] = None,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
     ):
         """Analytics rows for the report, scoped to the ambient tenant.
+
+        `days` is a look-back window; `None` means no date cutoff ("всё").
 
         `tenant_id` narrows further (a superuser previewing another workspace);
         it never widens what the ambient scope already allows. `source_ids`
@@ -86,7 +88,9 @@ class ReportAggregator:
         jsonb operator. Rows written before that metadata existed match no
         scenario, which is correct — they were not produced by one.
         """
-        qs = AIAnalytics.objects.filter(analysis_date__gte=date.today() - timedelta(days=days))
+        qs = AIAnalytics.objects.all()
+        if days is not None:
+            qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
 
         if source_id:
             qs = qs.filter(source_id=source_id)

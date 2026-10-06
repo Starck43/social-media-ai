@@ -62,7 +62,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         stmt = sa_text(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
-            "ON CONFLICT DO NOTHING"
+            "ON CONFLICT (source_id, external_id) DO NOTHING"
         )
         # Same tenant stamping the ORM path does: refuses to write rather than
         # guessing a workspace for rows collected outside a tenant context.
@@ -70,7 +70,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         result = await session.execute(stmt, params)
 
         count = int(result.rowcount or 0)
-        if count >= 0:
+        if count > 0:
             return count
         # An executemany over ON CONFLICT reports no rowcount (-1), so the real
         # number of staged rows is read back rather than assumed from the input
@@ -93,6 +93,8 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         limit: int = 50,
         *,
         include_exhausted: bool = False,
+        start_date: Any = None,
+        end_date: Any = None,
     ) -> list[CollectedItem]:
         """The raw items waiting for this source, newest first.
 
@@ -102,12 +104,21 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         single run, each time costing a full request timeout and holding the
         batch back. They stay on disk — `include_exhausted` still reads them, and
         `handle_prune` is what reclaims them.
+
+        `start_date`/`end_date` (date or datetime) restrict the drain to items
+        whose `published_at` falls inside the content window — the same window
+        that gated collection, so an analyze run never touches content outside
+        the task's configured period.
         """
         from app.models.collected_item import CollectedItem
 
         query = self.filter(source_id=source_id)
         if not include_exhausted:
             query = query.filter(CollectedItem.analyze_attempts < CollectedItem.give_up_after_attempts)
+        if start_date is not None:
+            query = query.filter(CollectedItem.published_at >= start_date)
+        if end_date is not None:
+            query = query.filter(CollectedItem.published_at <= end_date)
         return list(await query.order_by(CollectedItem.published_at.desc().nullslast()).limit(limit))
 
     async def exhausted_count(self, source_id: int) -> int:

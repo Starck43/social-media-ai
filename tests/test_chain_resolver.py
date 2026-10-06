@@ -57,8 +57,9 @@ async def _db_cleanup():
 async def test_generate_chain_id_is_stable_per_mode(source):
     analyzer = AIAnalyzer()
     topics = ["Отпуск в Сочи"]
-    # Normalized top topic: lowercased, punctuation/spaces stripped, ≤20 chars.
-    normalized = "отпусквсочи"
+    # Normalized top topic: lowercased, Cyrillic transliterated to Latin,
+    # punctuation/spaces stripped, ≤20 chars.
+    normalized = "otpuskvsochi"
 
     themes = analyzer._generate_topic_chain_id(source, topics, None, analyze_type="themes")
     # No scenario: source + normalized top topic.

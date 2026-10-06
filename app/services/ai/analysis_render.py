@@ -86,8 +86,18 @@ def render_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
     analysis_meta = _as_dict(summary_data.get("analysis_metadata"))
     sentiment = sentiment_summary(summary_data)
 
+    # Title fallback chain: explicit analysis_title → top main_topic → chain_label.
+    # The LLM is asked for `analysis_title` but doesn't always emit one, so the
+    # first main topic (which the chain resolver already promoted to chain_label)
+    # is the next-best human-readable title.
+    analysis_title = summary_data.get("analysis_title")
+    if not analysis_title:
+        main_topics = _as_list(text.get("main_topics")) or _as_list(unified.get("main_topics"))
+        if main_topics:
+            analysis_title = str(main_topics[0])
+
     return {
-        "analysis_title": summary_data.get("analysis_title"),
+        "analysis_title": analysis_title,
         "analysis_summary": summary_data.get("analysis_summary"),
         "main_topics": _as_list(text.get("main_topics")) or _as_list(unified.get("main_topics")),
         "overall_mood": text.get("overall_mood"),

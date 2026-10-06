@@ -65,6 +65,8 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     engagement = await agg.get_engagement_metrics(days=days)
     llm = await agg.get_llm_provider_stats(days=days)
     activity = await agg.get_activity_trend(days=days, tenant_id=tenant_id)
+    sentiment_by_user = await agg.get_sentiment_by_user(days=days, limit=20, tenant_id=tenant_id)
+    activity_by_user = await agg.get_activity_by_user(days=days, limit=20, tenant_id=tenant_id)
 
     # Chains: group ai_analytics rows by topic_chain_id (Phase 4 display)
     from datetime import date, timedelta
@@ -137,6 +139,8 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
         "engagement": engagement,
         "llm": llm,
         "activity": activity,
+        "sentiment_by_user": sentiment_by_user,
+        "activity_by_user": activity_by_user,
         "chains": chains_result,
         "kpis": {
             "total_analyses": total_analyses,
@@ -401,7 +405,10 @@ async def analytics_detail(request: Request, analysis_id: int):
             {
                 "id": c.id,
                 "analysis_date": c.analysis_date,
-                "title": (c.summary_data or {}).get("analysis_title") or f"Анализ #{c.id}",
+                "title": (c.summary_data or {}).get("analysis_title")
+                or (c.main_topics or [None])[0]
+                or c.chain_label
+                or f"Анализ #{c.id}",
             }
             for c in chain
         ]

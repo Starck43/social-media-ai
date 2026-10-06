@@ -19,6 +19,7 @@ from app.types.enums.bot_types import AnalyzeType
 from app.types.enums.llm_types import MediaType
 from app.utils.date_parsing import universal_date_parser
 from app.utils.enum_helpers import get_enum_value
+from app.utils.translit import translit_slug
 
 logger = logging.getLogger(__name__)
 
@@ -1215,7 +1216,7 @@ class AIAnalyzer:
                 Chain ID string
         """
         top_topic = main_topics[0] if main_topics else "general"
-        normalized_topic = "".join(c for c in top_topic.lower() if c.isalnum())[:20]
+        normalized_topic = translit_slug(top_topic)[:20]
 
         scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
 

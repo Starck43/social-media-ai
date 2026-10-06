@@ -135,12 +135,21 @@ async def _analytics_in_scope(tenant_filter: int | None) -> dict:
     rows = await AIAnalytics.objects.select_related("source").order_by(AIAnalytics.created_at.desc()).limit(8)
     for a in rows:
         sd = a.summary_data or {}
+        # Title fallback: analysis_title → top main_topic → chain_label → id.
+        title = sd.get("analysis_title")
+        if not title:
+            topics = sd.get("main_topics") or []
+            title = topics[0] if topics else None
+        if not title:
+            title = a.chain_label
+        if not title:
+            title = f"Анализ #{a.id}"
         recent.append(
             {
                 "id": a.id,
                 "source_name": a.source.name if a.source else f"#{a.source_id}",
                 "analysis_date": a.analysis_date,
-                "title": sd.get("analysis_title") or f"Анализ #{a.id}",
+                "title": title,
                 "summary": (sd.get("analysis_summary") or "")[:220],
                 "topics": (sd.get("main_topics") or [])[:4],
                 "cost_usd": float(a.estimated_cost or 0) / 100,

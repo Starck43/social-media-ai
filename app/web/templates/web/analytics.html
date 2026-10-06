@@ -87,25 +87,25 @@
     <div class="mt-6 grid gap-4 lg:grid-cols-2">
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <div class="flex items-center justify-between">
-                <h2 class="text-sm font-medium text-slate-300">Настроение по дням</h2>
+                <h2 class="text-sm font-medium text-slate-300">Настроение по пользователям</h2>
                 <div class="flex items-center gap-3 text-xs text-slate-400">
                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>позитив</span>
                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-300"></span>нейтр</span>
                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-rose-400"></span>негатив</span>
                 </div>
             </div>
-            {% if analytics.sentiment %}
+            {% if analytics.sentiment_by_user %}
                 <div class="mt-4 space-y-2">
-                    {% for p in analytics.sentiment %}
+                    {% for u in analytics.sentiment_by_user %}
                         <div class="flex items-center justify-between text-sm">
-                            <span class="text-slate-400">{{ p.date }}</span>
+                            <span class="text-slate-400 truncate">{{ u.user }}</span>
                             <div class="flex items-center gap-4">
-                                <span class="w-8 text-right text-slate-300">{{ "%.2f"|format(p.avg_sentiment_score) }}</span>
-                                <div class="flex items-center gap-3 text-xs">
-                                    <span class="w-6 text-right text-emerald-400">{{ p.distribution.positive }}</span>
-                                    <span class="w-6 text-right text-amber-300">{{ p.distribution.neutral }}</span>
-                                    <span class="w-6 text-right text-rose-400">{{ p.distribution.negative }}</span>
-                                </div>
+                                <span class="w-8 text-right text-slate-300">
+                                    {% if u.avg_sentiment is not none %}
+                                        {{ "%.2f"|format(u.avg_sentiment) }}
+                                    {% else %}—{% endif %}
+                                </span>
+                                <span class="w-6 text-right text-xs text-slate-500">{{ u.count }}×</span>
                             </div>
                         </div>
                     {% endfor %}
@@ -116,16 +116,16 @@
         </div>
 
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-300">Активность пользователей</h2>
-            {% if analytics.activity %}
+            <h2 class="text-sm font-medium text-slate-300">Активность по пользователям</h2>
+            {% if analytics.activity_by_user %}
                 <div class="mt-4 space-y-2">
-                    {% for a in analytics.activity %}
+                    {% for u in analytics.activity_by_user %}
                         <div class="flex items-center justify-between text-sm">
-                            <span class="text-slate-400">{{ a.date }}</span>
+                            <span class="text-slate-400 truncate">{{ u.user }}</span>
                             <div class="flex items-center gap-4 text-xs">
-                                <span class="text-slate-300">{{ a.messages_count }} сообщ.</span>
-                                <span class="w-6 text-right text-cyan-400">{{ a.active_users }} юз.</span>
-                                <span class="w-10 text-right text-slate-500">{{ a.engagement_rate }} eng.</span>
+                                <span class="text-slate-300">{{ u.messages }} сообщ.</span>
+                                <span class="w-6 text-right text-cyan-400">{{ u.days }} дн.</span>
+                                <span class="w-10 text-right text-slate-500">{{ u.engagement_rate }} eng.</span>
                             </div>
                         </div>
                     {% endfor %}
@@ -168,6 +168,9 @@
                                     {{ "%.2f"|format(e.avg_sentiment) }} ·
                                 {% endif %}
                                 {{ e.count }}×
+                                {% if e.analysis_id %}
+                                    <a href="/app/analytics/{{ e.analysis_id }}" class="ml-1 text-cyan-400 hover:text-cyan-300">→</a>
+                                {% endif %}
                             </span>
                         </div>
                         {% if e.context %}

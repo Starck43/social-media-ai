@@ -137,9 +137,16 @@ class TopicChainService:
 				summary = getattr(analytics, 'summary_data', {})
 				content_stats = summary.get("content_statistics", {})
 				
-				# Extract AI-generated title and summary
-				analysis_title = summary.get("analysis_title")
-				analysis_summary = summary.get("analysis_summary")
+			# Extract AI-generated title and summary
+			analysis_title = summary.get("analysis_title")
+			analysis_summary = summary.get("analysis_summary")
+			
+			# Fallback: the LLM writes the summary under text_analysis.summary
+			# when the top-level analysis_summary is absent.
+			if not analysis_summary:
+				multi_llm = summary.get("multi_llm_analysis", {})
+				text_analysis = multi_llm.get("text_analysis", {})
+				analysis_summary = text_analysis.get("summary")
 				
 				# Extract sentiment and toxicity from multi_llm_analysis
 				multi_llm = summary.get("multi_llm_analysis", {})

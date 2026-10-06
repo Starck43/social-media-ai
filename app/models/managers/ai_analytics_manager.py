@@ -226,6 +226,101 @@ class AIAnalyticsManager(BaseManager):
         rows = await Source.objects.filter(is_active=True).exclude(Source.id.in_(recent)).values(Source.id).rows()
         return [row[0] for row in rows]
 
+    async def get_chains_summary(
+        self,
+        source_id: int | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """
+        List all topic chains with aggregated stats.
+
+        Each chain shows its label, number of analyses, date range, and top
+        topics. Ready for the ``analytics_chains`` agent tool (Phase 5).
+
+        Args:
+                source_id: Filter to one source (optional)
+                start_date: Include analyses from this date (optional)
+                end_date: Include analyses up to this date (optional)
+                limit: Maximum number of chains to return (default 50)
+
+        Returns:
+                List of chain summaries sorted by latest analysis date
+        """
+        q = self.filter()
+        if source_id is not None:
+            q = q.filter(source_id=source_id)
+        if start_date:
+            q = q.filter(analysis_date__gte=start_date)
+        if end_date:
+            q = q.filter(analysis_date__lte=end_date)
+
+        rows = await q.order_by(self.model.topic_chain_id, self.model.analysis_date.desc())
+
+        by_chain: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            cid = row.topic_chain_id
+            if not cid:
+                continue
+            if cid not in by_chain:
+                by_chain[cid] = {
+                    "topic_chain_id": cid,
+                    "chain_label": row.chain_label or cid,
+                    "total_analyses": 0,
+                    "first_date": row.analysis_date.isoformat() if row.analysis_date else None,
+                    "last_date": None,
+                    "sources": set(),
+                    "main_topics": [],
+                }
+            entry = by_chain[cid]
+            entry["total_analyses"] += 1
+            if row.analysis_date:
+                entry["last_date"] = row.analysis_date.isoformat()
+            if row.source_id:
+                entry["sources"].add(row.source_id)
+            if row.main_topics:
+                for t in row.main_topics:
+                    if t not in entry["main_topics"]:
+                        entry["main_topics"].append(t)
+
+        result = []
+        for cid, entry in by_chain.items():
+            entry["sources"] = list(entry["sources"])
+            entry["main_topics"] = entry["main_topics"][:5]
+            result.append(entry)
+
+        result.sort(key=lambda x: x["last_date"] or "", reverse=True)
+        return result[:limit]
+
+    async def get_chain_detail(self, topic_chain_id: str) -> dict[str, Any] | None:
+        """
+        Full detail for one topic chain: all analyses with metrics and evolution.
+
+        Returns None if the chain has no rows. Used by ``analytics_chain_detail``
+        (Phase 5).
+
+        Args:
+                topic_chain_id: The chain identifier
+
+        Returns:
+                Chain detail dict or None
+        """
+        from app.services.ai.topic_chain_service import TopicChainService
+
+        rows = await self.get_by_topic_chain(topic_chain_id)
+        if not rows:
+            return None
+
+        service = TopicChainService()
+        chain_data = service.build_topic_chain(list(rows))
+
+        stats = service.get_topic_statistics(chain_data.get(topic_chain_id, {}))
+
+        base = chain_data.get(topic_chain_id, {})
+        base["topic_statistics"] = stats
+        return base
+
     async def build_period_rollups(self, period_type: PeriodType, start: date, end: date) -> int:
         """Aggregate the daily analytics of a period into one rollup row per source.
 

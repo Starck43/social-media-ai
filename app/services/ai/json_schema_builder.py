@@ -36,6 +36,9 @@ class JSONSchemaBuilder:
             "строка, развернутое описание ситуации (2-4 предложения): что происходит, "
             "кого/что ищут, какие требования выделяют, какие паттерны видны"
         ),
+        "topic_hint": "строка, короткое название темы/цепочки (3-7 слов)",
+        "confidence": "число от 0.0 до 1.0 — уверенность в значимости анализа",
+        "is_meaningful": "true если это значимый факт, а не рутина",
     }
 
     # Typed response contract per analysis type, keyed by AnalysisType.db_value.
@@ -48,6 +51,11 @@ class JSONSchemaBuilder:
         },
         "topics": {
             "main_topics": ("array", "список из {max_topics} главных тем"),
+            "entities": (
+                "array",
+                'список упомянутых сущностей в формате '
+                '[{"name": "имя", "type": "person|brand|org", "context": "контекст упоминания"}]',
+            ),
         },
         "keywords": {
             "keywords": ("array", "список из {max_keywords} ключевых слов"),
@@ -62,6 +70,11 @@ class JSONSchemaBuilder:
             "trend_name": ("string", "название тренда"),
             "growth_rate": ("number", "число — темп роста; отрицательное значение означает спад"),
             "momentum": ("string", "одно из: {momentum_levels}"),
+            "entities": (
+                "array",
+                'список связанных сущностей в формате '
+                '[{"name": "имя", "type": "person|brand|org", "context": "контекст"}]',
+            ),
         },
         "toxicity": {
             "toxicity_score": ("number", "число от 0.0 (чистый) до 1.0 (токсичный)"),

@@ -46,6 +46,11 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
 
     # Chain tracking for ongoing topics/threads
     topic_chain_id: Mapped[str] = Column(String(100), nullable=True)
+    chain_label: Mapped[str | None] = Column(
+        String(255),
+        nullable=True,
+        comment="Human-readable name of the topic chain (latest analysis_title or top topic)",
+    )
     parent_analysis_id: Mapped[int] = Column(
         ForeignKey(f"{settings.DB_SCHEMA}.ai_analytics.id", ondelete="SET NULL"), nullable=True
     )

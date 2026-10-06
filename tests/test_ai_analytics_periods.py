@@ -143,6 +143,7 @@ async def test_analyze_content_forwards_force_reanalyze(monkeypatch, source):
         analyze_type=None,
         agent_scenario=None,
         trigger_config=None,
+        **kwargs,
     ):
         seen["force_reanalyze"] = force_reanalyze
         seen["len"] = len(content)

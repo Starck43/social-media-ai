@@ -124,15 +124,25 @@ def tool_specs() -> list[dict[str, Any]]:
     return to_openai_schemas()
 
 
+class ToolError(Exception):
+    """A tool returned an error dict — confirmation replay catches it."""
+    pass
+
+
 async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     """Dispatch a tool call, returning the raw handler result.
 
     Unlike `execute`, errors propagate — the caller decides how to surface them.
+    Error dicts ({"error": "..."}) raise ToolError so confirmation replay
+    catches them as failures instead of treating them as successful results.
     """
     tool_obj = _REGISTRY.get(name)
     if tool_obj is None:
         raise LookupError(f"Unknown tool: {name}")
-    return await tool_obj.handler(**(arguments or {}))
+    result = await tool_obj.handler(**(arguments or {}))
+    if isinstance(result, dict) and "error" in result:
+        raise ToolError(result["error"])
+    return result
 
 
 async def execute(name: str, arguments: dict[str, Any]) -> str:

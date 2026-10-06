@@ -79,6 +79,7 @@ async def _row(
     topics=None,
     scenario_id=None,
     topic_chain_id: str | None = None,
+    chain_label: str | None = None,
 ):
     """One analytics row `day_offset` days ago (0 = today)."""
     return await AIAnalytics.objects.create(
@@ -86,6 +87,7 @@ async def _row(
         analysis_date=date.today() - timedelta(days=day_offset),
         period_type=PeriodType.DAY,
         topic_chain_id=topic_chain_id,
+        chain_label=chain_label,
         summary_data=_summary(text, topics=topics, scenario_id=scenario_id),
     )
 
@@ -259,3 +261,52 @@ async def test_dynamics_never_compare_overlapping_windows(source):
     brief = await ReportAggregator().generate_digest_brief(period="week")
     assert "Тональность" in brief
     assert "Тональность упала" in brief
+
+
+# ── chains ────────────────────────────────────────────────────────────────────
+
+
+async def test_chains_section_absent_without_chains(source):
+    """Rows without a `topic_chain_id` produce no "Цепочки" section."""
+    await _row(source, day_offset=0, topics=["запуск"])
+    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="themes")
+    assert "Цепочки" not in brief
+
+
+async def test_chains_section_lists_chains_by_entry_count(source):
+    """Chains grouped by `topic_chain_id`, ranked by entry count, labelled."""
+    await _row(source, day_offset=0, topic_chain_id="chain_vac", chain_label="Отпуск")
+    await _row(source, day_offset=1, topic_chain_id="chain_vac", chain_label="Отпуск")
+    await _row(source, day_offset=2, topic_chain_id="chain_vac", chain_label="Отпуск")
+    await _row(source, day_offset=3, topic_chain_id="chain_new", chain_label="Новый проект")
+    await _row(source, day_offset=4, topic_chain_id="chain_new", chain_label="Новый проект")
+
+    brief = await ReportAggregator().generate_digest_brief(period="week")
+    assert "## Цепочки" in brief
+    # The heavier chain leads the list.
+    assert brief.index("Отпуск") < brief.index("Новый проект")
+    assert "3 записей" in brief
+    assert "2 записей" in brief
+
+
+async def test_chains_section_falls_back_to_chain_id_without_label(source):
+    await _row(source, day_offset=0, topic_chain_id="chain_no_label")
+    brief = await ReportAggregator().generate_digest_brief(period="week")
+    assert "chain_no_label" in brief
+
+
+async def test_chain_dynamics_reports_new_and_continued_chains(source):
+    """A chain present in both windows is "continued"; one only in the current
+    period is "new". Labels come from `chain_label`."""
+    # Chain "Отпуск": 3 rows in the current week, 1 in the previous one.
+    for offset in (0, 1, 2):
+        await _row(source, day_offset=offset, topic_chain_id="chain_vac", chain_label="Отпуск")
+    await _row(source, day_offset=8, topic_chain_id="chain_vac", chain_label="Отпуск")
+    # Chain "Новый проект": 2 rows, only in the current week.
+    for offset in (3, 4):
+        await _row(source, day_offset=offset, topic_chain_id="chain_new", chain_label="Новый проект")
+
+    brief = await ReportAggregator().generate_digest_brief(period="week")
+    assert "## Динамика цепочек" in brief
+    assert "Новая цепочка: **Новый проект** (2 записей)" in brief
+    assert "Продолжение: **Отпуск** (+2 записей)" in brief

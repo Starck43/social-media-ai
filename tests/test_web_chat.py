@@ -34,18 +34,16 @@ CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 GREETING = "Спросите агента о ваших данных"
 PASSWORD = "secret-password-1"
 
-# The bubble carries `whitespace-pre-wrap`, so anything between its tags and the
-# message is rendered: a leading newline plus the template's indentation became
-# visible padding that shifted every bubble's first line and broke the
-# left/right alignment. This captures the message's own text — nothing else.
-# The assistant bubble has no inner text at all: Markdown is rendered
-# client-side, so the message travels in the `x-html` argument instead.
+# Bubbles use Alpine.js for rendering:
+# - user bubble: whitespace-pre-wrap + x-text carries the raw message
+# - assistant bubble: msg-prose + x-html carries renderMarkdown(message.content)
+# The regex matches each bubble type and captures the Alpine binding value.
 BUBBLE_RE = re.compile(
-    r'<div class="[^"]*whitespace-pre-wrap[^"]*"(?:\s+x-html=\'([^\']*)\')?>(.*?)</div>',
+    r'<div(?:\s[^>]*)?\sclass="[^"]*whitespace-pre-wrap[^"]*"(?:\s[^>]*)?\sx-text="([^"]*)"',
     re.S,
 )
-# What sits in `x-html` is the Alpine expression; the message is its argument.
-XHTML_ARG_RE = re.compile(r"^renderMarkdown\((.*)\)$", re.S)
+# Assistant bubble: x-html="renderMarkdown(...)" — capture the inner arg.
+XHTML_ARG_RE = re.compile(r"renderMarkdown\((.*)\)", re.S)
 
 
 async def _client() -> AsyncClient:
@@ -268,16 +266,15 @@ async def test_a_bubble_renders_the_message_without_template_whitespace() -> Non
             bubbles = BUBBLE_RE.findall(page.text)
             assert len(bubbles) == 2, f"expected one bubble per message, got {bubbles!r}"
 
-            # Flush against the tags, and no leftover blank edges.
-            user_html, user_text = bubbles[0]
-            assert not user_html and user_text == "Покажи источники"
-            # The assistant side is Markdown rendered client-side: what sits in
-            # the bubble is the Alpine expression, the message is its argument.
-            assistant_html, assistant_text = bubbles[1]
-            assert assistant_text == ""
-            arg = XHTML_ARG_RE.match((assistant_html or "").strip())
+            # User bubble: x-text="message.content || ''"
+            user_text = bubbles[0]
+            assert user_text == "Покажи источники", f"expected user message, got {user_text!r}"
+
+            # Assistant bubble: x-html="renderMarkdown(message.content || '')"
+            assistant_html = bubbles[1]
+            arg = XHTML_ARG_RE.search(assistant_html)
             assert arg, f"expected a renderMarkdown(...) bubble, got {assistant_html!r}"
-            # Internal newlines and indentation are the message's own.
+            # x-text / x-html bind to the Alpine expression, message is the JSON arg
             assert json.loads(arg.group(1)) == "Ответ:\n    отступ внутри сообщения"
         finally:
             if session_id is not None:

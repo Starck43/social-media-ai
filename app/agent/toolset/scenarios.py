@@ -177,6 +177,7 @@ def _draft_from_fields(fields: dict[str, Any]) -> Any:
         },
         "required": [],
     },
+    required_permission="agentscenario.view",
 )
 async def scenario_list(only_active: bool = True) -> list[dict[str, Any]]:
     from app.models import AgentScenario
@@ -197,6 +198,7 @@ async def scenario_list(only_active: bool = True) -> list[dict[str, Any]]:
         "properties": {"id": {"type": "integer", "description": "ID сценария"}},
         "required": ["id"],
     },
+    required_permission="agentscenario.view",
 )
 async def scenario_get(id: int) -> dict[str, Any]:
     from app.models import AgentScenario
@@ -215,6 +217,7 @@ async def scenario_get(id: int) -> dict[str, Any]:
         "собирают. Возьми подходящий шаблон, если он есть, — не изобретай поля заново."
     ),
     parameters={"type": "object", "properties": {}, "required": []},
+    required_permission="agentscenario.view",
 )
 async def scenario_templates() -> dict[str, Any]:
     from app.services.ai.scenario_templates import list_templates
@@ -235,6 +238,7 @@ async def scenario_templates() -> dict[str, Any]:
         },
         "required": ["description"],
     },
+    required_permission="agentscenario.view",
 )
 async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
     from app.services.ai.scenario_builder import ScenarioBuilder
@@ -260,6 +264,7 @@ async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
         "properties": {"prompt": {"type": "string", "description": "Текст промпта для проверки"}},
         "required": ["prompt"],
     },
+    required_permission="agentscenario.view",
 )
 async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
     from app.services.ai.scenario_builder import ScenarioBuilder
@@ -280,6 +285,7 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
         "Требует подтверждения владельца — сначала покажи ему превью, что получится."
     ),
     confirm=True,
+    required_permission="agentscenario.create",
     parameters={
         "type": "object",
         "properties": {
@@ -393,6 +399,7 @@ async def scenario_create(
         "scope сливается с текущим по типам анализа. Требует подтверждения владельца."
     ),
     confirm=True,
+    required_permission="agentscenario.update",
     parameters={
         "type": "object",
         "properties": {
@@ -476,6 +483,7 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
         "Оригинал не меняется. Требует подтверждения владельца."
     ),
     confirm=True,
+    required_permission="agentscenario.create",
     parameters={
         "type": "object",
         "properties": {
@@ -550,6 +558,7 @@ async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[s
         "Требует подтверждения."
     ),
     confirm=True,
+    required_permission="agentscenario.delete",
     parameters={
         "type": "object",
         "properties": {"id": {"type": "integer", "description": "ID сценария"}},

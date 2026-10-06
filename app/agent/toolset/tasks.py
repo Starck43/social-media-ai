@@ -17,6 +17,7 @@ def _get_job_types() -> tuple[str, ...]:
     name="task_list",
     description="Показать все задачи (cron): имя, выражение, тип задачи, активность, время следующего запуска.",
     parameters={"type": "object", "properties": {}, "required": []},
+    required_permission="agenttask.view",
 )
 async def task_list() -> list[dict[str, Any]]:
     from app.models import AgentTask
@@ -49,6 +50,7 @@ async def task_list() -> list[dict[str, Any]]:
         "конкретика. Если сценарий требует цель, а она не задана, результат вернёт warnings."
     ),
     confirm=True,
+    required_permission="agenttask.create",
     parameters={
         "type": "object",
         "properties": {
@@ -242,6 +244,7 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
     name="task_remove",
     description="Удалить задачу по имени.",
     confirm=True,
+    required_permission="agenttask.delete",
     parameters={
         "type": "object",
         "properties": {"name": {"type": "string", "description": "Имя задачи"}},
@@ -264,6 +267,7 @@ async def task_remove(name: str) -> dict[str, Any]:
         "Неизменные поля остаются текущими. job_type можно сменить полностью."
     ),
     confirm=True,
+    required_permission="agenttask.update",
     parameters={
         "type": "object",
         "properties": {
@@ -452,6 +456,7 @@ async def task_update(
     name="task_pause",
     description="Поставить задачу на паузу или возобновить её.",
     confirm=True,
+    required_permission="agenttask.update",
     parameters={
         "type": "object",
         "properties": {

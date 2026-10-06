@@ -457,6 +457,8 @@ async def membership_role(
     workspace with no owner has nobody who may manage it at all, so it would
     be unreachable rather than merely restricted.
     """
+    from app.models.role import Role
+
     tenant_id = request.state.tenant_id
 
     denied = guard_web(request, "tenant", "update", back=BACK)
@@ -480,13 +482,22 @@ async def membership_role(
         add_flash(request, "error", f"Неизвестная роль: {role}")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
-    if membership.role == "owner" and new_role != "owner":
-        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.role == "owner"]
+    # Resolve role string → role_id
+    codename_map = {"owner": "SUPERUSER", "admin": "ADMIN", "member": "VIEWER", "viewer": "VIEWER"}
+    codename = codename_map.get(new_role)
+    new_role_id: int | None = None
+    if codename is not None:
+        r = await Role.objects.filter(codename=codename).first()
+        if r is not None:
+            new_role_id = r.id
+
+    if membership.is_owner and new_role != "owner":
+        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.is_owner]
         if len(owners) <= 1:
             add_flash(request, "error", "Владелец должен остаться хотя бы один")
             return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
-    await tenant_users.update_by_id(membership.id, role=new_role)
+    await tenant_users.update_by_id(membership.id, role_id=new_role_id)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 

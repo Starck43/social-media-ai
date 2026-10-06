@@ -55,5 +55,5 @@ async def resolve_source_owner(source: Any) -> Optional[int]:
             return None
         return user_id
 
-    owners = [member for member in members if member.role == "owner"] or members
+    owners = [member for member in members if member.is_owner] or members
     return owners[-1].user_id

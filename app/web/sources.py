@@ -523,9 +523,9 @@ async def source_detail(request: Request, source_id: int):
         from app.models.tenant import TenantUser
 
         membership = await TenantUser.objects.filter(
-            tenant_id=source.tenant_id, user_id=user.id, role="owner", is_active=True
+            tenant_id=source.tenant_id, user_id=user.id, is_active=True
         ).first()
-        user_is_owner = membership is not None
+        user_is_owner = membership is not None and membership.is_owner
 
     if token_owner is not None:
         owner_label = f"{token_owner.username} (личный токен)"

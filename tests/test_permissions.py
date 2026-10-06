@@ -16,6 +16,7 @@ the HTTP layers are only a delivery mechanism for them.
 """
 
 import importlib.util
+import inspect
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -217,7 +218,12 @@ def test_the_parallel_permission_systems_are_not_reintroduced():
     """Each of these was a second answer to the same question, and three were
     broken by construction: they compared `ActionType.value`, which for these
     enums is the `(db_value, display, emoji)` tuple, so the codename suffix match
-    could never succeed. A merge that brings one back must fail here."""
+    could never succeed. A merge that brings one back must fail here.
+
+    `app.core.permissions` is the allowed exception: the centralized scope for
+    non-HTTP surfaces (chat agent, managers). It must delegate to the same
+    predicate — `User.has_perm_for()` — rather than invent a new one.
+    """
     from app.api import deps
     from app.core import decorators
     from app.services.user import permissions as role_permissions
@@ -229,5 +235,13 @@ def test_the_parallel_permission_systems_are_not_reintroduced():
     assert not hasattr(deps, "require_workspace_owner_or_perm")
     assert not hasattr(role_permissions, "require_permission")
     assert not hasattr(role_permissions, "require_any_permission")
-    assert importlib.util.find_spec("app.core.permissions") is None
     assert importlib.util.find_spec("app.services.user.roles") is None
+
+    from app.core import permissions as centralized
+
+    assert issubclass(centralized.PermissionDeniedError, PermissionError)
+    source = inspect.getsource(centralized.has_permission)
+    assert "has_perm_for" in source
+    assert "model_permissions" in inspect.getsource(
+        centralized.require_permission
+    ) or "has_permission" in inspect.getsource(centralized.require_permission)

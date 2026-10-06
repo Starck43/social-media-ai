@@ -26,11 +26,6 @@ from app.types import ActionType
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models import TenantUser, User
 
-# Workspace roles that may always configure their own workspace. `TenantUser.role`
-# is a free string today (`owner` is the server default and what invite codes
-# issue); anything not listed here is a plain member and needs platform rights.
-OWNER_ROLES = frozenset({"owner"})
-
 
 def _resolve_action(action: ActionType | str) -> ActionType | None:
     """Accept an `ActionType` or its db value / name (`"update"`, `"UPDATE"`)."""
@@ -80,15 +75,22 @@ class WebPerms:
 
     @property
     def workspace_role(self) -> str | None:
-        """Membership role in the active workspace (`owner`, `member`, ...)."""
+        """Codename of the platform role in the active workspace, or None."""
         for membership in self._memberships:
             if membership.tenant_id == self._tenant_id:
-                return membership.role
+                if membership.role is None:
+                    return None
+                codename = membership.role.codename
+                name = codename.name if hasattr(codename, "name") else str(codename)
+                return name
         return None
 
     @property
     def is_owner(self) -> bool:
-        return self.workspace_role in OWNER_ROLES
+        for membership in self._memberships:
+            if membership.tenant_id == self._tenant_id:
+                return membership.is_owner
+        return False
 
     # --- what they may do --------------------------------------------------
 

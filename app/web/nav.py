@@ -20,6 +20,7 @@ class NavItem(NamedTuple):
     href: str
     label: str
     ready: bool = True
+    required_permission: str | None = None  # e.g., "source.view", "agenttask.create"
 
 
 # The desktop sidebar shows everything (including the roadmap); the mobile bar

@@ -37,10 +37,34 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-Запись/отправление (`confirm=True`): `task_add/remove/update/pause`, `source_add/disable`,
-`digest_send_now`, `action_send`, `scenario_create/update/clone/delete`. Их модель
-не выполняет сама — runtime кладёт вызов в
-`session.state['pending_confirmation']` и ждёт явного «да»/«нет» от владельца.
+### Permission gates
+
+Каждый инструмент имеет поле `required_permission` — точечный codename права
+в формате `model.action` (например, `"source.view"`, `"agenttask.create"`,
+`"digestrun.update"`). При вызове runtime проверяет права через
+`has_permission_by_codename(get_current_user(), required_permission)` в
+`permission_scope()`:
+
+- Если прав нет → инструмент возвращает ошибку «У вас нет прав...»
+- Если `required_permission` не задан → инструмент выполняется без проверки
+- `is_bypass()` (CLI/worker/admin) пропускает все проверки
+
+Write-инструменты (`confirm=True`) additionally требуют подтверждение владельца.
+
+### Confirmation flow
+
+1. Tool call с `confirm=True` → staging в `session.state['pending_confirmation']`
+2. Runtime возвращает human-readable preview: «Требуется подтверждение: добавить источник...»
+3. Владелец отвечает «да»/«нет»
+4. При «да»:
+   - Permission re-check: `has_permission_by_codename(get_current_user(), required_permission)`
+   - Execution: `call_tool(name, args)`
+   - Result overwrites the staged confirmation row
+   - Model loop resumes (agent continues plan)
+5. При «нет» → clear pending, return «Отменено.»
+
+Permission re-check at confirmation time ensures that if the user's role changed
+between tool call and confirmation, the action is still blocked.
 
 ## Команды чата
 
@@ -100,6 +124,19 @@ run). Автоматическая эволюция промптов **не пр
 
 Подтверждение — общее для всех write-tools: runtime кладёт вызов в
 `session.state['pending_confirmation']` и ждёт «да».
+
+### Web chat
+
+`/app/chat` использует тот же runtime (`handle_web_message`), что и Telegram/MAX.
+Workspace разрешается `TenantUIMiddleware` из `tenant_users` web membership.
+Роль передаётся как `role_id` в `handle_web_message()`, permission checks
+работают через `permission_scope()` так же, как в messenger.
+
+### Telegram/MAX users
+
+Для telegram/MAX users User разрешается через `tenant_users` → `user_id` → `User`.
+Если `user_id = NULL` (unmessenger user), permission checks пропускаются
+(`has_permission(None, ...) = True` via bypass for legacy rows).
 
 ## Задачи в чате
 

@@ -48,7 +48,25 @@ The console is gated by the **platform role** of the signed-in operator, the
 same way Django gates a `ModelAdmin`. There is no separate admin permission
 model: the answer to "may this operator do this" comes from `role_permission` →
 `permissions.model_type_id` + `action_type`, read through
-`User.model_permissions()` — one source of truth shared with `/api` and the CLI.
+`User.has_perm_for(model_name, action)` — one source of truth shared with `/api`,
+`/app`, the agent tools, and the CLI.
+
+**Who may enter:** a superuser (`users.is_superuser` or the `SUPERUSER` role),
+or any user whose role carries at least one model `view`
+(`User.has_admin_access()`). Anyone else is sent back to the login form.
+
+**What they may do:** per model, the role's rights map onto the console actions
+one to one, and sqladmin asks about every one of them — hiding a button and
+blocking the route behind it are the same check.
+
+The permission check uses structured columns:
+- `permissions.model_type_id` → `model_types.model_name` (e.g., `source`, `agenttask`, `tenant`)
+- `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
+
+The single predicate `User.has_perm_for(model_name, action)` is the canonical
+check — it is used by `/api`, `/app`, `/admin`, agent tools, and CLI. Changing a
+role's codename never breaks permission logic because the check uses structured
+columns, not codename strings.
 
 **Who may enter:** a superuser (`users.is_superuser` or the `SUPERUSER` role),
 or any user whose role carries at least one model `view`
@@ -102,7 +120,8 @@ spelling mistake is otherwise silent.
 
 | File | Role |
 |---|---|
-| `app/models/user.py` | `model_permissions()` / `has_perm_for()` — the canonical check |
+| `app/models/user.py` | `has_perm_for()` — the canonical check |
+| `app/core/permissions.py` | `has_permission()`, `has_role()`, `permission_scope()` — non-HTTP surfaces |
 | `app/admin/authorization.py` | `AdminAuthorizationBackend` — turns those rights into grants; also `require_admin_perm()` for routes outside the console |
 | `app/admin/base.py` | `action_permissions` declaration + `get_admin_user()` |
 | `app/admin/views.py` | per-view flags and action declarations |

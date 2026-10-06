@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from sqlalchemy import Text, cast
+
+from app.core.permissions import require_permission
+from app.types import ActionType
 
 from .base_manager import BaseManager
 
@@ -14,6 +17,9 @@ class AgentScenarioManager(BaseManager):
     guard in `BaseManager` applies. The previous signatures took a caller-owned
     `AsyncSession` and ran hand-built `select()` statements on it, which
     bypassed that guard — a scenario from another workspace was reachable.
+
+    User-facing writes are gated by the caller's platform role
+    (`agentscenario.create/update/delete`).
     """
 
     def __init__(self):
@@ -22,9 +28,21 @@ class AgentScenarioManager(BaseManager):
 
         super().__init__(B)
 
-    async def get_default_scenario(
-        self, *, tenant_id: Optional[int] = None
-    ) -> Optional[object]:
+    # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
+
+    @require_permission("agentscenario", ActionType.CREATE)
+    async def create(self, **kwargs: Any) -> object:
+        return await super().create(**kwargs)
+
+    @require_permission("agentscenario", ActionType.UPDATE)
+    async def update_by_id(self, instance_id: int, **kwargs: Any) -> Optional[object]:
+        return await super().update_by_id(instance_id, **kwargs)
+
+    @require_permission("agentscenario", ActionType.DELETE)
+    async def delete_by_id(self, instance_id: int) -> bool:
+        return await super().delete_by_id(instance_id)
+
+    async def get_default_scenario(self, *, tenant_id: Optional[int] = None) -> Optional[object]:
         """
         Retrieve the default scenario for the tenant in scope.
 
@@ -113,6 +131,7 @@ class AgentScenarioManager(BaseManager):
 
         return matching_scenarios
 
+    @require_permission("agentscenario", ActionType.CREATE)
     async def create_scenario(
         self,
         name: str,
@@ -153,6 +172,7 @@ class AgentScenarioManager(BaseManager):
             is_default=is_default,
         )
 
+    @require_permission("agentscenario", ActionType.UPDATE)
     async def update_scenario_activity(self, scenario_id: int, is_active: bool) -> Optional[object]:
         """
         Update scenario active status.

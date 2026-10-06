@@ -25,6 +25,7 @@ from starlette.responses import RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
+from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
@@ -88,10 +89,14 @@ class TenantUIMiddleware:
                     else await tenants.get(id=membership.tenant_id)
                 )
                 if workspace is not None:
+                    role_codename: str | None = None
+                    if membership.role is not None:
+                        codename = membership.role.codename
+                        role_codename = codename.name if hasattr(codename, "name") else str(codename)
                     request.state.workspaces.append(
                         {
                             "tenant": workspace,
-                            "role": membership.role,
+                            "role": role_codename,
                             "active": membership.tenant_id == tenant_id,
                         }
                     )
@@ -99,15 +104,30 @@ class TenantUIMiddleware:
         if user is not None:
             request.state.connection_alerts = await self._connection_alerts(user.id)
 
-        with tenant_scope(tenant_id):
-            if tenant_id is not None:
-                try:
-                    from app.models import Notification
+        # Run inside both tenant_scope (data isolation) and permission_scope
+        # (rights checks). permission_scope is only active when we have a user;
+        # the workspace owner passes every model right (matching `WebPerms`).
+        scope_ctx = tenant_scope(tenant_id)
+        perm_ctx = None
+        if user is not None:
+            perms = getattr(request.state, "web_perms", None)
+            perm_ctx = permission_scope(user, is_owner=bool(perms is not None and perms.is_owner))
 
-                    request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
-                except Exception:  # noqa: BLE001 — a badge must never break a page
-                    request.state.unread_notifications = 0
-            await self.app(scope, receive, send)
+        with scope_ctx:
+            if perm_ctx is not None:
+                perm_ctx.__enter__()
+            try:
+                if tenant_id is not None:
+                    try:
+                        from app.models import Notification
+
+                        request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
+                    except Exception:  # noqa: BLE001 — a badge must never break a page
+                        request.state.unread_notifications = 0
+                await self.app(scope, receive, send)
+            finally:
+                if perm_ctx is not None:
+                    perm_ctx.__exit__(None, None, None)
 
     @staticmethod
     async def _connection_alerts(user_id: int) -> list:

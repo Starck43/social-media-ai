@@ -30,6 +30,32 @@ def hash_invite_code(code: str) -> str:
 WEB_CHANNEL = "web"
 
 
+def _resolve_role_codename(role: str | None) -> str | None:
+    """Map a legacy workspace-role string to a platform ``Role.codename``.
+
+    Legacy strings "owner" → SUPERUSER, "member" → VIEWER.  If the string
+    already matches a codename it is passed through unchanged.
+    """
+    if role is None:
+        return None
+
+    legacy_map = {"owner": "SUPERUSER", "member": "VIEWER"}
+    return legacy_map.get(role, role)
+
+
+async def _role_codename_by_id(role_id: int | None) -> str | None:
+    """The codename of a role, or None when the role is unresolved."""
+    if role_id is None:
+        return None
+    from ..role import Role
+
+    role = await Role.objects.get(id=role_id)
+    if role is None:
+        return None
+    codename = role.codename
+    return codename.name if hasattr(codename, "name") else str(codename)
+
+
 def generate_invite_code() -> str:
     """Human-typable code: 4+4 uppercase alphanumerics, no ambiguous chars."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -110,9 +136,11 @@ class TenantUserManager(BaseManager["TenantUser"]):
         return row
 
     async def add_member(
-        self, *, tenant_id: int, channel: str, external_user_id: str, role: str = "owner"
+        self, *, tenant_id: int, channel: str, external_user_id: str, role_id: int | None = None, role: str | None = None
     ) -> TenantUser | None:
-        """Bind a messenger identity (a chat participant) to a workspace.
+        """Backward-compatible wrapper: accept either role_id or legacy role string.
+
+        Bind a messenger identity (a chat participant) to a workspace.
 
         No tier check here, unlike `add_web_member`, and that asymmetry is
         deliberate: the team quota counts seats in the web console, not people
@@ -120,26 +148,42 @@ class TenantUserManager(BaseManager["TenantUser"]):
         the product, not an extra seat — charging for it would make the free
         tier unusable for the thing it exists for.
         """
+        if role is not None and role_id is None:
+            # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
+            from app.models import Role
+            codename = _resolve_role_codename(role)
+            role_obj = await Role.objects.filter(codename=codename).first()
+            role_id = role_obj.id if role_obj else None
+
         existing = await self.get(tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id))
         if existing is not None:
-            if not existing.is_active or existing.role != role:
-                return await self.update_by_id(existing.id, is_active=True, role=role)
+            if not existing.is_active or existing.role_id != role_id:
+                return await self.update_by_id(existing.id, is_active=True, role_id=role_id)
             return existing
 
         return await self.create(
-            tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role=role
+            tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role_id=role_id
         )
 
-    async def add_web_member(self, *, tenant_id: int, user_id: int, role: str = "owner") -> "TenantUser | None":
-        """Web membership: same row, but bound to the `users` table via user_id.
+    async def add_web_member(self, *, tenant_id: int, user_id: int, role_id: int | None = None, role: str | None = None) -> "TenantUser | None":
+        """Backward-compatible wrapper: accept either role_id or legacy role string.
+
+        Web membership: same row, but bound to the `users` table via user_id.
 
         This is the path that consumes a team seat, so this is where the tier is
         enforced — which is also the path invite redemption takes.
         """
+        if role is not None and role_id is None:
+            # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
+            from app.models import Role
+            codename = _resolve_role_codename(role)
+            role_obj = await Role.objects.filter(codename=codename).first()
+            role_id = role_obj.id if role_obj else None
+
         existing = await self.get(tenant_id=tenant_id, user_id=user_id)
         if existing is not None:
-            if not existing.is_active or existing.role != role:
-                return await self.update_by_id(existing.id, is_active=True, role=role)
+            if not existing.is_active or existing.role_id != role_id:
+                return await self.update_by_id(existing.id, is_active=True, role_id=role_id)
             return existing
 
         blocked = await _member_limit_reason(tenant_id)
@@ -147,7 +191,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
             raise PlanLimitError(blocked)
 
         return await self.create(
-            tenant_id=tenant_id, channel=WEB_CHANNEL, external_user_id=str(user_id), user_id=user_id, role=role
+            tenant_id=tenant_id, channel=WEB_CHANNEL, external_user_id=str(user_id), user_id=user_id, role_id=role_id
         )
 
     async def web_memberships(self, user_id: int) -> list["TenantUser"]:
@@ -175,11 +219,24 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
         expires_at: datetime | None = None,
     ) -> tuple["TenantInvite", str]:
         """Create an invitation; returns (row, plaintext code shown once)."""
+        from app.core.database import async_session_maker
+        from ..role import Role
+
         code = generate_invite_code()
+
+        # Resolve role string → role_id
+        codename = _resolve_role_codename(role)
+        role_id: int | None = None
+        if codename is not None:
+            async with async_session_maker() as session:
+                r = await Role.objects.filter(codename=codename).first()
+                if r is not None:
+                    role_id = r.id
+
         row = await self.create(
             tenant_id=tenant_id,
             code_hash=hash_invite_code(code),
-            role=role,
+            role_id=role_id,
             max_uses=max_uses,
             expires_at=expires_at,
         )
@@ -215,13 +272,18 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
             tenant_id=invite.tenant_id,
             channel=channel,
             external_user_id=external_user_id,
-            role=invite.role,
+            role_id=invite.role_id,
         )
         await TenantChannelManager().bind(
             tenant_id=invite.tenant_id, channel=channel, chat_id=str(chat_id), kind="private"
         )
         await self.update_by_id(invite.id, used_count=invite.used_count + 1)
-        return {"status": "bound", "tenant_id": invite.tenant_id, "role": invite.role}
+        return {
+            "status": "bound",
+            "tenant_id": invite.tenant_id,
+            "role_id": invite.role_id,
+            "role_codename": await _role_codename_by_id(invite.role_id),
+        }
 
     async def redeem_web(self, *, code: str, user_id: int) -> dict[str, Any]:
         """Attach a logged-in web user to an invited tenant (no messenger chat).
@@ -243,7 +305,7 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
             return {"status": "already", "tenant_id": invite.tenant_id}
 
         try:
-            await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role=invite.role)
+            await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role_id=invite.role_id)
         except PlanLimitError as e:
             # The code is not burned: the seat may free up, and this person
             # should be able to redeem the same code once it does.
@@ -251,7 +313,7 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
             return {"status": "no_seat", "reason": str(e)}
 
         await self.update_by_id(invite.id, used_count=invite.used_count + 1)
-        return {"status": "bound", "tenant_id": invite.tenant_id, "role": invite.role}
+        return {"status": "bound", "tenant_id": invite.tenant_id, "role_id": invite.role_id}
 
 
 class TenantChannelManager(BaseManager["TenantChannel"]):

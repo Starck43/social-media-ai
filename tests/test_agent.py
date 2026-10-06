@@ -399,8 +399,8 @@ async def test_chat_uses_agent_limits(_clean_sessions, monkeypatch):
 
     first = await agent_runtime.handle_inbound(_inbound("привет", user_id="7"))
     assert first == "ok"
-    assert captured.get("max_tokens") == 2048
-    assert captured.get("temperature") == 0.5
+    assert captured.get("max_tokens") == 1024
+    assert captured.get("temperature") == 0.3
 
 
 async def test_confirmed_tool_resumes_the_plan(_clean_sessions, monkeypatch):

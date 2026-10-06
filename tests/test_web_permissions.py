@@ -56,13 +56,18 @@ class _StubUser:
 
 
 class _StubMembership:
-    def __init__(self, tenant_id: int, role: str) -> None:
+    def __init__(self, tenant_id: int, role: str, is_owner: bool = False) -> None:
         self.tenant_id = tenant_id
         self.role = role
+        self._is_owner = is_owner
+
+    @property
+    def is_owner(self) -> bool:
+        return self._is_owner
 
 
-def _perms(user, *, role: str = "member", same_tenant: bool = True) -> WebPerms:
-    memberships = [_StubMembership(1 if same_tenant else 999, role)] if user is not None else []
+def _perms(user, *, role: str = "member", same_tenant: bool = True, is_owner: bool = False) -> WebPerms:
+    memberships = [_StubMembership(1 if same_tenant else 999, role, is_owner=is_owner)] if user is not None else []
     return WebPerms(user, memberships, 1)
 
 
@@ -78,7 +83,7 @@ def test_section_gate_asks_who_the_user_is_and_fails_closed() -> None:
 def test_workspace_owner_writes_his_own_workspace_regardless_of_platform_role() -> None:
     # The documented rule: the owner of a workspace may always configure it.
     viewer = _StubUser(rights={("source", ActionType.VIEW)})
-    perms = _perms(viewer, role="owner")
+    perms = _perms(viewer, role="owner", is_owner=True)
     assert perms.is_owner
     assert perms.can("source", ActionType.CREATE)
     assert perms.can("agenttask", ActionType.DELETE)

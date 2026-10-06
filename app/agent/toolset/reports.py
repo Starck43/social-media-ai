@@ -20,6 +20,7 @@ from app.agent.tools import tool
         },
         "required": [],
     },
+    required_permission="digestrun.view",
 )
 async def report_period(period: str = "day") -> dict[str, Any]:
     from app.services.digest.builder import aggregate, period_bounds
@@ -40,6 +41,7 @@ async def report_period(period: str = "day") -> dict[str, Any]:
         "То же самое, что ежедневная сводка по расписанию, но вручную."
     ),
     confirm=True,
+    required_permission="digestrun.update",
     parameters={
         "type": "object",
         "properties": {

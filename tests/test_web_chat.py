@@ -138,8 +138,15 @@ async def test_a_sent_message_becomes_the_transcript(monkeypatch: pytest.MonkeyP
     replies = iter(["Первый ответ", "Второй ответ"])
     seen: list[tuple[str, int, str]] = []
 
-    async def _fake_turn(text: str, *, tenant_id: int, user_id: int, role: str) -> str:
-        seen.append((text, tenant_id, role))
+    async def _fake_turn(
+        text: str,
+        *,
+        tenant_id: int,
+        user_id: int,
+        role_id: int | None = None,
+        role_codename: str | None = None,
+    ) -> str:
+        seen.append((text, tenant_id, role_codename))
         # Stand in for the real turn: it opens the session and persists both
         # sides, which is exactly what makes the transcript the shared one.
         with tenant_scope(tenant_id):
@@ -167,8 +174,8 @@ async def test_a_sent_message_becomes_the_transcript(monkeypatch: pytest.MonkeyP
             resp = await client.post("/app/chat", data={"text": "Покажи дашборд", "_csrf": token})
             assert resp.status_code == 200
 
-            # The turn ran as this workspace, with this user's membership role.
-            assert seen == [("Покажи дашборд", tenant_id, "owner")]
+            # The turn ran as this workspace, with this user's platform role.
+            assert seen == [("Покажи дашборд", tenant_id, "SUPERUSER")]
 
             # The page answers inline — no redirect, no polling a job.
             assert "Первый ответ" in resp.text
@@ -335,7 +342,14 @@ async def test_an_empty_question_is_a_no_op() -> None:
     """Whitespace must not open a session or reach the agent."""
     seen: list[str] = []
 
-    async def _fake_turn(text: str, *, tenant_id: int, user_id: int, role: str) -> str:
+    async def _fake_turn(
+        text: str,
+        *,
+        tenant_id: int,
+        user_id: int,
+        role_id: int | None = None,
+        role_codename: str | None = None,
+    ) -> str:
         seen.append(text)
         return "не должно случиться"
 

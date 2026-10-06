@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from croniter import croniter
+
+from app.core.permissions import require_permission
+from app.types import ActionType
 
 from .base_manager import BaseManager
 
@@ -23,6 +26,38 @@ class AgentTaskManager(BaseManager):
         from ..agent_task import AgentTask
 
         super().__init__(AgentTask)
+
+    # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
+
+    @require_permission("agenttask", ActionType.CREATE)
+    async def create(self, **kwargs: Any) -> "AgentTask":
+        return await super().create(**kwargs)
+
+    @require_permission("agenttask", ActionType.UPDATE)
+    async def update_by_id(self, instance_id: int, **kwargs: Any) -> Optional["AgentTask"]:
+        return await super().update_by_id(instance_id, **kwargs)
+
+    @require_permission("agenttask", ActionType.DELETE)
+    async def delete_by_id(self, instance_id: int) -> bool:
+        return await super().delete_by_id(instance_id)
+
+    @require_permission("agenttask", ActionType.UPDATE)
+    async def set_sources(self, task_id: int, source_ids: list[int]) -> int:
+        """Replace the task's source links with exactly `source_ids`.
+
+        The single write path for the m2m table — the web form, the CLI and the
+        agent tool all call it instead of hand-rolling delete+insert.
+        """
+        from ..agent_task import agent_task_sources
+
+        return await self._replace_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
+
+    @require_permission("agenttask", ActionType.UPDATE)
+    async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
+        """Link sources to the task, keeping the links that already exist."""
+        from ..agent_task import agent_task_sources
+
+        return await self._add_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
 
     @staticmethod
     def requires_sources(job_type: str) -> bool:
@@ -126,22 +161,6 @@ class AgentTaskManager(BaseManager):
             grouped.setdefault(int(task_id), []).append(int(source_id))
         return {tid: sorted(grouped.get(tid, [])) for tid in task_ids}
 
-    async def set_sources(self, task_id: int, source_ids: list[int]) -> int:
-        """Replace the task's source links with exactly `source_ids`.
-
-        The single write path for the m2m table — the web form, the CLI and the
-        agent tool all call it instead of hand-rolling delete+insert.
-        """
-        from ..agent_task import agent_task_sources
-
-        return await self._replace_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
-
-    async def add_sources(self, task_id: int, source_ids: list[int]) -> int:
-        """Link sources to the task, keeping the links that already exist."""
-        from ..agent_task import agent_task_sources
-
-        return await self._add_secondary(agent_task_sources, "agent_task_id", task_id, "source_id", source_ids)
-
     @staticmethod
     def _task_effectively_active(task, workspace_active_source_ids) -> bool:
         """Whether a task is effectively active — i.e. should be scheduled/shown as active.
@@ -226,7 +245,10 @@ class AgentTaskManager(BaseManager):
         `record_result` when the worker finishes, so `last_status` here is a
         provisional value and may be overwritten.
         """
-        await self.update_by_id(
+        from .base_manager import BaseManager
+
+        await BaseManager.update_by_id(
+            self,
             task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,
@@ -241,7 +263,10 @@ class AgentTaskManager(BaseManager):
         `last_error` / `last_run_at` reflect what actually happened, not just
         that the job was enqueued. Must run inside the task's tenant scope.
         """
-        await self.update_by_id(
+        from .base_manager import BaseManager
+
+        await BaseManager.update_by_id(
+            self,
             task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,

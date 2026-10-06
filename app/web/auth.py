@@ -46,11 +46,16 @@ async def _unique_slug(base: str) -> str:
 
 async def _create_workspace(user: User, name: str) -> int:
     """New tenant owned by `user` (web membership, role=owner). Returns tenant_id."""
+    from app.core.database import async_session_maker
+
     tenant = await tenants.create(
         name=name.strip()[:100] or f"{user.username}'s workspace",
         slug=await _unique_slug(_slugify(name or user.username)),
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant.id, user_id=user.id, role="owner")
+    # Resolve SUPERUSER role id for the workspace owner
+    super_role = await Role.objects.filter(codename="SUPERUSER").first()
+    role_id = super_role.id if super_role is not None else None
+    await TenantUserManager().add_web_member(tenant_id=tenant.id, user_id=user.id, role_id=role_id)
     return tenant.id
 
 

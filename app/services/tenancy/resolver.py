@@ -39,14 +39,23 @@ class Resolution:
     channel: str
     chat_id: str
     user_id: str
-    role: str
+    role_id: int | None = None
+    role_codename: str | None = None
     onboarded: bool = False
     is_platform_owner: bool = False
 
     @property
     def is_owner(self) -> bool:
         """Writes that affect the whole workspace stay with its owner."""
-        return self.is_platform_owner or self.role == "owner"
+        if self.is_platform_owner:
+            return True
+        # role_id is None → legacy/unresolved row, treat as owner for compat
+        if self.role_id is None:
+            return True
+        # role_id resolves to a Role row: SUPERUSER is the canonical owner role
+        if self.role_codename is None:
+            return False
+        return self.role_codename == "SUPERUSER"
 
 
 def is_platform_owner(channel: str, user_id: str) -> bool:
@@ -127,15 +136,31 @@ def _chat_kind(inbound: Any) -> str:
     return "channel" if getattr(inbound, "is_channel_post", False) else "private"
 
 
+def _role_codename(member: Any) -> str | None:
+    """The member's role codename, or None when the role is unresolved."""
+    role = getattr(member, "role", None)
+    if role is None:
+        return None
+    codename = role.codename
+    return codename.name if hasattr(codename, "name") else str(codename)
+
+
 async def _bootstrap_owner(inbound: Any) -> Resolution:
     """Bind a platform owner's chat to the bootstrap workspace (first contact)."""
+    from app.models.role import Role
+
     tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
     channel = inbound.channel
+
+    # Resolve SUPERUSER role id
+    super_role = await Role.objects.filter(codename="SUPERUSER").first()
+    role_id = super_role.id if super_role is not None else None
+
     await tenant_users.add_member(
         tenant_id=tenant.id,
         channel=channel,
         external_user_id=str(inbound.user_id),
-        role="owner",
+        role_id=role_id,
     )
     await tenant_channels.bind(
         tenant_id=tenant.id,
@@ -149,7 +174,8 @@ async def _bootstrap_owner(inbound: Any) -> Resolution:
         channel=channel,
         chat_id=str(inbound.chat_id),
         user_id=str(inbound.user_id),
-        role="owner",
+        role_id=role_id,
+        role_codename="SUPERUSER" if super_role is not None else None,
         onboarded=True,
         is_platform_owner=True,
     )
@@ -181,7 +207,8 @@ async def resolve_inbound(inbound: Any) -> Optional[Resolution]:
                 channel=channel,
                 chat_id=chat_id,
                 user_id=user_id,
-                role=member.role,
+                role_id=member.role_id,
+                role_codename=_role_codename(member),
                 is_platform_owner=is_platform_owner(channel, user_id),
             )
 
@@ -194,7 +221,8 @@ async def resolve_inbound(inbound: Any) -> Optional[Resolution]:
                     channel=channel,
                     chat_id=chat_id,
                     user_id=user_id,
-                    role=result.get("role", "member"),
+                    role_id=result.get("role_id"),
+                    role_codename=result.get("role_codename"),
                     onboarded=True,
                 )
             logger.info(f"Invite rejected for {channel}:{chat_id}: {result}")

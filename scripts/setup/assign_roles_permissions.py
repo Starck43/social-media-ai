@@ -25,6 +25,8 @@ ROLE_PERMISSIONS = {
         "social.notification.view",
         "dashboard.aianalytics.view",
         "social.digestrun.view",
+        "account.credential.view",
+        "account.llmprovider.view",
     ],
     "AI_BOT": [
         "social.source.view",
@@ -37,6 +39,8 @@ ROLE_PERMISSIONS = {
         "social.agentscenario.*",
         "social.agenttask.*",
         "social.botaction.*",
+        "account.credential.view",
+        "account.llmprovider.view",
     ],
     "MANAGER": [
         "social.source.*",
@@ -44,6 +48,9 @@ ROLE_PERMISSIONS = {
         "social.notification.*",
         "dashboard.aianalytics.view",
         "social.digestrun.view",
+        "account.credential.view",
+        "account.credential.update",
+        "account.llmprovider.view",
     ],
     "ANALYST": [
         "social.source.view",
@@ -52,6 +59,8 @@ ROLE_PERMISSIONS = {
         "social.notification.view",
         "dashboard.aianalytics.*",
         "social.digestrun.*",
+        "account.credential.view",
+        "account.llmprovider.view",
     ],
     "MODERATOR": [
         "social.source.*",
@@ -60,6 +69,8 @@ ROLE_PERMISSIONS = {
         "dashboard.aianalytics.*",
         "social.digestrun.view",
         "social.agentfeedback.*",
+        "account.credential.view",
+        "account.llmprovider.view",
     ],
     "ADMIN": ["*"],
     "SUPERUSER": ["*"],

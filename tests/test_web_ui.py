@@ -100,7 +100,7 @@ async def test_register_creates_workspace_and_membership(client: AsyncClient) ->
         assert user is not None
         memberships = await TenantUserManager().web_memberships(user.id)
         assert len(memberships) == 1
-        assert memberships[0].role == "owner"
+        assert memberships[0].is_owner
         tenant = await tenants.get(id=memberships[0].tenant_id)
         assert tenant.name == "Test Studio"
 

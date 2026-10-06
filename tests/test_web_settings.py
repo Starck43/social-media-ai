@@ -54,7 +54,7 @@ def test_unknown_tab_falls_back_to_workspace() -> None:
     assert _tab_of(_R("credentials")) == "connections"
     # A hand-typed tab must not reach a template branch that does not exist.
     assert _tab_of(_R("../../admin")) == "workspace"
-    assert set(TABS) == {"workspace", "team", "connections", "channels"}
+    assert set(TABS) == {"workspace", "team", "connections", "agent", "channels"}
 
 
 def test_self_service_kinds_exclude_deployment_secrets() -> None:
@@ -402,7 +402,7 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
             owner, tenant_id = await _register(client, "SetSolo")
             memberships = await TenantUserManager().web_memberships(owner.id)
             membership = memberships[0]
-            assert membership.role == "owner"
+            assert membership.is_owner
 
             token = await _csrf(client, "/app/settings?tab=team")
             resp = await client.post(
@@ -412,7 +412,7 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
             assert "должен остаться хотя бы один" in resp.text
 
             row = await tenant_users.get(id=membership.id)
-            assert row.role == "owner"
+            assert row.is_owner
 
             # Promote a second member to owner, then the same demotion is allowed:
             # the guard counts owners, not the row being edited.
@@ -434,7 +434,7 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
                 )
                 assert "Роль изменена" in resp.text
                 row = await tenant_users.get(id=membership.id)
-                assert row.role == "viewer"
+                assert not row.is_owner
             finally:
                 await _cleanup(second)
     finally:

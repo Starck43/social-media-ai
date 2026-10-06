@@ -24,7 +24,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
 from ..core.decorators import app_label
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         TenantManager,
         TenantUserManager,
     )
+    from .role import Role
 
 
 @app_label("account")
@@ -271,13 +272,35 @@ class TenantUser(Base, TimestampMixin):
     user_id: Mapped[int | None] = Column(
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"), nullable=True
     )
-    role: Mapped[str] = Column(String(20), nullable=False, default="owner", server_default="owner")
+    role_id: Mapped[int | None] = Column(
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id", ondelete="SET NULL"), nullable=True,
+        comment="Platform role for this workspace membership (NULL = legacy/unresolved)",
+    )
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    # Relationship to the platform role assigned to this workspace membership
+    role: Mapped["Role | None"] = relationship("Role", lazy="selectin")
 
     if TYPE_CHECKING:
         objects: ClassVar[TenantUserManager | BaseManager]
     else:
         objects: ClassVar = None
+
+    @property
+    def is_owner(self) -> bool:
+        """True when this membership's role grants full workspace access.
+
+        The platform SUPERUSER role is the canonical owner role; legacy rows
+        with ``role_id == NULL`` are treated as owners for backward compatibility
+        (pre-migration data where the string column was "owner").
+        """
+        if self.role_id is None:
+            return True
+        if self.role is None:
+            return False
+        codename = self.role.codename
+        name = codename.name if hasattr(codename, "name") else str(codename)
+        return name == "SUPERUSER"
 
 
 @app_label("account")
@@ -296,7 +319,10 @@ class TenantInvite(Base, TimestampMixin):
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.tenants.id", ondelete="CASCADE"), nullable=False
     )
     code_hash: Mapped[str] = Column(String(64), nullable=False)
-    role: Mapped[str] = Column(String(20), nullable=False, default="owner", server_default="owner")
+    role_id: Mapped[int | None] = Column(
+        Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id", ondelete="SET NULL"), nullable=True,
+        comment="Platform role to assign on invite redemption",
+    )
     expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     max_uses: Mapped[int] = Column(Integer, nullable=False, default=1, server_default="1")
     used_count: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")

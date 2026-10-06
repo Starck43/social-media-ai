@@ -11,7 +11,11 @@ client workspace. A chat is bound to exactly one tenant, and every data row
 2. **Invite codes** bring client chats into their own workspaces (`/start
    <code>`). Codes are SHA-256 hashed in the DB; the plaintext is shown once.
 3. **Membership** is `(tenant_id, channel, external_user_id)` — a chat
-   participant with a `role` (`owner` | `member`).
+   participant with a platform role assigned via `role_id` (FK to `roles.id`).
+   Roles are defined by `Role.codename` (enum `user_role_type`): `VIEWER`,
+   `AI_BOT`, `MANAGER`, `ANALYST`, `MODERATOR`, `ADMIN`, `SUPERUSER`.
+   `SUPERUSER` is the canonical "owner" role; legacy rows with `role_id = NULL`
+   are treated as owners for backward compatibility.
 4. **Enforcement** lives in `BaseManager`/`QuerySet`, not in models:
    `TenantScopedMixin` just marks the model. Every SELECT is filtered to
    `current_tenant_id()`, every `create()` stamps `tenant_id`; `update_by_id`
@@ -114,15 +118,61 @@ a foreign one is refused with 403, never honoured.
 
 | Surface | Auth | Workspace | Rights |
 | --- | --- | --- | --- |
-| `/api/*` | bearer JWT (required, 401 otherwise) | caller's membership; headers select, never widen | `app/api/deps.py` — model rights / role ladder, declared per endpoint (see `docs/API.md`) |
-| `/app/*` | web session | caller's membership (`TenantUIMiddleware`) | the membership is the boundary; no per-model right in the client UI |
-| `/admin/*` (sqladmin) | admin backend | bypass — operator console | per-model rights, Django-style (`docs/ADMIN.md`) |
+| `/api/*` | bearer JWT (required, 401 otherwise) | caller's membership; headers select, never widen | `User.has_perm_for(model_name, action)` — structured `model_type_id` + `action_type`, declared per endpoint (see `docs/API.md`) |
+| `/app/*` | web session | caller's membership (`TenantUIMiddleware`) | `WebPerms.can()` — owner bypass + `User.has_perm_for()`; gated by `guard_web()` |
+| `/admin/*` (sqladmin) | admin backend | bypass — operator console | per-model rights via `User.has_perm_for()` (see `docs/ADMIN.md`) |
 | CLI | none (developer tool) | bypass; `--tenant` opts into one workspace | developer surface, no rights check |
 | worker / scheduler | — | from `job.tenant_id` / `task.tenant_id` | jobs run as the workspace they belong to |
+| agent chat (Telegram/MAX/web) | inbound resolution | `resolve_inbound()` → tenant | tools check `required_permission` via `has_permission()` in `permission_scope()`; writes require confirmation |
 
-Rights come from the platform role (`role_permission` → `permissions`) and are
-read through `User.model_permissions()`; every surface that needs them uses that
-one predicate, so they cannot drift apart.
+Rights come from the platform role (`role_permission` → `permissions.model_type_id` + `action_type`, never the stored codename) and are
+read through `User.has_perm_for(model_name, action)` — one predicate shared
+across all surfaces (`/api`, `/app`, `/admin`, agent tools, CLI). The check
+uses structured columns (`model_type_id` + `action_type`), not codename strings,
+so changing a role's codename never breaks permission logic.
+
+## Roles and permissions
+
+Platform roles are stored in the `roles` table (`settings.DB_SCHEMA.roles`).
+Each role has a `codename` (enum `user_role_type`) and a set of permissions
+(many-to-many via `role_permission` → `permissions`).
+
+### Role codenames
+
+| Codename | Purpose |
+|---|---|
+| `SUPERUSER` | Workspace owner / platform operator — full access, all actions |
+| `ADMIN` | Workspace administrator |
+| `MODERATOR` | Content moderation |
+| `ANALYST` | Read-only analytics access |
+| `MANAGER` | Content management (sources, tasks, scenarios) |
+| `AI_BOT` | Automated agent identity |
+| `VIEWER` | Read-only workspace member |
+
+### Structured permissions
+
+Permissions are stored as pairs:
+- `permissions.model_type_id` → `model_types.model_name` (e.g., `source`, `agenttask`, `tenant`)
+- `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
+
+The single predicate `User.has_perm_for(model_name, action)` checks whether the
+user's role grants the required pair. This is the same check used by:
+- `/api/*` — `app/api/deps.py`
+- `/app/*` — `app/web/perms.py` (`WebPerms.can()`)
+- `/admin/*` — `app/admin/authorization.py`
+- Agent tools — `app/agent/runtime.py` (`has_permission_by_codename()` in `permission_scope()`)
+- CLI/worker — `app/core/permissions.py` (`is_bypass()` skips checks)
+
+### Legacy compatibility
+
+Before migration 0080, `tenant_users.role` was a string column (`"owner"` / `"member"`).
+Migration 0080 replaced it with `tenant_users.role_id` (FK to `roles.id`).
+Legacy rows with `role_id = NULL` are treated as owners (`is_owner = True`) for
+backward compatibility.
+
+Role string resolution helpers:
+- `_resolve_role_codename("owner")` → `"SUPERUSER"`
+- `_resolve_role_codename("member")` → `"VIEWER"`
 
 ## Config
 
@@ -152,6 +202,14 @@ personal vault (`user_credentials`, keyed by `users.id`, not `tenants.id`);
 `0066_drop_tenant_credentials.py` drops the old workspace vault: personal L2
 secrets now live in `user_credentials` and app/bot config (VK app/token, bot
 tokens) moves to the environment. See [COLLECTION.md](./COLLECTION.md).
+
+Migration `0080_replace_tenant_role_string_with_role_id.py` replaced the legacy
+`tenant_users.role` string column with `tenant_users.role_id` (nullable FK to
+`roles.id`). The migration:
+- Backfilled `role_id` from string values (`"owner"` → SUPERUSER, `"member"` → VIEWER)
+- Made `tenant_users.role_id` nullable (NULL = unresolved/legacy)
+- Updated all managers (`add_member`, `add_web_member`, `issue`, `redeem`, `redeem_web`) to use `role_id`
+- Updated `Resolution.is_owner` and `TenantUser.is_owner` to check `role.codename == "SUPERUSER"` or `role_id = NULL`
 
 ## Validation status
 

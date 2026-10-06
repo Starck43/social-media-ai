@@ -21,6 +21,7 @@ from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
+from app.core.permissions import get_current_user, has_permission_by_codename, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.services.tenancy.resolver import (
     Resolution,
@@ -194,7 +195,8 @@ async def handle_web_message(
     *,
     tenant_id: int,
     user_id: int,
-    role: str,
+    role_id: int | None = None,
+    role_codename: str | None = None,
 ) -> Optional[str]:
     """Run one agent turn for a browser message in the given workspace.
 
@@ -218,7 +220,8 @@ async def handle_web_message(
         channel=WEB_CHANNEL,
         chat_id=str(user_id),
         user_id=str(user_id),
-        role=role,
+        role_id=role_id,
+        role_codename=role_codename,
     )
     inbound = Inbound(
         channel=WEB_CHANNEL,
@@ -245,19 +248,39 @@ async def web_session_id(user_id: int) -> Optional[int]:
 
 async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     """Agent turn inside an already resolved workspace."""
-    text = inbound.text.strip()
-
-    if resolution.onboarded:
-        from app.models.managers.tenant_manager import tenants
-
-        tenant = await tenants.get(id=resolution.tenant_id)
-        name = getattr(tenant, "name", "workspace")
-        return (
-            f"Готово! Этот чат привязан к рабочему пространству «{name}». "
-            f"Роль: {resolution.role}. Спросите что-нибудь или напишите /help."
+    # Resolve the User so permission checks have a subject.
+    # For web: resolution.user_id is the users.id.
+    # For telegram/MAX: resolve via tenant_users → user_id (may be None).
+    user = None
+    if resolution.channel == WEB_CHANNEL:
+        from app.models import User
+        user = await User.objects.get(id=int(resolution.user_id))
+    else:
+        from app.models.managers.tenant_manager import tenant_users
+        tu = await tenant_users.get(
+            channel=resolution.channel,
+            external_user_id=resolution.user_id,
         )
+        if tu and tu.user_id is not None:
+            from app.models import User
+            user = await User.objects.get(id=tu.user_id)
+    # user is None for unmessenger users without web binding → bypass (legacy).
 
-    limit = await tenant_daily_cost_limit(resolution.tenant_id)
+    with permission_scope(user, is_owner=resolution.is_owner):
+        text = inbound.text.strip()
+
+        if resolution.onboarded:
+            from app.models.managers.tenant_manager import tenants
+
+            tenant = await tenants.get(id=resolution.tenant_id)
+            name = getattr(tenant, "name", "workspace")
+            role_label = "Суперпользователь" if resolution.is_owner else "Участник"
+            return (
+                f"Готово! Этот чат привязан к рабочему пространству «{name}». "
+                f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
+            )
+
+        limit = await tenant_daily_cost_limit(resolution.tenant_id)
     if limit and await _cost_today() >= limit:
         return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
 
@@ -300,6 +323,15 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     if pending:
         verdict = text.lower()
         if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
+            # Re-check permission at confirmation time (user role may have changed)
+            perm = pending.get("required_permission")
+            if perm and not has_permission_by_codename(get_current_user(), perm):
+                await _clear_pending(session)
+                await session.append("user", text)
+                reply = f"Подтверждение отклонено: у вас нет прав для этого действия."
+                await session.append("assistant", reply)
+                await session.touch()
+                return reply
             await _clear_pending(session)
             await session.append("user", text)
             try:
@@ -400,6 +432,30 @@ async def _run_tool_loop(
             spec = TOOL_REGISTRY.get(name)
             if spec is None:
                 tool_output = f"Unknown tool: {name}"
+            elif spec.required_permission:
+                # Permission gate: check before dispatch
+                if not has_permission_by_codename(get_current_user(), spec.required_permission):
+                    tool_output = f"У вас нет прав для вызова инструмента «{name}». Обратитесь к владельцу workspace."
+                elif spec.confirm:
+                    await _set_pending(
+                        session,
+                        {
+                            "name": name,
+                            "args": args,
+                            "tool_call_id": call.get("id"),
+                            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                            "required_permission": spec.required_permission,
+                        },
+                    )
+                    tool_output = _human_confirmation(name, args)
+                    stop_loop = True
+                else:
+                    try:
+                        result = await call_tool(name, args)
+                        tool_output = _format_tool_result(name, result)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(f"Tool {name} failed: {e}")
+                        tool_output = f"Tool error: {e}"
             elif spec.confirm:
                 await _set_pending(
                     session,

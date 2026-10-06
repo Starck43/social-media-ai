@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_permission
+from app.types import ActionType
 from app.utils.enum_helpers import get_enum_value
 
 from .base_manager import BaseManager, QuerySet
@@ -24,12 +26,39 @@ class SourceManager(BaseManager["Source"]):
     — Monitoring queue management
     — Bulk operations
     — Search and filtering
+
+    User-facing writes are gated by the caller's platform role
+    (`source.create/update/delete`). Collector bookkeeping
+    (`update_last_checked`) stays unchecked: ingest/collector run without a
+    user context.
     """
 
     def __init__(self):
         from ..source import Source
 
         super().__init__(Source)
+
+    # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
+
+    @require_permission("source", ActionType.CREATE)
+    async def create(self, *args: Any, session: AsyncSession | None = None, **kwargs: Any) -> "Source":
+        if session is not None:
+            return await super().create(*args, session=session, **kwargs)
+        return await super().create(*args, **kwargs)
+
+    @require_permission("source", ActionType.UPDATE)
+    async def update_by_id(
+        self, instance_id: int, *args: Any, session: AsyncSession | None = None, **kwargs: Any
+    ) -> Optional["Source"]:
+        if session is not None:
+            return await super().update_by_id(instance_id, *args, session=session, **kwargs)
+        return await super().update_by_id(instance_id, *args, **kwargs)
+
+    @require_permission("source", ActionType.DELETE)
+    async def delete_by_id(self, instance_id: int, *args: Any, session: AsyncSession | None = None) -> bool:
+        if session is not None:
+            return await super().delete_by_id(instance_id, *args, session=session)
+        return await super().delete_by_id(instance_id, *args)
 
     async def get_source_with_platform(
         self,
@@ -136,6 +165,7 @@ class SourceManager(BaseManager["Source"]):
         """
         return await self.filter(platform_id=platform_id, external_id=external_id).first()
 
+    @require_permission("source", ActionType.CREATE)
     async def create_source(
         self,
         platform_id: int,
@@ -238,8 +268,11 @@ class SourceManager(BaseManager["Source"]):
         return list(await qs)
 
     async def update_last_checked(self, source_id: int, timestamp: Optional[datetime] = None) -> Optional["Source"]:
-        """
-        Update last_checked timestamp for a source.
+        """Update last_checked timestamp for a source.
+
+        Collector/ingest bookkeeping: bypasses the permission gate (runs
+        without a user context). User-facing toggles go through the gated
+        `update_by_id` instead.
 
         Args:
                 source_id: ID of the source to update
@@ -248,6 +281,8 @@ class SourceManager(BaseManager["Source"]):
         Returns:
                 Updated Source object or None if not found
         """
+        from .base_manager import BaseManager
+
         if timestamp is None:
             # Ensure timezone-aware datetime
             timestamp = datetime.now(timezone.utc)
@@ -255,7 +290,7 @@ class SourceManager(BaseManager["Source"]):
             # Add UTC timezone if naive
             timestamp = timestamp.replace(tzinfo=timezone.utc)
 
-        return await self.update_by_id(source_id, last_checked=timestamp)
+        return await BaseManager.update_by_id(self, source_id, last_checked=timestamp)
 
     async def get_stats(self) -> dict:
         """

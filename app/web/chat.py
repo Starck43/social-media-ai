@@ -116,13 +116,35 @@ def _enrich_message(msg) -> dict:
     }
 
 
-def _membership_role(request: Request) -> str:
-    """The caller's role in the active workspace, as `Resolution.role` sees it."""
+def _membership_role(request: Request) -> str | None:
+    """The codename of the caller's platform role in the active workspace."""
     tenant_id = getattr(request.state, "tenant_id", None)
     for membership in getattr(request.state, "memberships", []) or []:
         if membership.tenant_id == tenant_id:
-            return membership.role
-    return "member"
+            if membership.role is None:
+                return None
+            codename = membership.role.codename
+            name = codename.name if hasattr(codename, "name") else str(codename)
+            return name
+    return None
+
+
+def _membership_role_id(request: Request) -> int | None:
+    """The role_id of the caller in the active workspace."""
+    tenant_id = getattr(request.state, "tenant_id", None)
+    for membership in getattr(request.state, "memberships", []) or []:
+        if membership.tenant_id == tenant_id:
+            return membership.role_id
+    return None
+
+
+def _is_owner(request: Request) -> bool:
+    """True when the caller is the owner of the active workspace."""
+    tenant_id = getattr(request.state, "tenant_id", None)
+    for membership in getattr(request.state, "memberships", []) or []:
+        if membership.tenant_id == tenant_id:
+            return membership.is_owner
+    return False
 
 
 @router.get("")
@@ -158,7 +180,7 @@ async def chat_page(request: Request):
 
     if is_ajax:
         return JSONResponse(
-            {"messages": enriched, "is_owner": _membership_role(request) == "owner"}
+            {"messages": enriched, "is_owner": _is_owner(request)}
         )
 
     return render(
@@ -166,7 +188,7 @@ async def chat_page(request: Request):
         "web/chat.html",
         section="chat",
         messages=enriched,
-        is_owner=_membership_role(request) == "owner",
+        is_owner=_is_owner(request),
     )
 
 
@@ -217,7 +239,8 @@ async def chat_send(
         text,
         tenant_id=tenant_id,
         user_id=user.id,
-        role=_membership_role(request),
+        role_id=_membership_role_id(request),
+        role_codename=_membership_role(request),
     )
 
     if reply is None:

@@ -42,6 +42,7 @@ _PLATFORM_ALIASES = {
         },
         "required": [],
     },
+    required_permission="source.view",
 )
 async def sources_list(only_active: bool = True, limit: int = 20) -> list[dict[str, Any]]:
     from app.models import Source
@@ -69,6 +70,7 @@ async def sources_list(only_active: bool = True, limit: int = 20) -> list[dict[s
     name="source_add",
     description="Добавить новый источник контента (группу/канал/пользователя).",
     confirm=True,
+    required_permission="source.create",
     parameters={
         "type": "object",
         "properties": {
@@ -112,6 +114,7 @@ async def source_add(platform: str, source_type: str, external_id: str, name: st
     name="source_disable",
     description="Отключить сбор из источника по id (сбор по нему прекратится).",
     confirm=True,
+    required_permission="source.update",
     parameters={
         "type": "object",
         "properties": {"source_id": {"type": "integer", "description": "ID источника"}},

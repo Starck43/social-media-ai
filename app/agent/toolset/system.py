@@ -11,6 +11,7 @@ from app.agent.tools import tool
     name="system_status",
     description="Состояние системы: очередь задач, расписания, расходы на LLM за сегодня.",
     parameters={"type": "object", "properties": {}, "required": []},
+    required_permission="job.view",
 )
 async def system_status() -> dict[str, Any]:
     from app.models import AgentTask, Job
@@ -43,6 +44,7 @@ async def system_status() -> dict[str, Any]:
         },
         "required": ["key", "value"],
     },
+    required_permission="agentmemory.update",
 )
 async def memory_set(key: str, value: str) -> dict[str, Any]:
     from app.models.managers.agent_memory_manager import agent_memory
@@ -60,6 +62,7 @@ async def memory_set(key: str, value: str) -> dict[str, Any]:
         "properties": {"key": {"type": "string", "description": "Ключ факта; пусто = все факты"}},
         "required": [],
     },
+    required_permission="agentmemory.view",
 )
 async def memory_get(key: str | None = None) -> dict[str, Any]:
     from app.models.managers.agent_memory_manager import agent_memory

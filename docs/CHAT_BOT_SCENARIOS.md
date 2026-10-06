@@ -31,7 +31,6 @@ See also:
 | `name` | string | Human-readable name |
 | `content_types` | JSON array | What to collect (`posts`, `comments`, `mentions`, `videos`, `stories`) |
 | `analysis_types` | JSON array | Which metrics to extract (`sentiment`, `keywords`, `topics`, `competitor`, `brand_mentions`, `trends`) |
-| `analyze_type` | enum | Grouping mode (`themes` / `days` / `sources` / `users`) |
 | `scope` | JSON | Per-metric config (e.g. `{"keywords": {"max_keywords": 10}}`) |
 | `base_prompt` | text | Core LLM instruction (required) |
 | `media_overrides` | JSON | Per-media-type overrides: `{"image": "...", "video": "..."}` (optional) |
@@ -106,7 +105,6 @@ TEMPLATES = {
         "name": "Brand Monitoring",
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["sentiment", "brand_mentions", "keywords"],
-        "analyze_type": "themes",
         "scope": {"keywords": {"max_keywords": 10}},
         "base_prompt": "You are a brand analyst. Track mentions and sentiment.",
     },
@@ -114,7 +112,6 @@ TEMPLATES = {
         "name": "Competitor Watch",
         "content_types": ["posts", "comments"],
         "analysis_types": ["competitor", "sentiment", "trends"],
-        "analyze_type": "days",
         "scope": {"competitor": {"targets": []}},
         "base_prompt": "You are a competitive intelligence analyst...",
     },
@@ -122,7 +119,6 @@ TEMPLATES = {
         "name": "Customer Support Monitor",
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["sentiment", "keywords"],
-        "analyze_type": "themes",
         "scope": {"sentiment": {"categories": ["Positive", "Negative", "Neutral"]}},
         "base_prompt": "You are a customer support analyst...",
     },
@@ -130,7 +126,6 @@ TEMPLATES = {
         "name": "Trend Spotter",
         "content_types": ["posts", "comments"],
         "analysis_types": ["trends", "keywords"],
-        "analyze_type": "days",
         "scope": {},
         "base_prompt": "You are a trend analyst...",
     },
@@ -138,7 +133,6 @@ TEMPLATES = {
         "name": "Toxicity Guard",
         "content_types": ["posts", "comments"],
         "analysis_types": ["sentiment"],
-        "analyze_type": "themes",
         "scope": {"sentiment": {"categories": ["Positive", "Neutral", "Toxic"]}},
         "base_prompt": "You are a content safety moderator...",
     },
@@ -189,7 +183,6 @@ Store user preferences in `agent_memory` under `scope=scenario_prefs`
 
 ```
 scope=scenario_prefs, key=default_language, value=ru
-scope=scenario_prefs, key=preferred_analyze_type, value=days
 scope=scenario_prefs, key=brands, value=["Fanta","Sprite"]
 ```
 
@@ -198,6 +191,9 @@ after a successful create/update, `apply_to_draft()` fills the *empty* fields of
 the next draft — in `scenario_create` and in the first step of the web wizard —
 so an explicit choice from the current conversation always outranks a remembered
 one.
+
+> `preferred_analyze_type` was removed: grouping is now a query-time parameter
+> (`group_by` + `time_breakdown`), not a scenario property.
 
 ### System Prompt Fragment
 
@@ -211,7 +207,7 @@ tools are registered either way):
 1. СНАЧАЛА узнай цель: что анализировать и зачем.
 2. Предложи подходящий шаблон из scenario_templates.
 3. Нет подходящего — проведи мастер: content_types → analysis_types →
-   analyze_type → описание задачи.
+   описание задачи.
 4. Сгенерируй промпт через scenario_suggest_prompt.
 5. Проверь переменные через scenario_validate_prompt.
 6. Покажи превью и запроси подтверждение.
@@ -235,7 +231,6 @@ User: I want to track my brand mentions on VK
 Bot: Found template "Brand Monitoring". It includes:
   • Sentiment and brand mention analysis
   • Top-10 keywords
-  • Theme grouping
   Create scenario "My Brand VK" from this template? [Yes/No/Customize]
 ```
 
@@ -256,14 +251,12 @@ Bot: Let's go step by step.
      • keywords — keywords
      • trends — trends
 
-  3️⃣ How to group results?
-     [themes] by topics
-     [days] by day ← recommended for competitors
-     [sources] by source
-
-  4️⃣ Describe the task in your words — I'll generate a prompt.
+  3️⃣ Describe the task in your words — I'll generate a prompt.
      Example: "Compare our brand X with competitors Y and Z,
               track their new products and audience reaction"
+
+  4️⃣ Grouping for reports: themes (default), sources, entities, sentiment,
+     content_type, or intent. Time breakdown per-date? (yes/no)
 ```
 
 ### Pattern 3: Clone + Modify

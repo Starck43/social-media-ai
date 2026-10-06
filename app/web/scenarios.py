@@ -338,7 +338,6 @@ def _draft_from_form(form) -> "ScenarioDraft":
     """
     from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
     from app.types import AnalysisType, ContentType
-    from app.types.enums.bot_types import AnalyzeType
 
     def _getlist(key: str) -> list[str]:
         return form.getlist(key) if hasattr(form, "getlist") else (form.get(key) or [])
@@ -353,13 +352,6 @@ def _draft_from_form(form) -> "ScenarioDraft":
         unknown = [v for v in raw if _enum_by_value(enum_cls, v) is None]
         if unknown:
             raise ValueError(f"Неизвестный {label}: {', '.join(unknown)}")
-
-    analyze_type = None
-    if form.get("analyze_type"):
-        analyze_member = _enum_by_value(AnalyzeType, form.get("analyze_type"))
-        if analyze_member is None:
-            raise ValueError(f"Неизвестный режим анализа: {form['analyze_type']}")
-        analyze_type = analyze_member.db_value
 
     def _opt_int(key: str) -> int | None:
         raw = (form.get(key) or "").strip()
@@ -397,7 +389,6 @@ def _draft_from_form(form) -> "ScenarioDraft":
         is_default=form.get("is_default") == "on",
         content_types=content_types,
         analysis_types=analysis_types,
-        analyze_type=analyze_type,
         scope=scope,
         base_prompt=_opt_prompt("base_prompt"),
         media_overrides={
@@ -463,7 +454,6 @@ async def _remember_preferences(scenario) -> None:
     try:
         draft = ScenarioBuilder.draft_from_scenario(scenario)
         await scenario_prefs.remember(
-            preferred_analyze_type=draft.analyze_type,
             brands=(draft.scope or {}).get("competitor", {}).get("competitor_list") or [],
         )
     except Exception:  # noqa: BLE001 — preferences are a convenience, not the work
@@ -476,7 +466,6 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.models.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
     from app.types import AnalysisType, ContentType, LLMStrategyType
-    from app.types.enums.bot_types import AnalyzeType
 
     perms = getattr(request.state, "web_perms", None)
     llm_models = [
@@ -494,7 +483,6 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         draft=draft,
         content_types=list(ContentType),
         analysis_types=list(AnalysisType),
-        analyze_types=list(AnalyzeType),
         llm_strategies=LLMStrategyType.choices(),
         llm_models=llm_models,
         media_types=ScenarioBuilder.media_types_for(draft.content_types),
@@ -545,7 +533,6 @@ async def scenario_create(
             analysis_types=draft.analysis_types,
             content_types=draft.content_types,
             scope=draft.scope,
-            analyze_type=draft.analyze_type,
             base_prompt=draft.base_prompt,
             media_overrides=draft.media_overrides,
             summary_prompt=draft.summary_prompt,
@@ -624,7 +611,6 @@ async def scenario_save(
         content_types=scenario.content_types,
         analysis_types=scenario.analysis_types,
         scope=scenario.scope,
-        analyze_type=scenario.analyze_type,
         is_active=scenario.is_active,
         is_default=scenario.is_default,
         max_tokens=scenario.max_tokens,

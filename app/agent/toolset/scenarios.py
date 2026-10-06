@@ -23,7 +23,6 @@ WRITABLE_FIELDS: tuple[str, ...] = (
     "description",
     "content_types",
     "analysis_types",
-    "analyze_type",
     "scope",
     "base_prompt",
     "media_overrides",
@@ -44,7 +43,6 @@ def _brief(scenario: Any) -> dict[str, Any]:
         "is_default": scenario.is_default,
         "analysis_types": list(scenario.analysis_types or []),
         "content_types": list(scenario.content_types or []),
-        "analyze_type": scenario.analyze_type.db_value if scenario.analyze_type else None,
     }
 
 
@@ -66,9 +64,8 @@ def _validate(changes: dict[str, Any]) -> dict[str, Any]:
     The model gets the error back and can correct itself, which is far cheaper
     than a scenario that fails silently at analysis time.
     """
-    from app.services.ai.scenario_templates import _enum_value, _enum_values
+    from app.services.ai.scenario_templates import _enum_values
     from app.types import AnalysisType, ContentType
-    from app.types.enums.bot_types import AnalyzeType
 
     checked = dict(changes)
     for field, enum_cls, label in (
@@ -77,8 +74,6 @@ def _validate(changes: dict[str, Any]) -> dict[str, Any]:
     ):
         if field in checked:
             checked[field] = _enum_values(checked[field], enum_cls, label)
-    if "analyze_type" in checked:
-        checked["analyze_type"] = _enum_value(checked["analyze_type"], AnalyzeType, "режим анализа")
     return checked
 
 
@@ -121,15 +116,12 @@ def _unknown_variables(draft: Any) -> list[str]:
 async def _save_preferences(draft: Any) -> dict[str, Any]:
     """Remember the choices this scenario was created with.
 
-    Only what a person could plausibly want again: the grouping mode and the
-    competitor/brand list. Called after a successful write, so a rejected
-    scenario teaches nothing.
+    Only what a person could plausibly want again: the competitor/brand list.
+    Called after a successful write, so a rejected scenario teaches nothing.
     """
     from app.services.ai import scenario_prefs
 
     prefs: dict[str, Any] = {}
-    if draft.analyze_type:
-        prefs["preferred_analyze_type"] = draft.analyze_type
     competitor = (draft.scope or {}).get("competitor") or {}
     brands = competitor.get("brand_names") or competitor.get("competitor_list") or []
     if brands:
@@ -155,7 +147,6 @@ def _draft_from_fields(fields: dict[str, Any]) -> Any:
         is_active=True,
         content_types=checked.get("content_types") or [],
         analysis_types=analysis_types,
-        analyze_type=checked.get("analyze_type"),
         scope=ScenarioBuilder.sanitize_scope(scope, analysis_types),
         base_prompt=checked.get("base_prompt"),
         media_overrides=dict(checked.get("media_overrides") or {}),
@@ -309,11 +300,6 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
                     "intent, hashtag_analysis"
                 ),
             },
-            "analyze_type": {
-                "type": "string",
-                "enum": ["themes", "days", "sources", "monitored_users"],
-                "description": "Как группировать результат: по темам, по дням, по источникам",
-            },
             "scope": {
                 "type": "object",
                 "description": "Параметры анализа по типам; если не заданы — генерируются по analysis_types",
@@ -334,7 +320,6 @@ async def scenario_create(
     description: Optional[str] = None,
     content_types: Optional[list[str]] = None,
     analysis_types: Optional[list[str]] = None,
-    analyze_type: Optional[str] = None,
     scope: Optional[dict[str, Any]] = None,
     base_prompt: Optional[str] = None,
     summary_prompt: Optional[str] = None,
@@ -347,7 +332,6 @@ async def scenario_create(
         ("description", description),
         ("content_types", content_types),
         ("analysis_types", analysis_types),
-        ("analyze_type", analyze_type),
         ("scope", scope),
         ("base_prompt", base_prompt),
         ("summary_prompt", summary_prompt),
@@ -378,7 +362,6 @@ async def scenario_create(
             analysis_types=draft.analysis_types,
             content_types=draft.content_types,
             scope=draft.scope,
-            analyze_type=draft.analyze_type,
             base_prompt=draft.base_prompt,
             media_overrides=draft.media_overrides,
             summary_prompt=draft.summary_prompt,
@@ -407,7 +390,7 @@ async def scenario_create(
             "changes": {
                 "type": "object",
                 "description": (
-                    "Поля для изменения: name, description, content_types, analysis_types, analyze_type, "
+                    "Поля для изменения: name, description, content_types, analysis_types, "
                     "scope, base_prompt, summary_prompt, media_overrides, is_active, is_default, max_tokens"
                 ),
             },
@@ -461,7 +444,6 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
         description=draft.description,
         content_types=draft.content_types,
         analysis_types=draft.analysis_types,
-        analyze_type=draft.analyze_type,
         scope=draft.scope,
         base_prompt=draft.base_prompt,
         media_overrides=draft.media_overrides,
@@ -533,7 +515,6 @@ async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[s
             analysis_types=draft.analysis_types,
             content_types=draft.content_types,
             scope=draft.scope,
-            analyze_type=draft.analyze_type,
             base_prompt=draft.base_prompt,
             media_overrides=draft.media_overrides,
             summary_prompt=draft.summary_prompt,

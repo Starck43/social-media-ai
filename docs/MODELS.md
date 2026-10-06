@@ -324,7 +324,6 @@ AI analysis contracts per source.
 | `content_types` | `JSON` | What to collect: `["posts", "comments"]` |
 | `analysis_types` | `JSON` | What to analyze: `["sentiment", "keywords"]` |
 | `scope` | `JSON` | METHODOLOGY config only: categories, scale, max_keywords, context_window, etc. Specific targets (brands, competitors) go in `AgentTask.payload`, not here. |
-| `analyze_type` | `Enum` | Analysis mode: `themes`, `days`, `sources`, `monitored_users` |
 | `text_prompt` | `Text` | Custom text analysis prompt |
 | `image_prompt` | `Text` | Custom image analysis prompt |
 | `video_prompt` | `Text` | Custom video analysis prompt |

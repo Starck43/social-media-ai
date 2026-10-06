@@ -203,6 +203,33 @@ class AnalyzeType(DatabaseEnum, Enum):
             return None
 
 
+class GroupingAxis(str, Enum):
+    """Read-time grouping axis for analytics rows.
+
+    Unlike the old ``AgentScenario.analyze_type`` this is a query-time
+    parameter, not a column on the scenario. One ``AIAnalytics`` row can
+    appear in multiple groupings simultaneously.
+    """
+
+    THEMES        = "themes"
+    SOURCES       = "sources"
+    ENTITIES      = "entities"
+    SENTIMENT     = "sentiment"
+    CONTENT_TYPE  = "content_type"
+    INTENT        = "intent"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            "themes": "По темам",
+            "sources": "По источникам",
+            "entities": "По сущностям",
+            "sentiment": "По тональности",
+            "content_type": "По типу контента",
+            "intent": "По намерению",
+        }.get(self.value, self.value)
+
+
 @database_enum
 class BotActionStatus(DatabaseEnum, Enum):
     """Status of a bot action in the ledger."""

@@ -98,6 +98,15 @@
                     {% else %}
                         <div class="text-xs text-slate-600">разовая</div>
                     {% endif %}
+                    {% if sources_map.get(job.id) %}
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            {% for s in sources_map[job.id] %}
+                                <a href="/app/sources/{{ s.source_id }}"
+                                   class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-cyan-300"
+                                   title="Источник этого запуска">{{ s.name }}</a>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3 text-xs text-slate-400">{{ job.job_type }}</td>
                 <td class="px-4 py-3">
@@ -134,6 +143,18 @@
                                 {% endif %}
                                 <button class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-900">
                                     Перезапустить
+                                </button>
+                            </form>
+                        {% endif %}
+                        {% if job.status in cancellable and perms and perms.can('agenttask', 'delete') %}
+                            <form method="post" action="/app/jobs/{{ job.id }}/cancel"
+                                  @submit="return confirm('Прервать задание #{{ job.id }}?')">
+                                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                {% if is_superuser and filter_tenant_id %}
+                                    <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
+                                {% endif %}
+                                <button class="rounded-lg border border-amber-800/70 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-950/40">
+                                    Прервать
                                 </button>
                             </form>
                         {% endif %}

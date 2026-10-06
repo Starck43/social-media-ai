@@ -48,6 +48,10 @@ RETRYABLE = frozenset({"failed"})
 # see the module docstring for why that row is off limits.
 DELETABLE = frozenset({"pending", "done", "failed"})
 
+# Statuses a cancel may touch. Only `running` — anything else is already
+# terminal or not yet in flight.
+CANCELLABLE = frozenset({"running"})
+
 
 async def _jobs_for(tenant_id: int | None) -> list[Job]:
     """Most recent jobs, newest first, for one workspace (None = all)."""
@@ -55,6 +59,47 @@ async def _jobs_for(tenant_id: int | None) -> list[Job]:
     if tenant_id is not None:
         query = query.filter(tenant_id=tenant_id)
     return list(await query)
+
+
+async def _job_sources(jobs: list[Job]) -> dict[int, list[dict[str, Any]]]:
+    """job_id → linked sources, so a row reads as "what this run touched".
+
+    Sources come from the run's own `result["per_source"]` (name + id, the most
+    accurate record of what actually ran), falling back to `payload["source_ids"]`
+    for a job that has not finished yet. Resolved in one lookup over every id.
+    """
+    from app.models import Source
+
+    by_job: dict[int, list[dict[str, Any]]] = {}
+    wanted: set[int] = set()
+    for job in jobs:
+        per = (job.result or {}).get("per_source") or []
+        entries = [
+            {"source_id": p.get("source_id"), "name": p.get("name")}
+            for p in per
+            if p.get("source_id")
+        ]
+        by_job[job.id] = entries
+        wanted.update(e["source_id"] for e in entries)
+        wanted.update(int(sid) for sid in ((job.payload or {}).get("source_ids") or []) if str(sid).isdigit())
+
+    names: dict[int, str] = {}
+    if wanted:
+        rows = await Source.objects.filter(Source.id.in_(wanted))
+        names = {s.id: s.name for s in rows}
+
+    for job in jobs:
+        entries = by_job[job.id]
+        seen = {e["source_id"] for e in entries}
+        for sid in ((job.payload or {}).get("source_ids") or []):
+            if not str(sid).isdigit():
+                continue
+            sid = int(sid)
+            if sid not in seen:
+                entries.append({"source_id": sid, "name": names.get(sid, f"Источник #{sid}")})
+                seen.add(sid)
+
+    return by_job
 
 
 async def _all_stats(tenant_id: int | None) -> dict[str, int]:
@@ -94,14 +139,23 @@ async def jobs_list(request: Request):
     else:
         rows = await _jobs_for(filter_tenant_id if is_superuser else tenant_id)
 
+    # Sources each job touched, so `#1234` also answers "по каким источникам".
+    if is_superuser and tenant_id is None:
+        with tenant_scope(bypass=True):
+            sources_map = await _job_sources(rows)
+    else:
+        sources_map = await _job_sources(rows)
+
     return render(
         request,
         "web/jobs.html",
         section="jobs",
         jobs=rows,
+        sources_map=sources_map,
         stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
         retryable=RETRYABLE,
         deletable=DELETABLE,
+        cancellable=CANCELLABLE,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
@@ -261,4 +315,56 @@ async def job_run(
         add_flash(request, "error", f"Задание снова упало: {result.get('error', '?')}")
     else:
         add_flash(request, "success", "Задание выполнено")
+    return RedirectResponse("/app/jobs", status_code=302)
+
+
+@router.post("/{job_id}/cancel")
+async def job_cancel(
+    request: Request,
+    job_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Cancel a running job by marking it failed.
+
+    The worker loop checks the status before each step; once it sees `failed`
+    it stops. This is a soft cancel — the worker finishes the current LLM call
+    and then bails out, so no data is lost.
+    """
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse("/app/jobs", status_code=302)
+
+    gated = guard_superuser(request, back="/app/")
+    if gated is not None:
+        return gated
+
+    denied = guard_web(request, "agenttask", "delete", back="/app/jobs")
+    if denied is not None:
+        return denied
+
+    tenant_id = action_tenant_id(request, tenant_id)
+
+    from app.core.tenant_context import tenant_scope
+
+    with tenant_scope(tenant_id, bypass=tenant_id is None):
+        filters: dict = {"id": job_id} if tenant_id is None else {"id": job_id, "tenant_id": tenant_id}
+        job = await Job.objects.get(**filters)
+        if job is None:
+            add_flash(request, "error", "Задание не найдено")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+        if job.status != "running":
+            add_flash(request, "error", f"Задание #{job.id} уже {job.status} — прервать нечего")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+        now = job.updated_at or job.created_at
+        await Job.objects.update_by_id(
+            job.id,
+            status="failed",
+            error="Cancelled by operator",
+            finished_at=now,
+        )
+
+    add_flash(request, "success", f"Задание #{job_id} прервано оператором")
     return RedirectResponse("/app/jobs", status_code=302)

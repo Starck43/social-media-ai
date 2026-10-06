@@ -48,7 +48,10 @@
 
     {% if analytics.chains %}
     <div class="mt-6">
-        <h2 class="mb-3 text-sm font-medium text-slate-300">🔗 Тематические цепочки</h2>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-medium text-slate-300">🔗 Тематические цепочки</h2>
+            <a href="/app/analytics/chains" class="text-xs text-cyan-400 hover:text-cyan-300">Все цепочки →</a>
+        </div>
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for chain in analytics.chains[:6] %}
             <a href="/app/analytics/chains/{{ chain.chain_id }}"

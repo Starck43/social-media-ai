@@ -6,6 +6,7 @@ from typing import Any, Optional
 from app.core.config import settings
 from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
+from app.services.ai.chain_resolver import resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
 from app.services.ai.llm_client import LLMClientFactory
@@ -273,23 +274,32 @@ class AIAnalyzer:
             unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
 
             # Auto-generate topic_chain_id if not provided
-            # NEW LOGIC: One source + one scenario = one chain (timeline by dates)
+            # Phase 1: use resolve_chain_async for proper lookup by topic_hint
             main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get(
                 "main_topics"
             ) or []
-            if not topic_chain_id:
-                # The signature is (source, main_topics, agent_scenario): passing
-                # only the scenario bound it to `main_topics`, and the body reads
-                # `main_topics[0]` — so every analysis raised "'AgentScenario'
-                # object is not subscriptable", returned None, and stored
-                # nothing. That is why this workspace had no content hashes at
-                # all and every re-collection looked brand new.
-                topic_chain_id = self._generate_topic_chain_id(
-                    source, main_topics, agent_scenario, analyze_type=analyze_type
-                )
-                logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
+            # Extract topic_hint from LLM response (Phase 1: normalize + lookup existing)
+            text_parsed = (analysis_results.get("text_analysis", {}) or {}).get("parsed") or {}
+            topic_hint: str | None = text_parsed.get("topic_hint")
+            if unified_summary:
+                topic_hint = unified_summary.get("topic_hint") or topic_hint
 
-            chain_label = self._resolve_chain_label(main_topics, analysis_results)
+            if not topic_chain_id:
+                if topic_hint:
+                    # resolve_chain does normalization + lookup in ai_analytics by topic_hint
+                    topic_chain_id, chain_label = await resolve_chain_async(
+                        source.tenant_id, source.id, topic_hint
+                    )
+                    logger.info(f"Chain resolved: {topic_chain_id} for source {source.id} via hint={topic_hint!r}")
+                else:
+                    # Fallback to source+scenario-based ID (no topic_hint in LLM response)
+                    topic_chain_id = self._generate_topic_chain_id(
+                        source, main_topics, agent_scenario, analyze_type=analyze_type
+                    )
+                    chain_label = self._resolve_chain_label(main_topics, analysis_results)
+                    logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
+            else:
+                chain_label = self._resolve_chain_label(main_topics, analysis_results)
 
             # Save comprehensive analysis
             analysis = await self._save_analysis(

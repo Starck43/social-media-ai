@@ -65,6 +65,54 @@ async def _aggregate(agg: ReportAggregator, days: int, tenant_id: int | None) ->
     llm = await agg.get_llm_provider_stats(days=days)
     activity = await agg.get_activity_trend(days=days, tenant_id=tenant_id)
 
+    # Chains: group ai_analytics rows by topic_chain_id (Phase 4 display)
+    from datetime import date, timedelta
+    from app.models import AIAnalytics
+
+    cutoff = date.today() - timedelta(days=days)
+    chain_rows = await AIAnalytics.objects.filter(
+        AIAnalytics.topic_chain_id.isnot(None), AIAnalytics.analysis_date >= cutoff
+    )
+    chains_map: dict[str, dict[str, Any]] = {}
+    for row in chain_rows:
+        cid = row.topic_chain_id
+        if not cid:
+            continue
+        if cid not in chains_map:
+            chains_map[cid] = {
+                "chain_id": cid,
+                "chain_label": row.chain_label or cid,
+                "entry_count": 0,
+                "first_date": None,
+                "last_date": None,
+                "scores": [],
+            }
+        entry = chains_map[cid]
+        entry["entry_count"] += 1
+        if not entry["first_date"] or (row.analysis_date and row.analysis_date < entry["first_date"]):
+            entry["first_date"] = row.analysis_date
+        if not entry["last_date"] or (row.analysis_date and row.analysis_date > entry["last_date"]):
+            entry["last_date"] = row.analysis_date
+        from app.services.ai.reporting import _chain_sentiment
+        score = _chain_sentiment(row.summary_data)
+        if score is not None:
+            entry["scores"].append(score)
+
+    chains_result = []
+    for cid, entry in chains_map.items():
+        scores = entry.pop("scores")
+        chains_result.append({
+            "chain_id": entry["chain_id"],
+            "chain_label": entry["chain_label"],
+            "entry_count": entry["entry_count"],
+            "date_range": {
+                "start": entry["first_date"].isoformat() if entry["first_date"] else None,
+                "end": entry["last_date"].isoformat() if entry["last_date"] else None,
+            },
+            "avg_sentiment": round(sum(scores) / len(scores), 3) if scores else None,
+        })
+    chains_result.sort(key=lambda c: -c["entry_count"])
+
     # Roll the sentiment distribution up for a headline widget.
     dist = {"positive": 0, "neutral": 0, "negative": 0}
     total_analyses = 0
@@ -86,6 +134,7 @@ async def _aggregate(agg: ReportAggregator, days: int, tenant_id: int | None) ->
         "engagement": engagement,
         "llm": llm,
         "activity": activity,
+        "chains": chains_result,
         "kpis": {
             "total_analyses": total_analyses,
             "total_posts": total_posts,

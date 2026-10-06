@@ -698,3 +698,48 @@ async def get_engagement_metrics_aggregate(
     )
     
     return metrics
+
+
+@router.get("/analytics/aggregate/grouped", response_model=dict)
+async def get_grouped_analytics(
+    source_id: Optional[int] = Query(None, description="Filter by source"),
+    days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
+    group_by: str = Query("themes", description="Grouping axis: themes, sources, entities, sentiment, content_type, intent"),
+    time_breakdown: bool = Query(False, description="Enable per-date entries within each group"),
+    entity_type: Optional[str] = Query(None, description="Filter entities by type (person, brand, org)"),
+    _user = Depends(require_model_perm("aianalytics", ActionType.VIEW)),
+):
+    """
+    Get analytics grouped by the specified axis.
+
+    Returns a structured response with groups, each containing count,
+    average sentiment, and optional per-date entries when time_breakdown=True.
+    """
+    from datetime import date, timedelta
+    from app.services.ai.grouping import group_analytics
+    from app.types.enums.bot_types import GroupingAxis
+
+    try:
+        axis = GroupingAxis(group_by)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, sentiment, content_type, intent"
+        )
+
+    # Fetch analytics rows
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+    analytics = await AIAnalytics.objects.filter(
+        source_id=source_id if source_id else None,
+        analysis_date__gte=start,
+    ).order_by(AIAnalytics.analysis_date.asc())
+
+    result = group_analytics(
+        list(analytics),
+        axis=axis,
+        time_breakdown=time_breakdown,
+        entity_type=entity_type,
+    )
+
+    return result

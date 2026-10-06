@@ -17,21 +17,38 @@ from app.agent.tools import tool
         "type": "object",
         "properties": {
             "period": {"type": "string", "enum": ["day", "week"], "description": "Период (по умолчанию day)"},
+            "group_by": {
+                "type": "string",
+                "enum": ["themes", "sources", "entities", "sentiment", "content_type", "intent"],
+                "description": "Ось группировки (по умолчанию themes)",
+            },
+            "time_breakdown": {"type": "boolean", "description": "Разбивка по дням внутри каждой группы (по умолчанию false)"},
         },
         "required": [],
     },
     required_permission="digestrun.view",
 )
-async def report_period(period: str = "day") -> dict[str, Any]:
+async def report_period(
+    period: str = "day",
+    group_by: str = "themes",
+    time_breakdown: bool = False,
+) -> dict[str, Any]:
     from app.services.digest.builder import aggregate, period_bounds
     from app.services.digest.render import render_plain
 
     if period not in ("day", "week"):
         return {"error": f"Unknown period: {period!r}. Use day or week"}
 
-    data, start, end = await aggregate(period)
+    data, start, end = await aggregate(period, group_by=group_by, time_breakdown=time_breakdown)
     text = render_plain(data)
-    return {"period": period, "period_start": str(start), "period_end": str(end), "text": text}
+    return {
+        "period": period,
+        "group_by": group_by,
+        "time_breakdown": time_breakdown,
+        "period_start": str(start),
+        "period_end": str(end),
+        "text": text,
+    }
 
 
 @tool(
@@ -46,16 +63,26 @@ async def report_period(period: str = "day") -> dict[str, Any]:
         "type": "object",
         "properties": {
             "period": {"type": "string", "enum": ["day", "week"], "description": "Период (по умолчанию day)"},
+            "group_by": {
+                "type": "string",
+                "enum": ["themes", "sources", "entities", "sentiment", "content_type", "intent"],
+                "description": "Ось группировки (по умолчанию themes)",
+            },
+            "time_breakdown": {"type": "boolean", "description": "Разбивка по дням внутри каждой группы (по умолчанию false)"},
         },
         "required": [],
     },
 )
-async def digest_send_now(period: str = "day") -> dict[str, Any]:
+async def digest_send_now(
+    period: str = "day",
+    group_by: str = "themes",
+    time_breakdown: bool = False,
+) -> dict[str, Any]:
     from app.services.digest.builder import build_and_publish
 
     if period not in ("day", "week"):
         return {"error": f"Unknown period: {period!r}. Use day or week"}
-    return await build_and_publish(period=period)
+    return await build_and_publish(period=period, group_by=group_by, time_breakdown=time_breakdown)
 
 
 @tool(

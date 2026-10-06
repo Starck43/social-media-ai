@@ -116,7 +116,7 @@ async def test_themes_group_ranks_topics_by_repeat_mentions(source):
     await _row(source, day_offset=1, topics=["запуск"])
     await _row(source, day_offset=2, topics=["отзывы"])
 
-    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="themes")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes")
     assert "По темам" in brief
     assert "запуск" in brief
     # Counted, so the repeated topic leads the numbered list.
@@ -139,7 +139,7 @@ async def test_sources_group_names_each_source(source, platform):
             period_type=PeriodType.DAY,
             summary_data=_summary({}),
         )
-        brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="sources")
+        brief = await ReportAggregator().generate_digest_brief(period="day", group_by="sources")
         assert "Источники" in brief or "источник" in brief.lower()
         assert "Brief Source" in brief and "Second Source" in brief
     finally:
@@ -148,7 +148,7 @@ async def test_sources_group_names_each_source(source, platform):
 
 async def test_days_group_lists_each_day(source):
     await _row(source, day_offset=0, text={"content_statistics": {"total_posts": 3}})
-    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="days")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="days")
     assert "По дням" in brief
     assert date.today().isoformat() in brief
 
@@ -157,7 +157,7 @@ async def test_monitored_users_group_lists_the_author(source):
     """The per-person grouping keys off the chain id, which only the
     `monitored_users` analysis mode builds."""
     await _row(source, day_offset=0, text={}, topic_chain_id=f"src_{source.id}_user_ivan")
-    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="monitored_users")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="monitored_users")
     assert "По отслеживаемым пользователям" in brief
     assert "ivan" in brief
 
@@ -269,7 +269,7 @@ async def test_dynamics_never_compare_overlapping_windows(source):
 async def test_chains_section_absent_without_chains(source):
     """Rows without a `topic_chain_id` produce no "Цепочки" section."""
     await _row(source, day_offset=0, topics=["запуск"])
-    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="themes")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="themes")
     assert "Цепочки" not in brief
 
 

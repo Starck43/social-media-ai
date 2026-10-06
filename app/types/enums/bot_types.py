@@ -217,6 +217,9 @@ class GroupingAxis(str, Enum):
     SENTIMENT     = "sentiment"
     CONTENT_TYPE  = "content_type"
     INTENT        = "intent"
+    DAYS          = "days"
+    MONITORED_USERS = "monitored_users"
+    CHAINS        = "chains"
 
     @property
     def display_name(self) -> str:
@@ -227,6 +230,9 @@ class GroupingAxis(str, Enum):
             "sentiment": "По тональности",
             "content_type": "По типу контента",
             "intent": "По намерению",
+            "days": "По дням",
+            "monitored_users": "По отслеживаемым пользователям",
+            "chains": "Цепочки",
         }.get(self.value, self.value)
 
 

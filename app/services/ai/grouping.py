@@ -352,48 +352,6 @@ async def group_analytics(
             "avg_sentiment": avg_sent,
         }
 
-        if axis == GroupingAxis.DAYS:
-            day_rows = [r for r in rows if (r.analysis_date.isoformat() if r.analysis_date else "unknown") == key]
-            cs = _content_stats(day_rows[0].summary_data) if day_rows else {}
-            group.update(
-                {
-                    "posts": sum(
-                        int((_content_stats(r.summary_data).get("total_posts") or 0)) for r in day_rows
-                    ),
-                    "messages": sum(
-                        int((_content_stats(r.summary_data).get("messages_count") or 0)) for r in day_rows
-                    ),
-                    "users": sum(
-                        int((_content_stats(r.summary_data).get("active_users") or 0)) for r in day_rows
-                    ),
-                }
-            )
-
-        elif axis == GroupingAxis.MONITORED_USERS:
-            user_rows = [r for r in rows if _chain_author(r.topic_chain_id) == key]
-            group.update(
-                {
-                    "posts": sum(
-                        int((_content_stats(r.summary_data).get("total_posts") or 0)) for r in user_rows
-                    ),
-                    "messages": sum(
-                        int((_content_stats(r.summary_data).get("messages_count") or 0)) for r in user_rows
-                    ),
-                }
-            )
-
-        elif axis == GroupingAxis.CHAINS:
-            chain_rows = [r for r in rows if r.topic_chain_id == key]
-            label = next(
-                (r.chain_label for r in chain_rows if getattr(r, "chain_label", None)),
-                next((human_chain_label(r.summary_data) for r in chain_rows if human_chain_label(r.summary_data)), key),
-            )
-            dates = [r.analysis_date for r in chain_rows if r.analysis_date]
-            span = ""
-            if dates:
-                span = f"{min(dates).isoformat()} — {max(dates).isoformat()}"
-            group.update({"label": label, "date_span": span})
-
         if time_breakdown:
             entries = []
             for day in sorted(bucket["entries"]):

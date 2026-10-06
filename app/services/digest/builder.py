@@ -78,7 +78,8 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
 async def aggregate(
     period: str,
     source_ids: list[int] | None = None,
-    analyze_type: str | None = None,
+    group_by: str = "themes",
+    time_breakdown: bool = False,
     scenario_id: int | None = None,
 ) -> tuple[dict[str, Any], date, date]:
     start, end = period_bounds(period)
@@ -91,10 +92,10 @@ async def aggregate(
     engagement = await agg.get_engagement_metrics(days=days)
     llm_stats = await agg.get_llm_provider_stats(days=days)
 
-    # Hybrid step 1: the algorithmic brief, grouped by the scenario's analyze_type
+    # Hybrid step 1: the algorithmic brief, grouped by group_by axis
     # and extended with the scenario's analysis_types sections. No LLM here.
     brief = await agg.generate_digest_brief(
-        period=period, source_ids=source_ids, analyze_type=analyze_type, scenario_id=scenario_id
+        period=period, source_ids=source_ids, group_by=group_by, time_breakdown=time_breakdown, scenario_id=scenario_id
     )
 
     # Persist a WEEKLY/MONTHLY rollup row per source so `period_type` reflects
@@ -142,7 +143,8 @@ async def build_and_publish(
     agent_task_id: int | None = None,
     force: bool = False,
     source_ids: list[int] | None = None,
-    analyze_type: str | None = None,
+    group_by: str = "themes",
+    time_breakdown: bool = False,
     scenario_id: int | None = None,
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
@@ -163,7 +165,7 @@ async def build_and_publish(
         return {"status": "failed", "error": "Could not create digest run"}
 
     try:
-        data, _start, _end = await aggregate(period, source_ids, analyze_type, scenario_id)
+        data, _start, _end = await aggregate(period, source_ids, group_by, time_breakdown, scenario_id)
         summary, llm_info = await _summarize(data)
         if llm_info.get("cost"):
             # Accumulate: a retried run really paid for every summary attempt.

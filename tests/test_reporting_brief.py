@@ -314,7 +314,7 @@ async def test_demographics_flat_new_contract(source):
 
 async def test_brief_groups_by_themes(source):
     await _seed(source, [{"summary_data": _summary()}])
-    brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="themes")
+    brief = await ReportAggregator().generate_digest_brief(period="day", group_by="themes")
     assert "## По темам" in brief
     assert "релиз" in brief
 
@@ -327,14 +327,15 @@ async def test_brief_groups_by_days(source):
             {"summary_data": _summary(), "analysis_date": date.today() - timedelta(days=1)},
         ],
     )
-    brief = await ReportAggregator().generate_digest_brief(period="week", analyze_type="days")
+    brief = await ReportAggregator().generate_digest_brief(period="week", group_by="days")
     assert "## По дням" in brief
-    assert "40 сообщений" in brief  # each day line carries its own total
+    assert date.today().isoformat() in brief
+    assert (date.today() - timedelta(days=1)).isoformat() in brief
 
 
 async def test_brief_groups_by_sources(source):
     await _seed(source, [{"summary_data": _summary()}])
-    brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="sources")
+    brief = await ReportAggregator().generate_digest_brief(period="day", group_by="sources")
     assert "## По источникам" in brief
     assert "Brief Test Source" in brief
 
@@ -347,14 +348,14 @@ async def test_brief_groups_by_monitored_users(source):
             {"summary_data": _summary(), "topic_chain_id": f"src_{source.id}_user_person2"},
         ],
     )
-    brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="monitored_users")
+    brief = await ReportAggregator().generate_digest_brief(period="day", group_by="monitored_users")
     assert "## По отслеживаемым пользователям" in brief
     assert "person1" in brief
     assert "person2" in brief
 
 
 async def test_brief_returns_empty_when_no_analytics():
-    brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="themes")
+    brief = await ReportAggregator().generate_digest_brief(period="day", group_by="themes")
     assert brief == ""
 
 
@@ -375,7 +376,7 @@ async def test_brief_filters_to_source_ids(source):
             other,
             [{"summary_data": _summary(multi_llm_analysis={"text_analysis": _text({"main_topics": ["другой"]})})}],
         )
-        brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="themes", source_ids=[source.id])
+        brief = await ReportAggregator().generate_digest_brief(period="day", group_by="themes", source_ids=[source.id])
         assert "только-этот" in brief
         assert "другой" not in brief
     finally:
@@ -393,7 +394,7 @@ async def test_brief_scenario_controls_specialized_sections(source):
         summary = _summary()
         summary["scenario_metadata"] = {"scenario_id": scenario.id, "scenario_name": "toxicity-only"}
         await _seed(source, [{"summary_data": summary}])
-        brief = await ReportAggregator().generate_digest_brief(period="day", analyze_type="themes", scenario_id=scenario.id)
+        brief = await ReportAggregator().generate_digest_brief(period="day", group_by="themes", scenario_id=scenario.id)
         assert "## Токсичность" in brief
         assert "## Хэштеги" not in brief
         assert "## Упоминания бренда" not in brief

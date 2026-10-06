@@ -72,6 +72,29 @@ def _task_payload(task) -> dict[str, Any]:
     return dict(task.payload or {}) if task is not None else {}
 
 
+def _resolve_content_window(task_payload: dict[str, Any], payload: dict[str, Any], source) -> dict[str, Any]:
+    """The content window (cli_dates) for a run, resolved once and applied at every stage.
+
+    One rule everywhere — scheduled or forced: the window is the most specific
+    `cli_dates` available, in priority order:
+      1. job payload override (per-run, e.g. CLI `--start-date` / run-now flags)
+      2. task payload (the task's configured window)
+      3. source params (source-level fallback)
+
+    Returns a dict with parsed `start_date`/`end_date` `date` objects (or None).
+    An empty result means "no window" — collection falls back to incremental
+    (last_checked) and analysis drains whatever is staged.
+    """
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    cli_dates = (payload or {}).get("cli_dates") or (task_payload or {}).get("cli_dates") or (getattr(source, "params", None) or {}).get("cli_dates")
+    if not cli_dates:
+        return {}
+    start = AgentTaskManager.parse_date(cli_dates.get("start_date"))
+    end = AgentTaskManager.parse_date(cli_dates.get("end_date"))
+    return {"start_date": start, "end_date": end}
+
+
 # How many staged raw items one analyze run takes per source. A collect run
 # stages everything the platform returned, so this is the cap that keeps a
 # single pass bounded and lets the remainder roll into the next run.
@@ -169,7 +192,10 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     # Optional per-run overrides merged into each source's params (the collector
     # reads force_refresh/cli_dates/incremental_mode from source.params).
     force_refresh = task_payload.get("force_refresh") or payload.get("force_refresh")
-    cli_dates = task_payload.get("cli_dates") or payload.get("cli_dates")
+    # The content window is resolved once and applied at every stage (collect +
+    # analyze) — see `_resolve_content_window`.
+    window = _resolve_content_window(task_payload, payload, None)
+    cli_dates = window or None
     # Full-cycle refresh: re-analyze the whole selected period, overwriting rows
     # by (source, date). Only ever set by an explicit `--force-refresh` task run.
     force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
@@ -428,6 +454,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
     excluded_users = task_payload.get("excluded_users") or []
     force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
+    # The content window gates which staged rows this run drains — the same
+    # window that gated collection, so analysis never touches content outside
+    # the task's configured period.
+    window = _resolve_content_window(task_payload, payload, None)
 
     stats: dict[str, Any] = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0, "per_source": []}
 
@@ -470,7 +500,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             # every one of them for the next attempt — the only copy of the
             # content must never be the thing we drop.
             try:
-                staged = await CollectedItem.objects.for_source(source.id, limit=ANALYZE_STAGE_BATCH)
+                staged = await CollectedItem.objects.for_source(
+                    source.id,
+                    limit=ANALYZE_STAGE_BATCH,
+                    start_date=window.get("start_date"),
+                    end_date=window.get("end_date"),
+                )
                 if staged:
                     from app.services.ai.analyzer import AIAnalyzer
 

@@ -668,6 +668,28 @@ def _window_label(source) -> str:
     return f"с {fmt(source.date_from)} по {fmt(source.date_to)}"
 
 
+async def _resolve_source_window(source) -> dict:
+    """The content window (cli_dates) for a forced source-page run.
+
+    Forced runs («Собрать сейчас» / «Выполнить анализ») have no task context, so
+    the window is resolved from the source's linked task payload first, then the
+    source's own params — the same priority the handlers use. Returns a dict
+    suitable for merging into a job payload (`{"cli_dates": {...}}` or `{}`).
+    """
+    from app.models.agent_task import AgentTask, agent_task_sources
+
+    linked = (
+        await AgentTask.objects.join(agent_task_sources)
+        .filter(agent_task_sources.c.source_id == source.id)
+        .order_by(AgentTask.created_at.desc())
+        .first()
+    )
+    cli_dates = (linked.payload or {}).get("cli_dates") if linked else None
+    if not cli_dates:
+        cli_dates = (source.params or {}).get("cli_dates")
+    return {"cli_dates": cli_dates} if cli_dates else {}
+
+
 def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
 
@@ -848,7 +870,12 @@ async def source_collect_now(
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
 
-        outcome = await run_job_inline("collect", {"source_ids": [source.id]})
+        # Resolve the content window the same way the handlers do, so a forced
+        # collect from the source page honours the task's configured dates
+        # instead of draining the whole history. Priority: linked task payload
+        # cli_dates → source params cli_dates.
+        window = await _resolve_source_window(source)
+        outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
 
     name = source.name
     if not outcome:
@@ -910,9 +937,13 @@ async def source_analyze_now(
             await session.close()
 
         # Enqueue — the worker loop picks it up; no HTTP timeout.
+        # Resolve the content window so a forced analyze honours the task's
+        # configured dates instead of draining every staged row. Priority:
+        # linked task payload cli_dates → source params cli_dates.
+        window = await _resolve_source_window(source)
         await JobManager().enqueue(
             job_type="analyze",
-            payload={"source_ids": [source.id]},
+            payload={"source_ids": [source.id], **window},
             tenant_id=tenant_id,
         )
 

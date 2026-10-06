@@ -375,3 +375,83 @@ async def test_prune_sweeps_raw_content_nobody_analysed(source):
 
     assert swept["staged_deleted"] == 2
     assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0
+
+
+async def test_analyze_window_filters_staged_items_by_published_at(source, monkeypatch):
+    """An analyze run only drains staged items inside the task's content window.
+
+    Regression: the task's `cli_dates.start_date` gated collection (the VK
+    request) but not analysis — `handle_analyze` drained every staged row, so a
+    window of 2026-06-01 still analysed content from 2010.
+    """
+    from app.jobs import handlers
+    from app.services.ai import analyzer as analyzer_mod
+
+    # Two batches: one inside the window, one outside.
+    inside = [
+        {"platform": "vk", "external_id": f"in_{i}", "text": f"внутри {i}", "published_at": "2026-06-15T10:00:00Z"}
+        for i in range(2)
+    ]
+    outside = [
+        {"platform": "vk", "external_id": f"out_{i}", "text": f"снаружи {i}", "published_at": "2010-05-22T10:00:00Z"}
+        for i in range(2)
+    ]
+    c = _collector(inside + outside)
+    await c.collect_from_source(source, analyze=False, run_id=111)
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 4
+
+    seen = {}
+
+    async def fake_analyze(self, content, source_, **kwargs):
+        seen["count"] = len(content)
+        from app.services.ai.dedup import item_hash
+
+        return [_Row([item_hash(i) for i in content])]
+
+    monkeypatch.setattr(analyzer_mod.AIAnalyzer, "analyze_content", fake_analyze)
+    task, scenario = await _task_with_scenario()
+    # Window: only 2026-06-01 onward.
+    await AgentTask.objects.update_by_id(task.id, payload={"cli_dates": {"start_date": "2026-06-01"}})
+    task = await AgentTask.objects.get(id=task.id)
+    try:
+        await handlers.handle_analyze({"agent_task_id": task.id})
+    finally:
+        from app.models import AgentTask as _T
+
+        await _T.objects.delete_by_id(task.id)
+
+    # Only the two in-window rows reached the analyser...
+    assert seen["count"] == 2
+    # ...and only those were retired; the out-of-window rows stay staged.
+    remaining = await CollectedItem.objects.filter(source_id=source.id)
+    assert len(remaining) == 2
+    assert {r.text for r in remaining} == {"снаружи 0", "снаружи 1"}
+
+
+async def test_analyze_without_window_drains_all_staged(source, monkeypatch):
+    """No window configured → the old behaviour: drain everything staged."""
+    from app.jobs import handlers
+    from app.services.ai import analyzer as analyzer_mod
+
+    c = _collector(_items(3))
+    await c.collect_from_source(source, analyze=False, run_id=222)
+
+    seen = {}
+
+    async def fake_analyze(self, content, source_, **kwargs):
+        seen["count"] = len(content)
+        from app.services.ai.dedup import item_hash
+
+        return [_Row([item_hash(i) for i in content])]
+
+    monkeypatch.setattr(analyzer_mod.AIAnalyzer, "analyze_content", fake_analyze)
+    task, scenario = await _task_with_scenario()
+    try:
+        await handlers.handle_analyze({"agent_task_id": task.id})
+    finally:
+        from app.models import AgentTask as _T
+
+        await _T.objects.delete_by_id(task.id)
+
+    assert seen["count"] == 3
+    assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0

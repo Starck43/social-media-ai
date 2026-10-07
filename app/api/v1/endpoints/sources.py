@@ -21,7 +21,7 @@ async def list_sources(
             id=s.id,
             name=s.name,
             platform_id=s.platform_id,
-            source_type=str(s.source_type) if s.source_type else "",
+            source_type=s.source_type,
             external_id=s.external_id,
             params=s.params or {},
             is_active=s.is_active,
@@ -48,7 +48,7 @@ async def get_source(
         id=source.id,
         name=source.name,
         platform_id=source.platform_id,
-        source_type=str(source.source_type) if source.source_type else "",
+        source_type=source.source_type,
         external_id=source.external_id,
         params=source.params or {},
         is_active=source.is_active,
@@ -82,7 +82,7 @@ async def create_source(
         id=source.id,
         name=source.name,
         platform_id=source.platform_id,
-        source_type=str(source.source_type) if source.source_type else "",
+        source_type=source.source_type,
         external_id=source.external_id,
         params=source.params or {},
         is_active=source.is_active,
@@ -117,7 +117,7 @@ async def update_source(
         id=source.id,
         name=source.name,
         platform_id=source.platform_id,
-        source_type=str(source.source_type) if source.source_type else "",
+        source_type=source.source_type,
         external_id=source.external_id,
         params=source.params or {},
         is_active=source.is_active,
@@ -138,4 +138,4 @@ async def delete_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    await Source.objects.delete(source_id)
+    await Source.objects.delete(id=source_id)

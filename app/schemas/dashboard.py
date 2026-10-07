@@ -5,9 +5,12 @@ These schemas define the structure for dashboard statistics,
 source summaries, analytics summaries, and trend data.
 """
 
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from app.types import PeriodType, SourceType
 
 
 class DashboardStats(BaseModel):
@@ -39,10 +42,16 @@ class SourceSummary(BaseModel):
     id: int
     name: str
     platform_name: str = Field(..., description="Name of the platform")
-    source_type: str = Field(..., description="Type of source (USER, GROUP, CHANNEL)")
+    source_type: Any
     is_active: bool
     last_checked: Optional[str] = Field(None, description="Last check timestamp (ISO format)")
     analytics_count: int = Field(..., description="Number of analytics for this source")
+
+    @field_serializer("source_type", check_fields=False)
+    def _serialize_source_type(self, value: Any) -> str:
+        if isinstance(value, Enum):
+            return value.name
+        return str(value) if value else ""
 
 
 class AnalyticsSummary(BaseModel):
@@ -56,10 +65,16 @@ class AnalyticsSummary(BaseModel):
     source_id: int
     source_name: str = Field(..., description="Name of the source")
     analysis_date: str = Field(..., description="Analysis date (ISO format)")
-    period_type: str = Field(..., description="Period type (DAY, WEEK, MONTH, CUSTOM)")
+    period_type: Any
     topic_chain_id: Optional[str] = Field(None, description="Topic chain ID for continuity")
     llm_model: Optional[str] = Field(None, description="LLM model used for analysis")
     created_at: str = Field(..., description="Creation timestamp (ISO format)")
+
+    @field_serializer("period_type", check_fields=False)
+    def _serialize_period_type(self, value: Any) -> str:
+        if isinstance(value, Enum):
+            return value.name
+        return str(value) if value else ""
 
 
 class TrendData(BaseModel):

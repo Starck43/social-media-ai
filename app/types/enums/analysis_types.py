@@ -96,6 +96,9 @@ class AnalysisType(DatabaseEnum, Enum):
         """Map db_value → label_no_emoji for all types."""
         return {a.db_value: a.label_no_emoji for a in cls}
 
+    def __str__(self) -> str:
+        return self.name
+
 
 @database_enum
 class SentimentLabel(DatabaseEnum, Enum):
@@ -151,6 +154,9 @@ class SentimentLabel(DatabaseEnum, Enum):
             return cls[name]
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @database_enum

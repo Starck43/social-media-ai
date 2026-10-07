@@ -73,7 +73,7 @@ async def get_dashboard_stats(
 
     analytics_by_period = {}
     for analytic in analytics:
-        period = analytic.period_type.name if analytic.period_type else "unknown"
+        period = str(analytic.period_type) if analytic.period_type else "unknown"
         analytics_by_period[period] = analytics_by_period.get(period, 0) + 1
 
     return DashboardStats(
@@ -126,7 +126,7 @@ async def get_sources_summary(
                 id=source.id,
                 name=source.name,
                 platform_name=platform_map.get(source.platform_id, f"Platform {source.platform_id}"),
-                source_type=str(source.source_type) if source.source_type else "unknown",
+                source_type=source.source_type if source.source_type else None,
                 is_active=source.is_active,
                 last_checked=source.last_checked.isoformat()
                 if source.last_checked
@@ -170,7 +170,7 @@ async def get_analytics_summary(
             source_id=a.source_id,
             source_name=source_map.get(a.source_id, f"Source {a.source_id}"),
             analysis_date=a.analysis_date.isoformat() if a.analysis_date else "",
-            period_type=a.period_type.name if a.period_type else "unknown",
+            period_type=a.period_type if a.period_type else None,
             topic_chain_id=a.topic_chain_id,
             llm_model=a.llm_model,
             created_at=a.created_at.isoformat() if a.created_at else "",

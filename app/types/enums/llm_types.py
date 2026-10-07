@@ -66,3 +66,6 @@ class LLMStrategyType(DatabaseEnum, Enum):
     def choices(cls) -> list[tuple[str, str]]:
         """Get list of tuples containing strategy value and label."""
         return [(m.value, f"{m.emoji} {m.label}".strip()) for m in cls]
+
+    def __str__(self) -> str:
+        return self.value

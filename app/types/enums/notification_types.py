@@ -69,3 +69,6 @@ class NotificationType(DatabaseEnum, Enum):
             return cls[name]
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        return self.name

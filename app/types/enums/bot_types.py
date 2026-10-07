@@ -71,6 +71,9 @@ class AgentActionType(DatabaseEnum, Enum):
         except KeyError:
             return None
 
+    def __str__(self) -> str:
+        return self.name
+
 
 @database_enum
 class BotTriggerType(DatabaseEnum, Enum):
@@ -134,6 +137,9 @@ class BotTriggerType(DatabaseEnum, Enum):
             return cls[name]
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @database_enum
@@ -201,6 +207,9 @@ class AnalyzeType(DatabaseEnum, Enum):
             return cls[name]
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class GroupingAxis(str, Enum):
@@ -276,3 +285,6 @@ class BotActionStatus(DatabaseEnum, Enum):
         if use_db_value:
             return [(status.db_value, status.label) for status in cls]
         return [(status.name, status.label) for status in cls]
+
+    def __str__(self) -> str:
+        return self.name

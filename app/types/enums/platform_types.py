@@ -58,6 +58,9 @@ class PlatformType(DatabaseEnum, Enum):
         except KeyError:
             return None
 
+    def __str__(self) -> str:
+        return self.name
+
 
 @database_enum
 class SourceType(DatabaseEnum, Enum):
@@ -127,6 +130,9 @@ class SourceType(DatabaseEnum, Enum):
             return cls[name]
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @database_enum

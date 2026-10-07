@@ -113,12 +113,12 @@ async def get_source_analytics(
         "analytics": [
             {
                 "id": a.id,
-                "analysis_date": a.analysis_date,
-                "period_type": a.period_type.name if a.period_type else None,
+                "analysis_date": a.analysis_date.isoformat() if a.analysis_date else None,
+                "period_type": str(a.period_type) if a.period_type else None,
                 "topic_chain_id": a.topic_chain_id,
                 "llm_model": a.llm_model,
                 "summary_data": a.summary_data,
-                "created_at": a.created_at
+                "created_at": a.created_at.isoformat() if a.created_at else None,
             }
             for a in analytics
         ]

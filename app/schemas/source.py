@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class SourceCreate(BaseModel):
@@ -32,7 +33,7 @@ class SourceResponse(BaseModel):
     id: int
     name: str
     platform_id: int
-    source_type: str
+    source_type: Any
     external_id: str
     params: dict[str, Any]
     is_active: bool
@@ -41,5 +42,10 @@ class SourceResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("source_type", check_fields=False)
+    def _serialize_source_type(self, value: Any) -> str:
+        if isinstance(value, Enum):
+            return value.name
+        return str(value) if value else ""

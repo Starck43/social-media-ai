@@ -57,7 +57,7 @@ async def list_notifications(
             id=n.id,
             title=n.title,
             message=n.message,
-            notification_type=str(n.notification_type) if n.notification_type else "unknown",
+            notification_type=n.notification_type,
             is_read=n.is_read,
             related_entity_type=n.related_entity_type,
             related_entity_id=n.related_entity_id,
@@ -89,8 +89,6 @@ async def get_notification_stats(
         ntype = str(n.notification_type) if n.notification_type else "unknown"
         by_type[ntype] = by_type.get(ntype, 0) + 1
 
-    return NotificationStats(total=total, unread=unread, by_type=by_type)
-
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
 async def get_notification(
@@ -110,9 +108,7 @@ async def get_notification(
         id=notification.id,
         title=notification.title,
         message=notification.message,
-        notification_type=str(notification.notification_type)
-        if notification.notification_type
-        else "unknown",
+        notification_type=notification.notification_type,
         is_read=notification.is_read,
         related_entity_type=notification.related_entity_type,
         related_entity_id=notification.related_entity_id,
@@ -143,9 +139,7 @@ async def create_notification(
         id=notification.id,
         title=notification.title,
         message=notification.message,
-        notification_type=str(notification.notification_type)
-        if notification.notification_type
-        else "unknown",
+        notification_type=notification.notification_type,
         is_read=notification.is_read,
         related_entity_type=notification.related_entity_type,
         related_entity_id=notification.related_entity_id,

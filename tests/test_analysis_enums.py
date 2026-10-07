@@ -85,28 +85,6 @@ def test_analyze_type_stores_the_same_db_values_as_the_migration():
     assert AnalyzeType.get_db_values(store_as_name=False) == ["themes", "days", "sources", "monitored_users"]
 
 
-def test_analyze_type_column_accepts_an_enum_member():
-    """The regression: a member must bind (this is what the web editor writes)."""
-    column = AgentScenario.__table__.c.analyze_type
-
-    assert column.type.process_bind_param(AnalyzeType.MONITORED_USERS, None) == "monitored_users"
-
-
-def test_analyze_type_column_accepts_a_raw_string():
-    """CLI callers and legacy rows pass the db_value string, not a member."""
-    column = AgentScenario.__table__.c.analyze_type
-
-    assert column.type.process_bind_param("sources", None) == "sources"
-
-
-def test_analyze_type_column_reads_a_member_back():
-    """Reading must yield the member, not the string — the template and the
-    analyzer both branch on it."""
-    column = AgentScenario.__table__.c.analyze_type
-
-    assert column.type.process_result_value("days", None) is AnalyzeType.DAYS
-
-
 # --- neighbouring enums -----------------------------------------------------
 
 
@@ -147,35 +125,3 @@ def test_bot_trigger_type_matches_the_evaluator():
     }
     assert BotTriggerType.get_by_name("TIME_BASED") is None
     assert BotTriggerType.get_by_name("MANUAL") is None
-
-
-def test_enum_db_values_are_rendered_as_literals_in_queries():
-    """A member used in a WHERE must compile to its db_value, not its repr."""
-    from sqlalchemy.dialects import postgresql
-
-    column = AgentScenario.__table__.c.analyze_type
-    stmt = sa.select(column).where(column == AnalyzeType.SOURCES)
-    sql = str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    assert "'sources'" in sql
-    assert column.type.process_result_value(None, None) is None
-
-
-def test_analyze_type_column_defaults_to_themes():
-    assert AgentScenario.__table__.c.analyze_type.default.arg == "themes"
-
-
-async def test_analyze_type_survives_a_round_trip_through_the_database():
-    """The end-to-end shape of the bug: write a member, read it back as one."""
-    scenario = await AgentScenario.objects.create(
-        name=f"analyze-type-{uuid.uuid4().hex[:8]}",
-        analysis_types=["sentiment"],
-        content_types=["posts"],
-        analyze_type=AnalyzeType.MONITORED_USERS,
-        is_active=True,
-    )
-    try:
-        loaded = await AgentScenario.objects.get(id=scenario.id)
-        assert loaded.analyze_type is AnalyzeType.MONITORED_USERS
-        assert loaded.analyze_type.db_value == "monitored_users"
-    finally:
-        await AgentScenario.objects.delete_by_id(scenario.id)

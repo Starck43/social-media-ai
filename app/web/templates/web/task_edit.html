@@ -162,6 +162,42 @@
         {% endif %}
         {{ task_dates("editing", "editing.job_type") }}
 
+        <template x-if="editing.job_type === 'digest'">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-4">
+                <h3 class="text-sm font-medium text-slate-300">Параметры дайджеста</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="mb-1 block text-sm text-slate-300">Период</label>
+                        <select name="digest_period" x-model="editing.digest_period"
+                                class="{{ control() }}">
+                            <option value="day">День</option>
+                            <option value="week">Неделя</option>
+                            <option value="month">Месяц</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm text-slate-300">Ось группировки</label>
+                        <select name="digest_group_by" x-model="editing.digest_group_by"
+                                class="{{ control() }}">
+                            <option value="themes">По темам</option>
+                            <option value="sources">По источникам</option>
+                            <option value="entities">По сущностям</option>
+                            <option value="sentiment">По тональности</option>
+                            <option value="content_type">По типу контента</option>
+                            <option value="intent">По намерению</option>
+                            <option value="topic_chains">Тематические цепочки</option>
+                        </select>
+                    </div>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="hidden" name="digest_time_breakdown" :value="editing.digest_time_breakdown ? 'on' : ''">
+                    <input type="checkbox" x-model="editing.digest_time_breakdown"
+                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                    Разбивка по дням внутри групп
+                </label>
+            </div>
+        </template>
+
         <div class="grid grid-cols-2 gap-3">
             <div x-show="editing.job_type === 'collect'">
                 <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
@@ -175,6 +211,15 @@
                 <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
                        class="{{ control() }}">
                 <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+            </div>
+            <div x-show="editing.job_type === 'analyze'">
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="hidden" name="force_reanalyze" :value="editing.force_reanalyze ? 'on' : ''">
+                    <input type="checkbox" x-model="editing.force_reanalyze"
+                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                    Переанализировать всё (игнорировать хеши)
+                </label>
+                <p class="mt-1 text-xs text-slate-500">Снять все дедуп-хешы и прогнать заново</p>
             </div>
         </div>
 
@@ -330,6 +375,9 @@
             end_date: "",
             force_refresh: false,
             force_reanalyze: false,
+            digest_period: "day",
+            digest_group_by: "themes",
+            digest_time_breakdown: false,
             trigger_type: "",
             trigger_keywords: "",
             trigger_match: "any",
@@ -358,6 +406,9 @@
                     excluded_users: TASK_EDIT.excluded_users || "",
                     start_date: TASK_EDIT.start_date || "",
                     end_date: TASK_EDIT.end_date || "",
+                    digest_period: TASK_EDIT.digest_period || "day",
+                    digest_group_by: TASK_EDIT.digest_group_by || "themes",
+                    digest_time_breakdown: TASK_EDIT.digest_time_breakdown || false,
                     trigger_keywords: TASK_EDIT.trigger_keywords || "",
                     trigger_usernames: TASK_EDIT.trigger_usernames || "",
                     blacklist: TASK_EDIT.blacklist || "",

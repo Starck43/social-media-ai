@@ -195,6 +195,10 @@ async def analytics_page(request: Request):
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     data = await _analytics(tenant_id, is_superuser, days, filter_tenant_id)
+    # Grouped analytics — axis switcher on the page.
+    grouped = await _fetch_grouped(days, filter_tenant_id, is_superuser, tenant_id,
+                                   request)
+
     return render(
         request,
         "web/analytics.html",
@@ -205,7 +209,70 @@ async def analytics_page(request: Request):
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
+        grouped_data=grouped,
     )
+
+
+async def _fetch_grouped(
+    days: int | None,
+    filter_tenant_id: int | None,
+    is_superuser: bool,
+    tenant_id: int | None,
+    request: Request,
+) -> dict:
+    """Fetch grouped analytics for the axis switcher.
+
+    Reads group_by / time_breakdown / entity_type from query params,
+    applies the same tenant scoping as the main analytics data, and
+    returns a dict suitable for template rendering.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import AIAnalytics
+    from app.services.ai.grouping import group_analytics
+    from app.types.enums.bot_types import GroupingAxis
+
+    group_by = request.query_params.get("group_by", "themes")
+    time_breakdown = request.query_params.get("time_breakdown", "false").lower() == "true"
+    entity_type = request.query_params.get("entity_type")
+
+    try:
+        axis = GroupingAxis(group_by)
+    except ValueError:
+        axis = GroupingAxis.THEMES
+
+    # Entity type filter is only valid for ENTITIES axis.
+    if entity_type and axis != GroupingAxis.ENTITIES:
+        entity_type = None
+
+    # Fetch raw rows with the same scope as the main analytics.
+    qs = AIAnalytics.objects.all()
+    if days is not None:
+        from datetime import date, timedelta
+        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
+
+    if is_superuser and tenant_id is None:
+        with tenant_scope(bypass=True):
+            rows = list(await qs)
+    else:
+        rows = list(await qs)
+
+    try:
+        result = await group_analytics(
+            rows,
+            axis=axis,
+            time_breakdown=time_breakdown,
+            entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
+        )
+    except ValueError as e:
+        # Invalid entity_type — fall back to no filter.
+        result = await group_analytics(rows, axis=axis, time_breakdown=time_breakdown)
+
+    return {
+        "groups": result.get("groups", []),
+        "axis": result.get("axis", "themes"),
+        "time_breakdown": time_breakdown,
+        "entity_type": entity_type if axis == GroupingAxis.ENTITIES else None,
+    }
 
 
 async def _source_names(source_ids: set[int]) -> dict[int, str]:

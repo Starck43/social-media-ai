@@ -100,7 +100,6 @@ async def test_wizard_create_persists_scenario() -> None:
                 "name": _name("wizard-created"),
                 "content_types": ["posts", "comments"],
                 "analysis_types": ["sentiment", "keywords"],
-                "analyze_type": "days",
                 "base_prompt": "Проанализируй {text} из {platform}",
             }
             resp = await client.post("/app/scenarios/new", data=form)
@@ -112,7 +111,6 @@ async def test_wizard_create_persists_scenario() -> None:
             assert row is not None
             assert row.content_types == ["posts", "comments"]
             assert row.analysis_types == ["sentiment", "keywords"]
-            assert row.analyze_type and row.analyze_type.db_value == "days"
             # The scope was generated server-side: each selected type got its defaults.
             assert "sentiment" in row.scope
             assert "keywords" in row.scope
@@ -132,7 +130,6 @@ async def test_preview_returns_final_prompt_fragment() -> None:
                 "name": "p",
                 "content_types": ["posts"],
                 "analysis_types": ["sentiment", "keywords"],
-                "analyze_type": "themes",
                 "base_prompt": "Тональность из {platform}",
                 "_csrf": csrf,
             }
@@ -266,9 +263,10 @@ async def test_suggest_prompt_falls_back_when_no_model_answers() -> None:
 async def test_wizard_starts_from_remembered_preferences() -> None:
     """A second scenario opens with the choices the owner already made.
 
-    The grouping mode and the brand list are the two things re-typed every
-    time; both come from `agent_memory(scope=scenario_prefs)`, which the chat
-    tools and the wizard's own save write.
+    The brand list is the thing re-typed every time; it comes from
+    `agent_memory(scope=scenario_prefs)`, which the chat tools and the wizard's
+    own save write. `preferred_analyze_type` was removed: grouping is now a
+    query-time parameter (`group_by` + `time_breakdown`), not a scenario property.
     """
     from app.core.tenant_context import tenant_scope
     from app.services.ai import scenario_prefs
@@ -277,15 +275,10 @@ async def test_wizard_starts_from_remembered_preferences() -> None:
         user, tenant_id = await _register(client, "WizPrefs")
         try:
             with tenant_scope(tenant_id):
-                await scenario_prefs.remember(preferred_analyze_type="days", brands=["Fanta"])
+                await scenario_prefs.remember(brands=["Fanta"])
 
             page = await client.get("/app/scenarios/new")
             assert page.status_code == 200
-            # The template wraps the option tag, so match the tag and its
-            # attributes rather than one line of it.
-            assert any(
-                'value="days"' in tag and "selected" in tag for tag in re.findall(r"<option[^>]*>", page.text)
-            ), "the remembered grouping mode must be preselected"
             assert "Fanta" in page.text, "the remembered brand list must be pre-filled"
         finally:
             with tenant_scope(bypass=True):

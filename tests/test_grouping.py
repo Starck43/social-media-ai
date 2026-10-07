@@ -289,60 +289,15 @@ async def test_avg_sentiment_computed_across_rows_in_group(source):
     assert result["groups"][0]["avg_sentiment"] == 0.5
 
 
-# ── days ────────────────────────────────────────────────────────────────────────
+# ── topic_chains ────────────────────────────────────────────────────────────────
 
 
-async def test_group_by_days_sums_content_stats(source):
-    r1 = await _row(
-        source,
-        day_offset=3,
-        summary_data=_summary({"content_statistics": {"total_posts": 5, "messages_count": 10, "active_users": 3}}),
-    )
-    r2 = await _row(
-        source,
-        day_offset=2,
-        summary_data=_summary({"content_statistics": {"total_posts": 3, "messages_count": 7, "active_users": 2}}),
-    )
-    r3 = await _row(
-        source,
-        day_offset=1,
-        summary_data=_summary({"content_statistics": {"total_posts": 2, "messages_count": 4, "active_users": 1}}),
-    )
-    rows = [r1, r2, r3]
-    result = await group_analytics(rows, "days")
-    d3 = next(g for g in result["groups"] if g["key"] == (date.today() - timedelta(days=3)).isoformat())
-    assert d3["count"] == 1
-    d2 = next(g for g in result["groups"] if g["key"] == (date.today() - timedelta(days=2)).isoformat())
-    assert d2["count"] == 1
-    d1 = next(g for g in result["groups"] if g["key"] == (date.today() - timedelta(days=1)).isoformat())
-    assert d1["count"] == 1
-
-
-# ── monitored_users ─────────────────────────────────────────────────────────────
-
-
-async def test_group_by_monitored_users_extracts_author(source):
-    r1 = await _row(source, day_offset=3, topic_chain_id="src_1_user_alice")
-    r2 = await _row(source, day_offset=2, topic_chain_id="src_1_user_alice")
-    r3 = await _row(source, day_offset=1, topic_chain_id="src_1_user_bob")
-    rows = [r1, r2, r3]
-    result = await group_analytics(rows, "monitored_users")
-    keys = {g["key"] for g in result["groups"]}
-    assert "alice" in keys
-    assert "bob" in keys
-    alice = next(g for g in result["groups"] if g["key"] == "alice")
-    assert alice["count"] == 2
-
-
-# ── chains ─────────────────────────────────────────────────────────────────────
-
-
-async def test_group_by_chains_uses_topic_chain_id(source):
+async def test_topic_chains_uses_topic_chain_id(source):
     r1 = await _row(source, day_offset=3, topic_chain_id="chain-abc", summary_data=_summary(topics=["т"]))
     r2 = await _row(source, day_offset=1, topic_chain_id="chain-abc", summary_data=_summary(topics=["т"]))
     r3 = await _row(source, day_offset=2, topic_chain_id="chain-xyz", summary_data=_summary(topics=["т"]))
     rows = [r1, r2, r3]
-    result = await group_analytics(rows, "chains")
+    result = await group_analytics(rows, "topic_chains")
     keys = {g["key"] for g in result["groups"]}
     assert "chain-abc" in keys
     assert "chain-xyz" in keys

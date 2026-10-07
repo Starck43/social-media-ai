@@ -74,13 +74,11 @@ def test_templates_cover_the_documented_presets() -> None:
 def test_every_template_validates_against_the_production_enums() -> None:
     """A preset with a stale enum value would expand into a row nothing can read."""
     from app.types import AnalysisType, ContentType
-    from app.types.enums.bot_types import AnalyzeType
 
     for key in TEMPLATES:
         draft = expand_template(key)
         assert all(ContentType.get_by_value(c) for c in draft.content_types), key
         assert all(AnalysisType.get_by_value(a) for a in draft.analysis_types), key
-        assert AnalyzeType.get_by_value(draft.analyze_type), key
         assert draft.base_prompt, key
 
 
@@ -95,14 +93,12 @@ def test_every_template_prompt_validates() -> None:
 def test_expand_template_carries_preset_fields() -> None:
     draft = expand_template("competitor_watch", {"name": "Конкуренты ВК"})
     assert draft.name == "Конкуренты ВК"
-    assert draft.analyze_type == "days"
     assert "competitor" in draft.analysis_types
     assert draft.scope, "the scope must be generated, not empty"
 
 
 def test_expand_template_overrides_win_and_scope_merges() -> None:
-    draft = expand_template("brand_monitoring", {"analyze_type": "days", "scope": {"keywords": {"max_keywords": 25}}})
-    assert draft.analyze_type == "days"
+    draft = expand_template("brand_monitoring", {"scope": {"keywords": {"max_keywords": 25}}})
     assert draft.scope["keywords"]["max_keywords"] == 25
     # The defaults for the same type survive the override.
     assert "entity_types" in draft.scope["keywords"]
@@ -264,7 +260,7 @@ async def test_clone_copies_fields_and_never_the_default_flag() -> None:
         is_default=True,
         scope={"sentiment": {"categories": ["A"]}},
     )
-    result = await tools.scenario_clone(row.id, "Копия", {"analyze_type": "days"})
+    result = await tools.scenario_clone(row.id, "Копия", {})
 
     assert result["status"] == "cloned"
     clone = await AgentScenario.objects.get(id=result["scenario"]["id"])
@@ -273,9 +269,7 @@ async def test_clone_copies_fields_and_never_the_default_flag() -> None:
     assert clone.name == "Копия"
     assert clone.base_prompt == "Промпт"
     assert clone.media_overrides == {"image": "Картинки {count}"}
-    assert clone.analyze_type.db_value == "days"
     assert clone.is_default is False, "a copy must not become a second default"
-    assert original.analyze_type.db_value != "days", "the original stays untouched"
     assert original.name == "Оригинал"
 
 
@@ -307,21 +301,23 @@ async def test_delete_of_a_missing_scenario_is_an_error() -> None:
 
 
 async def test_create_remembers_the_grouping_mode() -> None:
+    # After refactoring, grouping is query-time, not scenario-level
+    # This test verifies that scenario creation doesn't try to save preferred_analyze_type
     await tools.scenario_create(name=_name("pref"), template_key="trend_spotter")
-    assert (await scenario_prefs.load())["preferred_analyze_type"] == "days"
+    # No preferred_analyze_type should be stored
+    prefs = await scenario_prefs.load()
+    assert "preferred_analyze_type" not in prefs
 
 
 async def test_preferences_fill_an_empty_draft_but_not_a_chosen_one() -> None:
     from app.services.ai.scenario_builder import ScenarioDraft
 
-    await scenario_prefs.remember(preferred_analyze_type="days", brands=["Fanta", "Sprite"])
+    # After refactoring, preferred_analyze_type is removed from scenario_prefs
+    # Only brands preference remains
+    await scenario_prefs.remember(brands=["Fanta", "Sprite"])
 
     filled = await scenario_prefs.apply_to_draft(ScenarioDraft(name="x"))
-    assert filled.analyze_type == "days"
     assert filled.scope["competitor"]["brand_names"] == ["Fanta", "Sprite"]
-
-    chosen = await scenario_prefs.apply_to_draft(ScenarioDraft(name="x", analyze_type="themes"))
-    assert chosen.analyze_type == "themes", "an explicit choice outranks a remembered one"
 
 
 async def test_preferences_round_trip_lists_through_json() -> None:
@@ -330,8 +326,9 @@ async def test_preferences_round_trip_lists_through_json() -> None:
 
 
 async def test_preferences_ignore_unknown_keys_and_empty_values() -> None:
-    written = await scenario_prefs.remember(something_else="x", brands=[], preferred_analyze_type="days")
-    assert written == {"preferred_analyze_type": "days"}
+    # preferred_analyze_type is no longer stored, only brands
+    written = await scenario_prefs.remember(something_else="x", brands=["TestBrand"])
+    assert written == {"brands": ["TestBrand"]}
     assert "something_else" not in await scenario_prefs.load()
 
 

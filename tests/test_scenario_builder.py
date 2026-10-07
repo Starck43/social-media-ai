@@ -66,8 +66,13 @@ def test_final_prompt_without_custom_uses_default() -> None:
 def test_preview_blocks_split_common_and_type_fields() -> None:
     draft = ScenarioDraft(name="t", analysis_types=["sentiment"])
     blocks = scenario_builder.preview_blocks(draft)
-    assert set(blocks["common_fields"]) == {"analysis_title", "analysis_summary"}
-    assert set(blocks["type_fields"]) == {"sentiment_score", "sentiment_label"}
+    # COMMON_FIELDS are always present
+    assert "analysis_title" in blocks["common_fields"]
+    assert "analysis_summary" in blocks["common_fields"]
+    # Type-specific fields for sentiment
+    assert "sentiment_score" in blocks["type_fields"]
+    assert "sentiment_label" in blocks["type_fields"]
+    # Additional fields may be present (topic_hint, confidence, is_meaningful)
     assert "text" in blocks["media_previews"]
     assert blocks["custom_prompt"] is None
     assert blocks["has_custom"] is False

@@ -227,14 +227,13 @@ async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
     )
     scenario = await AgentScenario.objects.create(
         name="digest-scn",
-        analyze_type="sources",
         analysis_types=["toxicity", "brand_mentions"],
     )
     task = await AgentTask.objects.create(
         name=f"t_{uuid.uuid4().hex[:6]}",
         job_type="digest",
         cron_expr="@once",
-        payload={"period": "week"},
+        payload={"period": "week", "group_by": "sources"},
         agent_scenario_id=scenario.id,
         is_active=True,
     )
@@ -243,13 +242,14 @@ async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
 
         captured = {}
 
-        async def fake_build(period, agent_task_id, force, source_ids, analyze_type, scenario_id):
+        async def fake_build(period, agent_task_id, force, source_ids, group_by, time_breakdown, scenario_id):
             captured.update(
                 period=period,
                 agent_task_id=agent_task_id,
                 force=force,
                 source_ids=source_ids,
-                analyze_type=analyze_type,
+                group_by=group_by,
+                time_breakdown=time_breakdown,
                 scenario_id=scenario_id,
             )
             return {"status": "sent", "results": {}}
@@ -259,7 +259,8 @@ async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
 
         assert captured["period"] == "week"
         assert captured["source_ids"] == [source.id]
-        assert captured["analyze_type"] == "sources"
+        assert captured["group_by"] == "sources"
+        assert captured["time_breakdown"] is False
         assert captured["scenario_id"] == scenario.id
     finally:
         await AgentTask.objects.delete_by_id(task.id)

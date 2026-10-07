@@ -1,12 +1,13 @@
 {% extends "sqladmin/base.html" %}
 {% block head %}
 {{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
 {% block extra_css %}{% endblock %}
 {% endblock %}
 
 {% block body %}
-<main data-theme="dark">
+<main data-theme="light" id="login-main">
     <div class="auth-container">
         <div class="card">
             <div class="card-body">
@@ -60,6 +61,14 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
+        // Применяем сохранённую тему
+        const savedTheme = localStorage.getItem("theme") || "light"
+        const loginMain = document.getElementById("login-main")
+        if (loginMain) {
+            loginMain.setAttribute("data-theme", savedTheme)
+        }
+        document.documentElement.classList.toggle("dark", savedTheme === "dark")
+
         const form = document.getElementById("loginForm")
         const submitButton = form.querySelector("button[type='submit']")
 

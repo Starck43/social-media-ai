@@ -3,12 +3,13 @@
 
 {% block head %}
 {{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
 {% block extra_css %}{% endblock %}
 {% endblock %}
 
 {% block body %}
-<main data-theme="dark">
+<main data-theme="light">
     {% block main %}
     <div class="wrapper">
         <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md">
@@ -45,6 +46,12 @@
                             </a>
                         </div>
                         {% endif %}
+                        <div class="navbar-nav">
+                            <button type="button" id="theme-toggle-btn" class="nav-link btn-icon theme-toggle-btn" title="Переключить тему">
+                                <i class="fa fa-moon" id="theme-toggle-icon"></i>
+                                <span id="theme-toggle-label">Тёмная</span>
+                            </button>
+                        </div>
                     </div>
                 </nav>
             </div>
@@ -107,27 +114,38 @@
     // Общие функции для всех форм аутентификации
     document.addEventListener("DOMContentLoaded", function() {
         // Переключение темы
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute("data-theme") || "light"
-            const newTheme = currentTheme === "light" ? "dark" : "light"
+        const themeToggleBtn = document.getElementById("theme-toggle-btn")
+        const themeToggleIcon = document.getElementById("theme-toggle-icon")
+        const themeToggleLabel = document.getElementById("theme-toggle-label")
+        const main = document.querySelector("main")
 
-            document.documentElement.setAttribute("data-theme", newTheme)
+        function applyTheme(theme) {
+            if (main) {
+                main.setAttribute("data-theme", theme)
+            }
+            document.documentElement.classList.toggle("dark", theme === "dark")
+            if (themeToggleIcon) {
+                themeToggleIcon.className = theme === "dark" ? "fa fa-sun" : "fa fa-moon"
+            }
+            if (themeToggleLabel) {
+                themeToggleLabel.textContent = theme === "dark" ? "Светлая" : "Тёмная"
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = main ? (main.getAttribute("data-theme") || "light") : "light"
+            const newTheme = currentTheme === "light" ? "dark" : "light"
+            applyTheme(newTheme)
             localStorage.setItem("theme", newTheme)
         }
 
-        // Загрузка сохраненной темы
-        const savedTheme = localStorage.getItem("theme")
-        if (savedTheme) {
-            document.documentElement.setAttribute("data-theme", savedTheme)
-        }
+        // Загрузка сохранённой темы (по умолчанию светлая)
+        const savedTheme = localStorage.getItem("theme") || "light"
+        applyTheme(savedTheme)
 
-        // Добавляем кнопку переключения темы
-        const themeToggle = document.createElement("button")
-        themeToggle.className = "theme-toggle"
-        themeToggle.innerHTML = "🌓"
-        themeToggle.title = "Переключить тему"
-        themeToggle.onclick = toggleTheme
-        document.body.appendChild(themeToggle)
+        if (themeToggleBtn) {
+            themeToggleBtn.addEventListener("click", toggleTheme)
+        }
 
         // Автофокус на первом поле ввода
         const firstInput = document.querySelector("input[type=\"text\"], input[type=\"email\"]")

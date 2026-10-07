@@ -246,6 +246,30 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Модальное окно подтверждения реального запроса -->
+            <div class="modal fade" id="realTestModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title">
+                                <i class="fa fa-exclamation-triangle me-2"></i>Подтверждение реального запроса
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="mb-2">Отправить реальный запрос к API? Это может списать средства.</p>
+                            <p class="mb-0 text-muted small" id="real_test_modal_image_note" style="display: none;">
+                                <i class="fa fa-image me-1"></i>Запрос включает анализ изображения.
+                            </p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="button" class="btn btn-warning" id="real_test_modal_confirm">Подтвердить</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -296,27 +320,45 @@
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const testForm = document.getElementById("test_form")
-        if (testForm) {
-            let clickedTestType = "mock"
-            document.querySelectorAll("#test_form button[type=\"submit\"]").forEach(btn => {
-                btn.addEventListener("click", function () {
-                    clickedTestType = this.onclick ? (this.onclick.toString().includes("'real'") ? "real" : "mock") : "mock"
-                })
-            })
-            testForm.addEventListener("submit", function (e) {
-                const prompt = document.getElementById("real_prompt").value
-                if (!prompt.trim()) {
-                    alert("Введите запрос для тестирования")
-                    e.preventDefault()
-                    return
+        if (!testForm) return
+
+        const realModalEl = document.getElementById("realTestModal")
+        const realModalConfirm = document.getElementById("real_test_modal_confirm")
+        const realModalImageNote = document.getElementById("real_test_modal_image_note")
+        const bsBootstrap = window.tabler && window.tabler.bootstrap ? window.tabler.bootstrap : window.bootstrap
+        const bsModal = realModalEl && bsBootstrap ? bsBootstrap.Modal.getOrCreateInstance(realModalEl) : null
+
+        let skipRealConfirm = false
+
+        testForm.addEventListener("submit", function (e) {
+            const prompt = document.getElementById("real_prompt").value
+            if (!prompt.trim()) {
+                alert("Введите запрос для тестирования")
+                e.preventDefault()
+                return
+            }
+
+            const testType = document.getElementById("test_type_field").value
+            const hasImage = document.getElementById("image_data_hidden").value !== ""
+
+            if (testType === "real" && !skipRealConfirm && bsModal) {
+                e.preventDefault()
+                if (hasImage) {
+                    realModalImageNote.style.display = "block"
+                } else {
+                    realModalImageNote.style.display = "none"
                 }
-                const hasImage = document.getElementById("image_data_hidden").value !== ""
-                if (clickedTestType === "real") {
-                    let msg = "Отправить реальный запрос к API? Это может списать средства."
-                    if (hasImage) msg += "\n\nЗапрос включает анализ изображения."
-                    if (!confirm(msg)) { e.preventDefault(); return }
-                }
-                document.getElementById("test_type_field").value = clickedTestType
+                bsModal.show()
+            }
+
+            skipRealConfirm = false
+        })
+
+        if (realModalConfirm && bsModal) {
+            realModalConfirm.addEventListener("click", function () {
+                bsModal.hide()
+                skipRealConfirm = true
+                testForm.requestSubmit()
             })
         }
     })

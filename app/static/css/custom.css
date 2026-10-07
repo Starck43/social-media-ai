@@ -342,6 +342,29 @@ label {
     opacity: 0.6;
 }
 
+/* ── Dark theme overrides for form controls ─────────────────────── */
+/* Force dark background for inputs/textareas in dark mode */
+[data-theme="dark"] .form-control,
+[data-theme="dark"] textarea.form-control,
+[data-theme="dark"] input.form-control,
+[data-theme="dark"] select.form-control,
+[data-theme="dark"] textarea,
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] input[type="email"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] select {
+    background-color: var(--tblr-bg-forms) !important;
+    background-image: none !important;
+    color: var(--tblr-body-color) !important;
+    border-color: var(--tblr-border-color) !important;
+}
+
+[data-theme="dark"] .form-control:focus {
+    background-color: var(--tblr-bg-forms) !important;
+    border-color: var(--tblr-primary) !important;
+}
+
 .form-group {
     width: 100%;
     margin-top: 1rem;
@@ -386,6 +409,31 @@ label {
 .btn-primary:hover {
     background-color: var(--tblr-primary-darken);
     border-color: var(--tblr-primary-darken);
+}
+
+.btn-secondary {
+    --tblr-btn-color: var(--tblr-body-color);
+    background-color: var(--tblr-bg-surface-secondary);
+    border-color: var(--tblr-border-color);
+    color: var(--tblr-body-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--tblr-bg-surface-tertiary);
+    border-color: var(--tblr-border-color);
+    color: var(--tblr-body-color);
+}
+
+.btn-outline-secondary {
+    --tblr-btn-color: var(--tblr-body-color);
+    background-color: transparent;
+    border-color: var(--tblr-border-color);
+    color: var(--tblr-body-color);
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--tblr-bg-surface-tertiary);
+    color: var(--tblr-body-color);
 }
 
 .btn-light {

@@ -1,0 +1,221 @@
+/* ============================================
+   SHARED THEME SYSTEM
+   Unified dark/light theme variables for both
+   web app (Tailwind) and admin (Tabler CSS).
+   Theme is persisted in localStorage as "theme"
+   ("light" | "dark") and applied via the
+   `dark` class on <html> (web) or `data-theme`
+   attribute on <main> (admin).
+   ============================================ */
+
+/* ── Shared color tokens ──────────────────────────────────────────────
+   These mirror the web app's Tailwind slate + cyan palette so both
+   surfaces render identically. Admin CSS variables reference these.
+*/
+:root {
+    /* Slate grays — light theme */
+    --color-slate-50: #f8fafc;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8;
+    --color-slate-500: #64748b;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-850: #172033;
+    --color-slate-900: #0f172a;
+    --color-slate-950: #020617;
+
+    /* Cyan brand — matches web */
+    --color-cyan-400: #22d3ee;
+    --color-cyan-500: #06b6d4;
+    --color-cyan-600: #0891b2;
+
+    /* Semantic aliases (light) */
+    --color-bg: var(--color-slate-50);
+    --color-surface: #ffffff;
+    --color-surface-secondary: var(--color-slate-100);
+    --color-surface-tertiary: var(--color-slate-200);
+    --color-text: var(--color-slate-800);
+    --color-text-secondary: var(--color-slate-500);
+    --color-border: var(--color-slate-200);
+    --color-border-strong: var(--color-slate-300);
+
+    /* Status colors */
+    --color-success: #059669;
+    --color-success-bg: #dcfce7;
+    --color-danger: #e11d48;
+    --color-danger-bg: #fee2e2;
+    --color-warning: #d97706;
+    --color-warning-bg: #fef3c7;
+    --color-info: #0284c7;
+    --color-info-bg: #e0f2fe;
+}
+
+/* ── Dark theme overrides ───────────────────────────────────────────────
+   Applied when <html> has .dark class (web) or <main> has data-theme="dark" (admin).
+   The admin layout.html sets data-theme="dark" on <main>, and we also
+   support the .dark class on <html> for consistency.
+*/
+html.dark,
+[data-theme="dark"] {
+    /* Semantic aliases (dark) */
+    --color-bg: var(--color-slate-950);
+    --color-surface: var(--color-slate-900);
+    --color-surface-secondary: var(--color-slate-800);
+    --color-surface-tertiary: var(--color-slate-700);
+    --color-text: var(--color-slate-200);
+    --color-text-secondary: var(--color-slate-400);
+    --color-border: var(--color-slate-700);
+    --color-border-strong: var(--color-slate-600);
+
+    /* Status colors — adjusted for dark */
+    --color-success: #34d399;
+    --color-success-bg: rgba(16, 185, 129, 0.15);
+    --color-danger: #fb7185;
+    --color-danger-bg: rgba(239, 68, 68, 0.15);
+    --color-warning: #fbbf24;
+    --color-warning-bg: rgba(245, 158, 11, 0.15);
+    --color-info: #38bdf8;
+    --color-info-bg: rgba(56, 189, 248, 0.15);
+}
+
+/* ── Tabler CSS variable bridge ─────────────────────────────────────────
+   Map shared tokens to Tabler's expected variable names so the admin
+   inherits the same palette without duplicating values.
+*/
+:root {
+    /* Brand */
+    --tblr-primary: var(--color-cyan-600);
+    --tblr-primary-darken: var(--color-cyan-700);
+    --tblr-primary-rgb: 8, 145, 178;
+
+    /* Secondary / neutrals */
+    --tblr-secondary: var(--color-slate-600);
+    --tblr-success: var(--color-success);
+    --tblr-danger: var(--color-danger);
+    --tblr-warning: var(--color-warning);
+    --tblr-info: var(--color-info);
+
+    /* Text & surfaces */
+    --tblr-body-color: var(--color-text);
+    --tblr-body-bg: var(--color-bg);
+    --tblr-bg-surface: var(--color-surface);
+    --tblr-bg-surface-rgb: 255, 255, 255;
+    --tblr-bg-surface-secondary: var(--color-surface-secondary);
+    --tblr-bg-surface-tertiary: var(--color-surface-tertiary);
+    --tblr-border-color: var(--color-border);
+    --tblr-border-color-translucent: rgba(0, 0, 0, 0.08);
+
+    /* Forms */
+    --tblr-bg-forms: var(--color-surface);
+
+    /* Misc */
+    --tblr-white-rgb: 255, 255, 255;
+    --tblr-btn-padding-x: 0.75rem;
+    --tblr-btn-padding-y: 0.4375rem;
+
+    /* Shadows */
+    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+
+    /* Auth gradient */
+    --auth-bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%);
+    --auth-container-max-width: 400px;
+
+    /* Alert colors */
+    --alert-bg-info: var(--color-info-bg);
+    --alert-text-info: var(--color-info);
+    --alert-bg-danger: var(--color-danger-bg);
+    --alert-text-danger: var(--color-danger);
+    --alert-bg-success: var(--color-success-bg);
+    --alert-text-success: var(--color-success);
+}
+
+/* Dark theme Tabler overrides */
+html.dark,
+[data-theme="dark"] {
+    --tblr-primary: var(--color-cyan-400);
+    --tblr-primary-darken: var(--color-cyan-500);
+    --tblr-primary-rgb: 34, 211, 238;
+
+    --tblr-secondary: var(--color-slate-400);
+    --tblr-success: var(--color-success);
+    --tblr-danger: var(--color-danger);
+    --tblr-warning: var(--color-warning);
+    --tblr-info: var(--color-info);
+
+    --tblr-body-color: var(--color-text);
+    --tblr-body-bg: var(--color-bg);
+    --tblr-bg-surface: var(--color-surface);
+    --tblr-bg-surface-rgb: 15, 23, 42;
+    --tblr-bg-surface-secondary: var(--color-surface-secondary);
+    --tblr-bg-surface-tertiary: var(--color-surface-tertiary);
+    --tblr-bg-forms: var(--color-surface);
+    --tblr-border-color: var(--color-border);
+    --tblr-border-color-translucent: rgba(255, 255, 255, 0.08);
+
+    --tblr-navbar-bg: rgba(15, 23, 42, 0.95);
+    --tblr-navbar-color: rgba(203, 213, 225, 0.8);
+
+    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+    --auth-bg-gradient: linear-gradient(135deg, #164e63 0%, #164e63 100%);
+
+    --alert-bg-info: var(--color-info-bg);
+    --alert-text-info: var(--color-cyan-400);
+    --alert-bg-danger: var(--color-danger-bg);
+    --alert-text-danger: #fecdd3;
+    --alert-bg-success: var(--color-success-bg);
+    --alert-text-success: #6ee7b7;
+}
+
+/* ── Theme toggle button (shared style) ─────────────────────────────────
+   Used in both web sidebar and admin sidebar.
+*/
+.theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: auto;
+    height: auto;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--tblr-border-color);
+    background: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--tblr-primary);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.theme-toggle-btn i {
+    font-size: 1.1rem;
+    margin-right: 0.5rem;
+}
+
+/* ── Smooth transitions ───────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+    transition-property: background-color, border-color, color, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+}
+
+/* ── Theme persistence script (shared) ─────────────────────────────────
+   Inject once per page. Reads localStorage["theme"], respects
+   prefers-color-scheme, and toggles the `dark` class on <html>.
+   Both web and admin call this via a small inline script.
+*/

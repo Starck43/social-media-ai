@@ -158,7 +158,7 @@ async def delete_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    await AgentTask.objects.delete(task_id)
+    await AgentTask.objects.delete(id=task_id)
 
 
 @router.patch("/{task_id}/pause")

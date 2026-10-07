@@ -1,7 +1,9 @@
 import json
 import logging
 from datetime import datetime
+from typing import Any
 
+import httpx
 from fastapi import status
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -275,35 +277,33 @@ class LLMModelActions:
                     "price_updated": price_updated,
                 },
             )
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
+            logger.error(f"LLM request error for model {model.name} ({model.model_id}): {e}", exc_info=True)
+            error_details = _build_error_details(e, model)
+            return await admin_view.templates.TemplateResponse(
+                request,
+                "llm_model/test_error.html",
+                {
+                    "request": request,
+                    "model": model,
+                    "provider": model.provider,
+                    "error_details": error_details,
+                    "prompt": prompt,
+                    "error_time": datetime.now(),
+                },
+            )
         except Exception as e:
-            logger.error(f"Error in real test: {e}", exc_info=True)
-            error_details = {"kind": "unknown", "message": str(e), "recommendations": []}
-            if hasattr(e, "response") and e.response is not None:
-                try:
-                    err_data = e.response.json()
-                    err_obj = err_data.get("error", {}) if isinstance(err_data, dict) else {}
-                    kind = err_obj.get("type", "api_error")
-                    code = err_obj.get("code", "")
-                    message = err_obj.get("message", e.response.text or str(e))
-
-                    # Build specific recommendations based on error type
-                    recommendations = _error_recommendations(kind, code, message, e.response.status_code)
-
-                    error_details = {
-                        "kind": kind,
-                        "code": code,
-                        "message": message,
-                        "retry_after": e.response.headers.get("retry-after", ""),
-                        "status_code": e.response.status_code,
-                        "recommendations": recommendations,
-                    }
-                except Exception:
-                    error_details = {
-                        "kind": "http_error",
-                        "message": f"HTTP {getattr(e.response, 'status_code', '?')}: {getattr(e.response, 'text', str(e))}",
-                        "status_code": getattr(e.response, "status_code", None),
-                        "recommendations": ["Проверьте подключение к интернету и доступность провайдера"],
-                    }
+            logger.error(f"Unexpected error testing model {model.name} ({model.model_id}): {e}", exc_info=True)
+            error_details = {
+                "kind": "unexpected_error",
+                "message": f"Внутренняя ошибка: {str(e)}",
+                "retry_after": "",
+                "status_code": None,
+                "recommendations": [
+                    "Проверьте настройки провайдера и попробуйте снова",
+                    "Обратитесь к администратору при повторении ошибки",
+                ],
+            }
             return await admin_view.templates.TemplateResponse(
                 request,
                 "llm_model/test_error.html",
@@ -339,12 +339,67 @@ class LLMModelActions:
         return payload, messages
 
 
+def _build_error_details(exc: Exception, model: LLMModel) -> dict[str, Any]:
+    """Build structured error details for the test_error template."""
+    status_code: int | None = None
+    message = str(exc)
+    code = ""
+    retry_after = ""
+    raw_body: str | None = None
+    provider_host = model.provider.base_url.replace("https://", "").replace("http://", "").split("/")[0]
+
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status_code = exc.response.status_code
+        raw_body = exc.response.text
+        try:
+            err_json = exc.response.json()
+            if isinstance(err_json, dict):
+                code = err_json.get("error", {}).get("code") or err_json.get("code") or err_json.get("error") or ""
+                if isinstance(code, dict):
+                    code = code.get("message") or code.get("type") or str(code)
+                message = err_json.get("error", {}).get("message") or err_json.get("message") or message
+        except Exception:
+            pass
+        retry_after = exc.response.headers.get("Retry-After", "")
+        if not message or message == str(exc):
+            body_preview = raw_body[:500] if raw_body else "No response body"
+            message = f"HTTP {status_code}: {body_preview}"
+
+    elif isinstance(exc, httpx.TimeoutException):
+        message = f"Превышено время ожидания ответа от {model.provider.name} ({model.provider.base_url})"
+
+    elif isinstance(exc, httpx.TransportError):
+        message = f"Ошибка подключения к {model.provider.name} ({model.provider.base_url}): {exc}"
+
+    recommendations = _error_recommendations(
+        kind=type(exc).__name__.lower(),
+        code=code.lower() if isinstance(code, str) else "",
+        message=message.lower(),
+        status_code=status_code or 0,
+    )
+
+    return {
+        "kind": type(exc).__name__,
+        "message": message,
+        "code": code,
+        "status_code": status_code,
+        "retry_after": retry_after,
+        "recommendations": recommendations,
+        "raw_body": raw_body,
+        "provider_host": provider_host,
+    }
+
+
 def _error_recommendations(kind: str, code: str, message: str, status_code: int) -> list[str]:
     """Generate human-readable recommendations based on LLM API error."""
     recs = []
 
     # Rate limiting
-    if kind in ("rate_limit_error", "rate_limit") or code in ("model_concurrency", "rate_limit_exceeded", "quota_exceeded"):
+    if kind in ("rate_limit_error", "rate_limit") or code in (
+        "model_concurrency",
+        "rate_limit_exceeded",
+        "quota_exceeded",
+    ):
         recs.append("Лимит запросов исчерпан. Подождите и повторите попытку.")
         if status_code == 429:
             recs.append("Или увеличьте лимит параллельных запросов в настройках провайдера.")
@@ -355,7 +410,11 @@ def _error_recommendations(kind: str, code: str, message: str, status_code: int)
         recs.append("Убедитесь, что ключ активен и не истёк.")
 
     # Model not found / invalid model
-    elif kind in ("model_not_found", "invalid_request_error") or code in ("model_not_found", "invalid_model", "model_not_allowed"):
+    elif kind in ("model_not_found", "invalid_request_error") or code in (
+        "model_not_found",
+        "invalid_model",
+        "model_not_allowed",
+    ):
         recs.append(f"Модель '{code}' не найдена или недоступна у провайдера.")
         recs.append("Проверьте название model_id в настройках модели.")
         recs.append("Возможно модель депрекейднута — обратитесь к документации провайдера.")

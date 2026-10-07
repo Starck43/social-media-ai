@@ -1313,7 +1313,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 		provider_id = int(pks.split(",")[0])
 		provider = await LLMProvider.objects.get(id=provider_id)
-		models = await LLMModel.objects.filter(provider_id=provider_id, is_active=True).all()
+		models = await LLMModel.objects.select_related("provider").filter(provider_id=provider_id, is_active=True).all()
 		if not models:
 			request.session["admin_message"] = {"type": "error", "message": "Нет активных моделей у провайдера"}
 			return RedirectResponse(request.url_for("admin:list", identity=self.identity))

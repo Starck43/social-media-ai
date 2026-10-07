@@ -265,12 +265,18 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 | `/llm-stats` | GET | Статистика LLM провайдеров |
 | `/content-mix` | GET | Распределение типов контента |
 | `/engagement` | GET | Метрики вовлеченности |
+| `/grouped` | GET | Универсальная группировка по любой оси (days, themes, sources, entities, sentiment, content_type, intent, topic_chains) |
 
 **Общие параметры:**
 - `source_id` (optional): Фильтр по источнику
 - `scenario_id` (optional): Фильтр по сценарию
 - `days` (int): Период анализа (1-90)
 - `limit` (int): Макс. кол-во результатов (только для topics)
+
+**Параметры для `/grouped`:**
+- `group_by` (required): Ось группировки — `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`
+- `time_breakdown` (bool, default `false`): Включить разбивку по датам внутри каждой группы
+- `entity_type` (optional, только для `entities`): Фильтр сущностей — `person`, `brand`
 
 **Пример запроса:**
 ```bash

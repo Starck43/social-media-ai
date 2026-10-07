@@ -440,12 +440,13 @@ Content-Type: application/json
       "categories": ["positive", "negative", "neutral"]
     }
   },
-  "ai_prompt": "Analyze sentiment: {content}",
-  "trigger_type": "keywords",
-  "trigger_config": {"keywords": ["important", "urgent"]},
-  "action_type": "NOTIFICATION",
+  "base_prompt": "Analyze sentiment: {content}",
+  "media_overrides": {"image": "Describe this image", "video": "Summarize this video"},
+  "summary_prompt": "Create a unified summary from all analyses",
+  "analysis_types": ["sentiment", "keywords", "topics"],
+  "content_types": ["posts", "comments"],
   "is_active": true,
-  "collection_interval_hours": 24
+  "max_tokens": 2048
 }
 ```
 

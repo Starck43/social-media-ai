@@ -192,7 +192,7 @@ Invite codes for bringing clients into workspaces.
 |---|---|---|
 | `id` | `Integer` PK | |
 | `code_hash` | `String(64)` | SHA-256 hash of the plaintext code |
-| `role` | `String(20)` | Role granted on redeem (default: "owner") |
+| `role_id` | `Integer` FK → `roles.id` (nullable) | Platform role to assign on invite redemption |
 | `expires_at` | `DateTime` | Code expiry (nullable) |
 | `max_uses` | `Integer` | Max redemptions (default: 1) |
 | `used_count` | `Integer` | Current redemption count |
@@ -240,12 +240,17 @@ Membership: which messenger identity belongs to which workspace.
 | `tenant_id` | `Integer` FK | |
 | `channel` | `String(20)` | `'telegram'` or `'max'` |
 | `external_user_id` | `String(100)` | Messenger user ID |
-| `role` | `String(20)` | `'owner'` or `'member'` |
+| `user_id` | `Integer` FK (nullable) | Web user ID (if linked) |
+| `role_id` | `Integer` FK → `roles.id` (nullable) | Platform role for this membership |
 | `is_active` | `Boolean` | Membership active |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
 **Unique constraint:** `(tenant_id, channel, external_user_id)`
+
+**Note:** Migration `0080` replaced the old `role` `String(20)` column with
+`role_id` (FK to `roles.id`). Legacy rows with `role_id IS NULL` are treated as
+owners for backward compatibility.
 
 ---
 

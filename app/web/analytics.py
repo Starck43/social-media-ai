@@ -223,9 +223,10 @@ async def _fetch_grouped(
 ) -> dict:
     """Fetch grouped analytics for the axis switcher.
 
-    Reads group_by / time_breakdown / entity_type from query params,
-    applies the same tenant scoping as the main analytics data, and
-    returns a dict suitable for template rendering.
+    Reads group_by / entity_type from query params, applies the same tenant
+    scoping as the main analytics data, and returns a dict suitable for
+    template rendering. The `days` axis gives the per-date chronology, so no
+    separate time_breakdown toggle here.
     """
     from app.core.tenant_context import tenant_scope
     from app.models import AIAnalytics
@@ -233,7 +234,6 @@ async def _fetch_grouped(
     from app.types.enums.bot_types import GroupingAxis
 
     group_by = request.query_params.get("group_by", "themes")
-    time_breakdown = request.query_params.get("time_breakdown", "false").lower() == "true"
     entity_type = request.query_params.get("entity_type")
 
     try:
@@ -261,17 +261,15 @@ async def _fetch_grouped(
         result = await group_analytics(
             rows,
             axis=axis,
-            time_breakdown=time_breakdown,
             entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
         )
-    except ValueError as e:
+    except ValueError:
         # Invalid entity_type — fall back to no filter.
-        result = await group_analytics(rows, axis=axis, time_breakdown=time_breakdown)
+        result = await group_analytics(rows, axis=axis)
 
     return {
         "groups": result.get("groups", []),
         "axis": result.get("axis", "themes"),
-        "time_breakdown": time_breakdown,
         "entity_type": entity_type if axis == GroupingAxis.ENTITIES else None,
     }
 

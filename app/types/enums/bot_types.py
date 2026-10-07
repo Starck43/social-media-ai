@@ -210,12 +210,14 @@ class GroupingAxis(str, Enum):
     parameter, not a column on the scenario. One ``AIAnalytics`` row can
     appear in multiple groupings simultaneously.
 
-    Time-based breakdown is handled by the ``time_breakdown`` flag on
-    ``group_analytics()``, not as a separate axis.  Per-user views use
-    ``ENTITIES(entity_type="person")``.  Topic chains are a cross-row
-    grouping accessible via ``TOPIC_CHAINS``.
+    ``DAYS`` groups rows by ``analysis_date`` (chronology as an axis).
+    Per-date sub-entries *within* each group are the separate
+    ``time_breakdown`` flag on ``group_analytics()``. Per-user views use
+    ``ENTITIES(entity_type="person")``; topic chains are a cross-row
+    grouping via ``TOPIC_CHAINS``.
     """
 
+    DAYS          = "days"
     THEMES        = "themes"
     SOURCES       = "sources"
     ENTITIES      = "entities"
@@ -227,6 +229,7 @@ class GroupingAxis(str, Enum):
     @property
     def display_name(self) -> str:
         return {
+            "days": "По дням",
             "themes": "По темам",
             "sources": "По источникам",
             "entities": "По сущностям",

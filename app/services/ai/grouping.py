@@ -235,12 +235,30 @@ async def group_analytics(
     for row in rows:
         key: str | None = None
 
-        if axis == GroupingAxis.THEMES:
+        if axis == GroupingAxis.DAYS:
+            key = row.analysis_date.isoformat() if row.analysis_date else "unknown"
+
+        elif axis == GroupingAxis.THEMES:
             topics = _extract_topics(row.summary_data)
             if topics:
                 key = topics[0]
             else:
                 key = "(без темы)"
+            bucket = groups.setdefault(
+                key,
+                {"key": key, "count": 0, "scores": [], "entries": defaultdict(list), "chain_id": None},
+            )
+            bucket["count"] += 1
+            sent = _extract_sentiment(row.summary_data)
+            if sent and sent.get("score") is not None:
+                bucket["scores"].append(float(sent["score"]))
+            # Set chain_id to the first non-null topic_chain_id we encounter
+            if bucket["chain_id"] is None and row.topic_chain_id:
+                bucket["chain_id"] = row.topic_chain_id
+            if time_breakdown:
+                day = row.analysis_date.isoformat() if row.analysis_date else "unknown"
+                bucket["entries"][day].append(row)
+            continue
 
         elif axis == GroupingAxis.SOURCES:
             key = str(row.source_id)
@@ -349,6 +367,9 @@ async def group_analytics(
             # chain id kept alongside so templates can link to the chain page.
             group["chain_id"] = bucket["key"]
             group["key"] = bucket.get("label") or bucket["key"]
+        elif axis == GroupingAxis.THEMES and bucket["chain_id"] is not None:
+            # For themes, we have optionally collected a chain_id from the rows.
+            group["chain_id"] = bucket["chain_id"]
 
         if time_breakdown:
             entries = []

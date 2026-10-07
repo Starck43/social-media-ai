@@ -8,8 +8,8 @@ two independent query-time parameters that shape how those rows are presented.
 
 | Dimension | What it answers | Values |
 |-----------|----------------|--------|
-| **Grouping axis** | *By what attribute* do we group? | `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent` |
-| **Time slice** | *How* do we show dynamics? | aggregate (default) or per-date breakdown (`time_breakdown: true`) |
+| **Grouping axis** | *By what attribute* do we group? | `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
+| **Time slice** | *How* do we show dynamics? | aggregate (default) or per-date breakdown (`time_breakdown: true`, digest/API only) |
 
 They are orthogonal: any axis can be shown as an aggregate over the period OR
 as a per-date chronology.
@@ -24,6 +24,7 @@ as a per-date chronology.
 
 | Axis | Groups by | JSONB field |
 |------|-----------|-------------|
+| `days` | Analysis date (chronology as an axis) | `analysis_date` |
 | `themes` | Semantic topics | `summary_data->'topics'` |
 | `sources` | Source/channel | `source_id` |
 | `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` |
@@ -64,12 +65,13 @@ The old `AgentScenario.analyze_type` enum (`themes`, `days`, `sources`,
 | Old `analyze_type` | New parameters |
 |-------------------|----------------|
 | `themes` | `group_by=themes` |
-| `days` | `group_by=themes, time_breakdown=true` |
+| `days` | `group_by=days` (chronology as an axis) |
 | `sources` | `group_by=sources` |
 | `monitored_users` | `group_by=entities, entity_type=person` |
 
-The `days` mode was never a grouping axis — it was always a time display mode.
-It becomes `time_breakdown=true` on any axis.
+`time_breakdown` remains available for the digest brief and the API — it adds
+per-date sub-entries *within* each group of any axis. The web analytics page
+uses the `days` axis instead of a separate toggle.
 
 ## Обзор
 

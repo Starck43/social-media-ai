@@ -86,10 +86,11 @@
 
     {# ── Axis switcher + grouped results ─────────────────────────────── #}
     {% set gd = grouped_data %}
-    <div x-data="{ axis: '{{ gd.axis }}', td: {{ 'true' if gd.time_breakdown else 'false' }} }" class="mt-6 space-y-4">
+    <div x-data="{ axis: '{{ gd.axis }}' }" class="mt-6 space-y-4">
         <div class="flex flex-wrap items-center gap-3">
             <div class="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
                 {% set axes = [
+                    ('days', 'По дням', '📅'),
                     ('themes', 'По темам', '🧩'),
                     ('sources', 'По источникам', '🔗'),
                     ('entities', 'По сущностям', '👤'),
@@ -99,23 +100,17 @@
                     ('topic_chains', 'Тематические цепочки', '🔗'),
                 ] %}
                 {% for ax_val, ax_label, ax_icon in axes %}
-                <a href="?group_by={{ ax_val }}{% if gd.time_breakdown %}&time_breakdown=true{% endif %}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
+                <a href="?group_by={{ ax_val }}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
                    class="rounded-lg px-3 py-1.5 text-sm transition"
                    :class="axis === '{{ ax_val }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:bg-slate-800'">
                     {{ ax_icon }} {{ ax_label }}
                 </a>
                 {% endfor %}
             </div>
-            <label class="flex items-center gap-2 text-sm text-slate-300">
-                <input type="checkbox" x-model="td" @change="location.search += '&time_breakdown=' + (this.checked ? 'true' : 'false')"
-                       {% if gd.time_breakdown %}checked{% endif %}
-                       class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                Разбивка по дням
-            </label>
             <template x-if="axis === 'entities'">
                 <div class="flex gap-2">
                     {% for et in [('brand', 'Бренды'), ('person', 'Персоны'), ('org', 'Организации')] %}
-                    <a href="?group_by=entities&entity_type={{ et[0] }}{% if gd.time_breakdown %}&time_breakdown=true{% endif %}"
+                    <a href="?group_by=entities&entity_type={{ et[0] }}"
                        class="rounded-lg border px-3 py-1.5 text-sm transition"
                        :class="(axis === 'entities' && '{{ gd.entity_type or "" }}' === '{{ et[0] }}') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-400 hover:bg-slate-800'">
                         {{ et[1] }}
@@ -144,20 +139,6 @@
                         {% endif %}
                     </span>
                 </div>
-                {% if gd.time_breakdown and group.entries %}
-                <div class="mt-2 space-y-1 border-t border-slate-800 pt-2">
-                    {% for entry in group.entries %}
-                    <div class="flex items-center justify-between text-xs text-slate-400">
-                        <span>{{ entry.date }}</span>
-                        <span>{{ entry.count }} упом.
-                            {% if entry.avg_sentiment is not none %}
-                            · {{ "%.2f"|format(entry.avg_sentiment) }}
-                            {% endif %}
-                        </span>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
             </div>
             {% endfor %}
         </div>

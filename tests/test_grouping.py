@@ -67,11 +67,12 @@ async def _row(
     summary_data: dict | None = None,
     media_types: list[str] | None = None,
     topic_chain_id: str | None = None,
+    period_type: PeriodType = PeriodType.DAY,
 ):
     return await AIAnalytics.objects.create(
         source_id=source.id,
         analysis_date=date.today() - timedelta(days=day_offset),
-        period_type=PeriodType.DAY,
+        period_type=period_type,
         summary_data=summary_data or {},
         media_types=media_types,
         topic_chain_id=topic_chain_id,
@@ -249,6 +250,24 @@ async def test_group_by_intent_counts_intent_types(source):
     assert "question" in keys
     assert "complaint" in keys
     assert result["groups"][0]["count"] == 2
+
+
+# ── days axis ─────────────────────────────────────────────────────────────────
+
+
+async def test_days_axis_groups_by_analysis_date(source):
+    r1 = await _row(source, day_offset=5, summary_data=_summary(topics=["a"]))
+    r2 = await _row(source, day_offset=3, summary_data=_summary(topics=["b"]))
+    # Same day as r2 — unique (source, date, period) forces another period_type.
+    r3 = await _row(source, day_offset=3, summary_data=_summary(topics=["c"]), period_type=PeriodType.WEEK)
+    result = await group_analytics([r1, r2, r3], "days")
+    keys = {g["key"] for g in result["groups"]}
+    assert keys == {
+        (date.today() - timedelta(days=5)).isoformat(),
+        (date.today() - timedelta(days=3)).isoformat(),
+    }
+    busiest = next(g for g in result["groups"] if g["key"] == (date.today() - timedelta(days=3)).isoformat())
+    assert busiest["count"] == 2
 
 
 # ── time_breakdown ────────────────────────────────────────────────────────────

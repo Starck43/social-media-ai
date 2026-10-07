@@ -12,13 +12,9 @@ from .base import Base, TimestampMixin
 
 
 def _model_type_to_capabilities(model_type: str) -> list[str]:
-    if model_type == "text":
-        return ["text"]
-    if model_type == "image":
-        return ["text", "image"]
-    if model_type == "embedding":
-        return ["embedding"]
-    return ["text"]
+    if not model_type:
+        return []
+    return [c.strip() for c in model_type.split(",")]
 
 
 @app_label("ai")

@@ -133,6 +133,8 @@ class LLMModelManager(BaseManager):
             raise ValueError(f"Provider {provider_id} is not active")
 
         if is_default:
+            # Clear other defaults of the same model_type (exact match)
+            # Note: This assumes that a model is a default for its *exact* set of capabilities.
             await self.filter(model_type=model_type, is_default=True).update(is_default=False)
 
         model = await self.create(
@@ -161,6 +163,7 @@ class LLMModelManager(BaseManager):
 
         if fields.get("is_default") is True and not model.is_default:
             scope_type = fields.get("model_type", model.model_type)
+            # Clear other defaults of the same model_type (exact match)
             await self.filter(model_type=scope_type, is_default=True).update(is_default=False)
 
         await self.update_by_id(model_id, **fields)
@@ -248,7 +251,8 @@ class LLMModelManager(BaseManager):
         from ..ai_analytics import AIAnalytics
 
         # Get all active models of this type with provider prefetched
-        models = await self.select_related("provider").filter(model_type=model_type, is_active=True)
+        # Use contains to find models that support this capability
+        models = await self.select_related("provider").filter(model_type__contains=model_type, is_active=True)
         if not models:
             return None
 
@@ -283,7 +287,8 @@ class LLMModelManager(BaseManager):
         Single entry point for default model resolution.
         Priority: is_default → first active (same ordering as _get_default_for_capability).
         """
-        models = await self.select_related("provider").filter(model_type=model_type, is_active=True)
+        # Use contains to find models that support this capability
+        models = await self.select_related("provider").filter(model_type__contains=model_type, is_active=True)
         if not models:
             return None
         models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))

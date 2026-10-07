@@ -9,7 +9,7 @@ from sqladmin.fields import SelectField
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import validators
+from wtforms import validators, SelectMultipleField, widgets
 
 from app.admin.actions import LLMModelActions
 from app.admin.formatters import format_date, format_usd, plan_badge
@@ -1409,7 +1409,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 	form_excluded_columns = BaseAdmin.form_excluded_columns + ["text_scenarios", "image_scenarios", "video_scenarios"]
 
 	form_overrides = {
-		"model_type": SelectField,
+		"model_type": SelectMultipleField,
 		**BaseAdmin.form_overrides,
 	}
 
@@ -1426,9 +1426,11 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		},
 		"model_type": {
 			"label": "Тип модели",
-			"description": "text — текст, image — текст+изображения, embedding — эмбеддинги",
-			"choices": [("text", "text — текст"), ("image", "image — текст+изображения"), ("embedding", "embedding — эмбеддинги")],
+			"description": "Выберите возможности модели",
+			"choices": [("text", "text"), ("image", "image"), ("video", "video"), ("audio", "audio")],
 			"coerce": str,
+			"widget": widgets.ListWidget(prefix_label=False),
+			"option_widget": widgets.CheckboxInput(),
 		},
 		"input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
 		"output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
@@ -1481,6 +1483,11 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		)
 
 		return form
+
+	async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
+		if "model_type" in data and isinstance(data["model_type"], list):
+			data["model_type"] = ",".join(data["model_type"])
+		await super().on_model_change(data, model, is_created, request)
 
 	async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
 		await super().after_model_change(data, model, is_created, request)

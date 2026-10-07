@@ -440,12 +440,29 @@ label {
     border-color: var(--alert-text-info);
 }
 
-/* ── Select2 ──────────────────────────────────────────────────────────────── */
-.select2-container--default .select2-selection--single {
-    height: auto;
-    background-color: var(--tblr-bg-forms);
-    border-color: var(--tblr-border-color);
-    border-radius: 0.5rem;
+/* ── Select2 / Checkbox overrides ────────────────────────────────────────── */
+.form-check-inline {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Fix for SelectMultipleField with CheckboxInput */
+.form-group ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.form-group ul li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
 }
 
 .select2-container--default .select2-selection .select2-selection__rendered {

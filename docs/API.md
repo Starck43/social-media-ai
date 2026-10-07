@@ -136,11 +136,6 @@ the API, the console and the role editor cannot drift apart. See
 | `GET/POST/PATCH/DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
-**Not enforced yet:** most `/api/*` endpoints authenticate but do not declare a
-model right, so any authenticated member may call them. The building blocks are
-in place — adopting a right is one `Depends(require_model_perm(...))` on the
-endpoint.
-
 ---
 
 ## Health
@@ -865,6 +860,25 @@ Authorization: Bearer <token>
 
 **Permissions:** `aianalytics.view`
 
+### Grouped Analytics
+
+```
+GET /api/v1/dashboard/analytics/aggregate/grouped?group_by=themes&time_breakdown=false&entity_type=brand&source_id=1&days=7
+Authorization: Bearer <token>
+```
+
+**Query params:**
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `group_by` | string | Yes | Grouping axis: `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
+| `time_breakdown` | bool | No | Include per-date breakdown inside each group |
+| `entity_type` | string | No | Filter entities by type (`person`, `brand`); only for `group_by=entities` |
+| `source_id` | int | No | Filter by source |
+| `scenario_id` | int | No | Filter by scenario |
+| `days` | int | No | Look-back window |
+
+**Permissions:** `aianalytics.view`
+
 ---
 
 ## LLM Providers
@@ -1406,10 +1420,9 @@ GET /dashboard/topic-chains
   "analysis_types": ["sentiment", "keywords"],
   "content_types": ["posts", "comments"],
   "scope": {},
-  "ai_prompt": "string",
-  "trigger_type": "keywords",
-  "trigger_config": {},
-  "action_type": "NOTIFICATION",
+  "base_prompt": "string",
+  "media_overrides": {},
+  "summary_prompt": "string",
   "is_active": true,
   "collection_interval_hours": 24,
   "created_at": "ISO datetime",

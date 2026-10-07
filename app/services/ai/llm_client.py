@@ -40,6 +40,23 @@ def _cap_text(m: LLMModel) -> bool:
     return m.model_type in ("text", "image")  # image-capable models also handle text
 
 
+def default_model_sort_key(m: LLMModel) -> tuple[bool, bool, int]:
+    """Order key for default-model resolution.
+
+    Shared by every place that picks "the" model (digest, agent fallback
+    chain, settings dropdown): default provider first, then the default
+    model, then lowest id. Same tuple as LLMModelManager's resolvers, so the
+    admin flags predict the runtime choice. A missing relation is treated as
+    non-default so the picker never crashes — it just deprioritises the row.
+    """
+    provider = getattr(m, "provider", None)
+    return (
+        not bool(getattr(provider, "is_default", False)),
+        not bool(getattr(m, "is_default", False)),
+        int(getattr(m, "id", 0) or 0),
+    )
+
+
 async def _allowed_model_types() -> Optional[set[str]]:
     """Model types the ambient workspace's tier may use, or None when unfiltered.
 
@@ -415,7 +432,7 @@ async def chat_with_fallback(
         # available", which would send the operator looking at the LLM console
         # for a model that is there and simply not part of this plan.
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    text_models.sort(key=lambda m: (not m.provider.is_default, m.id))
+    text_models.sort(key=default_model_sort_key)
 
     last_err: Optional[Exception] = None
     for model in text_models:
@@ -452,12 +469,13 @@ async def resolve_model() -> Optional[LLMModel]:
             return m
         logger.warning(f"AGENT_MODEL '{settings.AGENT_MODEL}' not found, falling back")
 
-    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.is_default.desc(), LLMModel.id))
+    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
     # An explicit AGENT_MODEL is honoured even on a tier that does not include
     # its type: it is an operator's deliberate override of the runtime, and a
     # blank env var must not turn into "no model at all". The automatic choice
     # below is filtered.
     allowed_types = await _allowed_model_types()
+    models.sort(key=default_model_sort_key)
     for m in models:
         if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types):
             return m

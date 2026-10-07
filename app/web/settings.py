@@ -168,8 +168,10 @@ async def settings_page(request: Request):
 
     # Active LLM models for the agent dropdown
     from app.models.llm_model import LLMModel
+    from app.services.ai.llm_client import default_model_sort_key
 
-    active_models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.is_default.desc(), LLMModel.id)
+    active_models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
+    active_models = sorted(active_models, key=default_model_sort_key)
     model_options = []
     for m in active_models:
         provider_name = m.provider.name if m.provider else "?"

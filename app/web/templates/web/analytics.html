@@ -126,10 +126,46 @@
             <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
                 <div class="flex items-center justify-between">
                     <h3 class="truncate text-sm font-medium text-slate-200">
-                        {% if group.chain_id %}
-                        <a href="/app/analytics/chains/{{ group.chain_id }}" class="hover:text-cyan-300">{{ group.key }}</a>
+                        {% set axis = gd.axis %}
+                        {% set key = group.key %}
+                        {% set link_params = [] %}
+                        {% set is_link = false %}
+
+                        {% if axis == 'sources' %}
+                            {% set _ = link_params.append('source_id=' ~ key) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'themes' %}
+                            {# For themes, we do not have a filter, so we skip linking for now #}
+                            {% set is_link = false %}
+                        {% elif axis == 'entities' %}
+                            {% set _ = link_params.append('entity_name=' ~ key) %}
+                            {% set _ = link_params.append('entity_type=' ~ (gd.entity_type or '')) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'sentiment' %}
+                            {% set _ = link_params.append('sentiment=' ~ key) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'content_type' %}
+                            {% set _ = link_params.append('content_type=' ~ key) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'intent' %}
+                            {% set _ = link_params.append('intent=' ~ key) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'topic_chains' %}
+                            {% set _ = link_params.append('chain_id=' ~ key) %}
+                            {% set is_link = true %}
+                        {% elif axis == 'days' %}
+                            {# For days, we do not link #}
+                            {% set is_link = false %}
+                        {% endif %}
+
+                        {% if is_link %}
+                            {% set _ = link_params.append('days=' ~ days) %}
+                            {% if filter_tenant_id %}
+                                {% set _ = link_params.append('tenant_id=' ~ filter_tenant_id) %}
+                            {% endif %}
+                            <a href="/app/analytics/chains?{{ link_params|join('&') }}" class="hover:text-cyan-300">{{ group.key }}</a>
                         {% else %}
-                        {{ group.key }}
+                            {{ group.key }}
                         {% endif %}
                     </h3>
                     <span class="shrink-0 text-xs text-slate-400">
@@ -239,22 +275,6 @@
                         {% if e.context %}
                             <p class="truncate text-xs text-slate-500">{{ e.context }}</p>
                         {% endif %}
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p class="mt-4 text-sm text-slate-500">Нет данных</p>
-            {% endif %}
-        </div>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-300">Типы контента</h2>
-            {% if analytics.content_mix.media_types %}
-                <div class="mt-4 space-y-2">
-                    {% for media, info in analytics.content_mix.media_types.items() %}
-                        <div class="flex items-center justify-between text-sm">
-                            <span class="capitalize text-slate-300">{{ media }}</span>
-                            <span class="text-xs text-slate-500">{{ info.count }} ({{ info.percentage }}%)</span>
-                        </div>
                     {% endfor %}
                 </div>
             {% else %}

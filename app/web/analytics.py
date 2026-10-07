@@ -62,7 +62,6 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     sentiment = await agg.get_sentiment_trends(days=days)
     topics = await agg.get_top_topics(days=days, limit=10, tenant_id=tenant_id)
     entities = await agg.get_entity_mentions(days=days, limit=20, tenant_id=tenant_id)
-    content_mix = await agg.get_content_mix(days=days, tenant_id=tenant_id)
     engagement = await agg.get_engagement_metrics(days=days)
     llm = await agg.get_llm_provider_stats(days=days)
     activity = await agg.get_activity_trend(days=days, tenant_id=tenant_id)
@@ -136,7 +135,6 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
         "sentiment_dist": dist,
         "topics": topics,
         "entities": entities,
-        "content_mix": content_mix,
         "engagement": engagement,
         "llm": llm,
         "activity": activity,
@@ -291,14 +289,15 @@ async def analytics_chains(request: Request):
     A chain groups the analyses of one ongoing theme/source/user over time.
     This page lists every chain the workspace has and, for each, a timeline of
     its analyses — the "удобный просмотр ретроспективы" the user asked for.
-    Can be filtered by entity mention (entity_name and entity_type) and inherits
-    the same date range and tenant context as the main analytics page.
+    Can be filtered by entity mention (entity_name, entity_type), source (source_id),
+    sentiment (sentiment), content type (content_type), intent (intent), and chain id (chain_id).
+    Inherits the same date range and tenant context as the main analytics page.
     The list sorts by the chain's latest analysis date: `?sort=desc` (default,
     newest first) or `?sort=asc` (oldest first).
     """
     from app.models import AIAnalytics
     from app.services.ai.topic_chain_service import TopicChainService
-    from app.services.ai.grouping import _extract_entities
+    from app.services.ai.grouping import _extract_entities, _extract_sentiment, _extract_intent, _extract_media_types
     
     # Resolve days and tenant context like the main analytics page
     days, _ = _resolve_days(request)
@@ -310,9 +309,14 @@ async def analytics_chains(request: Request):
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     
-    # Get optional entity filter
+    # Get optional filters
     entity_name = request.query_params.get("entity_name")
     entity_type = request.query_params.get("entity_type")
+    source_id = request.query_params.get("source_id")
+    sentiment = request.query_params.get("sentiment")
+    content_type = request.query_params.get("content_type")
+    intent = request.query_params.get("intent")
+    chain_id = request.query_params.get("chain_id")
     
     # Build base query: rows with topic_chain_id not null
     qs = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
@@ -330,16 +334,52 @@ async def analytics_chains(request: Request):
     else:
         rows = list(await qs)
     
-    # If entity filter is provided, filter rows to those mentioning that entity
-    if entity_name and entity_type:
-        filtered_rows = []
-        for row in rows:
+    # Apply additional filters in Python
+    filtered_rows = []
+    for row in rows:
+        match = True
+        
+        # source_id filter
+        if source_id is not None and str(row.source_id) != source_id:
+            match = False
+        
+        # sentiment filter
+        if match and sentiment is not None:
+            sent = _extract_sentiment(row.summary_data or {})
+            if not sent or sent.get("label") != sentiment:
+                match = False
+        
+        # content_type filter
+        if match and content_type is not None:
+            media_types = _extract_media_types(row)
+            if content_type not in media_types:
+                match = False
+        
+        # intent filter
+        if match and intent is not None:
+            intnt = _extract_intent(row.summary_data or {})
+            if intnt != intent:
+                match = False
+        
+        # chain_id filter (topic_chain_id)
+        if match and chain_id is not None and row.topic_chain_id != chain_id:
+            match = False
+        
+        # entity filter
+        if match and entity_name and entity_type:
             entities = _extract_entities(row.summary_data or {})
+            entity_found = False
             for ent in entities:
                 if ent["name"] == entity_name and ent["type"] == entity_type:
-                    filtered_rows.append(row)
-                    break  # no need to check other entities for this row
-        rows = filtered_rows
+                    entity_found = True
+                    break
+            if not entity_found:
+                match = False
+        
+        if match:
+            filtered_rows.append(row)
+    
+    rows = filtered_rows
     
     # Build chains from the (possibly filtered) rows
     chain_data = TopicChainService().build_topic_chain(rows)
@@ -366,13 +406,46 @@ async def analytics_chains(request: Request):
         sorts=CHAIN_SORTS,
         perms_can=perms_can,
     )
+    return render(
+        request,
+        "web/analytics_chains.html",
+        section="analytics",
+        chains=chains,
+        source_names=names,
+        total_chains=len(chains),
+        sort=sort,
+        sorts=CHAIN_SORTS,
+        perms_can=perms_can,
+    )
 @router.get("/chains/{chain_id}")
 async def analytics_chain_detail(request: Request, chain_id: str):
     """One chain's full retrospective: a chronological timeline of analyses."""
     from app.models import AIAnalytics
     from app.services.ai.topic_chain_service import TopicChainService
+    from app.core.tenant_context import tenant_scope
 
-    rows = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date)
+    # Resolve days and tenant context like the main analytics page
+    days, _ = _resolve_days(request)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
+
+    # Build base query: rows with this topic_chain_id
+    qs = AIAnalytics.objects.filter(topic_chain_id=chain_id)
+
+    # Apply date filter if days is specified
+    if days is not None:
+        from datetime import date, timedelta
+        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
+
+    # Apply tenant filter
+    if is_superuser and tenant_id is None:
+        with tenant_scope(bypass=True):
+            rows = list(await qs)
+    else:
+        rows = list(await qs)
+
     if not rows:
         return render(request, "web/not_found.html", status_code=404)
 

@@ -258,7 +258,10 @@ label {
 [data-theme="dark"] input[type="password"],
 [data-theme="dark"] input[type="email"],
 [data-theme="dark"] input[type="number"],
-[data-theme="dark"] select {
+[data-theme="dark"] select,
+[data-theme="dark"] .select2-container--default .select2-selection--single,
+[data-theme="dark"] .select2-container--default .select2-search--dropdown .select2-search__field,
+[data-theme="dark"] .select2-container--default .select2-selection--multiple {
     background-color: var(--tblr-bg-forms) !important;
     background-image: none !important;
     color: var(--tblr-body-color) !important;
@@ -278,6 +281,10 @@ label {
 
 .form-group input:not(:focus) {
     background-color: var(--tblr-bg-forms);
+}
+
+[data-theme="dark"] .form-group input:not(:focus) {
+    background-color: var(--tblr-bg-forms) !important;
 }
 
 .input-group .btn {

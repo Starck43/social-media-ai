@@ -999,17 +999,28 @@ class ReportAggregator:
         self,
         period: str = "day",  # "day" | "week"
         source_ids: Optional[list[int]] = None,
-        analyze_type: Optional[str] = None,  # themes | days | sources | monitored_users
+        group_by: str = "themes",  # GroupingAxis value: themes | sources | entities | sentiment | content_type | intent
+        time_breakdown: bool = False,
+        entity_type: str | None = None,
         scenario_id: Optional[int] = None,
     ) -> str:
         """Structured Markdown brief for the digest period — pure algorithm, no LLM.
 
         Hybrid digest step 1. It aggregates the period's `ai_analytics` rows into
-        a human-readable brief, groups them by the scenario's `analyze_type`
-        (themes → top themes, days → per-day dynamics, sources → per source,
-        monitored_users → per tracked person) and appends a section for each
-        `analysis_types` the scenario enables. The narrative step turns this
-        brief into the final digest text.
+        a human-readable brief, groups them by the `group_by` axis (themes → top
+        themes, sources → per source, entities → per entity, sentiment → by
+        sentiment bucket, content_type → by media type, intent → by intent) and
+        appends a section for each `analysis_types` the scenario enables. The
+        narrative step turns this brief into the final digest text.
+
+        Args:
+            period: The period to report on ("day", "week", or "month")
+            source_ids: Optional list of source IDs to filter by
+            group_by: The grouping axis to use (themes, sources, entities, sentiment, content_type, intent)
+            time_breakdown: If True, include per-date sub-entries within each group
+            entity_type: Optional filter for entities axis. One of "brand", "person", "org".
+                When None, all entity types are included. Ignored for other axes.
+            scenario_id: Optional scenario ID to filter by scenario-specific analysis types
 
         Returns an empty string when there is nothing to report; the digest
         still ships, the LLM step just gets a sparse context.
@@ -1038,8 +1049,8 @@ class ReportAggregator:
         lines.append(f"## {title}")
         lines.append(f"**Период:** {start.isoformat()} — {end.isoformat()}")
 
-        mode = get_enum_value(analyze_type) or "themes"
-        section = await self._brief_base_group(analytics, mode)
+        mode = group_by or "themes"
+        section = await self._brief_base_group(analytics, mode, time_breakdown, entity_type)
         if section:
             lines.extend(section)
 
@@ -1186,84 +1197,60 @@ class ReportAggregator:
     def _specialized_sections(cls):
         return [(name, label, method) for name, (label, method) in cls.DIGEST_SPECIALIZED.items()]
 
-    async def _brief_base_group(self, analytics, mode: str) -> list[str]:
-        """Group the period's analytics by `analyze_type` into markdown lines."""
-        if mode == "days":
-            return self._group_by_days(analytics)
-        if mode == "sources":
-            return await self._group_by_sources(analytics)
-        if mode == "monitored_users":
-            return self._group_by_monitored_users(analytics)
-        return self._group_by_themes(analytics)
+    async def _brief_base_group(self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None) -> list[str]:
+        """Group the period's analytics by axis into markdown lines."""
+        from app.services.ai.grouping import group_analytics
+        from app.types.enums.bot_types import GroupingAxis
 
-    def _group_by_themes(self, analytics, limit: int = 8) -> list[str]:
-        counter: Counter = Counter()
-        for a in analytics:
-            for topic in self._extract_topics(a.summary_data):
-                counter[topic] += 1
-        if not counter:
-            return []
-        lines = ["", "## По темам"]
-        for i, (topic, count) in enumerate(counter.most_common(limit), 1):
-            lines.append(f"{i}. **{topic}** — {count} упом.")
-        return lines
+        try:
+            result = await group_analytics(analytics, axis, time_breakdown=time_breakdown, entity_type=entity_type)
+        except ValueError:
+            # Invalid axis — fall back to themes
+            result = await group_analytics(analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type)
 
-    def _group_by_days(self, analytics) -> list[str]:
-        by_date: dict[date, list] = defaultdict(list)
-        for a in analytics:
-            by_date[a.analysis_date].append(a)
-        if not by_date:
-            return []
-        lines = ["", "## По дням"]
-        for d in sorted(by_date):
-            rows = by_date[d]
-            posts = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
-            )
-            messages = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) or 0) for r in rows
-            )
-            users = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("active_users", 0) or 0) for r in rows
-            )
-            lines.append(
-                f"- **{d.isoformat()}** — {len(rows)} анализ(ов), {posts} постов, {messages} сообщений, {users} польз."
-            )
-        return lines
+        return self._render_grouped_result(result)
 
-    async def _group_by_sources(self, analytics) -> list[str]:
-        by_source: dict[int, list] = defaultdict(list)
-        for a in analytics:
-            by_source[a.source_id].append(a)
-        if not by_source:
-            return []
-        names = await self._source_name_map(list(by_source))
-        lines = ["", "## По источникам"]
-        for sid, rows in sorted(by_source.items(), key=lambda kv: -len(kv[1])):
-            posts = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
-            )
-            name = names.get(sid, f"Источник #{sid}")
-            lines.append(f"- **{name}** — {len(rows)} анализ(ов), {posts} постов")
-        return lines
+    def _render_grouped_result(self, result: dict[str, Any]) -> list[str]:
+        """Convert group_analytics() result to markdown lines."""
+        from app.types.enums.bot_types import GroupingAxis
 
-    def _group_by_monitored_users(self, analytics) -> list[str]:
-        by_author: dict[str, list] = defaultdict(list)
-        for a in analytics:
-            author = self._chain_author(a.topic_chain_id)
-            if author is not None:
-                by_author[author].append(a)
-        if not by_author:
+        axis = result.get("axis", "themes")
+        groups = result.get("groups", [])
+        if not groups:
             return []
-        lines = ["", "## По отслеживаемым пользователям"]
-        for author, rows in sorted(by_author.items(), key=lambda kv: -len(kv[1])):
-            posts = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) or 0) for r in rows
-            )
-            messages = sum(
-                int((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) or 0) for r in rows
-            )
-            lines.append(f"- **{author}** — {len(rows)} анализ(ов), {posts} постов, {messages} сообщений")
+
+        try:
+            label = GroupingAxis(axis).display_name
+        except ValueError:
+            label = axis
+
+        lines = ["", f"## {label}"]
+        for i, group in enumerate(groups, 1):
+            key = group["key"]
+            count = group["count"]
+            avg_sent = group.get("avg_sentiment")
+            sent_str = f" (sent: {avg_sent})" if avg_sent is not None else ""
+
+            # No extras — the old DAYS and MONITORED_USERS axes are gone.
+            # Grouping is now pure axis-based; posts/messages/users are
+            # available in the per-date entries when time_breakdown=True.
+            extras = []
+
+            extra_str = ""
+            if extras:
+                extra_str = f" ({', '.join(extras)})"
+
+            if result.get("time_breakdown") and group.get("entries"):
+                lines.append(f"{i}. **{key}** — {count} упом.{extra_str}{sent_str}")
+                for entry in group["entries"]:
+                    day = entry["date"]
+                    day_count = entry["count"]
+                    day_sent = entry.get("avg_sentiment")
+                    day_sent_str = f" (sent: {day_sent})" if day_sent is not None else ""
+                    lines.append(f"  - {day}: {day_count} упом.{day_sent_str}")
+            else:
+                lines.append(f"{i}. **{key}** — {count} упом.{extra_str}{sent_str}")
+
         return lines
 
     def _group_by_chains(self, analytics, limit: int = 8) -> list[str]:

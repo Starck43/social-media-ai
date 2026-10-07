@@ -121,17 +121,6 @@
                         {% endfor %}
                     </ul>
 
-                    <div class="mt-4">
-                        <label for="sc-analyze" class="mb-1 block text-sm text-slate-300">Как группировать анализ</label>
-                        <select id="sc-analyze" name="analyze_type"
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
-                            {% for at in analyze_types %}
-                                <option value="{{ at.db_value }}"
-                                        {% if draft.analyze_type == at.db_value %}selected{% endif %}>{{ at.emoji }} {{ at.display_name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
                     {# Advanced: the scope JSON the wizard maintains for the user. #}
                     <details class="mt-4" @toggle="scopeOpen = $event.target.open">
                         <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">

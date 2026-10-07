@@ -60,23 +60,34 @@ def _stats(runs: list[DigestRun]) -> dict[str, float | int]:
 
 @router.get("")
 @router.get("/")
-async def digests_list(request: Request, period: str | None = None):
+async def digests_list(request: Request, period: str | None = None, group_by: str | None = None):
     """History of digest runs plus the manual-send panel."""
-    return await _page(request, period)
+    return await _page(request, period, group_by=group_by)
 
 
 @router.get("/preview")
-async def digest_preview(request: Request, period: str | None = None):
+async def digest_preview(
+    request: Request,
+    period: str | None = None,
+    group_by: str | None = None,
+    time_breakdown: str | None = None,
+):
     """Render the digest for `period` without summarising or publishing.
 
     Deliberately skips `_summarize`: a preview that quietly spends LLM budget
     (and could be spammed by reloading) would make this button a cost. The
     panel says "без AI-сводки" so nobody mistakes it for the real delivery.
     """
-    return await _page(request, period, preview=True)
+    return await _page(request, period, preview=True, group_by=group_by, time_breakdown=time_breakdown)
 
 
-async def _page(request: Request, period: str | None, preview: bool = False):
+async def _page(
+    request: Request,
+    period: str | None,
+    preview: bool = False,
+    group_by: str | None = None,
+    time_breakdown: str | None = None,
+):
     """Shared render for both views — they differ only by the preview text."""
     user = getattr(request.state, "web_user", None)
     is_superuser = bool(user and user.is_superuser)
@@ -100,6 +111,8 @@ async def _page(request: Request, period: str | None, preview: bool = False):
         "stats": _stats(runs),
         "periods": PERIODS,
         "selected_period": valid_period(period),
+        "selected_group_by": group_by or "themes",
+        "selected_time_breakdown": time_breakdown == "true",
         "is_superuser": is_superuser,
         "tenants": tenants,
         "filter_tenant_id": filter_tenant_id,
@@ -111,11 +124,13 @@ async def _page(request: Request, period: str | None, preview: bool = False):
         from app.services.digest.builder import aggregate
 
         chosen = context["selected_period"]
+        gby = context["selected_group_by"]
+        td = context["selected_time_breakdown"]
         if is_superuser and tenant_id is None:
             with tenant_scope(bypass=True):
-                data, start, end = await aggregate(chosen)
+                data, start, end = await aggregate(chosen, group_by=gby, time_breakdown=td)
         else:
-            data, start, end = await aggregate(chosen)
+            data, start, end = await aggregate(chosen, group_by=gby, time_breakdown=td)
         context["preview_text"] = render_digest(data, summary=None)
         context["preview_period"] = (chosen, start, end)
 
@@ -126,6 +141,8 @@ async def _page(request: Request, period: str | None, preview: bool = False):
 async def digest_send_now(
     request: Request,
     period: str = Form("day"),
+    group_by: str = Form("themes"),
+    time_breakdown: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
@@ -148,7 +165,12 @@ async def digest_send_now(
         # `force=True` — a manual send is its own run, not a retry of the
         # scheduled one, so the "already sent" guard must not swallow it.
         with tenant_scope(tenant_id):
-            result = await build_and_publish(period=valid_period(period), force=True)
+            result = await build_and_publish(
+                period=valid_period(period),
+                force=True,
+                group_by=group_by,
+                time_breakdown=bool(time_breakdown),
+            )
     except DigestDeliveryError as e:
         add_flash(request, "error", f"Дайджест собран, но не доставлен: {e}")
     except Exception as e:  # noqa: BLE001 - a manual send must not 500 the page

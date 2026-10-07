@@ -86,7 +86,8 @@ def _build_trigger_config(
 
 
 def _payload_from_form(
-		job_type, monitored_users, excluded_users, start_date, end_date, force_refresh, force_reanalyze
+		job_type, monitored_users, excluded_users, start_date, end_date, force_refresh, force_reanalyze,
+		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
 ) -> dict:
 	"""The flat payload keys a task of this type needs.
 
@@ -95,6 +96,10 @@ def _payload_from_form(
 	from the first post. `force_refresh` (collect: overwrite the window) and
 	`force_reanalyze` (analyze: re-run the model on stored rows) are the
 	operator's own choices.
+
+	For digest: `period` (day/week/month), `group_by` axis, and
+	`time_breakdown` flag are stored in payload so the scheduled run uses
+	the operator's preference.
 	"""
 	payload: dict = {}
 	if monitored_users:
@@ -109,6 +114,13 @@ def _payload_from_form(
 		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
 		if force_reanalyze:
 			payload["force_reanalyze"] = True
+	if job_type == "digest":
+		if digest_period and digest_period in ("day", "week", "month"):
+			payload["period"] = digest_period
+		if digest_group_by:
+			payload["group_by"] = digest_group_by
+		if digest_time_breakdown:
+			payload["time_breakdown"] = True
 	return payload
 
 
@@ -197,6 +209,9 @@ def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]
 		"end_date": cli_dates.get("end_date") or "",
 		"force_refresh": bool(payload.get("force_refresh")),
 		"force_reanalyze": bool(payload.get("force_reanalyze")),
+		"digest_period": payload.get("period") or "day",
+		"digest_group_by": payload.get("group_by") or "themes",
+		"digest_time_breakdown": bool(payload.get("time_breakdown")),
 		"trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
 		"trigger_keywords": ", ".join(trigger_config.get("keywords") or []),
 		"trigger_match": trigger_config.get("match", "any"),
@@ -457,6 +472,9 @@ async def task_create(
 		end_date: str = Form(""),
 		force_refresh: str = Form(""),
 		force_reanalyze: str = Form(""),
+		digest_period: str = Form(""),
+		digest_group_by: str = Form(""),
+		digest_time_breakdown: str = Form(""),
 		trigger_type: str = Form(""),
 		trigger_keywords: str = Form(""),
 		trigger_match: str = Form("any"),
@@ -524,6 +542,9 @@ async def task_create(
 			end_date,
 			force_refresh,
 			force_reanalyze,
+			digest_period=digest_period,
+			digest_group_by=digest_group_by,
+			digest_time_breakdown=digest_time_breakdown == "on",
 		)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
@@ -788,6 +809,9 @@ async def task_edit_page(request: Request, task_id: int):
 		"end_date": cli_dates.get("end_date") or "",
 		"force_refresh": bool(payload.get("force_refresh")),
 		"force_reanalyze": bool(payload.get("force_reanalyze")),
+		"digest_period": payload.get("period") or "day",
+		"digest_group_by": payload.get("group_by") or "themes",
+		"digest_time_breakdown": bool(payload.get("time_breakdown")),
 		"trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
 		"trigger_keywords": ", ".join(trigger_config.get("keywords") or []),
 		"trigger_match": trigger_config.get("match", "any"),
@@ -950,6 +974,9 @@ async def task_update(
 		end_date: str = Form(""),
 		force_refresh: str = Form(""),
 		force_reanalyze: str = Form(""),
+		digest_period: str = Form(""),
+		digest_group_by: str = Form(""),
+		digest_time_breakdown: str = Form(""),
 		trigger_type: str = Form(""),
 		trigger_keywords: str = Form(""),
 		trigger_match: str = Form("any"),
@@ -1013,6 +1040,9 @@ async def task_update(
 			end_date,
 			force_refresh,
 			force_reanalyze,
+			digest_period=digest_period,
+			digest_group_by=digest_group_by,
+			digest_time_breakdown=digest_time_breakdown == "on",
 		)
 	except ValueError as e:
 		add_flash(request, "error", str(e))

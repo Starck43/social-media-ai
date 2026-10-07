@@ -7,7 +7,7 @@ same payload for every channel; channels differ only in transport rules.
 
 ## Pipeline
 
-`app/services/digest/builder.py::build_and_publish(period, agent_task_id, source_ids, analyze_type, scenario_id)`
+`app/services/digest/builder.py::build_and_publish(period, agent_task_id, source_ids, group_by, time_breakdown, scenario_id)`
 
 1. `period_bounds(period)` → inclusive `(start, end)` dates: the last N days
    ending today (N = 1 for `day`, N = 7 for `week`).
@@ -17,9 +17,10 @@ same payload for every channel; channels differ only in transport rules.
    `{"status": "skipped", "reason": "already_sent"}`.
 
 3. **Hybrid step 1 — the algorithm.** `aggregate()` reads
-   `ReportAggregator.generate_digest_brief(period, source_ids, analyze_type, scenario_id)`:
-   it groups the period's `ai_analytics` rows by the scenario's `analyze_type`
-   and appends a section for each `analysis_types` the scenario enables.
+   `ReportAggregator.generate_digest_brief(period, source_ids, group_by, time_breakdown, scenario_id)`:
+   it groups the period's `ai_analytics` rows by the `group_by` axis (and
+   optionally `time_breakdown`) and appends a section for each `analysis_types`
+   the scenario enables.
    The five core types (`sentiment`, `keywords`, `topics`, `trends`,
    `engagement`) are covered by the standard aggregations; the eight extended
    types use their specialized ones (see the table below).
@@ -45,18 +46,40 @@ same payload for every channel; channels differ only in transport rules.
    - every tenant channel with `is_digest_target=True` in the workspace the job
      runs for (resolved from the ambient tenant scope).
 
-## Grouping by `analyze_type`
+## Grouping axes and time slices
 
-`AgentScenario.analyze_type` decides how the algorithmic brief groups the data.
-The digest handler passes the task's scenario through, so a digest scheduled by
-a task whose scenario says "by sources" reports per source, and so on:
+The algorithmic brief groups data by a **grouping axis** (`group_by`) and an
+optional **time breakdown** (`time_breakdown`). These are two independent
+parameters passed through the digest task payload:
 
-| `analyze_type`    | Brief groups by                                                        |
-| ----------------- | ---------------------------------------------------------------------- |
-| `themes`          | Top themes over the period (count of topic mentions)                   |
-| `days`            | Per-day dynamics (posts / messages / active users per date)            |
-| `sources`         | Per source (analyses and posts per source)                             |
-| `monitored_users` | Per tracked person (rows whose chain id is `src_<id>_user_<author>`)   |
+| `group_by` | `time_breakdown` | Brief groups by                                                        |
+| ---------- | ---------------- | ---------------------------------------------------------------------- |
+| `themes`   | `false` (default) | Top themes over the period (count of topic mentions)                  |
+| `themes`   | `true`            | Per-day dynamics of themes: "Mon: vacation, Tue: prices, Wed: contest" |
+| `sources`  | `false`           | Per source (analyses and posts per source)                             |
+| `sources`  | `true`            | Per-source activity broken down by date                                |
+| `entities` | `false`           | Top mentioned entities (brands, persons, organizations)                |
+| `entities` | `true`            | Chronology of mentions: "01.10 — Coca-Cola, 03.10 — Pepsi"            |
+| `sentiment`| `false`           | Distribution by sentiment score                                        |
+| `content_type` | `false`       | Distribution by media type (text, image, video)                        |
+| `intent`   | `false`           | Distribution by user intent                                            |
+
+The digest handler reads `task.payload.group_by` (default `"themes"`) and
+`task.payload.time_breakdown` (default `false`). The same `ai_analytics` rows
+are grouped differently depending on these parameters — no data duplication.
+
+**Entity filtering:** `entities` axis supports an optional `entity_type` filter
+(`"person"`, `"brand"`, `"org"`). The old `monitored_users` mode is now
+`group_by="entities", entity_type="person"`.
+
+**Example task payload:**
+```json
+{
+  "period": "week",
+  "group_by": "entities",
+  "time_breakdown": true
+}
+```
 
 ## Specialized sections
 

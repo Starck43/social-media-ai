@@ -8,7 +8,6 @@ from sqlalchemy.orm import Mapped, relationship
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import LLMStrategyType
-from ..types.enums.bot_types import AnalyzeType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 
@@ -27,11 +26,6 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     analysis_types: Mapped[list[str]] = Column(JSON, nullable=True, default=list)
     # Configuration parameters for analysis (no analysis_types here!)
     scope: Mapped[dict[str, Any]] = Column(JSON, nullable=True, default=dict)
-
-    # JSON Schema configuration for LLM response format
-    analyze_type: Mapped[AnalyzeType | None] = AnalyzeType.sa_column(
-        type_name="analyze_type", nullable=True, store_as_name=False, default=AnalyzeType.THEMES.db_value
-    )
 
     # One base prompt for every media type, optional per-media overrides and a
     # summary prompt. Variables: {text}, {platform}, {source_type}, {stats},

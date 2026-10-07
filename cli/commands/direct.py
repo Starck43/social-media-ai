@@ -95,17 +95,19 @@ def cmd_digest(
     src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max)"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     period: str = typer.Option("day", "--period", help="Period: day | week"),
+    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent"),
+    time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):
     """Build and publish a digest directly (not idempotent)."""
-    stats = _sync(_digest_main(period=period, src=src, tenant=tenant, verbose=verbose))
+    stats = _sync(_digest_main(period=period, src=src, tenant=tenant, group_by=group_by, time_breakdown=time_breakdown, verbose=verbose))
     _report("ДАЙДЖЕСТ ЗАВЕРШЁН", stats)
     return stats
 
 
-async def _digest_main(*, period: str, src: str | None, tenant: str | None, verbose: bool = False):
+async def _digest_main(*, period: str, src: str | None, tenant: str | None, group_by: str = "themes", time_breakdown: bool = False, verbose: bool = False):
     """Shared async body for the digest direct command."""
-    tenant_id, payload, sources = await _resolve(tenant, src, period=period)
+    tenant_id, payload, sources = await _resolve(tenant, src, period=period, group_by=group_by, time_breakdown=time_breakdown)
     if verbose:
         for s in sources:
             rprint(f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]")

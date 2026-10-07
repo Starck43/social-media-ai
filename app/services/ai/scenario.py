@@ -244,7 +244,6 @@ class ScenarioService:
             output_schema=output_schema,
             is_active=is_active,
             is_default=is_default,
-            analyze_type=analyze_type,
             llm_strategy=llm_strategy,
             text_llm_model_id=text_llm_model_id,
             image_llm_model_id=image_llm_model_id,

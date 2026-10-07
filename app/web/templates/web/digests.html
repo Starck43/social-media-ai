@@ -57,6 +57,18 @@
                     <option value="{{ value }}" {% if value == selected_period %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
+            <select name="group_by" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+                    <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
+                {% endfor %}
+            </select>
+            <label class="flex items-center gap-2 text-sm text-slate-300">
+                <input type="hidden" name="time_breakdown" value="">
+                <input type="checkbox" name="time_breakdown" value="true"
+                       {% if selected_time_breakdown %}checked{% endif %}
+                       class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                Разбивка по дням
+            </label>
             <button class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
                 Показать
             </button>
@@ -92,6 +104,17 @@
                         <option value="{{ value }}" {% if value == selected_period %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
+                <select name="group_by" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                    {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+                        <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
+                    {% endfor %}
+                </select>
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="hidden" name="time_breakdown" value="">
+                    <input type="checkbox" name="time_breakdown" value="true"
+                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                    Разбивка по дням
+                </label>
                 <button :disabled="busy"
                         class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50">
                     <span x-show="!busy">Отправить дайджест</span>

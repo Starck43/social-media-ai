@@ -194,30 +194,29 @@ async def test_base_analyze_does_not_save_a_timed_out_llm_stub(monkeypatch, sour
     assert saved == [], "a timed-out LLM stub must not be persisted"
 
 
-async def test_analyze_content_uses_passed_scenario_for_mode(monkeypatch, source):
-    """A caller-supplied scenario's analyze_type selects the mode and is forwarded.
+async def test_analyze_content_uses_passed_scenario_when_forwarded(monkeypatch, source):
+    """A caller-supplied scenario is forwarded to the analysis method.
 
-    This is the regression behind "no agent conclusion / old unclear chain title":
-    `handle_analyze` resolves the task's scenario but used to drop it, so the
-    analysis fell back to the (absent) tenant default and the default prompt —
-    scenario 6's custom prompt/analysis_types never ran. Now the resolved
-    scenario reaches `base_analyze_content`, which must use it instead of the
-    tenant default.
+    The `analyze_type` column was removed from `AgentScenario`; the analysis
+    mode now comes from the explicit `analyze_by` parameter (or defaults to
+    "themes"). The scenario is still forwarded for prompt/LLM config.
     """
     from app.models import AgentScenario
 
     mode_called = []
 
-    async def fake_by_days(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, task_payload=None, **kwargs):
+    async def fake_by_sources(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, task_payload=None, **kwargs):
         mode_called.append(agent_scenario)
         return []
 
-    monkeypatch.setattr(AIAnalyzer, "_analyze_content_by_days", fake_by_days)
+    monkeypatch.setattr(AIAnalyzer, "_analyze_content_by_sources", fake_by_sources)
 
-    sc = AgentScenario(id=999, name="Сценарий 6", analyze_type="days")
-    await AIAnalyzer().analyze_content([{"text": "x"}], source, agent_scenario=sc)
-    # The scenario's analyze_type ("days") selects the mode, and the scenario
-    # object itself is handed down.
+    sc = AgentScenario(id=999, name="Сценарий 6", analysis_types=["sentiment"])
+    await AIAnalyzer().analyze_content(
+        [{"text": "x"}], source,
+        analyze_by="sources",
+        agent_scenario=sc,
+    )
     assert mode_called == [sc]
 
 

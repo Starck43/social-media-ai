@@ -20,7 +20,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.types import AnalysisType, ContentType
-from app.types.enums.bot_types import AnalyzeType
 
 # Fields a preset may carry. Anything outside this set is rejected, so a typo in
 # a preset fails loudly here instead of writing a column the wizard never reads.
@@ -29,7 +28,6 @@ PRESET_FIELDS: tuple[str, ...] = (
     "description",
     "content_types",
     "analysis_types",
-    "analyze_type",
     "scope",
     "base_prompt",
     "media_overrides",
@@ -42,7 +40,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Упоминания бренда, их тональность и ключевые слова вокруг них.",
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["brand_mentions", "sentiment", "keywords"],
-        "analyze_type": "themes",
         "scope": {"keywords": {"max_keywords": 10}, "relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
             "Ты — бренд-аналитик. Найди упоминания бренда в контенте, "
@@ -55,7 +52,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Активность конкурентов и реакция аудитории на неё, по дням.",
         "content_types": ["posts", "comments"],
         "analysis_types": ["competitor", "sentiment", "trends"],
-        "analyze_type": "days",
         "scope": {},
         "base_prompt": (
             "Ты — аналитик конкурентной разведки. Сравни активность конкурентов "
@@ -69,7 +65,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Обращения и жалобы клиентов: тональность и темы проблем.",
         "content_types": ["posts", "comments", "mentions"],
         "analysis_types": ["sentiment", "keywords", "intent"],
-        "analyze_type": "themes",
         "scope": {"relevance_filter": True, "min_confidence": 0.6},
         "base_prompt": (
             "Ты — аналитик службы поддержки. Собери обращения и жалобы клиентов, "
@@ -82,7 +77,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Что обсуждают и какие темы набирают обороты, по дням.",
         "content_types": ["posts", "comments"],
         "analysis_types": ["trends", "keywords", "topics"],
-        "analyze_type": "days",
         "scope": {},
         "base_prompt": (
             "Ты — тренд-аналитик. Определи, какие темы набирают обороты в "
@@ -95,7 +89,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Резкий и оскорбительный контент в комментариях и постах.",
         "content_types": ["posts", "comments"],
         "analysis_types": ["toxicity", "sentiment"],
-        "analyze_type": "themes",
         "scope": {},
         "base_prompt": (
             "Ты — модератор контента. Найди резкие, оскорбительные и "
@@ -131,7 +124,6 @@ def list_templates() -> list[dict[str, Any]]:
             "description": preset["description"],
             "content_types": list(preset["content_types"]),
             "analysis_types": list(preset["analysis_types"]),
-            "analyze_type": preset["analyze_type"],
         }
         for key, preset in TEMPLATES.items()
     ]
@@ -191,14 +183,12 @@ def expand_template(key: str, overrides: Optional[dict[str, Any]] = None) -> "Sc
 
     content_types = _enum_values(overrides.get("content_types"), ContentType, "тип контента")
     analysis_types = _enum_values(overrides.get("analysis_types"), AnalysisType, "тип анализа")
-    analyze_type = _enum_value(overrides.get("analyze_type"), AnalyzeType, "режим анализа")
 
     merged: dict[str, Any] = {
         "name": preset["name"],
         "description": preset["description"],
         "content_types": content_types or list(preset["content_types"]),
         "analysis_types": analysis_types or list(preset["analysis_types"]),
-        "analyze_type": analyze_type or preset["analyze_type"],
         "base_prompt": preset["base_prompt"],
         "summary_prompt": preset.get("summary_prompt"),
         "media_overrides": dict(preset.get("media_overrides") or {}),
@@ -234,7 +224,6 @@ def expand_template(key: str, overrides: Optional[dict[str, Any]] = None) -> "Sc
         is_active=True,
         content_types=merged["content_types"],
         analysis_types=merged["analysis_types"],
-        analyze_type=merged["analyze_type"],
         scope=ScenarioBuilder.sanitize_scope(scope, merged["analysis_types"]),
         base_prompt=merged["base_prompt"],
         media_overrides=merged["media_overrides"],

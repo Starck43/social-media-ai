@@ -19,6 +19,8 @@ is never blocked behind a long collection.
   `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`,
   **target parameters**: `brands`, `competitors`, `hashtags`, `influencer_names`,
   `keywords_list`),
+  **digest grouping**: `group_by` (`themes` | `sources` | `entities` | `sentiment` | `content_type` | `intent`, default `themes`),
+  `time_breakdown` (boolean, default `false` — enables per-date entries within each group),
   `agent_scenario_id` (FK → `agent_scenarios`, optional), `is_active`,
   `next_run_at`, `last_run_at`, `last_status`, `last_error`, plus
   `trigger_type` / `trigger_config` / `action_type` and the guards

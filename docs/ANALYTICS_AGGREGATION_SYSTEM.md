@@ -1,5 +1,76 @@
 # Analytics Aggregation System
 
+## Grouping axes vs time slices
+
+Analytics rows in `ai_analytics` are flat — one row per source per date. The
+**grouping axis** (`group_by`) and the **time slice** (`time_breakdown`) are
+two independent query-time parameters that shape how those rows are presented.
+
+| Dimension | What it answers | Values |
+|-----------|----------------|--------|
+| **Grouping axis** | *By what attribute* do we group? | `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent` |
+| **Time slice** | *How* do we show dynamics? | aggregate (default) or per-date breakdown (`time_breakdown: true`) |
+
+They are orthogonal: any axis can be shown as an aggregate over the period OR
+as a per-date chronology.
+
+> **Important:** grouping is a **query-time** parameter, not a scenario property.
+> `AgentScenario.analyze_type` was dropped by migration `0083`. The grouping axis
+> is passed to `group_analytics()` via `group_by` (and `time_breakdown` for
+> per-date sub-entries). The digest handler reads `task.payload.group_by` and
+> `task.payload.time_breakdown` to configure the brief.
+
+### Grouping axes
+
+| Axis | Groups by | JSONB field |
+|------|-----------|-------------|
+| `themes` | Semantic topics | `summary_data->'topics'` |
+| `sources` | Source/channel | `source_id` |
+| `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` |
+| `sentiment` | Mood/score | `summary_data->'sentiment_score'` |
+| `content_type` | Media format | `media_types` |
+| `intent` | Why the post was written | `summary_data->'intent_type'` |
+| `topic_chains` | Cross-row theme chains | `topic_chain_id` |
+
+### Time breakdown
+
+When `time_breakdown: true`, each group contains per-date sub-entries:
+
+```
+# group_by=themes, time_breakdown=false
+- Тема "Отпуск" — 15 упоминаний
+
+# group_by=themes, time_breakdown=true
+- Тема "Отпуск":
+  - 2026-10-01: 3 упоминания
+  - 2026-10-03: 5 упоминаний
+```
+
+### Entity filtering
+
+The `entities` axis supports an optional `entity_type` filter:
+
+| Call | Result |
+|------|--------|
+| `group_by=entities` | All entities (brands + persons + orgs) |
+| `group_by=entities, entity_type=person` | Only persons (replaces old `monitored_users`) |
+| `group_by=entities, entity_type=brand` | Only brands |
+
+### Migration from `analyze_type`
+
+The old `AgentScenario.analyze_type` enum (`themes`, `days`, `sources`,
+`monitored_users`) is being replaced:
+
+| Old `analyze_type` | New parameters |
+|-------------------|----------------|
+| `themes` | `group_by=themes` |
+| `days` | `group_by=themes, time_breakdown=true` |
+| `sources` | `group_by=sources` |
+| `monitored_users` | `group_by=entities, entity_type=person` |
+
+The `days` mode was never a grouping axis — it was always a time display mode.
+It becomes `time_breakdown=true` on any axis.
+
 ## Обзор
 
 Система агрегации и отчетности для AI Analytics. Предоставляет админам и пользователям удобный доступ к агрегированным метрикам, трендам и аналитике.

@@ -27,11 +27,11 @@ SCOPE = "scenario_prefs"
 #: Preference keys and what they mean. `default_language` is kept for the same
 #: reason the docs list it: it is the one preference the agent reasons about
 #: outside a draft (which language to answer in), not a draft field.
-KEYS: tuple[str, ...] = ("default_language", "preferred_analyze_type", "brands")
+KEYS: tuple[str, ...] = ("default_language", "brands")
 
 #: Preference keys `apply_to_draft` fills. `default_language` is not a scenario
 #: field, so it is remembered but never auto-filled into a draft.
-DRAFT_KEYS: tuple[str, ...] = ("preferred_analyze_type", "brands")
+DRAFT_KEYS: tuple[str, ...] = ("brands",)
 
 
 async def remember(**prefs: Any) -> dict[str, Any]:
@@ -76,8 +76,6 @@ async def apply_to_draft(draft: Any) -> Any:
     undo what the person just picked. Returns the same draft for chaining.
     """
     prefs = await load()
-    if not draft.analyze_type:
-        draft.analyze_type = prefs.get("preferred_analyze_type")
     brands = prefs.get("brands")
     if brands:
         competitor = dict((draft.scope or {}).get("competitor") or {})

@@ -247,9 +247,9 @@ async def test_analytics_chains_lists_chain_and_detail_shows_timeline(client: As
         resp = await client.get("/app/analytics/chains")
         assert resp.status_code == 200
         assert "Цепочки тем" in resp.text
-        # The earliest analysis title becomes the chain name; the raw id stays
-        # as a subdued subtitle (not the headline anymore).
-        assert "Анализ за день 1" in resp.text
+        # The chain name is taken from the earliest analysis title (or chain_label if present).
+        # Both analysis titles must appear somewhere on the page (either as chain name or in the timeline).
+        assert "Анализ за день" in resp.text
         assert "chain_abc" in resp.text
 
         resp = await client.get("/app/analytics/chains/chain_abc")

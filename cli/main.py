@@ -666,6 +666,8 @@ digest_app = typer.Typer(help="Digest operations")
 @digest_app.command("send-now")
 def digest_send_now(
     period: str = typer.Argument("day", help="Period: day | week"),
+    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent"),
+    time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
 ):
     """Build and publish a digest right now (manual run, not idempotent)."""
 
@@ -680,7 +682,7 @@ def digest_send_now(
 
     async def _run():
         try:
-            result = await build_and_publish(period=period)
+            result = await build_and_publish(period=period, group_by=group_by, time_breakdown=time_breakdown)
         except DigestDeliveryError as e:
             rprint(f"[red]Delivery failed: {e}[/red]")
             raise typer.Exit(1)
@@ -703,11 +705,13 @@ def digest_run(
     src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max)"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     period: str = typer.Option("day", "--period", help="Period: day | week"),
+    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent"),
+    time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):
     """Build and publish a digest directly (not idempotent)."""
 
-    _run_platform(direct._digest_main(period=period, src=src, tenant=tenant, verbose=verbose))
+    _run_platform(direct._digest_main(period=period, src=src, tenant=tenant, group_by=group_by, time_breakdown=time_breakdown, verbose=verbose))
 
 
 # app.add_typer(permissions.app, name="permissions", help="Manage permissions")

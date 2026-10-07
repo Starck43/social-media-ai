@@ -209,6 +209,11 @@ class GroupingAxis(str, Enum):
     Unlike the old ``AgentScenario.analyze_type`` this is a query-time
     parameter, not a column on the scenario. One ``AIAnalytics`` row can
     appear in multiple groupings simultaneously.
+
+    Time-based breakdown is handled by the ``time_breakdown`` flag on
+    ``group_analytics()``, not as a separate axis.  Per-user views use
+    ``ENTITIES(entity_type="person")``.  Topic chains are a cross-row
+    grouping accessible via ``TOPIC_CHAINS``.
     """
 
     THEMES        = "themes"
@@ -217,9 +222,7 @@ class GroupingAxis(str, Enum):
     SENTIMENT     = "sentiment"
     CONTENT_TYPE  = "content_type"
     INTENT        = "intent"
-    DAYS          = "days"
-    MONITORED_USERS = "monitored_users"
-    CHAINS        = "chains"
+    TOPIC_CHAINS  = "topic_chains"
 
     @property
     def display_name(self) -> str:
@@ -230,9 +233,7 @@ class GroupingAxis(str, Enum):
             "sentiment": "По тональности",
             "content_type": "По типу контента",
             "intent": "По намерению",
-            "days": "По дням",
-            "monitored_users": "По отслеживаемым пользователям",
-            "chains": "Цепочки",
+            "topic_chains": "Тематические цепочки",
         }.get(self.value, self.value)
 
 

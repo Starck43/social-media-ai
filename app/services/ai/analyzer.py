@@ -69,9 +69,7 @@ class AIAnalyzer:
                 List of AIAnalytics records (one per day with activity)
         """
         analyze_by = analyze_by or (
-            agent_scenario.analyze_type
-            if agent_scenario and agent_scenario.analyze_type
-            else await self._default_scenario_analyze_type(source)
+            await self._default_scenario_analyze_type(source)
         )
         analyze_by = get_enum_value(analyze_by)
 
@@ -120,8 +118,9 @@ class AIAnalyzer:
         """
         try:
             default_sc = await AgentScenario.objects.get_default_scenario(tenant_id=source.tenant_id)
-            if default_sc is not None and default_sc.analyze_type:
-                return get_enum_value(default_sc.analyze_type)
+            if default_sc is not None:
+                # analyze_type column was removed; default to "themes"
+                pass
         except Exception:
             pass
         return "themes"

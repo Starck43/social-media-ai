@@ -268,7 +268,6 @@ class ScenarioBuilder:
             is_default=scenario.is_default,
             content_types=list(scenario.content_types or []),
             analysis_types=list(scenario.analysis_types or []),
-            analyze_type=getattr(scenario.analyze_type, "db_value", None) if scenario.analyze_type else None,
             scope=dict(scenario.scope or {}),
             base_prompt=scenario.base_prompt,
             media_overrides=dict(scenario.media_overrides or {}),
@@ -292,7 +291,6 @@ class ScenarioBuilder:
         scenario.content_types = list(draft.content_types)
         scenario.analysis_types = list(draft.analysis_types)
         scenario.scope = dict(draft.scope or {})
-        scenario.analyze_type = draft.analyze_type
         scenario.base_prompt = draft.base_prompt
         scenario.media_overrides = dict(draft.media_overrides or {})
         scenario.summary_prompt = draft.summary_prompt

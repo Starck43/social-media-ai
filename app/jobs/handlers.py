@@ -375,6 +375,8 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
 
     # The group_by axis tells the aggregator how to group the brief.
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
+    if not scenario_id and task is not None:
+        scenario_id = getattr(task, "agent_scenario_id", None)
     group_by = task_payload.get("group_by") or payload.get("group_by") or "themes"
     time_breakdown = bool(task_payload.get("time_breakdown") or payload.get("time_breakdown"))
 

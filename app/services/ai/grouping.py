@@ -303,16 +303,7 @@ async def group_analytics(
             intent = _extract_intent(row.summary_data)
             key = intent or "unknown"
 
-        elif axis == GroupingAxis.DAYS:
-            key = row.analysis_date.isoformat() if row.analysis_date else "unknown"
-
-        elif axis == GroupingAxis.MONITORED_USERS:
-            author = _chain_author(row.topic_chain_id)
-            if author is None:
-                continue
-            key = author
-
-        elif axis == GroupingAxis.CHAINS:
+        elif axis == GroupingAxis.TOPIC_CHAINS:
             if not row.topic_chain_id:
                 continue
             key = row.topic_chain_id

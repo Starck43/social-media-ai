@@ -15,7 +15,7 @@ import sqlalchemy as sa
 # import settings to resolve the schema name at runtime
 from app.core.config import settings
 
-schema = settings.DB_SCHEMA
+schema = settings.DB_SCHEMA or "public"
 
 
 # revision identifiers, used by Alembic.
@@ -30,7 +30,7 @@ def upgrade() -> None:
     # analyzer's internal `analyze_by` parameter, so we do NOT drop the
     # PostgreSQL type here. It will be cleaned up in a future migration
     # once the analyzer is also refactored.
-    op.drop_column(f"{schema}.agent_scenarios", "analyze_type")
+    op.drop_column("agent_scenarios", "analyze_type", schema=schema)
 
 
 def downgrade() -> None:

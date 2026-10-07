@@ -1001,6 +1001,7 @@ class ReportAggregator:
         source_ids: Optional[list[int]] = None,
         group_by: str = "themes",  # GroupingAxis value: themes | sources | entities | sentiment | content_type | intent
         time_breakdown: bool = False,
+        entity_type: str | None = None,
         scenario_id: Optional[int] = None,
     ) -> str:
         """Structured Markdown brief for the digest period — pure algorithm, no LLM.
@@ -1011,6 +1012,15 @@ class ReportAggregator:
         sentiment bucket, content_type → by media type, intent → by intent) and
         appends a section for each `analysis_types` the scenario enables. The
         narrative step turns this brief into the final digest text.
+
+        Args:
+            period: The period to report on ("day", "week", or "month")
+            source_ids: Optional list of source IDs to filter by
+            group_by: The grouping axis to use (themes, sources, entities, sentiment, content_type, intent)
+            time_breakdown: If True, include per-date sub-entries within each group
+            entity_type: Optional filter for entities axis. One of "brand", "person", "org".
+                When None, all entity types are included. Ignored for other axes.
+            scenario_id: Optional scenario ID to filter by scenario-specific analysis types
 
         Returns an empty string when there is nothing to report; the digest
         still ships, the LLM step just gets a sparse context.
@@ -1040,7 +1050,7 @@ class ReportAggregator:
         lines.append(f"**Период:** {start.isoformat()} — {end.isoformat()}")
 
         mode = group_by or "themes"
-        section = await self._brief_base_group(analytics, mode, time_breakdown)
+        section = await self._brief_base_group(analytics, mode, time_breakdown, entity_type)
         if section:
             lines.extend(section)
 
@@ -1187,16 +1197,16 @@ class ReportAggregator:
     def _specialized_sections(cls):
         return [(name, label, method) for name, (label, method) in cls.DIGEST_SPECIALIZED.items()]
 
-    async def _brief_base_group(self, analytics, axis: str = "themes", time_breakdown: bool = False) -> list[str]:
+    async def _brief_base_group(self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None) -> list[str]:
         """Group the period's analytics by axis into markdown lines."""
         from app.services.ai.grouping import group_analytics
         from app.types.enums.bot_types import GroupingAxis
 
         try:
-            result = await group_analytics(analytics, axis, time_breakdown=time_breakdown)
+            result = await group_analytics(analytics, axis, time_breakdown=time_breakdown, entity_type=entity_type)
         except ValueError:
             # Invalid axis — fall back to themes
-            result = await group_analytics(analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown)
+            result = await group_analytics(analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type)
 
         return self._render_grouped_result(result)
 

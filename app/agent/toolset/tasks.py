@@ -156,6 +156,7 @@ async def task_add(
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
+    from zoneinfo import ZoneInfo
 
     job_types = _get_job_types()
     if job_type not in job_types:
@@ -199,6 +200,7 @@ async def task_add(
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.
     tenant = await Tenant.objects.get(id=current_tenant_id())
+    tz = resolve_tz(tenant)
     task = await AgentTask.objects.create(
         name=name,
         cron_expr=cron,
@@ -206,7 +208,7 @@ async def task_add(
         payload=payload,
         agent_scenario_id=scenario_id,
         is_active=True,
-        next_run_at=next_run_at(cron, resolve_tz(tenant)),
+        next_run_at=next_run_at(cron, tz),
     )
 
     if source_ids:
@@ -221,7 +223,9 @@ async def task_add(
     result: dict[str, Any] = {
         "status": "created",
         "name": task.name,
-        "next_run_at": task.next_run_at.astimezone(tz).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None,
+        "next_run_at": (
+            task.next_run_at.astimezone(ZoneInfo(tz)).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None
+        ),
     }
 
     # Hint when the bound scenario wants specific targets the task does not

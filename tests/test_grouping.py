@@ -295,11 +295,29 @@ async def test_avg_sentiment_computed_across_rows_in_group(source):
 async def test_topic_chains_uses_topic_chain_id(source):
     r1 = await _row(source, day_offset=3, topic_chain_id="chain-abc", summary_data=_summary(topics=["т"]))
     r2 = await _row(source, day_offset=1, topic_chain_id="chain-abc", summary_data=_summary(topics=["т"]))
-    r3 = await _row(source, day_offset=2, topic_chain_id="chain-xyz", summary_data=_summary(topics=["т"]))
+    r3 = await _row(source, day_offset=2, topic_chain_id="chain-xyz", summary_data=_summary(topics=["другое"]))
     rows = [r1, r2, r3]
     result = await group_analytics(rows, "topic_chains")
-    keys = {g["key"] for g in result["groups"]}
-    assert "chain-abc" in keys
-    assert "chain-xyz" in keys
-    abc = next(g for g in result["groups"] if g["key"] == "chain-abc")
+    chain_ids = {g["chain_id"] for g in result["groups"]}
+    assert chain_ids == {"chain-abc", "chain-xyz"}
+    abc = next(g for g in result["groups"] if g["chain_id"] == "chain-abc")
     assert abc["count"] == 2
+    # Display key is the human label (first topic), not the raw chain id.
+    assert abc["key"] == "т"
+    xyz = next(g for g in result["groups"] if g["chain_id"] == "chain-xyz")
+    assert xyz["key"] == "другое"
+
+
+async def test_topic_chains_falls_back_to_chain_id_without_label(source):
+    r1 = await _row(source, day_offset=1, topic_chain_id="chain-nolabel", summary_data={})
+    result = await group_analytics([r1], "topic_chains")
+    group = result["groups"][0]
+    assert group["key"] == "chain-nolabel"
+    assert group["chain_id"] == "chain-nolabel"
+
+
+async def test_topic_chains_prefers_chain_label_over_topics(source):
+    r1 = await _row(source, day_offset=1, topic_chain_id="chain-l", summary_data=_summary(topics=["т"]))
+    r1.chain_label = "Горячая тема"
+    result = await group_analytics([r1], "topic_chains")
+    assert result["groups"][0]["key"] == "Горячая тема"

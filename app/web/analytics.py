@@ -17,6 +17,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.services.ai.reporting import ReportAggregator
+from app.services.ai.grouping import _extract_entities
 
 from .deps import (
     action_tenant_id,
@@ -288,28 +289,68 @@ async def _source_names(source_ids: set[int]) -> dict[int, str]:
 @router.get("/chains")
 async def analytics_chains(request: Request):
     """All theme chains with a chronological retrospective per chain.
-
+    
     A chain groups the analyses of one ongoing theme/source/user over time.
     This page lists every chain the workspace has and, for each, a timeline of
     its analyses — the "удобный просмотр ретроспективы" the user asked for.
+    Can be filtered by entity mention (entity_name and entity_type) and inherits
+    the same date range and tenant context as the main analytics page.
     The list sorts by the chain's latest analysis date: `?sort=desc` (default,
     newest first) or `?sort=asc` (oldest first).
     """
     from app.models import AIAnalytics
     from app.services.ai.topic_chain_service import TopicChainService
-
+    from app.services.ai.grouping import _extract_entities
+    
+    # Resolve days and tenant context like the main analytics page
+    days, _ = _resolve_days(request)
     sort = request.query_params.get("sort", "desc")
-    if sort not in ("desc", "asc"):
+    if sort not in dict(CHAIN_SORTS):
         sort = "desc"
-
-    rows = await AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None)).order_by(AIAnalytics.analysis_date)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
+    
+    # Get optional entity filter
+    entity_name = request.query_params.get("entity_name")
+    entity_type = request.query_params.get("entity_type")
+    
+    # Build base query: rows with topic_chain_id not null
+    qs = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
+    
+    # Apply date filter if days is specified
+    if days is not None:
+        from datetime import date, timedelta
+        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
+    
+    # Apply tenant filter
+    if is_superuser and tenant_id is None:
+        from app.core.tenant_context import tenant_scope
+        with tenant_scope(bypass=True):
+            rows = list(await qs)
+    else:
+        rows = list(await qs)
+    
+    # If entity filter is provided, filter rows to those mentioning that entity
+    if entity_name and entity_type:
+        filtered_rows = []
+        for row in rows:
+            entities = _extract_entities(row.summary_data or {})
+            for ent in entities:
+                if ent["name"] == entity_name and ent["type"] == entity_type:
+                    filtered_rows.append(row)
+                    break  # no need to check other entities for this row
+        rows = filtered_rows
+    
+    # Build chains from the (possibly filtered) rows
     chain_data = TopicChainService().build_topic_chain(rows)
-
+    
     # Source names for every source a chain's steps touch, so the list can show
-    # "по источнику" instead of a bare #id.
+    # "по источнику" вместо bare #id.
     source_ids = {step["source_info"]["source_id"] for ch in chain_data.values() for step in ch.get("evolution", []) if step.get("source_info", {}).get("source_id")}
     names = await _source_names(source_ids)
-
+    
     # Order chains by their latest analysis (most recent first by default).
     chains = sorted(
         chain_data.values(),
@@ -327,8 +368,6 @@ async def analytics_chains(request: Request):
         sorts=CHAIN_SORTS,
         perms_can=perms_can,
     )
-
-
 @router.get("/chains/{chain_id}")
 async def analytics_chain_detail(request: Request, chain_id: str):
     """One chain's full retrospective: a chronological timeline of analyses."""

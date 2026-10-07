@@ -315,6 +315,8 @@ async def group_analytics(
             key,
             {"key": key, "count": 0, "scores": [], "entries": defaultdict(list)},
         )
+        if axis == GroupingAxis.TOPIC_CHAINS and "label" not in bucket:
+            bucket["label"] = row.chain_label or human_chain_label(row.summary_data)
         bucket["count"] += 1
         sent = _extract_sentiment(row.summary_data)
         if sent and sent.get("score") is not None:
@@ -342,6 +344,11 @@ async def group_analytics(
             "count": bucket["count"],
             "avg_sentiment": avg_sent,
         }
+        if axis == GroupingAxis.TOPIC_CHAINS:
+            # Human-readable title (chain_label / first topic) with the raw
+            # chain id kept alongside so templates can link to the chain page.
+            group["chain_id"] = bucket["key"]
+            group["key"] = bucket.get("label") or bucket["key"]
 
         if time_breakdown:
             entries = []

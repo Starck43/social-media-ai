@@ -130,7 +130,13 @@
             {% for group in gd.groups %}
             <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
                 <div class="flex items-center justify-between">
-                    <h3 class="truncate text-sm font-medium text-slate-200">{{ group.key }}</h3>
+                    <h3 class="truncate text-sm font-medium text-slate-200">
+                        {% if group.chain_id %}
+                        <a href="/app/analytics/chains/{{ group.chain_id }}" class="hover:text-cyan-300">{{ group.key }}</a>
+                        {% else %}
+                        {{ group.key }}
+                        {% endif %}
+                    </h3>
                     <span class="shrink-0 text-xs text-slate-400">
                         {{ group.count }} упом.
                         {% if group.avg_sentiment is not none %}
@@ -241,15 +247,13 @@
                                 <span class="truncate text-slate-300">{{ e.name }}</span>
                                 <span class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">{{ e.type }}</span>
                             </span>
-                            <span class="shrink-0 text-xs text-slate-500">
-                                {% if e.avg_sentiment is not none %}
-                                    {{ "%.2f"|format(e.avg_sentiment) }} ·
-                                {% endif %}
-                                {{ e.count }}×
-                                {% if e.analysis_id %}
-                                    <a href="/app/analytics/{{ e.analysis_id }}" class="ml-1 text-cyan-400 hover:text-cyan-300">→</a>
-                                {% endif %}
-                            </span>
+                             <span class="shrink-0 text-xs text-slate-500">
+                                 {% if e.avg_sentiment is not none %}
+                                     {{ "%.2f"|format(e.avg_sentiment) }} ·
+                                 {% endif %}
+                                 {{ e.count }}×
+                                 <a href="/app/analytics/chains?entity_name={{ e.name }}&entity_type={{ e.type }}&days={{ days }}" class="ml-1 text-cyan-400 hover:text-cyan-300">→</a>
+                             </span>
                         </div>
                         {% if e.context %}
                             <p class="truncate text-xs text-slate-500">{{ e.context }}</p>

@@ -61,32 +61,32 @@ async def test_generate_chain_id_is_stable_per_mode(source):
     # punctuation/spaces stripped, ≤20 chars.
     normalized = "otpuskvsochi"
 
-    themes = analyzer._generate_topic_chain_id(source, topics, None, analyze_type="themes")
+    themes = await analyzer._generate_topic_chain_id(source, topics, None, analyze_type="themes")
     # No scenario: source + normalized top topic.
     assert themes == f"src_{source.id}_{normalized}"
 
     scn = AgentScenario(id=7, name="scn")
-    with_scn = analyzer._generate_topic_chain_id(source, topics, scn, analyze_type="themes")
+    with_scn = await analyzer._generate_topic_chain_id(source, topics, scn, analyze_type="themes")
     assert with_scn == f"src_{source.id}_scn_7_{normalized}"
     # Same inputs → same id (that is what makes a chain continue across runs).
-    assert analyzer._generate_topic_chain_id(source, topics, scn, analyze_type="themes") == with_scn
+    assert await analyzer._generate_topic_chain_id(source, topics, scn, analyze_type="themes") == with_scn
 
 
 async def test_generate_chain_id_is_stable_per_sources_mode(source):
     analyzer = AIAnalyzer()
-    cid = analyzer._generate_topic_chain_id(source, ["что угодно"], None, analyze_type="sources")
+    cid = await analyzer._generate_topic_chain_id(source, ["что угодно"], None, analyze_type="sources")
     assert cid == f"src_{source.id}_def_all"
 
 
 async def test_generate_chain_id_is_stable_per_monitored_users_mode(source):
     analyzer = AIAnalyzer()
-    cid = analyzer._generate_topic_chain_id(source, [], None, analyze_type="monitored_users")
+    cid = await analyzer._generate_topic_chain_id(source, [], None, analyze_type="monitored_users")
     assert cid == f"src_{source.id}_def_users"
 
 
 async def test_generate_chain_id_falls_back_to_general_without_topics(source):
     analyzer = AIAnalyzer()
-    cid = analyzer._generate_topic_chain_id(source, [], None, analyze_type="themes")
+    cid = await analyzer._generate_topic_chain_id(source, [], None, analyze_type="themes")
     assert cid == f"src_{source.id}_general"
 
 

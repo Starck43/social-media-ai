@@ -14,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
+from zoneinfo import ZoneInfo
 
 from app.models import Tenant
 from app.types import ActionType
@@ -46,7 +47,7 @@ def plural(n: int, one: str, few: str, many: str) -> str:
 	return many
 
 
-def human_datetime(value: Any, *, empty: str = "—") -> str:
+def human_datetime(value: Any, *, empty: str = "—", tz: str = "Europe/Moscow") -> str:
 	"""Render a timestamp the way a person reads it: `сегодня, 14:30`.
 
 	The pages had five handwritten `strftime` formats between them — a task
@@ -55,13 +56,21 @@ def human_datetime(value: Any, *, empty: str = "—") -> str:
 	answers the only question a reader has about a recent run.
 
 	Accepts `datetime`, `date` and `None`; naive values are read as UTC so the
-	output does not depend on the server's local zone.
+	output does not depend on the server's local zone. UTC times are converted
+	to the caller's timezone (default: Europe/Moscow) so the displayed clock
+	matches the user's wall clock.
 	"""
 	if value is None:
 		return empty
 	if isinstance(value, datetime):
+		# Naive → UTC; then convert to the tenant's zone.
 		moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-		today = datetime.now(timezone.utc).date()
+		try:
+			tzinfo = ZoneInfo(tz)
+		except Exception:
+			tzinfo = timezone.utc
+		moment = moment.astimezone(tzinfo)
+		today = datetime.now(tzinfo).date()
 		if moment.date() == today:
 			return f"сегодня, {moment:%H:%M}"
 		if moment.date() == today - timedelta(days=1):
@@ -202,6 +211,13 @@ def perms_can(request: Request, model_name: str, action: ActionType | str) -> bo
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
 	perms = getattr(request.state, "web_perms", None)
 	admin_plus = perms is not None and perms.is_superuser_role
+	# Resolve the timezone for human_dt: tenant's own zone or the global default.
+	tenant_tz = getattr(request.state, "tenant", None)
+	if tenant_tz is None:
+		tenant_tz = getattr(request.state, "_tenant_tz", "Europe/Moscow")
+	if isinstance(tenant_tz, Tenant):
+		tenant_tz = tenant_tz.timezone or "Europe/Moscow"
+
 	context: dict[str, Any] = {
 		"user": getattr(request.state, "web_user", None),
 		"memberships": getattr(request.state, "memberships", []) or [],
@@ -223,6 +239,8 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
 		# not per-request state, so it belongs here rather than in every handler
 		# that might render a badge.
 		"plan_labels": {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS},
+		# Timezone for the human_dt filter — templates use {{ value|human_dt(tz=_tz) }}
+		"_tz": tenant_tz,
 	}
 	context.update(extra)
 	return templates.TemplateResponse(request=request, name=name, context=context, status_code=status_code)

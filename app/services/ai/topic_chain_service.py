@@ -159,8 +159,8 @@ class TopicChainService:
 
 				chain_evolution.append({
 					"id": getattr(analytics, "id", None),
-					"date": analytics.analysis_date.isoformat()
-					if hasattr(analytics.analysis_date, 'isoformat')
+					"date": analytics.analysis_date.strftime("%d.%m.%Y")
+					if hasattr(analytics.analysis_date, 'strftime')
 					else str(analytics.analysis_date),
 					"analysis_title": analysis_title,
 					"analysis_summary": analysis_summary,

@@ -20,16 +20,27 @@ def _get_job_types() -> tuple[str, ...]:
     required_permission="agenttask.view",
 )
 async def task_list() -> list[dict[str, Any]]:
-    from app.models import AgentTask
+    from app.core.config import settings
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
 
     rows = await AgentTask.objects.order_by(AgentTask.id)
+    tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+
+    def _fmt(dt):
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(tz).strftime("%d.%m.%Y %H:%M")
+
     return [
         {
             "name": t.name,
             "cron": t.cron_expr,
             "job_type": t.job_type,
             "active": t.is_active,
-            "next_run_at": t.next_run_at.isoformat() if t.next_run_at else None,
+            "next_run_at": _fmt(t.next_run_at),
             "last_status": t.last_status,
         }
         for t in rows
@@ -207,7 +218,11 @@ async def task_add(
         await _check_task_sources(source_ids, task.tenant_id)
         await AgentTaskManager().add_sources(task.id, source_ids)
 
-    result: dict[str, Any] = {"status": "created", "name": task.name, "next_run_at": task.next_run_at.isoformat()}
+    result: dict[str, Any] = {
+        "status": "created",
+        "name": task.name,
+        "next_run_at": task.next_run_at.astimezone(tz).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None,
+    }
 
     # Hint when the bound scenario wants specific targets the task does not
     # carry — the analysis would otherwise have nothing to aim at. Surfaced as

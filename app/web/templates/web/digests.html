@@ -173,7 +173,7 @@
                         <td class="px-4 py-3 text-xs text-slate-400">
                             {% if run.llm_cost is not none %}${{ "%.4f"|format(run.llm_cost) }}{% else %}—{% endif %}
                         </td>
-                        <td class="px-4 py-3 text-xs text-slate-500">{{ run.created_at|human_dt }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-500">{{ run.created_at|human_dt(tz=_tz) }}</td>
                         <td class="px-4 py-3 text-right">
                             <button @click="open = !open" class="text-xs text-cyan-400 hover:text-cyan-300">
                                 <span x-show="!open">Показать</span>

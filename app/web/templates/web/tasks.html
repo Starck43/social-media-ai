@@ -91,7 +91,7 @@
                 </td>
                 <td class="px-4 py-3 text-slate-400">
                     {% if task.last_run_at %}
-                    {{ task.last_run_at|human_dt }}
+                    {{ task.last_run_at|human_dt(tz=_tz) }}
                     {% else %}
                     <span class="text-slate-600">—</span>
                     {% endif %}
@@ -100,7 +100,7 @@
                     {% if task.cron_expr == '@once' and task.last_run_at %}
                     <span class="text-slate-600">—</span>
                     {% elif task.next_run_at %}
-                    {{ task.next_run_at|human_dt }}
+                    {{ task.next_run_at|human_dt(tz=_tz) }}
                     {% else %}
                     <span class="text-slate-600">—</span>
                     {% endif %}

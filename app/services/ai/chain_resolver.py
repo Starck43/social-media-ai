@@ -6,7 +6,6 @@ Resolution is deterministic — normalization + lookup, no LLM call.
 from __future__ import annotations
 
 import re
-import uuid
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
@@ -61,7 +60,7 @@ async def resolve_chain_async(
        where topic_chain_id IS NOT NULL
     4. Compare normalized ``topic_hint`` (nested contract first, then top-level)
     5. If match found → return existing (topic_chain_id, chain_label)
-    6. If no match → generate new chain_id = uuid4 hex[:12],
+    6. If no match → generate new chain_id from topic_hint slug (transliterated),
        return (chain_id, topic_hint)
     """
     if not topic_hint:
@@ -101,5 +100,44 @@ async def resolve_chain_async(
         if _normalize(existing_hint) == normalized_hint:
             return row.topic_chain_id, row.chain_label or human_chain_label(summary) or row.topic_chain_id
 
-    new_id = f"ch_{uuid.uuid4().hex[:12]}"
+    new_id = await _generate_chain_slug(normalized_hint)
     return new_id, topic_hint[:255]
+
+
+async def _generate_chain_slug(topic_hint: str) -> str:
+    """Generate a human-readable chain slug from a topic hint.
+
+    Uses transliteration so Cyrillic topics become URL-safe Latin slugs.
+    Appends a counter on collision (e.g. "kiberbezopasnost", "kiberbezopasnost-1").
+    """
+    from app.core.database import async_session_maker
+    from app.utils.translit import translit_slug
+    from sqlalchemy import select
+    from app.models import AIAnalytics
+
+    base = translit_slug(topic_hint)
+    if not base:
+        return "obschaya-tema"
+
+    async with async_session_maker() as s:
+        stmt = select(AIAnalytics.topic_chain_id).where(
+            AIAnalytics.topic_chain_id.like(f"{base}%")
+        )
+        result = await s.execute(stmt)
+        existing = list(result.scalars().all())
+
+    if base not in existing:
+        return base
+
+    # Collision: find the highest counter and increment
+    counters = []
+    for eid in existing:
+        if eid == base:
+            continue
+        # Match base-N pattern
+        suffix = eid[len(base) + 1:] if eid.startswith(base + "-") else ""
+        if suffix.isdigit():
+            counters.append(int(suffix))
+
+    next_counter = max(counters, default=0) + 1
+    return f"{base}-{next_counter}"

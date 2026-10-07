@@ -637,7 +637,7 @@ def _analysis_row(a) -> dict:
     cost = a.estimated_cost
     return {
         "id": a.id,
-        "analysis_date": a.analysis_date.isoformat() if a.analysis_date else "—",
+        "analysis_date": a.analysis_date.strftime("%d.%m.%Y") if a.analysis_date else "—",
         "main_topics": a.main_topics or [],
         "sentiment": _extract_sentiment_score(a.summary_data),
         "llm_model": a.llm_model,

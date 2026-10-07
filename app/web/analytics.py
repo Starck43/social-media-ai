@@ -110,8 +110,8 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
             "chain_label": entry["chain_label"],
             "entry_count": entry["entry_count"],
             "date_range": {
-                "start": entry["first_date"].isoformat() if entry["first_date"] else None,
-                "end": entry["last_date"].isoformat() if entry["last_date"] else None,
+                "start": entry["first_date"].strftime("%d.%m.%Y") if entry["first_date"] else None,
+                "end": entry["last_date"].strftime("%d.%m.%Y") if entry["last_date"] else None,
             },
             "avg_sentiment": round(sum(scores) / len(scores), 3) if scores else None,
         })

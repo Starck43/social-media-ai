@@ -128,7 +128,7 @@
                     <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивен</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-400">{{ source.created_at|human_dt }}</td>
+                <td class="px-4 py-3 text-slate-400">{{ source.created_at|human_dt(tz=_tz) }}</td>
                 {% if is_superuser %}
                 <td class="px-4 py-3 text-xs text-slate-400">{{ source.tenant.name }}</td>
                 {% endif %}

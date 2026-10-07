@@ -293,7 +293,7 @@ class AIAnalyzer:
                     logger.info(f"Chain resolved: {topic_chain_id} for source {source.id} via hint={topic_hint!r}")
                 else:
                     # Fallback to source+scenario-based ID (no topic_hint in LLM response)
-                    topic_chain_id = self._generate_topic_chain_id(
+                    topic_chain_id = await self._generate_topic_chain_id(
                         source, main_topics, agent_scenario, analyze_type=analyze_type
                     )
                     chain_label = self._resolve_chain_label(main_topics, analysis_results)
@@ -1201,11 +1201,33 @@ class AIAnalyzer:
 
         return None
 
-    def _generate_topic_chain_id(
+    async def _find_matching_chain_by_topic(self, source: Source, top_topic: str) -> str | None:
+        """Look for an existing chain whose topic_chain_id contains this topic slug.
+
+        Returns the matching chain_id or None so the caller generates a new one.
+        """
+        from app.core.database import async_session_maker
+        from app.utils.translit import translit_slug
+        from sqlalchemy import select
+
+        slug = translit_slug(top_topic)
+        if not slug:
+            return None
+
+        async with async_session_maker() as s:
+            stmt = select(AIAnalytics.topic_chain_id).where(
+                AIAnalytics.source_id == source.id,
+                AIAnalytics.topic_chain_id.isnot(None),
+                AIAnalytics.topic_chain_id.like(f"%{slug}%"),
+            ).limit(1)
+            result = await s.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def _generate_topic_chain_id(
         self, source: Source, main_topics: list[str], agent_scenario: AgentScenario = None, analyze_type: str = None
     ):
         """
-        Generate topic chain ID for source.
+        Generate or resolve topic chain ID for source.
 
         NEW LOGIC: One source + one scenario = one chain (timeline by dates).
         All analyses for this source+scenario go into the same chain.
@@ -1227,22 +1249,56 @@ class AIAnalyzer:
                 Chain ID string
         """
         top_topic = main_topics[0] if main_topics else "general"
-        normalized_topic = translit_slug(top_topic)[:20]
-
-        scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
 
         # The mode may arrive as an `AnalyzeType` member (straight off the ORM)
         # or as its db_value string (the CLI, the by-sources/by-users branches),
         # so compare on the normalised value.
         mode = get_enum_value(analyze_type)
         if mode == AnalyzeType.SOURCES.db_value:
+            scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
             return f"src_{source.id}_{scn}_all"
         if mode == AnalyzeType.MONITORED_USERS.db_value:
+            scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else "def"
             return f"src_{source.id}_{scn}_users"
-        if agent_scenario and agent_scenario.id:
-            return f"src_{source.id}_scn_{agent_scenario.id}_{normalized_topic}"
-        else:
-            return f"src_{source.id}_{normalized_topic}"
+
+        # Themes mode: try to find an existing chain with a matching topic,
+        # so the chain stays stable even when the top topic shifts.
+        chain_id = await self._find_matching_chain_by_topic(source, top_topic)
+        if chain_id:
+            return chain_id
+
+        # No match — generate a stable, human-readable slug from the topic.
+        slug = translit_slug(top_topic)
+        if not slug:
+            return f"src_{source.id}_general"
+
+        scn = f"scn_{agent_scenario.id}" if agent_scenario and agent_scenario.id else ""
+        base = f"src_{source.id}_{scn}_{slug}" if scn else f"src_{source.id}_{slug}"
+
+        # Collision guard: if the base slug is already taken, append a counter.
+        from app.core.database import async_session_maker
+        from sqlalchemy import select
+
+        async with async_session_maker() as s:
+            stmt = select(AIAnalytics.topic_chain_id).where(
+                AIAnalytics.topic_chain_id.like(f"{base}%")
+            )
+            result = await s.execute(stmt)
+            existing = list(result.scalars().all())
+
+        if base not in existing:
+            return base
+
+        counters = []
+        for eid in existing:
+            if eid == base:
+                continue
+            suffix = eid[len(base) + 1:] if eid.startswith(base + "-") else ""
+            if suffix.isdigit():
+                counters.append(int(suffix))
+
+        next_counter = max(counters, default=0) + 1
+        return f"{base}-{next_counter}"
 
     @staticmethod
     def _resolve_chain_label(main_topics: list[str], analysis_results: dict[str, Any]) -> str:

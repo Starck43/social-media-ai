@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Union
 
 from fastapi import HTTPException
 from sqladmin import action
@@ -1493,9 +1493,14 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 				is_default=False
 			)
 
-	async def delete_model(self, request: Request, pk: int) -> None:
-		"""Override default delete to use manager's reassignment logic."""
-		result = await LLMModel.objects.delete_with_default_reassignment(pk)
+	async def delete_model(self, request: Request, pk: Union[int, str]) -> None:
+		"""Override default delete to use manager's reassignment logic.
+
+		sqladmin passes `pk` as a string from query params — cast to int
+		before forwarding to the manager which expects an integer id.
+		"""
+		model_id = int(pk) if isinstance(pk, str) else pk
+		result = await LLMModel.objects.delete_with_default_reassignment(model_id)
 		warnings = result.get("warnings", [])
 		if warnings:
 			msg = "; ".join(warnings)

@@ -13,6 +13,7 @@ from app.services.ai.llm_client import LLMClientFactory
 from app.services.ai.llm_provider_resolver import LLMProviderResolver
 from app.services.ai.prompts import PromptBuilder
 from app.services.ai.scenario import build_output_schema
+from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
 from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
 from app.types.enums.bot_types import AnalyzeType
@@ -674,9 +675,14 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            pydantic_model = None
             if agent_scenario and agent_scenario.output_schema:
                 prompt = prompt + "\n\nОтвет должен соответствовать JSON Schema:\n" + str(agent_scenario.output_schema)
-            result = await client.analyze(prompt, **kwargs)
+                try:
+                    pydantic_model = build_pydantic_model(agent_scenario)
+                except Exception as exc:
+                    logger.warning("Failed to build Pydantic model for text analysis: %s", exc)
+            result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Text analysis completed using {model.name}")
             return result
@@ -721,7 +727,13 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
-            result = await client.analyze(prompt, **kwargs)
+            pydantic_model = None
+            if agent_scenario and agent_scenario.output_schema:
+                try:
+                    pydantic_model = build_pydantic_model(agent_scenario)
+                except Exception as exc:
+                    logger.warning("Failed to build Pydantic model for image analysis: %s", exc)
+            result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
             return result
@@ -766,7 +778,13 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
-            result = await client.analyze(prompt, **kwargs)
+            pydantic_model = None
+            if agent_scenario and agent_scenario.output_schema:
+                try:
+                    pydantic_model = build_pydantic_model(agent_scenario)
+                except Exception as exc:
+                    logger.warning("Failed to build Pydantic model for video analysis: %s", exc)
+            result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
             return result
@@ -1468,6 +1486,24 @@ class AIAnalyzer:
                 else:
                     analysis_title = f"{analysis_title} ({date_str})"
                 logger.info(f"Enhanced analysis_title with date: {analysis_title}")
+
+        # Pydantic validation safety-net: re-validate already-parsed dicts against
+        # the scenario's model. The LLM client already validated at parse time;
+        # this catches anything that slipped through or was added by a caller
+        # that bypassed the client.
+        pydantic_model = None
+        if agent_scenario and agent_scenario.output_schema:
+            try:
+                pydantic_model = build_pydantic_model(agent_scenario)
+            except Exception as exc:
+                logger.warning("Failed to build Pydantic model in _save_analysis: %s", exc)
+
+        if pydantic_model is not None:
+            for result in (analysis_results or {}).values():
+                if isinstance(result, dict) and isinstance(result.get("parsed"), dict):
+                    result["parsed"] = validate_with_pydantic(result["parsed"], pydantic_model)
+            if isinstance(unified_summary, dict) and isinstance(unified_summary.get("parsed"), dict):
+                unified_summary["parsed"] = validate_with_pydantic(unified_summary["parsed"], pydantic_model)
 
         # Build comprehensive data structure
         comprehensive_data = {

@@ -139,7 +139,9 @@ class LLMClient(ABC):
         }
 
     @abstractmethod
-    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]: ...
+    async def analyze(
+        self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
+    ) -> dict[str, Any]: ...
 
     @abstractmethod
     async def chat(
@@ -163,7 +165,9 @@ class LLMClient(ABC):
 
 
 class OpenAICompatibleClient(LLMClient):
-    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]:
+    async def analyze(
+        self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
+    ) -> dict[str, Any]:
         if not self.api_key:
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
@@ -191,10 +195,17 @@ class OpenAICompatibleClient(LLMClient):
             await _record_llm_usage(self.model, success=False)
             return {"request": payload, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
+        parsed = self._parse_response(data)
+        if pydantic_model is not None:
+            try:
+                parsed = pydantic_model.model_validate(parsed).model_dump()
+            except Exception as exc:
+                logger.warning("Pydantic validation failed for %s: %s", self.provider.name, exc)
+
         response = {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
-            "parsed": self._parse_response(data),
+            "parsed": parsed,
             "usage": self._usage_block(
                 (data.get("usage") or {}).get("prompt_tokens", 0), (data.get("usage") or {}).get("completion_tokens", 0)
             ),
@@ -322,7 +333,9 @@ class AnthropicClient(LLMClient):
             "Content-Type": "application/json",
         }
 
-    async def analyze(self, prompt: str, media_urls: Optional[list[str]] = None, **kwargs) -> dict[str, Any]:
+    async def analyze(
+        self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
+    ) -> dict[str, Any]:
         if not self.api_key:
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
@@ -358,11 +371,18 @@ class AnthropicClient(LLMClient):
             return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
         text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+        parsed = _try_json(text)
+        if pydantic_model is not None:
+            try:
+                parsed = pydantic_model.model_validate(parsed).model_dump()
+            except Exception as exc:
+                logger.warning("Pydantic validation failed for Anthropic %s: %s", self.provider.name, exc)
+
         usage = data.get("usage") or {}
         response = {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
-            "parsed": _try_json(text),
+            "parsed": parsed,
             "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
         }
         await _record_llm_usage(self.model, success=True, usage=response.get("usage"))

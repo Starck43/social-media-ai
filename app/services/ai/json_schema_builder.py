@@ -19,7 +19,9 @@ in a scenario yields a thinner prompt instead of a wrong one.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
+
+from pydantic import BaseModel, create_model
 
 # A field is (json_type, description). `json_type` is the type as it appears in
 # the rendered instruction and as it appears in `build_json_schema()`.
@@ -366,3 +368,55 @@ class JSONSchemaBuilder:
 
 Не добавляй текст до или после JSON.
 {cls.event_instruction(scope)}"""
+
+
+_TYPE_MAP = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def build_pydantic_model(scenario: Any) -> Type[BaseModel]:
+    """Dynamically create a Pydantic model from a scenario's output schema.
+
+    Uses ``AgentScenario.output_schema`` when present; otherwise derives the
+    schema from ``scenario.analysis_types`` + ``scenario.scope`` so a scenario
+    that has not been persisted yet still gets a strict validator.
+    """
+    from app.services.ai.scenario import build_output_schema
+
+    raw_schema = scenario.output_schema if scenario and scenario.output_schema else {}
+    if not raw_schema:
+        raw_schema = build_output_schema(
+            getattr(scenario, "analysis_types", None) or [],
+            getattr(scenario, "scope", None) or {},
+        )
+
+    properties = raw_schema.get("properties") or {}
+    field_definitions: Dict[str, tuple[Any, Any]] = {}
+    for field_name, field_schema in properties.items():
+        json_type = field_schema.get("type", "string") if isinstance(field_schema, dict) else "string"
+        py_type = _TYPE_MAP.get(json_type, str)
+        default = ... if field_name in (raw_schema.get("required") or []) else None
+        field_definitions[field_name] = (py_type, default)
+
+    model_name = f"ScenarioOutput_{getattr(scenario, 'id', 'dynamic')}"
+    return create_model(model_name, __base__=BaseModel, **field_definitions)
+
+
+def validate_with_pydantic(parsed: dict[str, Any], model_cls: Type[BaseModel]) -> dict[str, Any]:
+    """Validate a parsed dict against a Pydantic model; return model_dump() on success.
+
+    Falls back to the original dict on ``ValidationError`` so a schema mismatch
+    never breaks the analysis pipeline.
+    """
+    try:
+        return model_cls.model_validate(parsed).model_dump()
+    except Exception as exc:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("Pydantic validation failed: %s — keeping raw parsed dict", exc)
+        return parsed

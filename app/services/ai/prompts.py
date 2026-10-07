@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from app.types import MediaType
 from app.services.ai.prompt_variables import PromptSubstitution
+from app.services.ai.prompt_sanitizer import sanitize_untrusted_text
 
 if TYPE_CHECKING:
 	from app.models import AgentScenario
@@ -150,8 +151,9 @@ class PromptBuilder:
 
 		# Get standard variables based on media type
 		if media_value == 'text':
+			raw_text = context.get('text', '') or ''
 			variables = PromptSubstitution.prepare_text_variables(
-				text=context.get('text', ''),
+				text=sanitize_untrusted_text(raw_text),
 				stats=context.get('stats', {}),
 				platform_name=context.get('platform_name', ''),
 				source_type=context.get('source_type', '')

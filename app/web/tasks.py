@@ -39,6 +39,38 @@ def _split_names(raw: str) -> list[str]:
 	return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
 
 
+# The analysis targets a task payload carries (param_registry.PAYLOAD_PARAMS):
+# the scenario's analysis types say *what kind* of target matters, the task
+# says *which* brands/hashtags/… to aim at.
+TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names", "keywords_list", "topic_list")
+
+
+def _split_targets(raw: str) -> list[str]:
+	"""Split a comma separated target string, keeping spaces inside a name.
+
+	`_split_names` splits on spaces too — right for usernames, wrong for
+	"Coca Cola" — so targets are commas only.
+	"""
+	return [v.strip() for v in (raw or "").split(",") if v.strip()]
+
+
+def _apply_targets(payload: dict, targets: dict[str, str]) -> None:
+	"""Write the form's target fields into the payload, authoritatively.
+
+	The edit page always submits every target input (hidden ones keep their
+	value), so a filled field sets its key and an emptied one drops it. Dropping
+	rather than storing `[]` keeps a cleared target out of the payload
+	altogether, where `extract_target_values` would still inject it into the
+	prompt as an empty list.
+	"""
+	for key in TARGET_KEYS:
+		values = _split_targets(targets.get(key, ""))
+		if values:
+			payload[key] = values
+		else:
+			payload.pop(key, None)
+
+
 def _build_trigger_config(
 		trigger_type: str,
 		keywords: str,
@@ -93,9 +125,9 @@ def _payload_from_form(
 
 	For collect/analyze a `cli_dates.start_date` is mandatory: without it a
 	fresh source has no lower bound and the first run drains the whole history
-	from the first post. `force_refresh` (collect: overwrite the window) and
-	`force_reanalyze` (analyze: re-run the model on stored rows) are the
-	operator's own choices.
+	from the first post. `force_refresh` (collect: overwrite the window — and,
+	per docs/CLI.md, re-run the analysis over it) and `force_reanalyze`
+	(analyze: re-run the model on stored rows) are the operator's own choices.
 
 	For digest: `period` (day/week/month), `group_by` axis, and
 	`time_breakdown` flag are stored in payload so the scheduled run uses
@@ -112,8 +144,14 @@ def _payload_from_form(
 			raise ValueError("Укажите дату начала сбора контента — иначе первый запуск вытянет всё с первого поста")
 		end = AgentTaskManager.parse_date(end_date)
 		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
-		if force_reanalyze:
-			payload["force_reanalyze"] = True
+		# One flag per type, written explicitly so a value left behind by a
+		# job-type switch never survives the save. `force_refresh` on collect is
+		# the documented full cycle (docs/CLI.md: re-fetch the period *and* re-run
+		# the analysis over it); `analyze` keeps its own `force_reanalyze`.
+		if job_type == "collect":
+			payload["force_reanalyze"] = bool(force_refresh)
+		else:
+			payload["force_reanalyze"] = bool(force_reanalyze)
 	if job_type == "digest":
 		if digest_period and digest_period in ("day", "week", "month"):
 			payload["period"] = digest_period
@@ -181,27 +219,29 @@ def _trigger_and_action_fields(
 	return fields
 
 
-def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]:
-	"""Everything the edit modal binds, as the plain object Alpine edits.
+def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[int]) -> dict[str, Any]:
+	"""Everything the edit page binds, as the plain object Alpine edits.
 
-	Built here rather than in the template because it has two callers: the row's
-	name button and the `?task_id=` deep link, and the editor must not fill
-	differently depending on how it was opened. `is_active` is the *effective*
-	flag — the one the list column shows — so reopening a task that is active on
-	paper but blocked by a deactivated source does not silently activate it.
-	The trigger/action and date fields are bound too, so editing a task shows
-	what it is configured with instead of dropping the sections empty.
+	One builder, because the editor opened from two places (the row's name
+	button and the `?task_id=` deep link, both landing on
+	`/app/tasks/{id}/edit`) must fill identically. `is_active` is the
+	*effective* flag — the one the list column shows — so reopening a task
+	that is active on paper but blocked by a deactivated source does not
+	silently activate it. The trigger/action, date and target fields are
+	bound too, so editing a task shows what it is configured with instead of
+	dropping the sections empty. `source_ids` is passed in by the caller,
+	which has already resolved the lazy m2m on the detached row.
 	"""
 	payload = task.payload if isinstance(task.payload, dict) else {}
 	cli_dates = payload.get("cli_dates") or {}
 	trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
-	return {
+	edit: dict[str, Any] = {
 		"id": task.id,
 		"name": task.name,
 		"job_type": task.job_type,
 		"cron_expr": task.cron_expr,
 		"is_active": task.id in effective_active,
-		"source_ids": [s.id for s in task.sources] if task.sources else [],
+		"source_ids": source_ids,
 		"scenario_id": task.agent_scenario_id,
 		"monitored_users": ", ".join(payload.get("monitored_users") or []),
 		"excluded_users": ", ".join(payload.get("excluded_users") or []),
@@ -227,6 +267,11 @@ def _edit_payload(task: AgentTask, effective_active: set[int]) -> dict[str, Any]
 		"cooldown_seconds": task.cooldown_seconds or "",
 		"requires_approval": task.requires_approval if task.requires_approval is not None else True,
 	}
+	# The analysis targets live in payload under their own keys (brands, …) and
+	# are edited as comma separated strings, like monitored_users above.
+	for key in TARGET_KEYS:
+		edit[key] = ", ".join(payload.get(key) or [])
+	return edit
 
 
 async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
@@ -401,6 +446,9 @@ async def tasks_list(request: Request):
 	sources = await Source.objects.filter(tenant_id=tenant_id).order_by(Source.name)
 
 	scenarios = await AgentScenario.objects.filter(tenant_id=tenant_id, is_active=True).order_by(AgentScenario.name)
+	# Which payload target keys each scenario wants (param_registry.PAYLOAD_PARAMS):
+	# drives the conditional target inputs in the add modal, as on the edit page.
+	scenario_analysis = {str(s.id): list(s.analysis_types or []) for s in scenarios}
 
 	# Effective activity: a task bound to a deactivated scenario or with no
 	# active source to operate on is not "active", however its flag is set.
@@ -445,6 +493,7 @@ async def tasks_list(request: Request):
 		tasks=tasks,
 		sources=sources,
 		scenarios=scenarios,
+		scenario_analysis=scenario_analysis,
 		effective_active=effective_active,
 		running_jobs=running_jobs,
 		job_types=JobType.choices(),
@@ -468,6 +517,12 @@ async def task_create(
 		scenario_id: int = Form(default=None),
 		monitored_users: str = Form(""),
 		excluded_users: str = Form(""),
+		brands: str = Form(""),
+		competitors: str = Form(""),
+		hashtags: str = Form(""),
+		influencer_names: str = Form(""),
+		keywords_list: str = Form(""),
+		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
 		force_refresh: str = Form(""),
@@ -549,6 +604,18 @@ async def task_create(
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
+
+	_apply_targets(
+		payload,
+		{
+			"brands": brands,
+			"competitors": competitors,
+			"hashtags": hashtags,
+			"influencer_names": influencer_names,
+			"keywords_list": keywords_list,
+			"topic_list": topic_list,
+		},
+	)
 
 	# Warn about missing target params for the scenario's analysis types.
 	# Non-blocking: the task is still created, but analysis will have nothing
@@ -775,8 +842,8 @@ async def task_edit_page(request: Request, task_id: int):
 			if bound is not None:
 				scenarios = [bound, *scenarios]
 
-	# Eager-load sources into a plain list so _edit_payload doesn't hit a lazy
-	# loader on a detached instance (DetachedInstanceError).
+	# Resolve the m2m into a plain list: the row is detached here, and
+	# `_edit_payload` must not hit a lazy loader on it (DetachedInstanceError).
 	source_ids_for_task: list[int] = []
 	if task.sources is not None:
 		try:
@@ -790,43 +857,11 @@ async def task_edit_page(request: Request, task_id: int):
 	effective = await AgentTaskManager().effective_active_map([task], active_source_ids)
 	effective_active = {tid for tid, ok in effective.items() if ok}
 
-	# Build the edit dict with sources already resolved to avoid lazy-load on
-	# the detached instance.
-	payload = task.payload if isinstance(task.payload, dict) else {}
-	cli_dates = payload.get("cli_dates") or {}
-	trigger_config = task.trigger_config if isinstance(task.trigger_config, dict) else {}
-	edit = {
-		"id": task.id,
-		"name": task.name,
-		"job_type": task.job_type,
-		"cron_expr": task.cron_expr,
-		"is_active": task.id in effective_active,
-		"source_ids": source_ids_for_task,
-		"scenario_id": task.agent_scenario_id,
-		"monitored_users": ", ".join(payload.get("monitored_users") or []),
-		"excluded_users": ", ".join(payload.get("excluded_users") or []),
-		"start_date": cli_dates.get("start_date") or "",
-		"end_date": cli_dates.get("end_date") or "",
-		"force_refresh": bool(payload.get("force_refresh")),
-		"force_reanalyze": bool(payload.get("force_reanalyze")),
-		"digest_period": payload.get("period") or "day",
-		"digest_group_by": payload.get("group_by") or "themes",
-		"digest_time_breakdown": bool(payload.get("time_breakdown")),
-		"trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
-		"trigger_keywords": ", ".join(trigger_config.get("keywords") or []),
-		"trigger_match": trigger_config.get("match", "any"),
-		"trigger_usernames": ", ".join(trigger_config.get("usernames") or []),
-		"trigger_threshold": trigger_config.get("threshold", 0.5),
-		"trigger_direction": trigger_config.get("direction", "below"),
-		"trigger_baseline_hours": trigger_config.get("baseline_period_hours", 24),
-		"trigger_spike_multiplier": trigger_config.get("spike_multiplier", 3.0),
-		"action_type": getattr(task, "action_type", None).name if getattr(task, "action_type", None) else "",
-		"blacklist": ", ".join(task.blacklist or []),
-		"whitelist": ", ".join(task.whitelist or []),
-		"rate_limit_per_hour": task.rate_limit_per_hour or "",
-		"cooldown_seconds": task.cooldown_seconds or "",
-		"requires_approval": task.requires_approval if task.requires_approval is not None else True,
-	}
+	edit = _edit_payload(task, effective_active, source_ids_for_task)
+
+	# Which payload targets each scenario's analysis types want — the form
+	# renders the matching inputs (see `param_registry.PAYLOAD_PARAMS`).
+	scenario_analysis = {str(s.id): list(s.analysis_types or []) for s in scenarios}
 
 	return render(
 		request,
@@ -836,6 +871,7 @@ async def task_edit_page(request: Request, task_id: int):
 		edit=edit,
 		sources=sources,
 		scenarios=scenarios,
+		scenario_analysis=scenario_analysis,
 		job_types=JobType.choices(),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
@@ -970,6 +1006,12 @@ async def task_update(
 		scenario_id: int = Form(default=None),
 		monitored_users: str = Form(""),
 		excluded_users: str = Form(""),
+		brands: str = Form(""),
+		competitors: str = Form(""),
+		hashtags: str = Form(""),
+		influencer_names: str = Form(""),
+		keywords_list: str = Form(""),
+		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
 		force_refresh: str = Form(""),
@@ -1070,10 +1112,24 @@ async def task_update(
 	# "days", "min_messages" set via CLI or agent tool must survive a web edit.
 	payload = task.payload.copy() if isinstance(task.payload, dict) else {}
 	payload.update(new_payload)
+	# The form's target fields are authoritative for their own keys: filled
+	# sets, emptied clears (see `_apply_targets`).
+	_apply_targets(
+		payload,
+		{
+			"brands": brands,
+			"competitors": competitors,
+			"hashtags": hashtags,
+			"influencer_names": influencer_names,
+			"keywords_list": keywords_list,
+			"topic_list": topic_list,
+		},
+	)
 
-	# Warn about missing target params for the scenario's analysis types.
-	if task.agent_scenario_id:
-		sc = await AgentScenario.objects.filter(id=task.agent_scenario_id).first()
+	# Warn about missing target params for the scenario's analysis types —
+	# the scenario this save binds, not the one the row held before the edit.
+	if scenario_id:
+		sc = await AgentScenario.objects.filter(id=scenario_id).first()
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
 

@@ -160,6 +160,27 @@
             </select>
         </div>
         {% endif %}
+        {# The analysis targets the selected scenario's analysis types need
+           (param_registry.PAYLOAD_PARAMS): the scenario says which kinds of
+           target matter, the task says the actual brands/hashtags. Every input
+           stays in the DOM — a hidden one still submits its value, so the
+           payload round-trips untouched when the scenario changes. #}
+        <div class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3"
+             x-show="targetFields.length > 0" x-cloak>
+            <p class="text-sm text-slate-300">Цели анализа
+                <span class="text-xs text-slate-500">— какие именно данные искать, требует выбранный сценарий</span>
+            </p>
+            <div class="grid grid-cols-2 gap-3">
+                <template x-for="f in targetDefs" :key="f.key">
+                    <div x-show="isTargetVisible(f)">
+                        <label class="mb-1 block text-xs text-slate-400" x-text="f.label"></label>
+                        <input type="text" :name="f.key" x-model="editing[f.key]" :placeholder="f.ph"
+                               class="{{ control() }}">
+                        <p class="mt-1 text-xs text-slate-500" x-text="f.hint"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
         {{ task_dates("editing", "editing.job_type") }}
 
         <template x-if="editing.job_type === 'digest'">
@@ -198,29 +219,28 @@
             </div>
         </template>
 
+        {# `x-if`, not `x-show`: these inputs belong to one job type and must
+           not reach the POST for the others. The force flags live in
+           `task_dates` alone — one checkbox per type, no second one bound to
+           the same name here. #}
         <div class="grid grid-cols-2 gap-3">
-            <div x-show="editing.job_type === 'collect'">
-                <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
-                <input name="monitored_users" x-model="editing.monitored_users"
-                       placeholder="username1, username2"
-                       class="{{ control() }}">
-                <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
-            </div>
-            <div x-show="editing.job_type === 'collect' || editing.job_type === 'analyze'">
-                <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
-                <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
-                       class="{{ control() }}">
-                <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
-            </div>
-            <div x-show="editing.job_type === 'analyze'">
-                <label class="flex items-center gap-2 text-sm text-slate-300">
-                    <input type="hidden" name="force_reanalyze" :value="editing.force_reanalyze ? 'on' : ''">
-                    <input type="checkbox" x-model="editing.force_reanalyze"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                    Переанализировать всё (игнорировать хеши)
-                </label>
-                <p class="mt-1 text-xs text-slate-500">Снять все дедуп-хешы и прогнать заново</p>
-            </div>
+            <template x-if="editing.job_type === 'collect'">
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                    <input name="monitored_users" x-model="editing.monitored_users"
+                           placeholder="username1, username2"
+                           class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+                </div>
+            </template>
+            <template x-if="editing.job_type === 'collect' || editing.job_type === 'analyze'">
+                <div>
+                    <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                    <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
+                           class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+                </div>
+            </template>
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
@@ -266,6 +286,15 @@
 
 <script>
     const TASK_EDIT = {{ edit|tojson }};
+    const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
+    const TARGET_FIELDS = [
+        { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
+        { key: "competitors", type: "competitor", label: "Конкуренты", ph: "brand-a, brand-b", hint: "Чьи упоминания считать конкурентными" },
+        { key: "hashtags", type: "hashtag_analysis", label: "Хэштеги", ph: "#бренд, #акция", hint: "Хэштеги для отслеживания" },
+        { key: "influencer_names", type: "influencer", label: "Авторы", ph: "author1, author2", hint: "Авторы и инфлюенсеры для анализа" },
+        { key: "keywords_list", type: "keywords", label: "Ключевые слова", ph: "жалоба, отзыв", hint: "Ключевые слова для поиска" },
+        { key: "topic_list", type: "topics", label: "Темы", ph: "доставка, цены", hint: "Темы, которые нужно выделить" },
+    ];
 
     function scheduleBuilder() {
         const pad = n => String(n).padStart(2, "0")
@@ -371,6 +400,12 @@
             scenario_id: "",
             monitored_users: "",
             excluded_users: "",
+            brands: "",
+            competitors: "",
+            hashtags: "",
+            influencer_names: "",
+            keywords_list: "",
+            topic_list: "",
             start_date: "",
             end_date: "",
             force_refresh: false,
@@ -396,6 +431,16 @@
         return {
             editing: { ...defaults },
             editSched: scheduleBuilder(),
+            targetDefs: TARGET_FIELDS,
+            activeTargetTypes() {
+                return SCENARIO_ANALYSIS[String(this.editing.scenario_id)] || [];
+            },
+            isTargetVisible(field) {
+                return this.activeTargetTypes().includes(field.type);
+            },
+            get targetFields() {
+                return TARGET_FIELDS.filter((f) => this.activeTargetTypes().includes(f.type));
+            },
             init() {
                 this.editing = {
                     ...defaults,
@@ -404,6 +449,12 @@
                     scenario_id: TASK_EDIT.scenario_id || "",
                     monitored_users: TASK_EDIT.monitored_users || "",
                     excluded_users: TASK_EDIT.excluded_users || "",
+                    brands: TASK_EDIT.brands || "",
+                    competitors: TASK_EDIT.competitors || "",
+                    hashtags: TASK_EDIT.hashtags || "",
+                    influencer_names: TASK_EDIT.influencer_names || "",
+                    keywords_list: TASK_EDIT.keywords_list || "",
+                    topic_list: TASK_EDIT.topic_list || "",
                     start_date: TASK_EDIT.start_date || "",
                     end_date: TASK_EDIT.end_date || "",
                     digest_period: TASK_EDIT.digest_period || "day",

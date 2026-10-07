@@ -109,6 +109,9 @@ def _render(name: str, **extra) -> str:
         "filter_tenant_id": None,
         "tenants": [],
         "scenarios": [],
+        # Which payload targets each scenario wants (tasks_list passes it;
+        # empty here — the list pages under test carry no scenarios).
+        "scenario_analysis": {},
         "sources": [],
         "tasks": [],
         "effective_active": set(),

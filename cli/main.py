@@ -7,7 +7,7 @@ import typer
 # Configure logging (console + file -> logs/app.log) for CLI runs.
 import app.core.logger  # noqa: F401  (configures the "app" logger handlers)
 
-from .commands import collect, credentials, direct, roles, scenarios
+from .commands import collect, credentials, direct, llm, roles, scenarios
 
 app = typer.Typer(
     name="SMM Admin CLI",
@@ -17,6 +17,7 @@ app = typer.Typer(
 
 app.add_typer(roles.app, name="roles", help="Manage roles and permissions")
 app.add_typer(credentials.app, name="credentials", help="Manage platform credentials (tenant vault)")
+app.add_typer(llm.app, name="llm", help="Manage LLM providers and models")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
 app.command(name="collect")(collect.collect_cmd)
 

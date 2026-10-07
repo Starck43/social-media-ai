@@ -258,8 +258,10 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Database Migration
 
+**⚠️ Single Migrator Rule:** Never run `alembic upgrade` in parallel from multiple processes/containers. If you have multiple app instances (e.g., in Docker Compose with `scale`), only **one** should run migrations. The others must wait for it to complete.
+
 ```bash
-# Run Alembic migrations
+# Run Alembic migrations (single process only!)
 python -m alembic upgrade head
 
 # Or via CLI
@@ -269,6 +271,13 @@ python -m cli.main ...  # after bootstrap
 alembic current
 alembic check
 ```
+
+**Dual-head resolution:** If `alembic check` shows a dual-head (two migration heads), do not auto-resolve:
+1. Run `alembic heads` to see both heads
+2. Compare the two migration files manually
+3. Decide which to keep (usually the higher revision number)
+4. Run `alembic stamp head` to mark the chosen head as current
+5. The other head's changes must be manually merged or abandoned
 
 ---
 

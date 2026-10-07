@@ -48,7 +48,7 @@ async def _register_workspace(client: AsyncClient, prefix: str, tz: str) -> tupl
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": f"{prefix} workspace",
             "_csrf": csrf,

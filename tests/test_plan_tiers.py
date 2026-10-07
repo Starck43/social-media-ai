@@ -309,7 +309,7 @@ async def _web_user():
     role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
     return await User.objects.create_user(
         username=name,
-        email=f"{name}@example.test",
+        email=f"{name}@example.com",
         password="secret-password-1",
         role_id=role.id,
     )

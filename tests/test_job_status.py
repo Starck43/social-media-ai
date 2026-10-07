@@ -39,7 +39,7 @@ async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": workspace,
             "_csrf": token,

@@ -219,7 +219,7 @@ async def _operator(role: Role) -> str:
     username = _uniq("op")
     await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password=PASSWORD,
         role_id=role.id,
     )

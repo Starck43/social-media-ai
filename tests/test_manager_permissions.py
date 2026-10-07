@@ -35,7 +35,7 @@ async def _user(role: Role) -> User:
     username = f"mgr{secrets.token_hex(4)}"
     return await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
     )

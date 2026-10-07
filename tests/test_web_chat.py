@@ -66,7 +66,7 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": PASSWORD,
             "workspace": f"{prefix} workspace",
             "_csrf": token,
@@ -299,7 +299,7 @@ async def test_a_member_does_not_inherit_the_owner_conversation() -> None:
                 "/app/register",
                 data={
                     "username": username,
-                    "email": f"{username}@example.test",
+                    "email": f"{username}@example.com",
                     "password": PASSWORD,
                     "workspace": "member workspace",
                     "_csrf": token,

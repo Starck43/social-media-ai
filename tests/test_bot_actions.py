@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from app.models import AgentScenario, AgentTask, BotAction, Platform, Source, TenantUser
+from app.models import AgentScenario, AgentTask, BotAction, Platform, Role, Source, TenantUser
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.bot_action_manager import BotActionManager
 from app.services.social.guards import GuardsChecker
@@ -100,11 +100,12 @@ async def approver():
     failure reads like a database problem rather than a stale test constant, so
     the approver is created here and torn down with the rest of the fixtures.
     """
+    viewer_role = await Role.objects.get(codename="VIEWER")
     u = await TenantUser.objects.create(
         tenant_id=1,
         channel="web",
         external_user_id=f"approver-{uuid.uuid4().hex[:12]}",
-        role="member",
+        role_id=viewer_role.id,
         is_active=True,
     )
     yield u

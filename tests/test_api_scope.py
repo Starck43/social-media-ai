@@ -40,7 +40,7 @@ async def _member() -> tuple[int, str]:
     role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
     user = await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
     )
@@ -134,7 +134,7 @@ async def test_user_without_membership_is_forbidden():
     username = _uniq("lonely")
     role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
     user = await User.objects.create_user(
-        username=username, email=f"{username}@example.test", password="secret-password-1", role_id=role.id
+        username=username, email=f"{username}@example.com", password="secret-password-1", role_id=role.id
     )
     token = create_access_token(subject=str(user.id))[0]
 

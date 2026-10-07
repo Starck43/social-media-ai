@@ -33,7 +33,7 @@ EXPECTED_FIELDS = {
     "intent": {"intent_type", "confidence"},
     "brand_mentions": {"brand", "context", "sentiment"},
     "hashtag_analysis": {"hashtags"},
-    "trends": {"trend_name", "growth_rate", "momentum"},
+    "trends": {"trend_name", "growth_rate", "momentum", "entities"},
 }
 
 

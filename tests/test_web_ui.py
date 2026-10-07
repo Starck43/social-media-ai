@@ -84,7 +84,7 @@ async def test_register_creates_workspace_and_membership(client: AsyncClient) ->
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": "Test Studio",
             "_csrf": token,
@@ -120,7 +120,7 @@ async def test_logout_clears_session(client: AsyncClient) -> None:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": "Bye Studio",
             "_csrf": token,
@@ -151,7 +151,7 @@ async def test_invite_redeem_adds_second_membership(client: AsyncClient) -> None
         "/app/register",
         data={
             "username": owner_name,
-            "email": f"{owner_name}@example.test",
+            "email": f"{owner_name}@example.com",
             "password": "secret-password-1",
             "workspace": "Invite Host",
             "_csrf": owner_token,
@@ -171,7 +171,7 @@ async def test_invite_redeem_adds_second_membership(client: AsyncClient) -> None
                 "/app/register",
                 data={
                     "username": member_name,
-                    "email": f"{member_name}@example.test",
+                    "email": f"{member_name}@example.com",
                     "password": "secret-password-1",
                     "workspace": "Own Studio",
                     "_csrf": member_token,
@@ -207,7 +207,7 @@ async def test_dashboard_shows_kpis(client: AsyncClient) -> None:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": "KPI Studio",
             "_csrf": token,
@@ -340,7 +340,7 @@ async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": workspace,
             "_csrf": token,

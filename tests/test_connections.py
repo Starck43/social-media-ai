@@ -62,7 +62,7 @@ async def web_user(credentials_key):
     role = await Role.objects.get(codename="VIEWER")
     user = await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
     )

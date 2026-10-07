@@ -39,7 +39,7 @@ async def make_user():
         username = f"srcowner{secrets.token_hex(4)}"
         user = await User.objects.create_user(
             username=username,
-            email=f"{username}@example.test",
+            email=f"{username}@example.com",
             password="secret-password-1",
             role_id=role.id,
         )

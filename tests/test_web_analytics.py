@@ -53,7 +53,7 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
         "/app/register",
         data={
             "username": username,
-            "email": f"{username}@example.test",
+            "email": f"{username}@example.com",
             "password": "secret-password-1",
             "workspace": f"{prefix} workspace",
             "_csrf": token,
@@ -94,7 +94,7 @@ async def _invitee(prefix: str, platform_role: UserRoleType, tenant_id: int, pas
     assert role is not None, f"role {platform_role.name} is seeded"
     user = await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password=password,
         role_id=role.id,
         is_superuser=False,

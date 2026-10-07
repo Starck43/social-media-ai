@@ -69,3 +69,24 @@ async def _test_database():
 
     shares = bool(WORKING_DATABASE_URL) and database_name(WORKING_DATABASE_URL) == database_name(TEST_DATABASE_URL)
     await ensure_test_database(TEST_DATABASE_URL, shares_working_database=shares)
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _seed_reference_data():
+    """Idempotent seed of roles/permissions at session start.
+
+    Runs on every test session (not only first deploy) so an interrupted run
+    leaves no stale reference rows. The seed scripts are idempotent by design.
+    """
+    from scripts.setup.roles import seed_roles
+    from scripts.setup.assign_roles_permissions import assign_roles_permissions
+    from app.core.tenant_context import tenant_scope
+
+    seed_roles()
+    with tenant_scope(bypass=True):
+        await assign_roles_permissions()
+    yield
+    # Restore reference rows in case a test mutated them
+    seed_roles()
+    with tenant_scope(bypass=True):
+        await assign_roles_permissions()

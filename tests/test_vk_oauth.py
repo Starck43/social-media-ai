@@ -64,7 +64,7 @@ async def owner_user(bootstrap_tenant_id):
     role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
     user = await User.objects.create_user(
         username=username,
-        email=f"{username}@example.test",
+        email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
     )

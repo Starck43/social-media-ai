@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
@@ -18,6 +19,30 @@ MINUTE = 60
 # AgentMessage.cost / DigestRun.llm_cost are plain USD floats; quantise to 1e-9
 # so sub-cent calls from cheap models never round to "free".
 _COST_SCALE = Decimal("0.000000001")
+
+
+async def _record_llm_usage(model: LLMModel, success: bool, usage: dict | None = None) -> None:
+    """Update model usage/health counters (last_used_at, last_success_at, last_error_at, use_count, fail_count).
+
+    One UPDATE per model attempt — the per-client chat() call is the single
+    recording point; chat_with_fallback must not record on top of it.
+    Naive UTC matches the plain DateTime columns; NULL counters read as 0.
+    """
+    try:
+        now = datetime.utcnow()
+        updates = {"last_used_at": now, "use_count": (model.use_count or 0) + 1}
+        if success:
+            updates["last_success_at"] = now
+        else:
+            updates["last_error_at"] = now
+            updates["fail_count"] = (model.fail_count or 0) + 1
+        await LLMModel.objects.update_by_id(model.id, **updates)
+        # Update local object for potential re-use in same request
+        for k, v in updates.items():
+            setattr(model, k, v)
+    except Exception:
+        # Never break the main flow for metrics
+        logger.debug("Failed to record LLM usage for model %s", model.id, exc_info=True)
 
 
 def price_usage_usd(model: LLMModel, prompt_tokens: int, completion_tokens: int) -> float:
@@ -159,12 +184,14 @@ class OpenAICompatibleClient(LLMClient):
                 data = r.json()
         except httpx.TimeoutException:
             logger.error(f"Timeout for {self.provider.name} after {timeout}s")
+            await _record_llm_usage(self.model, success=False)
             return {"request": payload, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
         except Exception as e:
             logger.error(f"Unexpected error for {self.provider.name}: {e}")
+            await _record_llm_usage(self.model, success=False)
             return {"request": payload, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
-        return {
+        response = {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
             "parsed": self._parse_response(data),
@@ -172,6 +199,8 @@ class OpenAICompatibleClient(LLMClient):
                 (data.get("usage") or {}).get("prompt_tokens", 0), (data.get("usage") or {}).get("completion_tokens", 0)
             ),
         }
+        await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+        return response
 
     async def chat(
         self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
@@ -194,15 +223,21 @@ class OpenAICompatibleClient(LLMClient):
 
         timeout = min(float(payload.get("timeout", self.timeout)), 60.0)
 
-        async with httpx.AsyncClient() as c:
-            r = await c.post(
-                f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
-            )
-            if r.status_code != 200:
-                raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
-            data = r.json()
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(
+                    f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
+                )
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
 
-        return self._parse_chat(data)
+            response = self._parse_chat(data)
+            await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+            return response
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
+            await _record_llm_usage(self.model, success=False)
+            raise
 
     # ── internal helpers ─────────────────────────────────────
 
@@ -315,19 +350,23 @@ class AnthropicClient(LLMClient):
                 data = r.json()
         except httpx.TimeoutException:
             logger.error(f"Anthropic timeout after {timeout}s")
+            await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
         except Exception as e:
             logger.error(f"Anthropic error: {e}")
+            await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
         text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
         usage = data.get("usage") or {}
-        return {
+        response = {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
             "response": data,
             "parsed": _try_json(text),
             "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
         }
+        await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+        return response
 
     async def chat(
         self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
@@ -359,13 +398,19 @@ class AnthropicClient(LLMClient):
             ]
 
         timeout = min(self.timeout, 60.0)
-        async with httpx.AsyncClient() as c:
-            r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
-            if r.status_code != 200:
-                raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
-            data = r.json()
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
 
-        return self._parse_chat(data)
+            response = self._parse_chat(data)
+            await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+            return response
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
+            await _record_llm_usage(self.model, success=False)
+            raise
 
     def _parse_chat(self, data: dict) -> dict[str, Any]:
         content_parts: list[str] = []
@@ -428,9 +473,6 @@ async def chat_with_fallback(
     allowed_types = await _allowed_model_types()
     text_models = [m for m in models if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types)]
     if not text_models and allowed_types is not None:
-        # The tier's fleet is empty. Say so instead of raising "No LLM models
-        # available", which would send the operator looking at the LLM console
-        # for a model that is there and simply not part of this plan.
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
     text_models.sort(key=default_model_sort_key)
 
@@ -438,27 +480,53 @@ async def chat_with_fallback(
     for model in text_models:
         try:
             client = LLMClientFactory.create(model)
+            # Usage is recorded inside client.chat (single recording point).
             return await client.chat(messages, tools=tools, **kwargs)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 429:
-                # Rate-limited — transient, try the next provider
                 last_err = e
-                logger.warning(
-                    f"{model.provider.name}/{model.model_id} rate-limited (429), trying next"
-                )
+                logger.warning(f"{model.provider.name}/{model.model_id} rate-limited (429), trying next")
             elif code < 500:
-                # 4xx (auth, quota, bad request) — config problem, surface immediately
-                raise
+                # 4xx errors: if tools were provided and error suggests tools/function
+                # calling is not supported, try next model instead of raising immediately.
+                if tools and _is_tools_not_supported_error(e):
+                    last_err = e
+                    logger.warning(
+                        f"{model.provider.name}/{model.model_id} appears not to support tools ({code}), trying next"
+                    )
+                else:
+                    raise
             else:
                 last_err = e
-                logger.warning(
-                    f"{model.provider.name}/{model.model_id} failed ({code}), trying next"
-                )
+                logger.warning(f"{model.provider.name}/{model.model_id} failed ({code}), trying next")
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_err = e
             logger.warning(f"{model.provider.name}/{model.model_id} timeout/transport, trying next")
     raise last_err or RuntimeError("No LLM models available")
+
+
+def _is_tools_not_supported_error(e: httpx.HTTPStatusError) -> bool:
+    """Check if a 4xx error indicates that tools/function calling is not supported."""
+    try:
+        error_data = e.response.json()
+        error_msg = str(error_data).lower()
+    except Exception:
+        error_msg = e.response.text.lower()
+
+    # Keywords that suggest tools/function calling is not supported
+    unsupported_keywords = [
+        "tool",
+        "function",
+        "unsupported",
+        "not supported",
+        "not implemented",
+        "invalid_request_error",
+        "upstream",
+        "rejected",
+        "capability",
+    ]
+    return any(kw in error_msg for kw in unsupported_keywords)
 
 
 async def resolve_model() -> Optional[LLMModel]:

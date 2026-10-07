@@ -50,6 +50,19 @@ class LLMModel(Base, TimestampMixin):
         DateTime, nullable=True, comment="Timestamp of the last computed estimated cost"
     )
 
+    # Phase 2 — usage/health counters (backfilled from ai_analytics history)
+    last_used_at: Mapped[datetime | None] = Column(
+        DateTime, nullable=True, comment="Last time this model was invoked"
+    )
+    last_success_at: Mapped[datetime | None] = Column(
+        DateTime, nullable=True, comment="Last successful invocation (no 5xx/timeout)"
+    )
+    last_error_at: Mapped[datetime | None] = Column(
+        DateTime, nullable=True, comment="Last failed invocation (5xx/timeout/network)"
+    )
+    use_count: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")
+    fail_count: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")
+
     max_tokens: Mapped[int] = Column(Integer, nullable=False, default=4096)
     default_temperature: Mapped[float] = Column(Float, nullable=False, default=0.3)
 

@@ -66,7 +66,63 @@ Write-инструменты (`confirm=True`) additionally требуют под
 Permission re-check at confirmation time ensures that if the user's role changed
 between tool call and confirmation, the action is still blocked.
 
-## Команды чата
+## Инструменты
+
+Все инструменты зарегистрированы в `TOOL_REGISTRY` в `app/agent/tools.py`
+(импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
+OpenAI function calling.
+
+### Permission gates
+
+Каждый инструмент имеет поле `required_permission` — точечный codename права
+в формате `model.action` (например, `"source.view"`, `"agenttask.create"`,
+`"digestrun.update"`). При вызове runtime проверяет права через
+`has_permission_by_codename(get_current_user(), required_permission)` в
+`permission_scope()`:
+
+- Если прав нет → инструмент возвращает ошибку «У вас нет прав...»
+- Если `required_permission` не задан → инструмент выполняется без проверки
+- `is_bypass()` (CLI/worker/admin) пропускает все проверки
+
+Write-инструменты (`confirm=True`) additionally требуют подтверждение владельца.
+
+### Confirmation flow
+
+1. Tool call с `confirm=True` → staging в `session.state['pending_confirmation']`
+2. Runtime возвращает human-readable preview: «Требуется подтверждение: добавить источник...»
+3. Владелец отвечает «да»/«нет»
+4. При «да»:
+   - Permission re-check: `has_permission_by_codename(get_current_user(), required_permission)`
+   - Execution: `call_tool(name, args)`
+   - Result overwrites the staged confirmation row
+   - Model loop resumes (agent continues plan)
+5. При «нет» → clear pending, return «Отменено.»
+
+Permission re-check at confirmation time ensures that if the user's role changed
+between tool call and confirmation, the action is still blocked.
+
+### LLM модели и провайдеры
+
+Инструменты в `app/agent/toolset/llm.py` (permission prefix `llmmodel.*`,
+`llmprovider.*`):
+
+| Tool | Назначение | Confirm | Право |
+|---|---|---|---|
+| `llm_providers_list` | список провайдеров (id, name, api_format, base_url, is_active, is_default) | нет | `llmprovider.view` |
+| `llm_models_list` | список моделей с фильтрами provider_id, model_type, active_only | нет | `llmmodel.view` |
+| `llm_model_test` | тест модели (промпт → ответ, usage, нет секретов) | нет | `llmmodel.view` |
+| `llm_model_add` | создать модель (provider_id, name, api_model_id, model_type, costs, is_default) | да | `llmmodel.create` |
+| `llm_model_update` | частичное обновление модели | да | `llmmodel.update` |
+| `llm_model_delete` | удалить модель с preview перераспределения default (dry_run=true по умолчанию) | да | `llmmodel.delete` |
+
+Удаление модели (`llm_model_delete`) показывает план перед выполнением:
+- какая модель удаляется
+- был ли она default для своего `model_type`
+- сколько сценариев (`AgentScenario.text_llm_model_id` / `image_llm_model_id` / `video_llm_model_id`) сбросится в NULL
+- кто станет новым default (по приоритету: `last_success_at` → имя в `ai_analytics.llm_model` → любой активный)
+- предупреждение, если модели этого типа не останется
+
+### Команды чата
 
 - `/help` — список возможностей
 - `/stop` — очистить историю (session остаётся)

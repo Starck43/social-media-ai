@@ -125,15 +125,28 @@ LLM model definitions per provider.
 | `name` | `String(100)` | Human-readable name (e.g., "GPT-4o Mini") |
 | `model_id` | `String(100)` | API model string (e.g., "gpt-4o-mini") |
 | `model_type` | `Enum` | `text`, `image`, `embedding` |
-| `capabilities` | `JSON` | Supported media types |
+| `capabilities` | `JSON` | Supported media types (derived from `model_type`) |
 | `input_cost_per_1k` | `Float` | Cost per 1K input tokens (USD) |
 | `output_cost_per_1k` | `Float` | Cost per 1K output tokens (USD) |
 | `max_tokens` | `Integer` | Max output tokens |
 | `default_temperature` | `Float` | Default temperature |
 | `is_active` | `Boolean` | Whether the model is available |
-| `is_default` | `Boolean` | Default for provider |
+| `is_default` | `Boolean` | Default for this `model_type` (global uniqueness per type) |
+| `last_used_at` | `DateTime` | Last time this model was invoked (NULL = unknown) |
+| `last_success_at` | `DateTime` | Last successful invocation (no 5xx/timeout) |
+| `last_error_at` | `DateTime` | Last failed invocation (5xx/timeout/network) |
+| `use_count` | `Integer` | Total invocations (once per model attempt) |
+| `fail_count` | `Integer` | Total failed calls (since migration) |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
+
+**`is_default` semantics:** exactly one active model per `model_type` may have `is_default=True`. Creating/updating a model with `is_default=True` clears the flag on all other models of the same `model_type`. This is enforced by `LLMModelManager.create_model`/`update_model`, by `LLMModelAdmin.after_model_change` and by the API/agent tools (thin callers of the manager).
+
+**Default resolution order** (used by `resolve_default_model`, digest builder, agent fallback chain):
+1. `is_default=True` + active
+2. First active model of the same `model_type` ordered by `provider.is_default` DESC, then `model.is_default` DESC, then `id` ASC
+
+**Usage/health counters** (`last_used_at`, `last_success_at`, `last_error_at`, `use_count`, `fail_count`) are updated by `llm_client._record_llm_usage` on every LLM call (both `chat_with_fallback` and direct client calls). `NULL` = unknown history (backward compatible). `last_success_at` is backfilled from `ai_analytics.created_at` per model name for legacy signal in default reassignment.
 
 **Relationships:** `provider`, `text_scenarios`, `image_scenarios`, `video_scenarios`
 

@@ -92,14 +92,20 @@ When the agent/analyzer asks for a model:
 1. Explicit model name passed by caller → find by `llm_models.name`.
 2. `AGENT_MODEL` env var set → use that model.
 3. Otherwise: first active `text`-capable model ordered by
-   `llm_providers.is_default DESC, llm_models.id ASC`.
+   `llm_providers.is_default DESC, llm_models.is_default DESC,
+   llm_models.id ASC` (`default_model_sort_key` in
+   `app/services/ai/llm_client.py`; `LLMModelManager.resolve_default_model`
+   filters one `model_type` with the same tuple). `is_default` is unique per
+   `model_type` fleet-wide (enforced by `LLMModelManager.create_model` /
+   `update_model`; admin/API/tools are thin callers); a single default
+   provider is enforced by `LLMProviderAdmin`.
 
 ### Fallback
 
 A broken LLM must never break the digest, agent reply, or collection analysis.
 If a call raises a non-4xx error (timeout, 5xx, network), the client walks the
-fallback chain: active providers ordered by `is_default`, same model type, and
-retries on the next one. A 4xx (auth, quota) is raised as-is so config problems
+fallback chain: active text-capable models ordered by `default_model_sort_key`
+(default provider, default model, lowest id), and retries on the next one. A 4xx (auth, quota) is raised as-is so config problems
 surface instead of silently routing to a fallback.
 
 ### Encryption at rest

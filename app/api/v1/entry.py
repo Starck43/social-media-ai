@@ -6,7 +6,7 @@ from app.services.user.auth import get_authenticated_user
 from app.api.v1.endpoints import (
 	auth, user, roles, monitoring, scenarios, 
 	notifications, dashboard, llm_providers, social,
-    sources, tasks, credentials
+    sources, tasks, credentials, llm_models
 )
 
 router = APIRouter()
@@ -25,6 +25,7 @@ router.include_router(scenarios.router, prefix="/ai", tags=["scenarios"], depend
 router.include_router(notifications.router, prefix="/notifications", tags=["notifications"], dependencies=API_AUTH)
 router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"], dependencies=API_AUTH)
 router.include_router(llm_providers.router, prefix="/llm", tags=["llm"], dependencies=API_AUTH)
+router.include_router(llm_models.router, prefix="/llm", tags=["llm"], dependencies=API_AUTH)
 # Public (no API_AUTH): the platform redirects the browser here after consent.
 router.include_router(social.router, prefix="/social", tags=["social"])
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)

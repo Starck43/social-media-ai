@@ -1334,6 +1334,19 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 			request.session["admin_message"] = {"type": "error", "message": f"❌ {provider.name}: {e}"}
 		return RedirectResponse(request.url_for("admin:list", identity=self.identity))
 
+	async def on_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
+		await super().on_model_change(data, model, is_created, request)
+
+		if getattr(model, "is_default", False):
+			# Single default provider fleet-wide: clear the flag on every
+			# other row *before* this one commits. Every default-model
+			# resolver ranks on provider.is_default first, so two defaults
+			# fork the fleet into an id-lottery.
+			qs = LLMProvider.objects.filter(is_default=True)
+			if getattr(model, "id", None) is not None:
+				qs = qs.exclude(id=model.id)
+			await qs.update(is_default=False)
+
 	async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
 		if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):
 			from app.utils.crypto import encrypt_secret
@@ -1428,7 +1441,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 			"label": "Активна",
 			"description": "Отключите, чтобы модель не использовалась сценариями и авто-выбором",
 		},
-		"is_default": {"label": "По умолчанию", "description": "Приоритетная модель для этого провайдера"},
+		"is_default": {"label": "По умолчанию", "description": "Дефолтная модель этого типа (одна на тип, остальные сбросятся)"},
 		"last_request_cost": {
 			"label": "Стоимость последнего запроса",
 			"description": "Заполняется автоматически после теста модели",
@@ -1473,12 +1486,27 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		await super().after_model_change(data, model, is_created, request)
 
 		if model.is_default:
-			# Only one default model per provider: clear the siblings in one
-			# statement instead of loading and re-saving each one (which went
-			# through the legacy sync `Base.save()`).
-			await LLMModel.objects.filter(provider_id=model.provider_id).exclude(id=model.id).update(
+			# Single default per model_type fleet-wide (same rule as
+			# LLMModelManager.create_model/update_model): clear the siblings
+			# in one statement instead of loading and re-saving each one.
+			await LLMModel.objects.filter(model_type=model.model_type, is_default=True).exclude(id=model.id).update(
 				is_default=False
 			)
+
+	async def delete_model(self, request: Request, pk: int) -> None:
+		"""Override default delete to use manager's reassignment logic."""
+		result = await LLMModel.objects.delete_with_default_reassignment(pk)
+		warnings = result.get("warnings", [])
+		if warnings:
+			msg = "; ".join(warnings)
+			request.session["admin_message"] = {"type": "warning", "message": msg}
+		elif result.get("new_default_id"):
+			request.session["admin_message"] = {
+				"type": "success",
+				"message": f"Модель удалена. Default перейдёт к {result['new_default_name']} (сценариев сброшено: {result['scenarios_reset']})",
+			}
+		else:
+			request.session["admin_message"] = {"type": "success", "message": "Модель удалена"}
 
 	@action(name="test-model", label="🧪 Тестировать модель", add_in_list=True, add_in_detail=True)
 	async def test_model_action(self, request: Request):

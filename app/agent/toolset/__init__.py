@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from . import actions, collect, reports, scenarios, sources, system, tasks  # noqa: F401
+from . import actions, collect, llm, reports, scenarios, sources, system, tasks  # noqa: F401

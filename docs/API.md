@@ -133,6 +133,7 @@ the API, the console and the role editor cannot drift apart. See
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
 | `GET/POST/PATCH/DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
+| `GET/POST/PATCH/DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
 **Not enforced yet:** most `/api/*` endpoints authenticate but do not declare a
@@ -927,6 +928,78 @@ Authorization: Bearer <token>
 ```
 
 **Permissions:** `llmprovider.delete`
+
+---
+
+## LLM Models
+
+### Create Model
+
+```
+POST /api/v1/llm/llm-models/
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "provider_id": 1,
+  "name": "GPT-4 Turbo",
+  "model_id": "gpt-4-turbo",
+  "model_type": "text",
+  "description": "OpenAI GPT-4 Turbo",
+  "input_cost_per_1k": 0.01,
+  "output_cost_per_1k": 0.03,
+  "max_tokens": 128000,
+  "default_temperature": 0.3,
+  "is_active": true,
+  "is_default": false
+}
+```
+
+**Permissions:** `llmmodel.create`
+
+### List Models
+
+```
+GET /api/v1/llm/llm-models/?is_active=true&provider_id=1&model_type=text
+Authorization: Bearer <token>
+```
+
+**Permissions:** `llmmodel.view`
+
+### Get Model
+
+```
+GET /api/v1/llm/llm-models/{model_id}
+Authorization: Bearer <token>
+```
+
+**Permissions:** `llmmodel.view`
+
+### Update Model
+
+```
+PATCH /api/v1/llm/llm-models/{model_id}
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "is_default": true,
+  "max_tokens": 8192
+}
+```
+
+**Permissions:** `llmmodel.update`
+
+### Delete Model
+
+```
+DELETE /api/v1/llm/llm-models/{model_id}
+Authorization: Bearer <token>
+```
+
+**Response** `204 No Content` (default reassignment handled automatically)
+
+**Permissions:** `llmmodel.delete`
 
 ---
 

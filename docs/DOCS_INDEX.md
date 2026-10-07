@@ -16,7 +16,7 @@
 
 ## Анализ и мониторинг
 
-- **[Типы AI-анализа](./guide/AI_PIPELINE_AND_PROMPTS.md)** - AI-конвейер, PromptBuilder, промпты по типам медиа
+- **[Типы AI-анализа](AI_PIPELINE_AND_PROMPTS.md)** - AI-конвейер, PromptBuilder, промпты по типам медиа
 - **[Агрегация аналитики](./ANALYTICS_AGGREGATION_SYSTEM.md)** - Обработка и хранение данных
 - **[Тематические цепочки](./ANALYTICS_CHAINS.md)** - Привязка анализов к цепочкам, relevance-фильтр, группировки, веб и дайджест
 - **[Автозаполнение промптов и scope](./PROMPT_AND_SCOPE_EXPLAINED.md)** - Поведение PromptBuilder и json_schema_builder

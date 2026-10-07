@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block body %}
-<main data-theme="light">
+<main data-theme="dark" x-data="adminThemeManager()" :data-theme="isDark ? 'dark' : 'light'">
     {% block main %}
     <div class="wrapper">
         <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md">
@@ -47,9 +47,11 @@
                         </div>
                         {% endif %}
                         <div class="navbar-nav">
-                            <button type="button" id="theme-toggle-btn" class="nav-link btn-icon theme-toggle-btn" title="Переключить тему">
-                                <i class="fa fa-moon" id="theme-toggle-icon"></i>
-                                <span id="theme-toggle-label">Тёмная</span>
+                            <button @click="toggleTheme()"
+                                    title="Переключить тему"
+                                    class="nav-link btn-icon theme-toggle-btn">
+                                <i :class="isDark ? 'fa fa-sun' : 'fa fa-moon'"></i>
+                                <span x-text="isDark ? 'Светлая' : 'Тёмная'"></span>
                             </button>
                         </div>
                     </div>
@@ -110,43 +112,47 @@
 {% endblock %}
 
 {% block tail %}
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+<script>
+    // Shared theme manager — syncs with localStorage, respects prefers-color-scheme
+    // Works for both admin (data-theme attribute) and web (dark class on <html>)
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('adminThemeManager', () => ({
+            isDark: false,
+            init() {
+                const stored = localStorage.getItem('theme');
+                this.isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                this.apply();
+            },
+            apply() {
+                // Apply to <main> via data-theme (admin)
+                const main = document.querySelector('main');
+                if (main) {
+                    main.setAttribute('data-theme', this.isDark ? 'dark' : 'light');
+                }
+                // Also apply dark class to <html> for consistency with web app
+                document.documentElement.classList.toggle('dark', this.isDark);
+                localStorage.setItem('theme', this.isDark ? 'dark' : 'light');
+            },
+            toggleTheme() {
+                this.isDark = !this.isDark;
+                this.apply();
+            }
+        }));
+    });
+</script>
 <script>
     // Общие функции для всех форм аутентификации
     document.addEventListener("DOMContentLoaded", function() {
-        // Переключение темы
-        const themeToggleBtn = document.getElementById("theme-toggle-btn")
-        const themeToggleIcon = document.getElementById("theme-toggle-icon")
-        const themeToggleLabel = document.getElementById("theme-toggle-label")
-        const main = document.querySelector("main")
-
-        function applyTheme(theme) {
+        // Загрузка сохраненной темы
+        const savedTheme = localStorage.getItem("theme")
+        if (savedTheme) {
+            document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+            const main = document.querySelector('main');
             if (main) {
-                main.setAttribute("data-theme", theme)
-            }
-            document.documentElement.classList.toggle("dark", theme === "dark")
-            if (themeToggleIcon) {
-                themeToggleIcon.className = theme === "dark" ? "fa fa-sun" : "fa fa-moon"
-            }
-            if (themeToggleLabel) {
-                themeToggleLabel.textContent = theme === "dark" ? "Светлая" : "Тёмная"
+                main.setAttribute('data-theme', savedTheme);
             }
         }
-
-        function toggleTheme() {
-            const currentTheme = main ? (main.getAttribute("data-theme") || "light") : "light"
-            const newTheme = currentTheme === "light" ? "dark" : "light"
-            applyTheme(newTheme)
-            localStorage.setItem("theme", newTheme)
-        }
-
-        // Загрузка сохранённой темы (по умолчанию светлая)
-        const savedTheme = localStorage.getItem("theme") || "light"
-        applyTheme(savedTheme)
-
-        if (themeToggleBtn) {
-            themeToggleBtn.addEventListener("click", toggleTheme)
-        }
-
         // Автофокус на первом поле ввода
         const firstInput = document.querySelector("input[type=\"text\"], input[type=\"email\"]")
         if (firstInput && !firstInput.value) {

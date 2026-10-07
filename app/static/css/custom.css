@@ -1,105 +1,10 @@
 /* ============================================
    UNIFIED ADMIN STYLES
-   Общие стили админки — палитра slate + cyan
-   Совместима с web UI (app/web/templates/web/base.html)
+   Admin-specific overrides — theme variables
+   now live in theme.css (shared with web app).
    ============================================ */
 
-/* ── Light theme (default) ──────────────────────────────────────────────────
-   Преемственные цвета от web: slate-50/100/900 → primary cyan
-*/
-:root {
-    /* Brand — cyan палитра как в web */
-    --tblr-primary: #0891b2;          /* cyan-600 */
-    --tblr-primary-darken: #0e7490;   /* cyan-700 */
-    --tblr-primary-rgb: 8, 145, 178;
-
-    /* Secondary — slate-600 для нейтральных акцентов */
-    --tblr-secondary: #475569;        /* slate-600 */
-    --tblr-success: #059669;          /* emerald-600 */
-    --tblr-danger: #e11d48;           /* rose-600 */
-    --tblr-warning: #d97706;          /* amber-600 */
-    --tblr-info: #0284c7;             /* sky-600 */
-
-    /* Text & surfaces — light slate scale */
-    --tblr-body-color: #1e293b;       /* slate-800 */
-    --tblr-body-bg: #f8fafc;          /* slate-50 */
-    --tblr-bg-surface: #ffffff;       /* white */
-    --tblr-bg-surface-rgb: 255, 255, 255;
-    --tblr-bg-surface-secondary: #f1f5f9;  /* slate-100 */
-    --tblr-bg-surface-tertiary: #e2e8f0;     /* slate-200 */
-    --tblr-border-color: #e2e8f0;     /* slate-200 */
-    --tblr-border-color-translucent: rgba(0, 0, 0, 0.08);
-
-    /* Form backgrounds */
-    --tblr-bg-forms: #ffffff;
-
-    /* Misc */
-    --tblr-white-rgb: 255, 255, 255;
-    --tblr-btn-padding-x: 0.75rem;
-    --tblr-btn-padding-y: 0.4375rem;
-
-    /* Shadows — soft, web-like */
-    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
-    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
-
-    /* Auth gradient — subtle cyan */
-    --auth-bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%);
-    --auth-container-max-width: 400px;
-
-    /* Alert colors — light theme */
-    --alert-bg-info: #e0f2fe;
-    --alert-text-info: #0369a1;
-    --alert-bg-danger: #fff1f2;
-    --alert-text-danger: #9f1239;
-    --alert-bg-success: #ecfdf5;
-    --alert-text-success: #047857;
-}
-
-/* ── Dark theme ─────────────────────────────────────────────────────────────
-   Точная копия палитры web: slate-950 bg, slate-900 cards, cyan-400 accents
-*/
-[data-theme="dark"] {
-    /* Brand — cyan-400/500 для тёмной темы (как в web) */
-    --tblr-primary: #22d3ee;          /* cyan-400 */
-    --tblr-primary-darken: #06b6d4;   /* cyan-500 */
-    --tblr-primary-rgb: 34, 211, 238;
-
-    --tblr-secondary: #94a3b8;        /* slate-400 */
-    --tblr-success: #34d399;          /* emerald-400 */
-    --tblr-danger: #fb7185;           /* rose-400 */
-    --tblr-warning: #fbbf24;          /* amber-400 */
-    --tblr-info: #38bdf8;             /* sky-400 */
-
-    /* Text & surfaces — точная копия web */
-    --tblr-body-color: #cbd5e1;       /* slate-300 */
-    --tblr-body-bg: #020617;          /* slate-950 */
-    --tblr-bg-surface: #0f172a;       /* slate-900 */
-    --tblr-bg-surface-rgb: 15, 23, 42;
-    --tblr-bg-surface-secondary: #1e293b;  /* slate-800 */
-    --tblr-bg-surface-tertiary: #334155;     /* slate-700 */
-    --tblr-border-color: #334155;     /* slate-700 */
-    --tblr-border-color-translucent: rgba(255, 255, 255, 0.08);
-
-    --tblr-navbar-bg: rgba(15, 23, 42, 0.95);
-    --tblr-navbar-color: rgba(203, 213, 225, 0.8);
-
-    /* Shadows — deeper for dark */
-    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
-
-    /* Auth gradient — dark cyan */
-    --auth-bg-gradient: linear-gradient(135deg, #164e63 0%, #164e63 0%, #164e63 100%);
-
-    /* Alert colors — dark theme */
-    --alert-bg-info: rgba(3, 105, 163, 0.2);
-    --alert-text-info: #7dd3fc;
-    --alert-bg-danger: rgba(153, 18, 57, 0.2);
-    --alert-text-danger: #fecdd3;
-    --alert-bg-success: rgba(4, 120, 87, 0.2);
-    --alert-text-success: #6ee7b7;
-}
-
-/* ── Base layout ────────��─────────────────────────────────────────────────── */
+/* ── Base layout ──────────────────────────────────────────────────────── */
 main {
     display: flex;
     flex-direction: column;
@@ -412,28 +317,24 @@ label {
 }
 
 .btn-secondary {
-    --tblr-btn-color: var(--tblr-body-color);
-    background-color: var(--tblr-bg-surface-secondary);
-    border-color: var(--tblr-border-color);
-    color: var(--tblr-body-color);
+    background-color: var(--tblr-secondary);
+    border-color: var(--tblr-secondary);
 }
 
 .btn-secondary:hover {
-    background-color: var(--tblr-bg-surface-tertiary);
-    border-color: var(--tblr-border-color);
-    color: var(--tblr-body-color);
+    background-color: var(--tblr-secondary-darken, var(--tblr-secondary));
+    border-color: var(--tblr-secondary-darken, var(--tblr-secondary));
 }
 
 .btn-outline-secondary {
-    --tblr-btn-color: var(--tblr-body-color);
-    background-color: transparent;
+    color: var(--tblr-secondary);
     border-color: var(--tblr-border-color);
-    color: var(--tblr-body-color);
+    background: transparent;
 }
 
 .btn-outline-secondary:hover {
-    background-color: var(--tblr-bg-surface-tertiary);
     color: var(--tblr-body-color);
+    background-color: var(--tblr-bg-surface-tertiary);
 }
 
 .btn-light {
@@ -454,6 +355,11 @@ label {
 .btn.disabled, .btn:disabled, fieldset:disabled .btn {
     border: var(--tblr-border-width) solid var(--tblr-border-color);
     opacity: 1;
+}
+
+/* Card footer buttons */
+.card-footer .btn {
+    min-width: auto;
 }
 
 /* ── Password input ───────────────────────────────────────────────────────── */
@@ -605,32 +511,6 @@ label {
     justify-content: flex-end;
 }
 
-/* ── Theme toggle ─────────────────────────────────────────────────────────── */
-.theme-toggle {
-    position: fixed;
-    bottom: 1rem;
-    right: 1rem;
-    background: var(--tblr-bg-surface);
-    border: 1px solid var(--tblr-border-color);
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: var(--box-shadow-lg);
-    z-index: 1000;
-    font-size: 1.2rem;
-    transition: transform 0.2s ease, background-color 0.2s ease;
-}
-
-.theme-toggle:hover {
-    transform: scale(1.1);
-    background: var(--tblr-primary);
-    color: white;
-}
-
 /* ── Loading states ───────────────────────────────────────────────────────── */
 .loading {
     opacity: 0.7;
@@ -702,13 +582,5 @@ label {
 
     .form-actions {
         flex-direction: column;
-    }
-
-    .theme-toggle {
-        top: 0.5rem;
-        right: 0.5rem;
-        width: 35px;
-        height: 35px;
-        font-size: 1rem;
     }
 }

@@ -1,35 +1,36 @@
 /* ===================================
    UNIFIED DASHBOARD STYLES
-   Общие стили для всех дашбордов
+   Dashboard-specific overrides — theme
+   variables now live in theme.css (shared).
    =================================== */
 
 :root {
-    /* Brand Colors */
+    /* Brand Colors — dashboard uses its own gradient */
     --dashboard-primary: #667eea;
     --dashboard-secondary: #764ba2;
-    --dashboard-success: #28a745;
-    --dashboard-danger: #dc3545;
-    --dashboard-warning: #ffc107;
-    --dashboard-info: #17a2b8;
+    --dashboard-success: var(--tblr-success);
+    --dashboard-danger: var(--tblr-danger);
+    --dashboard-warning: var(--tblr-warning);
+    --dashboard-info: var(--tblr-info);
 
     /* Sentiment Colors */
-    --sentiment-positive: #28a745;
-    --sentiment-neutral: #ffc107;
-    --sentiment-negative: #dc3545;
+    --sentiment-positive: var(--tblr-success);
+    --sentiment-neutral: var(--tblr-warning);
+    --sentiment-negative: var(--tblr-danger);
 
-    /* Background */
-    --dashboard-bg: #f8f9fa;
-    --card-bg: #ffffff;
-    --card-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.12);
+    /* Background — use shared tokens */
+    --dashboard-bg: var(--color-bg);
+    --card-bg: var(--color-surface);
+    --card-shadow: var(--box-shadow);
+    --card-shadow-hover: var(--box-shadow-lg);
 
-    /* Text */
-    --text-primary: #222222;
-    --text-secondary: #6c757d;
-    --text-muted: #999999;
+    /* Text — use shared tokens */
+    --text-primary: var(--color-text);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-secondary);
 
-    /* Borders */
-    --border-color: #dee2e6;
+    /* Borders — use shared tokens */
+    --border-color: var(--color-border);
     --border-radius: 12px;
     --border-radius-sm: 8px;
 
@@ -38,14 +39,15 @@
     --transition-normal: 0.3s ease;
 }
 
-/* Dark Theme — same slate scale as /app/ (slate-950 bg, slate-900 cards) */
+/* Dark Theme — inherits from shared theme.css */
+html.dark,
 [data-theme="dark"] {
-    --dashboard-bg: #020617;
-    --card-bg: #0f172a;
+    --dashboard-bg: var(--color-bg);
+    --card-bg: var(--color-surface);
     --card-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    --text-primary: #d3d3d6;
-    --text-secondary: #a0a0a0;
-    --border-color: #374151;
+    --text-primary: var(--color-text);
+    --text-secondary: var(--color-text-secondary);
+    --border-color: var(--color-border);
 }
 
 /* Global Styles */

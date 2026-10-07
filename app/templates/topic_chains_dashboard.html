@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Dashboard Styles -->
+    <link rel="stylesheet" href="/static/css/theme.css">
     <link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
 <body>
@@ -34,6 +35,9 @@
                 <a class="nav-link text-white" href="/dashboard/topic-chains">
                     <i class="fas fa-project-diagram me-1"></i> Обзор источников
                 </a>
+                <button id="themeToggle" class="btn btn-sm btn-outline-light" title="Переключить тему">
+                    <i class="fas fa-moon"></i>
+                </button>
                 {% if user %}
                 <a class="nav-link text-white" href="/admin">
                     <i class="fas fa-user me-1"></i> {{ user.username }}
@@ -354,6 +358,28 @@
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            // Theme toggle
+            const themeToggle = document.getElementById('themeToggle');
+            if (themeToggle) {
+                const currentTheme = localStorage.getItem('theme') || 'light';
+                document.documentElement.classList.toggle('dark', currentTheme === 'dark');
+                updateThemeToggleIcon(currentTheme);
+
+                themeToggle.addEventListener('click', function() {
+                    const isDark = document.documentElement.classList.toggle('dark');
+                    const newTheme = isDark ? 'dark' : 'light';
+                    localStorage.setItem('theme', newTheme);
+                    updateThemeToggleIcon(newTheme);
+                });
+            }
+
+            function updateThemeToggleIcon(theme) {
+                const icon = themeToggle.querySelector('i');
+                if (icon) {
+                    icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+                }
+            }
+
             loadSources();
             loadChains();
             

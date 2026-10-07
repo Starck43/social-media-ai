@@ -178,9 +178,12 @@
                             <strong>Стоимость:</strong>
                             {% if cost_info.has_cost_report %}
                             <ul class="mb-0 ps-3">
-                                {% if cost_info.cost.input is not none %}<li>Вход: ${{ "%.6f"|format(cost_info.cost.input) }}</li>{% endif %}
-                                {% if cost_info.cost.output is not none %}<li>Выход: ${{ "%.6f"|format(cost_info.cost.output) }}</li>{% endif %}
-                                {% if cost_info.cost.total is not none %}<li>Всего: ${{ "%.6f"|format(cost_info.cost.total) }}</li>{% endif %}
+                                {% set c_in = cost_info.cost.input if cost_info.cost is defined and cost_info.cost.input is not none else none %}
+                                {% set c_out = cost_info.cost.output if cost_info.cost is defined and cost_info.cost.output is not none else none %}
+                                {% set c_tot = cost_info.cost.total if cost_info.cost is defined and cost_info.cost.total is not none else none %}
+                                {% if c_in is not none %}<li>Вход: ${{ "%.6f"|format(c_in) }}</li>{% endif %}
+                                {% if c_out is not none %}<li>Выход: ${{ "%.6f"|format(c_out) }}</li>{% endif %}
+                                {% if c_tot is not none %}<li>Всего: ${{ "%.6f"|format(c_tot) }}</li>{% endif %}
                             </ul>
                             {% elif cost_info.estimated_cost is not none %}
                             <ul class="mb-0 ps-3">
@@ -195,8 +198,10 @@
                         <div class="col-md-4">
                             <strong>Пересчитанные цены $/1K:</strong>
                             <ul class="mb-0 ps-3">
-                                <li>Вход: <code>{{ "%.6f"|format(cost_info.price_per_1k.input) if cost_info.price_per_1k.input is not none else "—" }}</code></li>
-                                <li>Выход: <code>{{ "%.6f"|format(cost_info.price_per_1k.output) if cost_info.price_per_1k.output is not none else "—" }}</code></li>
+                                {% set price_in = cost_info.price_per_1k.input if cost_info.price_per_1k is defined and cost_info.price_per_1k.input is not none else none %}
+                                {% set price_out = cost_info.price_per_1k.output if cost_info.price_per_1k is defined and cost_info.price_per_1k.output is not none else none %}
+                                <li>Вход: <code>{{ "%.6f"|format(price_in) if price_in is not none else "—" }}</code></li>
+                                <li>Выход: <code>{{ "%.6f"|format(price_out) if price_out is not none else "—" }}</code></li>
                             </ul>
                         </div>
                     </div>

@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block body %}
-<main data-theme="light" id="login-main">
+<main x-data="adminThemeManager()" :data-theme="isDark ? 'dark' : 'light'">
     <div class="auth-container">
         <div class="card">
             <div class="card-body">

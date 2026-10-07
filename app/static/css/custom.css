@@ -1,602 +1,666 @@
+/* ============================================
+   UNIFIED ADMIN STYLES
+   Общие стили админки — палитра slate + cyan
+   Совместима с web UI (app/web/templates/web/base.html)
+   ============================================ */
+
+/* ── Light theme (default) ──────────────────────────────────────────────────
+   Преемственные цвета от web: slate-50/100/900 → primary cyan
+*/
 :root {
-	/* Переопределение основных цветов Tabler под наш дизайн */
-	--tblr-primary: #2e47c1;
-	--tblr-primary-darken: #1c2e7f;
-	--tblr-primary-rgb: 46, 71, 193;
+    /* Brand — cyan палитра как в web */
+    --tblr-primary: #0891b2;          /* cyan-600 */
+    --tblr-primary-darken: #0e7490;   /* cyan-700 */
+    --tblr-primary-rgb: 8, 145, 178;
 
-	--tblr-secondary: #5e33c8;
-	--tblr-success: #4cc9f0;
-	--tblr-danger: #f72585;
-	--tblr-warning: #fca311;
-	--tblr-info: #4895ef;
-	--tblr-white-rgb: 255, 255, 255;
+    /* Secondary — slate-600 для нейтральных акцентов */
+    --tblr-secondary: #475569;        /* slate-600 */
+    --tblr-success: #059669;          /* emerald-600 */
+    --tblr-danger: #e11d48;           /* rose-600 */
+    --tblr-warning: #d97706;          /* amber-600 */
+    --tblr-info: #0284c7;             /* sky-600 */
 
-	--tblr-body-color: #222222;
-	--tblr-body-bg: transparent;
-	--tblr-bg-surface: #6379e2;
-	--tblr-bg-surface-rgb: 250, 250, 250;
-	--tblr-bg-surface-secondary: #9e78c4;
-	--tblr-border-color-translucent: rgba(0, 0, 0, 0.5);
-	--tblr-bg-surface-tertiary: transparent;
-	--tblr-bg-forms: transparent;
-	--tblr-btn-padding-x: 1rem;
-	--tblr-btn-padding-y: 0.4375rem;
+    /* Text & surfaces — light slate scale */
+    --tblr-body-color: #1e293b;       /* slate-800 */
+    --tblr-body-bg: #f8fafc;          /* slate-50 */
+    --tblr-bg-surface: #ffffff;       /* white */
+    --tblr-bg-surface-rgb: 255, 255, 255;
+    --tblr-bg-surface-secondary: #f1f5f9;  /* slate-100 */
+    --tblr-bg-surface-tertiary: #e2e8f0;     /* slate-200 */
+    --tblr-border-color: #e2e8f0;     /* slate-200 */
+    --tblr-border-color-translucent: rgba(0, 0, 0, 0.08);
 
-	.btn {
-		--tblr-btn-color: rgba(var(--tblr-white-rgb), 0.8);
-		--tblr-btn-disabled-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
-	}
+    /* Form backgrounds */
+    --tblr-bg-forms: #ffffff;
 
-	.navbar {
-		--tblr-navbar-color: rgba(var(--tblr-white-rgb), 1);
-	}
+    /* Misc */
+    --tblr-white-rgb: 255, 255, 255;
+    --tblr-btn-padding-x: 0.75rem;
+    --tblr-btn-padding-y: 0.4375rem;
 
-	.btn-light {
-		--tblr-light: transparent;
-		--tblr-light-fg: var(--tblr-body-color);
-		--tblr-btn-border-color: var(--tblr-body-color);
-	}
+    /* Shadows — soft, web-like */
+    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
 
-	.form-fieldset {
-		background-color: rgba(var(--tblr-bg-surface-rgb), 0.2);
-	}
+    /* Auth gradient — subtle cyan */
+    --auth-bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%);
+    --auth-container-max-width: 400px;
 
-	label {
-		font-weight: bold;
-		margin-bottom: 0.5rem;
-	}
-
-	.input-group .btn {
-		--tblr-btn-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
-	}
-
-	/* Фон для страниц аутентификации */
-	--auth-bg-gradient: linear-gradient(135deg, var(--tblr-bg-surface) 0%, var(--tblr-bg-surface-secondary) 100%);
-
-	/* Дополнительные переменные для нашего дизайна */
-	--auth-container-max-width: 400px;
-	--box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-
-	/* Кастомные цвета для алертов */
-	--alert-bg-info: rgba(72, 149, 239, 0.1);
-	--alert-text-info: #4895ef;
-	--alert-bg-danger: #fee2e2;
-	--alert-text-danger: #991b1b;
-	--alert-bg-success: #d1fae5;
-	--alert-text-success: #065f46;
+    /* Alert colors — light theme */
+    --alert-bg-info: #e0f2fe;
+    --alert-text-info: #0369a1;
+    --alert-bg-danger: #fff1f2;
+    --alert-text-danger: #9f1239;
+    --alert-bg-success: #ecfdf5;
+    --alert-text-success: #047857;
 }
 
+/* ── Dark theme ─────────────────────────────────────────────────────────────
+   Точная копия палитры web: slate-950 bg, slate-900 cards, cyan-400 accents
+*/
 [data-theme="dark"] {
-	/* Переопределение темной темы Tabler — фон как в /app/ (slate-950/900/800) */
-	--tblr-primary: #6b83f3;
-	--tblr-secondary: #a17fed;
-	--tblr-bg-surface: #0f172a;
-	--tblr-bg-surface-rgb: 15, 23, 42;
-	--tblr-bg-surface-secondary: #1e293b;
-	--tblr-body-bg: #020617;
-	--tblr-body-color: #d3d3d6;
-	--tblr-border-color: #374151;
+    /* Brand — cyan-400/500 для тёмной темы (как в web) */
+    --tblr-primary: #22d3ee;          /* cyan-400 */
+    --tblr-primary-darken: #06b6d4;   /* cyan-500 */
+    --tblr-primary-rgb: 34, 211, 238;
 
-	--tblr-border-color-translucent: rgba(255, 255, 255, 0.5);
-	--tblr-navbar-bg: rgba(var(--tblr-bg-surface-rgb), 0.5);
-	--tblr-navbar-color: rgba(var(--tblr-white-rgb), 0.8);
+    --tblr-secondary: #94a3b8;        /* slate-400 */
+    --tblr-success: #34d399;          /* emerald-400 */
+    --tblr-danger: #fb7185;           /* rose-400 */
+    --tblr-warning: #fbbf24;          /* amber-400 */
+    --tblr-info: #38bdf8;             /* sky-400 */
 
-	/* Дополнительные переменные для темной темы */
-	--box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    /* Text & surfaces — точная копия web */
+    --tblr-body-color: #cbd5e1;       /* slate-300 */
+    --tblr-body-bg: #020617;          /* slate-950 */
+    --tblr-bg-surface: #0f172a;       /* slate-900 */
+    --tblr-bg-surface-rgb: 15, 23, 42;
+    --tblr-bg-surface-secondary: #1e293b;  /* slate-800 */
+    --tblr-bg-surface-tertiary: #334155;     /* slate-700 */
+    --tblr-border-color: #334155;     /* slate-700 */
+    --tblr-border-color-translucent: rgba(255, 255, 255, 0.08);
 
-	/* Темные цвета для алертов */
-	--alert-bg-info: rgba(72, 149, 239, 0.2);
-	--alert-text-info: #a7f3d0;
-	--alert-bg-danger: #450a0a;
-	--alert-text-danger: #fecaca;
-	--alert-bg-success: #022c22;
-	--alert-text-success: #a7f3d0;
+    --tblr-navbar-bg: rgba(15, 23, 42, 0.95);
+    --tblr-navbar-color: rgba(203, 213, 225, 0.8);
+
+    /* Shadows — deeper for dark */
+    --box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --box-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+    /* Auth gradient — dark cyan */
+    --auth-bg-gradient: linear-gradient(135deg, #164e63 0%, #164e63 0%, #164e63 100%);
+
+    /* Alert colors — dark theme */
+    --alert-bg-info: rgba(3, 105, 163, 0.2);
+    --alert-text-info: #7dd3fc;
+    --alert-bg-danger: rgba(153, 18, 57, 0.2);
+    --alert-text-danger: #fecdd3;
+    --alert-bg-success: rgba(4, 120, 87, 0.2);
+    --alert-text-success: #6ee7b7;
 }
 
-/* Основные стили для админки */
+/* ── Base layout ────────��─────────────────────────────────────────────────── */
 main {
-	display: flex;
-	flex-direction: column;
-	min-height: 100vh;
-	margin: auto;
-	background: var(--auth-bg-gradient) !important;
-	background-color: var(--tblr-body-bg) !important;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    margin: auto;
+    background: var(--auth-bg-gradient) !important;
+    background-color: var(--tblr-body-bg) !important;
 }
 
 .page-wrapper {
-	overflow: auto;
-	padding: calc(var(--tblr-content-padding) * .7);
+    overflow: auto;
+    padding: calc(var(--tblr-content-padding) * .7);
 }
 
 .page-header {
-	min-height: 0 !important;
-	margin: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
 }
 
 .page-body {
-	display: flex;
+    display: flex;
 }
 
-/* Стили для навбара */
+/* ── Sidebar / navbar ─────────────────────────────────────────────────────── */
 aside {
-	padding: calc(var(--tblr-content-padding) * .5);
-	box-shadow: var(--box-shadow) !important;
+    padding: calc(var(--tblr-content-padding) * .5);
+    box-shadow: var(--box-shadow-lg) !important;
 }
 
 aside .container-fluid {
-	margin: 0 calc(var(--tblr-content-padding) * .5);
-	height: 100%;
+    margin: 0 calc(var(--tblr-content-padding) * .5);
+    height: 100%;
 }
 
 nav {
-	height: 100%;
-	overflow-x: hidden;
+    height: 100%;
+    overflow-x: hidden;
 }
 
 .navbar-nav:last-child {
-	flex-grow: 0 !important;
+    flex-grow: 0 !important;
 }
 
 .navbar .navbar-nav .nav-link {
-	color: var(--tblr-navbar-color);
+    color: var(--tblr-navbar-color);
 }
 
 .navbar .navbar-nav .nav-link.active {
-	background-color: rgba(var(--tblr-bg-surface-rgb), 0.2);
+    background-color: rgba(var(--tblr-primary-rgb), 0.15);
+    color: var(--tblr-primary) !important;
+    font-weight: 600;
 }
 
-@media (min-width: 768px) {
-	.navbar-vertical.navbar-expand-md {
-		max-width: 12rem;
-	}
+.navbar .navbar-nav .nav-link:hover:not(.active) {
+    background-color: var(--tblr-bg-surface-tertiary);
+}
 
-	.navbar-expand-md.navbar-vertical ~ .navbar, .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-		margin-left: 12rem;
-	}
+/* Vertical sidebar responsive */
+@media (min-width: 768px) {
+    .navbar-vertical.navbar-expand-md {
+        max-width: 12rem;
+    }
+
+    .navbar-expand-md.navbar-vertical ~ .navbar,
+    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
+        margin-left: 12rem;
+    }
 }
 
 @media (min-width: 992px) {
-	.navbar-vertical.navbar-expand-md {
-		max-width: unset;
-	}
+    .navbar-vertical.navbar-expand-md {
+        max-width: unset;
+    }
 
-	.navbar-expand-md.navbar-vertical ~ .navbar, .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-		margin-left: 15rem;
-	}
+    .navbar-expand-md.navbar-vertical ~ .navbar,
+    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
+        margin-left: 15rem;
+    }
 }
 
 @media (max-width: 767.98px) {
-	.navbar-expand-lg .navbar-collapse .navbar-nav {
-		flex-wrap: wrap;
-		justify-content: space-between;
-	}
+    .navbar-expand-lg .navbar-collapse .navbar-nav {
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
 }
 
 .d-flex > div {
-	width: auto;
-	max-width: 100%;
-	flex: auto;
+    width: auto;
+    max-width: 100%;
+    flex: auto;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────────
+   Преемственные от web: rounded-2xl (16px), border-slate-800, bg-slate-900/50
+*/
+.card {
+    box-shadow: var(--box-shadow) !important;
+    border: 1px solid var(--tblr-border-color) !important;
+    background-color: var(--tblr-bg-surface) !important;
+    border-radius: 0.75rem;          /* 12px — ближе к web rounded-2xl */
+}
+
+.card-header {
+    background-color: var(--tblr-bg-surface-secondary);
+    border-bottom: 1px solid var(--tblr-border-color);
+    font-weight: 600;
 }
 
 .card-footer {
-	background-color: rgba(var(--tblr-bg-surface-rgb), 0.2);
+    background-color: var(--tblr-bg-surface-secondary);
+    border-top: 1px solid var(--tblr-border-color);
 }
 
 .card-footer > *:first-child {
-	color: var(--tblr-secondary) !important;
-	flex: 1000;
+    color: var(--tblr-primary) !important;
+    flex: 1000;
 }
 
 .card-footer .row > * {
-	flex: 0 1 auto;
-	width: auto;
+    flex: 0 1 auto;
+    width: auto;
 }
 
+/* ── Tables ───────────────────────────────────────────────────────────────── */
 .card-table {
-	overflow-x: auto;
-	width: 100%;
+    overflow-x: auto;
+    width: 100%;
 }
 
 .table thead th {
-	font-size: 1em !important;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tblr-secondary);
+    font-weight: 600;
 }
 
+.table > :not(:last-child) > :last-child > * {
+    border-bottom-color: var(--tblr-border-color);
+}
+
+.table-hover > tbody > tr:hover > * {
+    background-color: rgba(var(--tblr-primary-rgb), 0.05);
+}
+
+/* ── Icons in table cells ─────────────────────────────────────────────────── */
 td > i {
-	padding: 5px;
-	border-radius: 50%;
-	background-color: rgba(var(--tblr-bg-surface-rgb), 1);
-	overflow: hidden;
+    padding: 5px;
+    border-radius: 50%;
+    background-color: var(--tblr-bg-surface-tertiary);
+    overflow: hidden;
 }
 
 td > a i {
-	color: var(--tblr-success);
+    color: var(--tblr-success);
 }
 
 * > a:first-child i {
-	color: var(--tblr-warning);
+    color: var(--tblr-warning);
 }
 
 * > a:nth-child(3) i {
-	color: var(--tblr-danger);
+    color: var(--tblr-danger);
 }
 
-/* Контейнеры аутентификации */
+/* ── Auth containers ──────────────────────────────────────────────────────── */
 .auth-container {
-	max-width: var(--auth-container-max-width);
-	width: 100%;
-	margin: auto;
-	animation: authSlideUp 0.5s ease-out;
+    max-width: var(--auth-container-max-width);
+    width: 100%;
+    margin: auto;
+    animation: authSlideUp 0.5s ease-out;
 }
 
-.card {
-	box-shadow: var(--box-shadow) !important;
-	border: 1px solid var(--tblr-border-color) !important;
-	background-color: rgba(var(--tblr-bg-surface-rgb), 0.3) !important;
-}
-
-form {
-	display: flex;
-	flex-direction: column;
-}
-
-button[type=submit] {
-	flex: 1
-}
-
-.input-group {
-	width: max-content;
-	margin-left: auto;
-}
-
-.input-group input {
-	display: block;
-	padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.input-group > .form-control::placeholder {
-	color: rgba(var(--tblr-white-rgb), 0.5);
-}
-
-.btn i {
-	margin-right: 5px;
-}
-.btn-sm {
-	padding: 3px 8px;
-	border-radius: 3px;
-}
-
-.btn.disabled, .btn:disabled, fieldset:disabled .btn {
-	border: var(--tblr-border-width) solid var(--tblr-border-color);
-	opacity: 1;
-}
-
-/* Заголовки аутентификации */
 .auth-header {
-	text-align: center;
-	margin-bottom: 1.5rem;
+    text-align: center;
+    margin-bottom: 1.5rem;
 }
 
 .auth-header .card-title {
-	color: var(--tblr-primary) !important;
-	font-size: 1.5rem;
-	font-weight: 600;
-	margin-bottom: 0.5rem;
+    color: var(--tblr-primary) !important;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
 }
 
 .auth-header p {
-	color: var(--tblr-primary) !important;
-	font-size: 0.9rem;
-	margin-bottom: 0;
+    color: var(--tblr-secondary) !important;
+    font-size: 0.9rem;
+    margin-bottom: 0;
 }
 
-/* Специфичные стили для форм */
-.form-control {
-	padding: .625rem .75rem;
-}
-
-.form-control:focus {
-	background-color: rgba(var(--tblr-bg-surface-rgb), 1);
-}
-
-.form-group {
-	width: 100%;
-	margin-top: 1rem;
-	align-items: baseline;
-}
-
-.form-group input:not(:focus) {
-	background-color: transparent !important;
-}
-
-.form-fieldset .form-group > *:first-child {
-	flex: 1;
-}
-
-.form-fieldset .form-group > *:last-child {
-	flex: 1 1 50%;
-	width: auto;
-}
-
-.password-input-wrapper {
-	position: relative;
-}
-
-.toggle-password {
-	position: absolute;
-	right: 10px;
-	top: 50%;
-	transform: translateY(-50%);
-	background: none;
-	border: none;
-	cursor: pointer;
-	color: var(--tblr-secondary);
-	padding: 0.25rem;
-	z-index: 5;
-}
-
-.toggle-password:hover {
-	color: var(--tblr-primary);
-}
-
-.password-hint {
-	display: block;
-	margin-top: 0.5rem;
-	font-size: 0.875rem;
-	color: var(--tblr-primary);
-}
-
-/* Индикатор силы пароля */
-.password-strength-meter {
-	height: 3px;
-	margin-top: 1rem;
-	background-color: rgba(var(--tblr-bg-surface-rgb), 0.2);
-	border-radius: 3px;
-	overflow: hidden;
-}
-
-.strength-bar {
-	height: 100%;
-	width: 0%;
-	transition: width 0.3s ease, background-color 0.3s ease;
-	border-radius: 3px;
-}
-
-/* Сообщения об ошибках */
-.error-messages {
-	margin-top: 0.5rem;
-	font-size: 0.875rem;
-	color: var(--tblr-danger);
-}
-
-.form-group.has-error .form-control {
-	border-color: var(--tblr-danger) !important;
-}
-
-/* Ссылки аутентификации */
 .auth-link {
-	text-align: center;
-	margin-top: 1.5rem;
+    text-align: center;
+    margin-top: 1.5rem;
 }
 
 .auth-link a {
-	color: var(--tblr-primary);
-	text-decoration: none;
-	font-size: 0.9rem;
+    color: var(--tblr-primary);
+    text-decoration: none;
+    font-size: 0.9rem;
 }
 
 .auth-link a:hover {
-	text-decoration: underline;
+    text-decoration: underline;
 }
 
-/* Кастомные алерты для аутентификации */
+/* ── Forms ──────────────────────────────────────────────────────────────────
+   Преемственные от web controls macro
+*/
+.form-fieldset {
+    background-color: var(--tblr-bg-surface-secondary);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+}
+
+label {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    color: var(--tblr-body-color);
+}
+
+.form-control {
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--tblr-border-color);
+    background-color: var(--tblr-bg-forms);
+    color: var(--tblr-body-color);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus {
+    border-color: var(--tblr-primary);
+    box-shadow: 0 0 0 3px rgba(var(--tblr-primary-rgb), 0.15);
+    outline: none;
+}
+
+.form-control::placeholder {
+    color: var(--tblr-secondary);
+    opacity: 0.6;
+}
+
+.form-group {
+    width: 100%;
+    margin-top: 1rem;
+    align-items: baseline;
+}
+
+.form-group input:not(:focus) {
+    background-color: var(--tblr-bg-forms);
+}
+
+.input-group .btn {
+    --tblr-btn-bg: var(--tblr-bg-surface-tertiary);
+}
+
+.input-group {
+    width: max-content;
+    margin-left: auto;
+}
+
+.input-group input {
+    display: block;
+    padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────────
+   Преемственные от web: rounded-lg, cyan primary
+*/
+.btn {
+    --tblr-btn-color: rgba(var(--tblr-white-rgb), 0.8);
+    --tblr-btn-disabled-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
+    border-radius: 0.5rem;
+    font-weight: 500;
+}
+
+.btn-primary {
+    background-color: var(--tblr-primary);
+    border-color: var(--tblr-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--tblr-primary-darken);
+    border-color: var(--tblr-primary-darken);
+}
+
+.btn-light {
+    --tblr-light: transparent;
+    --tblr-light-fg: var(--tblr-body-color);
+    --tblr-btn-border-color: var(--tblr-border-color);
+}
+
+.btn i {
+    margin-right: 5px;
+}
+
+.btn-sm {
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+
+.btn.disabled, .btn:disabled, fieldset:disabled .btn {
+    border: var(--tblr-border-width) solid var(--tblr-border-color);
+    opacity: 1;
+}
+
+/* ── Password input ───────────────────────────────────────────────────────── */
+.password-input-wrapper {
+    position: relative;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--tblr-secondary);
+    padding: 0.25rem;
+    z-index: 5;
+}
+
+.toggle-password:hover {
+    color: var(--tblr-primary);
+}
+
+.password-hint {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--tblr-secondary);
+}
+
+/* ── Password strength meter ──────────────────────────────────────────────── */
+.password-strength-meter {
+    height: 3px;
+    margin-top: 1rem;
+    background-color: var(--tblr-bg-surface-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.strength-bar {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    border-radius: 3px;
+}
+
+/* ── Alerts ───────────────────────────────────────────────────────────────── */
 .alert {
-	border-radius: 0.375rem;
-	padding: 0.75rem 1.25rem;
-	margin-bottom: 1rem;
-	border: 1px solid transparent;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
 }
 
 .alert-danger {
-	color: var(--alert-text-danger);
-	background-color: var(--alert-bg-danger);
-	border-color: var(--alert-text-danger);
+    color: var(--alert-text-danger);
+    background-color: var(--alert-bg-danger);
+    border-color: var(--alert-text-danger);
 }
 
 .alert-success {
-	color: var(--alert-text-success);
-	background-color: var(--alert-bg-success);
-	border-color: var(--alert-text-success);
+    color: var(--alert-text-success);
+    background-color: var(--alert-bg-success);
+    border-color: var(--alert-text-success);
 }
 
 .alert-info {
-	color: var(--alert-text-info);
-	background-color: var(--alert-bg-info);
-	border-color: var(--alert-text-info);
+    color: var(--alert-text-info);
+    background-color: var(--alert-bg-info);
+    border-color: var(--alert-text-info);
 }
 
-/* Отладочная информация */
-.debug-info {
-	margin-top: 1.5rem;
-	padding: 1rem;
-	background: rgba(var(--tblr-bg-surface-rgb), 0.3);
-	border-radius: 4px;
-	font-size: 0.75rem;
-	color: var(--tblr-secondary);
-}
-
-.debug-info strong {
-	display: block;
-	margin-bottom: 0.5rem;
-}
-
-/* Состояния загрузки */
-.loading {
-	opacity: 0.7;
-	pointer-events: none;
-}
-
-.btn-group {
-	width: max-content;
-}
-
-.btn-loading {
-	position: relative;
-	color: transparent;
-}
-
-.btn-loading::after {
-	content: '';
-	position: absolute;
-	width: 20px;
-	height: 20px;
-	top: 50%;
-	left: 50%;
-	margin: -10px 0 0 -10px;
-	border: 2px solid currentColor;
-	border-radius: 50%;
-	border-right-color: transparent;
-	animation: authSpin 1s linear infinite;
-}
-
-.btn-icon {
-	gap: 0.5rem;
-}
-
-.select2-container {
-	max-width: inherit;
-}
-
+/* ── Select2 ──────────────────────────────────────────────────────────────── */
 .select2-container--default .select2-selection--single {
-	height: auto;
-	background-color: transparent;
-	border-color: var(--tblr-border-color);
+    height: auto;
+    background-color: var(--tblr-bg-forms);
+    border-color: var(--tblr-border-color);
+    border-radius: 0.5rem;
 }
 
 .select2-container--default .select2-selection .select2-selection__rendered {
-	padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
-	color: var(--tblr-body-color);
+    padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
+    color: var(--tblr-body-color);
 }
 
 .select2-dropdown {
-	background-color: rgba(var(--tblr-bg-surface-rgb), 0.4);
-	backdrop-filter: blur(10px);
-}
-
-.select2-container--default .select2-selection--multiple {
-	background-color: inherit;
+    background-color: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 0.5rem;
+    box-shadow: var(--box-shadow-lg);
 }
 
 .select2-container--default .select2-search--dropdown .select2-search__field {
-	background-color: transparent;
-	padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
+    background-color: var(--tblr-bg-forms);
+    padding: var(--tblr-btn-padding-y) var(--tblr-btn-padding-x);
+    border-radius: 0.5rem;
+    color: var(--tblr-body-color);
 }
 
 .select2-container--default .select2-selection--multiple {
-    border: var(--tblr-border-width) solid var(--tblr-border-color) !important;
+    background-color: var(--tblr-bg-forms);
+    border: 1px solid var(--tblr-border-color) !important;
+    border-radius: 0.5rem;
 }
 
 .select2-container--default .select2-search__field {
-	color: var(--tblr-body-color);
+    color: var(--tblr-body-color);
 }
 
 .select2-container--default .select2-selection--multiple .select2-selection__choice {
-	background-color: var(--tblr-secondary);
+    background-color: var(--tblr-primary);
+    border-radius: 0.25rem;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__arrow {
-	height: 100%;
-	right: 8px;
+    height: 100%;
+    right: 8px;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__arrow b {
-	border-width: 8px 6px 0 6px;
-	border-color: var(--tblr-body-color) transparent transparent transparent;
+    border-width: 8px 6px 0 6px;
+    border-color: var(--tblr-body-color) transparent transparent transparent;
 }
 
+/* ── Pagination ───────────────────────────────────────────────────────────── */
 .pagination .page-link {
-	color: inherit;
+    color: var(--tblr-primary);
+    border-radius: 0.375rem;
+    margin: 0 2px;
+    border-color: var(--tblr-border-color);
 }
 
-/* Действия формы */
+.pagination .page-link:hover {
+    background-color: rgba(var(--tblr-primary-rgb), 0.1);
+    border-color: var(--tblr-primary);
+}
+
+.pagination .page-item.active .page-link {
+    background-color: var(--tblr-primary);
+    border-color: var(--tblr-primary);
+}
+
+/* ── Form actions ─────────────────────────────────────────────────────────── */
 .form-actions {
-	margin-top: 1.5rem;
-	display: flex;
-	gap: 1rem;
-	justify-content: flex-end;
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
 }
 
-/* Утилитарные классы для центрирования */
-.centered {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-/* Переключатель темы */
+/* ── Theme toggle ─────────────────────────────────────────────────────────── */
 .theme-toggle {
-	position: fixed;
-	bottom: 1rem;
-	right: 1rem;
-	background: var(--tblr-bg-surface);
-	border: 1px solid var(--tblr-border-color);
-	border-radius: 50%;
-	width: 40px;
-	height: 40px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	box-shadow: var(--box-shadow);
-	z-index: 1000;
-	font-size: 1.2rem;
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    background: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--box-shadow-lg);
+    z-index: 1000;
+    font-size: 1.2rem;
+    transition: transform 0.2s ease, background-color 0.2s ease;
 }
 
 .theme-toggle:hover {
-	transform: scale(1.1);
-	background: var(--tblr-primary);
-	color: white;
+    transform: scale(1.1);
+    background: var(--tblr-primary);
+    color: white;
 }
 
-/* Адаптивность для мобильных устройств */
-@media (max-width: 768px) {
-	.auth-container {
-		margin: 1rem;
-		padding: 0;
-	}
-
-	.auth-container .card {
-		padding: 1.5rem !important;
-	}
-
-	.form-actions {
-		flex-direction: column;
-	}
-
-	.theme-toggle {
-		top: 0.5rem;
-		right: 0.5rem;
-		width: 35px;
-		height: 35px;
-		font-size: 1rem;
-	}
+/* ── Loading states ───────────────────────────────────────────────────────── */
+.loading {
+    opacity: 0.7;
+    pointer-events: none;
 }
 
-/* Анимации */
+.btn-group {
+    width: max-content;
+}
+
+.btn-loading {
+    position: relative;
+    color: transparent;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    top: 50%;
+    left: 50%;
+    margin: -10px 0 0 -10px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    border-right-color: transparent;
+    animation: authSpin 1s linear infinite;
+}
+
+/* ── Misc utilities ───────────────────────────────────────────────────────── */
+.centered {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon {
+    gap: 0.5rem;
+}
+
+/* ── Animations ───────────────────────────────────────────────────────────── */
 @keyframes authSlideUp {
-	from {
-		opacity: 0;
-		transform: translateY(20px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes authSpin {
-	to {
-		transform: rotate(360deg);
-	}
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .auth-container {
+        margin: 1rem;
+        padding: 0;
+    }
+
+    .auth-container .card {
+        padding: 1.5rem !important;
+    }
+
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .theme-toggle {
+        top: 0.5rem;
+        right: 0.5rem;
+        width: 35px;
+        height: 35px;
+        font-size: 1rem;
+    }
 }

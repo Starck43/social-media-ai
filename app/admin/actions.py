@@ -277,23 +277,32 @@ class LLMModelActions:
             )
         except Exception as e:
             logger.error(f"Error in real test: {e}", exc_info=True)
-            error_details = {"kind": "unknown", "message": str(e)}
+            error_details = {"kind": "unknown", "message": str(e), "recommendations": []}
             if hasattr(e, "response") and e.response is not None:
                 try:
                     err_data = e.response.json()
                     err_obj = err_data.get("error", {}) if isinstance(err_data, dict) else {}
+                    kind = err_obj.get("type", "api_error")
+                    code = err_obj.get("code", "")
+                    message = err_obj.get("message", e.response.text or str(e))
+
+                    # Build specific recommendations based on error type
+                    recommendations = _error_recommendations(kind, code, message, e.response.status_code)
+
                     error_details = {
-                        "kind": err_obj.get("type", "api_error"),
-                        "code": err_obj.get("code", ""),
-                        "message": err_obj.get("message", e.response.text or str(e)),
+                        "kind": kind,
+                        "code": code,
+                        "message": message,
                         "retry_after": e.response.headers.get("retry-after", ""),
                         "status_code": e.response.status_code,
+                        "recommendations": recommendations,
                     }
                 except Exception:
                     error_details = {
                         "kind": "http_error",
                         "message": f"HTTP {getattr(e.response, 'status_code', '?')}: {getattr(e.response, 'text', str(e))}",
                         "status_code": getattr(e.response, "status_code", None),
+                        "recommendations": ["Проверьте подключение к интернету и доступность провайдера"],
                     }
             return await admin_view.templates.TemplateResponse(
                 request,
@@ -328,6 +337,62 @@ class LLMModelActions:
             "stream": False,
         }
         return payload, messages
+
+
+def _error_recommendations(kind: str, code: str, message: str, status_code: int) -> list[str]:
+    """Generate human-readable recommendations based on LLM API error."""
+    recs = []
+
+    # Rate limiting
+    if kind in ("rate_limit_error", "rate_limit") or code in ("model_concurrency", "rate_limit_exceeded", "quota_exceeded"):
+        recs.append("Лимит запросов исчерпан. Подождите и повторите попытку.")
+        if status_code == 429:
+            recs.append("Или увеличьте лимит параллельных запросов в настройках провайдера.")
+
+    # Authentication
+    elif kind == "authentication_error" or code in ("invalid_api_key", "authentication_failed", "unauthorized"):
+        recs.append("Проверьте API ключ провайдера в настройках модели.")
+        recs.append("Убедитесь, что ключ активен и не истёк.")
+
+    # Model not found / invalid model
+    elif kind in ("model_not_found", "invalid_request_error") or code in ("model_not_found", "invalid_model", "model_not_allowed"):
+        recs.append(f"Модель '{code}' не найдена или недоступна у провайдера.")
+        recs.append("Проверьте название model_id в настройках модели.")
+        recs.append("Возможно модель депрекейднута — обратитесь к документации провайдера.")
+
+    # Upstream rejected (provider-side error)
+    elif code == "upstream_rejected" or "upstream" in message.lower():
+        recs.append("Провайдер отклонил запрос. Возможные причины:")
+        recs.append("• Недостаточно средств на аккаунте провайдера")
+        recs.append("• Модель временно недоступна")
+        recs.append("• Превышен лимит параллельных запросов")
+        recs.append("• Модель не поддерживает указанный max_tokens")
+
+    # Insufficient funds
+    elif "insufficient" in message.lower() or "balance" in message.lower():
+        recs.append("Недостаточно средств на аккаунте провайдера.")
+        recs.append("Пополните баланс для продолжения тестирования.")
+
+    # Timeout
+    elif "timeout" in kind.lower() or "timeout" in message.lower():
+        recs.append("Превышено время ожидания ответа от провайдера.")
+        recs.append("Проверьте стабильность网络连接 и попробуйте снова.")
+
+    # Generic errors
+    else:
+        recs.append(f"Ошибка: {kind}")
+        if status_code == 400:
+            recs.append("Проверьте корректность параметров запроса (model_id, max_tokens, temperature).")
+        elif status_code == 401:
+            recs.append("Ошибка авторизации — проверьте API ключ.")
+        elif status_code == 403:
+            recs.append("Доступ запрещён — проверьте права провайдера.")
+        elif status_code == 429:
+            recs.append("Слишком много запросов — подождите и повторите.")
+        elif status_code >= 500:
+            recs.append("Ошибка на стороне провайдера — попробуйте позже.")
+
+    return recs
 
 
 def _try_parse_json(text: str) -> dict | None:

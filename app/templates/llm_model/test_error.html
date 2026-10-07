@@ -2,6 +2,7 @@
 {% set is_rate_limit = error_details.kind in ('rate_limit_error', 'rate_limit') or error_details.code in ('model_concurrency', 'rate_limit_exceeded', 'quota_exceeded') %}
 {% set is_auth_error = error_details.kind == 'authentication_error' or error_details.code in ('invalid_api_key', 'authentication_failed', 'unauthorized') %}
 {% set is_model_error = error_details.kind in ('model_not_found', 'invalid_request_error') or error_details.code in ('model_not_found', 'invalid_model', 'model_not_allowed') %}
+{% set is_upstream_error = error_details.code == 'upstream_rejected' or 'upstream' in (error_details.message or '').lower() %}
 
 {% block title %}Ошибка тестирования: {{ model.name }}{% endblock %}
 
@@ -88,6 +89,21 @@
             </div>
             {% endif %}
 
+            {% if error_details.recommendations %}
+            <div class="card border-info mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0"><i class="fa fa-lightbulb me-2"></i>Рекомендации</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        {% for rec in error_details.recommendations %}
+                        <li>{{ rec }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
             {% if prompt %}
             <div class="row">
                 <div class="col-md-6">
@@ -128,20 +144,23 @@
 
             <div class="row mt-4">
                 <div class="col-12">
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 flex-wrap">
                         <form method="get" action="/admin/llm-model/action/test-model/">
                             <input type="hidden" name="pks" value="{{ model.id }}">
                             {% if prompt %}
                             <input type="hidden" name="prompt" value="{{ prompt }}">
                             {% endif %}
+                            <input type="hidden" name="test_type" value="real">
                             <button type="submit" class="btn btn-warning">
                                 <i class="fa fa-redo"></i>
                                 Попробовать снова
                             </button>
                         </form>
+                        <a href="{{ url_for('admin:details', identity='llm-model', pk=model.id) }}" class="btn btn-primary">
+                            <i class="fa fa-arrow-left me-2"></i>Назад к модели
+                        </a>
                         <a href="{{ url_for('admin:list', identity='llm-model') }}" class="btn btn-secondary">
-                            <i class="fa fa-arrow-left"></i>
-                            Назад к списку
+                            <i class="fa fa-list me-2"></i>К списку моделей
                         </a>
                     </div>
                 </div>

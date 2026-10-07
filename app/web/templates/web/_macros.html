@@ -8,17 +8,22 @@
    Callers pass the body through `{% call %}` so a card keeps its own markup:
 
        {% call card() %}
-         <h2 class="text-sm font-medium text-slate-300">Как собирается</h2>
+         <h2 class="text-sm font-medium text-slate-600 dark:text-slate-300">Как собирается</h2>
        {% endcall %}
+
+   Light theme support: all colors use dark: modifiers.
 #}
 {# ── form controls ──────────────────────────────────────────────────────────
 
    One class list for every input and select on `/app`. It was pasted 80 times
    across the templates, which is how the focus ring ended up on some fields and
    not others. `extra` appends a modifier — `font-mono` for identifiers,
-   `text-rose-300` for a rejected value. #}
+   `text-rose-300` for a rejected value.
+
+   Light theme: bg-white, border-slate-300, text-slate-900.
+   Dark theme: bg-slate-950, border-slate-700, text-slate-100. #}
 {% macro control(extra="") -%}
-    w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500{{ (" " + extra) if extra }}
+    w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 dark:focus:border-cyan-400{{ (" " + extra) if extra }}
 {%- endmacro %}
 
 
@@ -42,12 +47,12 @@
    that already exists — the wizard posts the endpoint defaults instead. #}
 {% macro source_fields(platforms, source_types, idp) -%}
     <div>
-        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-300">Название (опционально)</label>
+        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название (опционально)</label>
         <input id="{{ idp }}-name" name="name" maxlength="100" placeholder="Мой источник"
                class="{{ control() }}">
     </div>
     <div>
-        <label for="{{ idp }}-platform" class="mb-1 block text-sm text-slate-300">Платформа</label>
+        <label for="{{ idp }}-platform" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Платформа</label>
         <select id="{{ idp }}-platform" name="platform" required
                 class="{{ control() }}">
             {% for platform in platforms %}
@@ -56,7 +61,7 @@
         </select>
     </div>
     <div>
-        <label for="{{ idp }}-source_type" class="mb-1 block text-sm text-slate-300">Тип</label>
+        <label for="{{ idp }}-source_type" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Тип</label>
         <select id="{{ idp }}-source_type" name="source_type" required
                 class="{{ control() }}">
             {% for st in source_types %}
@@ -65,17 +70,17 @@
         </select>
     </div>
     <div>
-        <label for="{{ idp }}-external_id" class="mb-1 block text-sm text-slate-300">Внешний ID</label>
+        <label for="{{ idp }}-external_id" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Внешний ID</label>
         <input id="{{ idp }}-external_id" name="external_id" required maxlength="200"
                placeholder="123456789, @channel или https://vk.com/club1"
                class="{{ control('font-mono') }}">
     </div>
     <div>
-        <label for="{{ idp }}-monitored_users" class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
+        <label for="{{ idp }}-monitored_users" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые пользователи</label>
         <input id="{{ idp }}-monitored_users" name="monitored_users"
                placeholder="username1, username2, @durov"
                class="{{ control() }}">
-        <p class="mt-1 text-xs text-slate-500">Через запятую. Можно оставить пустым.</p>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">Через запятую. Можно оставить пустым.</p>
     </div>
 {%- endmacro %}
 
@@ -88,12 +93,12 @@
    of the form can show/hide fields per type. #}
 {% macro task_fields(job_types, idp, model=None) -%}
     <div>
-        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-300">Название</label>
+        <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
         <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
                class="{{ control() }}">
     </div>
     <div>
-        <label for="{{ idp }}-job_type" class="mb-1 block text-sm text-slate-300">Тип задачи</label>
+        <label for="{{ idp }}-job_type" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Тип задачи</label>
         <select id="{{ idp }}-job_type" name="job_type" required
                 class="{{ control() }}"{% if model %} x-model="{{ model }}"{% endif %}>
             {% for value, label in job_types %}
@@ -112,19 +117,19 @@
    the flags out of the POST for the types that do not have them. #}
 {% macro task_dates(m, model) -%}
     <template x-if="{{ model }} === 'collect' || {{ model }} === 'analyze'">
-        <div class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
-            <p class="text-sm text-slate-300">Период сбора контента</p>
+        <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+            <p class="text-sm text-slate-700 dark:text-slate-300">Период сбора контента</p>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Дата начала *</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
                     <input type="date" name="start_date" required x-model="{{ m }}.start_date"
                            class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-500">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Дата окончания</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
                     <input type="date" name="end_date" x-model="{{ m }}.end_date" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-500">Необязательно.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">Необязательно.</p>
                 </div>
             </div>
             {# One flag per type: collect's force_refresh is the documented full
@@ -132,21 +137,21 @@
                Hidden + x-model rather than `:checked`, so the value survives
                the template being torn down and rebuilt on a job_type switch. #}
             <template x-if="{{ model }} === 'collect'">
-                <label class="flex items-center gap-2 text-sm text-slate-300">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="force_refresh" :value="{{ m }}.force_refresh ? 'on' : ''">
                     <input type="checkbox" x-model="{{ m }}.force_refresh"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
                     Перетирать данные за этот период
-                    <span class="text-xs text-slate-500">заново получить записи за период и перепрогнать их анализ (иначе — только новые)</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-500">заново получить записи за период и перепрогнать их анализ (иначе — только новые)</span>
                 </label>
             </template>
             <template x-if="{{ model }} === 'analyze'">
-                <label class="flex items-center gap-2 text-sm text-slate-300">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="force_reanalyze" :value="{{ m }}.force_reanalyze ? 'on' : ''">
                     <input type="checkbox" x-model="{{ m }}.force_reanalyze"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
                     Принудительный повторный анализ
-                    <span class="text-xs text-slate-500">перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-500">перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши</span>
                 </label>
             </template>
         </div>
@@ -158,11 +163,11 @@
    `model` are the same paths as in `task_dates`. The per-trigger fields are
    inside `x-if` templates so only the active type's config is submitted. #}
 {% macro task_trigger_actions(m, model, trigger_types, action_types) -%}
-    <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
-        <p class="text-sm text-slate-300">Условие срабатывания</p>
+    <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+        <p class="text-sm text-slate-700 dark:text-slate-300">Условие срабатывания</p>
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Тип триггера</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип триггера</label>
                 <select name="trigger_type" x-model="{{ m }}.trigger_type" class="{{ control() }}">
                     <option value="">не задан</option>
                     {% for value, label in trigger_types %}
@@ -171,19 +176,19 @@
                 </select>
             </div>
             <div class="flex items-end">
-                <p class="text-xs text-slate-500">Без триггера контент проходит без фильтрации.</p>
+                <p class="text-xs text-slate-600 dark:text-slate-500">Без триггера контент проходит без фильтрации.</p>
             </div>
         </div>
 
         <template x-if="{{ m }}.trigger_type === 'KEYWORD_MATCH'">
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Ключевые слова</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ключевые слова</label>
                     <input name="trigger_keywords" placeholder="жалоба, срочно" :value="{{ m }}.trigger_keywords"
                            class="{{ control() }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Совпадение</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Совпадение</label>
                     <select name="trigger_match" :value="{{ m }}.trigger_match" class="{{ control() }}">
                         <option value="any">любое из слов</option>
                         <option value="all">все слова</option>
@@ -193,7 +198,7 @@
         </template>
         <template x-if="{{ m }}.trigger_type === 'USER_MENTION'">
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Пользователи</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пользователи</label>
                 <input name="trigger_usernames" placeholder="user1, user2" :value="{{ m }}.trigger_usernames"
                        class="{{ control() }}">
             </div>
@@ -201,12 +206,12 @@
         <template x-if="{{ m }}.trigger_type === 'SENTIMENT_THRESHOLD'">
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Порог</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Порог</label>
                     <input name="trigger_threshold" type="number" min="0" max="1" step="0.05"
                            :value="{{ m }}.trigger_threshold" class="{{ control() }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Направление</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Направление</label>
                     <select name="trigger_direction" :value="{{ m }}.trigger_direction" class="{{ control() }}">
                         <option value="below">ниже порога</option>
                         <option value="above">выше порога</option>
@@ -217,21 +222,21 @@
         <template x-if="{{ m }}.trigger_type === 'ACTIVITY_SPIKE'">
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Базовый период, ч</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Базовый период, ч</label>
                     <input name="trigger_baseline_hours" type="number" min="1" :value="{{ m }}.trigger_baseline_hours"
                            class="{{ control() }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs text-slate-400">Коэффициент всплеска</label>
+                    <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Коэффициент всплеска</label>
                     <input name="trigger_spike_multiplier" type="number" step="0.5" min="1"
                            :value="{{ m }}.trigger_spike_multiplier" class="{{ control() }}">
                 </div>
             </div>
         </template>
 
-        <p class="text-sm text-slate-300">Действие после анализа</p>
+        <p class="text-sm text-slate-700 dark:text-slate-300">Действие после анализа</p>
         <div>
-            <label class="mb-1 block text-xs text-slate-400">Тип действия</label>
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип действия</label>
             <select name="action_type" x-model="{{ m }}.action_type" class="{{ control() }}">
                 <option value="">не выполнять</option>
                 {% for value, label in action_types %}
@@ -242,29 +247,29 @@
 
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Чёрный список</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Чёрный список</label>
                 <input name="blacklist" placeholder="user1, user2" :value="{{ m }}.blacklist" class="{{ control() }}">
             </div>
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Белый список</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Белый список</label>
                 <input name="whitelist" placeholder="user1, user2" :value="{{ m }}.whitelist" class="{{ control() }}">
             </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Лимит действий в час</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Лимит действий в час</label>
                 <input name="rate_limit_per_hour" type="number" min="0" :value="{{ m }}.rate_limit_per_hour"
                        class="{{ control() }}">
             </div>
             <div>
-                <label class="mb-1 block text-xs text-slate-400">Пауза между действиями, сек</label>
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Пауза между действиями, сек</label>
                 <input name="cooldown_seconds" type="number" min="0" :value="{{ m }}.cooldown_seconds"
                        class="{{ control() }}">
             </div>
         </div>
-        <label class="flex items-center gap-2 text-sm text-slate-300">
+        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input type="checkbox" name="requires_approval" :checked="{{ m }}.requires_approval"
-                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
             Требовать подтверждение перед выполнением
         </label>
     </div>
@@ -301,7 +306,7 @@
 
 
 {% macro card(extra="") -%}
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ extra }}">
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 {{ extra }}">
         {{ caller() }}
     </div>
 {%- endmacro %}
@@ -379,7 +384,7 @@
 
 {% macro empty_state(title, hint="", height="h-40", radius="rounded-2xl") -%}
     <div class="flex {{ height }} items-center justify-center {{ radius }} border border-dashed
-                border-slate-800 text-sm text-slate-500">
+                border-slate-300 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400">
         <p class="max-w-md px-4 text-center">
             {{ title }}
             {% if hint %}{{ hint }}{% endif %}
@@ -393,11 +398,11 @@
    worse than no link, because it costs the reader a dead end. #}
 {% macro empty_state_cta(title, cta_label, cta_href, hint="", height="h-40") -%}
     <div class="flex {{ height }} items-center justify-center rounded-2xl border border-dashed
-                border-slate-800 text-sm text-slate-500">
+                border-slate-300 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400">
         <p class="max-w-md px-4 text-center">
             {{ title }}
             {% if cta_label %}
-                {% if hint %}{{ hint }} <a href="{{ cta_href }}" class="text-cyan-400 hover:underline">{{ cta_label }}</a>{% else %}<a href="{{ cta_href }}" class="text-cyan-400 hover:underline">{{ cta_label }}</a>{% endif %}
+                {% if hint %}{{ hint }} <a href="{{ cta_href }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% else %}<a href="{{ cta_href }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% endif %}
             {% elif hint %}
                 {{ hint }}
             {% endif %}
@@ -427,8 +432,8 @@
    element to toggle, and a label around just the words leaves the tick inert.
    `cid` must be unique per card; it is what binds the label to the box. #}
 {% macro check_mark(state="") -%}
-    <svg class="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-700
-                    transition group-hover:text-cyan-500/60 {{ state }}"
+    <svg class="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-600
+                    transition group-hover:text-cyan-500 dark:group-hover:text-cyan-400 {{ state }}"
          viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
         <path fill-rule="evenodd"
               d="M16.7 4.15a.75.75 0 0 1 .14 1.05l-8 10.5a.75.75 0 0 1-1.13.08l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.9 3.89 7.47-9.82a.75.75 0 0 1 1.05-.14Z"
@@ -445,14 +450,14 @@
    `analysis-cb`); it merges into the one class attribute rather than adding a
    second, which the parser would drop. `attrs` carries Alpine handlers. #}
 {% macro check_card(cid, name, value, content, checked=False, cls="", attrs="") -%}
-    <li class="group relative flex items-center rounded-lg border border-slate-700 bg-slate-950 transition
-               hover:border-cyan-500
-               has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 has-[:checked]:text-cyan-200
-               has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan-500/60">
+    <li class="group relative flex items-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 transition
+               hover:border-cyan-500 dark:hover:border-cyan-400
+               has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 has-[:checked]:text-cyan-700 dark:has-[:checked]:text-cyan-300
+               has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan-500/60 dark:has-[:focus-visible]:ring-cyan-400/60">
         <input type="checkbox" id="{{ cid }}" name="{{ name }}" value="{{ value }}"
                class="{{ cls }} peer sr-only" {{ attrs }} {% if checked %}checked{% endif %}>
-        <span class="pointer-events-none flex-1 px-3 py-2 text-sm text-slate-300">{{ content }}</span>
-        {{ check_mark("peer-checked:text-cyan-500") }}
+        <span class="pointer-events-none flex-1 px-3 py-2 text-sm text-slate-700 dark:text-slate-300">{{ content }}</span>
+        {{ check_mark("peer-checked:text-cyan-500 dark:peer-checked:text-cyan-400") }}
         <label for="{{ cid }}" class="absolute inset-0 cursor-pointer"></label>
     </li>
 {%- endmacro %}
@@ -468,19 +473,22 @@
    `group-has-[:checked]:` (the knob is a *descendant* of the group, not a
    sibling of the input, so `peer-checked:` cannot reach it). The focus ring
    lives on the track via `peer-focus-visible:`: `:focus-visible` propagates to
-   the ancestor tree, `peer-*` only reaches siblings. #}
+   the ancestor tree, `peer-*` only reaches siblings.
+
+   Light theme: bg-white, border-slate-300, text-slate-700.
+   Dark theme: bg-slate-900, border-slate-700, text-slate-300. #}
 {% macro switch_toggle(name, content, checked=False, disabled=False, attrs="") -%}
-    <label class="group inline-flex cursor-pointer items-center gap-2 text-sm text-slate-300 transition
-                  hover:text-cyan-200 has-[:checked]:text-cyan-200
+    <label class="group inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300 transition
+                  hover:text-cyan-600 dark:hover:text-cyan-400 has-[:checked]:text-cyan-600 dark:has-[:checked]:text-cyan-400
                   {% if disabled %}pointer-events-none opacity-60{% endif %}">
         <input type="checkbox" name="{{ name }}" class="peer sr-only" {{ attrs }}
                {% if checked %}checked{% endif %} {% if disabled %}disabled{% endif %}>
         <span aria-hidden="true"
-              class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-slate-700 bg-slate-900 p-0.5
-                     transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-500/60
-                     group-has-[:checked]:border-cyan-500 group-has-[:checked]:bg-cyan-500">
-            <span class="block h-3.5 w-3.5 rounded-full bg-slate-500 shadow transition-transform
-                         group-has-[:checked]:translate-x-[18px] group-has-[:checked]:bg-slate-950"></span>
+              class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5
+                     transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-500/60 dark:peer-focus-visible:ring-cyan-400/60
+                     group-has-[:checked]:border-cyan-500 group-has-[:checked]:bg-cyan-500 dark:group-has-[:checked]:bg-cyan-500">
+            <span class="block h-3.5 w-3.5 rounded-full bg-slate-400 dark:bg-slate-500 shadow transition-transform
+                         group-has-[:checked]:translate-x-[18px] group-has-[:checked]:bg-white dark:group-has-[:checked]:bg-slate-950"></span>
         </span>
         <span class="pointer-events-none">{{ content }}</span>
     </label>

@@ -9,28 +9,39 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>[x-cloak]{display:none!important}</style>
 </head>
-<body class="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-100 antialiased">
+<body x-data="themeManager()" :class="{ 'dark': isDark }" class="flex min-h-screen items-center justify-center p-6 antialiased">
 <div class="w-full max-w-md">
     <a href="/app/" class="mb-6 flex items-center justify-center gap-2 text-xl font-semibold tracking-tight">
-        <span class="h-2.5 w-2.5 rounded-full bg-cyan-400"></span>
+        <span class="h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
         AI Monitor
     </a>
 
     {% include "web/_flashes.html" %}
 
     {% if error is defined and error %}
-        <div class="mb-4 rounded-lg border border-rose-700 bg-rose-950 px-4 py-2 text-sm text-rose-200">
+        <div class="mb-4 rounded-lg border border-rose-600 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/50 px-4 py-2 text-sm text-rose-700 dark:text-rose-200">
             {{ error }}
         </div>
     {% endif %}
 
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-        <h1 class="text-lg font-semibold">{% block heading %}{% endblock %}</h1>
-        <p class="mt-1 text-sm text-slate-400">{% block lead %}{% endblock %}</p>
+    <div class="rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-6 shadow-xl">
+        <h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{% block heading %}{% endblock %}</h1>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{% block lead %}{% endblock %}</p>
         {% block card %}{% endblock %}
     </div>
 
-    <p class="mt-6 text-center text-sm text-slate-500">{% block footnote %}{% endblock %}</p>
+    <p class="mt-6 text-center text-sm text-slate-600 dark:text-slate-500">{% block footnote %}{% endblock %}</p>
 </div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('themeManager', () => ({
+        isDark: localStorage.getItem('theme') === 'dark',
+        init() {
+            document.documentElement.classList.toggle('dark', this.isDark);
+        }
+    }));
+});
+</script>
 </body>
 </html>

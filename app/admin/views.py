@@ -9,7 +9,7 @@ from sqladmin.fields import SelectField
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import validators, SelectMultipleField, widgets
+from wtforms import validators, widgets
 
 from app.admin.actions import LLMModelActions
 from app.admin.formatters import format_date, format_usd, plan_badge
@@ -46,7 +46,7 @@ from app.types import (
 )
 from app.types.enums.llm_types import APIFormatType
 from .base import BaseAdmin
-from .widgets import EuropeanDateField
+from .widgets import EuropeanDateField, CommaSeparatedSelectMultipleField
 from ..services.ai.llm_client import LLMClientFactory
 
 logger = logging.getLogger(__name__)
@@ -1409,7 +1409,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 	form_excluded_columns = BaseAdmin.form_excluded_columns + ["text_scenarios", "image_scenarios", "video_scenarios"]
 
 	form_overrides = {
-		"model_type": SelectMultipleField,
+		"model_type": CommaSeparatedSelectMultipleField,
 		**BaseAdmin.form_overrides,
 	}
 
@@ -1465,6 +1465,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
 	async def scaffold_form(self, rules=None):
 		form = await super().scaffold_form(rules)
+
+		# Ensure SelectMultipleField for model_type uses proper multi-value coercion/processing
+		if hasattr(form, "model_type"):
+			# If the model has a comma-separated string, process_data/process_formdata needs to handle it.
+			# Actually WTForms SelectMultipleField handles list of strings, but model.model_type is a string.
+			pass
 
 		providers = await LLMProvider.objects.all().order_by("name")
 

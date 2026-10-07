@@ -1,4 +1,4 @@
-from wtforms.fields import Field
+from wtforms.fields import Field, SelectMultipleField
 from wtforms.widgets import TextInput
 
 from app.utils.date_parsing import universal_date_parser
@@ -31,3 +31,19 @@ class EuropeanDateField(Field):
 		except ValueError:
 			self.data = None
 			raise ValueError('Неверный формат даты. Используйте ДД.ММ.ГГГГ')
+
+
+class CommaSeparatedSelectMultipleField(SelectMultipleField):
+	def process_data(self, value):
+		if isinstance(value, str):
+			self.data = [v.strip() for v in value.split(",") if v.strip()]
+		elif isinstance(value, (list, tuple)):
+			self.data = list(value)
+		else:
+			self.data = []
+
+	def process_formdata(self, valuelist):
+		if valuelist:
+			self.data = valuelist
+		else:
+			self.data = []

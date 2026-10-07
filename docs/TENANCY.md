@@ -211,9 +211,23 @@ Migration `0080_replace_tenant_role_string_with_role_id.py` replaced the legacy
 - Updated all managers (`add_member`, `add_web_member`, `issue`, `redeem`, `redeem_web`) to use `role_id`
 - Updated `Resolution.is_owner` and `TenantUser.is_owner` to check `role.codename == "SUPERUSER"` or `role_id = NULL`
 
+Migration `0081_add_ai_analytics_chain_label.py` adds a nullable `chain_label`
+column to `ai_analytics` — a human-readable label for topic chains so grouping
+can be done at query time without deriving it from `summary_data`.
+
+Migration `0082_collected_items_nonpartial_unique_index.py` replaces the partial
+unique index on `collected_items` (`WHERE external_id IS NOT NULL`) with a regular
+unique index. This makes the index usable by `ON CONFLICT DO NOTHING` in
+`CollectedItemManager.store_items` without changing runtime behaviour.
+
+Migration `0083_drop_analyze_type_from_agent_scenarios.py` drops the old
+`analyze_type` enum column from `agent_scenarios`; grouping axes
+(`group_by` + `time_breakdown`) are now query-time parameters, not scenario
+properties.
+
 ## Validation status
 
-- **Migration**: `0052` is applied; the database is on revision `0052` (head) and
+- **Migration**: `0083` is applied; the database is on revision `0083` (head) and
   `alembic check` reports **no new upgrade operations** when run against the
   working (production) schema.
 - **`alembic check` and the test schema**: models read `settings.DB_SCHEMA`,

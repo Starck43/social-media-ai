@@ -655,7 +655,7 @@ Action ledger (audit trail for automated actions).
 | `0065` | Add `user_credentials` (personal L2 vault, keyed by `users.id`) |
 | `0066` | Drop `tenant_credentials` (app/bot config moves to the environment) |
 | `0073` | Move trigger_type/trigger_config/action_type/guards from `agent_scenarios` to `agent_tasks` |
-| `0080` | Migrate `users.role_id` from string role name to FK → `roles` |
+| `0080` | Replace `tenant_users.role` string column with `tenant_users.role_id` FK → `roles.id` |
 | `0083` | Drop `analyze_type` from `agent_scenarios` (grouping is now query-time: `group_by` + `time_breakdown`) |
 
 Head migration: `0083` (verify with `alembic current`).

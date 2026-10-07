@@ -27,6 +27,7 @@ ROLE_PERMISSIONS = {
         "social.digestrun.view",
         "account.credential.view",
         "account.llmprovider.view",
+        "ai.llmmodel.view",
     ],
     "AI_BOT": [
         "social.source.view",
@@ -41,6 +42,7 @@ ROLE_PERMISSIONS = {
         "social.botaction.*",
         "account.credential.view",
         "account.llmprovider.view",
+        "ai.llmmodel.view",
     ],
     "MANAGER": [
         "social.source.*",
@@ -51,6 +53,8 @@ ROLE_PERMISSIONS = {
         "account.credential.view",
         "account.credential.update",
         "account.llmprovider.view",
+        "ai.llmmodel.view",
+        "ai.llmmodel.*",
     ],
     "ANALYST": [
         "social.source.view",
@@ -61,6 +65,7 @@ ROLE_PERMISSIONS = {
         "social.digestrun.*",
         "account.credential.view",
         "account.llmprovider.view",
+        "ai.llmmodel.view",
     ],
     "MODERATOR": [
         "social.source.*",
@@ -71,6 +76,7 @@ ROLE_PERMISSIONS = {
         "social.agentfeedback.*",
         "account.credential.view",
         "account.llmprovider.view",
+        "ai.llmmodel.view",
     ],
     "ADMIN": ["*"],
     "SUPERUSER": ["*"],
@@ -80,12 +86,12 @@ ROLE_PERMISSIONS = {
 async def assign_roles_permissions() -> dict[str, list[str]]:
     results = {}
     for role_codename, patterns in ROLE_PERMISSIONS.items():
-        result = await RolePermissionService.update_role_permissions(
+        res = await RolePermissionService.update_role_permissions(
             role_codename=role_codename.lower(),
             permission_codenames=patterns,
             strategy="synchronize",
         )
-        results[role_codename] = result
+        results[role_codename] = res
     return results
 
 

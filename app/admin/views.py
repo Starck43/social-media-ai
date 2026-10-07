@@ -66,7 +66,7 @@ class UserAdmin(BaseAdmin, model=User):
 	column_labels = dict({
 		"id": "ID",
 		"username": "Имя пользователя",
-		"email": "Email",
+		"email": "Электронная почта",
 		"role": "Роль",
 		"hashed_password": "Пароль",
 		"is_superuser": "Администратор",

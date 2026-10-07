@@ -84,7 +84,7 @@ do*. They are separate layers, and every surface uses the same two:
 
 | Surface | Authentication | Rights |
 |---|---|---|
-| `/api/*` | bearer JWT (`ApiScopeMiddleware`) | per-endpoint: `require_model_perm` (model rights) and `require_platform_role` (role ladder); today only `PUT /users/roles/{name}/permissions` declares one |
+| `/api/*` | bearer JWT (`ApiScopeMiddleware`) | per-endpoint: `require_model_perm` (model rights) and `require_platform_role` (role ladder); most write endpoints and many read endpoints declare model rights |
 | `/app/*` | web session (`TenantUIMiddleware`) | workspace membership is the boundary; no per-model right in the client UI |
 | `/admin/*` | admin backend | per-model rights, Django-style (`docs/ADMIN.md`) |
 | CLI | none (developer tool) | runs with the tenant guard off; `--tenant` picks a workspace |

@@ -313,7 +313,7 @@ Content sources (VK groups, Telegram channels, etc.).
 
 ### `agent_scenarios`
 
-AI analysis contracts per source.
+Reusable analysis methodology (prompt, models, scope). Triggers and actions live on `agent_tasks` — a scenario says *how to analyse*, a task says *whether to act*.
 
 | Column | Type | Description |
 |---|---|---|
@@ -324,21 +324,13 @@ AI analysis contracts per source.
 | `content_types` | `JSON` | What to collect: `["posts", "comments"]` |
 | `analysis_types` | `JSON` | What to analyze: `["sentiment", "keywords"]` |
 | `scope` | `JSON` | METHODOLOGY config only: categories, scale, max_keywords, context_window, etc. Specific targets (brands, competitors) go in `AgentTask.payload`, not here. |
-| `text_prompt` | `Text` | Custom text analysis prompt |
-| `image_prompt` | `Text` | Custom image analysis prompt |
-| `video_prompt` | `Text` | Custom video analysis prompt |
-| `audio_prompt` | `Text` | Custom audio analysis prompt |
-| `unified_summary_prompt` | `Text` | Custom summary prompt |
-| `trigger_type` | `Enum` | When to analyze: `KEYWORD_MATCH`, `SENTIMENT_THRESHOLD`, etc. |
-| `trigger_config` | `JSON` | Trigger parameters |
-| `action_type` | `Enum` | Post-analysis action: `NOTIFICATION`, `COMMENT`, etc. |
-| `rate_limit_per_hour` | `Integer` | Max actions per hour |
-| `cooldown_seconds` | `Integer` | Min seconds between actions |
-| `requires_approval` | `Boolean` | Require owner approval |
-| `blacklist` | `JSON` | Usernames/IDs to skip |
-| `whitelist` | `JSON` | Only act on these users |
+| `base_prompt` | `Text` | Core LLM instruction for analysis |
+| `media_overrides` | `JSON` | Per-media-type prompt overrides |
+| `summary_prompt` | `Text` | Custom prompt for unified summary |
+| `max_tokens` | `Integer` | Max tokens for LLM responses |
+| `output_schema` | `JSON` | JSON Schema for structured LLM output |
 | `is_active` | `Boolean` | Active flag |
-| `collection_interval_hours` | `Integer` | How often to collect (min 1) |
+| `is_default` | `Boolean` | Default for new sources |
 | `text_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for text |
 | `image_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for images |
 | `video_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for video |
@@ -346,7 +338,9 @@ AI analysis contracts per source.
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
-**Relationships:** `sources` (one-to-many), `text_llm_model`, `image_llm_model`, `video_llm_model`
+**Relationships:** `agent_tasks` (one-to-many), `text_llm_model`, `image_llm_model`, `video_llm_model`
+
+> **Note:** `analyze_type` column was dropped by migration `0083`. Grouping is now a query-time parameter (`group_by` + `time_breakdown`) on `agent_tasks.payload`, not a scenario property.
 
 ---
 
@@ -379,30 +373,36 @@ AI analysis results.
 
 ### `agent_tasks`
 
-Agent cron task definitions.
+Cron-based task definitions. Triggers and actions live here (not on scenarios) — a scenario says *how to analyse*, a task says *whether to act*.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `Integer` PK | |
 | `tenant_id` | `Integer` FK | |
 | `name` | `String(100)` | Unique task name |
-| `cron_expr` | `String(50)` | Cron expression |
-| `timezone` | `String(50)` | Task timezone |
+| `cron_expr` | `String(100)` | 5-field cron expression |
 | `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | TASK-SPECIFIC TARGET parameters: `period`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, etc. These are injected into the analysis prompt, NOT into the response schema. Scenario methodology (categories, limits) stays in `AgentScenario.scope`. |
-| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Reusable scenario applied when the task runs (nullable, `SET NULL`) |
+| `payload` | `JSON` | Task-specific params. For `digest`: `period` (day/week/month), `group_by` (themes/sources/entities/sentiment/content_type/intent/topic_chains), `time_breakdown` (bool). For `collect`/`analyze`: `monitored_users`, `excluded_users`, `cli_dates` (start_date/end_date), `force_refresh`, `force_reanalyze`, `analyze_inline`. For `digest` + `analyze`: `scenario_id` override. |
+| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Reusable scenario (nullable, `SET NULL`) |
+| `trigger_type` | `Enum` | `KEYWORD_MATCH`, `SENTIMENT_THRESHOLD`, `USER_MENTION`, `ACTIVITY_SPIKE` |
+| `trigger_config` | `JSON` | Trigger parameters (keywords, threshold, spike multiplier...) |
+| `action_type` | `Enum` | `COMMENT`, `REPLY`, `DIRECT_MESSAGE`, `POST`, `REACTION`, `MODERATION`, `NOTIFICATION` |
+| `rate_limit_per_hour` | `Integer` | Max actions per hour |
+| `cooldown_seconds` | `Integer` | Min seconds between actions |
+| `requires_approval` | `Boolean` | Require owner approval (default `true`) |
+| `blacklist` | `JSON` | Usernames/IDs to never act on |
+| `whitelist` | `JSON` | Only act on these users |
 | `is_active` | `Boolean` | Active flag |
 | `next_run_at` | `DateTime` | Next scheduled run (UTC) |
 | `last_run_at` | `DateTime` | Last run timestamp |
-| `last_status` | `String(50)` | `success`, `failed`, etc. |
+| `last_status` | `String(20)` | `success`, `failed`, `skipped` |
 | `last_error` | `Text` | Error message if failed |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
 
 **Unique constraint:** `(tenant_id, name)`
 
-**Relationships:** `tenant`, `agent_scenario`, `sources` (many-to-many via
-`agent_task_sources`)
+**Relationships:** `tenant`, `agent_scenario`, `sources` (many-to-many via `agent_task_sources`)
 
 ---
 
@@ -631,9 +631,13 @@ Action ledger (audit trail for automated actions).
 | Migration | Description |
 |---|---|
 | `0031` | Add LLM cost tracking to `ai_analytics` |
+| `0040` | Add `analyze_type` to `agent_scenarios` (deprecated, replaced by query-time `group_by`) |
 | `0044` | Add tenancy core tables (`tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, workspace `tenant_credentials`) + add `tenant_id` to 10 business tables |
 | `0049` | Add `content_hash` to `ai_analytics` for deduplication |
 | `0065` | Add `user_credentials` (personal L2 vault, keyed by `users.id`) |
 | `0066` | Drop `tenant_credentials` (app/bot config moves to the environment) |
+| `0073` | Move trigger_type/trigger_config/action_type/guards from `agent_scenarios` to `agent_tasks` |
+| `0080` | Migrate `users.role_id` from string role name to FK → `roles` |
+| `0083` | Drop `analyze_type` from `agent_scenarios` (grouping is now query-time: `group_by` + `time_breakdown`) |
 
-Head migration: `0066` (verify with `alembic current`).
+Head migration: `0083` (verify with `alembic current`).

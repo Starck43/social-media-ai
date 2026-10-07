@@ -14,16 +14,23 @@ two independent query-time parameters that shape how those rows are presented.
 They are orthogonal: any axis can be shown as an aggregate over the period OR
 as a per-date chronology.
 
+> **Important:** grouping is a **query-time** parameter, not a scenario property.
+> `AgentScenario.analyze_type` was dropped by migration `0083`. The grouping axis
+> is passed to `group_analytics()` via `group_by` (and `time_breakdown` for
+> per-date sub-entries). The digest handler reads `task.payload.group_by` and
+> `task.payload.time_breakdown` to configure the brief.
+
 ### Grouping axes
 
 | Axis | Groups by | JSONB field |
 |------|-----------|-------------|
-| `themes` | Semantic topics | `summary_data->'topics'`, `topic_chain_id` |
+| `themes` | Semantic topics | `summary_data->'topics'` |
 | `sources` | Source/channel | `source_id` |
 | `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` |
 | `sentiment` | Mood/score | `summary_data->'sentiment_score'` |
 | `content_type` | Media format | `media_types` |
 | `intent` | Why the post was written | `summary_data->'intent_type'` |
+| `topic_chains` | Cross-row theme chains | `topic_chain_id` |
 
 ### Time breakdown
 

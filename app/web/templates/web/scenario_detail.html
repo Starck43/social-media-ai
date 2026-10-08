@@ -6,9 +6,9 @@
 <div class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-            <a href="/app/scenarios" class="text-sm text-slate-400 hover:text-slate-200">← Все сценарии</a>
+            <a href="/app/scenarios" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">← Все сценарии</a>
             <h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ scenario.name }}</h1>
-            <p class="mt-1 text-sm text-slate-500">
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if scenario.is_default %}
                     Сценарий по умолчанию для новых источников.
                 {% else %}
@@ -25,7 +25,7 @@
     </div>
 
     {% if not editable %}
-        <div class="mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
+        <div class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 text-sm text-slate-600 dark:text-slate-400">
             Вы можете читать сценарий, но не менять его — правомочие требуется ролью.
         </div>
     {% endif %}
@@ -36,17 +36,17 @@
 
         <!-- Основное ─────────────────────────────────────────────────── -->
         <div>
-            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Основное</h2>
-            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Основное</h2>
+            <fieldset class="space-y-4 ui-card">
             <div>
-                <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                <label for="sc-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
                 <input id="sc-name" name="name" required maxlength="255" value="{{ scenario.name }}"
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
             </div>
             <div>
-                <label for="sc-desc" class="mb-1 block text-sm text-slate-300">Описание</label>
+                <label for="sc-desc" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Описание</label>
                 <textarea id="sc-desc" name="description" rows="2"
-                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">{{ scenario.description or '' }}</textarea>
+                          class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">{{ scenario.description or '' }}</textarea>
             </div>
             <div class="flex flex-wrap gap-6">
                 {{ switch_toggle("is_active", "Активен", checked=scenario.is_active, disabled=not editable) }}
@@ -62,14 +62,14 @@
 
         <!-- Ограничения ─────────────────────────────────────────────── -->
         <div>
-            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Ограничения</h2>
-            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Ограничения</h2>
+            <fieldset class="space-y-4 ui-card">
             <div class="grid gap-4 sm:grid-cols-3">
                 <div>
-                    <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
+                    <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Лимит токенов ответа</label>
                     <input id="sc-max-tokens" name="max_tokens" type="number" min="0"
                            value="{{ scenario.max_tokens or '' }}"
-                           class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                           class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
                 </div>
             </div>
             </fieldset>
@@ -77,37 +77,37 @@
 
         <!-- Промпты ──────────────────────────────────────────────────── -->
         <div>
-            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Промпты</h2>
-            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-xs text-slate-500">
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Промпты</h2>
+            <fieldset class="space-y-4 ui-card">
+            <p class="text-xs text-slate-600 dark:text-slate-400">
                 Пустое поле — берётся промпт по умолчанию из
-                <code class="text-slate-400">app/agent/prompts</code>.
+                <code class="text-slate-600 dark:text-slate-400">app/agent/prompts</code>.
             </p>
             <div class="grid gap-4 lg:grid-cols-2">
                 <div class="lg:col-span-2">
-                    <label for="sc-prompt-text" class="mb-1 block text-sm text-slate-300">Текстовый анализ</label>
+                    <label for="sc-prompt-text" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Текстовый анализ</label>
                     <textarea id="sc-prompt-text" name="text_prompt" rows="5" {{ ro }}
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.text_prompt or '' }}</textarea>
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.text_prompt or '' }}</textarea>
                 </div>
                 <div>
-                    <label for="sc-prompt-image" class="mb-1 block text-sm text-slate-300">Изображения</label>
+                    <label for="sc-prompt-image" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Изображения</label>
                     <textarea id="sc-prompt-image" name="image_prompt" rows="4" {{ ro }}
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.image_prompt or '' }}</textarea>
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.image_prompt or '' }}</textarea>
                 </div>
                 <div>
-                    <label for="sc-prompt-video" class="mb-1 block text-sm text-slate-300">Видео</label>
+                    <label for="sc-prompt-video" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Видео</label>
                     <textarea id="sc-prompt-video" name="video_prompt" rows="4" {{ ro }}
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.video_prompt or '' }}</textarea>
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.video_prompt or '' }}</textarea>
                 </div>
                 <div>
-                    <label for="sc-prompt-audio" class="mb-1 block text-sm text-slate-300">Аудио</label>
+                    <label for="sc-prompt-audio" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Аудио</label>
                     <textarea id="sc-prompt-audio" name="audio_prompt" rows="4" {{ ro }}
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.audio_prompt or '' }}</textarea>
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.audio_prompt or '' }}</textarea>
                 </div>
                 <div>
-                    <label for="sc-prompt-summary" class="mb-1 block text-sm text-slate-300">Сводный анализ</label>
+                    <label for="sc-prompt-summary" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сводный анализ</label>
                     <textarea id="sc-prompt-summary" name="unified_summary_prompt" rows="4" {{ ro }}
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.unified_summary_prompt or '' }}</textarea>
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ scenario.unified_summary_prompt or '' }}</textarea>
                 </div>
             </div>
             </fieldset>
@@ -115,12 +115,12 @@
 
         <!-- Модели ───────────────────────────────────────────────────── -->
         <div>
-            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Модели LLM</h2>
-            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Модели LLM</h2>
+            <fieldset class="space-y-4 ui-card">
             <div>
-                <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
+                <label for="sc-strategy" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Стратегия выбора</label>
                 <select id="sc-strategy" name="llm_strategy" {{ ro }}
-                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                     <option value="">Автовыбор (флот платформы)</option>
                     {% for value, label in llm_strategies %}
                         <option value="{{ value }}"
@@ -135,9 +135,9 @@
                     ('video_llm_model_id', scenario.video_llm_model_id, 'Видео'),
                 ] %}
                     <div>
-                        <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                        <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
                         <select id="sc-{{ field }}" name="{{ field }}" {{ ro }}
-                                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                             <option value="">Автовыбор</option>
                             {% for m in llm_models if m.model_type == field.split('_')[0] %}
                                 <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
@@ -151,15 +151,15 @@
 
         <!-- По умолчанию ─────────────────────────────────────────────── -->
         <div>
-            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">По умолчанию</h2>
-            <fieldset class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">По умолчанию</h2>
+            <fieldset class="space-y-4 ui-card">
             {{ switch_toggle("is_default", "Сценарий по умолчанию для новых источников",
                             checked=scenario.is_default, disabled=not editable) }}
             </fieldset>
         </div>
 
 <div class="flex justify-end gap-3">
-            <a href="/app/scenarios" class="rounded-lg border border-slate-700 px-5 py-2 text-sm text-slate-300 hover:bg-slate-900">
+            <a href="/app/scenarios" class="rounded-lg border border-slate-300 dark:border-slate-700 px-5 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                 Отмена
             </a>
             {% if editable %}
@@ -173,30 +173,30 @@
 
     <!-- Тест-прогон ─────────────────────────────────────────────────── -->
     {% if editable %}
-        <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-300">Проверить триггер</h2>
-            <p class="mt-1 text-xs text-slate-500">
-                Текст идёт через тот же <code class="text-slate-400">TriggerEvaluator</code>, что и конвейер.
+        <div class="mt-6 ui-card">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Проверить триггер</h2>
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                Текст идёт через тот же <code class="text-slate-600 dark:text-slate-400">TriggerEvaluator</code>, что и конвейер.
                 Модель не вызывается, ничего не записывается.
             </p>
             <form method="post" action="/app/scenarios/{{ scenario.id }}/test-trigger" class="mt-4 space-y-3">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <div>
-                    <label for="tt-sample" class="mb-1 block text-sm text-slate-300">Текст поста</label>
+                    <label for="tt-sample" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Текст поста</label>
                     <textarea id="tt-sample" name="sample_text" rows="3"
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
                               placeholder="Вставьте текст поста, который хотите проверить"></textarea>
                 </div>
                 <div>
-                    <label for="tt-json" class="mb-1 block text-sm text-slate-300">Результат анализа (JSON)</label>
+                    <label for="tt-json" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Результат анализа (JSON)</label>
                     <textarea id="tt-json" name="analysis_json" rows="3"
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
                               placeholder='{"sentiment_score": 0.8}'></textarea>
-                    <p class="mt-1 text-xs text-slate-500">
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                         Нужен только для триггеров «после анализа» (sentiment_threshold, manual).
                     </p>
                 </div>
-                <button class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900">
+                <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                     Проверить
                 </button>
             </form>

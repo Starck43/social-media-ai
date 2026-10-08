@@ -152,10 +152,11 @@ async def test_scenario_status_wears_the_shared_pill(is_active: bool) -> None:
             assert "h-1.5 w-1.5 rounded-full bg-" not in row, "the status dot is back"
             # The same pill the sources/tasks lists wear: emerald when live,
             # the muted slate one when not.
-            bg = "bg-emerald-950" if is_active else "bg-slate-800"
-            fg = "text-emerald-400" if is_active else "text-slate-500"
+            bg = "bg-emerald-50" if is_active else "bg-slate-100"
+            dark_bg = "dark:bg-emerald-950" if is_active else "dark:bg-slate-800"
+            fg = "text-emerald-700" if is_active else "text-slate-600"
             cell = next(c for c in re.findall(r"<td\b.*?</td>", row, re.S) if "активен" in c)
-            assert f"rounded-full {bg}" in cell and fg in cell
+            assert "rounded-full" in cell and bg in cell and dark_bg in cell and fg in cell
             assert ("активен" if is_active else "неактивен") in cell
         finally:
             await _drop(user, tenant_id)

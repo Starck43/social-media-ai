@@ -1,21 +1,11 @@
+{% from "web/_macros.html" import icon %}
 <!doctype html>
 <html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}AI Monitor{% endblock %}</title>
-    <script>
-    (function() {
-        try {
-            var theme = localStorage.getItem('theme');
-            var isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-            }
-            window.__initialWebTheme = isDark;
-        } catch(e) {}
-    })();
-    </script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -39,17 +29,16 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/ui.css') }}">
     <style>
         [x-cloak]{display:none!important}
-        /* Smooth theme transition */
-        * { transition-property: background-color, border-color, color; transition-duration: 150ms; transition-timing-function: ease; }
     </style>
     {# Child pages add their own <head> content here (scripts, styles). Without
        this block a child's `{% block extra_head %}` is silently dropped by Jinja —
        that is how the chat page ended up without marked.js. #}
     {% block extra_head %}{% endblock %}
 </head>
-<body x-data="themeManager()" :class="{ 'dark': isDark }" class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
+<body class="ui-shell min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
 <div class="flex min-h-screen">
     <aside class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 md:flex">
         <a href="/app/" class="flex items-center gap-2 px-2 py-3 text-lg font-semibold tracking-tight">
@@ -63,7 +52,7 @@
                     <a href="{{ item.href }}"
                        class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-900 dark:bg-slate-800 font-medium text-white{% else %}text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100{% endif %}">{{ item.label }}</a>
                 {% else %}
-                    <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-500"
+                    <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-400"
                           title="Раздел появится в следующих вехах">
                         {{ item.label }}
                         <span class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-600">скоро</span>
@@ -75,24 +64,22 @@
             <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
                 <a href="/admin/" target="_blank" rel="noopener"
                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
-                    <span>⚙️</span>
+                    {{ icon('settings') }}
                     <span>Админка</span>
                     <span class="text-[10px] text-slate-400 dark:text-slate-600">↗</span>
                 </a>
             </div>
         {% endif %}
         <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
-            <button @click="toggle()"
-                    title="Переключить тему"
-                    class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
-                <span x-text="isDark ? '☀️' : '🌙'"></span>
-                <span x-text="isDark ? 'Светлая' : 'Тёмная'"></span>
-            </button>
+            <label for="theme-desktop" class="mb-1 block px-3 text-xs ui-muted">Оформление</label>
+            <select id="theme-desktop" data-theme-select class="ui-control w-full" aria-label="Тема оформления">
+                <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
+            </select>
         </div>
     </aside>
 
     <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-6 py-3 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-6 py-3 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
             <div x-data="{ open: false }" class="relative">
                 <button @click="open = !open"
                         class="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-900 dark:text-slate-300">
@@ -112,7 +99,7 @@
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 <input type="hidden" name="tenant_id" value="{{ w.tenant.id }}">
                                 <button class="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
-                                    {{ w.tenant.name }} <span class="text-xs text-slate-500 dark:text-slate-500">{{ w.role }}</span>
+                                    {{ w.tenant.name }} <span class="text-xs text-slate-500 dark:text-slate-400">{{ w.role }}</span>
                                 </button>
                             </form>
                         {% endif %}
@@ -164,7 +151,7 @@
                     </button>
 
                     <div x-show="openModal" @click.outside="close()" @keydown.escape.window="close()" x-cloak
-                         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+                         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
                         <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
                             <div class="flex items-center justify-between">
                                 <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Уведомления</h2>
@@ -188,7 +175,7 @@
                                             <div class="min-w-0">
                                                 <p class="text-sm font-medium text-slate-900 dark:text-slate-100" x-text="n.title"></p>
                                                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="n.message"></p>
-                                                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-500" x-text="n.created_at"></p>
+                                                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400" x-text="n.created_at"></p>
                                             </div>
                                             <button type="button" @click="readOne(n)"
                                                     title="Отметить прочитанным"
@@ -206,6 +193,9 @@
                         </div>
                     </div>
                 </div>
+                <select data-theme-select class="ui-control ui-theme-select md:hidden" aria-label="Тема оформления">
+                    <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
+                </select>
                 <span class="hidden text-sm text-slate-600 dark:text-slate-400 sm:inline">{{ user.username if user }}</span>
                 <form method="post" action="/app/logout">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -218,7 +208,7 @@
 
         {% include "web/_flashes.html" %}
 
-        <main class="flex-1 bg-white dark:bg-slate-950 p-4 pb-28 md:p-6 md:pb-6">{% block content %}{% endblock %}</main>
+        <main class="flex-1 bg-slate-50 dark:bg-slate-950 p-4 pb-28 md:p-6 md:pb-6">{% block content %}{% endblock %}</main>
     </div>
 </div>
 
@@ -229,34 +219,12 @@
     <div class="flex">
         {% for item in mobile_nav %}
             <a href="{{ item.href }}"
-               class="flex-1 px-2 py-3 text-center text-xs {% if section == item.key %}font-medium text-cyan-600 dark:text-cyan-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">
+               class="flex-1 px-2 py-3 text-center text-xs {% if section == item.key %}font-medium text-cyan-700 dark:text-cyan-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">
                 {{ item.label }}
             </a>
         {% endfor %}
     </div>
 </nav>
-
-<script>
-// Theme manager — syncs with localStorage, respects prefers-color-scheme
-document.addEventListener('alpine:init', () => {
-    Alpine.data('themeManager', () => ({
-        isDark: typeof window !== 'undefined' ? (window.__initialWebTheme || false) : false,
-        init() {
-            const stored = localStorage.getItem('theme');
-            this.isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
-            this.apply();
-        },
-        apply() {
-            document.documentElement.classList.toggle('dark', this.isDark);
-            localStorage.setItem('theme', this.isDark ? 'dark' : 'light');
-        },
-        toggle() {
-            this.isDark = !this.isDark;
-            this.apply();
-        }
-    }));
-});
-</script>
 
 <script>
 function notificationsBell() {

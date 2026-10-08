@@ -13,9 +13,9 @@
                  x-show="show"
                  {% if auto %}x-init="setTimeout(() => show = false, 5000)"{% endif %}
                  class="flex items-start justify-between gap-4 rounded-lg border px-4 py-2 text-sm
-                       {% if f.kind == 'success' %}border-emerald-700 bg-emerald-950 text-emerald-200
-                       {% elif f.kind == 'error' %}border-rose-700 bg-rose-950 text-rose-200
-                       {% else %}border-slate-700 bg-slate-900 text-slate-200{% endif %}">
+                       {% if f.kind == 'success' %}border-emerald-700 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200
+                       {% elif f.kind == 'error' %}border-rose-700 bg-rose-50 dark:bg-rose-950 text-rose-800 dark:text-rose-200
+                       {% else %}border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200{% endif %}">
                 <span>{{ f.text }}</span>
                 <button type="button" @click="show = false" aria-label="Скрыть"
                         class="opacity-60 hover:opacity-100">&times;</button>

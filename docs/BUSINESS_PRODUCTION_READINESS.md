@@ -12,11 +12,17 @@ See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOC
 
 ### PRD-01 — Tenant-safe, retry-safe delivery (blocker)
 
-Observed: [broadcast_digest](../app/channels/registry.py) sends every digest to global env targets, then tenant targets. [build_and_publish](../app/services/digest/builder.py) stores one aggregate run outcome and rebroadcasts after a partial-channel failure.
+**Routing progress:** the [tenant-safe delivery change](design/tenant_safe_digest_delivery_review.md)
+implements owned active recipients, bootstrap-only bound env aliases, within-call
+identifier deduplication and non-bypass build scoping. No migration or live
+production setup is included. Per-target retries, concurrent publication and
+ambiguous transport acknowledgements remain open; this gate is not complete.
+
+Baseline observation before that change: [broadcast_digest](../app/channels/registry.py) sends every digest to global env targets, then tenant targets. [build_and_publish](../app/services/digest/builder.py) stores one aggregate run outcome and rebroadcasts after a partial-channel failure.
 
 Actions:
-- Remove global targets from arbitrary tenant delivery, or bind the legacy destination explicitly to the bootstrap workspace with a compatibility policy. Never make a global recipient an implicit tenant destination.
-- Deduplicate identical transport/chat destinations, enforce active bindings and keep operational alerts free of customer report content.
+- **Routing implemented:** global env values are no longer additional recipients. They may alias only matching active bootstrap digest bindings; no automatic binding creation.
+- **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
 - Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
 - Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.
 

@@ -64,13 +64,13 @@ TELEGRAM_ADMIN_CHAT_ID=   # legacy: default chat for admin notifications
 
 # Telegram (Channels)
 TELEGRAM_OWNER_IDS=       # comma-separated Telegram user ids for agent chat
-TELEGRAM_DIGEST_CHANNEL_ID=  # target channel/chat for scheduled digests
+TELEGRAM_DIGEST_CHANNEL_ID=  # bootstrap alias; matching active digest binding required
 
 # MAX
 MAX_BOT_TOKEN=
 MAX_API_URL=https://platform-api2.max.ru
 MAX_OWNER_ID=             # MAX user id for agent chat
-MAX_CHANNEL_ID=           # target channel/chat for scheduled digests
+MAX_CHANNEL_ID=           # bootstrap alias; matching active digest binding required
 
 # ─── Tenancy ──────────────────────────────────────────────────
 CREDENTIALS_KEY=          # Fernet key — generate with:
@@ -186,11 +186,11 @@ LOG_LEVEL=INFO
 | `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
 | `TELEGRAM_ADMIN_CHAT_ID` | `None` | Legacy: default chat for admin notifications |
 | `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
-| `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Target channel/chat for scheduled digests |
+| `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Bootstrap alias; requires matching active digest-enabled binding |
 | `MAX_BOT_TOKEN` | `None` | MAX bot access token |
 | `MAX_API_BASE` | `https://platform-api2.max.ru` | MAX API base URL |
 | `MAX_OWNER_ID` | `""` | MAX user ID allowed to chat with the agent |
-| `MAX_CHANNEL_ID` | `""` | Target channel/chat for scheduled digests |
+| `MAX_CHANNEL_ID` | `""` | Bootstrap alias; requires matching active digest-enabled binding |
 
 ### Tenancy
 

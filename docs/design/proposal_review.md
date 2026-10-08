@@ -70,6 +70,14 @@ IDs below identify decisions in this review; original competitive matrix numbers
 | R39 / “reactive only” and “manual test only” | Existing scheduler, job notifications, llm_model_test tool and learning already provide automation. | Identify missing aggregate anomaly detection/probes specifically; do not rebuild existing automation. |
 | R40 / hosted SaaS out of scope forever | Historical personal-agent framing conflicts with the new business objective. | Adopt progressive scope: managed pilot → repeatable B2B service → self-service after billing/support/security gates. FUT-06/08. |
 
+## Current routing implementation progress
+
+The [tenant-safe delivery change](tenant_safe_digest_delivery_review.md) addresses
+PRD-01's implicit env recipients, within-call duplicate identifiers and unscoped
+operator build reads. It does not implement durable per-target retries or
+concurrent-send idempotency. The observations below remain traceable to the
+initial baseline; follow-up scope must account for this completed routing part.
+
 ## Newly identified launch risks
 
 These supersede the old “embeddings next” sequence. Details and acceptance are in the production plan.

@@ -194,6 +194,12 @@ python -m app.runtime
 
 ### 6. Дайджест
 
+Before sending, register the recipient as an active workspace channel binding
+and enable `is_digest_target` (workspace settings → Channels). Env channel IDs
+are bootstrap-only aliases and do not authorize an unbound destination. Manual
+operator sends without a selected workspace build only the bootstrap digest.
+See [delivery configuration](./docs/DIGEST.md#configuration).
+
 ```bash
 python -m cli.main digest send-now day     # разовая отправка
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'

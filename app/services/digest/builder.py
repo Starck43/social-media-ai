@@ -155,6 +155,26 @@ async def build_and_publish(
     time_breakdown: bool = False,
     scenario_id: int | None = None,
 ) -> dict[str, Any]:
+    """Resolve and scope the entire run, including manual operator execution."""
+    from app.channels.registry import resolve_digest_tenant
+    from app.core.tenant_context import tenant_scope
+
+    tenant = await resolve_digest_tenant()
+    with tenant_scope(tenant.id):
+        return await _build_and_publish_scoped(
+            period, agent_task_id, force, source_ids, group_by, time_breakdown, scenario_id
+        )
+
+
+async def _build_and_publish_scoped(
+    period: str,
+    agent_task_id: int | None,
+    force: bool,
+    source_ids: list[int] | None,
+    group_by: str,
+    time_breakdown: bool,
+    scenario_id: int | None,
+) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
     from app.models.managers.digest_run_manager import DigestRunManager
 

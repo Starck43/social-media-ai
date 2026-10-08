@@ -40,11 +40,19 @@ same payload for every channel; channels differ only in transport rules.
 5. `render.py` renders HTML-safe text (the brief's Markdown is converted to the
    HTML subset the channels accept) with a length budget per channel.
 
-6. **Hybrid step 3 — delivery.** `broadcast_digest()` sends to every target and
-   records the result. Targets are additive:
-   - env-configured channels (`TELEGRAM_DIGEST_CHANNEL_ID` / `MAX_CHANNEL_ID`);
-   - every tenant channel with `is_digest_target=True` in the workspace the job
-     runs for (resolved from the ambient tenant scope).
+6. **Hybrid step 3 — delivery.** `broadcast_digest()` sends only to active
+   `tenant_channels` bindings with `is_digest_target=True` belonging to the one
+   active workspace resolved for this run. `channel_filter` applies to every
+   bound target. Exact normalized `(transport, chat_id)` destinations are sent
+   once per broadcast call.
+   - Env destinations (`TELEGRAM_DIGEST_CHANNEL_ID` / `MAX_CHANNEL_ID`) are
+     bootstrap-only aliases for matching active digest bindings, not additional
+     recipients. An unbound, inactive, disabled or foreign env destination is
+     ignored; configuring env alone no longer authorizes delivery.
+   - Non-operator callers cannot supply a foreign `tenant_id` or run unscoped.
+     Trusted unscoped operator runs resolve `DEFAULT_TENANT_SLUG`; the builder
+     enters that workspace with bypass disabled **before** aggregation, run
+     bookkeeping, LLM summarization and delivery.
 
 ## Grouping axes and time slices
 
@@ -169,16 +177,29 @@ trust store if the OS does not ship it.
 | Variable                       | Purpose                                          |
 | ------------------------------ | ------------------------------------------------ |
 | `TELEGRAM_BOT_TOKEN`           | Bot token (also used for the agent chat)         |
-| `TELEGRAM_DIGEST_CHANNEL_ID`   | Legacy env target for digests (`@name` or numeric id) |
+| `TELEGRAM_DIGEST_CHANNEL_ID`   | Bootstrap-only alias for an active owned digest binding (`@name` or numeric id) |
 | `MAX_BOT_TOKEN`                | MAX bot access token                             |
-| `MAX_CHANNEL_ID`               | Legacy env target for digests                    |
+| `MAX_CHANNEL_ID`               | Bootstrap-only alias for an active owned digest binding |
 | `AGENT_MODEL`                  | Preferred LLM model name for the summary         |
 
-Delivery targets are additive: the env vars above (legacy, global) and the
-tenant channels flagged `is_digest_target=True` in the digest job's workspace
-(see the web console's workspace settings). Only channels with both token and
-target set receive anything; `broadcast_digest()` returns `{}` when none is
-configured.
+Recipient authorization comes from active, digest-enabled workspace bindings,
+not from env. Env aliases retain legacy result keys (`telegram` / `max`) only
+when they match a bootstrap binding; other result keys are `transport:chat_id`.
+Missing transport credentials produce a failed result for that owned target;
+no eligible bindings return `{}`. Missing/inactive workspace or an unauthorized
+scope override raises `TenantContextError` before sending.
+
+**Compatibility action:** register the intended recipient through the existing
+channel-binding/operator workflow and enable its digest flag in workspace
+settings. No binding is created automatically and no database migration is
+required. Env-only installations must perform this setup before delivery works.
+Identifiers are trimmed and `@usernames` compared case-insensitively; a numeric
+chat ID and a username alias are not resolved as equivalent without platform
+identity verification. Prefer one stable identifier per destination.
+
+This fixes routing and within-call duplicate recipients, not partial-delivery
+retry/concurrent-send idempotency. Those remain separate work; an ambiguous
+transport timeout can still cause a repeated external delivery.
 
 ## Manual runs
 ```bash
@@ -187,7 +208,9 @@ python -m cli.main digest send-now week
 ```
 
 Manual runs are not idempotent by design — useful for testing channel setup
-without waiting for a schedule.
+without waiting for a schedule. An unscoped operator `digest send-now` uses only
+the bootstrap workspace, not a cross-workspace aggregate. Explicitly scoped
+runs use their selected workspace; the entire build runs without tenant bypass.
 
 Legacy task payloads with group_by=sentiment or content_type fall back to themes.
 Sentiment distribution and content mix remain metrics, not grouping axes.

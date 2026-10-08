@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.channels.max import MaxChannel
 from app.channels.telegram import TelegramChannel
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from app.models import Tenant
 
 
 def get_channel(name: str):
@@ -32,50 +36,76 @@ def enabled_channels() -> list:
     return channels
 
 
+async def resolve_digest_tenant(tenant_id: int | None = None) -> Tenant:
+    """Resolve one active workspace without letting an ID grant access.
+
+    An unscoped operator run selects the bootstrap workspace. The builder must
+    enter its non-bypass scope before reading analytics, not only before send.
+    """
+    from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+    from app.models.managers.tenant_manager import tenants
+
+    ambient = current_tenant_id()
+    if not is_bypass() and (ambient is None or (tenant_id is not None and tenant_id != ambient)):
+        raise TenantContextError("Digest delivery requires the current workspace; foreign overrides are forbidden")
+    selected = tenant_id if tenant_id is not None else ambient
+    if selected is None:
+        tenant = await tenants.get_by_slug(settings.DEFAULT_TENANT_SLUG)
+    else:
+        tenant = await tenants.get(id=selected)
+    if tenant is None or not tenant.is_active:
+        raise TenantContextError("Digest workspace is missing or inactive")
+    return tenant
+
+
+def _destination_id(chat_id: str) -> str:
+    """Normalize exact IDs/usernames without guessing numeric/username aliases."""
+    value = str(chat_id).strip()
+    return value.lower() if value.startswith("@") else value
+
+
 async def broadcast_digest(
     text: str, channel_filter: str | None = None, tenant_id: int | None = None
 ) -> dict[str, dict]:
-    """
-    Publish digest text to configured digest targets.
+    """Send only to active, digest-enabled bindings of one active workspace.
 
-    Two target sets, additive:
-    - env-configured targets: TELEGRAM_DIGEST_CHANNEL_ID / MAX_CHANNEL_ID
-    - tenant channels with `is_digest_target=True` (hybrid digest step 3).
-
-    Returns {channel: send_result} — keys are channel names for the env targets
-    and "channel:chat_id" for tenant-bound ones.
+    Legacy env destinations are bootstrap-only aliases for matching bindings,
+    never additional recipients. Each normalized (transport, destination) is
+    sent once per call. This does not make retries/transport timeouts exactly-once.
     """
+    from app.models.managers.tenant_manager import tenant_channels
+
+    tenant = await resolve_digest_tenant(tenant_id)
+    bindings = await tenant_channels.digest_targets(tenant.id)
+    targets: dict[tuple[str, str], str] = {}
+    for binding in bindings:
+        # Explicit backstop even when a caller is in operator bypass.
+        if binding.tenant_id != tenant.id or not binding.is_active or not binding.is_digest_target:
+            continue
+        if channel_filter and binding.channel != channel_filter:
+            continue
+        chat_id = _destination_id(binding.chat_id)
+        if chat_id:
+            targets.setdefault((binding.channel, chat_id), f"{binding.channel}:{chat_id}")
+
+    if tenant.slug == settings.DEFAULT_TENANT_SLUG.strip().lower():
+        for name, configured in (
+            ("telegram", settings.TELEGRAM_DIGEST_CHANNEL_ID),
+            ("max", settings.MAX_CHANNEL_ID),
+        ):
+            if not configured or (channel_filter and name != channel_filter):
+                continue
+            destination = (name, _destination_id(configured))
+            if destination in targets:
+                targets[destination] = name  # Preserve legacy result keys, not a second send.
+            else:
+                logger.warning("Legacy %s digest destination ignored: no active bootstrap digest binding", name)
+
     results: dict[str, dict] = {}
-    targets = [("telegram", settings.TELEGRAM_DIGEST_CHANNEL_ID), ("max", settings.MAX_CHANNEL_ID)]
-    for name, chat_id in targets:
-        if channel_filter and name != channel_filter:
-            continue
-        if not chat_id:
-            continue
+    for (name, chat_id), key in targets.items():
         ch = get_channel(name)
         if not ch:
-            results[name] = {"success": False, "error": "channel not configured"}
+            results[key] = {"success": False, "error": "channel not configured"}
             continue
-        results[name] = await ch.send(chat_id, text, parse_mode="HTML")
-
-    # Tenant digest targets: every bound chat with is_digest_target=True gets
-    # the same payload. The tenant is resolved from the ambient scope when not
-    # passed explicitly — the digest job runs inside the job's workspace scope,
-    # so this never leaks across workspaces.
-    if tenant_id is None:
-        from app.core.tenant_context import current_tenant_id
-
-        tenant_id = current_tenant_id()
-    if tenant_id is not None:
-        from app.models.managers.tenant_manager import tenant_channels
-
-        channels = await tenant_channels.digest_targets(tenant_id)
-        for tc in channels:
-            key = f"{tc.channel}:{tc.chat_id}"
-            ch = get_channel(tc.channel)
-            if not ch:
-                results[key] = {"success": False, "error": "channel not configured"}
-                continue
-            results[key] = await ch.send(tc.chat_id, text, parse_mode="HTML")
-
+        results[key] = await ch.send(chat_id, text, parse_mode="HTML")
     return results

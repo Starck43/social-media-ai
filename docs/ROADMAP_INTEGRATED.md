@@ -28,7 +28,7 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
 
 ## Candidate first implementation PRs (choose next, not executed here)
 
-1. **Tenant-safe destination resolution** (PRD-01): remove implicit cross-tenant env delivery, deduplicate recipients; focused two-tenant tests. Keep durable per-target retry/concurrency work in a follow-up design if needed.
+1. **Tenant-safe destination resolution** (PRD-01): the bounded routing package is implemented in the [delivery change](design/tenant_safe_digest_delivery_review.md), including bootstrap build scoping and focused two-tenant tests. Deployment requires recipient binding setup. Durable per-target retry/concurrency work remains a separate follow-up; PRD-01 is not fully closed.
 2. **Agent authorization and registry contract** (PRD-02 / UX-02): reproduce/fix action_send binding, explicit rights and separate tenant/global powers; decide legacy identity migration. Do not turn on live posting.
 3. **Spend accounting design + regression harness** (PRD-03): specify units, every-call attribution, unknown-price and concurrent reservation semantics. Approve schema requirements before implementing a ledger.
 4. **Production profile and health** (PRD-04): API/runtime ownership, one migrator, private DB, readiness, staging deploy/restore evidence.

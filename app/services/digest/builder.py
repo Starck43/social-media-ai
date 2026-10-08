@@ -82,6 +82,11 @@ async def aggregate(
     time_breakdown: bool = False,
     scenario_id: int | None = None,
 ) -> tuple[dict[str, Any], date, date]:
+    # "days" is a web-only grouping for the Chronology view; it must not be used
+    # for digest generation (the API and CLI should reject it before reaching here).
+    if group_by == "days":
+        raise ValueError("group_by='days' is web-only; use themes, sources, entities, sentiment, content_type, intent, or topic_chains")
+
     start, end = period_bounds(period)
     days = (end - start).days + 1
     agg = ReportAggregator()

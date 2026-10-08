@@ -727,6 +727,13 @@ async def get_grouped_analytics(
             detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, sentiment, content_type, intent"
         )
 
+    # "days" is a web-only grouping for the Chronology view; reject it here
+    if group_by == "days":
+        raise HTTPException(
+            status_code=400,
+            detail="group_by='days' is web-only; use themes, sources, entities, sentiment, content_type, intent, or topic_chains"
+        )
+
     # Fetch analytics rows
     end = date.today()
     start = end - timedelta(days=days - 1)

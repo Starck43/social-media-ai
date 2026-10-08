@@ -68,6 +68,9 @@ The digest handler reads `task.payload.group_by` (default `"themes"`) and
 `task.payload.time_breakdown` (default `false`). The same `ai_analytics` rows
 are grouped differently depending on these parameters — no data duplication.
 
+**Mention grouping (По упоминаниям):** The user-facing heading is «По упоминаниям»;
+the technical axis value remains `entities`.
+
 **Entity filtering:** `entities` axis supports an optional `entity_type` filter
 (`"person"`, `"brand"`, `"org"`). The old `monitored_users` mode is now
 `group_by="entities", entity_type="person"`.

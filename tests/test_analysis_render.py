@@ -188,3 +188,57 @@ def test_common_title_fallback_never_uses_database_id_or_chain_label():
         render_analysis({"source_metadata": {"source_name": "Анна"}})["display_title"] == "Материалы источника «Анна»"
     )
     assert render_analysis({})["display_title"] == "Материалы источника"
+
+
+@pytest.mark.parametrize(
+    "summary, expected",
+    [
+        ("Первая фраза. Вторая фраза.", "Первая фраза."),
+        ("Что изменилось? Ответ в следующей фразе.", "Что изменилось?"),
+        ("  Дизайн\n  интерьера   обновлён! Далее детали.", "Дизайн интерьера обновлён!"),
+        ("Цена 3.5 млн руб. за помещение. Другая тема.", "Цена 3.5 млн руб. за помещение."),
+        ("Проект на ул. Ленина в г. Киров. Следующая фраза.", "Проект на ул. Ленина в г. Киров."),
+        ("А. Петров рассказал о ремонте. Дальше детали.", "А. Петров рассказал о ремонте."),
+        (
+            "Упомянуты мебель, свет и т.д. в новом интерьере. Другая тема.",
+            "Упомянуты мебель, свет и т.д. в новом интерьере.",
+        ),
+        ("Короткая сводка без точки", "Короткая сводка без точки"),
+        (None, None),
+        ({"bad": "value"}, None),
+        ("  \n ", None),
+    ],
+)
+def test_summary_display_heading_uses_first_sentence_without_false_boundaries(summary, expected):
+    from app.services.ai.analysis_render import summary_display_heading
+
+    assert summary_display_heading(summary) == expected
+
+
+def test_summary_display_heading_only_adds_ellipsis_when_truncated():
+    from app.services.ai.analysis_render import summary_display_heading
+
+    assert summary_display_heading("а" * 120) == "а" * 120
+    assert summary_display_heading("а" * 121) == "а" * 119 + "…"
+    heading = summary_display_heading("Содержательная фраза " * 20)
+    assert len(heading) <= 120 and heading.endswith("…")
+
+
+def test_display_title_cascade_summary_before_topic_without_changing_saved_data():
+    data = {"topics": ["Дизайн"], "analysis_summary": "Интерьер стал светлее. Далее описание."}
+    assert render_analysis(data)["display_title"] == "Интерьер стал светлее."
+    assert render_analysis(data)["analysis_summary"] == data["analysis_summary"]
+    assert data["topics"] == ["Дизайн"]
+    data["analysis_title"] = "Я"
+    assert render_analysis(data)["display_title"] == "Я"
+    assert render_analysis({"analysis_summary": " ", "topics": ["Дизайн"]})["display_title"] == "Дизайн"
+    assert (
+        render_analysis({"content_hashes": ["hash"]}, source_name="Анна")["display_title"]
+        == "Материалы источника «Анна»"
+    )
+    assert (
+        render_analysis({"analysis_summary": {"bad": "value"}, "unified_summary": {"summary": "Сводка."}})[
+            "display_title"
+        ]
+        == "Сводка."
+    )

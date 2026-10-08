@@ -240,6 +240,9 @@ lost its default. Actual deletion still runs through the shared model manager.
 
 ## Aggregate-first analytics tools
 
+The `entities` axis is displayed to users as **По упоминаниям** (people, brands,
+organizations). The tool/query value `entities` and `entity_type` filters are unchanged.
+
 `report_period(period="day"|"week", group_by="themes"|"sources"|"entities"|
 "intent"|"topic_chains", limit=10, sentiment=None, media=None)` returns compact
 zero-LLM groups `{key, count, avg_sentiment}`, total group count and period metadata.

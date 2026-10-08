@@ -64,7 +64,7 @@ NAV_FILTERS = (
 DRILL_LABELS = {
     "themes": "По темам",
     "sources": "По источникам",
-    "entities": "По сущностям",
+    "entities": "По упоминаниям",
     "sentiment": "По тональности",
     "content_type": "По типу контента",
     "intent": "По намерению",

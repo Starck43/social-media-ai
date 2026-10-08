@@ -42,7 +42,11 @@ def compact_groups(groups: list[dict], limit: int = 10, *, chain_keys: bool = Fa
         "type": "object",
         "properties": {
             "period": {"type": "string", "enum": ["day", "week"]},
-            "group_by": {"type": "string", "enum": REPORT_AXES},
+            "group_by": {
+                "type": "string",
+                "enum": REPORT_AXES,
+                "description": "Ось группировки; entities — по упоминаниям людей, брендов и организаций.",
+            },
             "time_breakdown": {"type": "boolean", "description": "Include compact per-date aggregate slices"},
             "entity_type": {"type": "string", "enum": ["person", "brand", "org"]},
             "limit": LIMIT_SCHEMA,
@@ -109,7 +113,11 @@ async def report_period(
         "type": "object",
         "properties": {
             "period": {"type": "string", "enum": ["day", "week"]},
-            "group_by": {"type": "string", "enum": REPORT_AXES},
+            "group_by": {
+                "type": "string",
+                "enum": REPORT_AXES,
+                "description": "Ось группировки; entities — по упоминаниям людей, брендов и организаций.",
+            },
             "time_breakdown": {"type": "boolean"},
         },
         "required": [],

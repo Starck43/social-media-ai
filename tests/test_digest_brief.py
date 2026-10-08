@@ -158,7 +158,7 @@ async def test_monitored_users_group_lists_the_author(source):
         text_data = {"entities": [{"name": "ivan", "type": "person"}]}
         await _row(source, day_offset=0, text=text_data, topic_chain_id=f"src_{source.id}_user_ivan")
         brief = await ReportAggregator().generate_digest_brief(period="week", group_by="entities", entity_type="person")
-        assert "## По сущностям" in brief
+        assert "## По упоминаниям" in brief
 
 
 async def test_specialized_sections_are_filtered_by_the_scenario(source):

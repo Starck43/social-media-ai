@@ -169,7 +169,7 @@ class GroupingAxis(str, Enum):
             "days": "По дням",
             "themes": "По темам",
             "sources": "По источникам",
-            "entities": "По сущностям",
+            "entities": "По упоминаниям",
             "intent": "По намерению",
             "topic_chains": "Тематические цепочки",
         }.get(self.value, self.value)

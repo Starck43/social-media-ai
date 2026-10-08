@@ -1,4 +1,4 @@
-# AGENTS.md — Social Media AI Analytics
+# AGENTS.md — ИИ Ассистент
 
 AI-powered social media monitoring platform (VK, Telegram, MAX): AI-анализ
 контента, автокомментирование ботом, ежедневные отчёты, персональный агент в

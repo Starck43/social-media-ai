@@ -85,7 +85,7 @@ class UserAdmin(BaseAdmin, model=User):
 	form_widget_args = {
 		"hashed_password": {"type": "password"},
 		"email": {"placeholder": "user@example.com"},
-		"username": {"placeholder": "username"},
+		"username": {"placeholder": "ivan_petrov"},
 	}
 
 	form_args = {
@@ -94,7 +94,7 @@ class UserAdmin(BaseAdmin, model=User):
 			"description": "Логин для входа в /app и /admin",
 		},
 		"email": {
-			"label": "Email",
+			"label": "Электронная почта",
 			"description": "Используется для идентификации и восстановления доступа",
 		},
 		"hashed_password": {
@@ -941,8 +941,8 @@ class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
 
 
 class AIAnalyticsAdmin(BaseAdmin, model=AIAnalytics):
-	name = "AI Аналитика"
-	name_plural = "AI Аналитика"
+	name = "ИИ-аналитика"
+	name_plural = "ИИ-аналитика"
 	icon = "fa fa-chart-bar"
 
 	# Rows are written by the analyzer only — the admin may inspect, correct or
@@ -1223,8 +1223,8 @@ class NotificationAdmin(BaseAdmin, model=Notification):
 
 
 class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
-	name = "Провайдер LLM"
-	name_plural = "Провайдеры LLM"
+	name = "Провайдер ИИ"
+	name_plural = "Провайдеры ИИ"
 	icon = "fa fa-server"
 
 	# Проба подключения ходит в провайдера его же ключом и тратит токены —
@@ -1357,8 +1357,8 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 
 
 class LLMModelAdmin(BaseAdmin, model=LLMModel):
-	name = "Модель LLM"
-	name_plural = "Модели LLM"
+	name = "Модель ИИ"
+	name_plural = "Модели ИИ"
 	icon = "fa fa-microchip"
 
 	# Как и у провайдера: реальный вызов модели по сохранённому ключу.
@@ -1402,6 +1402,11 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 			"default_temperature": "Температура",
 			"is_active": "Активна",
 			"is_default": "По умолчанию",
+			"use_count": "Вызовов всего",
+			"fail_count": "Ошибок всего",
+			"last_used_at": "Последний вызов",
+			"last_success_at": "Последний успех",
+			"last_error_at": "Последняя ошибка",
 		},
 		**BaseAdmin.column_labels,
 	)
@@ -1427,7 +1432,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		"model_type": {
 			"label": "Тип модели",
 			"description": "Выберите возможности модели",
-			"choices": [("text", "text"), ("image", "image"), ("video", "video"), ("audio", "audio")],
+			"choices": [("text", "Текст"), ("image", "Изображение"), ("video", "Видео"), ("audio", "Аудио")],
 			"coerce": str,
 			"widget": widgets.ListWidget(prefix_label=False),
 			"option_widget": widgets.CheckboxInput(),
@@ -1451,6 +1456,26 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 		"last_request_cost_at": {
 			"label": "Когда был последний запрос",
 			"description": "Заполняется автоматически после теста модели",
+		},
+		"use_count": {
+			"label": "Вызовов всего",
+			"description": "Заполняется автоматически при каждом вызове модели",
+		},
+		"fail_count": {
+			"label": "Ошибок всего",
+			"description": "Заполняется автоматически при неуспешных вызовах (5xx, таймаут, сеть)",
+		},
+		"last_used_at": {
+			"label": "Последний вызов",
+			"description": "Заполняется автоматически",
+		},
+		"last_success_at": {
+			"label": "Последний успех",
+			"description": "Заполняется автоматически при успешном вызове",
+		},
+		"last_error_at": {
+			"label": "Последняя ошибка",
+			"description": "Заполняется автоматически при неуспешном вызове",
 		},
 		**BaseAdmin.form_args,
 	}
@@ -1559,7 +1584,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
 	column_labels = dict({
 		"id": "ID",
 		"name": "Название",
-		"slug": "Slug",
+		"slug": "Слаг",
 		"plan": "Тариф",
 		"timezone": "Часовой пояс",
 		"is_active": "Активно",
@@ -1600,7 +1625,7 @@ class TenantAdmin(BaseAdmin, model=Tenant):
 
 	form_args = {
 		"name": {"label": "Название", "description": "Отображаемое имя рабочего пространства"},
-		"slug": {"label": "Slug", "description": "Уникальный короткий идентификатор, используется в URL и заголовках"},
+		"slug": {"label": "Слаг", "description": "Уникальный короткий идентификатор, используется в URL и заголовках"},
 		"plan": {
 			"label": "Тариф",
 			"description": (
@@ -1810,7 +1835,7 @@ class BotActionAdmin(BaseAdmin, model=BotAction):
 			"payload": "Данные действия",
 			"result": "Результат",
 			"error": "Ошибка",
-			"dry_run": "Тестовый запуск (dry run)",
+			"dry_run": "Тестовый запуск",
 			"confirmed_by": "Подтверждено пользователем",
 			"confirmed_at": "Время подтверждения",
 			"attempts": "Попытки",

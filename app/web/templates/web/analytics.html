@@ -42,7 +42,12 @@
         </div>
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <p class="text-sm text-slate-400">LLM-расход</p>
-            <p class="mt-2 text-3xl font-semibold">${{ "%.2f"|format(analytics.kpis.cost_usd) }}</p>
+            <p class="mt-2 text-3xl font-semibold">
+                ${{ "%.2f"|format(analytics.kpis.cost_usd) }}
+                {% if analytics.kpis.cost_usd == 0 %}
+                <span class="text-base text-slate-500">(тариф не задан)</span>
+                {% endif %}
+            </p>
         </div>
     </div>
 
@@ -81,6 +86,11 @@
         {% if analytics.chains|length > 6 %}
         <p class="mt-2 text-xs text-slate-600">Показаны 6 из {{ analytics.chains|length }} цепочек</p>
         {% endif %}
+        <p class="mt-2 text-xs text-slate-600">
+            Цепочки формируются автоматически по совпадающим темам.
+            Дубликаты можно объединить через
+            <code class="text-cyan-400">python -m cli.main chains merge --apply</code>
+        </p>
     </div>
     {% endif %}
 
@@ -90,21 +100,24 @@
         <div class="flex flex-wrap items-center gap-3">
             <div class="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
                 {% set axes = [
-                    ('days', 'По дням', '📅'),
+                    ('days', 'Хронология', '📅'),
                     ('themes', 'По темам', '🧩'),
                     ('sources', 'По источникам', '🔗'),
                     ('entities', 'По сущностям', '👤'),
                     ('sentiment', 'По тональности', '😊'),
                     ('content_type', 'По типу контента', '📊'),
                     ('intent', 'По намерению', '🎯'),
-                    ('topic_chains', 'Тематические цепочки', '🔗'),
                 ] %}
                 {% for ax_val, ax_label, ax_icon in axes %}
-                <a href="?group_by={{ ax_val }}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
+                {% set count = (gd.group_counts or {}).get(ax_val, 0) %}
+                {% if count > 0 or ax_val == gd.axis %}
+                <a href="?group_by={{ ax_val }}{% if ax_val == 'entities' and gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
                    class="rounded-lg px-3 py-1.5 text-sm transition"
                    :class="axis === '{{ ax_val }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:bg-slate-800'">
                     {{ ax_icon }} {{ ax_label }}
+                    {% if count > 0 %}<span class="text-xs opacity-70">({{ count }})</span>{% endif %}
                 </a>
+                {% endif %}
                 {% endfor %}
             </div>
             <template x-if="axis === 'entities'">

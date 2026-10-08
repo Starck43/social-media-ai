@@ -129,6 +129,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     # Headline KPIs from the raw activity + engagement data.
     total_posts = sum(a.get("total_posts", 0) for a in activity)
     peak_users = max((a.get("active_users", 0) for a in activity), default=0)
+    peak_users_display = "—" if peak_users == 0 else peak_users
 
     return {
         "sentiment": sentiment,
@@ -144,7 +145,7 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
         "kpis": {
             "total_analyses": total_analyses,
             "total_posts": total_posts,
-            "peak_users": peak_users,
+            "peak_users": peak_users_display,
             "cost_usd": float((llm.get("summary") or {}).get("total_cost_usd") or 0),
         },
     }
@@ -262,13 +263,35 @@ async def _fetch_grouped(
             entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
         )
     except ValueError:
-        # Invalid entity_type — fall back to no filter.
         result = await group_analytics(rows, axis=axis)
+
+    # Compute group counts for all axes to drive tab visibility and count badges.
+    axes_for_counts = [
+        ("days", GroupingAxis.DAYS),
+        ("themes", GroupingAxis.THEMES),
+        ("sources", GroupingAxis.SOURCES),
+        ("entities", GroupingAxis.ENTITIES),
+        ("sentiment", GroupingAxis.SENTIMENT),
+        ("content_type", GroupingAxis.CONTENT_TYPE),
+        ("intent", GroupingAxis.INTENT),
+    ]
+    group_counts = {}
+    for ax_val, ax_enum in axes_for_counts:
+        if ax_val == axis.value:
+            group_counts[ax_val] = len(result.get("groups", []))
+        else:
+            try:
+                entity_type_filter = entity_type if ax_enum == GroupingAxis.ENTITIES else None
+                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter)
+                group_counts[ax_val] = len(res.get("groups", []))
+            except ValueError:
+                group_counts[ax_val] = 0
 
     return {
         "groups": result.get("groups", []),
         "axis": result.get("axis", "themes"),
         "entity_type": entity_type if axis == GroupingAxis.ENTITIES else None,
+        "group_counts": group_counts,
     }
 
 

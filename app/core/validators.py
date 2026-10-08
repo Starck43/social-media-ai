@@ -7,19 +7,19 @@ def validate_password(password: str) -> tuple[bool, str]:
 	"""Validate password against complexity requirements."""
 
 	if len(password) < settings.PASSWORD_MIN_LENGTH:
-		return False, f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long"
+		return False, f"Пароль должен содержать минимум {settings.PASSWORD_MIN_LENGTH} символов"
 
 	if settings.PASSWORD_REQUIRE_UPPERCASE and not re.search(r'[A-Z]', password):
-		return False, "Password must contain at least one uppercase letter"
+		return False, "Пароль должен содержать хотя бы одну заглавную букву"
 
 	if settings.PASSWORD_REQUIRE_LOWERCASE and not re.search(r'[a-z]', password):
-		return False, "Password must contain at least one lowercase letter"
+		return False, "Пароль должен содержать хотя бы одну строчную букву"
 
 	if settings.PASSWORD_REQUIRE_NUMBERS and not re.search(r'\d', password):
-		return False, "Password must contain at least one number"
+		return False, "Пароль должен содержать хотя бы одну цифру"
 
 	if settings.PASSWORD_REQUIRE_SPECIAL and not re.search(r'[!@#$%^&*]', password):
-		return False, "Password must contain at least one special character (!@#$%^&*)"
+		return False, "Пароль должен содержать хотя бы один спецсимвол (!@#$%^&*)"
 
 	return True, ""
 

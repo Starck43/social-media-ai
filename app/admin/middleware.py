@@ -23,10 +23,10 @@ async def csrf_middleware(request: Request, call_next):
     )
 
     if not token:
-        raise HTTPException(status_code=403, detail="CSRF token missing")
+        raise HTTPException(status_code=403, detail="Отсутствует токен безопасности")
 
     csrf_manager = get_csrf_manager(request)
     if not csrf_manager or not csrf_manager.verify_token(token):
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+        raise HTTPException(status_code=403, detail="Недействительный токен безопасности")
 
     return await call_next(request)

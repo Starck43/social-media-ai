@@ -59,15 +59,15 @@ async def reset_password_page(request: Request):
 	error = request.query_params.get("error")
 	message = None
 	if error == "user_not_found":
-		message = "User not found or has insufficient permissions"
+		message = "Пользователь не найден или недостаточно прав"
 	elif error == "invalid_csrf":
-		message = "Security token expired. Please try again."
+		message = "Срок действия токена безопасности истёк. Попробуйте ещё раз."
 	elif error == "email_required":
-		message = "Email address is required"
+		message = "Необходимо указать электронную почту"
 
 	# Get the admin instance from the request
 	admin = request.app.state.admin
-	admin.title = "Reset Password"
+	admin.title = "Сброс пароля"
 
 	return templates.TemplateResponse(
 		"sqladmin/user/reset_password.html",
@@ -101,7 +101,7 @@ async def reset_password(
 		if is_ajax:
 			return JSONResponse(
 				status_code=status.HTTP_403_FORBIDDEN,
-				content={"error": "Invalid or expired CSRF token. Please refresh the page and try again."}
+				content={"error": "Недействительный или просроченный токен безопасности. Обновите страницу и попробуйте ещё раз."}
 			)
 		return RedirectResponse(
 			"/admin/reset-password?error=invalid_csrf",
@@ -109,7 +109,7 @@ async def reset_password(
 		)
 
 	if not email:
-		error_msg = "Email is required"
+		error_msg = "Необходимо указать электронную почту"
 		if is_ajax:
 			return JSONResponse(
 				status_code=status.HTTP_400_BAD_REQUEST,
@@ -200,7 +200,7 @@ async def change_password_form_path(
 
 	# Get the admin instance from the request
 	admin = request.app.state.admin
-	admin.title = "Change Password"
+	admin.title = "Смена пароля"
 
 	messages = request.session.pop("_messages", None)
 
@@ -247,7 +247,7 @@ async def change_password_submit_path(
 		)
 
 	if not current_user.is_active:
-		raise HTTPException(status_code=403, detail="Permission denied")
+		raise HTTPException(status_code=403, detail="Доступ запрещён")
 
 	# Initialize messages list
 	if "_messages" not in request.session:
@@ -256,24 +256,24 @@ async def change_password_submit_path(
 	# CSRF check
 	csrf_manager = get_csrf_manager(request)
 	if not csrf_token or not csrf_manager.verify_token(csrf_token):
-		request.session["_messages"].append("Invalid or missing security token. Please try again.")
+		request.session["_messages"].append("Отсутствующий или недействительный токен безопасности. Попробуйте ещё раз.")
 		return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 	# Basic validation
 	errors = []
 
 	if not all([current_password, new_password, confirm_password]):
-		errors.append("All password fields are required")
+		errors.append("Заполните все поля пароля")
 
 	if new_password != confirm_password:
-		errors.append("Passwords do not match")
+		errors.append("Пароли не совпадают")
 
 	if current_user.id != int(user_id):
-		errors.append("User not found")
+		errors.append("Пользователь не найден")
 
 	# Check if new password is different from current
 	if new_password == current_password:
-		errors.append("New password must be different from current password")
+		errors.append("Новый пароль должен отличаться от текущего")
 
 	# Validate password complexity using the existing validator
 	from app.core.validators import validate_password
@@ -283,7 +283,7 @@ async def change_password_submit_path(
 
 	# Verify current password
 	if not verify_password(current_password, current_user.hashed_password):
-		errors.append("Current password is incorrect")
+		errors.append("Текущий пароль неверен")
 
 	if errors:
 		request.session["_messages"].extend(errors)
@@ -330,7 +330,7 @@ async def change_password_submit_path(
 
 	except Exception as e:
 		logger.error(f"Error changing password: {str(e)}", exc_info=True)
-		request.session["_messages"].append("Server error. Please try again.")
+		request.session["_messages"].append("Ошибка сервера. Попробуйте ещё раз.")
 		return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=303)
 
 
@@ -359,7 +359,7 @@ async def verify_current_password(
 		return {"valid": is_valid}
 	except Exception as e:
 		logger.error(f"Error verifying password: {str(e)}", exc_info=True)
-		return {"valid": False, "error": "An error occurred while verifying password"}
+		return {"valid": False, "error": "Произошла ошибка при проверке пароля"}
 
 
 @router.get("/dashboard", response_class=HTMLResponse, name="analytics_dashboard")

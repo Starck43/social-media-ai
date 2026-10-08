@@ -36,11 +36,11 @@ class AdminAuthBackend(AuthenticationBackend):
 
         if not csrf_manager or not csrf_manager.verify_token(csrf_token):
             logger.warning("❌ Invalid CSRF token in login attempt")
-            request.session["login_error"] = "Invalid CSRF token"
+            request.session["login_error"] = "Недействительный токен безопасности"
             return False
 
         if not username or not password:
-            request.session["login_error"] = "Please enter both username and password"
+            request.session["login_error"] = "Введите имя пользователя и пароль"
             return False
 
         try:
@@ -70,7 +70,7 @@ class AdminAuthBackend(AuthenticationBackend):
             # Track failed attempt
             await self.track_login_attempt(request, username)
 
-        request.session["login_error"] = "Invalid username or password"
+        request.session["login_error"] = "Неверное имя пользователя или пароль"
         return False
 
     async def logout(self, request: Request) -> bool:
@@ -114,7 +114,7 @@ class AdminAuthBackend(AuthenticationBackend):
         if current_attempts >= settings.MAX_LOGIN_ATTEMPTS:
             lockout_key = f"login_lockout:{username}"
             request.session[lockout_key] = datetime.now().isoformat()
-            raise HTTPException(status_code=429, detail="Too many login attempts")
+            raise HTTPException(status_code=429, detail="Слишком много попыток входа")
 
     @staticmethod
     async def check_login_lockout(request: Request, username: str):
@@ -126,4 +126,4 @@ class AdminAuthBackend(AuthenticationBackend):
         if lockout_time:
             lockout_time = datetime.fromisoformat(lockout_time)
             if datetime.now() < lockout_time + timedelta(minutes=settings.LOGIN_TIMEOUT_MINUTES):
-                raise HTTPException(status_code=429, detail="Account temporarily locked")
+                raise HTTPException(status_code=429, detail="Учётная запись временно заблокирована")

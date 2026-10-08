@@ -50,8 +50,8 @@ async def lifespan(_: FastAPI):
 
 def create_application() -> FastAPI:
     application = FastAPI(
-        title="Social Media AI Manager",
-        description="API для управления социальными сетями с AI аналитикой",
+        title="ИИ Ассистент",
+        description="API для управления социальными сетями с ИИ-аналитикой",
         version="0.4.0",
         debug=settings.DEBUG,
         lifespan=lifespan,

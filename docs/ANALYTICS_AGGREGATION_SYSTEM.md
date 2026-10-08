@@ -19,24 +19,27 @@ as a per-date chronology.
 > axes below. The old `AgentScenario.analyze_type` was dropped by migration
 > `0083`; grouping is now a query-time parameter passed to `group_analytics()`
 > via `group_by` (and `time_breakdown` for per-date sub-entries).
+>
+> **Web UI note:** the web analytics page exposes `days` as a dedicated
+> **"Хронология"** tab (chronology as its own view) and hides `topic_chains`
+> from the axis switcher. Both remain fully functional via direct URL or API.
 
 ### `GroupingAxis` values
 
-| Axis | Groups by | JSONB field |
-|------|-----------|-------------|
-| `themes` | Semantic topics | `summary_data->'topics'` |
-| `sources` | Source/channel | `source_id` |
-| `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` |
-| `sentiment` | Mood/score | `summary_data->'sentiment_score'` |
-| `content_type` | Media format | `media_types` |
-| `intent` | Why the post was written | `summary_data->'intent_type'` |
-| `topic_chains` | Cross-row theme chains | `topic_chain_id` |
+| Axis | Groups by | JSONB field | Notes |
+|------|-----------|-------------|-------|
+| `days` | `analysis_date` | — | **Web-only view mode** ("Хронология" tab). Not a digest grouping axis. |
+| `themes` | Semantic topics | `summary_data->'topics'` | |
+| `sources` | Source/channel | `source_id` | |
+| `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` | Supports `entity_type` filter |
+| `sentiment` | Mood/score | `summary_data->'sentiment_score'` | |
+| `content_type` | Media format | `media_types` | |
+| `intent` | Why the post was written | `summary_data->'intent_type'` | |
+| `topic_chains` | Cross-row theme chains | `topic_chain_id` | Hidden from web axis switcher; accessible via direct URL |
 
-> **Note:** `days` is not a grouping axis — chronology is provided by the
-> `time_breakdown` flag (per-date sub-entries within any axis group). The
-> web analytics page uses the default aggregate view over the selected
-> date window; the digest can enable `time_breakdown: true` for a per-day
-> chronology.
+> **Note:** `days` is a web-only view mode presented as the **"Хронология"** tab
+> in the analytics page. The digest and API use `time_breakdown: true` for
+> per-date chronology within any axis group.
 
 ### Time breakdown
 

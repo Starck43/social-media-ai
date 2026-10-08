@@ -68,7 +68,7 @@ def setup_admin(app):
         authentication_backend=authentication_backend,
         authorization_backend=AdminAuthorizationBackend(),
         base_url="/admin",
-        title="Social Media AI Admin",
+        title="ИИ Ассистент",
         logo_url="/static/logo.png",
         templates_dir=str(PROJECT_ROOT / "app" / "templates"),
     )

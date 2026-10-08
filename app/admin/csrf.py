@@ -44,5 +44,5 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 			csrf_manager = get_csrf_manager(request)
 			token = request.headers.get("X-CSRF-Token") or request.cookies.get("csrf_token")
 			if not csrf_manager.verify_token(token):
-				raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+				raise HTTPException(status_code=403, detail="Отсутствующий или недействительный токен безопасности")
 		return await call_next(request)

@@ -1,6 +1,18 @@
 {% extends "sqladmin/base.html" %}
 {% block head %}
 {{ super() }}
+<script>
+(function() {
+    try {
+        var theme = localStorage.getItem('theme');
+        var isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+        }
+        window.__initialAdminTheme = isDark;
+    } catch(e) {}
+})();
+</script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/custom.css') }}">
 {% block extra_css %}{% endblock %}
@@ -50,8 +62,8 @@
                 {% if debug %}
                 <div class="debug-info">
                     <strong>Отладочная информация:</strong><br>
-                    CSRF Token: {{ csrf_token()|default('Not set')|truncate(20) }}<br>
-                    Session Keys: {{ request.session.keys()|list }}
+                    CSRF-токен: {{ csrf_token()|default('Not set')|truncate(20) }}<br>
+                    Ключи сессии: {{ request.session.keys()|list }}
                 </div>
                 {% endif %}
             </div>
@@ -85,7 +97,7 @@
             e.preventDefault()
             const originalText = submitButton.textContent
             submitButton.disabled = true
-            submitButton.textContent = "Signing in..."
+            submitButton.textContent = "Вход..."
             errorDiv.style.display = "none"
 
             // Get the CSRF token from the form
@@ -93,7 +105,7 @@
 
             if (!csrfToken) {
                 console.error("CSRF token not found in the form")
-                showError("Security token missing. Please refresh the page.")
+                showError("Отсутствует токен безопасности. Обновите страницу.")
                 submitButton.disabled = false
                 submitButton.textContent = originalText
                 return
@@ -104,7 +116,7 @@
 
             // Базовая валидация
             if (!username || !password) {
-                showError("Please enter both username and password")
+                showError("Введите имя пользователя и пароль")
                 submitButton.disabled = false
                 submitButton.textContent = originalText
                 return
@@ -134,7 +146,7 @@
                         if (result.success && result.redirect) {
                             window.location.href = result.redirect
                         } else {
-                            showError(result.error || "Login failed")
+                            showError(result.error || "Не удалось войти")
                         }
                     } catch (jsonError) {
                         console.log("Regular form submission successful")
@@ -143,12 +155,12 @@
                 } else {
                     // Ошибка сервера
                     const errorText = await response.text()
-                    showError(errorText || `Login failed (status: ${response.status})`)
+                    showError(errorText || `Не удалось войти (статус: ${response.status})`)
                 }
 
             } catch (error) {
                 console.error("Error during login:", error)
-                showError("An error occurred during login. Please try again.")
+                showError("Произошла ошибка при входе. Попробуйте ещё раз.")
             } finally {
                 submitButton.disabled = false
                 submitButton.textContent = originalText

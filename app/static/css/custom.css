@@ -159,6 +159,22 @@ td > i {
     overflow: hidden;
 }
 
+/* Boolean status icons in model lists (sqladmin bool_formatter renders
+   <i class="fa fa-check text-success"> / <i class="fa fa-times text-danger">
+   directly inside <td>). Fixed square box keeps border-radius: 50% a circle
+   instead of an oval; background stays transparent. */
+td > i.fa-check,
+td > i.fa-times {
+    --fa-width: 1.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    background-color: transparent;
+}
+
 td > a i {
     color: var(--tblr-success);
 }

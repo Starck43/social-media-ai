@@ -155,7 +155,7 @@ Create `/etc/systemd/system/smm-ai.service`:
 
 ```ini
 [Unit]
-Description=Social Media AI Runtime
+Description=ИИ Ассистент Runtime
 After=network.target postgresql.service
 
 [Service]
@@ -190,7 +190,7 @@ Create `/etc/systemd/system/smm-ai-worker.service`:
 
 ```ini
 [Unit]
-Description=Social Media AI Worker
+Description=ИИ Ассистент Worker
 After=network.target postgresql.service
 
 [Service]

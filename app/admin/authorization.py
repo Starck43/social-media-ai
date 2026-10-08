@@ -213,7 +213,7 @@ def _console_backend(request: Request) -> AdminAuthorizationBackend:
     backend = getattr(getattr(request.app.state, "admin", None), "authorization_backend", None)
     if not isinstance(backend, AdminAuthorizationBackend):
         # No console on this app (`ADMIN_ENABLED` off): nothing is allowed.
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin console is disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Консоль администратора отключена")
     return backend
 
 

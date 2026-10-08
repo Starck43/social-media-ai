@@ -1,6 +1,6 @@
 # CLI Reference
 
-Social Media AI Administration CLI built with Typer.
+ИИ Ассистент administration CLI built with Typer.
 
 ```bash
 python -m cli.main <command> <subcommand> [options]

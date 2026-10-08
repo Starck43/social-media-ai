@@ -68,7 +68,7 @@ class Inbound:
 | Env Var | Purpose |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Bot token (required for both agent chat and digest) |
-| `TELEGRAM_DIGEST_CHANNEL_ID` | Bootstrap-only alias; requires matching active digest binding |
+| `TELEGRAM_DIGEST_CHANNEL_ID` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `TELEGRAM_OWNER_IDS` | Comma-separated Telegram user IDs allowed to chat with the agent |
 
 ### Inbound: Long Polling
@@ -134,7 +134,7 @@ POST https://api.telegram.org/bot{token}/sendMessage
 | `MAX_BOT_TOKEN` | Bot access token |
 | `MAX_API_BASE` | API base URL (default: `https://platform-api2.max.ru`) |
 | `MAX_OWNER_ID` | MAX user ID allowed to chat with the agent |
-| `MAX_CHANNEL_ID` | Bootstrap-only alias; requires matching active digest binding |
+| `MAX_CHANNEL_ID` | Deprecated; ignored by digest delivery (use workspace bindings) |
 
 ### Inbound: Long Polling
 
@@ -212,10 +212,10 @@ with tenant_scope(workspace_id):
 # {"telegram:123": {"success": True, "message_id": 123}}
 ```
 
-`channel_filter` applies to tenant targets as well as bootstrap env aliases.
-Env alone never adds a recipient: it must match an active, digest-enabled
-bootstrap binding. Matching env/bound recipients are sent once and keep legacy
-result keys (`telegram` / `max`); other keys are `transport:chat_id`. Dedup uses
+`channel_filter` applies to every workspace target. Deprecated env destinations
+are ignored even for bootstrap; `TELEGRAM_ADMIN_CHAT_ID` is not a digest target.
+Only active, digest-enabled owned bindings authorize delivery. Result keys are
+consistently `transport:chat_id`, not the old `telegram` / `max` keys. Dedup uses
 trimmed exact identifiers and case-insensitive `@usernames`, not a platform
 lookup between numeric IDs and username aliases. Cross-call retries and
 concurrent publication are not made exactly-once by this routing change.

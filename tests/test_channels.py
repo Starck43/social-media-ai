@@ -288,7 +288,7 @@ class TestDigestBroadcast:
         monkeypatch.setattr(registry_module.settings, "MAX_CHANNEL_ID", "")
 
         result = await registry_module.broadcast_digest("hi")
-        assert list(result) == ["telegram"] and result["telegram"]["success"] is True
+        assert list(result) == ["telegram:@my_channel"] and result["telegram:@my_channel"]["success"] is True
         assert sent == [("@my_channel", "hi")]
 
     async def test_channel_filter_and_disabled_binding(self, monkeypatch, _bound_bootstrap_target):
@@ -316,4 +316,4 @@ class TestDigestBroadcast:
         monkeypatch.setattr(registry_module.settings, "MAX_CHANNEL_ID", "")
 
         result = await registry_module.broadcast_digest("hi")
-        assert result["telegram"] == {"success": False, "error": "channel not configured"}
+        assert result["telegram:@my_channel"] == {"success": False, "error": "channel not configured"}

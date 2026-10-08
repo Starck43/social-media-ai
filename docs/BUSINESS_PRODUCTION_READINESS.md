@@ -13,7 +13,7 @@ See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOC
 ### PRD-01 — Tenant-safe, retry-safe delivery (blocker)
 
 **Routing progress:** the [tenant-safe delivery change](design/tenant_safe_digest_delivery_review.md)
-implements owned active recipients, bootstrap-only bound env aliases, within-call
+implements exclusively owned active DB recipients, ignored env destinations, within-call
 identifier deduplication and non-bypass build scoping. No migration or live
 production setup is included. Per-target retries, concurrent publication and
 ambiguous transport acknowledgements remain open; this gate is not complete.
@@ -21,7 +21,8 @@ ambiguous transport acknowledgements remain open; this gate is not complete.
 Baseline observation before that change: [broadcast_digest](../app/channels/registry.py) sends every digest to global env targets, then tenant targets. [build_and_publish](../app/services/digest/builder.py) stores one aggregate run outcome and rebroadcasts after a partial-channel failure.
 
 Actions:
-- **Routing implemented:** global env values are no longer additional recipients. They may alias only matching active bootstrap digest bindings; no automatic binding creation.
+- **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
+- **Notification boundary remains open:** the legacy `MessengerService` falls back to `TELEGRAM_ADMIN_CHAT_ID`; the collector can send source names/raw error text there, and report/trend helpers also omit a recipient. Separate explicitly addressed workspace notifications from scrubbed operator alerts; never treat the admin fallback as a client delivery route. See [configuration boundaries](CONFIGURATION.md#application-credentials-and-recipient-boundaries).
 - **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
 - Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
 - Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.

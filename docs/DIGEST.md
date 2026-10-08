@@ -45,10 +45,9 @@ same payload for every channel; channels differ only in transport rules.
    active workspace resolved for this run. `channel_filter` applies to every
    bound target. Exact normalized `(transport, chat_id)` destinations are sent
    once per broadcast call.
-   - Env destinations (`TELEGRAM_DIGEST_CHANNEL_ID` / `MAX_CHANNEL_ID`) are
-     bootstrap-only aliases for matching active digest bindings, not additional
-     recipients. An unbound, inactive, disabled or foreign env destination is
-     ignored; configuring env alone no longer authorizes delivery.
+   - Deprecated env destinations (`TELEGRAM_DIGEST_CHANNEL_ID` / `MAX_CHANNEL_ID`)
+     are ignored in every workspace, including bootstrap. `TELEGRAM_ADMIN_CHAT_ID`
+     is not used by digest delivery. Configuring env alone cannot authorize a send.
    - Non-operator callers cannot supply a foreign `tenant_id` or run unscoped.
      Trusted unscoped operator runs resolve `DEFAULT_TENANT_SLUG`; the builder
      enters that workspace with bypass disabled **before** aggregation, run
@@ -180,14 +179,14 @@ trust store if the OS does not ship it.
 | Variable                       | Purpose                                          |
 | ------------------------------ | ------------------------------------------------ |
 | `TELEGRAM_BOT_TOKEN`           | Bot token (also used for the agent chat)         |
-| `TELEGRAM_DIGEST_CHANNEL_ID`   | Bootstrap-only alias for an active owned digest binding (`@name` or numeric id) |
+| `TELEGRAM_DIGEST_CHANNEL_ID`   | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN`                | MAX bot access token                             |
-| `MAX_CHANNEL_ID`               | Bootstrap-only alias for an active owned digest binding |
+| `MAX_CHANNEL_ID`               | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `AGENT_MODEL`                  | Preferred LLM model name for the summary         |
 
 Recipient authorization comes from active, digest-enabled workspace bindings,
-not from env. Env aliases retain legacy result keys (`telegram` / `max`) only
-when they match a bootstrap binding; other result keys are `transport:chat_id`.
+not from env. Result keys are consistently `transport:chat_id`, including
+bootstrap; consumers of the old `telegram` / `max` keys must update.
 Missing transport credentials produce a failed result for that owned target;
 no eligible bindings return `{}`. Missing/inactive workspace or an unauthorized
 scope override raises `TenantContextError` before sending.

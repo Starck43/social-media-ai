@@ -83,20 +83,26 @@ async def test_clients_never_receive_or_send_to_legacy_or_other_tenant(workspace
     ]
 
 
-async def test_bootstrap_legacy_alias_sends_matching_binding_once(workspaces, sent, monkeypatch):
+@pytest.mark.parametrize("channel,env_name", [("telegram", "TELEGRAM_DIGEST_CHANNEL_ID"), ("max", "MAX_CHANNEL_ID")])
+async def test_bootstrap_matching_env_does_not_change_bound_delivery(workspaces, sent, monkeypatch, channel, env_name):
     owner, _, _, bind = workspaces
-    binding = await bind(owner, chat_id=f"@digest_{uuid4().hex}")
-    monkeypatch.setattr(settings, "TELEGRAM_DIGEST_CHANNEL_ID", f" {binding.chat_id.upper()} ")
+    binding = await bind(owner, channel=channel, chat_id=f"@digest_{uuid4().hex}")
+    monkeypatch.setattr(settings, env_name, f" {binding.chat_id.upper()} ")
     with tenant_scope(owner.id):
         results = await registry.broadcast_digest("owner")
-    assert list(results) == ["telegram"]
-    assert sent == [("telegram", binding.chat_id, "owner", "HTML")]
+    assert list(results) == [f"{channel}:{binding.chat_id}"]
+    assert sent == [(channel, binding.chat_id, "owner", "HTML")]
+    monkeypatch.setattr(settings, env_name, "unrelated-global-address")
+    with tenant_scope(owner.id):
+        assert list(await registry.broadcast_digest("owner again")) == list(results)
+    assert sent[-1] == (channel, binding.chat_id, "owner again", "HTML")
 
 
 async def test_unbound_legacy_address_is_not_a_recipient(workspaces, sent, monkeypatch):
     owner, _, _, _ = workspaces
     monkeypatch.setattr(settings, "TELEGRAM_DIGEST_CHANNEL_ID", "not-bound")
     monkeypatch.setattr(settings, "MAX_CHANNEL_ID", "also-not-bound")
+    monkeypatch.setattr(settings, "TELEGRAM_ADMIN_CHAT_ID", "admin-is-not-a-digest-target")
     with tenant_scope(owner.id):
         assert await registry.broadcast_digest("private") == {}
     assert sent == []

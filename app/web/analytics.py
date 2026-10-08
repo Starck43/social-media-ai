@@ -13,8 +13,9 @@ mutation uses (`guard_web` + `perms.can`), never open to a plain viewer.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -80,9 +81,28 @@ def _safe_analytics_return(value: str | None) -> str | None:
         return None
     if parsed.scheme or parsed.netloc or parsed.fragment:
         return None
-    if parsed.path not in {"/app/analytics", "/app/analytics/", "/app/analytics/group", "/app/analytics/chains"}:
+    path = unquote(parsed.path)
+    if "\\" in path or any(ord(char) < 32 for char in path):
+        return None
+    static = {"/app", "/app/analytics", "/app/analytics/", "/app/analytics/group", "/app/analytics/chains"}
+    if path not in static and not re.fullmatch(
+        r"/app/(?:analytics/[0-9]+|sources/[0-9]+|analytics/chains/[\w-]+)", path
+    ):
         return None
     return value
+
+
+def _analysis_back_label(url: str, fallback: str = "К списку анализов") -> str:
+    path = urlsplit(url).path
+    if re.fullmatch(r"/app/analytics/[0-9]+", path):
+        return "К анализу"
+    if path.startswith("/app/analytics/chains/"):
+        return "К цепочке"
+    if re.fullmatch(r"/app/sources/[0-9]+", path):
+        return "К источнику"
+    if path == "/app":
+        return "На главную"
+    return fallback
 
 
 def _analytics_origin(request: Request, days_key: str) -> str:
@@ -397,6 +417,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         items.append(
             {
                 "id": row.id,
+                "url": _analytics_url(request, f"/app/analytics/{row.id}", days_key=days_key, return_to=group_origin),
                 "date": row.analysis_date,
                 "source_name": names.get(row.source_id, f"Источник #{row.source_id}"),
                 "title": _digest_value(row.summary_data, ("analysis_title",)) or f"Анализ #{row.id}",
@@ -423,6 +444,9 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         "web/analytics_group.html",
         section="analytics",
         items=items,
+        back_label=_analysis_back_label(
+            _safe_analytics_return(request.query_params.get("return_to")) or "/app/analytics", "К группам"
+        ),
         axis_label=DRILL_LABELS[axis],
         value=names.get(int(value), value) if axis == "sources" else value,
         back_url=_safe_analytics_return(request.query_params.get("return_to"))
@@ -548,6 +572,16 @@ async def _fetch_grouped(
                 value=value,
                 return_to=_analytics_origin(request, days_key),
             )
+
+    if axis == GroupingAxis.DAYS:
+        for group in result.get("groups", []):
+            for entry in group.get("entries", []):
+                entry["url"] = _analytics_url(
+                    request,
+                    f"/app/analytics/{entry['id']}",
+                    days_key=days_key,
+                    return_to=_analytics_origin(request, days_key),
+                )
 
     return {
         "groups": result.get("groups", []),
@@ -801,6 +835,17 @@ async def analytics_chain_detail(request: Request, chain_id: str):
         "/app/analytics/chains": "Все цепочки",
     }.get(urlsplit(back_url).path, "Все цепочки")
 
+    if re.fullmatch(r"/app/analytics/[0-9]+", urlsplit(back_url).path):
+        back_label = "К анализу"
+    for step in chain_data.get("evolution", []):
+        if step.get("id"):
+            step["analysis_url"] = _analytics_url(
+                request,
+                f"/app/analytics/{step['id']}",
+                days_key=days_key,
+                return_to=_analytics_origin(request, days_key),
+            )
+
     return render(
         request,
         "web/analytics_chain_detail.html",
@@ -904,40 +949,83 @@ async def analytics_delete(
 # analysis id — FastAPI would answer 422 instead of the chains page).
 @router.get("/{analysis_id}")
 async def analytics_detail(request: Request, analysis_id: int):
-    """One saved analysis, rendered from its stored summary_data.
+    """One stored analysis with honest metric states and origin-aware navigation."""
+    from datetime import date
 
-    This is the link the dashboard "Последние анализы" cards and the source
-    page rows point at, so a user can open a single result and read the AI
-    summary, topics, mood and statistics instead of hunting through the
-    aggregate page. Rendering reuses `analysis_render.render_analysis`, the
-    same helper the sqladmin detail template uses.
-    """
-    from app.models import AIAnalytics
+    from app.models import AIAnalytics, Platform
     from app.services.ai.analysis_render import render_analysis
+    from app.utils.date_parsing import universal_date_parser
 
-    row = await AIAnalytics.objects.select_related("source").get(id=analysis_id)
+    denied = guard_web(request, "aianalytics", "view", back="/app")
+    if denied is not None:
+        return denied
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
+    tenant_id = filter_tenant_id if filter_tenant_id is not None else getattr(request.state, "tenant_id", None)
+    query = AIAnalytics.objects.select_related("source")
+    if tenant_id is not None:
+        query = query.filter(tenant_id=tenant_id)
+    row = await query.get(id=analysis_id)
     if row is None:
         return render(request, "web/not_found.html", status_code=404)
-
     display = render_analysis(row.summary_data or {})
-
-    # All analytics sharing this row's chain, for the "next/previous in chain"
-    # navigation and the retrospective timeline.
+    # A direct historic permalink should not lose its own chain to the default
+    # current-month session window. Navigation links carry an explicit period.
+    days, days_key = _resolve_days(request) if request.query_params.get("days") is not None else (None, "all")
+    origin = _analytics_origin(request, days_key)
+    back_url = _safe_analytics_return(request.query_params.get("return_to")) or _analytics_url(
+        request, "/app/analytics/group", days_key=days_key, axis="sources", value=row.source_id, tenant_id=row.tenant_id
+    )
     chain = []
     if row.topic_chain_id:
-        chain = await AIAnalytics.objects.filter(topic_chain_id=row.topic_chain_id).order_by(AIAnalytics.analysis_date)
-        chain = [
-            {
-                "id": c.id,
-                "analysis_date": c.analysis_date,
-                "title": (c.summary_data or {}).get("analysis_title")
-                or (c.main_topics or [None])[0]
-                or c.chain_label
-                or f"Анализ #{c.id}",
-            }
-            for c in chain
-        ]
+        rows = await _scoped_analytics_rows(request, days, row.tenant_id, chain_id=row.topic_chain_id)
+        for entry in sorted(rows, key=lambda entry: (entry.analysis_date or date.min, entry.id)):
+            rendered = render_analysis(entry.summary_data or {})
+            chain.append(
+                {
+                    "id": entry.id,
+                    "analysis_date": entry.analysis_date,
+                    "title": rendered["analysis_title"] or entry.chain_label or f"Анализ #{entry.id}",
+                    "url": _analytics_url(request, f"/app/analytics/{entry.id}", days_key=days_key, return_to=origin),
+                }
+            )
+    chain_url = (
+        _analytics_url(
+            request,
+            "/app/analytics/chains/" + quote(row.topic_chain_id, safe=""),
+            days_key=days_key,
+            tenant_id=row.tenant_id,
+            return_to=origin,
+        )
+        if len(chain) > 1
+        else None
+    )
+    platform_name = display["source_metadata"].get("platform")
+    platform = await Platform.objects.get(id=row.source.platform_id) if row.source else None
+    if not platform_name:
+        platform_name = platform.name if platform else None
+    from app.utils.enum_helpers import get_enum_value
 
+    vk_reactions = bool(platform and get_enum_value(platform.platform_type) in ("vk", "vkontakte"))
+    platform_name = {"vk": "VK", "vkontakte": "VK", "telegram": "Telegram", "max": "MAX"}.get(
+        str(platform_name).casefold(), platform_name
+    )
+    topics = [
+        {
+            "label": topic,
+            "url": _analytics_url(
+                request,
+                "/app/analytics/group",
+                days_key=days_key,
+                axis="themes",
+                value=topic,
+                tenant_id=row.tenant_id,
+                return_to=origin,
+            ),
+        }
+        for topic in display["main_topics"]
+    ]
     return render(
         request,
         "web/analytics_detail.html",
@@ -945,4 +1033,16 @@ async def analytics_detail(request: Request, analysis_id: int):
         analysis=row,
         display=display,
         chain=chain,
+        chain_url=chain_url,
+        back_url=back_url,
+        topics=topics,
+        back_label=_analysis_back_label(
+            back_url,
+            "К аналитике" if urlsplit(back_url).path in ("/app/analytics", "/app/analytics/") else "К списку анализов",
+        ),
+        platform_name=platform_name or "Не сохранена",
+        vk_reactions=vk_reactions,
+        window_start=universal_date_parser(display["content_window_start"]),
+        window_end=universal_date_parser(display["content_window_end"]),
+        analyzed_at=universal_date_parser(display["analysis_metadata"].get("analysis_timestamp")),
     )

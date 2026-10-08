@@ -35,11 +35,11 @@ def test_extract_text_analysis_safe_on_garbage():
     assert extract_text_analysis({"multi_llm_analysis": "not-a-dict"}) == {}
 
 
-def test_extract_content_statistics_defaults_every_metric():
+def test_extract_content_statistics_missing_metrics_are_unknown():
     out = extract_content_statistics({})
-    assert out["total_posts"] == 0
-    assert out["avg_reactions_per_post"] == 0
-    assert out["engagement_rate"] == 0
+    assert out["total_posts"] is None
+    assert out["avg_reactions_per_post"] is None
+    assert out["engagement_rate"] is None
 
 
 def test_extract_content_statistics_reads_real_values():
@@ -47,7 +47,7 @@ def test_extract_content_statistics_reads_real_values():
     out = extract_content_statistics(data)
     assert out["total_posts"] == 5
     assert out["total_reactions"] == 9
-    assert out["total_comments"] == 0
+    assert out["total_comments"] is None
 
 
 def test_sentiment_summary_maps_score_to_label():
@@ -57,8 +57,12 @@ def test_sentiment_summary_maps_score_to_label():
 
 
 def test_sentiment_summary_neutral_and_negative():
-    assert sentiment_summary({"multi_llm_analysis": {"text_analysis": {"sentiment_score": 0.5}}})["label"] == "Нейтральный"
-    assert sentiment_summary({"multi_llm_analysis": {"text_analysis": {"sentiment_score": 0.2}}})["label"] == "Негативный"
+    assert (
+        sentiment_summary({"multi_llm_analysis": {"text_analysis": {"sentiment_score": 0.5}}})["label"] == "Нейтральный"
+    )
+    assert (
+        sentiment_summary({"multi_llm_analysis": {"text_analysis": {"sentiment_score": 0.2}}})["label"] == "Негативный"
+    )
 
 
 def test_sentiment_summary_missing_score_is_none():
@@ -87,3 +91,70 @@ def test_render_analysis_flattens_display_structure():
 def test_render_analysis_is_safe_on_empty_and_garbage():
     assert render_analysis(None)["main_topics"] == []
     assert render_analysis("garbage")["analysis_title"] is None
+
+
+def test_measured_zero_missing_and_partial_are_distinct():
+    data = {
+        "content_statistics": {
+            "total_posts": 2,
+            "total_reactions": 0,
+            "total_comments": 0,
+            "total_views": 12,
+            "metric_coverage": {
+                "total_reactions": {"known": 2, "total": 2},
+                "total_comments": {"known": 0, "total": 2},
+                "total_views": {"known": 1, "total": 2},
+            },
+        }
+    }
+    stats = extract_content_statistics(data)
+    assert stats["total_reactions"] == 0 and stats["avg_reactions_per_post"] == 0
+    assert stats["total_comments"] is None and stats["total_views"] is None
+    assert (
+        extract_content_statistics({"content_statistics": {"total_posts": 1, "total_reactions": 0}})["total_reactions"]
+        is None
+    )
+
+
+def test_parsed_flat_titles_topics_and_highlight_states():
+    parsed = {
+        "analysis_title": "Nested title",
+        "analysis_summary": "Nested summary",
+        "topics": [{"name": "F1"}],
+        "sentiment_score": 0.95,
+        "highlights": [],
+    }
+    display = render_analysis({"multi_llm_analysis": {"text_analysis": {"parsed": parsed}}})
+    assert display["analysis_title"] == "Nested title" and display["analysis_summary"] == "Nested summary"
+    assert display["main_topics"] == ["F1"] and display["sentiment"]["score"] == 0.95
+    assert display["highlights_available"] and display["highlights"] == []
+    assert not render_analysis({})["highlights_available"]
+
+
+def test_invalid_sentiment_and_saved_original_url_safety():
+    from app.services.ai.analysis_render import safe_original_url
+
+    for value in (float("nan"), float("inf"), -1, 1.2, True, "bad"):
+        assert sentiment_summary({"sentiment_score": value})["score"] is None
+    for url in (
+        "javascript:alert(1)",
+        "//evil.example/path",
+        "https://user:secret@example.com/post",
+        "https://example.com\n/",
+        "http://[bad",
+    ):
+        assert safe_original_url(url) is None
+    display = render_analysis(
+        {
+            "post_url": "https://example.com/post",
+            "content_statistics": {"original_links": ["https://example.com/post", "javascript:bad"]},
+        }
+    )
+    assert display["original_links"] == ["https://example.com/post"]
+
+
+def test_rollup_authors_not_presented_as_unique_people():
+    data = {"period_rollup": {"start": "2026-03-01", "end": "2026-03-07"}, "content_statistics": {"active_users": 20}}
+    display = render_analysis(data)
+    assert display["content_statistics"]["active_users"] is None
+    assert display["content_window_start"] == "2026-03-01"

@@ -112,7 +112,11 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
         The keys mirror what the platform clients emit, so analysis of stored
         rows and analysis of a live batch take the same path.
         """
+        metrics = dict(self.metrics or {})
         return {
+            **{
+                key: metrics[key] for key in ("reactions", "comments", "views", "metric_availability") if key in metrics
+            },
             "platform": self.platform,
             "external_id": self.external_id,
             "text": self.text or "",

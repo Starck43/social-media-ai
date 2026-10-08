@@ -455,3 +455,33 @@ async def test_analyze_without_window_drains_all_staged(source, monkeypatch):
 
     assert seen["count"] == 3
     assert len(await CollectedItem.objects.filter(source_id=source.id)) == 0
+
+
+async def test_staging_json_metrics_author_and_original_survive_deferred_replay(source):
+    from app.services.ai.analysis_render import render_analysis
+    from app.services.ai.analyzer import AIAnalyzer
+
+    items = _items(1)
+    items[0].update(
+        {
+            "reactions": 0,
+            "comments": 0,
+            "views": 0,
+            "from_id": 42,
+            "permalink": "https://example.com/original",
+            "metric_availability": {"reactions": True, "comments": False, "views": True},
+        }
+    )
+    collector = _collector(items)
+    result = await collector.collect_from_source(source, analyze=False, run_id=8501)
+    assert result["staged"] == 1
+    row = await CollectedItem.objects.filter(source_id=source.id).first()
+    replay = row.as_agent_item()
+    assert replay["metric_availability"] == items[0]["metric_availability"]
+    assert replay["permalink"] == "https://example.com/original" and replay["author"]["id"] == 42
+    stats = AIAnalyzer()._calculate_content_stats([replay])
+    display = render_analysis({"content_statistics": stats})
+    assert display["content_statistics"]["total_reactions"] == 0
+    assert display["content_statistics"]["total_comments"] is None
+    assert display["content_statistics"]["active_users"] == 1
+    assert display["original_links"] == ["https://example.com/original"]

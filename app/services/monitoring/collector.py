@@ -99,6 +99,8 @@ class ContentCollector:
 			permalink = item.get("permalink") or item.get("url")
 			if not permalink and external_id:
 				permalink = _build_permalink(source, external_id)
+			if permalink:
+				item.setdefault("permalink", permalink)  # Same saved URL reaches immediate analysis.
 			rows.append(
 				{
 					"run_id": run_id,
@@ -109,8 +111,29 @@ class ContentCollector:
 					"published_at": published,
 					"media_type": item.get("media_type") or item.get("type"),
 					"text": item.get("text"),
-					"metrics": item.get("metrics") if isinstance(item.get("metrics"), dict) else None,
-					"author": item.get("author") if isinstance(item.get("author"), dict) else None,
+					"metrics": {
+						**(item.get("metrics") if isinstance(item.get("metrics"), dict) else {}),
+						**{
+							key: item[key]
+							for key in ("reactions", "comments", "views", "metric_availability")
+							if key in item
+						},
+					},
+					"author": (
+						item.get("author")
+						if isinstance(item.get("author"), dict)
+						else (
+							{
+								"id": next(
+									item[k]
+									for k in ("from_id", "owner_id", "author_id", "user_id")
+									if item.get(k) is not None
+								)
+							}
+							if any(item.get(k) is not None for k in ("from_id", "owner_id", "author_id", "user_id"))
+							else None
+						)
+					),
 					"permalink": permalink,
 				}
 			)

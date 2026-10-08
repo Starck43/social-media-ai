@@ -153,3 +153,35 @@ async def test_analyze_content_forwards_force_reanalyze(monkeypatch, source):
 
     await AIAnalyzer().analyze_content([{"text": "x"}], source, force_reanalyze=True)
     assert seen.get("force_reanalyze") is True
+
+
+def test_new_stats_preserve_raw_totals_but_mark_incomplete_coverage():
+    from app.services.ai.analysis_render import render_analysis
+
+    content = [
+        {
+            "text": "first",
+            "reactions": 0,
+            "comments": 0,
+            "views": 5,
+            "from_id": 1,
+            "metric_availability": {"reactions": True, "comments": False, "views": True},
+            "permalink": "https://example.com/1",
+        },
+        {
+            "text": "second",
+            "reactions": 8,
+            "comments": 0,
+            "views": 10,
+            "metric_availability": {"reactions": False, "comments": False, "views": True},
+        },
+    ]
+    stats = AIAnalyzer()._calculate_content_stats(content)
+    assert stats["total_reactions"] == 8  # Legacy raw sum/formula remains inspectable.
+    assert stats["metric_coverage"]["total_reactions"] == {"known": 1, "total": 2}
+    display = render_analysis({"content_statistics": stats})
+    assert display["content_statistics"]["total_reactions"] is None
+    assert display["content_statistics"]["total_comments"] is None
+    assert display["content_statistics"]["total_views"] == 15
+    assert display["content_statistics"]["active_users"] is None
+    assert display["original_links"] == ["https://example.com/1"]

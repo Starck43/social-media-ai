@@ -1,177 +1,86 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import card, empty_state, page_title %}
-{% block title %}{% if display.analysis_summary %}{{ display.analysis_title or ('Анализ #' ~ analysis.id) }}{% else %}{{ display.analysis_title or ('Анализ #' ~ analysis.id) }} — сводка не сгенерирована{% endif %} — AI Monitor{% endblock %}
+{% from "web/_macros.html" import card, page_title %}
+{% macro metric(value, decimals=0) -%}
+    {% if value is none %}—{% elif decimals %}{{ "%.1f"|format(value) }}{% else %}{{ "%.0f"|format(value) }}{% endif %}
+{%- endmacro %}
+{% block title %}{{ (display.analysis_title or ('Анализ #' ~ analysis.id))|e }} — AI Monitor{% endblock %}
 {% block content %}
-    {% set analysis_title_text = display.analysis_title or ('Анализ #' ~ analysis.id) %}
-    {% if not display.analysis_summary %}
-        {% set analysis_title_text = analysis_title_text ~ ' — сводка не сгенерирована' %}
-    {% endif %}
-    {{ page_title(analysis_title_text, analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id)) }}
-
-    {% if not display.analysis_summary %}
-    <div class="mb-6 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-        <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-            </svg>
-            <span class="font-medium">Данные получены, но анализ не проводился.</span>
+    {{ page_title((display.analysis_title or ('Анализ #' ~ analysis.id))|e, (analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id))|e) }}
+    <nav aria-label="Навигация анализа" class="mb-5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+        <a href="{{ back_url|e }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-cyan-600 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label|e }}</a>
+        {% if analysis.source %}<a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">Карточка источника</a>{% endif %}
+        {% if chain_url %}<a href="{{ chain_url|e }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">Цепочка · {{ chain|length }} анализ(ов)</a>{% endif %}
+    </nav>
+    {% set stats = display.content_statistics %}
+    <section aria-label="Контекст анализа" class="mb-6 rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 text-sm text-slate-600 dark:text-slate-400">
+        <p>Одна сохранённая запись анализа, не полный отчёт по источнику.</p>
+        <div class="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+            <span>Платформа: {{ platform_name|e }}</span>
+            <span>Дата записи: {{ analysis.analysis_date|human_dt(tz=_tz) }}</span>
+            <span>Период публикаций: {% if window_start %}{{ window_start|human_dt(tz=_tz) }}{% if window_end and window_end != window_start %} — {{ window_end|human_dt(tz=_tz) }}{% endif %}{% else %}не сохранён{% endif %}</span>
+            <span>Объём: {{ metric(stats.total_posts) }} материалов</span>
+            <span>Время анализа: {{ analyzed_at|human_dt(tz=_tz) if analyzed_at else 'не сохранено' }}</span>
         </div>
-        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-            {% if analysis.source %}
-            <a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-400 hover:underline">{{ analysis.source.name }}</a>
-            <span>·</span>
-            {% endif %}
-            <span>{{ analysis.analysis_date.strftime('%d.%m.%Y') if analysis.analysis_date else '—' }}</span>
+        {% if display.original_links %}
+        <div class="mt-3 flex flex-wrap gap-3">
+            {% for url in display.original_links %}<a href="{{ url|e }}" target="_blank" rel="noopener noreferrer" class="text-cyan-600 dark:text-cyan-400 hover:underline">{% if display.original_links|length == 1 %}Открыть исходный материал ↗{% else %}Исходный материал {{ loop.index }} ↗{% endif %}</a>{% endfor %}
         </div>
-    </div>
-    {% endif %}
-
-    <div class="mb-6 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-        <a href="/app/analytics" class="text-cyan-400 hover:underline">← К аналитике</a>
-        {% if analysis.source %}
-            <span>·</span>
-            <a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-400 hover:underline">
-                {{ analysis.source.name }}
-            </a>
         {% endif %}
-        <span>·</span>
-        <span>{{ analysis.analysis_date.strftime('%d.%m.%Y') if analysis.analysis_date else '—' }}</span>
-        {% if analysis.topic_chain_id %}
-            <span>·</span>
-            <a href="/app/analytics/chains/{{ analysis.topic_chain_id }}" class="text-cyan-400 hover:underline">Цепочка тем</a>
-        {% endif %}
-    </div>
-
+    </section>
     <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {% set stats = display.content_statistics %}
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Постов</p>
-            <p class="mt-2 text-3xl font-semibold">{{ stats.total_posts }}</p>
+        {% for key, label in [('total_posts','Материалов'),('total_reactions','Реакций — метрика платформы'),('total_comments','Комментариев'),('active_users','Авторов / аккаунтов')] %}
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5" data-metric="{{ key }}" data-state="{{ 'unknown' if stats[key] is none else 'available' }}">
+            <p class="text-sm text-slate-500 dark:text-slate-400">{{ label }}</p>
+            <p class="mt-2 text-3xl font-semibold">{{ metric(stats[key]) }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Реакций</p>
-            <p class="mt-2 text-3xl font-semibold">{{ stats.total_reactions }}</p>
-        </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Комментариев</p>
-            <p class="mt-2 text-3xl font-semibold">{{ stats.total_comments }}</p>
-        </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Активных пользователей</p>
-            <p class="mt-2 text-3xl font-semibold">{{ stats.active_users }}</p>
-        </div>
+        {% endfor %}
     </div>
-
+    <p class="mt-3 text-xs text-slate-500">— означает, что значение не получено, неполно или не подтверждено. 0 показывается только при подтверждённой доступности метрики. Авторы / аккаунты — идентификаторы авторов материалов, не число читателей.</p>
+    {% if display.metrics_legacy %}<p class="mt-1 text-xs text-amber-700 dark:text-amber-300">Полнота сбора для этой записи не сохранена. Сохранённые ненулевые значения показаны как есть; неподтверждённые нули скрыты.</p>{% endif %}
+    {% if vk_reactions %}<p class="mt-1 text-xs text-slate-500">В сохранённой метрике реакций VK учитываются лайки, комментарии и репосты. Комментарии отдельно показаны для детализации; эти показатели не складываются.</p>{% endif %}
     <div class="mt-6 grid gap-4 lg:grid-cols-2">
         {% call card() %}
             <h2 class="text-sm font-medium text-slate-300">Сводка</h2>
-            {% if display.analysis_summary %}
-                <p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-300">{{ display.analysis_summary }}</p>
-            {% else %}
-                <p class="mt-3 text-sm text-slate-500">Сводка не сгенерирована.</p>
-            {% endif %}
+            {% if display.analysis_summary %}<p class="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-300">{{ display.analysis_summary|e }}</p>
+            {% else %}<p class="mt-3 text-sm text-slate-500">Сводка для этой записи не сохранена. Это не означает, что анализ не выполнялся.</p>{% endif %}
         {% endcall %}
-
         {% call card() %}
-            <h2 class="text-sm font-medium text-slate-300">Настроение</h2>
-            <div class="mt-3">
-                {% if display.sentiment.score is not none %}
-                    <div class="flex items-center gap-3">
-                        <div class="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                            {% set pct = (display.sentiment.score * 100) | round(0) %}
-                            {% if pct > 60 %}
-                                {% set bar = "bg-emerald-400" %}
-                            {% elif pct < 40 %}
-                                {% set bar = "bg-rose-400" %}
-                            {% else %}
-                                {% set bar = "bg-amber-300" %}
-                            {% endif %}
-                            <div class="{{ bar }} h-2" style="width: {{ pct }}%"></div>
-                        </div>
-                        <span class="w-14 text-right text-sm text-slate-300">{{ "%.0f"|format(pct) }}%</span>
-                    </div>
-                    <p class="mt-2 text-sm text-slate-400">{{ display.sentiment.label }}</p>
-                {% else %}
-                    <p class="text-sm text-slate-500">Нет данных</p>
-                {% endif %}
-            </div>
-            {% if display.overall_mood %}
-                <p class="mt-4 text-sm text-slate-400"><span class="text-slate-500">Общее настроение:</span> {{ display.overall_mood }}</p>
-            {% endif %}
+            <h2 class="text-sm font-medium text-slate-300">Тональность текста</h2>
+            {% if display.sentiment.score is not none %}
+                <p class="mt-3 text-sm text-slate-300">{{ display.sentiment.label|e }} · <strong>{{ "%.2f"|format(display.sentiment.score) }}/1</strong></p>
+                <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden="true"><div class="h-2 {% if display.sentiment.score > 0.6 %}bg-emerald-400{% elif display.sentiment.score < 0.4 %}bg-rose-400{% else %}bg-amber-300{% endif %}" style="width: {{ display.sentiment.score * 100 }}%"></div></div>
+                <p class="mt-2 text-xs text-slate-500">Шкала: 0 — негативная, 0,5 — нейтральная, 1 — позитивная. Это оценка тональности, не вероятность и не доля позитивных пользователей.</p>
+            {% else %}<p class="mt-3 text-sm text-slate-500">Оценка тональности не сохранена или некорректна.</p>{% endif %}
+            {% if display.overall_mood %}<p class="mt-3 text-sm text-slate-400">Общее настроение: {{ display.overall_mood|e }}</p>{% endif %}
         {% endcall %}
     </div>
-
     <div class="mt-6 grid gap-4 lg:grid-cols-2">
         {% call card() %}
             <h2 class="text-sm font-medium text-slate-300">Главные темы</h2>
-            {% if display.main_topics %}
-                <div class="mt-3 flex flex-wrap gap-1.5">
-                    {% for t in display.main_topics %}
-                        <span class="rounded-full bg-cyan-950 px-2.5 py-0.5 text-xs text-cyan-400">{{ t }}</span>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p class="mt-3 text-sm text-slate-500">Нет данных</p>
-            {% endif %}
+            {% if topics %}<div class="mt-3 flex flex-wrap gap-2">{% for topic in topics %}<a href="{{ topic.url|e }}" class="rounded-full bg-cyan-950 px-2.5 py-1 text-xs text-cyan-400 hover:bg-cyan-900">{{ topic.label|e }} →</a>{% endfor %}</div>
+            <p class="mt-2 text-xs text-slate-500">Открыть список анализов по теме с текущими фильтрами.</p>
+            {% else %}<p class="mt-3 text-sm text-slate-500">Темы в сохранённом результате отсутствуют.</p>{% endif %}
         {% endcall %}
-
         {% call card() %}
             <h2 class="text-sm font-medium text-slate-300">Выделяющиеся моменты</h2>
-            {% if display.highlights %}
-                <ul class="mt-3 space-y-2 text-sm text-slate-300">
-                    {% for h in display.highlights %}
-                        <li class="flex gap-2"><span class="text-cyan-400">•</span><span>{{ h }}</span></li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="mt-3 text-sm text-slate-500">Нет данных</p>
-            {% endif %}
+            {% if display.highlights %}<ul class="mt-3 space-y-2 text-sm text-slate-300">{% for highlight in display.highlights %}<li>• {{ highlight|e }}</li>{% endfor %}</ul>
+            {% elif display.highlights_available %}<p class="mt-3 text-sm text-slate-500">В сохранённом анализе не выделены.</p>
+            {% else %}<p class="mt-3 text-sm text-slate-500">Не рассчитаны или не сохранены.</p>{% endif %}
         {% endcall %}
     </div>
-
     {% call card(extra="mt-6") %}
-        <h2 class="text-sm font-medium text-slate-300">Вовлечённость</h2>
+        <h2 class="text-sm font-medium text-slate-300">Метрики на материал</h2>
         <div class="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-            <div>
-                <p class="text-slate-500">Реакций / пост</p>
-                <p class="mt-1 text-lg text-slate-200">{{ "%.1f"|format(stats.avg_reactions_per_post) }}</p>
-            </div>
-            <div>
-                <p class="text-slate-500">Комментариев / пост</p>
-                <p class="mt-1 text-lg text-slate-200">{{ "%.1f"|format(stats.avg_comments_per_post) }}</p>
-            </div>
-            <div>
-                <p class="text-slate-500">Просмотров</p>
-                <p class="mt-1 text-lg text-slate-200">{{ stats.total_views }}</p>
-            </div>
-            <div>
-                <p class="text-slate-500">Вовлечённость</p>
-                <p class="mt-1 text-lg text-slate-200">{{ "%.1f"|format(stats.engagement_rate) }}</p>
-            </div>
+            {% for key, label, decimals in [('avg_reactions_per_post','Реакций / материал',1),('avg_comments_per_post','Комментариев / материал',1),('avg_views_per_post','Просмотров / материал',1),('total_views','Всего просмотров',0)] %}
+            <div data-metric="{{ key }}" data-state="{{ 'unknown' if stats[key] is none else 'available' }}"><p class="text-slate-500">{{ label }}</p><p class="mt-1 text-lg text-slate-200">{{ metric(stats[key],decimals) }}</p></div>
+            {% endfor %}
         </div>
+        <p class="mt-3 text-xs text-slate-500">Средние значения = сохранённое количество / число материалов. Просмотры не складываются с реакциями и комментариями; процент ER здесь не рассчитывается.</p>
     {% endcall %}
-
-    {% if chain|length > 1 %}
+    {% if chain_url %}
         {% call card(extra="mt-6") %}
             <h2 class="text-sm font-medium text-slate-300">Хронология цепочки ({{ chain|length }})</h2>
-            <ol class="mt-4 space-y-2">
-                {% for c in chain %}
-                    <li>
-                        {% if c.id == analysis.id %}
-                            <span class="flex items-center gap-2 text-sm font-medium text-cyan-400">
-                                <span class="h-2 w-2 rounded-full bg-cyan-400"></span>
-                                {{ c.analysis_date.strftime('%d.%m.%Y') if c.analysis_date else '—' }} — {{ c.title }}
-                            </span>
-                        {% else %}
-                            <a href="/app/analytics/{{ c.id }}"
-                               class="flex items-center gap-2 text-sm text-slate-400 hover:text-cyan-300">
-                                <span class="h-2 w-2 rounded-full bg-slate-600"></span>
-                                {{ c.analysis_date.strftime('%d.%m.%Y') if c.analysis_date else '—' }} — {{ c.title }}
-                            </a>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-            </ol>
+            <ol class="mt-4 space-y-2">{% for entry in chain %}<li>{% if entry.id == analysis.id %}<span class="text-sm font-medium text-cyan-400">{{ entry.analysis_date|human_dt(tz=_tz) }} — {{ entry.title|e }} · текущий анализ</span>{% else %}<a href="{{ entry.url|e }}" class="text-sm text-slate-400 hover:text-cyan-300">{{ entry.analysis_date|human_dt(tz=_tz) }} — {{ entry.title|e }}</a>{% endif %}</li>{% endfor %}</ol>
         {% endcall %}
     {% endif %}
 {% endblock %}

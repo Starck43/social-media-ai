@@ -22,7 +22,8 @@ from app.types.enums.bot_types import GroupingAxis
 
 def _text_analysis(summary_data: dict) -> dict:
     """Parsed text-analysis payload from summary_data."""
-    return ((summary_data or {}).get("multi_llm_analysis") or {}).get("text_analysis") or {}
+    text = ((summary_data or {}).get("multi_llm_analysis") or {}).get("text_analysis") or {}
+    return {**text, **text.get("parsed", {})} if isinstance(text.get("parsed"), dict) else text
 
 
 def _digest_value(summary_data: dict, keys: tuple[str, ...]):
@@ -30,7 +31,7 @@ def _digest_value(summary_data: dict, keys: tuple[str, ...]):
     if not summary_data:
         return None
     nests = [
-        (summary_data.get("multi_llm_analysis") or {}).get("text_analysis"),
+        _text_analysis(summary_data),
         summary_data.get("unified_summary"),
         summary_data.get("ai_analysis"),
         summary_data,

@@ -107,12 +107,14 @@ def sentiment_summary(summary_data: dict[str, Any]) -> dict[str, Any]:
     return {"score": score, "label": _label_for_score(score) if score is not None else "—"}
 
 
-def render_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
+def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = None) -> dict[str, Any]:
     data = _as_dict(summary_data)
     text = extract_text_analysis(data)
     unified = _as_dict(data.get("unified_summary"))
     unified = {**unified, **_as_dict(unified.get("parsed"))}
-    containers = (text, unified, data)
+    legacy = _as_dict(data.get("ai_analysis"))
+    legacy = {**legacy, **_as_dict(legacy.get("parsed"))}
+    containers = (data, text, unified, legacy)
 
     def first(*keys):
         for container in containers:
@@ -125,11 +127,29 @@ def render_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
     raw_topics = _as_list(first("main_topics", "topics", "key_topics"))
     topics = []
     for topic in raw_topics:
-        value = topic if isinstance(topic, str) else (_as_dict(topic).get("topic") or _as_dict(topic).get("name"))
+        value = (
+            topic
+            if isinstance(topic, str)
+            else (_as_dict(topic).get("topic") or _as_dict(topic).get("name") or _as_dict(topic).get("key"))
+        )
         if isinstance(value, str) and value.strip() and value.strip() not in topics:
             topics.append(value.strip())
+    title = next(
+        (
+            c["analysis_title"].strip()
+            for c in containers
+            if isinstance(c.get("analysis_title"), str) and c["analysis_title"].strip()
+        ),
+        None,
+    )
+    # One deterministic stored-data fallback, not a generated LLM headline.
+    title = title or (topics[0] if topics else None)
     stats = _as_dict(data.get("content_statistics"))
     source_meta = _as_dict(data.get("source_metadata"))
+    name = source_name or source_meta.get("source_name")
+    display_title = title or (
+        f"Материалы источника «{name.strip()}»" if isinstance(name, str) and name.strip() else "Материалы источника"
+    )
     originals = []
     candidates = _as_list(stats.get("original_links")) + _as_list(data.get("original_links"))
     for key in ("original_url", "post_url", "permalink"):
@@ -142,7 +162,8 @@ def render_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
     date_range = _as_dict(stats.get("date_range"))
     rollup = _as_dict(data.get("period_rollup"))
     return {
-        "analysis_title": data.get("analysis_title") or first("analysis_title") or (topics[0] if topics else None),
+        "analysis_title": title,
+        "display_title": display_title,
         "analysis_summary": data.get("analysis_summary") or first("analysis_summary", "summary"),
         "main_topics": topics,
         "overall_mood": first("overall_mood"),

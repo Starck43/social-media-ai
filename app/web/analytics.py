@@ -20,6 +20,7 @@ from urllib.parse import quote, unquote, urlencode, urlsplit
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from app.services.ai.analysis_render import render_analysis
 from app.services.ai.grouping import _extract_entities
 from app.services.ai.reporting import MEDIA_FILTERS, REMOVED_GROUPING_AXES, SENTIMENT_FILTERS, ReportAggregator
 
@@ -370,7 +371,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
     """Read-only, flat membership list; chain-less rows are intentionally included."""
     from datetime import date
 
-    from app.services.ai.grouping import _digest_value, _extract_sentiment, filter_analytics, matches_analytics_group
+    from app.services.ai.grouping import _extract_sentiment, filter_analytics, matches_analytics_group
 
     denied = guard_web(request, "aianalytics", "view", back="/app")
     if denied is not None:
@@ -414,13 +415,15 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
     names = await _source_names({row.source_id for row in rows})
     items = []
     for row in rows:
+        display = render_analysis(row.summary_data, source_name=names.get(row.source_id))
         items.append(
             {
                 "id": row.id,
                 "url": _analytics_url(request, f"/app/analytics/{row.id}", days_key=days_key, return_to=group_origin),
                 "date": row.analysis_date,
                 "source_name": names.get(row.source_id, f"Источник #{row.source_id}"),
-                "title": _digest_value(row.summary_data, ("analysis_title",)) or f"Анализ #{row.id}",
+                "title": display["display_title"],
+                "summary_missing": not bool(display["analysis_summary"]),
                 "sentiment": _extract_sentiment(row.summary_data),
                 "chain_url": (
                     _analytics_url(
@@ -574,8 +577,12 @@ async def _fetch_grouped(
             )
 
     if axis == GroupingAxis.DAYS:
+        rows_by_id = {row.id: row for row in rows}
         for group in result.get("groups", []):
             for entry in group.get("entries", []):
+                entry["display_title"] = render_analysis(
+                    rows_by_id[entry["id"]].summary_data, source_name=source_names.get(entry["source_id"])
+                )["display_title"]
                 entry["url"] = _analytics_url(
                     request,
                     f"/app/analytics/{entry['id']}",
@@ -809,22 +816,15 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     if chain_data is None:
         chain_data = {"chain_id": chain_id, "evolution": [], "total_analyses": 0, "date_range": {}}
 
-    # The chain service's legacy title lookup is top-level only. Read the same
-    # nested/flat title contract as the drill-down list for every timeline entry.
-    from app.services.ai.grouping import _digest_value
-
+    source_ids = {row.source_id for row in rows}
+    names = await _source_names(source_ids)
     rows_by_id = {row.id: row for row in rows}
     for step in chain_data.get("evolution", []):
         row = rows_by_id.get(step.get("id"))
         if row is not None:
-            step["analysis_title"] = _digest_value(row.summary_data, ("analysis_title",)) or step.get("analysis_title")
-
-    source_ids = {
-        step["source_info"]["source_id"]
-        for step in chain_data.get("evolution", [])
-        if step.get("source_info", {}).get("source_id")
-    }
-    names = await _source_names(source_ids)
+            step["analysis_title"] = render_analysis(row.summary_data, source_name=names.get(row.source_id))[
+                "display_title"
+            ]
 
     chains_url = _analytics_url(request, "/app/analytics/chains", days_key=days_key)
     back_url = _safe_analytics_return(request.query_params.get("return_to")) or chains_url
@@ -953,7 +953,6 @@ async def analytics_detail(request: Request, analysis_id: int):
     from datetime import date
 
     from app.models import AIAnalytics, Platform
-    from app.services.ai.analysis_render import render_analysis
     from app.utils.date_parsing import universal_date_parser
 
     denied = guard_web(request, "aianalytics", "view", back="/app")
@@ -969,7 +968,7 @@ async def analytics_detail(request: Request, analysis_id: int):
     row = await query.get(id=analysis_id)
     if row is None:
         return render(request, "web/not_found.html", status_code=404)
-    display = render_analysis(row.summary_data or {})
+    display = render_analysis(row.summary_data, source_name=row.source.name if row.source else None)
     # A direct historic permalink should not lose its own chain to the default
     # current-month session window. Navigation links carry an explicit period.
     days, days_key = _resolve_days(request) if request.query_params.get("days") is not None else (None, "all")
@@ -980,13 +979,14 @@ async def analytics_detail(request: Request, analysis_id: int):
     chain = []
     if row.topic_chain_id:
         rows = await _scoped_analytics_rows(request, days, row.tenant_id, chain_id=row.topic_chain_id)
+        names = await _source_names({entry.source_id for entry in rows})
         for entry in sorted(rows, key=lambda entry: (entry.analysis_date or date.min, entry.id)):
-            rendered = render_analysis(entry.summary_data or {})
+            rendered = render_analysis(entry.summary_data, source_name=names.get(entry.source_id))
             chain.append(
                 {
                     "id": entry.id,
                     "analysis_date": entry.analysis_date,
-                    "title": rendered["analysis_title"] or entry.chain_label or f"Анализ #{entry.id}",
+                    "title": rendered["display_title"],
                     "url": _analytics_url(request, f"/app/analytics/{entry.id}", days_key=days_key, return_to=origin),
                 }
             )

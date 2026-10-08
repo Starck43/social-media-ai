@@ -14,6 +14,7 @@
                 <div>
                     <p class="text-xs text-slate-500">{{ item.date|human_dt }} · {{ item.source_name|e }}</p>
                     <a href="{{ item.url|e }}" class="mt-1 block font-medium text-slate-900 dark:text-slate-200 hover:text-cyan-500">{{ item.title|e }}</a>
+                    {% if item.summary_missing %}<p class="mt-1 text-xs text-slate-500">Сводка для этой записи не сохранена.</p>{% endif %}
                 </div>
                 {% if item.sentiment %}
                 <span class="rounded px-2 py-1 text-xs {% if item.sentiment.label == 'positive' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300{% elif item.sentiment.label == 'negative' %}bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300{% else %}bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300{% endif %}">

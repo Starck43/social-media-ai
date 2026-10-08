@@ -753,3 +753,25 @@ that analysis never ran. Titles, summaries and URL-bearing labels are escaped;
 invalid sentiment scores and non-HTTP(S)/credential-bearing original URLs are
 not rendered as trusted values or links. The shared admin metric renderer also
 shows unknown values as — rather than converting them back to zero.
+
+
+### Unified headings for saved analysis records
+
+All web entry points (flat group drill-down, day chronology, individual detail,
+chain timeline and dashboard recent analyses) use `render_analysis().display_title`:
+
+1. First valid saved `analysis_title` (root, text analysis including `parsed`,
+   unified summary including `parsed`, or legacy `ai_analysis`).
+2. First saved topic (`main_topics`, `topics`, `key_topics`; string or topic/name/key object).
+3. `Материалы источника «{source_name}»`, or `Материалы источника` if the name is unavailable.
+
+The technical row ID remains in the URL, not a headline. The current topic filter
+and chain label are not substituted for the record's own content. Date and source
+remain separate metadata; no LLM calls or historical JSON rewrite are needed.
+Missing summary is described as `Сводка для этой записи не сохранена`, never as
+proof that analysis did not run. Chronology entries without a summary stay clickable.
+
+Validation: `982 passed, 1 skipped, 10 warnings in 209.81s (0:03:29)`. Regression tests compare
+headings across group, chronology, detail, chain timeline and dashboard,
+including missing titles/summaries, nested payloads and escaped topic text.
+No migrations, production data rewrite or API changes.

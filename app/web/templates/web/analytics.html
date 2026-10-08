@@ -171,19 +171,15 @@
                 <h3 class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300"><a href="{{ group.url|e }}" class="hover:text-cyan-500">{{ group.display_key }} →</a></h3>
                 <div class="space-y-2">
                     {% for entry in group.entries %}
-                    {% if entry.analysis_summary %}
-                    <a href="{{ entry.url|e }}"
+                    <a href="{{ entry.url|e }}" data-analysis-id="{{ entry.id }}"
                        class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/30 p-3 hover:border-cyan-700 transition-colors">
                         <div class="min-w-0 flex-1">
-                            <p class="truncate text-sm text-slate-200">
-                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
-                            </p>
+                            <p class="truncate text-sm text-slate-200">{{ entry.display_title|e }}</p>
                             <p class="text-xs text-slate-500">
-                                {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}
-                                {% if entry.main_topics %}
-                                · {{ entry.main_topics[0] }}
-                                {% endif %}
+                                {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id)|e }}
+                                {% if entry.main_topics %} · {{ entry.main_topics[0]|e }}{% endif %}
                             </p>
+                            {% if not entry.analysis_summary %}<p class="mt-1 text-xs text-slate-500">Сводка для этой записи не сохранена.</p>{% endif %}
                         </div>
                         {% if entry.sentiment_score is not none %}
                         <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
@@ -194,26 +190,6 @@
                         </span>
                         {% endif %}
                     </a>
-                    {% else %}
-                    <div class="rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2">
-                        <div class="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-                            </svg>
-                            <p class="truncate text-sm text-amber-800 dark:text-amber-200">
-                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
-                            </p>
-                            <span class="text-xs text-amber-700 dark:text-amber-300">— Данные получены, но анализ не проводился.</span>
-                        </div>
-                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <span>{{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}</span>
-                            {% if entry.analysis_date %}
-                            <span>·</span>
-                            <span>{{ entry.analysis_date }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endif %}
                     {% endfor %}
                 </div>
             </div>

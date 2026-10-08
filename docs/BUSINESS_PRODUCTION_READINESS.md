@@ -22,7 +22,7 @@ Baseline observation before that change: [broadcast_digest](../app/channels/regi
 
 Actions:
 - **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
-- **Notification boundary remains open:** the legacy `MessengerService` falls back to `TELEGRAM_ADMIN_CHAT_ID`; the collector can send source names/raw error text there, and report/trend helpers also omit a recipient. Separate explicitly addressed workspace notifications from scrubbed operator alerts; never treat the admin fallback as a client delivery route. See [configuration boundaries](CONFIGURATION.md#application-credentials-and-recipient-boundaries).
+- **Notification boundary implemented:** workspace messages require explicit active owned bindings; fixed operator templates alone use `TELEGRAM_ADMIN_CHAT_ID`. Source-owned DB failure notifications do not forward raw exceptions. Recipient-picker UX, persisted outcomes/rate limits and process-wide logging audit remain open. See [notification contract](NOTIFICATIONS.md).
 - **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
 - Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
 - Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.

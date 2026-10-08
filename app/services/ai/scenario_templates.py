@@ -132,9 +132,7 @@ def list_templates() -> list[dict[str, Any]]:
 def _allowed(enum_cls: Any) -> str:
     """The db_values of an enum, as a comma-separated string for an error.
 
-    `all_db_values()` is the shared helper the analysis/content enums expose;
-    `AnalyzeType` predates it, so fall back to reading the members directly
-    rather than adding a second spelling of the same list.
+    `all_db_values()` is the shared helper the analysis/content enums expose.
     """
     values = getattr(enum_cls, "all_db_values", None)
     return ", ".join(values() if callable(values) else [m.db_value for m in enum_cls])

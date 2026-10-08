@@ -171,6 +171,81 @@ def _content_stats(summary_data: dict) -> dict[str, int]:
     return summary_data.get("content_statistics") or {}
 
 
+def _format_period_key(key: str, group_by_period: str | None) -> str:
+    """Format a period key for Russian locale display."""
+    if group_by_period == "week":
+        parts = key.split("-")
+        if len(parts) == 2 and parts[1].startswith("W"):
+            return f"Неделя {parts[1][1:]}"
+        return key
+    if group_by_period == "month":
+        parts = key.split("-")
+        if len(parts) == 2:
+            year, month = int(parts[0]), int(parts[1])
+            months = [
+                "январь", "февраль", "март", "апрель", "май", "июнь",
+                "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+            ]
+            return f"{months[month - 1]} {year}"
+        return key
+    # day: format ISO date for Russian locale
+    parts = key.split("-")
+    if len(parts) == 3:
+        from datetime import date as dt_date, timedelta
+        try:
+            d = dt_date(int(parts[0]), int(parts[1]), int(parts[2]))
+            today = dt_date.today()
+            if d == today:
+                return "сегодня"
+            yesterday = today - timedelta(days=1)
+            if d == yesterday:
+                return "вчера"
+            months = [
+                "января", "февраля", "марта", "апреля", "мая", "июня",
+                "июля", "августа", "сентября", "октября", "ноября", "декабря",
+            ]
+            if d.year == today.year:
+                return f"{d.day} {months[d.month - 1]}"
+            return f"{d.day} {months[d.month - 1]} {d.year}"
+        except (ValueError, TypeError):
+            pass
+    return key
+
+
+def _period_key(d: date, group_by_period: str | None) -> str:
+    """Compute a display key for a date under the chosen period grouping."""
+    if group_by_period == "week":
+        iso = d.isocalendar()
+        return f"{d.year}-W{iso.week:02d}"
+    if group_by_period == "month":
+        return d.strftime("%Y-%m")
+    return d.isoformat()
+
+
+def _serialize_row(row: AIAnalytics) -> dict[str, Any]:
+    """Serialize an AIAnalytics row for template rendering in timeline views."""
+    sent = _extract_sentiment(row.summary_data)
+    title = None
+    if row.summary_data:
+        title = row.summary_data.get("analysis_title")
+        if not title:
+            topics = _extract_topics(row.summary_data)
+            if topics:
+                title = topics[0]
+    return {
+        "id": row.id,
+        "analysis_date": row.analysis_date.isoformat() if row.analysis_date else None,
+        "source_id": row.source_id,
+        "analysis_title": title,
+        "sentiment_score": sent.get("score") if sent else None,
+        "sentiment_label": sent.get("label") if sent else None,
+        "main_topics": _extract_topics(row.summary_data),
+        "topic_chain_id": row.topic_chain_id,
+        "chain_label": row.chain_label,
+        "analysis_summary": (row.summary_data or {}).get("analysis_summary"),
+    }
+
+
 # ── source name cache ─────────────────────────────────────────────────────────
 
 
@@ -188,6 +263,7 @@ async def group_analytics(
     axis: GroupingAxis | str,
     time_breakdown: bool = False,
     entity_type: str | None = None,
+    group_by_period: str | None = None,
 ) -> dict[str, Any]:
     """Group analytics rows by the chosen axis.
 
@@ -197,6 +273,8 @@ async def group_analytics(
         time_breakdown: If True, include per-date sub-entries within each group.
         entity_type: Optional filter for ENTITIES axis. One of "brand", "person",
             "org". When None, all entity types are included. Ignored for other axes.
+        group_by_period: For DAYS axis only. One of "day", "week", "month".
+            Groups rows by the selected period instead of individual dates.
 
     Returns a dict suitable for digest text rendering and API JSON:
     {
@@ -208,7 +286,7 @@ async def group_analytics(
                 "key": "Coca-Cola",
                 "count": 12,
                 "avg_sentiment": 0.7,
-                "entries": [...]   # only if time_breakdown=True
+                "entries": [...]   # only if time_breakdown=True or axis==DAYS
             }
         ]
     }
@@ -236,7 +314,20 @@ async def group_analytics(
         key: str | None = None
 
         if axis == GroupingAxis.DAYS:
-            key = row.analysis_date.isoformat() if row.analysis_date else "unknown"
+            if group_by_period in ("week", "month"):
+                key = _period_key(row.analysis_date, group_by_period) if row.analysis_date else "unknown"
+            else:
+                key = row.analysis_date.isoformat() if row.analysis_date else "unknown"
+            bucket = groups.setdefault(
+                key,
+                {"key": key, "count": 0, "scores": [], "entries": []},
+            )
+            bucket["count"] += 1
+            bucket["entries"].append(row)
+            sent = _extract_sentiment(row.summary_data)
+            if sent and sent.get("score") is not None:
+                bucket["scores"].append(float(sent["score"]))
+            continue
 
         elif axis == GroupingAxis.THEMES:
             topics = _extract_topics(row.summary_data)
@@ -362,6 +453,8 @@ async def group_analytics(
             "count": bucket["count"],
             "avg_sentiment": avg_sent,
         }
+        if axis == GroupingAxis.DAYS:
+            group["display_key"] = _format_period_key(bucket["key"], group_by_period)
         if axis == GroupingAxis.TOPIC_CHAINS:
             # Human-readable title (chain_label / first topic) with the raw
             # chain id kept alongside so templates can link to the chain page.
@@ -388,9 +481,15 @@ async def group_analytics(
                     }
                 )
             group["entries"] = entries
+        elif axis == GroupingAxis.DAYS and bucket.get("entries"):
+            entries = [_serialize_row(r) for r in sorted(bucket["entries"], key=lambda r: r.analysis_date or date.min)]
+            group["entries"] = entries
         result_groups.append(group)
 
-    result_groups.sort(key=lambda g: -g["count"])
+    if axis == GroupingAxis.DAYS:
+        result_groups.sort(key=lambda g: g["key"], reverse=True)
+    else:
+        result_groups.sort(key=lambda g: -g["count"])
 
     result: dict[str, Any] = {"axis": axis.value, "time_breakdown": time_breakdown, "groups": result_groups}
     if axis == GroupingAxis.ENTITIES and entity_type:

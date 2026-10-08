@@ -29,7 +29,7 @@
                             800: '#1e293b', 850: '#172033', 900: '#0f172a', 950: '#020617',
                         },
                         cyan: {
-                            400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2',
+                            400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490',
                         }
                     }
                 }
@@ -49,42 +49,42 @@
        that is how the chat page ended up without marked.js. #}
     {% block extra_head %}{% endblock %}
 </head>
-<body x-data="themeManager()" :class="{ 'dark': isDark }" class="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
+<body x-data="themeManager()" :class="{ 'dark': isDark }" class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
 <div class="flex min-h-screen">
-    <aside class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800/80 p-4 md:flex">
+    <aside class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 md:flex">
         <a href="/app/" class="flex items-center gap-2 px-2 py-3 text-lg font-semibold tracking-tight">
             <span class="h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
             AI Monitor
         </a>
-        <div class="my-2 border-t border-slate-200 dark:border-slate-800/80"></div>
+        <div class="my-2 border-t border-slate-200 dark:border-slate-800"></div>
         <nav class="mt-1 flex-1 space-y-0.5 overflow-y-auto">
             {% for item in nav %}
                 {% if item.ready %}
                     <a href="{{ item.href }}"
-                       class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-900 dark:bg-slate-800 font-medium text-white dark:text-white{% else %}text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 dark:hover:text-slate-100{% endif %}">{{ item.label }}</a>
+                       class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-900 dark:bg-slate-800 font-medium text-white{% else %}text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100{% endif %}">{{ item.label }}</a>
                 {% else %}
-                    <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-400 dark:text-slate-600"
+                    <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-500"
                           title="Раздел появится в следующих вехах">
                         {{ item.label }}
-                        <span class="text-[10px] uppercase tracking-wider text-slate-300 dark:text-slate-700">скоро</span>
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-600">скоро</span>
                     </span>
                 {% endif %}
             {% endfor %}
         </nav>
         {% if user and user.is_superuser %}
-            <div class="border-t border-slate-200 dark:border-slate-800/80 pt-2">
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
                 <a href="/admin/" target="_blank" rel="noopener"
-                   class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 dark:hover:text-slate-100">
+                   class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
                     <span>⚙️</span>
                     <span>Админка</span>
                     <span class="text-[10px] text-slate-400 dark:text-slate-600">↗</span>
                 </a>
             </div>
         {% endif %}
-        <div class="border-t border-slate-200 dark:border-slate-800/80 pt-2">
+        <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
             <button @click="toggle()"
                     title="Переключить тему"
-                    class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 dark:hover:text-slate-100">
+                    class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
                 <span x-text="isDark ? '☀️' : '🌙'"></span>
                 <span x-text="isDark ? 'Светлая' : 'Тёмная'"></span>
             </button>
@@ -92,7 +92,7 @@
     </aside>
 
     <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800/80 px-6 py-3 bg-white dark:bg-slate-950">
+        <header class="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-6 py-3 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
             <div x-data="{ open: false }" class="relative">
                 <button @click="open = !open"
                         class="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-900 dark:text-slate-300">

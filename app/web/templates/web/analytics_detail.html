@@ -9,11 +9,20 @@
     {{ page_title(analysis_title_text, analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id)) }}
 
     {% if not display.analysis_summary %}
-    <div class="mb-6 flex items-center gap-2 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-1.5 text-sm text-amber-800 dark:text-amber-200">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-        </svg>
-        <span>Данные получены, но анализ не проводился.</span>
+    <div class="mb-6 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+            </svg>
+            <span class="font-medium">Данные получены, но анализ не проводился.</span>
+        </div>
+        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+            {% if analysis.source %}
+            <a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-400 hover:underline">{{ analysis.source.name }}</a>
+            <span>·</span>
+            {% endif %}
+            <span>{{ analysis.analysis_date.strftime('%d.%m.%Y') if analysis.analysis_date else '—' }}</span>
+        </div>
     </div>
     {% endif %}
 

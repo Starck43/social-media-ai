@@ -172,8 +172,8 @@
                         {% endif %}
                     </a>
                     {% else %}
-                    <div class="flex items-center justify-between rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2">
-                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <div class="rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2">
+                        <div class="flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
                             </svg>
@@ -181,6 +181,13 @@
                                 {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
                             </p>
                             <span class="text-xs text-amber-700 dark:text-amber-300">— Данные получены, но анализ не проводился.</span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+                            <span>{{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}</span>
+                            {% if entry.analysis_date %}
+                            <span>·</span>
+                            <span>{{ entry.analysis_date }}</span>
+                            {% endif %}
                         </div>
                     </div>
                     {% endif %}

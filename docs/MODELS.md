@@ -149,9 +149,12 @@ LLM model definitions per provider.
 `capabilities` is a computed Python property, not a database column.
 Scenario auto-resolution calls `resolve_default_model(capability, strategy)`.
 Explicit scenario model IDs win when active, supported and on active providers.
-Provider/model default ranks come first. Within equal ranks, `cost_efficient`
-minimizes the combined input/output per-1K tariff, `multimodal` prefers more
-capabilities, and `quality` keeps the stable fleet order (price is not quality).
+`cost_efficient` minimizes the combined configured input/output per-1K tariff
+first, with provider/model defaults breaking equal-tariff ties. `multimodal`
+keeps default ranks first and then prefers more capabilities. `quality` keeps
+the stable fleet order (price is not quality). Agent chat/report narrative uses
+cost-efficient routing; digest narrative uses quality routing. Workspace tier
+restrictions still filter the agent fallback fleet before invocation.
 
 **Usage/health counters** (`last_used_at`, `last_success_at`, `last_error_at`, `use_count`, `fail_count`) are updated by `llm_client._record_llm_usage` on every LLM call (both `chat_with_fallback` and direct client calls). `NULL` = unknown history (backward compatible). `last_success_at` is backfilled from `ai_analytics.created_at` per model name for legacy signal in default reassignment.
 
@@ -411,7 +414,7 @@ Cron-based task definitions. Triggers and actions live here (not on scenarios) â
 | `name` | `String(100)` | Unique task name |
 | `cron_expr` | `String(100)` | 5-field cron expression |
 | `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | Task-specific params. For `digest`: `period` (day/week/month), `group_by` (themes/sources/entities/sentiment/content_type/intent/topic_chains), `time_breakdown` (bool). For `collect`/`analyze`: `monitored_users`, `excluded_users`, `cli_dates` (start_date/end_date), `force_refresh`, `force_reanalyze`, `analyze_inline`. For `digest` + `analyze`: `scenario_id` override. |
+| `payload` | `JSON` | Task-specific params. For `digest`: `period` (day/week/month), `group_by` (themes/sources/entities/intent/topic_chains), `time_breakdown` (bool). For `collect`/`analyze`: `monitored_users`, `excluded_users`, `cli_dates` (start_date/end_date), `force_refresh`, `force_reanalyze`, `analyze_inline`. For `digest` + `analyze`: `scenario_id` override. |
 | `agent_scenario_id` | `Integer` FK â†’ `agent_scenarios` | Reusable scenario (nullable, `SET NULL`) |
 | `trigger_type` | `Enum` | `KEYWORD_MATCH`, `SENTIMENT_THRESHOLD`, `USER_MENTION`, `ACTIVITY_SPIKE` |
 | `trigger_config` | `JSON` | Trigger parameters (keywords, threshold, spike multiplier...) |

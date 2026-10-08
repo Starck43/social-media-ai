@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.core.config import settings
-from app.services.ai.llm_client import LLMClientFactory, resolve_model
-from app.services.ai.reporting import ReportAggregator
+from app.services.ai.llm_client import LLMClientFactory
+from app.services.ai.reporting import ReportAggregator, normalize_digest_axis
 from app.services.digest.render import render_digest
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,9 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         logger.warning("Daily LLM cost cap reached — digest summary skipped")
         return None, {"model": None, "cost_cap": True}
 
-    model = await resolve_model()
+    from app.models import LLMModel
+
+    model = await LLMModel.objects.resolve_default_model("text", strategy="quality")
     if not model:
         return None, {"model": None}
     try:
@@ -84,8 +86,9 @@ async def aggregate(
 ) -> tuple[dict[str, Any], date, date]:
     # "days" is a web-only grouping for the Chronology view; it must not be used
     # for digest generation (the API and CLI should reject it before reaching here).
+    group_by = normalize_digest_axis(group_by)
     if group_by == "days":
-        raise ValueError("group_by='days' is web-only; use themes, sources, entities, sentiment, content_type, intent, or topic_chains")
+        raise ValueError("group_by='days' is web-only; use themes, sources, entities, intent, or topic_chains")
 
     start, end = period_bounds(period)
     days = (end - start).days + 1

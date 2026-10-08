@@ -141,12 +141,13 @@ async def test_summarize_skipped_at_daily_cap(monkeypatch):
     async def spent():
         return 99.0
 
-    async def boom():  # resolve_model must never run
+    async def boom(*args, **kwargs):  # model resolution must never run
         raise AssertionError("model must not be resolved at cap")
 
     monkeypatch.setattr(resolver_module, "current_daily_cost_limit", full_limit)
     monkeypatch.setattr(resolver_module, "daily_cost_today", spent)
-    monkeypatch.setattr(builder, "resolve_model", boom)
+    from app.models.managers.llm_model_manager import LLMModelManager
+    monkeypatch.setattr(LLMModelManager, "resolve_default_model", boom)
 
     summary, info = await builder._summarize({"stats": {}})
     assert summary is None

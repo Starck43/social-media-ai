@@ -870,9 +870,11 @@ Authorization: Bearer <token>
 **Query params:**
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `group_by` | string | No | Default `themes`; `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`. `days` is web-only and returns 400 here. |
+| `group_by` | string | No | Default `themes`; `themes`, `sources`, `entities`, `intent`, `topic_chains`. `days` is web-only and returns 400 here. |
 | `time_breakdown` | bool | No | Include per-date breakdown inside each group |
-| `entity_type` | string | No | Filter entities by type (`person`, `brand`); only for `group_by=entities` |
+| `entity_type` | string | No | Filter entities by type (`person`, `brand`, `org`); only for `group_by=entities` |
+| `sentiment` | string | No | Cross-axis filter: `positive`, `neutral`, `negative` |
+| `media` | string | No | Cross-axis media_types containment filter: `text`, `image`, `video` |
 | `source_id` | int | No | Filter by source |
 | `scenario_id` | int | No | Filter by scenario |
 | `days` | int | No | Look-back window |
@@ -1451,3 +1453,7 @@ GET /dashboard/topic-chains
   "updated_at": "ISO datetime"
 }
 ```
+
+Removed grouping values `sentiment` and `content_type` return 400, listing:
+themes, sources, entities, intent, topic_chains. Invalid sentiment/media filter
+values return 422. Filtering precedes grouping, counts and date breakdowns.

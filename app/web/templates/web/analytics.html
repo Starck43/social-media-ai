@@ -9,6 +9,9 @@
             </p>
         </div>
         <form method="get" class="flex items-center gap-2">
+            {% for key in ['group_by', 'entity_type', 'sentiment', 'media', 'group_by_period'] %}
+                {% if request.query_params.get(key) %}<input type="hidden" name="{{ key }}" value="{{ request.query_params.get(key) }}">{% endif %}
+            {% endfor %}
             {% if is_superuser and tenants %}
                 <select name="tenant_id" onchange="this.form.submit()"
                         class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
@@ -73,8 +76,8 @@
                     </div>
                     {% if chain.avg_sentiment is not none %}
                     <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
-                        {% if chain.avg_sentiment >= 0.3 %}text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950
-                        {% elif chain.avg_sentiment <= -0.3 %}text-rose-700 bg-rose-100 dark:text-rose-300 dark:bg-rose-950
+                        {% if chain.avg_sentiment > 0.6 %}text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950
+                        {% elif chain.avg_sentiment < 0.4 %}text-rose-700 bg-rose-100 dark:text-rose-300 dark:bg-rose-950
                         {% else %}text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950{% endif %}">
                         {{ "%.1f"|format(chain.avg_sentiment) }}
                     </span>
@@ -99,14 +102,12 @@
                     ('themes', 'По темам', '🧩'),
                     ('sources', 'По источникам', '🔗'),
                     ('entities', 'По сущностям', '👤'),
-                    ('sentiment', 'По тональности', '😊'),
-                    ('content_type', 'По типу контента', '📊'),
                     ('intent', 'По намерению', '🎯'),
                 ] %}
                 {% for ax_val, ax_label, ax_icon in axes %}
                 {% set count = (gd.group_counts or {}).get(ax_val, 0) %}
-                {% if count > 0 or ax_val == gd.axis %}
-                <a href="?group_by={{ ax_val }}{% if ax_val == 'entities' and gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
+                {% if ax_val in gd.visible_axes %}
+                <a href="{{ gd.axis_urls[ax_val] }}"
                    class="rounded-lg px-3 py-1.5 text-sm transition"
                    :class="axis === '{{ ax_val }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'">
                     {{ ax_icon }} {{ ax_label }}
@@ -118,7 +119,7 @@
             <template x-if="axis === 'entities'">
                 <div class="flex gap-2">
                     {% for et in [('brand', 'Бренды'), ('person', 'Персоны'), ('org', 'Организации')] %}
-                    <a href="?group_by=entities&entity_type={{ et[0] }}"
+                    <a href="{{ gd.entity_urls[et[0]] }}"
                        class="rounded-lg border px-3 py-1.5 text-sm transition"
                        :class="(axis === 'entities' && '{{ gd.entity_type or "" }}' === '{{ et[0] }}') ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'">
                         {{ et[1] }}
@@ -130,7 +131,7 @@
             <div class="flex gap-1 rounded-xl border border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 p-1">
                 {% set periods = [('day', 'По дням'), ('week', 'По неделям'), ('month', 'По месяцам')] %}
                 {% for pval, plabel in periods %}
-                <a href="?group_by=days&group_by_period={{ pval }}&days={{ days }}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
+                <a href="{{ gd.period_urls[pval] }}"
                    class="rounded-lg px-3 py-1.5 text-sm transition"
                    :class="period === '{{ pval }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'">
                     {{ plabel }}
@@ -139,6 +140,27 @@
             </div>
             {% endif %}
         </div>
+
+        <form method="get" class="flex flex-wrap items-center gap-3" aria-label="Фильтры аналитики">
+            <input type="hidden" name="group_by" value="{{ gd.axis }}">
+            <input type="hidden" name="days" value="{{ days }}">
+            {% if filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+            {% if gd.entity_type %}<input type="hidden" name="entity_type" value="{{ gd.entity_type }}">{% endif %}
+            {% if gd.axis == 'days' %}<input type="hidden" name="group_by_period" value="{{ gd.group_by_period }}">{% endif %}
+            <label for="sentiment-filter" class="text-sm text-slate-500 dark:text-slate-400">Тональность</label>
+            <select id="sentiment-filter" name="sentiment" onchange="this.form.submit()" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+                {% for value, label in [('', 'Любая'), ('positive', 'Позитивная'), ('neutral', 'Нейтральная'), ('negative', 'Негативная')] %}
+                <option value="{{ value }}" {% if (gd.sentiment or '') == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <label for="media-filter" class="text-sm text-slate-500 dark:text-slate-400">Медиа</label>
+            <select id="media-filter" name="media" onchange="this.form.submit()" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+                {% for value, label in [('', 'Любые'), ('text', 'Текст'), ('image', 'Изображения'), ('video', 'Видео')] %}
+                <option value="{{ value }}" {% if (gd.media or '') == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit">Применить</button></noscript>
+        </form>
 
         {% if gd.groups %}
         {% if gd.axis == 'days' %}
@@ -164,8 +186,8 @@
                         </div>
                         {% if entry.sentiment_score is not none %}
                         <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
-                            {% if entry.sentiment_score >= 0.3 %}text-emerald-400 bg-emerald-950
-                            {% elif entry.sentiment_score <= -0.3 %}text-rose-400 bg-rose-950
+                            {% if entry.sentiment_score > 0.6 %}text-emerald-400 bg-emerald-950
+                            {% elif entry.sentiment_score < 0.4 %}text-rose-400 bg-rose-950
                             {% else %}text-amber-400 bg-amber-950{% endif %}">
                             {{ "%.1f"|format(entry.sentiment_score) }}
                         </span>

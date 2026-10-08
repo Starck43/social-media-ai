@@ -580,3 +580,11 @@ def _run(coro):
 
 The CLI uses the `rich` library for formatted tables and colored output.
 No JSON output — the CLI is operator-facing, not machine-facing.
+
+
+### Digest grouping values
+
+Digest command help lists `themes`, `sources`, `entities`, `intent` and
+`topic_chains`. `days` is web-only chronology; use `time_breakdown` for digest
+chronology. Sentiment and media are metrics/cross-filters, not grouping axes.
+Saved legacy task payloads with `sentiment` or `content_type` normalize to themes.

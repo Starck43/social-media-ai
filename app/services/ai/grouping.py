@@ -14,6 +14,7 @@ from typing import Any
 
 from app.models import AIAnalytics, Source
 from app.services.ai.chain_resolver import human_chain_label
+from app.services.ai.reporting import MEDIA_FILTERS, SENTIMENT_FILTERS, sentiment_bucket
 from app.types.enums.bot_types import GroupingAxis
 
 
@@ -92,34 +93,21 @@ def _extract_entities(summary_data: dict) -> list[dict]:
 
 
 def _extract_sentiment(summary_data: dict) -> dict | None:
-    """Extract sentiment data from summary_data JSON."""
-    if not summary_data:
+    """Read current flat/nested and legacy numeric scores with shared buckets."""
+    if not isinstance(summary_data, dict):
         return None
-
-    multi_llm = summary_data.get("multi_llm_analysis", {})
-    text_analysis = multi_llm.get("text_analysis", {})
-
-    if "sentiment_score" in text_analysis:
-        score = text_analysis["sentiment_score"]
-        if score > 0.6:
-            label = "positive"
-        elif score < 0.4:
-            label = "negative"
-        else:
-            label = "neutral"
-        return {"label": label, "score": score}
-
-    ai_analysis = summary_data.get("ai_analysis", {})
-    sentiment = ai_analysis.get("sentiment_analysis", {})
-    if sentiment and "overall_sentiment" in sentiment:
-        score = sentiment["overall_sentiment"]
-        if isinstance(score, (int, float)):
-            if score > 0.6:
-                label = "positive"
-            elif score < 0.4:
-                label = "negative"
-            else:
-                label = "neutral"
+    text = _text_analysis(summary_data)
+    candidates = [text.get("sentiment_score"), summary_data.get("sentiment_score")]
+    for container in (text, summary_data.get("ai_analysis") or {}, summary_data):
+        sentiment = container.get("sentiment_analysis") or {}
+        if not isinstance(sentiment, dict):
+            continue
+        candidates.append(sentiment.get("sentiment_score"))
+        overall = sentiment.get("overall_sentiment")
+        candidates.append(overall.get("score") if isinstance(overall, dict) else overall)
+    for score in candidates:
+        label = sentiment_bucket(score)
+        if label:
             return {"label": label, "score": float(score)}
     return None
 
@@ -258,14 +246,34 @@ async def _source_name_map(source_ids: list[int]) -> dict[int, str]:
 # ── main grouping function ────────────────────────────────────────────────────
 
 
+def filter_analytics(rows: list[AIAnalytics], sentiment: str | None = None, media: str | None = None) -> list[AIAnalytics]:
+    """Apply cross-axis filters before counts, averages or chronological slices."""
+    if sentiment is not None and sentiment not in SENTIMENT_FILTERS:
+        raise ValueError(f"sentiment must be one of {', '.join(SENTIMENT_FILTERS)}")
+    if media is not None and media not in MEDIA_FILTERS:
+        raise ValueError(f"media must be one of {', '.join(MEDIA_FILTERS)}")
+    filtered = []
+    for row in rows:
+        if sentiment is not None:
+            extracted = _extract_sentiment(row.summary_data)
+            if not extracted or sentiment_bucket(extracted["score"]) != sentiment:
+                continue
+        if media is not None and media not in _extract_media_types(row):
+            continue
+        filtered.append(row)
+    return filtered
+
+
 async def group_analytics(
     rows: list[AIAnalytics],
     axis: GroupingAxis | str,
     time_breakdown: bool = False,
     entity_type: str | None = None,
     group_by_period: str | None = None,
+    sentiment: str | None = None,
+    media: str | None = None,
 ) -> dict[str, Any]:
-    """Group analytics rows by the chosen axis.
+    """Group analytics rows by the chosen axis after sentiment/media filtering.
 
     Args:
         rows: List of AIAnalytics rows to group.
@@ -293,12 +301,6 @@ async def group_analytics(
     """
     if isinstance(axis, str):
         axis = GroupingAxis(axis)
-    if not rows:
-        result: dict[str, Any] = {"axis": axis.value, "time_breakdown": time_breakdown, "groups": []}
-        if axis == GroupingAxis.ENTITIES and entity_type:
-            result["entity_type"] = entity_type
-        return result
-
     # Validate entity_type filter
     if entity_type is not None and axis != GroupingAxis.ENTITIES:
         raise ValueError(f"entity_type filter is only valid for ENTITIES axis, got axis={axis.value}")
@@ -306,6 +308,14 @@ async def group_analytics(
         valid_types = {"brand", "person", "org"}
         if entity_type not in valid_types:
             raise ValueError(f"entity_type must be one of {valid_types}, got '{entity_type}'")
+
+    rows = filter_analytics(rows, sentiment=sentiment, media=media)
+    if not rows:
+        result: dict[str, Any] = {"axis": axis.value, "time_breakdown": time_breakdown, "groups": []}
+        if axis == GroupingAxis.ENTITIES and entity_type:
+            result["entity_type"] = entity_type
+        result.update({k: v for k, v in (("sentiment", sentiment), ("media", media)) if v is not None})
+        return result
 
     groups: dict[str, dict[str, Any]] = {}
     source_ids_needed: set[int] = set()
@@ -360,41 +370,6 @@ async def group_analytics(
                 if entity_type and ent["type"] != entity_type:
                     continue
                 key = ent["name"]
-                bucket = groups.setdefault(
-                    key,
-                    {"key": key, "count": 0, "scores": [], "entries": defaultdict(list)},
-                )
-                bucket["count"] += 1
-                sent = _extract_sentiment(row.summary_data)
-                if sent and sent.get("score") is not None:
-                    bucket["scores"].append(float(sent["score"]))
-                if time_breakdown:
-                    day = row.analysis_date.isoformat() if row.analysis_date else "unknown"
-                    bucket["entries"][day].append(row)
-            continue
-
-        elif axis == GroupingAxis.SENTIMENT:
-            sent = _extract_sentiment(row.summary_data)
-            key = sent["label"] if sent else "unknown"
-
-        elif axis == GroupingAxis.CONTENT_TYPE:
-            media_types = _extract_media_types(row)
-            if media_types:
-                for mt in media_types:
-                    key = mt
-                    bucket = groups.setdefault(
-                        key,
-                        {"key": key, "count": 0, "scores": [], "entries": defaultdict(list)},
-                    )
-                    bucket["count"] += 1
-                    sent = _extract_sentiment(row.summary_data)
-                    if sent and sent.get("score") is not None:
-                        bucket["scores"].append(float(sent["score"]))
-                    if time_breakdown:
-                        day = row.analysis_date.isoformat() if row.analysis_date else "unknown"
-                        bucket["entries"][day].append(row)
-            else:
-                key = "unknown"
                 bucket = groups.setdefault(
                     key,
                     {"key": key, "count": 0, "scores": [], "entries": defaultdict(list)},
@@ -494,4 +469,5 @@ async def group_analytics(
     result: dict[str, Any] = {"axis": axis.value, "time_breakdown": time_breakdown, "groups": result_groups}
     if axis == GroupingAxis.ENTITIES and entity_type:
         result["entity_type"] = entity_type
+    result.update({k: v for k, v in (("sentiment", sentiment), ("media", media)) if v is not None})
     return result

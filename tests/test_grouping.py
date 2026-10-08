@@ -193,48 +193,10 @@ async def test_group_by_entities_filters_by_type(source):
     assert "Coca-Cola" not in keys
 
 
-# ── sentiment ─────────────────────────────────────────────────────────────────
-
-
-async def test_group_by_sentiment_buckets_by_label(source):
-    r1 = await _row(source, day_offset=3, summary_data=_summary({"sentiment_score": 0.8}))
-    r2 = await _row(source, day_offset=2, summary_data=_summary({"sentiment_score": 0.2}))
-    r3 = await _row(source, day_offset=1, summary_data=_summary({"sentiment_score": 0.5}))
-    rows = [r1, r2, r3]
-    result = await group_analytics(rows, "sentiment")
-    assert len(result["groups"]) == 3
-    keys = {g["key"] for g in result["groups"]}
-    assert "positive" in keys
-    assert "negative" in keys
-    assert "neutral" in keys
-    pos = next(g for g in result["groups"] if g["key"] == "positive")
-    assert pos["avg_sentiment"] == 0.8
-
-
-async def test_group_by_sentiment_unknown_when_no_data(source):
-    r1 = await _row(source, day_offset=1, summary_data=_summary())
-    rows = [r1]
-    result = await group_analytics(rows, "sentiment")
-    assert len(result["groups"]) == 1
-    assert result["groups"][0]["key"] == "unknown"
-    assert result["groups"][0]["avg_sentiment"] is None
-
-
-# ── content_type ──────────────────────────────────────────────────────────────
-
-
-async def test_group_by_content_type_counts_media_types(source):
-    r1 = await _row(source, day_offset=3, media_types=["text", "image"])
-    r2 = await _row(source, day_offset=2, media_types=["text"])
-    r3 = await _row(source, day_offset=1, media_types=["video"])
-    rows = [r1, r2, r3]
-    result = await group_analytics(rows, "content_type")
-    keys = {g["key"] for g in result["groups"]}
-    assert "text" in keys
-    assert "image" in keys
-    assert "video" in keys
-    text_group = next(g for g in result["groups"] if g["key"] == "text")
-    assert text_group["count"] == 2
+@pytest.mark.parametrize("axis", ["sentiment", "content_type"])
+async def test_removed_axes_rejected_even_without_rows(axis):
+    with pytest.raises(ValueError):
+        await group_analytics([], axis)
 
 
 # ── intent ────────────────────────────────────────────────────────────────────
@@ -340,3 +302,32 @@ async def test_topic_chains_prefers_chain_label_over_topics(source):
     r1.chain_label = "Горячая тема"
     result = await group_analytics([r1], "topic_chains")
     assert result["groups"][0]["key"] == "Горячая тема"
+
+
+@pytest.mark.parametrize("score,expected", [(0, "negative"), (.399, "negative"), (.4, "neutral"), (.6, "neutral"), (.601, "positive"), (1, "positive"), (None, None), ("bad", None), (float("nan"), None), (True, None)])
+def test_sentiment_bucket_boundaries(score, expected):
+    from app.services.ai.reporting import sentiment_bucket
+    assert sentiment_bucket(score) == expected
+
+
+async def test_negative_entities_filter_applies_before_counts_and_averages(source):
+    negative = await _row(source, summary_data=_summary({"sentiment_score": .2}, entities=[{"name": "Risk brand", "type": "brand"}]), media_types=["text", "image"])
+    positive = await _row(source, day_offset=1, summary_data=_summary({"sentiment_score": .8}, entities=[{"name": "Safe brand", "type": "brand"}]), media_types=["text"])
+    result = await group_analytics([negative, positive], "entities", sentiment="negative", media="image", time_breakdown=True)
+    assert result["groups"] == [{"key": "Risk brand", "count": 1, "avg_sentiment": .2, "entries": [{"date": date.today().isoformat(), "count": 1, "avg_sentiment": .2}]}]
+    assert result["sentiment"] == "negative" and result["media"] == "image"
+
+
+async def test_filter_missing_sentiment_is_not_neutral_and_media_uses_containment(source):
+    unknown = await _row(source, summary_data={}, media_types=["text"])
+    neutral = await _row(source, day_offset=1, summary_data={"sentiment_score": .4}, media_types=["text", "video"])
+    result = await group_analytics([unknown, neutral], "sources", sentiment="neutral", media="video")
+    assert len(result["groups"]) == 1
+    assert result["groups"][0]["count"] == 1
+    assert result["groups"][0]["avg_sentiment"] == .4
+
+
+@pytest.mark.parametrize("filters", [{"sentiment": "unknown"}, {"media": "audio"}, {"entity_type": "bogus"}])
+async def test_invalid_filters_rejected_on_empty_input(filters):
+    with pytest.raises(ValueError):
+        await group_analytics([], "entities", **filters)

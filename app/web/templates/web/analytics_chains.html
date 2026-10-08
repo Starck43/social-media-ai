@@ -9,6 +9,7 @@
 
     <div class="mb-4 flex items-center justify-end">
         <form method="get" class="flex items-center gap-2">
+            {% for key, value in chain_filters.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
             <label for="sort" class="text-xs text-slate-500">Сортировка</label>
             <select name="sort" id="sort" onchange="this.form.submit()"
                     class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">

@@ -70,7 +70,8 @@ async def test_strategy_respects_explicit_defaults_and_active_provider(monkeypat
     disabled = model(1, provider_active=False, default=True, provider_default=True)
     chosen = model(3, default=True, cost=1)
     cheap = model(2, cost=0.01)
-    assert await resolve(monkeypatch, [disabled, cheap, chosen], "cost_efficient") is chosen
+    assert await resolve(monkeypatch, [disabled, cheap, chosen], "cost_efficient") is cheap
+    assert await resolve(monkeypatch, [disabled, cheap, chosen], "quality") is chosen
     assert await resolve(monkeypatch, [disabled]) is None
 
 

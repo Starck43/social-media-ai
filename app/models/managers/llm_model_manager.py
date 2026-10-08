@@ -282,11 +282,10 @@ class LLMModelManager(BaseManager):
     async def resolve_default_model(self, model_type: str, strategy: str | None = None) -> Optional["LLMModel"]:
         """Resolve a capability to a model on an active provider.
 
-        Explicit provider/model defaults take precedence. Without a strategy,
-        the stable fleet order is provider default, model default, id. Within
-        equal default ranks, cost_efficient picks the lowest combined per-1K
-        tariff; multimodal prefers more capabilities. Quality uses the stable
-        fleet defaults: price is not a proxy for quality.
+        Without a strategy and for quality, fleet defaults lead. Cost-efficient
+        routing minimizes the combined per-1K tariff, using defaults only to
+        break tariff ties. Multimodal prefers capabilities within equal default
+        ranks. Price is not a proxy for quality.
         """
         from app.services.ai.llm_client import default_model_sort_key
         from app.utils.enum_helpers import get_enum_value
@@ -307,6 +306,8 @@ class LLMModelManager(BaseManager):
                 preference = -len(model.capabilities)
             else:
                 preference = 0
+            if strategy_value == "cost_efficient":
+                return (preference, *defaults)
             return (*defaults[:2], preference, defaults[2])
 
         return min(models, key=sort_key)

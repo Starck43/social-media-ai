@@ -16,7 +16,7 @@ is never blocked behind a long collection.
 - `agent_tasks` — one cron definition **and the reaction it produces**:
   `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON): **write-path keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `force_refresh`, `force_reanalyze`, `analyze_inline`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, `topic_list`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `sentiment` | `content_type` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override).
+  `payload` (JSON): **write-path keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `force_refresh`, `force_reanalyze`, `analyze_inline`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, `topic_list`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override).
 - `agent_task_sources` — many-to-many between tasks and `sources`. A task's
   sources are linked here (not in `payload`); an empty set means all active
   sources. The `sources` relationship is loaded via `task.sources` (a list).

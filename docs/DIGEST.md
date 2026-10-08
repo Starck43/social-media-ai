@@ -60,8 +60,6 @@ parameters passed through the digest task payload:
 | `sources`  | `true`            | Per-source activity broken down by date                                |
 | `entities` | `false`           | Top mentioned entities (brands, persons, organizations)                |
 | `entities` | `true`            | Chronology of mentions: "01.10 — Coca-Cola, 03.10 — Pepsi"            |
-| `sentiment`| `false`           | Distribution by sentiment score                                        |
-| `content_type` | `false`       | Distribution by media type (text, image, video)                        |
 | `intent`   | `false`           | Distribution by user intent                                            |
 | `topic_chains` | `false`       | Thematic chains across the period (top chains by entry count)          |
 | `topic_chains` | `true`         | Per-day chain activity dynamics                                        |
@@ -190,3 +188,15 @@ python -m cli.main digest send-now week
 
 Manual runs are not idempotent by design — useful for testing channel setup
 without waiting for a schedule.
+
+Legacy task payloads with group_by=sentiment or content_type fall back to themes.
+Sentiment distribution and content mix remain metrics, not grouping axes.
+
+
+### Narrative versus report preview
+
+Digest narrative resolves the active configured quality/default text model via
+`resolve_default_model("text", strategy="quality")`. Daily cost caps are checked
+before resolution. Report preview tools use zero-LLM compact aggregates instead
+of invoking digest aggregation or weekly rollup writes; the existing agent chat
+cycle narrates with cost-efficient routing. Publication still needs confirmation.

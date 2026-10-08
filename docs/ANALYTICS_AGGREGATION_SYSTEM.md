@@ -8,21 +8,21 @@ two independent query-time parameters that shape how those rows are presented.
 
 | Dimension | What it answers | Values |
 |-----------|----------------|--------|
-| **Grouping axis** (`GroupingAxis`) | *By what attribute* do we group? | `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
+| **Grouping axis** (`GroupingAxis`) | *By what attribute* do we group? | `days`, `themes`, `sources`, `entities`, `intent`, `topic_chains` |
 | **Time slice** | *How* do we show dynamics? | aggregate (default) or per-date breakdown (`time_breakdown: true`, digest/API only) |
 
 They are orthogonal: any axis can be shown as an aggregate over the period OR
 as a per-date chronology.
 
-> **Important:** `GroupingAxis` has 8 members. Seven are digest grouping axes 
-> (themes, sources, entities, sentiment, content_type, intent, topic_chains). 
-> The eighth, days, is a web-only chronology view: the digest brief never groups by it — it uses time_breakdown: true instead. 
-> The old `AgentScenario.analyze_type` was dropped by migration `0083`; grouping is now a query-time parameter passed to 
+> **Important:** `GroupingAxis` has 6 members. Five are digest grouping axes
+> (themes, sources, entities, intent, topic_chains).
+> The sixth, days, is a web-only chronology view: the digest brief never groups by it — it uses time_breakdown: true instead.
+> The old `AgentScenario.analyze_type` was dropped by migration `0083`; grouping is now a query-time parameter passed to
 > `group_analytics()` via `group_by` (and `time_breakdown` for per-date sub-entries).
 >
 > **Web UI note:** the web analytics page exposes `days` as a dedicated
 > **"Хронология"** tab (chronology as its own view) and hides `topic_chains`
-> from the axis switcher. Both remain fully functional via direct URL or API.
+> from the axis switcher. Chronology is web-only; chains have their own web page and API endpoints.
 
 ### `GroupingAxis` values
 
@@ -32,17 +32,14 @@ as a per-date chronology.
 | `themes` | Semantic topics | `summary_data->'topics'` | |
 | `sources` | Source/channel | `source_id` | |
 | `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` | Supports `entity_type` filter |
-| `sentiment` | Mood/score | `summary_data->'sentiment_score'` | |
-| `content_type` | Media format | `media_types` | |
 | `intent` | Why the post was written | `summary_data->'intent_type'` | |
-| `topic_chains` | Cross-row theme chains | `topic_chain_id` | Hidden from web axis switcher; accessible via direct URL |
+| `topic_chains` | Cross-row theme chains | `topic_chain_id` | Dedicated chains page; not in the main switcher |
 
 > **Notes:**
 > - `days` is a **web-only chronology view** (per-date timeline), not a digest grouping axis.
 >   Digest uses `time_breakdown: true` instead (see DIGEST.md).
 > - `topic_chains` is **hidden from the web axis switcher** to avoid duplication with the
->   top "Тематические цепочки" card. Access via direct URL `?group_by=topic_chains` or the
->   dedicated `/analytics/chains` page.
+>   top "Тематические цепочки" card. Use the dedicated `/app/analytics/chains` page, not `?group_by=topic_chains`.
 
 ### Chain resolver
 
@@ -307,7 +304,7 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 | `/llm-stats` | GET | Статистика LLM провайдеров |
 | `/content-mix` | GET | Распределение типов контента |
 | `/engagement` | GET | Метрики вовлеченности |
-| `/grouped` | GET | Универсальная группировка по любой оси (themes, sources, entities, sentiment, content_type, intent, topic_chains; days is web-only) |
+| `/grouped` | GET | Универсальная группировка по любой оси (themes, sources, entities, intent, topic_chains; days is web-only) |
 
 **Общие параметры:**
 - `source_id` (optional): Фильтр по источнику
@@ -316,7 +313,7 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 - `limit` (int): Макс. кол-во результатов (только для topics)
 
 **Параметры для `/grouped`:**
-- `group_by` (optional, default `themes`): `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`. `days` is web-only and returns 400 in this API.
+- `group_by` (optional, default `themes`): `themes`, `sources`, `entities`, `intent`, `topic_chains`. `days` is web-only and returns 400 in this API.
 - `time_breakdown` (bool, default `false`): Включить разбивку по датам внутри каждой группы
 - `entity_type` (optional, только для `entities`): Фильтр сущностей — `person`, `brand`
 
@@ -588,3 +585,48 @@ curl -H "Authorization: Bearer $TOKEN" \
   such as credentials are not copied. Historical rows are not backfilled.
 - Native provider-specific strict JSON Schema modes, automatic reanalysis and
   the separate chat-learning `extract_json` helper are not changed here.
+
+## Cross-axis filters and switcher visibility
+
+`sentiment` and `content_type` are no longer GroupingAxis members. The Python
+read-time enum has six members: days (web-only), themes, sources, entities,
+intent and topic_chains. This change needs no database migration.
+
+`group_analytics(..., sentiment=None, media=None)` prefilters rows before counts,
+averages and date slices. Sentiment values: positive/neutral/negative; media:
+text/image/video (containment in media_types, not equality of the whole list).
+`reporting.sentiment_bucket(score)` is shared: >0.6 positive, <0.4 negative,
+0.4 and 0.6 neutral. Missing/invalid/non-finite values match no sentiment filter.
+Current nested, flat and legacy numeric scores are supported.
+
+The main web switcher evaluates exactly five groupings: days/themes/sources/
+entities/intent, with the active result reused for its badge. Tabs with fewer
+than two groups are hidden unless active. Filters are applied to both grouped
+results and badges, and survive axis/entity/period/workspace navigation in the
+URL. Other headline widgets remain period-level metrics. Chains have their own
+page and support sort=sentiment_asc (lowest available average score first,
+unknown scores last); sorting preserves the active query filters.
+
+Public grouped APIs and the main web page reject the removed axis values with
+400 and a valid-set message. Saved digest tasks using either removed axis
+normalize to themes, without deleting sentiment/content-mix metrics.
+
+
+### Compact agent reports and narrative routing
+
+`ReportAggregator.get_grouped_analytics()` scopes stored rows to the workspace,
+source, inclusive reporting window and optional chain, then groups without an
+LLM. Grouping is Python over stored JSON/JSONB data, not a new model invocation.
+`report_period` and `analytics_chains` return the top 10 compact groups by default:
+`{key, count, avg_sentiment}`. Chain keys are stable chain IDs. Explicit `limit=0`
+returns all aggregates; positive limits select top N. Requested time breakdowns
+contain only `{date, count, avg_sentiment}`. Chain detail returns daily aggregates,
+not raw analyses. No summary_data, prompts or original posts enter tool output.
+
+There is no extra narrative call in the report tools: the existing agent chat
+cycle selects `resolve_default_model("text", strategy="cost_efficient")`, cheapest
+combined configured input/output tariff first. The fallback fleet remains subject
+to workspace tier restrictions and active provider/model checks. Digest narrative
+uses `strategy="quality"` (configured defaults, never price as a quality proxy).
+Existing caps and confirmation gates still apply. The system prompt requires
+aggregate-first context; this change does not retroactively erase old sessions.

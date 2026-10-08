@@ -236,3 +236,23 @@ Model tools support `decision` and `custom_endpoint_path` as well as the existin
 model types. Delete preview excludes the model being deleted and models on
 inactive providers. A non-default deletion does not claim that the fleet has
 lost its default. Actual deletion still runs through the shared model manager.
+
+
+## Aggregate-first analytics tools
+
+`report_period(period="day"|"week", group_by="themes"|"sources"|"entities"|
+"intent"|"topic_chains", limit=10, sentiment=None, media=None)` returns compact
+zero-LLM groups `{key, count, avg_sentiment}`, total group count and period metadata.
+Optional `time_breakdown` includes only per-date counts and average sentiment.
+`analytics_chains(days=30, source_id=None, limit=10, sentiment=None, media=None)`
+returns the same compact shape with chain IDs as keys. `analytics_chain_detail`
+returns daily aggregates. Explicit `limit=0` requests the complete aggregate list.
+Positive limits request top N. Raw analyses, prompts and source posts are not tool
+results. Preview reports do not build/publish digests or write weekly rollups.
+
+The system prompt requires aggregate-first context, including for custom base
+prompts. The existing chat loop selects the cost-efficient text model; no second
+narrative LLM call is introduced. `digest_send_now` remains confirmation-gated,
+uses the configured quality/default text model for narrative and honors caps.
+Quality is configuration, not a price-based estimate. Existing permission gates
+(`digestrun.view`, `aianalytics.view`, `digestrun.update`) remain unchanged.

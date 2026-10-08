@@ -58,7 +58,7 @@
                 {% endfor %}
             </select>
             <select name="group_by" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+                {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
                     <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                 {% endfor %}
             </select>
@@ -105,7 +105,7 @@
                     {% endfor %}
                 </select>
                 <select name="group_by" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                    {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+                    {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
                         <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                     {% endfor %}
                 </select>

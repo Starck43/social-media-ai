@@ -13,10 +13,10 @@ mutation uses (`guard_web` + `perms.can`), never open to a plain viewer.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from app.services.ai.reporting import ReportAggregator
+from app.services.ai.reporting import MEDIA_FILTERS, REMOVED_GROUPING_AXES, SENTIMENT_FILTERS, ReportAggregator
 from app.services.ai.grouping import _extract_entities
 
 from .deps import (
@@ -35,7 +35,7 @@ PERIODS = (("7", "7 дней"), ("30", "30 дней"), ("90", "3 месяца"),
 
 # Chain-list sort orders: `desc` is the default ("сначала новые" — the latest
 # analysis in the chain decides the position); `asc` flips the timeline.
-CHAIN_SORTS = (("desc", "Сначала новые"), ("asc", "Сначала старые"))
+CHAIN_SORTS = (("desc", "Сначала новые"), ("asc", "Сначала старые"), ("sentiment_asc", "Сначала негативные — репутационный риск"))
 
 
 async def _analytics(tenant_id: int | None, is_superuser: bool, days: int | None, filter_tenant_id: int | None) -> dict:
@@ -233,6 +233,14 @@ async def _fetch_grouped(
     from app.types.enums.bot_types import GroupingAxis
 
     group_by = request.query_params.get("group_by", "themes")
+    if group_by in REMOVED_GROUPING_AXES or group_by == "topic_chains":
+        raise HTTPException(status_code=400, detail="Use: days, themes, sources, entities, intent; topic_chains has its own /app/analytics/chains page")
+    sentiment = request.query_params.get("sentiment") or None
+    media = request.query_params.get("media") or None
+    if sentiment is not None and sentiment not in SENTIMENT_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Use sentiment: {', '.join(SENTIMENT_FILTERS)}")
+    if media is not None and media not in MEDIA_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Use media: {', '.join(MEDIA_FILTERS)}")
     entity_type = request.query_params.get("entity_type")
     group_by_period = request.query_params.get("group_by_period", "day")
     if group_by_period not in ("day", "week", "month"):
@@ -246,9 +254,13 @@ async def _fetch_grouped(
     # Entity type filter is only valid for ENTITIES axis.
     if entity_type and axis != GroupingAxis.ENTITIES:
         entity_type = None
+    if entity_type and entity_type not in {"person", "brand", "org"}:
+        raise HTTPException(status_code=400, detail="Use entity_type: person, brand, org")
 
     # Fetch raw rows with the same scope as the main analytics.
     qs = AIAnalytics.objects.all()
+    if filter_tenant_id is not None:
+        qs = qs.filter(tenant_id=filter_tenant_id)
     if days is not None:
         from datetime import date, timedelta
         qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
@@ -265,9 +277,10 @@ async def _fetch_grouped(
             axis=axis,
             entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
             group_by_period=group_by_period if axis == GroupingAxis.DAYS else None,
+            sentiment=sentiment, media=media,
         )
-    except ValueError:
-        result = await group_analytics(rows, axis=axis)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Compute group counts for all axes to drive tab visibility and count badges.
     axes_for_counts = [
@@ -275,8 +288,6 @@ async def _fetch_grouped(
         ("themes", GroupingAxis.THEMES),
         ("sources", GroupingAxis.SOURCES),
         ("entities", GroupingAxis.ENTITIES),
-        ("sentiment", GroupingAxis.SENTIMENT),
-        ("content_type", GroupingAxis.CONTENT_TYPE),
         ("intent", GroupingAxis.INTENT),
     ]
     group_counts = {}
@@ -287,7 +298,7 @@ async def _fetch_grouped(
             try:
                 entity_type_filter = entity_type if ax_enum == GroupingAxis.ENTITIES else None
                 period = group_by_period if ax_enum == GroupingAxis.DAYS else None
-                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter, group_by_period=period)
+                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter, group_by_period=period, sentiment=sentiment, media=media)
                 group_counts[ax_val] = len(res.get("groups", []))
             except ValueError:
                 group_counts[ax_val] = 0
@@ -302,6 +313,12 @@ async def _fetch_grouped(
         "axis": result.get("axis", "themes"),
         "entity_type": entity_type if axis == GroupingAxis.ENTITIES else None,
         "group_counts": group_counts,
+        "visible_axes": [value for value, _ in axes_for_counts if group_counts[value] >= 2 or value == axis.value],
+        "sentiment": sentiment,
+        "media": media,
+        "axis_urls": {value: str(request.url.include_query_params(group_by=value).remove_query_params("entity_type")) if value != "entities" else str(request.url.include_query_params(group_by=value)) for value, _ in axes_for_counts},
+        "entity_urls": {value: str(request.url.include_query_params(group_by="entities", entity_type=value)) for value in ("brand", "person", "org")},
+        "period_urls": {value: str(request.url.include_query_params(group_by="days", group_by_period=value)) for value in ("day", "week", "month")},
         "group_by_period": group_by_period,
         "source_names": source_names,
     }
@@ -332,10 +349,10 @@ async def analytics_chains(request: Request):
     """
     from app.models import AIAnalytics
     from app.services.ai.topic_chain_service import TopicChainService
-    from app.services.ai.grouping import _extract_entities, _extract_sentiment, _extract_intent, _extract_media_types
+    from app.services.ai.grouping import _extract_entities, _extract_sentiment, _extract_intent, filter_analytics
     
     # Resolve days and tenant context like the main analytics page
-    days, _ = _resolve_days(request)
+    days, days_key = _resolve_days(request)
     sort = request.query_params.get("sort", "desc")
     if sort not in dict(CHAIN_SORTS):
         sort = "desc"
@@ -348,8 +365,8 @@ async def analytics_chains(request: Request):
     entity_name = request.query_params.get("entity_name")
     entity_type = request.query_params.get("entity_type")
     source_id = request.query_params.get("source_id")
-    sentiment = request.query_params.get("sentiment")
-    content_type = request.query_params.get("content_type")
+    sentiment = request.query_params.get("sentiment") or None
+    media = request.query_params.get("media") or request.query_params.get("content_type") or None
     intent = request.query_params.get("intent")
     chain_id = request.query_params.get("chain_id")
     
@@ -369,6 +386,13 @@ async def analytics_chains(request: Request):
     else:
         rows = list(await qs)
     
+    if filter_tenant_id is not None:
+        rows = [row for row in rows if row.tenant_id == filter_tenant_id]
+    try:
+        rows = filter_analytics(rows, sentiment=sentiment, media=media)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # Apply additional filters in Python
     filtered_rows = []
     for row in rows:
@@ -377,18 +401,6 @@ async def analytics_chains(request: Request):
         # source_id filter
         if source_id is not None and str(row.source_id) != source_id:
             match = False
-        
-        # sentiment filter
-        if match and sentiment is not None:
-            sent = _extract_sentiment(row.summary_data or {})
-            if not sent or sent.get("label") != sentiment:
-                match = False
-        
-        # content_type filter
-        if match and content_type is not None:
-            media_types = _extract_media_types(row)
-            if content_type not in media_types:
-                match = False
         
         # intent filter
         if match and intent is not None:
@@ -424,12 +436,26 @@ async def analytics_chains(request: Request):
     source_ids = {step["source_info"]["source_id"] for ch in chain_data.values() for step in ch.get("evolution", []) if step.get("source_info", {}).get("source_id")}
     names = await _source_names(source_ids)
     
-    # Order chains by their latest analysis (most recent first by default).
-    chains = sorted(
-        chain_data.values(),
-        key=lambda ch: ch.get("date_range", {}).get("end") or "",
-        reverse=(sort == "desc"),
-    )
+    scores_by_chain = {}
+    for row in rows:
+        extracted = _extract_sentiment(row.summary_data)
+        if extracted:
+            scores_by_chain.setdefault(row.topic_chain_id, []).append(extracted["score"])
+    for key, chain in chain_data.items():
+        scores = scores_by_chain.get(key, [])
+        chain["avg_sentiment"] = sum(scores) / len(scores) if scores else None
+    if sort == "sentiment_asc":
+        chains = sorted(chain_data.values(), key=lambda ch: (
+            ch["avg_sentiment"] is None,
+            ch["avg_sentiment"] if ch["avg_sentiment"] is not None else 0,
+            ch.get("chain_id") or "",
+        ))
+    else:
+        chains = sorted(chain_data.values(), key=lambda ch: ch.get("date_range", {}).get("end") or "", reverse=(sort == "desc"))
+    chain_filters = {key: value for key, value in request.query_params.items() if key in {
+        "days", "tenant_id", "source_id", "entity_name", "entity_type", "sentiment", "media", "content_type", "intent", "chain_id"
+    }}
+    chain_filters["days"] = days_key
     return render(
         request,
         "web/analytics_chains.html",
@@ -439,17 +465,7 @@ async def analytics_chains(request: Request):
         total_chains=len(chains),
         sort=sort,
         sorts=CHAIN_SORTS,
-        perms_can=perms_can,
-    )
-    return render(
-        request,
-        "web/analytics_chains.html",
-        section="analytics",
-        chains=chains,
-        source_names=names,
-        total_chains=len(chains),
-        sort=sort,
-        sorts=CHAIN_SORTS,
+        chain_filters=chain_filters,
         perms_can=perms_can,
     )
 @router.get("/chains/{chain_id}")

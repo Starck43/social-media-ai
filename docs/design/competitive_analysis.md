@@ -10,7 +10,7 @@ that the analysis pipeline still uses regex parsing or lacks LLM chat tools.
 | CA-01 | Existing JSON decoding/Pydantic strengthened: invalid structured results are rejected; nested supported schema fields validated; common relevance fields retained. No new provider-native strict schema protocol. |
 | CA-02 | Existing sanitizer extended to default prompts and untrusted-data framing; task payload cannot override `{text}`. Heuristic defense, not complete injection prevention. |
 | CA-03 | Request audit snapshot added to `ai_analytics.response_payload.request`, available without DEBUG; methodology hash and per-stage rendered prompt hashes. Historical rows not backfilled. |
-| CA-04 | Analyzer now returns an LLMModel, not an LLMProvider; capability resolution uses active providers, fleet defaults and strategy-specific tie-breaks. Quality is fleet configuration, not inferred from price. |
+| CA-04 | Analyzer now returns an LLMModel, not an LLMProvider; capability resolution uses active providers, tariff-first cost_efficient selection, fleet-default quality selection and capability-aware multimodal tie-breaks. Quality is fleet configuration, not inferred from price. |
 
 `llm_model_add/update/delete/test` and digest CLI `topic_chains` help were already
 implemented on master. Migration head is 0086, not 0085. CA-05 onward and MAX L1

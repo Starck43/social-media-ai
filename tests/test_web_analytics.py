@@ -393,3 +393,105 @@ async def test_viewer_cannot_delete_chain(client: AsyncClient) -> None:
     finally:
         await User.objects.delete_user(member.id)
         await _drop(owner, tenant_id, source_id)
+
+
+async def test_cross_filters_entities_work_in_web_and_api(client):
+    user, tenant_id = await _register(client, "cross")
+    source_id = await _make_source(client, tenant_id, "Cross-filter source")
+    try:
+        with tenant_scope(tenant_id):
+            for offset, (name, score) in enumerate([("Negative entity", .2), ("Positive entity", .8)]):
+                await AIAnalytics.objects.create(source_id=source_id, tenant_id=tenant_id, period_type=PeriodType.DAY,
+                    analysis_date=date.today() - timedelta(days=offset), media_types=["text", "image"], summary_data={"multi_llm_analysis": {"text_analysis": {
+                        "sentiment_score": score, "entities": [{"name": name, "type": "brand"}], "intent_type": "complaint",
+                    }}})
+        await _login(client, user.username)
+        response = await client.get("/app/analytics?group_by=entities&entity_type=brand&sentiment=negative&media=image&days=7")
+        assert response.status_code == 200
+        assert "Negative entity" in response.text
+        assert 'name="sentiment"' in response.text and 'name="media"' in response.text
+        assert 'href="?group_by=sentiment' not in response.text
+        assert 'href="?group_by=content_type' not in response.text
+        # Filter state survives switching axis/entity type/period.
+        from html import unescape
+        links = [unescape(href) for href in re.findall(r'href="([^"]*group_by=[^"]*)"', response.text)]
+        assert links
+        from urllib.parse import parse_qs, urlparse
+        for link in links:
+            query = parse_qs(urlparse(link).query)
+            assert query["sentiment"] == ["negative"] and query["media"] == ["image"]
+            assert query["days"] == ["7"]
+        login = await client.post("/api/v1/auth/login", data={"username": user.username, "password": "secret-password-1"})
+        assert login.status_code == 200
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        response = await client.get("/api/v1/dashboard/analytics/aggregate/grouped?group_by=entities&entity_type=brand&sentiment=negative&media=image", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["groups"] == [{"key": "Negative entity", "count": 1, "avg_sentiment": .2}]
+        for axis in ["sentiment", "content_type"]:
+            response = await client.get(f"/api/v1/dashboard/analytics/aggregate/grouped?group_by={axis}", headers=headers)
+            assert response.status_code == 400
+            assert "Use: themes, sources, entities, intent, topic_chains" in response.json()["detail"]
+            response = await client.get(f"/app/analytics?group_by={axis}")
+            assert response.status_code == 400
+    finally:
+        await _drop(user, tenant_id, source_id)
+
+
+async def test_switcher_runs_five_aggregations_and_hides_single_group_intent(monkeypatch):
+    from types import SimpleNamespace
+    from starlette.requests import Request
+    import app.services.ai.grouping as grouping
+    from app.web.analytics import _fetch_grouped
+    from unittest.mock import AsyncMock
+
+    rows = [SimpleNamespace(id=index, source_id=1, tenant_id=1, topic_chain_id=None, chain_label=None,
+        analysis_date=date.today() - timedelta(days=index), media_types=["text"], summary_data={"multi_llm_analysis": {"text_analysis": {
+            "main_topics": [f"theme-{index}"], "entities": [{"name": f"entity-{index}", "type": "brand"}],
+            "intent_type": "complaint", "sentiment_score": .2,
+        }}}) for index in (0, 1)]
+
+    class Rows:
+        def filter(self, *args, **kwargs): return self
+        def __await__(self):
+            async def load(): return rows
+            return load().__await__()
+
+    monkeypatch.setattr(AIAnalytics.objects, "all", lambda: Rows())
+    monkeypatch.setattr(grouping, "_source_name_map", AsyncMock(return_value={1: "Source"}))
+    real_group = grouping.group_analytics
+    calls = []
+    async def count(*args, **kwargs):
+        calls.append(kwargs["axis"].value)
+        return await real_group(*args, **kwargs)
+    monkeypatch.setattr(grouping, "group_analytics", count)
+    request = Request({"type": "http", "path": "/app/analytics", "headers": [], "query_string": b"group_by=entities&sentiment=negative&media=text", "scheme": "http", "server": ("testserver", 80)})
+    result = await _fetch_grouped(7, None, False, 1, request)
+    assert len(calls) == 5 and set(calls) == {"days", "themes", "sources", "entities", "intent"}
+    assert result["group_counts"]["intent"] == 1
+    assert "intent" not in result["visible_axes"]
+    request = Request({"type": "http", "path": "/app/analytics", "headers": [], "query_string": b"group_by=intent", "scheme": "http", "server": ("testserver", 80)})
+    calls.clear()
+    result = await _fetch_grouped(7, None, False, 1, request)
+    assert len(calls) == 5 and "intent" in result["visible_axes"]
+
+
+async def test_chains_risk_sort_missing_sentiment_last_and_filters_persist(client):
+    user, tenant_id = await _register(client, "risk")
+    source_id = await _make_source(client, tenant_id, "Risk sort source")
+    try:
+        for index, (chain, score) in enumerate([("positive", .9), ("negative", .1), ("unknown", None)]):
+            with tenant_scope(tenant_id):
+                await AIAnalytics.objects.create(source_id=source_id, analysis_date=date.today()-timedelta(days=index),
+                    period_type=PeriodType.DAY, topic_chain_id=f"risk-{chain}", media_types=["image"],
+                    summary_data={"analysis_title":f"Risk title {chain}", "sentiment_score":score})
+        await _login(client, user.username)
+        response = await client.get("/app/analytics/chains?sort=sentiment_asc&days=7&media=image")
+        assert response.status_code == 200
+        text = response.text
+        assert text.index("Risk title negative") < text.index("Risk title positive") < text.index("Risk title unknown")
+        assert 'name="media" value="image"' in text
+        response = await client.get("/app/analytics/chains?sort=sentiment_asc&days=7&media=image&sentiment=negative")
+        assert response.status_code == 200
+        assert "Risk title negative" in response.text and "Risk title positive" not in response.text
+    finally:
+        await _drop(user,tenant_id,source_id)

@@ -1,5 +1,14 @@
 # Индекс документации «ИИ Ассистент»
 
+## Business readiness: current decisions
+
+- **[Integrated roadmap](./ROADMAP_INTEGRATED.md)** — proposed sequence, small PRs and launch gates; reviewed against dev, not a production certification.
+- **[Proposal review](./design/proposal_review.md)** — dispositions of all research proposals, code evidence and stale assumptions.
+- **[Local experience plan](./LOCAL_EXPERIENCE_PLAN.md)** — bounded onboarding, trust, recovery and report improvements; migration boundaries marked.
+- **[Business production readiness](./BUSINESS_PRODUCTION_READINESS.md)** — security, cost, delivery, deployment, retention, recovery and support gates.
+- **[Future scale strategy](./design/future_scale_strategy.md)** — deferred embeddings, alerts, billing and capacity work with entry criteria.
+
+
 ## Видение и целевая архитектура
 
 - **[Видение продукта](./design/vision.md)** - принципы, гибридный сбор (API + авторизация), промпты, обучение, роадмап, что не делаем

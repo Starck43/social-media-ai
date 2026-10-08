@@ -1,73 +1,52 @@
-# Integrated Roadmap: analogs research × project reality
+# Integrated roadmap: business readiness before feature expansion
 
-Метод: каждое предложение из comparative analysis сверено с фактическим
-состоянием кода/доков. Статусы: DONE (уже есть) / PARTIAL (фундамент есть,
-дожать) / GAP (нет ничего) / REJECT (противоречит философии проекта).
+## Authority and status
 
-Философия-ограничения (не нарушать):
-- Один VPS, без новых обязательных сервисов (Redis/Celery уже отвергнуты).
-- Стоимость под потолком: tenant.daily_cost_limit + AGENT_DAILY_COST_LIMIT.
-- Privacy: сырой текст не хранится вечно (collected_items — write-ahead).
-- Сценарий = методология; задача = реакция и цели; группировка = запрос.
+Revised on 2026-10-08 against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`. **Proposed sequence; no implementation is claimed by this document.** The original roadmap is preserved in [archive](design/archive/roadmap_integrated_legacy.md); competitor research remains historical input, not a current backlog.
 
-## Phase 0 — Гигиена (без кода фич, разблокирует всё остальное)
-| # | Задача | Статус сейчас |
-|---|--------|---------------|
-| 0.1 | Синхронизировать доки с кодом: DIGEST.md (analyze_type → payload.group_by/time_breakdown), MODELS.md (триггеры/guards на agent_tasks; tenant_users.role_id; head миграций), API.md (base_prompt/media_overrides/summary_prompt; /analytics/aggregate/grouped) | GAP в доках |
-| 0.2 | Верифицировать в коде: финальный состав GroupingAxis (DAYS остался как web-only; CHAINS→TOPIC_CHAINS); дайджест читает payload.group_by | DONE |
-| 0.3 | Верифицировать/доделать chain_resolver (заполнение topic_chain_id/chain_label по topic_hint) | PARTIAL/не видно |
+Read in this order:
+1. [Proposal review](design/proposal_review.md): 40 dispositions, implementation evidence, stale assumptions and verification limits.
+2. [Business production readiness](BUSINESS_PRODUCTION_READINESS.md): blockers and release acceptance gates.
+3. [Local experience plan](LOCAL_EXPERIENCE_PLAN.md): bounded improvements on the existing architecture.
+4. [Future scale strategy](design/future_scale_strategy.md): optional investments and objective entry criteria.
 
-## Phase 1 — Надёжность и безопасность (high impact, low risk)
-| # | Задача | Аналог | Статус проекта | Почему сейчас |
-|---|--------|--------|----------------|---------------|
-| 1.1 | Pydantic-модели ответов LLM (AnalysisResult и т.д.) вместо regex extract_json(); модели зеркалируют контракт JSONSchemaBuilder (tests/test_reporting_contract.py пинит пару) | SmIA, Ratatoskr, IntelFlow | PARTIAL: схема есть, парсинг regex | Делает надёжным relevance-фильтр (is_meaningful/confidence) и специализированные агрегации |
-| 1.2 | Prompt-injection guard: санитайзер + instruction-defense framing ПЕРЕД подстановкой {text} (собранный соц-контент — недоверенный текст внутри промпта анализа) | Iva, Agent Life Space | GAP | Дайджест-нарратив и цепочки иначе отравляемы; дёшево |
-| 1.3 | Аудит-снимок: prompt_hash + scope/payload snapshot + latency_ms в ai_analytics (response_payload.request) | socmon | PARTIAL: llm_model и response_payload есть | Отвечает «почему анализ изменился» без внешнего трейсинга |
-| 1.4 | Заставить работать llm_strategy (cost_efficient/quality/multimodal): выбор модели по стратегии + LLMModel.role (selector/writer) | ai-news-digest, rss-bot | PARTIAL: поле есть, enforcement не виден | Не строить параллельный механизм двух моделей |
+CA-01–04 are substantially present: strict local analysis validation, default/custom text framing, non-DEBUG audit snapshots and model strategy/default resolution. Keep regression coverage and close remaining boundary gaps rather than reimplement them. Repository migration graph head is 0086; this says nothing about deployed DB revision. Historical test counts are not today's green gate.
 
-## Phase 2 — Embedding-платформа: один сервис, три потребителя
-Сервис `app/services/ai/embeddings.py` (модель типа embedding из llm_models;
-расход учитывается в daily cap; на starter-тарифе отключён — см. PLAN_LIMITS
-«LLM model types»).
-| # | Потребитель | Задача | Аналог | Статус |
-|---|-------------|--------|--------|--------|
-| 2.1 | Semantic dedup | cosine-порог против недавних embedding при collect; точный content-hash остаётся первым контуром | Telo-watch-tower, Syne | GAP (hash есть) |
-| 2.2 | Chain resolver | сопоставление topic_hint с живыми цепочками вместо нормализации строк | — (наша архитектура) | PARTIAL |
-| 2.3 | Agent memory | колонка embedding в agent_memory + semantic_search tool; access_count/last_accessed для reflect (decay становится data-driven, не новый job) | Mem0, Syne, Lethe | PARTIAL: confidence+provenance+reflect есть |
-REJECT: knowledge graph (Syne/Cognee) — entities[] + topic_chain_id уже дают
-связи «сущность↔тема»; граф оверкилл на этом объёме данных.
+## Recommended delivery order
 
-## Phase 3 — Стоимость и отказоустойчивость
-| # | Задача | Аналог | Статус |
-|---|--------|--------|--------|
-| 3.1 | Алгоритмический pre-filter перед LLM (regex/engagement-порог) — экономия токенов | BuzzAgent | GAP |
-| 3.2 | Probe-job здоровья моделей в HANDLERS registry (без миграции); авто-disable деградировавших | rss-bot AUTOMODEL | PARTIAL: chat_with_fallback есть |
-| 3.3 | Error-learning: авто-захват провальных tool_calls + реплики пользователя → Correction-строки; применение по-прежнему ручное (prompt_advice) | Kit | PARTIAL: /bad + reflect есть |
+| Stage | Packages | Why this order | Exit evidence |
+|---|---|---|---|
+| A — Rebase the decisions | Recheck fresh dev; agree first business workflow/capability limits; confirm PRD findings still exist. | User is actively changing dev; baseline findings can become stale. | Exact SHA, bounded scope per PR, no duplicate work. |
+| B — Close safety/economics blockers | PRD-01 delivery, PRD-02 rights + UX-02 action registry, PRD-03 spend design; keep publication disabled. | Prevent tenant leakage/global mutations and uncontrolled expense before attracting users. | Cross-tenant/role/registry/concurrency regression tests; approved budget model. |
+| C — Make operation repeatable | PRD-04 deploy/restore, PRD-05 truthful outcomes/leases, PRD-06 retention/privacy, PRD-07 AI write boundaries. | A feature-rich bot is not a supported service without recovery and data lifecycle. | Tested production profile, failure/recovery tests, legal/data policy and release packet. |
+| D — Reach first trustworthy value | UX-01 onboarding, UX-04 language, read-only UX-05 audit, UX-03 report clarity; PRD-08 visibility. | Reuse current web/agent capabilities; reduce operator-dependent setup. | First-value/recovery journeys, representative latency and usefulness results. |
+| E — Managed business pilot | Bounded invited tenants; PRD-09 capability contract and safe-action restrictions; test upgrades and real delivery. | Validate supported workflows, costs and support before self-service. | Signed release gates, restore drill, incident process, pilot feedback and economics. |
+| F — Measured optimization/product work | UX-06 spend alerts, UX-07 advice/calibration, UX-08 memory controls, UX-09 filtering; UX-10 export if demanded. | Complete accounting and pilot data make savings/quality decisions meaningful. | Quality/recall versus cost benchmark, customer acceptance, no new hidden side effects. |
+| G — Scale/self-service on demand | FUT-01–09 selected by their entry criteria. | Embeddings, billing, tracing and infrastructure are investments, not prerequisites for every deployment. | Separate architecture/product decisions and measured outcomes. |
 
-## Phase 4 — Продукт
-| # | Задача | Аналог | Статус |
-|---|--------|--------|--------|
-| 4.1 | Билингвальность: пронести tenants.agent_style.language в нарратив дайджеста и render | IntelFlow, BuzzAgent | PARTIAL: поле language есть |
-| 4.2 | Source suggestion: LLM предлагает источники по описанию темы (сценарные шаблоны + suggest_prompt УЖЕ есть) | twidgest-bot | PARTIAL |
-| 4.3 | Web search tool в реестр агента (required_permission, confirm не нужен) | Kit, IntelFlow | GAP |
-| 4.4 | Telegram Stars billing для pro-тарифа | claude-digest | GAP (планы есть, оплаты нет) |
+Some read-only UX work can run alongside safety work if files do not overlap, but the release gates cannot be skipped. No arbitrary calendar/effort promise is made before a fresh scope and workload baseline.
 
-## REJECT-лист (с обоснованием)
-| Предложение | Почему нет |
-|---|---|
-| skill_steps JSON в AgentScenario | Сценарий только что вычищен до «методологии»; процедурные навыки = инструменты агента (tools и есть skill-система). Размывать границу сценарий/задача нельзя |
-| Raw payload retention по умолчанию | Противоречит privacy-позиции (collected_items удаляется после сохранения анализа). Допустимо только opt-in флагом тарифа business |
-| Knowledge graph | entities + chains покрывают ~80% ценности при нулевой новой инфраструктуре |
-| Отдельный job памяти-decay | reflect уже точка гигиены; добавлять статистику доступа туда |
+## Candidate first implementation PRs (choose next, not executed here)
 
-## Решения по open questions
-1. **Memory scope:** additive — KV остаётся, embedding-колонка добавляется; ОДИН embedding-сервис на dedup + chains + memory (иначе три тарификации и три интеграции).
-2. **Observability:** сначала in-DB (1.3: prompt_hash, latency, tool-trace уже в agent_messages.tool_calls); Langfuse — опционально за LANGFUSE_SECRET_KEY, не раньше Phase 3 (философия: без лишних сервисов).
-3. **Skills:** не расширять сценарий; реестр инструментов = skill-система.
-4. **Payments:** Stars сначала, веб-оплаты позже; не блокирует ничего технического.
+1. **Tenant-safe destination resolution** (PRD-01): remove implicit cross-tenant env delivery, deduplicate recipients; focused two-tenant tests. Keep durable per-target retry/concurrency work in a follow-up design if needed.
+2. **Agent authorization and registry contract** (PRD-02 / UX-02): reproduce/fix action_send binding, explicit rights and separate tenant/global powers; decide legacy identity migration. Do not turn on live posting.
+3. **Spend accounting design + regression harness** (PRD-03): specify units, every-call attribution, unknown-price and concurrent reservation semantics. Approve schema requirements before implementing a ledger.
+4. **Production profile and health** (PRD-04): API/runtime ownership, one migrator, private DB, readiness, staging deploy/restore evidence.
+5. **First-report checklist** (UX-01): reuse existing writes and readiness; confirm supported source/window/scenario/delivery, not merely “some task exists”.
 
-## Validation gate на каждую фазу
-- pytest зелёный (сейчас 255 тестов — планка не ниже).
-- Daily cost cap не сломан: embedding-расходы входят в daily_cost_today().
-- Tenant-изоляция: embedding-колонки и новые таблицы — TenantScopedMixin где применимо.
-- Док-синхронизация: каждая фаза заканчивается правкой соответствующего docs/*.md.
+Default recommendation: begin with PR 1 after confirming current dev. These are separate PRs, not one large feature branch.
+
+## Branch and validation policy
+
+- Read dev; implement in a new branch from its latest committed SHA, never push directly to dev. This documentation review lives in ai/docs-business-readiness-review.
+- Keep each task thematic; no repo-wide reformat or unrelated cleanup. The user does not need to enumerate all parallel edits.
+- Before handing off an implementation PR, fetch dev, inspect overlap, synchronize in the task branch when appropriate, resolve both textual and semantic conflicts and rerun relevant checks. Report the exact tested SHA. If dev advances again, revalidate before merge.
+- Schema changes are separate, explicitly approved work with a single migration head, schema-qualified DDL and staging upgrade/rollback evidence. Absence of migrations does not guarantee absence of conflicts.
+- Use isolated test data only. State what ran and what did not; current full suite, not historical counts, gates a release.
+- Draft PRs are review proposals. Do not merge without the owner's explicit command.
+
+## Preserved constraints and revised assumptions
+
+Keep: deterministic pipeline, PostgreSQL queue, shared-but-isolated workspaces, encrypted secrets, bounded usage, structured outputs, no permanent raw archive by default, human-controlled risky actions.
+
+Revise: “one VPS forever”, “all exports/caches forbidden”, “hosted business always out of scope”, “first four reliability items absent”, “MAX transport means MAX collection”, “all recorded costs constitute a complete daily cap”, and “tier flag means a live feature is ready”. These were either stale observations or product assumptions, not immutable design rules.

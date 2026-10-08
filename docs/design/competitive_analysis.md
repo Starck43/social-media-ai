@@ -1,5 +1,7 @@
 # Обзор конкурентов и итоговая матрица заимствований
 
+> **Historical research — not the active implementation backlog.** Reviewed against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3` on 2026-10-08. Several gaps below are now implemented, while performance/competitor claims remain unverified. See [proposal review](proposal_review.md), [current roadmap](../ROADMAP_INTEGRATED.md), [local UX plan](../LOCAL_EXPERIENCE_PLAN.md) and [production gates](../BUSINESS_PRODUCTION_READINESS.md). Original research is preserved below.
+
 ## Implementation status (verified against master 1df34e7 and this change)
 
 This document is historical research. The status below supersedes assertions

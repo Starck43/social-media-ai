@@ -21,7 +21,7 @@
 {% endblock %}
 
 {% block body %}
-<main x-data="adminThemeManager()" :data-theme="isDark ? 'dark' : 'light'">
+<main data-theme="dark" x-data="adminThemeManager()" :data-theme="isDark ? 'dark' : 'light'">
     {% block main %}
     <div class="wrapper">
         <aside class="navbar navbar-expand-lg navbar-vertical navbar-expand-md">
@@ -130,7 +130,7 @@
     // Works for both admin (data-theme attribute) and web (dark class on <html>)
     document.addEventListener('alpine:init', () => {
         Alpine.data('adminThemeManager', () => ({
-    isDark: typeof window !== 'undefined' ? (window.__initialAdminTheme || false) : false,
+        isDark: typeof window !== 'undefined' ? (window.__initialAdminTheme || false) : false,
         init() {
                 const stored = localStorage.getItem('theme');
                 this.isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -156,6 +156,16 @@
 <script>
     // Общие функции для всех форм аутентификации
     document.addEventListener("DOMContentLoaded", function() {
+        // Загрузка сохраненной темы
+        const savedTheme = localStorage.getItem("theme")
+        if (savedTheme) {
+            document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+            const main = document.querySelector('main');
+            if (main) {
+                main.setAttribute('data-theme', savedTheme);
+            }
+        }
+
         // Автофокус на первом поле ввода
         const firstInput = document.querySelector("input[type=\"text\"], input[type=\"email\"]")
         if (firstInput && !firstInput.value) {

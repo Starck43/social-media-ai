@@ -32,6 +32,8 @@ main {
 aside {
     padding: calc(var(--tblr-content-padding) * .5);
     box-shadow: var(--box-shadow-lg) !important;
+    background-color: var(--tblr-navbar-bg, var(--tblr-bg-surface));
+    border-right: 1px solid var(--tblr-navbar-border-color, var(--tblr-border-color));
 }
 
 aside .container-fluid {
@@ -53,8 +55,8 @@ nav {
 }
 
 .navbar .navbar-nav .nav-link.active {
-    background-color: rgba(var(--tblr-primary-rgb), 0.15);
-    color: var(--tblr-primary) !important;
+    background-color: var(--tblr-navbar-active-bg, rgba(var(--tblr-primary-rgb), 0.15));
+    color: var(--tblr-navbar-active-color, var(--tblr-primary)) !important;
     font-weight: 600;
 }
 
@@ -323,7 +325,7 @@ label {
    Преемственные от web: rounded-lg, cyan primary
 */
 .btn {
-    --tblr-btn-color: rgba(var(--tblr-white-rgb), 0.8);
+    --tblr-btn-color: var(--tblr-btn-fg, #ffffff);
     --tblr-btn-disabled-bg: rgba(var(--tblr-bg-surface-rgb), 0.3);
     border-radius: 0.5rem;
     font-weight: 500;

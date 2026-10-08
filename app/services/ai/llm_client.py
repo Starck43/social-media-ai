@@ -452,12 +452,139 @@ class AnthropicClient(LLMClient):
 
 
 # ──────────────────────────────────────────────────────────────
+# Custom client (generic, per-model endpoint override)
+# ──────────────────────────────────────────────────────────────
+
+
+class CustomClient(LLMClient):
+    async def analyze(
+        self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
+    ) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+
+        endpoint = self.model.custom_endpoint_path
+        if not endpoint:
+            raise ValueError(
+                f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set"
+            )
+        payload: dict[str, Any] = {"model": self.model_name, "prompt": prompt}
+        if media_urls:
+            payload["media_urls"] = media_urls
+        payload.update(kwargs)
+
+        timeout = min(self.timeout, 60.0)
+        request_meta = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "provider": self.provider.name.lower(),
+            "endpoint": endpoint,
+        }
+
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
+        except httpx.TimeoutException:
+            logger.error(f"Custom endpoint timeout for {self.provider.name} after {timeout}s")
+            await _record_llm_usage(self.model, success=False)
+            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
+        except Exception as e:
+            logger.error(f"Custom endpoint error for {self.provider.name}: {e}")
+            await _record_llm_usage(self.model, success=False)
+            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+
+        content = _extract_custom_content(data)
+        parsed = _try_json(content) if isinstance(content, str) else content
+        if pydantic_model is not None:
+            try:
+                parsed = pydantic_model.model_validate(parsed).model_dump()
+            except Exception as exc:
+                logger.warning("Pydantic validation failed for custom %s: %s", self.provider.name, exc)
+
+        response = {
+            "request": request_meta,
+            "response": data,
+            "parsed": parsed,
+            "usage": self._usage_block(0, 0),
+        }
+        await _record_llm_usage(self.model, success=True)
+        return response
+
+    async def chat(
+        self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+    ) -> dict[str, Any]:
+        if not self.api_key:
+            raise ValueError(f"API key not set for {self.provider.name}")
+        await self._rate_limit()
+
+        endpoint = self.model.custom_endpoint_path
+        if not endpoint:
+            raise ValueError(
+                f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set"
+            )
+        payload: dict[str, Any] = {"model": self.model_name, "messages": messages}
+        if tools:
+            payload["tools"] = tools
+        payload.update(kwargs)
+
+        timeout = min(self.timeout, 60.0)
+        request_meta = {"model": self.model_name, "provider": self.provider.name.lower(), "endpoint": endpoint}
+
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+                if r.status_code != 200:
+                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                data = r.json()
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
+            await _record_llm_usage(self.model, success=False)
+            raise
+
+        content = _extract_custom_content(data)
+        return {
+            "content": content,
+            "tool_calls": [],
+            "usage": self._usage_block(0, 0),
+            "finish_reason": None,
+            "raw": data,
+        }
+
+    def _headers(self) -> dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
+        if "{key}" in header_name:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            k, _, v = header_name.partition(": ")
+            h[k] = v.format(key=self.api_key) if "{key}" in v else v
+        return h
+
+
+def _extract_custom_content(data: dict) -> Any:
+    for key in ("answers", "content", "text", "result", "output", "response"):
+        val = data.get(key)
+        if val is not None:
+            return val
+    if isinstance(data, dict) and len(data) == 1:
+        return next(iter(data.values()))
+    return data
+
+
+# ──────────────────────────────────────────────────────────────
 # Factory
 # ──────────────────────────────────────────────────────────────
 
 
 class LLMClientFactory:
-    _clients: dict[str, type[LLMClient]] = {"openai": OpenAICompatibleClient, "anthropic": AnthropicClient}
+    _clients: dict[str, type[LLMClient]] = {
+        "openai": OpenAICompatibleClient,
+        "anthropic": AnthropicClient,
+        "custom": CustomClient,
+    }
 
     @classmethod
     def create(cls, model: LLMModel) -> LLMClient:

@@ -204,6 +204,8 @@ class LLMModelActions:
 
             full_api_response = response_data.get("raw") or {}
             raw_content = response_data.get("content") or ""
+            if isinstance(raw_content, dict):
+                raw_content = json.dumps(raw_content, indent=2, ensure_ascii=False)
             parsed_fields = _try_parse_json(raw_content)
 
             response_content = raw_content or json.dumps(full_api_response, indent=2, ensure_ascii=False)

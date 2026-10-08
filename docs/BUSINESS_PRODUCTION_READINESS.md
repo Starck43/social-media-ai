@@ -15,7 +15,7 @@ See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOC
 Status: **PARTIAL, OPEN**. Merged items and next-session continuation are in
 [Implementation status](IMPLEMENTATION_STATUS.md). The
 [retry design](design/digest_delivery_retry_plan.md) is prepared; storage/schema
-approval is pending and no receipt/retry code is implemented yet.
+option was approved; its separate schema unit is prepared in PR #6, not merged, and no receipt/retry behavior is implemented yet.
 
 **Routing progress:** the [tenant-safe delivery change](design/tenant_safe_digest_delivery_review.md)
 implements exclusively owned active DB recipients, ignored env destinations, within-call

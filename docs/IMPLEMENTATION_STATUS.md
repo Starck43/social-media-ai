@@ -2,9 +2,10 @@
 
 ## Read this first
 
-Verified dev baseline: `7fedbd3b769ab5c9239be6f3cf852ac9fd2745a9`.
-Application/test code is unchanged from integrated delivery baseline `4b57c14`;
-new product-direction documentation has been read and preserved.
+Verified dev baseline: `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+The integrated delivery baseline is `4b57c14`. New product-direction docs and
+parallel UI/theme/sentiment changes in `7a06374` are preserved; their inclusion
+is not mislabeled as an application-unchanged baseline.
 This tracker separates merged work from proposals and work in a task branch.
 A checked box means the bounded item is merged into dev, **not** deployed or
 that its entire production gate is closed. Update this file and the roadmap
@@ -39,13 +40,23 @@ see the proposal review rather than rebuilding them.
 
 ## Current task — digest retry checkpoints
 
-Status: **DESIGN PREPARED; STORAGE DECISION REQUIRED; CODE NOT IMPLEMENTED**.
+Status: **STORAGE APPROVED; SCHEMA PR PREPARED / NOT MERGED; RETRY CODE NOT IMPLEMENTED**.
+Owner decision: one dedicated JSONB field on DigestRun plus a separate migration.
+This approves schema preparation, not production migration or automatic PR merge.
 Task branch: `ai/digest-retry-checkpoints`, created from the verified dev above.
 The local planning snapshot was refreshed when the new product docs landed.
 
-- [ ] Approve checkpoint storage and schema scope.
-  [Decision/design](design/digest_delivery_retry_plan.md): one dedicated JSON
-  field on DigestRun is recommended; schema work requires explicit approval.
+- Storage/schema decision **APPROVED**: nullable `DigestRun.delivery_state` JSONB,
+  no new table; separate schema-qualified migration PR. See [design](design/digest_delivery_retry_plan.md).
+- [ ] Merge the schema unit after review. Prepared and tested in
+  [PR #6](https://github.com/Starck43/social-media-ai/pull/6),
+  `ai/digest-delivery-state-schema`; it is not yet in dev. Two migration tests,
+  PostgreSQL/SQLite coverage, schema/digest regressions passed (62 tests).
+  Schema full run on fresh UI dev 7a06374: **1084 passed, 1 skipped**,
+  10 warnings; local Alembic head/current 0087, no drift. Actual local upgrade
+  0086 -> 0087 and isolated-schema rollback were checked. PostgreSQL storage
+  remains JSONB; ORM uses a SQLite-compatible variant for existing tests.
+  No production upgrade was run; schema remains pending review/merge.
 - [ ] Persist one immutable digest snapshot and per-recipient/part receipts.
 - [ ] Resume only unfinished known-failed parts without rebuilding the summary.
 - [ ] Recheck workspace ownership/activity/digest flag on every resumed send.
@@ -81,12 +92,13 @@ this checklist does not replace them or authorize deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and this task branch; inspect changes since `7fedbd3`.
+1. Fetch fresh dev and this task branch; inspect changes since `7a06374`.
 2. Read this file, the retry design, `app/services/digest/builder.py`,
    `app/models/digest_run.py`, its manager, channel adapters and jobs/dispatcher.
-3. Check the recorded storage decision. Until approval exists, **do not add a
-   migration/column** or claim durable retry implementation.
-4. Recommended next unit after approval: separate schema PR, then receipt/
+3. Storage is approved. Review the schema branch/PR and its validation; confirm
+   whether it was merged. Do not claim retry behavior exists merely because the
+   field exists, and do not apply a production migration without a deployment step.
+4. Next unit after schema review: receipt/
    transport/resume implementation against that approved schema. Do not reserve
    a migration number until fresh dev's current graph has been checked.
 5. Keep done/in-review/in-progress/blocked distinct; append test evidence and

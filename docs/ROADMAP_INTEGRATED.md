@@ -34,7 +34,7 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
 - [x] Explicit workspace notifications vs fixed operator alerts — merged in
   PR #4; [contract and combined tests](NOTIFICATIONS.md).
 - [ ] **Current unit: durable per-recipient/part retry.** Design prepared;
-  storage/schema decision pending. See [retry plan](design/digest_delivery_retry_plan.md).
+  dedicated JSONB field and separate migration approved; schema unit prepared in PR #6, not merged. See [retry plan](design/digest_delivery_retry_plan.md).
   Do not mark PRD-01 closed: retries, concurrency/acknowledgement policy and
   external identity verification still require evidence.
 - [ ] Agent authorization and registry contract (PRD-02 / UX-02): action_send,
@@ -46,7 +46,7 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
 - [ ] First-report checklist (UX-01): supported source/window/scenario/delivery,
   not merely the presence of a task.
 
-Current continuation: approve checkpoint storage, then implement the approved
+Current continuation: review the approved schema unit, then implement the approved
 schema/receipt units in separate thematic PRs. [Implementation status](IMPLEMENTATION_STATUS.md)
 records merged SHAs, validation limits and the new-session restart checklist.
 

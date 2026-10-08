@@ -2,11 +2,13 @@
 
 ## Status and evidence
 
-Design only; synchronized with dev `7fedbd3b769ab5c9239be6f3cf852ac9fd2745a9`.
-Application fields/call paths remain those of `4b57c14`. The new universal
+Design only; synchronized with dev `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+DigestRun/builder fields and call paths on dev still match `4b57c14` (the new UI changes are preserved). The new universal
 assistant architecture includes a future controlled outbox; this digest-specific
 checkpoint work must not be presented as implementing that general outbox.
-No retry implementation, schema edit or migration has been made.
+The owner approved the dedicated JSONB-field option. The schema unit is prepared in [PR #6](https://github.com/Starck43/social-media-ai/pull/6),
+`ai/digest-delivery-state-schema`, separately from this planning PR, not merged.
+No receipt/resume behavior is implemented in this branch.
 
 The current builder reuses a scheduled DigestRun row after failure, rebuilds the
 aggregation/summary and broadcasts to every current target again. DigestRun has
@@ -19,9 +21,9 @@ DigestRun-owned delivery ledger; a new job/manual retry cannot automatically
 assume another job's receipt history. Do not repurpose the human-readable error
 or HTML content fields as a hidden checkpoint container.
 
-## Storage decision requiring owner approval
+## Approved storage decision
 
-### Recommended: dedicated DigestRun JSON field
+### Selected: dedicated DigestRun JSONB field
 
 Add one narrowly scoped, versioned delivery_state field with a separate,
 schema-qualified Alembic migration; no new table or provider/billing redesign.

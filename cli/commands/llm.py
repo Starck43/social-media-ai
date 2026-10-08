@@ -29,12 +29,10 @@ def provider_list():
     """List all LLM providers."""
 
     async def _list():
-        from app.models import LLMProvider, LLMModel
+        from app.models import LLMModel, LLMProvider
 
         providers = await LLMProvider.objects.order_by(LLMProvider.id)
-        all_models = await LLMModel.objects.filter(
-            provider_id__in=[p.id for p in providers]
-        ).all()
+        all_models = await LLMModel.objects.filter(provider_id__in=[p.id for p in providers]).all()
         counts: dict[int, int] = {}
         for m in all_models:
             counts[m.provider_id] = counts.get(m.provider_id, 0) + 1
@@ -85,9 +83,7 @@ def model_list(
             filters["is_active"] = active
         if model_type is not None:
             filters["model_type"] = model_type
-        rows = await LLMModel.objects.select_related("provider").filter(**filters).order_by(
-            LLMModel.id
-        )
+        rows = await LLMModel.objects.select_related("provider").filter(**filters).order_by(LLMModel.id)
         table = Table(title="LLM Models")
         for col in (
             "id",
@@ -133,7 +129,7 @@ def model_add(
     name: str = typer.Argument(..., help="Human-readable model name"),
     model_id: str = typer.Argument(..., help="Provider model id, e.g. gpt-4o"),
     provider_id: int = typer.Option(..., "--provider-id", "-p", help="LLM provider id"),
-    model_type: str = typer.Option("text", "--type", help="text | image | embedding"),
+    model_type: str = typer.Option("text", "--type", help="text | image | embedding | decision"),
     description: str = typer.Option("", "--description", help="Short description"),
     max_tokens: int = typer.Option(4096, "--max-tokens"),
     default_temperature: float = typer.Option(0.3, "--temperature"),

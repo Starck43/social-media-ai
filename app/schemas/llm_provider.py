@@ -1,4 +1,5 @@
 """Schemas for LLM Provider management."""
+
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field
 class LLMProviderCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    api_format: str = Field(default="openai", description="openai | anthropic")
+    api_format: str = Field(default="openai", description="openai | anthropic | custom")
     base_url: str = Field(..., description="Base API URL, e.g. https://api.openai.com/v1")
     auth_header: Optional[str] = Field(None, description='Custom auth header, e.g. "x-api-key: {key}"')
     is_active: bool = Field(default=True)

@@ -1,6 +1,7 @@
 """
 Schemas for LLM Model API.
 """
+
 from datetime import datetime
 from typing import Optional
 
@@ -14,7 +15,8 @@ class LLMModelBase(BaseModel):
     model_id: str = Field(..., max_length=100)
     description: Optional[str] = None
     provider_id: int
-    model_type: str = Field(..., pattern="^(text|image|embedding)$")
+    model_type: str = Field(..., pattern="^(text|image|embedding|decision)$")
+    custom_endpoint_path: Optional[str] = Field(None, description="Custom endpoint path for api_format=custom")
     input_cost_per_1k: float = 0.0
     output_cost_per_1k: float = 0.0
     max_tokens: int = 4096
@@ -33,7 +35,8 @@ class LLMModelUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     model_id: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
-    model_type: Optional[str] = Field(None, pattern="^(text|image|embedding)$")
+    model_type: Optional[str] = Field(None, pattern="^(text|image|embedding|decision)$")
+    custom_endpoint_path: Optional[str] = Field(None, description="Custom endpoint path for api_format=custom")
     input_cost_per_1k: Optional[float] = None
     output_cost_per_1k: Optional[float] = None
     max_tokens: Optional[int] = None
@@ -51,6 +54,7 @@ class LLMModelResponse(LLMModelBase):
     fail_count: int = 0
     created_at: str
     updated_at: str
+    custom_endpoint_path: Optional[str] = None
 
 
 class LLMModelList(BaseModel):

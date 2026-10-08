@@ -9,6 +9,7 @@ from .content_types import MediaType  # noqa: F401
 API_FORMAT_LABELS: dict[str, str] = {
     "openai": "OpenAI-compatible (/chat/completions)",
     "anthropic": "Anthropic Messages (/messages)",
+    "custom": "Custom endpoint (per-model override)",
 }
 
 
@@ -17,6 +18,7 @@ class APIFormatType(str, Enum):
 
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    CUSTOM = "custom"
 
     @property
     def label(self) -> str:

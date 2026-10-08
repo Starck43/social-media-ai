@@ -36,6 +36,10 @@ class LLMModel(Base, TimestampMixin):
 
     model_type: Mapped[str] = Column(String(20), nullable=False, default="text")
 
+    custom_endpoint_path: Mapped[str | None] = Column(
+        String(200), nullable=True, comment="Custom endpoint path for api_format=custom, e.g. /v1/systemone"
+    )
+
     input_cost_per_1k: Mapped[float] = Column(Float, nullable=False, default=0.0)
     output_cost_per_1k: Mapped[float] = Column(Float, nullable=False, default=0.0)
 
@@ -47,9 +51,7 @@ class LLMModel(Base, TimestampMixin):
     )
 
     # Phase 2 — usage/health counters (backfilled from ai_analytics history)
-    last_used_at: Mapped[datetime | None] = Column(
-        DateTime, nullable=True, comment="Last time this model was invoked"
-    )
+    last_used_at: Mapped[datetime | None] = Column(DateTime, nullable=True, comment="Last time this model was invoked")
     last_success_at: Mapped[datetime | None] = Column(
         DateTime, nullable=True, comment="Last successful invocation (no 5xx/timeout)"
     )
@@ -105,6 +107,7 @@ class LLMModel(Base, TimestampMixin):
         # is already loaded before accessing it.
         try:
             from sqlalchemy.inspection import inspect
+
             state = inspect(self)
             if state.session_id is None or "provider" not in state.attrs:
                 # Detached or not loaded — don't touch the relationship

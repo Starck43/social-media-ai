@@ -68,11 +68,15 @@ period field in a new test fixture were corrected before the successful runs.
   5.39 s on a freshly reset isolated test schema.
 - Full suite on the starting dev plus routing changes: **994 passed, 1 skipped,
   10 warnings** in 207.95 s. Existing deprecation warnings remain.
-- Full suite after synchronizing latest dev: **in progress**; the completed
-  result will be recorded before this PR is handed off as ready.
+- Full suite after synchronizing dev `3256cdf`: **1002 passed, 1 skipped,
+  10 warnings** in 216.57 s, on a freshly reset isolated schema. The remote
+  PR's application/test files match the tested working tree.
 - Targeted Black/isort checks passed. No repository-wide reformat.
-- Final diff/local-link/migration-head and remote-content verification pending
-  the completed synchronized run.
+- `alembic heads/current`: **0086** on the local test schema; `alembic check`
+  reports **No new upgrade operations detected** with DB_SCHEMA=digest_test.
+  This does not describe any deployed database revision.
+- Targeted compileall, `git diff --check` and changed review-link checks passed.
+  Remote code/content and base ancestry are verified at handoff.
 
 Real integration regressions verify both default bootstrap and explicitly
 selected operator runs: analytics reads contain only the selected fixture,

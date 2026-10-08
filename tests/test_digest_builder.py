@@ -10,11 +10,17 @@ from app.services.digest import builder
 
 @pytest.fixture(autouse=True)
 async def _cleanup():
-    await DigestRun.objects.delete()
-    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
-    yield
-    await DigestRun.objects.delete()
-    await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
+    from app.core.config import settings
+    from app.core.tenant_context import tenant_scope
+    from app.models import Tenant
+
+    tenant = await Tenant.objects.get(slug=settings.DEFAULT_TENANT_SLUG)
+    with tenant_scope(tenant.id):
+        await DigestRun.objects.delete()
+        await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
+        yield
+        await DigestRun.objects.delete()
+        await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
 
 
 async def test_skipped_when_no_channels(monkeypatch):
@@ -147,6 +153,7 @@ async def test_summarize_skipped_at_daily_cap(monkeypatch):
     monkeypatch.setattr(resolver_module, "current_daily_cost_limit", full_limit)
     monkeypatch.setattr(resolver_module, "daily_cost_today", spent)
     from app.models.managers.llm_model_manager import LLMModelManager
+
     monkeypatch.setattr(LLMModelManager, "resolve_default_model", boom)
 
     summary, info = await builder._summarize({"stats": {}})

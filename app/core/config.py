@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     TELEGRAM_API_ID: Optional[str] = None
     TELEGRAM_API_HASH: Optional[str] = None
     TELEGRAM_SESSION: Optional[str] = None
-    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Legacy: default chat for admin notifications
+    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Legacy notification fallback; never a digest recipient
 
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50
@@ -98,13 +98,13 @@ class Settings(BaseSettings):
 
     # --- Channels / owner allowlist ---
     TELEGRAM_OWNER_IDS: str = ""  # comma-separated Telegram user ids allowed to talk to the agent
-    TELEGRAM_DIGEST_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
+    TELEGRAM_DIGEST_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
 
     # MAX messenger (Bot API: https://dev.max.ru)
     MAX_BOT_TOKEN: Optional[str] = None
     MAX_API_URL: str = "https://platform-api2.max.ru"
     MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
-    MAX_CHANNEL_ID: str = ""  # target channel/chat id for scheduled digests
+    MAX_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
 
     # --- Tenancy ---
     # Shared bot model: clients bind their chats via invite codes

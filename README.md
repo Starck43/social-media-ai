@@ -194,6 +194,12 @@ python -m app.runtime
 
 ### 6. Дайджест
 
+Before sending, register the recipient as an active workspace channel binding
+and enable `is_digest_target` (workspace settings → Channels). Deprecated env
+channel IDs are ignored; the admin chat is not a digest recipient. Manual
+operator sends without a selected workspace build only the bootstrap digest.
+See [delivery configuration](./docs/DIGEST.md#configuration).
+
 ```bash
 python -m cli.main digest send-now day     # разовая отправка
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
@@ -212,13 +218,13 @@ python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "wee
 | `CREDENTIALS_KEY`                 | Fernet-ключ для шифрования секретов в БД             |
 | `DEFAULT_TENANT_SLUG`             | slug bootstrap workspace (по умолчанию `owner`)      |
 | `TELEGRAM_BOT_TOKEN`              | токен Telegram-бота                                 |
-| `TELEGRAM_DIGEST_CHANNEL_ID`      | канал для отправки дайджестов                       |
+| `TELEGRAM_DIGEST_CHANNEL_ID`      | Deprecated; ignored by digest delivery — use workspace bindings |
 | `TELEGRAM_OWNER_IDS`              | comma-separated Telegram user ids, которым разрешён чат с агентом |
 | `TELEGRAM_API_ID`                 | L2 (MTProto) app id; предпочтительно через `credentials login telegram` в vault |
 | `TELEGRAM_API_HASH`               | L2 (MTProto) app hash (legacy fallback)          |
 | `TELEGRAM_SESSION`                | L2 (MTProto) `StringSession` — full-access, не коммитить (legacy fallback) |
 | `MAX_BOT_TOKEN`                   | токен MAX-бота                                      |
-| `MAX_CHANNEL_ID`                  | канал для отправки дайджестов (MAX)                 |
+| `MAX_CHANNEL_ID`                  | Deprecated; ignored by digest delivery — use workspace bindings |
 | `MAX_API_BASE`                    | base URL для MAX Bot API (по умолчанию `https://platform-api2.max.ru`) |
 | `SCHEDULER_ENABLED`               | включить cron-планировщик (по умолчанию `true`)     |
 | `SCHEDULER_TIMEZONE`              | часовой пояс cron по умолчанию (зона воркспейса важнее) |

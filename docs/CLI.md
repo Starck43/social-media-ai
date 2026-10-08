@@ -324,9 +324,18 @@ python -m cli.main digest send-now week
 Manual runs are **not idempotent** — useful for testing channel setup without
 waiting for a task.
 
+An unscoped operator run selects `DEFAULT_TENANT_SLUG` (bootstrap), and the
+complete build runs with tenant bypass disabled. For another workspace use an
+explicitly scoped task/direct run. Env recipients alone do not authorize sends:
+they must match an active, digest-enabled binding of bootstrap. Other workspaces
+use only their own active bindings. See [delivery setup](DIGEST.md#configuration).
+
 ### Run Digest Direct
 
 Same as `send-now`, but resolves sources via the unified `--src` flag:
+Without `--tenant`, publication still uses bootstrap scope, not an all-client
+digest. With `--tenant`, aggregation and delivery are restricted to that active
+workspace; a source filter cannot widen the selected workspace.
 
 ```bash
 python -m cli.main digest run [options]

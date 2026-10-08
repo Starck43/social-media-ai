@@ -17,7 +17,7 @@ class BaseAdmin(ModelView):
     icon = "fa fa-table"
     page_size = 50
     page_size_options = [25, 50, 100, 200]
-    save_as = True
+    save_as = False
 
     # Which `ActionType` each custom `@action` of this view needs, by the slug
     # the `action` decorator generates. Unlisted actions default to `update`

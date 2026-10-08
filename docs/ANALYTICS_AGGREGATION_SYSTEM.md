@@ -91,7 +91,7 @@ every timeline entry. It remains a retrospective, not a flat group filter.
 | `days` | `analysis_date` | — | **Web-only view mode** ("Хронология" tab). Not a digest grouping axis. |
 | `themes` | Semantic topics | `summary_data->'topics'` | |
 | `sources` | Source/channel | `source_id` | |
-| `entities` | Named objects (brands, persons, orgs) | `summary_data->'entities'` | Supports `entity_type` filter |
+| `entities` | По упоминаниям (бренды, персоны, организации) | `summary_data->'entities'` | Supports `entity_type` filter |
 | `intent` | Why the post was written | `summary_data->'intent_type'` | |
 | `topic_chains` | Cross-row theme chains | `topic_chain_id` | Dedicated chains page; not in the main switcher |
 
@@ -383,7 +383,7 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 **Параметры для `/grouped`:**
 - `group_by` (optional, default `themes`): `themes`, `sources`, `entities`, `intent`, `topic_chains`. `days` is web-only and returns 400 in this API.
 - `time_breakdown` (bool, default `false`): Включить разбивку по датам внутри каждой группы
-- `entity_type` (optional, только для `entities`): Фильтр сущностей — `person`, `brand`
+- `entity_type` (optional, только для `entities`): Фильтр упоминаний — `person`, `brand`, `org`
 
 **Пример запроса:**
 ```bash
@@ -755,15 +755,23 @@ not rendered as trusted values or links. The shared admin metric renderer also
 shows unknown values as — rather than converting them back to zero.
 
 
-### Unified headings for saved analysis records
+### Display titles
 
 All web entry points (flat group drill-down, day chronology, individual detail,
 chain timeline and dashboard recent analyses) use `render_analysis().display_title`:
 
 1. First valid saved `analysis_title` (root, text analysis including `parsed`,
    unified summary including `parsed`, or legacy `ai_analysis`).
-2. First saved topic (`main_topics`, `topics`, `key_topics`; string or topic/name/key object).
-3. `Материалы источника «{source_name}»`, or `Материалы источника` if the name is unavailable.
+2. First sentence of a saved nonempty summary, normalized to a single line and
+   shortened to at most 120 characters. Add `…` only when the excerpt is truncated;
+   common abbreviations and decimal numbers are not treated as sentence boundaries.
+3. First saved topic (`main_topics`, `topics`, `key_topics`; string or topic/name/key object).
+4. `Материалы источника «{source_name}»`, or `Материалы источника` if the name is unavailable.
+
+Short nonempty saved titles remain valid (no arbitrary minimum length). Full
+summaries remain unchanged in storage and on the detail page. `entities` is
+labelled **По упоминаниям** in tabs, breadcrumbs, digest headings and digest/task
+selectors; `group_by=entities` and `entity_type=person|brand|org` are unchanged.
 
 The technical row ID remains in the URL, not a headline. The current topic filter
 and chain label are not substituted for the record's own content. Date and source
@@ -771,7 +779,10 @@ remain separate metadata; no LLM calls or historical JSON rewrite are needed.
 Missing summary is described as `Сводка для этой записи не сохранена`, never as
 proof that analysis did not run. Chronology entries without a summary stay clickable.
 
-Validation: `982 passed, 1 skipped, 10 warnings in 209.81s (0:03:29)`. Regression tests compare
+Validation: `997 passed, 1 skipped, 10 warnings in 224.24s (0:03:44)`.
+Focused tests: 136 passed. Collection check: 998 tests collected. Regression tests compare
 headings across group, chronology, detail, chain timeline and dashboard,
-including missing titles/summaries, nested payloads and escaped topic text.
+including missing titles/summaries, nested payloads, escaped topic text,
+summary-derived headings/truncation, Russian abbreviations/decimal numbers,
+mention-axis labels in the UI/digest and unchanged entities API parameters.
 No migrations, production data rewrite or API changes.

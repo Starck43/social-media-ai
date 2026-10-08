@@ -101,7 +101,7 @@
                     ('days', 'Хронология', '📅'),
                     ('themes', 'По темам', '🧩'),
                     ('sources', 'По источникам', '🔗'),
-                    ('entities', 'По сущностям', '👤'),
+                    ('entities', 'По упоминаниям', '👤'),
                     ('intent', 'По намерению', '🎯'),
                 ] %}
                 {% for ax_val, ax_label, ax_icon in axes %}
@@ -291,7 +291,7 @@
         </div>
 
         <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Упоминания сущностей</h2>
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Упоминания людей, брендов и организаций</h2>
             {% if analytics.entities %}
                 <div class="mt-4 space-y-2">
                     {% for e in analytics.entities %}

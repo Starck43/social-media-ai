@@ -1121,3 +1121,75 @@ async def test_common_title_is_escaped_in_group_and_chronology(client, drill_rec
         assert page.status_code == 200
         assert "<script>alert(1)</script>" not in page.text
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+
+
+async def test_summary_derived_title_is_shared_without_reanalysis_warning(client, drill_records):
+    from html import unescape
+
+    from app.services.ai.analysis_render import summary_display_heading
+
+    data = drill_records
+    summary = (
+        "Обновлённый интерьер включает " + "современные материалы и удобную мебель " * 8 + ". Далее детали."
+    )
+    heading = summary_display_heading(summary)
+    assert len(heading) <= 120 and heading.endswith("…")
+    with tenant_scope(data["tenant_id"]):
+        for row_id in data["ids"][:3]:
+            await AIAnalytics.objects.filter(id=row_id).update(
+                summary_data={
+                    "multi_llm_analysis": {
+                        "text_analysis": {
+                            "parsed": {
+                                "analysis_summary": summary,
+                                "topics": ["Дизайн интерьера"],
+                                "sentiment_score": 0.9,
+                            }
+                        }
+                    }
+                }
+            )
+    for path in [
+        f'/app/analytics/group?axis=sources&value={data["sources"][0]}&days=all',
+        "/app/analytics?group_by=days&days=all",
+        f'/app/analytics/{data["ids"][0]}?days=all',
+        "/app/analytics/chains/drill-celebration?days=all",
+        "/app",
+    ]:
+        response = await client.get(path)
+        assert response.status_code == 200
+        assert heading in unescape(response.text)
+        assert "анализ не проводился" not in response.text
+        assert f'Анализ #{data["ids"][0]}' not in response.text
+    detail = await client.get(f'/app/analytics/{data["ids"][0]}?days=all')
+    assert summary in unescape(detail.text)  # Full summary survives display-only truncation.
+
+
+async def test_entities_label_is_mentions_and_query_contract_unchanged(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    response = await client.get("/app/analytics?group_by=entities&entity_type=brand&days=all")
+    assert response.status_code == 200
+    assert "По упоминаниям" in response.text and "По сущностям" not in response.text
+    group_url = next(
+        link
+        for link in _analytics_links(response.text)
+        if urlparse(link).path == "/app/analytics/group"
+        and parse_qs(urlparse(link).query).get("axis") == ["entities"]
+    )
+    assert parse_qs(urlparse(group_url).query)["entity_type"] == ["brand"]
+    group = await client.get(group_url)
+    assert group.status_code == 200
+    assert "По упоминаниям" in group.text and "По сущностям" not in group.text
+    assert "Иван" in response.text and "ACME" in response.text
+    login = await client.post(
+        "/api/v1/auth/login", data={"username": data["user"].username, "password": "secret-password-1"}
+    )
+    assert login.status_code == 200
+    api = await client.get(
+        "/api/v1/dashboard/analytics/aggregate/grouped?group_by=entities&entity_type=brand",
+        headers={"Authorization": "Bearer " + login.json()["access_token"]},
+    )
+    assert api.status_code == 200 and api.json()["axis"] == "entities"
+    assert {g["key"] for g in api.json()["groups"]} == {"Иван", "ACME"}

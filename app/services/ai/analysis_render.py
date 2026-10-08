@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -107,6 +108,59 @@ def sentiment_summary(summary_data: dict[str, Any]) -> dict[str, Any]:
     return {"score": score, "label": _label_for_score(score) if score is not None else "—"}
 
 
+def summary_display_heading(summary: Any, limit: int = 120) -> str | None:
+    """A short stored-summary excerpt, not an invented title or execution status."""
+    if not isinstance(summary, str):
+        return None
+    value = " ".join(summary.split())
+    if not value:
+        return None
+    # Conservative sentence boundaries: keep decimals and common abbreviations
+    # (e.g. ул. Ленина, г. Киров, т. д.) intact rather than cutting at every dot.
+    abbreviations = {
+        "г",
+        "ул",
+        "д",
+        "им",
+        "др",
+        "т",
+        "п",
+        "рис",
+        "стр",
+        "см",
+        "руб",
+        "млн",
+        "млрд",
+        "mr",
+        "mrs",
+        "ms",
+        "dr",
+        "vs",
+        "т.д",
+        "т.п",
+        "т.е",
+        "e.g",
+        "i.e",
+    }
+    for match in re.finditer(r"[.!?…]+(?=\s|$)", value):
+        prefix = value[: match.start()]
+        token = re.search(r"([^\s]+)$", prefix)
+        word = token.group(1) if token else ""
+        if match.group() == "." and (
+            word.casefold().rstrip(".") in abbreviations or (len(word) == 1 and word.isupper())
+        ):
+            continue
+        value = value[: match.end()]
+        break
+    if len(value) <= limit:
+        return value
+    shortened = value[: limit - 1].rstrip()
+    boundary = shortened.rfind(" ")
+    if boundary >= limit // 2:
+        shortened = shortened[:boundary]
+    return shortened.rstrip(" .,;:!?…") + "…"
+
+
 def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = None) -> dict[str, Any]:
     data = _as_dict(summary_data)
     text = extract_text_analysis(data)
@@ -142,12 +196,22 @@ def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = N
         ),
         None,
     )
-    # One deterministic stored-data fallback, not a generated LLM headline.
+    summary = next(
+        (
+            c[key].strip()
+            for c in containers
+            for key in ("analysis_summary", "summary")
+            if isinstance(c.get(key), str) and c[key].strip()
+        ),
+        None,
+    )
+    # One stored-data cascade shared by every web analysis entry point.
+    display_title = title or summary_display_heading(summary) or (topics[0] if topics else None)
     title = title or (topics[0] if topics else None)
     stats = _as_dict(data.get("content_statistics"))
     source_meta = _as_dict(data.get("source_metadata"))
     name = source_name or source_meta.get("source_name")
-    display_title = title or (
+    display_title = display_title or (
         f"Материалы источника «{name.strip()}»" if isinstance(name, str) and name.strip() else "Материалы источника"
     )
     originals = []
@@ -164,7 +228,7 @@ def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = N
     return {
         "analysis_title": title,
         "display_title": display_title,
-        "analysis_summary": data.get("analysis_summary") or first("analysis_summary", "summary"),
+        "analysis_summary": summary,
         "main_topics": topics,
         "overall_mood": first("overall_mood"),
         "highlights": _as_list(first("highlights")),

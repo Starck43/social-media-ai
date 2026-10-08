@@ -234,6 +234,9 @@ async def _fetch_grouped(
 
     group_by = request.query_params.get("group_by", "themes")
     entity_type = request.query_params.get("entity_type")
+    group_by_period = request.query_params.get("group_by_period", "day")
+    if group_by_period not in ("day", "week", "month"):
+        group_by_period = "day"
 
     try:
         axis = GroupingAxis(group_by)
@@ -261,6 +264,7 @@ async def _fetch_grouped(
             rows,
             axis=axis,
             entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
+            group_by_period=group_by_period if axis == GroupingAxis.DAYS else None,
         )
     except ValueError:
         result = await group_analytics(rows, axis=axis)
@@ -282,16 +286,24 @@ async def _fetch_grouped(
         else:
             try:
                 entity_type_filter = entity_type if ax_enum == GroupingAxis.ENTITIES else None
-                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter)
+                period = group_by_period if ax_enum == GroupingAxis.DAYS else None
+                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter, group_by_period=period)
                 group_counts[ax_val] = len(res.get("groups", []))
             except ValueError:
                 group_counts[ax_val] = 0
+
+    source_names = {}
+    if axis == GroupingAxis.DAYS and result.get("groups"):
+        source_ids = {entry.get("source_id") for group in result.get("groups", []) for entry in group.get("entries", []) if entry.get("source_id")}
+        source_names = await _source_names(source_ids)
 
     return {
         "groups": result.get("groups", []),
         "axis": result.get("axis", "themes"),
         "entity_type": entity_type if axis == GroupingAxis.ENTITIES else None,
         "group_counts": group_counts,
+        "group_by_period": group_by_period,
+        "source_names": source_names,
     }
 
 

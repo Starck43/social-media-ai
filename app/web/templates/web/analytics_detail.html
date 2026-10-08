@@ -1,8 +1,21 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import card, empty_state, page_title %}
-{% block title %}{{ display.analysis_title or ('Анализ #' ~ analysis.id) }} — AI Monitor{% endblock %}
+{% block title %}{% if display.analysis_summary %}{{ display.analysis_title or ('Анализ #' ~ analysis.id) }}{% else %}{{ display.analysis_title or ('Анализ #' ~ analysis.id) }} — сводка не сгенерирована{% endif %} — AI Monitor{% endblock %}
 {% block content %}
-    {{ page_title(display.analysis_title or ('Анализ #' ~ analysis.id), analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id)) }}
+    {% set analysis_title_text = display.analysis_title or ('Анализ #' ~ analysis.id) %}
+    {% if not display.analysis_summary %}
+        {% set analysis_title_text = analysis_title_text ~ ' — сводка не сгенерирована' %}
+    {% endif %}
+    {{ page_title(analysis_title_text, analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id)) }}
+
+    {% if not display.analysis_summary %}
+    <div class="mb-6 flex items-center gap-2 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-1.5 text-sm text-amber-800 dark:text-amber-200">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+        </svg>
+        <span>Данные получены, но анализ не проводился.</span>
+    </div>
+    {% endif %}
 
     <div class="mb-6 flex flex-wrap items-center gap-3 text-xs text-slate-400">
         <a href="/app/analytics" class="text-cyan-400 hover:underline">← К аналитике</a>

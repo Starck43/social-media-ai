@@ -86,17 +86,12 @@
         {% if analytics.chains|length > 6 %}
         <p class="mt-2 text-xs text-slate-600">Показаны 6 из {{ analytics.chains|length }} цепочек</p>
         {% endif %}
-        <p class="mt-2 text-xs text-slate-600">
-            Цепочки формируются автоматически по совпадающим темам.
-            Дубликаты можно объединить через
-            <code class="text-cyan-400">python -m cli.main chains merge --apply</code>
-        </p>
     </div>
     {% endif %}
 
     {# ── Axis switcher + grouped results ─────────────────────────────── #}
     {% set gd = grouped_data %}
-    <div x-data="{ axis: '{{ gd.axis }}' }" class="mt-6 space-y-4">
+    <div x-data="{ axis: '{{ gd.axis }}', period: '{{ gd.group_by_period }}' }" class="mt-6 space-y-4">
         <div class="flex flex-wrap items-center gap-3">
             <div class="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
                 {% set axes = [
@@ -131,9 +126,70 @@
                     {% endfor %}
                 </div>
             </template>
+            {% if gd.axis == 'days' %}
+            <div class="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
+                {% set periods = [('day', 'По дням'), ('week', 'По неделям'), ('month', 'По месяцам')] %}
+                {% for pval, plabel in periods %}
+                <a href="?group_by=days&group_by_period={{ pval }}&days={{ days }}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
+                   class="rounded-lg px-3 py-1.5 text-sm transition"
+                   :class="period === '{{ pval }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:bg-slate-800'">
+                    {{ plabel }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
 
         {% if gd.groups %}
+        {% if gd.axis == 'days' %}
+        <div class="space-y-6">
+            {% for group in gd.groups %}
+            <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <h3 class="mb-3 text-sm font-medium text-slate-300">{{ group.display_key }}</h3>
+                <div class="space-y-2">
+                    {% for entry in group.entries %}
+                    {% if entry.analysis_summary %}
+                    <a href="/app/analytics/{{ entry.id }}"
+                       class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/30 p-3 hover:border-cyan-700 transition-colors">
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm text-slate-200">
+                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
+                            </p>
+                            <p class="text-xs text-slate-500">
+                                {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}
+                                {% if entry.main_topics %}
+                                · {{ entry.main_topics[0] }}
+                                {% endif %}
+                            </p>
+                        </div>
+                        {% if entry.sentiment_score is not none %}
+                        <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
+                            {% if entry.sentiment_score >= 0.3 %}text-emerald-400 bg-emerald-950
+                            {% elif entry.sentiment_score <= -0.3 %}text-rose-400 bg-rose-950
+                            {% else %}text-amber-400 bg-amber-950{% endif %}">
+                            {{ "%.1f"|format(entry.sentiment_score) }}
+                        </span>
+                        {% endif %}
+                    </a>
+                    {% else %}
+                    <div class="flex items-center justify-between rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                            </svg>
+                            <p class="truncate text-sm text-amber-800 dark:text-amber-200">
+                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
+                            </p>
+                            <span class="text-xs text-amber-700 dark:text-amber-300">— Данные получены, но анализ не проводился.</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for group in gd.groups %}
             <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
@@ -191,6 +247,7 @@
             </div>
             {% endfor %}
         </div>
+        {% endif %}
         {% else %}
         <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-8">
             <p class="text-sm text-slate-500">Нет данных за выбранный период</p>

@@ -10,7 +10,7 @@ No production migration/deployment or live messenger call is authorized here.
 
 Started from dev `7fedbd3b769ab5c9239be6f3cf852ac9fd2745a9`. The local
 integration snapshot now preserves UI dev `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`;
-its full check is in progress. The migration/model do not overlap those UI edits.
+its full check has completed successfully. The migration/model do not overlap those UI edits.
 The new universal-assistant product documents are preserved. This digest field
 is not the future general-purpose outbox/workflow schema.
 
@@ -59,7 +59,13 @@ Python 3.13, the project venv and mocked transports. No production data/secrets.
   were weakened. This is not a promise of production SQLite support.
 - Initial migration-test SQL literal was changed to a bound JSON parameter;
   migration logic did not need a data-preservation workaround.
-- Final fresh-UI integration and exact head checks are recorded before handoff.
+- Final full suite on dev `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`
+  plus this schema unit: **1084 passed, 1 skipped, 10 warnings** (265.87 s),
+  freshly reset isolated schema, coverage disabled. User UI/theme/sentiment edits preserved.
+- Final local Alembic heads/current: **0087**; **No new upgrade operations detected**.
+- Targeted Black/isort, compileall, whitespace and documentation-link checks pass.
+- PR #6 is prepared for review, not merged/deployed. Actual receipt/resume logic
+  remains unimplemented; do not check off the full retry task.
 
 ## Exact next implementation unit
 

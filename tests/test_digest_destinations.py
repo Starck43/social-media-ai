@@ -191,6 +191,7 @@ async def test_destination_dedup_and_defensive_binding_checks(workspaces, sent, 
         SimpleNamespace(**{**common, "is_active": False}, chat_id="inactive"),
         SimpleNamespace(**{**common, "is_digest_target": False}, chat_id="not-digest"),
         SimpleNamespace(**common, chat_id=" "),
+        SimpleNamespace(**common, chat_id=None),
     ]
 
     async def targets(tenant_id):

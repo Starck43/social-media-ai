@@ -141,3 +141,19 @@ alerts to use the admin destination. See the
 Do not mark PRD-01 fully complete or enable new publication features because
 this routing PR passes. Merge/deploy only after the owner reviews the setup
 impact; recheck fresh dev again if it changes before merge.
+
+
+## Pre-merge automated review follow-up
+
+- `_destination_id(None)` now returns an empty identifier, so malformed manager
+  rows cannot send to the literal string `None`. The defensive binding regression
+  includes this case. Real `tenant_channels.chat_id` is already non-nullable;
+  this is a defensive improvement, not evidence of a live data disclosure.
+- The reported removal of a `build_and_publish(tenant_id=...)` argument is not
+  reproduced: dev `0211059` and this branch have the same public signature,
+  neither accepts it. Existing CLI/job/tool callers rely on workspace context.
+  Tests cover bootstrap and selected operator scope without inventing a new API.
+- After the guard change: focused destinations/channel/builder/e2e suite:
+  **51 passed, 1 warning** (6.44 s); targeted Black/isort and whitespace checks pass.
+  Combined notification/digest validation is recorded in the notification review
+  when both changes are synchronized. Earlier full-suite results remain historical.

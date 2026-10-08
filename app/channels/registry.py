@@ -55,8 +55,10 @@ async def resolve_digest_tenant(tenant_id: int | None = None) -> Tenant:
     return tenant
 
 
-def _destination_id(chat_id: str) -> str:
+def _destination_id(chat_id: str | None) -> str:
     """Normalize exact IDs/usernames without guessing numeric/username aliases."""
+    if chat_id is None:
+        return ""
     value = str(chat_id).strip()
     return value.lower() if value.startswith("@") else value
 

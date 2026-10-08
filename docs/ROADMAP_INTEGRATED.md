@@ -2,9 +2,9 @@
 
 ## Authority and status
 
-Revised on 2026-10-08 against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`; revalidated before merge against dev `fa5fb1b224527865dd830e9024f37a67b1ea4748` ([delta recheck](design/business_readiness_recheck_2026_10_08.md)). **Proposed sequence; this documentation delivery does not implement application changes.** The original roadmap is preserved in [archive](design/archive/roadmap_integrated_legacy.md); competitor research remains historical input, not a current backlog.
+Revised on 2026-10-08 against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`; revalidated before merge against dev `fa5fb1b224527865dd830e9024f37a67b1ea4748` ([delta recheck](design/business_readiness_recheck_2026_10_08.md)). **Historical planning baseline; current implementation/merge status is tracked in [Implementation status](IMPLEMENTATION_STATUS.md).** The original roadmap is preserved in [archive](design/archive/roadmap_integrated_legacy.md); competitor research remains historical input, not a current backlog.
 
-Read in this order:
+Read [Implementation status](IMPLEMENTATION_STATUS.md) first to resume work. Then:
 1. [Proposal review](design/proposal_review.md): 40 dispositions, implementation evidence, stale assumptions and verification limits.
 2. [Business production readiness](BUSINESS_PRODUCTION_READINESS.md): blockers and release acceptance gates.
 3. [Local experience plan](LOCAL_EXPERIENCE_PLAN.md): bounded improvements on the existing architecture.
@@ -26,15 +26,29 @@ CA-01–04 are substantially present: strict local analysis validation, default/
 
 Some read-only UX work can run alongside safety work if files do not overlap, but the release gates cannot be skipped. No arbitrary calendar/effort promise is made before a fresh scope and workload baseline.
 
-## Candidate first implementation PRs (choose next, not executed here)
+## Implementation checklist and next unit
 
-1. **Tenant-safe destination resolution** (PRD-01): the bounded routing package is implemented in the [delivery change](design/tenant_safe_digest_delivery_review.md), including bootstrap build scoping and focused two-tenant tests. Deployment requires recipient binding setup. Durable per-target retry/concurrency work remains a separate follow-up; PRD-01 is not fully closed.
-2. **Agent authorization and registry contract** (PRD-02 / UX-02): reproduce/fix action_send binding, explicit rights and separate tenant/global powers; decide legacy identity migration. Do not turn on live posting.
-3. **Spend accounting design + regression harness** (PRD-03): specify units, every-call attribution, unknown-price and concurrent reservation semantics. Approve schema requirements before implementing a ledger.
-4. **Production profile and health** (PRD-04): API/runtime ownership, one migrator, private DB, readiness, staging deploy/restore evidence.
-5. **First-report checklist** (UX-01): reuse existing writes and readiness; confirm supported source/window/scenario/delivery, not merely “some task exists”.
+- [x] Business-readiness review and revised documentation — merged in PR #2.
+- [x] Tenant-safe destination resolution and entire-build scope (bounded PRD-01)
+  — merged in PR #3; [evidence](design/tenant_safe_digest_delivery_review.md).
+- [x] Explicit workspace notifications vs fixed operator alerts — merged in
+  PR #4; [contract and combined tests](NOTIFICATIONS.md).
+- [ ] **Current unit: durable per-recipient/part retry.** Design prepared;
+  storage/schema decision pending. See [retry plan](design/digest_delivery_retry_plan.md).
+  Do not mark PRD-01 closed: retries, concurrency/acknowledgement policy and
+  external identity verification still require evidence.
+- [ ] Agent authorization and registry contract (PRD-02 / UX-02): action_send,
+  explicit rights, tenant/global powers and legacy identity migration.
+- [ ] Spend accounting design + regression harness (PRD-03): every-call units,
+  unknown pricing, attribution and concurrent reservation semantics.
+- [ ] Production profile and health (PRD-04): API/runtime ownership, one migrator,
+  private DB, staging readiness and restore evidence.
+- [ ] First-report checklist (UX-01): supported source/window/scenario/delivery,
+  not merely the presence of a task.
 
-Default recommendation: begin with PR 1 after confirming current dev. These are separate PRs, not one large feature branch.
+Current continuation: approve checkpoint storage, then implement the approved
+schema/receipt units in separate thematic PRs. [Implementation status](IMPLEMENTATION_STATUS.md)
+records merged SHAs, validation limits and the new-session restart checklist.
 
 ## Branch and validation policy
 

@@ -12,6 +12,11 @@ See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOC
 
 ### PRD-01 — Tenant-safe, retry-safe delivery (blocker)
 
+Status: **PARTIAL, OPEN**. Merged items and next-session continuation are in
+[Implementation status](IMPLEMENTATION_STATUS.md). The
+[retry design](design/digest_delivery_retry_plan.md) is prepared; storage/schema
+approval is pending and no receipt/retry code is implemented yet.
+
 **Routing progress:** the [tenant-safe delivery change](design/tenant_safe_digest_delivery_review.md)
 implements exclusively owned active DB recipients, ignored env destinations, within-call
 identifier deduplication and non-bypass build scoping. No migration or live
@@ -21,11 +26,11 @@ ambiguous transport acknowledgements remain open; this gate is not complete.
 Baseline observation before that change: [broadcast_digest](../app/channels/registry.py) sends every digest to global env targets, then tenant targets. [build_and_publish](../app/services/digest/builder.py) stores one aggregate run outcome and rebroadcasts after a partial-channel failure.
 
 Actions:
-- **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
-- **Notification boundary implemented:** workspace messages require explicit active owned bindings; fixed operator templates alone use `TELEGRAM_ADMIN_CHAT_ID`. Source-owned DB failure notifications do not forward raw exceptions. Recipient-picker UX, persisted outcomes/rate limits and process-wide logging audit remain open. See [notification contract](NOTIFICATIONS.md).
-- **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
-- Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
-- Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.
+- [x] **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
+- [x] **Notification boundary implemented:** workspace messages require explicit active owned bindings; fixed operator templates alone use `TELEGRAM_ADMIN_CHAT_ID`. Source-owned DB failure notifications do not forward raw exceptions. Recipient-picker UX, persisted outcomes/rate limits and process-wide logging audit remain open. See [notification contract](NOTIFICATIONS.md).
+- [x] **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
+- [ ] Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
+- [ ] Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.
 
 Acceptance: two tenants + configured legacy destination cannot leak reports; one successful/one failing destination only retries the failure; duplicate destinations, concurrent run attempts, lost acknowledgements and message splitting are covered. A no-channel configuration is visible and not a successful delivery. Persisted per-target progress may require a separately reviewed migration or versioned result structure.
 

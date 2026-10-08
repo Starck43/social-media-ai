@@ -1,46 +1,46 @@
-# Индекс документации «ИИ Ассистент»
+# AI Assistant documentation index
+
+## Product direction and target architecture
+
+- **[Product vision](./design/vision.md)** — universal assistant principles; social monitoring as the first domain, not the product boundary.
+- **[Product plan](./PRODUCT_PLAN.md)** — research, knowledge search, communication, follow-up, calculations, cases and approvals; current versus planned capabilities and phased acceptance gates.
+- **[Target assistant architecture](./ASSISTANT_ARCHITECTURE.md)** — proposed connector/workflow/evidence contracts, local computer boundary, controlled outbox and scaling path. Not implemented schema/API contracts.
+
+Product expansion supplements, rather than replaces, the readiness-first roadmap below. Reference documents describe current behavior; historical reviews retain their original baselines. A product plan is not a production certification.
 
 ## Business readiness: current decisions
 
 - **[Integrated roadmap](./ROADMAP_INTEGRATED.md)** — proposed sequence, small PRs and launch gates; reviewed against dev, not a production certification.
-- **[Proposal review](./design/proposal_review.md)** — dispositions of all research proposals, code evidence and stale assumptions.
-- **[Pre-merge delta recheck](./design/business_readiness_recheck_2026_10_08.md)** — new dev work accounted for before merging the documentation; remaining risks revalidated.
+- **[Proposal review](./design/proposal_review.md)** — dispositions of research proposals, code evidence and stale assumptions.
+- **[Pre-merge delta recheck](./design/business_readiness_recheck_2026_10_08.md)** — dev changes considered before the earlier documentation merge.
 - **[Tenant-safe delivery implementation](./design/tenant_safe_digest_delivery_review.md)** — routing fix, recipient setup compatibility, checks and remaining retry/concurrency work.
-- **[Local experience plan](./LOCAL_EXPERIENCE_PLAN.md)** — bounded onboarding, trust, recovery and report improvements; migration boundaries marked.
+- **[Local experience plan](./LOCAL_EXPERIENCE_PLAN.md)** — bounded onboarding, trust, recovery and report improvements; migration boundaries marked. This is application UX, not the future local file connector.
 - **[Business production readiness](./BUSINESS_PRODUCTION_READINESS.md)** — security, cost, delivery, deployment, retention, recovery and support gates.
-- **[Future scale strategy](./design/future_scale_strategy.md)** — deferred embeddings, alerts, billing and capacity work with entry criteria.
+- **[Future scale strategy](./design/future_scale_strategy.md)** — deferred embeddings, alerts, billing and capacity work with entry criteria; use alongside the new product expansion plan.
 
+## Runtime and integration references
 
-## Видение и целевая архитектура
+- **[API Reference](./API.md)** — REST endpoints, request/response schemas and authentication.
+- **[CLI Reference](./CLI.md)** — task, digest, credential and role commands.
+- **[Admin Panel](./ADMIN.md)** — sqladmin pages, actions, authentication and CSRF.
+- **[Data Models](./MODELS.md)** — tables, fields, relations and diagrams.
+- **[Configuration](./CONFIGURATION.md)** — environment variables, example configuration and keys.
+- **[Channels](./CHANNELS.md)** — Telegram/MAX listener, ingest and routing.
+- **[Notifications](./NOTIFICATIONS.md)** — workspace-owned recipients and fixed operator alerts.
+- **[Deployment](./DEPLOYMENT.md)** — deployment examples, backups and first-deployment checklist; verify against readiness requirements before production use.
 
-- **[Видение продукта](./design/vision.md)** - принципы, гибридный сбор (API + авторизация), промпты, обучение, роадмап, что не делаем
+## Analysis and monitoring
 
-## Справочники
+- **[AI pipeline and prompts](./AI_PIPELINE_AND_PROMPTS.md)** — structured analysis, PromptBuilder and media types.
+- **[Analytics aggregation](./ANALYTICS_AGGREGATION_SYSTEM.md)** — processing and storage.
+- **[Analytics chains](./ANALYTICS_CHAINS.md)** — relevance filters, grouping, web navigation and digests.
+- **[Prompt and scope behavior](./PROMPT_AND_SCOPE_EXPLAINED.md)** — PromptBuilder and generated schemas.
+- **[Collection and platform credentials](./COLLECTION.md)** — API/session layers, vault, OAuth and Telegram collection limitations.
 
-- **[API Reference](./API.md)** - Все REST endpoints, схемы запросов/ответов, аутентификация
-- **[CLI Reference](./CLI.md)** - Все команды CLI (task, digest, credentials, roles)
-- **[Admin Panel](./ADMIN.md)** - sqladmin страницы, кастомные actions, auth, CSRF
-- **[Data Models](./MODELS.md)** - Все таблицы, поля, связи, ER-диаграмма
-- **[Configuration](./CONFIGURATION.md)** - Полный список env vars, .env.example, генерация ключей
-- **[Channels](./CHANNELS.md)** - Telegram/MAX каналы, listener, ingest, routing
-- **[Notifications](./NOTIFICATIONS.md)** — workspace-owned recipients and fixed operator alerts
-- **[Deployment](./DEPLOYMENT.md)** - Docker Compose, systemd, nginx, бэкапы, first deployment checklist
+## Scheduling, delivery and agent
 
-## Анализ и мониторинг
-
-- **[Типы AI-анализа](AI_PIPELINE_AND_PROMPTS.md)** - AI-конвейер, PromptBuilder, промпты по типам медиа
-- **[Агрегация аналитики](./ANALYTICS_AGGREGATION_SYSTEM.md)** - Обработка и хранение данных
-- **[Тематические цепочки](./ANALYTICS_CHAINS.md)** - Привязка анализов к цепочкам, relevance-фильтр, группировки, веб и дайджест
-- **[Автозаполнение промптов и scope](./PROMPT_AND_SCOPE_EXPLAINED.md)** - Поведение PromptBuilder и json_schema_builder
-- **[Сбор контента и креды платформ](./COLLECTION.md)** - Слои сбора (API/сессия/браузер), волт токенов, VK и Telegram Bot API
-
-## Очередь и фоновые задачи
-
-- **[Планировщик и очередь задач](./AGENT_TASKS.md)** - Cron-расписания и фоновые джобы на PostgreSQL
-- **[Доставка дайджестов](./DIGEST.md)** - Сводки, каналы Telegram/MAX, идемпотентность
-- **[Агент в чате](./AGENT.md)** - Tool-calling runtime, сессии, память, подтверждения
-- **[Чат-создание сценариев](./CHAT_BOT_SCENARIOS.md)** - Архитектура сценариев (линза vs реакция), агент-тулы, шаблоны, UX-паттерны
-
-## Инфраструктура
-
-- **[Мультитенантность](./TENANCY.md)** - Рабочие пространства, инвайт-коды, изоляция данных
+- **[Task runner and queue](./AGENT_TASKS.md)** — PostgreSQL cron schedules and jobs.
+- **[Digest delivery](./DIGEST.md)** — aggregation, owned recipients and remaining retry/concurrency boundaries.
+- **[Chat agent](./AGENT.md)** — tool calling, sessions, memory, confirmation and current permission limitations.
+- **[Scenario creation](./CHAT_BOT_SCENARIOS.md)** — methodology versus reaction, tools, templates and UX patterns.
+- **[Multi-tenancy](./TENANCY.md)** — workspaces, invitations and isolation.

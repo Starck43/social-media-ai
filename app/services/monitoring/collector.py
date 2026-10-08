@@ -163,7 +163,6 @@ class ContentCollector:
 			source: Source,
 			content_type: str = "posts",
 			analyze: bool = True,
-			analyze_by: str = None,
 			force_reanalyze: bool = False,
 			run_id: Optional[int] = None,
 	) -> Optional[dict]:
@@ -174,7 +173,6 @@ class ContentCollector:
 			source: Source to collect from
 			content_type: Type of content to collect (posts, comments, etc.)
 			analyze: Whether to run AI analysis on collected content
-			analyze_by: Analysis method - "days" (group by days) or "themes" (theme-based analysis)
 			force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
 
 		Returns:
@@ -251,7 +249,7 @@ class ContentCollector:
 			analytics = None
 			if analyze and content:
 				analytics = await self.analyzer.analyze_content(
-					content, source, analyze_by=analyze_by, force_reanalyze=force_reanalyze
+					content, source, force_reanalyze=force_reanalyze
 				)
 				await self._retire_staged(source, analytics)
 			# No analysis this run: the staged rows are the deliverable, left for
@@ -264,7 +262,6 @@ class ContentCollector:
 				"content_count": len(content),
 				"new_items": new_count,
 				"analyzed": analyze,
-				"analyze_by": analyze_by,
 				"analytics_count": len(analytics) if analytics else 0,
 				# Rows written to `collected_items` this run. Still there if the
 				# analysis failed or is deferred — that is the honest count of the

@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
+    from ..agent_scenario import AgentScenario
+    from ..ai_analytics import AIAnalytics
     from ..llm_model import LLMModel
     from ..llm_provider import LLMProvider
-    from ..ai_analytics import AIAnalytics
-    from ..agent_scenario import AgentScenario
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +53,10 @@ class LLMModelManager(BaseManager):
                 LLMModel object or None
         """
         if provider_id:
-            models = await self.get_models_by_provider(provider_id=provider_id)
+            models = await self.select_related("provider").filter(provider_id=provider_id, is_active=True)
 
             for model in models:
-                if model.can_handle(capability):
+                if model.can_handle(capability) and model.provider and model.provider.is_active:
                     logger.info(f"Using model for {capability}: {model.name}")
                     return model
         else:
@@ -87,18 +87,8 @@ class LLMModelManager(BaseManager):
         return models
 
     async def _get_default_for_capability(self, capability: str) -> Optional["LLMModel"]:
-        """
-        Get default model for a specific capability (without provider restriction).
-
-        Priority: provider.is_default → model.is_default → model.id (lowest first).
-        """
-        models = await self._get_by_capability(capability, is_active=True)
-        if not models:
-            logger.warning(f"No active LLM model found for {capability}")
-            return None
-        models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))
-        logger.info(f"Resolved model for {capability}: {models[0].provider.name}/{models[0].model_id}")
-        return models[0]
+        """Use the shared active-provider default resolver."""
+        return await self.resolve_default_model(capability)
 
     # ──────────────────────────────────────────────────────────────
     # Phase 1 — Single source of truth for lifecycle
@@ -112,6 +102,7 @@ class LLMModelManager(BaseManager):
         model_id: str,
         model_type: str = "text",
         description: str | None = None,
+        custom_endpoint_path: str | None = None,
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
         max_tokens: int = 4096,
@@ -143,6 +134,7 @@ class LLMModelManager(BaseManager):
             model_id=model_id,
             model_type=model_type,
             description=description,
+            custom_endpoint_path=custom_endpoint_path,
             input_cost_per_1k=input_cost_per_1k,
             output_cost_per_1k=output_cost_per_1k,
             max_tokens=max_tokens,
@@ -161,10 +153,10 @@ class LLMModelManager(BaseManager):
         if not model:
             return None
 
-        if fields.get("is_default") is True and not model.is_default:
+        if fields.get("is_default", model.is_default) is True:
             scope_type = fields.get("model_type", model.model_type)
             # Clear other defaults of the same model_type (exact match)
-            await self.filter(model_type=scope_type, is_default=True).update(is_default=False)
+            await self.filter(model_type=scope_type, is_default=True).exclude(id=model_id).update(is_default=False)
 
         await self.update_by_id(model_id, **fields)
         updated = await self.get(id=model_id)
@@ -192,9 +184,9 @@ class LLMModelManager(BaseManager):
                 "warnings": list[str]
             }
         """
-        from ..llm_model import LLMModel
         from ..agent_scenario import AgentScenario
         from ..ai_analytics import AIAnalytics
+        from ..llm_model import LLMModel
 
         model = await self.get(id=model_id)
         if not model:
@@ -219,7 +211,7 @@ class LLMModelManager(BaseManager):
 
         if was_default:
             # Find candidate for new default
-            candidate = await self._find_default_candidate(model_type)
+            candidate = await self._find_default_candidate(model_type, exclude_id=model_id)
             if candidate:
                 candidate.is_default = True
                 await self.update_by_id(candidate.id, is_default=True)
@@ -239,7 +231,7 @@ class LLMModelManager(BaseManager):
             "warnings": warnings,
         }
 
-    async def _find_default_candidate(self, model_type: str) -> Optional["LLMModel"]:
+    async def _find_default_candidate(self, model_type: str, exclude_id: int | None = None) -> Optional["LLMModel"]:
         """
         Find the best candidate for default of a given model_type.
 
@@ -251,8 +243,9 @@ class LLMModelManager(BaseManager):
         from ..ai_analytics import AIAnalytics
 
         # Get all active models of this type with provider prefetched
-        # Use contains to find models that support this capability
-        models = await self.select_related("provider").filter(model_type__contains=model_type, is_active=True)
+        # Reassignment preserves the exact model type and active provider.
+        models = await self.select_related("provider").filter(model_type=model_type, is_active=True)
+        models = [m for m in models if m.id != exclude_id and m.provider and m.provider.is_active]
         if not models:
             return None
 
@@ -270,10 +263,14 @@ class LLMModelManager(BaseManager):
         # Strategy 2: name appears in ai_analytics.llm_model
         if hasattr(AIAnalytics, "llm_model"):
             try:
-                analytics_models = await AIAnalytics.objects.filter(llm_model__isnull=False).values_list("llm_model", flat=True).distinct()
+                analytics_models = (
+                    await AIAnalytics.objects.filter(llm_model__isnull=False)
+                    .values_list("llm_model", flat=True)
+                    .distinct()
+                )
                 analytics_model_names = set(analytics_models)
                 for m in models:
-                    if m.name in analytics_model_names:
+                    if m.name in analytics_model_names or m.model_id in analytics_model_names:
                         return m
             except Exception:
                 pass  # Fall through to strategy 3
@@ -282,14 +279,34 @@ class LLMModelManager(BaseManager):
         models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))
         return models[0] if models else None
 
-    async def resolve_default_model(self, model_type: str) -> Optional["LLMModel"]:
+    async def resolve_default_model(self, model_type: str, strategy: str | None = None) -> Optional["LLMModel"]:
+        """Resolve a capability to a model on an active provider.
+
+        Explicit provider/model defaults take precedence. Without a strategy,
+        the stable fleet order is provider default, model default, id. Within
+        equal default ranks, cost_efficient picks the lowest combined per-1K
+        tariff; multimodal prefers more capabilities. Quality uses the stable
+        fleet defaults: price is not a proxy for quality.
         """
-        Single entry point for default model resolution.
-        Priority: is_default → first active (same ordering as _get_default_for_capability).
-        """
-        # Use contains to find models that support this capability
-        models = await self.select_related("provider").filter(model_type__contains=model_type, is_active=True)
+        from app.services.ai.llm_client import default_model_sort_key
+        from app.utils.enum_helpers import get_enum_value
+
+        strategy_value = get_enum_value(strategy)
+        if strategy_value not in ("", "cost_efficient", "quality", "multimodal"):
+            raise ValueError(f"Unknown LLM strategy: {strategy_value}")
+        models = await self.select_related("provider").filter(is_active=True)
+        models = [m for m in models if m.provider and m.provider.is_active and m.can_handle(model_type)]
         if not models:
             return None
-        models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))
-        return models[0]
+
+        def sort_key(model):
+            defaults = default_model_sort_key(model)
+            if strategy_value == "cost_efficient":
+                preference = (model.input_cost_per_1k or 0) + (model.output_cost_per_1k or 0)
+            elif strategy_value == "multimodal":
+                preference = -len(model.capabilities)
+            else:
+                preference = 0
+            return (*defaults[:2], preference, defaults[2])
+
+        return min(models, key=sort_key)

@@ -1,5 +1,22 @@
 # Обзор конкурентов и итоговая матрица заимствований
 
+## Implementation status (verified against master 1df34e7 and this change)
+
+This document is historical research. The status below supersedes assertions
+that the analysis pipeline still uses regex parsing or lacks LLM chat tools.
+
+| ID | Current implementation |
+|---|---|
+| CA-01 | Existing JSON decoding/Pydantic strengthened: invalid structured results are rejected; nested supported schema fields validated; common relevance fields retained. No new provider-native strict schema protocol. |
+| CA-02 | Existing sanitizer extended to default prompts and untrusted-data framing; task payload cannot override `{text}`. Heuristic defense, not complete injection prevention. |
+| CA-03 | Request audit snapshot added to `ai_analytics.response_payload.request`, available without DEBUG; methodology hash and per-stage rendered prompt hashes. Historical rows not backfilled. |
+| CA-04 | Analyzer now returns an LLMModel, not an LLMProvider; capability resolution uses active providers, fleet defaults and strategy-specific tie-breaks. Quality is fleet configuration, not inferred from price. |
+
+`llm_model_add/update/delete/test` and digest CLI `topic_chains` help were already
+implemented on master. Migration head is 0086, not 0085. CA-05 onward and MAX L1
+remain separate roadmap work; no embeddings, billing, probes or new infrastructure
+were added in this change.
+
 ## Оговорка по ссылкам
 
 Точные URL репозиториев лежат в вашем исследовательском документе `analysis_and_best_experiences.md` (там таблица аналогов без ссылок). Чтобы не фабриковать адреса, я цитирую **имена из вашего исследования**, а уверенные публичные URL даю только для общеизвестных проектов: Mem0 — github.com/mem0ai/mem0, Cognee — github.com/topoteretes/cognee, Langfuse — github.com/langfuse/langfuse, pgvector — github.com/pgvector/pgvector, Telethon — github.com/LonamiWebs/Telethon.

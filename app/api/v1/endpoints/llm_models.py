@@ -22,6 +22,7 @@ def _model_response(m: LLMModel) -> LLMModelResponse:
         description=m.description,
         provider_id=m.provider_id,
         model_type=m.model_type,
+        custom_endpoint_path=m.custom_endpoint_path,
         input_cost_per_1k=m.input_cost_per_1k,
         output_cost_per_1k=m.output_cost_per_1k,
         max_tokens=m.max_tokens,

@@ -135,13 +135,10 @@ the digest can enable `time_breakdown: true` for a per-day chronology.
 │ ReportAggregator + специализированные агрегации           │
 │ (app/services/ai/grouping.py + reporting.py):             │
 │  - get_toxicity_summary()      → сводка по токсичности     │
-│  - get_sources_summary()       → сводка по источникам      │
-│  - get_sentiment_summary()     → сводка по тональности     │
-│  - get_content_type_summary()  → сводка по типам контента  │
-│  - get_entities_summary()      → сводка по сущностям       │
-│  - get_intent_summary()        → сводка по намерениям      │
-│  - get_topic_chains_summary()  → сводка по цепочкам тем    │
-│  - get_days_summary()          → хронология по дням        │
+│  - toxicity, hashtags, brands, viral content                │
+│  - influencers, competitors, intent, demographics           │
+│  Specialized sections use DIGEST_SPECIALIZED/reporting.py.  │
+│  Sources/chains/chronology use group_analytics().            │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -310,7 +307,7 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 | `/llm-stats` | GET | Статистика LLM провайдеров |
 | `/content-mix` | GET | Распределение типов контента |
 | `/engagement` | GET | Метрики вовлеченности |
-| `/grouped` | GET | Универсальная группировка по любой оси (days, themes, sources, entities, sentiment, content_type, intent, topic_chains) |
+| `/grouped` | GET | Универсальная группировка по любой оси (themes, sources, entities, sentiment, content_type, intent, topic_chains; days is web-only) |
 
 **Общие параметры:**
 - `source_id` (optional): Фильтр по источнику
@@ -319,7 +316,7 @@ CREATE INDEX idx_ai_analytics_provider ON public.ai_analytics(provider_type);
 - `limit` (int): Макс. кол-во результатов (только для topics)
 
 **Параметры для `/grouped`:**
-- `group_by` (required): Ось группировки — `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`
+- `group_by` (optional, default `themes`): `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`. `days` is web-only and returns 400 in this API.
 - `time_breakdown` (bool, default `false`): Включить разбивку по датам внутри каждой группы
 - `entity_type` (optional, только для `entities`): Фильтр сущностей — `person`, `brand`
 
@@ -373,7 +370,7 @@ GET /api/v1/dashboard/analytics/aggregate/sentiment-trends?source_id=1&days=7
 analytics = AIAnalytics(
   request_tokens=500,
   response_tokens=150,
-  estimated_cost=0.65,  # cents (650 tokens / 1000 * $0.01/1K), NUMERIC(14,6)
+  estimated_cost=0.65,  # USD cents: 650 tokens / 1000 * $0.01/1K * 100; NUMERIC(14,6)
   provider_type="openai",
   media_types=["text"]
 )
@@ -513,7 +510,7 @@ docs/
 ```bash
 cd /Users/admin/Projects/social-media-ai
 alembic current
-# Должно показать: 0085 (head)
+# Expected repository/deployed head: 0086 (head)
 ```
 
 ### Проверка сервиса
@@ -563,3 +560,31 @@ curl -H "Authorization: Bearer $TOKEN" \
 **Следующие шаги:**
 1. Добавить admin widgets для визуализации
 2. Обновить документацию DIGEST.md и ARCHITECTURE.md под текущую схему
+
+## Structured output, data boundaries and request audit
+
+- All three analysis clients (OpenAI-compatible, Anthropic and custom) validate
+  configured outputs with Pydantic. Required fields, nested object/array item
+  types, enum values, nullability and scalar bounds from the supported schema
+  subset are checked. Schema-invalid outputs return an error and empty `parsed`
+  data; they are not saved as successful analyses or dedup successes. Token
+  usage remains attached to the response. Optional omitted fields remain omitted,
+  and additional fields survive unless `additionalProperties=false`.
+- Generated schemas include typed common fields (`topic_hint`, `is_meaningful`,
+  `confidence`, title and analysis summary) so validation does not erase the
+  relevance or chain signals. Legacy `summary` and analysis-type required fields
+  retain their contract. The unified summary has its own contract, not the
+  per-media scenario schema.
+- `{text}` is framed as untrusted third-party data on custom and default prompt
+  paths. Payload/scope cannot replace this system-owned variable. Known control
+  sequences are removed and boundary tags escaped. This is defense in depth,
+  not a promise that prompt injection is impossible.
+- Every saved row includes `response_payload.request` even with DEBUG disabled:
+  tenant/source/scenario IDs, detached methodology/configuration and scope,
+  allowlisted task parameters, trigger configuration, resolved stage models and
+  hashes. `request.prompt_hash` is SHA-256 over canonical methodology JSON,
+  independent of post text; `request.prompts[stage].prompt_hash` hashes each exact
+  rendered prompt (including unified summary when used). Arbitrary task keys
+  such as credentials are not copied. Historical rows are not backfilled.
+- Native provider-specific strict JSON Schema modes, automatic reanalysis and
+  the separate chat-learning `extract_json` helper are not changed here.

@@ -19,9 +19,11 @@ in a scenario yields a thinner prompt instead of a wrong one.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Type
+from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
+from pydantic import ValidationError, create_model
 
 # A field is (json_type, description). `json_type` is the type as it appears in
 # the rendered instruction and as it appears in `build_json_schema()`.
@@ -55,7 +57,7 @@ class JSONSchemaBuilder:
             "main_topics": ("array", "список из {max_topics} главных тем"),
             "entities": (
                 "array",
-                'список упомянутых сущностей в формате '
+                "список упомянутых сущностей в формате "
                 '[{"name": "имя", "type": "person|brand|org", "context": "контекст упоминания"}]',
             ),
         },
@@ -74,7 +76,7 @@ class JSONSchemaBuilder:
             "momentum": ("string", "одно из: {momentum_levels}"),
             "entities": (
                 "array",
-                'список связанных сущностей в формате '
+                "список связанных сущностей в формате "
                 '[{"name": "имя", "type": "person|brand|org", "context": "контекст"}]',
             ),
         },
@@ -304,7 +306,15 @@ class JSONSchemaBuilder:
 
         return {
             "type": "object",
-            "properties": {"summary": {"type": "string", "description": "Краткое резюме анализа"}, **properties},
+            "properties": {
+                "summary": {"type": "string", "description": "Краткое резюме анализа"},
+                "analysis_title": {"type": "string"},
+                "analysis_summary": {"type": "string"},
+                "topic_hint": {"type": "string"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "is_meaningful": {"type": "boolean"},
+                **properties,
+            },
             "required": ["summary", *properties],
         }
 
@@ -396,27 +406,63 @@ def build_pydantic_model(scenario: Any) -> Type[BaseModel]:
             getattr(scenario, "scope", None) or {},
         )
 
-    properties = raw_schema.get("properties") or {}
-    field_definitions: Dict[str, tuple[Any, Any]] = {}
-    for field_name, field_schema in properties.items():
-        json_type = field_schema.get("type", "string") if isinstance(field_schema, dict) else "string"
-        py_type = _TYPE_MAP.get(json_type, str)
-        default = ... if field_name in (raw_schema.get("required") or []) else None
-        field_definitions[field_name] = (py_type, default)
-
     model_name = f"ScenarioOutput_{getattr(scenario, 'id', 'dynamic')}"
-    return create_model(model_name, __base__=BaseModel, **field_definitions)
+    return _model_from_schema(raw_schema, model_name)
 
 
-def validate_with_pydantic(parsed: dict[str, Any], model_cls: Type[BaseModel]) -> dict[str, Any]:
+def _schema_type(field_schema: dict, model_name: str) -> Any:
+    """Translate the supported JSON Schema subset, including nested values."""
+    if "enum" in field_schema:
+        py_type = Literal[tuple(field_schema["enum"])]
+    else:
+        json_type = field_schema.get("type")
+        if isinstance(json_type, list):
+            return Union[tuple(_schema_type({**field_schema, "type": t}, model_name) for t in json_type)]
+        if json_type == "null":
+            return type(None)
+        if json_type == "object" and "properties" in field_schema:
+            py_type = _model_from_schema(field_schema, model_name)
+        elif json_type == "array":
+            py_type = list[_schema_type(field_schema.get("items") or {}, model_name + "Item")]
+        else:
+            py_type = _TYPE_MAP.get(json_type, Any)
+    constraint_names = {
+        "minimum": "ge",
+        "maximum": "le",
+        "exclusiveMinimum": "gt",
+        "exclusiveMaximum": "lt",
+        "minLength": "min_length",
+        "maxLength": "max_length",
+        "minItems": "min_length",
+        "maxItems": "max_length",
+        "pattern": "pattern",
+    }
+    constraints = {dest: field_schema[key] for key, dest in constraint_names.items() if key in field_schema}
+    return Annotated[py_type, PydanticField(**constraints)] if constraints else py_type
+
+
+def _model_from_schema(schema: dict, model_name: str) -> Type[BaseModel]:
+    fields = {}
+    required = schema.get("required") or []
+    for name, field_schema in (schema.get("properties") or {}).items():
+        fields[name] = (_schema_type(field_schema, model_name + "_" + name), ... if name in required else None)
+    extra = "forbid" if schema.get("additionalProperties") is False else "allow"
+    return create_model(model_name, __config__=ConfigDict(extra=extra, strict=True), **fields)
+
+
+def validate_with_pydantic(
+    parsed: dict[str, Any], model_cls: Type[BaseModel], *, strict: bool = False
+) -> dict[str, Any]:
     """Validate a parsed dict against a Pydantic model; return model_dump() on success.
 
-    Falls back to the original dict on ``ValidationError`` so a schema mismatch
-    never breaks the analysis pipeline.
+    Compatibility callers keep the raw dict on ``ValidationError``. Runtime
+    callers use ``strict=True`` to reject invalid output instead of persisting it.
     """
     try:
-        return model_cls.model_validate(parsed).model_dump()
-    except Exception as exc:
+        return model_cls.model_validate(parsed).model_dump(exclude_unset=True)
+    except ValidationError as exc:
+        if strict:
+            raise
         logger = __import__("logging").getLogger(__name__)
         logger.warning("Pydantic validation failed: %s — keeping raw parsed dict", exc)
         return parsed

@@ -3,11 +3,12 @@
 All write tools require confirmation. Delete shows staging preview with
 reassignment plan before committing.
 """
+
 import logging
 from typing import Any
 
 from app.agent.tools import tool
-from app.models import LLMModel, LLMProvider, AgentScenario
+from app.models import AgentScenario, LLMModel, LLMProvider
 from app.models.managers.llm_model_manager import LLMModelManager
 from app.services.ai.llm_client import LLMClientFactory
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────
 # Read tools
 # ──────────────────────────────────────────────────────────────
+
 
 @tool(
     name="llm_providers_list",
@@ -53,7 +55,11 @@ async def llm_providers_list(active_only: bool = True) -> list[dict[str, Any]]:
         "type": "object",
         "properties": {
             "provider_id": {"type": "integer", "description": "Filter by provider"},
-            "model_type": {"type": "string", "enum": ["text", "image", "embedding"], "description": "Filter by model type"},
+            "model_type": {
+                "type": "string",
+                "enum": ["text", "image", "embedding", "decision"],
+                "description": "Filter by model type",
+            },
             "active_only": {"type": "boolean", "default": True, "description": "Filter only active models"},
         },
     },
@@ -82,6 +88,7 @@ async def llm_models_list(
             "provider": m.provider.name if m.provider else None,
             "provider_id": m.provider_id,
             "model_type": m.model_type,
+            "custom_endpoint_path": m.custom_endpoint_path,
             "max_tokens": m.max_tokens,
             "input_cost_per_1k": m.input_cost_per_1k,
             "output_cost_per_1k": m.output_cost_per_1k,
@@ -141,6 +148,7 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
 # Write tools (confirm=True)
 # ──────────────────────────────────────────────────────────────
 
+
 @tool(
     name="llm_model_add",
     description="Create a new LLM model (requires confirmation)",
@@ -152,8 +160,9 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
             "provider_id": {"type": "integer", "description": "Provider ID"},
             "name": {"type": "string", "description": "Human name, e.g. GPT-4 Turbo"},
             "api_model_id": {"type": "string", "description": "API model identifier, e.g. gpt-4-turbo"},
-            "model_type": {"type": "string", "enum": ["text", "image", "embedding"], "default": "text"},
+            "model_type": {"type": "string", "enum": ["text", "image", "embedding", "decision"], "default": "text"},
             "description": {"type": "string"},
+            "custom_endpoint_path": {"type": "string", "description": "Endpoint path for custom-format providers"},
             "input_cost_per_1k": {"type": "number", "default": 0.0},
             "output_cost_per_1k": {"type": "number", "default": 0.0},
             "max_tokens": {"type": "integer", "default": 4096},
@@ -171,6 +180,7 @@ async def llm_model_add(
     api_model_id: str,
     model_type: str = "text",
     description: str | None = None,
+    custom_endpoint_path: str | None = None,
     input_cost_per_1k: float = 0.0,
     output_cost_per_1k: float = 0.0,
     max_tokens: int = 4096,
@@ -186,6 +196,7 @@ async def llm_model_add(
             model_id=api_model_id,
             model_type=model_type,
             description=description,
+            custom_endpoint_path=custom_endpoint_path,
             input_cost_per_1k=input_cost_per_1k,
             output_cost_per_1k=output_cost_per_1k,
             max_tokens=max_tokens,
@@ -221,8 +232,9 @@ async def llm_model_add(
             "model_id": {"type": "integer", "description": "Model ID to update"},
             "name": {"type": "string"},
             "api_model_id": {"type": "string"},
-            "model_type": {"type": "string", "enum": ["text", "image", "embedding"]},
+            "model_type": {"type": "string", "enum": ["text", "image", "embedding", "decision"]},
             "description": {"type": "string"},
+            "custom_endpoint_path": {"type": "string", "description": "Endpoint path for custom-format providers"},
             "input_cost_per_1k": {"type": "number"},
             "output_cost_per_1k": {"type": "number"},
             "max_tokens": {"type": "integer"},
@@ -240,6 +252,7 @@ async def llm_model_update(
     api_model_id: str | None = None,
     model_type: str | None = None,
     description: str | None = None,
+    custom_endpoint_path: str | None = None,
     input_cost_per_1k: float | None = None,
     output_cost_per_1k: float | None = None,
     max_tokens: int | None = None,
@@ -261,6 +274,8 @@ async def llm_model_update(
         updates["model_type"] = model_type
     if description is not None:
         updates["description"] = description
+    if custom_endpoint_path is not None:
+        updates["custom_endpoint_path"] = custom_endpoint_path
     if input_cost_per_1k is not None:
         updates["input_cost_per_1k"] = input_cost_per_1k
     if output_cost_per_1k is not None:
@@ -332,7 +347,7 @@ async def llm_model_delete(
 
     candidate = None
     if was_default:
-        candidate = await mgr._find_default_candidate(model_type)
+        candidate = await mgr._find_default_candidate(model_type, exclude_id=model_id)
 
     plan = {
         "deleted_model": {
@@ -352,7 +367,7 @@ async def llm_model_delete(
             if candidate
             else None
         ),
-        "warnings": [] if candidate else [f"no model left for type {model_type}"],
+        "warnings": [f"no model left for type {model_type}"] if was_default and not candidate else [],
     }
 
     if dry_run:

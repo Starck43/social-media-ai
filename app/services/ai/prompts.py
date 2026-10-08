@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from app.types import MediaType
 from app.services.ai.prompt_variables import PromptSubstitution
-from app.services.ai.prompt_sanitizer import sanitize_untrusted_text
+from app.services.ai.prompt_sanitizer import frame_untrusted_text, sanitize_untrusted_text
 
 if TYPE_CHECKING:
 	from app.models import AgentScenario
@@ -211,6 +211,9 @@ class PromptBuilder:
 		if trigger_config:
 			variables['trigger_config'] = trigger_config
 
+		# System-owned text must not be replaced by task payload or scope.
+		if media_value == "text":
+			variables["text"] = frame_untrusted_text(context.get("text"))
 		return variables
 
 	@staticmethod
@@ -466,6 +469,7 @@ class PromptBuilder:
 		Returns:
 			Complete prompt for text analysis
 		"""
+		text = frame_untrusted_text(text)
 		return f"""
 Проанализируй контент из социальной сети и предоставь комплексный анализ в JSON формате.
 

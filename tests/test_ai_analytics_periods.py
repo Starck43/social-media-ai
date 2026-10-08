@@ -151,5 +151,5 @@ async def test_analyze_content_forwards_force_reanalyze(monkeypatch, source):
 
     monkeypatch.setattr(AIAnalyzer, "base_analyze_content", fake_base)
 
-    await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="themes", force_reanalyze=True)
+    await AIAnalyzer().analyze_content([{"text": "x"}], source, force_reanalyze=True)
     assert seen.get("force_reanalyze") is True

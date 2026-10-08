@@ -1,19 +1,20 @@
+import hashlib
+import json
 import logging
 from datetime import UTC, date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
-from app.core.config import settings
 from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
-from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
+from app.core.config import settings
+from app.models import AgentScenario, AIAnalytics, LLMModel, Source
 from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
+from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
 from app.services.ai.llm_client import LLMClientFactory
-from app.services.ai.llm_provider_resolver import LLMProviderResolver
 from app.services.ai.prompts import PromptBuilder
 from app.services.ai.scenario import build_output_schema
-from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
 from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
 from app.types.enums.llm_types import MediaType
@@ -46,19 +47,17 @@ class AIAnalyzer:
         self,
         content: list[dict],
         source: Source,
-        analyze_by: str = None,
         force_reanalyze: bool = False,
         agent_scenario=None,
         trigger_config=None,
         task_payload: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
-        Analyze content based on analyze_by mode.
+        Analyze content as theme clusters; report grouping is a read-path concern.
 
         Args:
                 content: List of content items
                 source: Source being analyzed
-                analyze_by: Analysis mode (only "themes" is supported)
                 force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
                 agent_scenario: Already-resolved scenario (task's own). When given,
                         the tenant-default lookup is skipped, so a task's scenario
@@ -68,7 +67,6 @@ class AIAnalyzer:
         Returns:
                 List of AIAnalytics records (one per theme cluster per source per run)
         """
-        # Only "themes" mode is supported; other modes were dead code removed in 0083
         return await self._analyze_content_by_themes(
             content,
             source,
@@ -224,9 +222,7 @@ class AIAnalyzer:
 
             # Auto-generate topic_chain_id if not provided
             # Phase 1: use resolve_chain_async for proper lookup by topic_hint
-            main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get(
-                "main_topics"
-            ) or []
+            main_topics = (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("main_topics") or []
             # Extract topic_hint from LLM response (Phase 1: normalize + lookup existing)
             text_parsed = (analysis_results.get("text_analysis", {}) or {}).get("parsed") or {}
             topic_hint: str | None = text_parsed.get("topic_hint")
@@ -236,16 +232,12 @@ class AIAnalyzer:
             if not topic_chain_id:
                 if topic_hint:
                     # resolve_chain does normalization + lookup in ai_analytics by topic_hint
-                    topic_chain_id, chain_label = await resolve_chain_async(
-                        source.tenant_id, source.id, topic_hint
-                    )
+                    topic_chain_id, chain_label = await resolve_chain_async(source.tenant_id, source.id, topic_hint)
                     normalized_label = _normalize(topic_hint)
                     logger.info(f"Chain resolved: {topic_chain_id} for source {source.id} via hint={topic_hint!r}")
                 else:
                     # Fallback to source+scenario-based ID (no topic_hint in LLM response)
-                    topic_chain_id = await self._generate_topic_chain_id(
-                        source, main_topics, agent_scenario
-                    )
+                    topic_chain_id = await self._generate_topic_chain_id(source, main_topics, agent_scenario)
                     chain_label = self._resolve_chain_label(main_topics, analysis_results)
                     normalized_label = _normalize(chain_label) if chain_label else None
                     logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
@@ -268,6 +260,8 @@ class AIAnalyzer:
                 analysis_date=analysis_date,
                 content_hash=batch_hash(content),
                 content_hashes=[item_hash(i) for i in content],
+                task_payload=task_payload,
+                trigger_config=trigger_config,
             )
 
             return analysis
@@ -617,7 +611,13 @@ class AIAnalyzer:
                 try:
                     # Load model with provider relationship to avoid session issues
                     model = await LLMModel.objects.select_related("provider").get(id=model_id)
-                    if model.is_active and model.provider.is_active:
+                    if (
+                        model
+                        and model.is_active
+                        and model.provider
+                        and model.provider.is_active
+                        and model.can_handle(get_enum_value(media_type))
+                    ):
                         logger.info(f"✅ Select model {model.name} (provider: {model.provider.name}) for {media_type}")
                         return model
 
@@ -649,79 +649,10 @@ class AIAnalyzer:
         return None
 
     async def _auto_resolve_model(self, agent_scenario: AgentScenario, media_type: MediaType) -> Optional[LLMModel]:
-        """Auto-resolve provider using strategy-based approach."""
-
-        # Get all active providers and their models
-        all_providers = await LLMProvider.objects.filter(is_active=True)
-        all_models = await LLMModel.objects.select_related("provider").filter(is_active=True)
-        active_models = [m for m in all_models if m.provider.is_active]
-
-        # Group models by provider and find best model for each provider
-        provider_best_models = {}
-        for model in active_models:
-            provider_id = model.provider_id
-            if provider_id not in provider_best_models:
-                provider_best_models[provider_id] = model
-            else:
-                # Keep model with most capabilities (prioritize multimodal models)
-                current = provider_best_models[provider_id]
-                if len(model.capabilities) > len(current.capabilities):
-                    provider_best_models[provider_id] = model
-
-        # Build available providers dict for a resolver - simplified without rigid provider typing
-        available = {}
-        for provider in all_providers:
-            if provider.id not in provider_best_models:
-                continue
-
-            model = provider_best_models[provider.id]
-
-            # Use generic provider type based on capabilities instead of rigid URL parsing
-            provider_type = self._get_generic_provider_type(model.capabilities)
-
-            available[provider.id] = (provider_type, model.name, model.capabilities or [])
-
-        if not available:
-            logger.error("No active providers available for auto-resolve")
-            return None
-
-        # Resolve by strategy
-        resolved = LLMProviderResolver.resolve_for_content_types(
-            content_types=agent_scenario.content_types or [],
-            available_providers=available,
-            strategy=str(agent_scenario.llm_strategy),
+        """Resolve the requested media capability, preserving fleet defaults."""
+        return await LLMModel.objects.resolve_default_model(
+            get_enum_value(media_type), strategy=get_enum_value(agent_scenario.llm_strategy)
         )
-
-        # Get provider for this media type
-        media_type_str = media_type.value if hasattr(media_type, "value") else str(media_type)
-        if media_type_str in resolved:
-            provider_config = resolved[media_type_str]
-            provider_id = provider_config["provider_id"]
-            provider = await LLMProvider.objects.get(id=provider_id)
-            logger.info(
-                f"✅ Auto-resolved provider {provider.name} for {media_type} "
-                f"using strategy '{agent_scenario.llm_strategy}'"
-            )
-            return provider
-
-        return None
-
-    def _get_generic_provider_type(self, capabilities: list[str]) -> str:
-        """Get generic provider type based on capabilities instead of rigid URL parsing."""
-        if not capabilities:
-            return "text"  # Default fallback
-
-        # Determine primary capability for categorization
-        if "video" in capabilities:
-            return "multimodal"  # Video usually implies multimodal capabilities
-        elif "image" in capabilities and "text" in capabilities:
-            return "multimodal"
-        elif "image" in capabilities:
-            return "vision"
-        elif "text" in capabilities:
-            return "text"
-        else:
-            return "specialized"
 
     async def _get_platform_name(self, source: Source) -> str:
         """Get platform name safely."""
@@ -893,6 +824,68 @@ class AIAnalyzer:
             }
         return trace
 
+    def _build_request_snapshot(self, analysis_results, source, scenario, task_payload=None, trigger_config=None):
+        """Non-secret, detached configuration snapshot for reproducible analysis.
+
+        The top-level hash identifies methodology, not changing post text.
+        Per-stage hashes identify the exact rendered prompts without duplicating
+        raw third-party content into the audit metadata.
+        """
+        config = {
+            "base_prompt": getattr(scenario, "base_prompt", None),
+            "media_overrides": getattr(scenario, "media_overrides", None),
+            "summary_prompt": getattr(scenario, "summary_prompt", None),
+            "output_schema": getattr(scenario, "output_schema", None),
+            "scope": getattr(scenario, "scope", None) or {},
+            "analysis_types": getattr(scenario, "analysis_types", None) or [],
+            "content_types": getattr(scenario, "content_types", None) or [],
+            "llm_strategy": get_enum_value(getattr(scenario, "llm_strategy", None)),
+            "max_tokens": getattr(scenario, "max_tokens", None),
+        }
+        canonical = json.dumps(self._make_json_serializable(config), sort_keys=True, ensure_ascii=False)
+        payload_keys = {
+            "cli_dates",
+            "monitored_users",
+            "excluded_users",
+            "brands",
+            "competitors",
+            "hashtags",
+            "influencer_names",
+            "keywords_list",
+            "topic_list",
+            "force_refresh",
+            "force_reanalyze",
+            "analyze_inline",
+            "agent_task_id",
+            "job_id",
+            "agent_scenario_id",
+            "scenario_id",
+        }
+        prompts = {}
+        for stage, result in (analysis_results or {}).items():
+            if not isinstance(result, dict):
+                continue
+            request = result.get("request") or {}
+            prompt = request.get("prompt")
+            prompts[stage] = {
+                "model": request.get("model"),
+                "provider": request.get("provider"),
+                "prompt_hash": hashlib.sha256(prompt.encode("utf-8")).hexdigest() if isinstance(prompt, str) else None,
+            }
+        snapshot = {
+            "version": 1,
+            "prompt_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "tenant_id": source.tenant_id,
+            "source_id": source.id,
+            "scenario_id": getattr(scenario, "id", None),
+            "scope": config["scope"],
+            "configuration": config,
+            "task_payload": {k: v for k, v in (task_payload or {}).items() if k in payload_keys},
+            "trigger_config": trigger_config or {},
+            "prompts": prompts,
+        }
+        return json.loads(json.dumps(self._make_json_serializable(snapshot), ensure_ascii=False))
+
     async def _find_matching_topic_chain(
         self, source: Source, current_topics: list[str], lookback_days: int = 7
     ) -> Optional[str]:
@@ -966,7 +959,9 @@ class AIAnalyzer:
             if match_ratio >= 0.5:
                 logger.info(
                     "Found matching topic chain: %s (match ratio: %.2f, source: %s)",
-                    analysis.topic_chain_id, match_ratio, source.id,
+                    analysis.topic_chain_id,
+                    match_ratio,
+                    source.id,
                 )
                 return analysis.topic_chain_id
 
@@ -977,20 +972,25 @@ class AIAnalyzer:
 
         Returns the matching chain_id or None so the caller generates a new one.
         """
+        from sqlalchemy import select
+
         from app.core.database import async_session_maker
         from app.utils.translit import translit_slug
-        from sqlalchemy import select
 
         slug = translit_slug(top_topic)
         if not slug:
             return None
 
         async with async_session_maker() as s:
-            stmt = select(AIAnalytics.topic_chain_id).where(
-                AIAnalytics.source_id == source.id,
-                AIAnalytics.topic_chain_id.isnot(None),
-                AIAnalytics.topic_chain_id.like(f"%{slug}%"),
-            ).limit(1)
+            stmt = (
+                select(AIAnalytics.topic_chain_id)
+                .where(
+                    AIAnalytics.source_id == source.id,
+                    AIAnalytics.topic_chain_id.isnot(None),
+                    AIAnalytics.topic_chain_id.like(f"%{slug}%"),
+                )
+                .limit(1)
+            )
             result = await s.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -1031,13 +1031,12 @@ class AIAnalyzer:
         base = f"src_{source.id}_{scn}_{slug}" if scn else f"src_{source.id}_{slug}"
 
         # Collision guard: if the base slug is already taken, append a counter.
-        from app.core.database import async_session_maker
         from sqlalchemy import select
 
+        from app.core.database import async_session_maker
+
         async with async_session_maker() as s:
-            stmt = select(AIAnalytics.topic_chain_id).where(
-                AIAnalytics.topic_chain_id.like(f"{base}%")
-            )
+            stmt = select(AIAnalytics.topic_chain_id).where(AIAnalytics.topic_chain_id.like(f"{base}%"))
             result = await s.execute(stmt)
             existing = list(result.scalars().all())
 
@@ -1048,7 +1047,7 @@ class AIAnalyzer:
         for eid in existing:
             if eid == base:
                 continue
-            suffix = eid[len(base) + 1:] if eid.startswith(base + "-") else ""
+            suffix = eid[len(base) + 1 :] if eid.startswith(base + "-") else ""
             if suffix.isdigit():
                 counters.append(int(suffix))
 
@@ -1085,6 +1084,8 @@ class AIAnalyzer:
         analysis_date: Optional[date] = None,
         content_hash: Optional[str] = None,
         content_hashes: Optional[list[str]] = None,
+        task_payload: Optional[dict[str, Any]] = None,
+        trigger_config: Optional[dict[str, Any]] = None,
     ) -> Any | None:
         """Save comprehensive analysis results to database."""
         from datetime import date as date_class
@@ -1238,10 +1239,8 @@ class AIAnalyzer:
 
         if pydantic_model is not None:
             for result in (analysis_results or {}).values():
-                if isinstance(result, dict) and isinstance(result.get("parsed"), dict):
-                    result["parsed"] = validate_with_pydantic(result["parsed"], pydantic_model)
-            if isinstance(unified_summary, dict) and isinstance(unified_summary.get("parsed"), dict):
-                unified_summary["parsed"] = validate_with_pydantic(unified_summary["parsed"], pydantic_model)
+                if isinstance(result, dict) and isinstance(result.get("parsed"), dict) and result["parsed"]:
+                    result["parsed"] = validate_with_pydantic(result["parsed"], pydantic_model, strict=True)
 
         # Build comprehensive data structure
         comprehensive_data = {
@@ -1286,6 +1285,12 @@ class AIAnalyzer:
         # DEBUG is on; in production keep metadata (usage + parsed keys) only,
         # so raw content is never persisted (vision.md invariant).
         response_payload = self._build_trace_payload(analysis_results)
+        audit_results = dict(analysis_results)
+        if unified_summary:
+            audit_results["unified_summary"] = unified_summary
+        response_payload["request"] = self._build_request_snapshot(
+            audit_results, source, agent_scenario, task_payload, trigger_config
+        )
 
         # Primary provider (most used)
         primary_provider = list(providers_used)[0] if providers_used else None

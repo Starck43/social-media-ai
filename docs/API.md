@@ -132,8 +132,8 @@ the API, the console and the role editor cannot drift apart. See
 | `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
-| `GET/POST/PATCH/DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
-| `GET/POST/PATCH/DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `VIEW` / `UPDATE` / `DELETE` |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-providers` | `llmprovider` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
+| `GET list/detail, POST, PATCH, DELETE /llm/llm-models` | `llmmodel` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | Dashboard endpoints | `source` / `aianalytics` / `notification` | per-endpoint |
 
 ---
@@ -870,7 +870,7 @@ Authorization: Bearer <token>
 **Query params:**
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `group_by` | string | Yes | Grouping axis: `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
+| `group_by` | string | No | Default `themes`; `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains`. `days` is web-only and returns 400 here. |
 | `time_breakdown` | bool | No | Include per-date breakdown inside each group |
 | `entity_type` | string | No | Filter entities by type (`person`, `brand`); only for `group_by=entities` |
 | `source_id` | int | No | Filter by source |
@@ -961,6 +961,7 @@ Content-Type: application/json
   "model_id": "gpt-4-turbo",
   "model_type": "text",
   "description": "OpenAI GPT-4 Turbo",
+  "custom_endpoint_path": null,
   "input_cost_per_1k": 0.01,
   "output_cost_per_1k": 0.03,
   "max_tokens": 128000,
@@ -971,6 +972,10 @@ Content-Type: application/json
 ```
 
 **Permissions:** `llmmodel.create`
+
+`model_type` accepts `text`, `image`, `embedding`, `decision`.
+`custom_endpoint_path` is optional (migration 0086), used for `api_format=custom`.
+List/detail responses include the endpoint path and usage/health counters.
 
 ### List Models
 

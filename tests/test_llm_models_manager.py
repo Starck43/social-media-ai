@@ -1,9 +1,11 @@
 """Tests for LLMModelManager lifecycle methods."""
-import pytest
+
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.core.database import async_session_maker
-from app.models import LLMModel, LLMProvider, AgentScenario, AIAnalytics, Source
+from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
 from app.models.managers.llm_model_manager import LLMModelManager
 from app.types import SourceType
 
@@ -17,6 +19,7 @@ async def _cleanup():
     """Clean up test data."""
     async with async_session_maker() as s:
         from sqlalchemy import delete
+
         await s.execute(delete(AgentScenario).where(AgentScenario.name.like("test_%")))
         await s.execute(delete(AIAnalytics).where(AIAnalytics.llm_model.like("test_%")))
         await s.execute(delete(Source).where(Source.name.like("test_%")))
@@ -154,8 +157,12 @@ class TestLLMModelManager:
 
         # Create models with different last_success_at
         now = datetime.utcnow()
-        m_old = await _create_model(provider.id, "test_model_old", model_type="text", is_default=True, last_success_at=now - timedelta(days=10))
-        m_new = await _create_model(provider.id, "test_model_new", model_type="text", is_default=False, last_success_at=now - timedelta(days=1))
+        m_old = await _create_model(
+            provider.id, "test_model_old", model_type="text", is_default=True, last_success_at=now - timedelta(days=10)
+        )
+        m_new = await _create_model(
+            provider.id, "test_model_new", model_type="text", is_default=False, last_success_at=now - timedelta(days=1)
+        )
 
         mgr = LLMModelManager()
         result = await mgr.delete_with_default_reassignment(m_old.id)
@@ -278,3 +285,72 @@ class TestLLMModelManagerEdgeCases:
         mgr = LLMModelManager()
         with pytest.raises(ValueError, match="not found"):
             await mgr.delete_with_default_reassignment(999999)
+
+
+class TestReliabilityRegressions:
+    async def test_endpoint_path_round_trip(self):
+        from app.api.v1.endpoints.llm_models import _model_response
+
+        provider = await _create_provider()
+        m = await LLMModelManager().create_model(
+            provider_id=provider.id,
+            name="test_custom_model",
+            model_id="custom",
+            model_type="decision",
+            custom_endpoint_path="/predict",
+        )
+        assert m.custom_endpoint_path == "/predict"
+        assert _model_response(m).custom_endpoint_path == "/predict"
+
+    async def test_changing_default_model_type_clears_destination_default(self):
+        provider = await _create_provider()
+        old = await _create_model(provider.id, "test_old_default", model_type="embedding", is_default=True)
+        moved = await _create_model(provider.id, "test_moved_default", model_type="text", is_default=True)
+        manager = LLMModelManager()
+        await manager.update_model(moved.id, model_type="embedding")
+        assert (await manager.get(id=old.id)).is_default is False
+        assert (await manager.get(id=moved.id)).is_default is True
+
+    async def test_delete_preview_matches_execution(self):
+        from app.agent.toolset.llm import llm_model_delete
+
+        provider = await _create_provider()
+        deleted = await _create_model(
+            provider.id,
+            "test_deleted_default",
+            model_type="embedding",
+            is_default=True,
+            last_success_at=datetime.utcnow(),
+        )
+        candidate = await _create_model(provider.id, "test_remaining", model_type="embedding")
+        preview = await llm_model_delete(deleted.id)
+        assert preview["plan"]["new_default"]["id"] == candidate.id
+        assert await LLMModel.objects.get(id=deleted.id) is not None
+        result = await llm_model_delete(deleted.id, dry_run=False)
+        assert result["result"]["new_default_id"] == candidate.id
+
+    async def test_default_candidate_ignores_disabled_providers(self):
+        provider = await _create_provider()
+        inactive = await _create_provider("test_inactive_provider")
+        await LLMProvider.objects.update_by_id(inactive.id, is_active=False)
+        deleted = await _create_model(provider.id, "test_deleted", model_type="embedding", is_default=True)
+        await _create_model(
+            inactive.id, "test_disabled_candidate", model_type="embedding", last_success_at=datetime.utcnow()
+        )
+        remaining = await _create_model(provider.id, "test_good_candidate", model_type="embedding")
+        result = await LLMModelManager().delete_with_default_reassignment(deleted.id)
+        assert result["new_default_id"] == remaining.id
+
+    async def test_nondefault_delete_preview_has_no_spurious_warning(self):
+        from app.agent.toolset.llm import llm_model_delete
+
+        provider = await _create_provider()
+        m = await _create_model(provider.id, "test_nondefault", model_type="embedding")
+        preview = await llm_model_delete(m.id)
+        assert preview["plan"]["warnings"] == []
+
+    async def test_partial_update_does_not_unset_the_current_default(self):
+        provider = await _create_provider()
+        m = await _create_model(provider.id, "test_default_partial", model_type="text", is_default=True)
+        updated = await LLMModelManager().update_model(m.id, name="test_renamed_default")
+        assert updated.is_default is True

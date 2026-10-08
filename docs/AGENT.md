@@ -66,41 +66,6 @@ Write-инструменты (`confirm=True`) additionally требуют под
 Permission re-check at confirmation time ensures that if the user's role changed
 between tool call and confirmation, the action is still blocked.
 
-## Инструменты
-
-Все инструменты зарегистрированы в `TOOL_REGISTRY` в `app/agent/tools.py`
-(импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
-OpenAI function calling.
-
-### Permission gates
-
-Каждый инструмент имеет поле `required_permission` — точечный codename права
-в формате `model.action` (например, `"source.view"`, `"agenttask.create"`,
-`"digestrun.update"`). При вызове runtime проверяет права через
-`has_permission_by_codename(get_current_user(), required_permission)` в
-`permission_scope()`:
-
-- Если прав нет → инструмент возвращает ошибку «У вас нет прав...»
-- Если `required_permission` не задан → инструмент выполняется без проверки
-- `is_bypass()` (CLI/worker/admin) пропускает все проверки
-
-Write-инструменты (`confirm=True`) additionally требуют подтверждение владельца.
-
-### Confirmation flow
-
-1. Tool call с `confirm=True` → staging в `session.state['pending_confirmation']`
-2. Runtime возвращает human-readable preview: «Требуется подтверждение: добавить источник...»
-3. Владелец отвечает «да»/«нет»
-4. При «да»:
-   - Permission re-check: `has_permission_by_codename(get_current_user(), required_permission)`
-   - Execution: `call_tool(name, args)`
-   - Result overwrites the staged confirmation row
-   - Model loop resumes (agent continues plan)
-5. При «нет» → clear pending, return «Отменено.»
-
-Permission re-check at confirmation time ensures that if the user's role changed
-between tool call and confirmation, the action is still blocked.
-
 ### LLM модели и провайдеры
 
 Инструменты в `app/agent/toolset/llm.py` (permission prefix `llmmodel.*`,
@@ -259,3 +224,15 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 `tests/test_agent.py`: confirmation round-trip, отмена, plain answer, лимит
 стоимости, незнакомцы игнорируются, listener шлёт ответ в тот же чат, `/help`,
 проброс лимитов в `chat()`. Модель и HTTP не дёргаются — `_chat` стабится.
+
+## LLM lifecycle reliability
+
+`llm_model_add/update/delete/test` already exist in `toolset/llm.py` and are
+registered by `toolset/__init__.py`. Writes require confirmation and the matching
+`llmmodel.create/update/delete` right; the runtime rechecks permissions after
+confirmation. Connection testing is read-gated by `llmmodel.view`.
+
+Model tools support `decision` and `custom_endpoint_path` as well as the existing
+model types. Delete preview excludes the model being deleted and models on
+inactive providers. A non-default deletion does not claim that the fleet has
+lost its default. Actual deletion still runs through the shared model manager.

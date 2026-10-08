@@ -101,7 +101,7 @@ LLM provider configuration.
 | `id` | `Integer` PK | |
 | `name` | `String(100)` | Provider name (e.g., "OpenAI") |
 | `description` | `Text` | Description |
-| `api_format` | `String(20)` | `openai` or `anthropic` |
+| `api_format` | `String(20)` | `openai`, `anthropic`, or `custom` |
 | `base_url` | `String(255)` | API base URL |
 | `auth_header` | `String(50)` | Auth header (e.g., "Bearer") |
 | `encrypted_api_key` | `Text` | Fernet-encrypted API key |
@@ -124,8 +124,10 @@ LLM model definitions per provider.
 | `provider_id` | `Integer` FK → `llm_providers` | Owning provider |
 | `name` | `String(100)` | Human-readable name (e.g., "GPT-4o Mini") |
 | `model_id` | `String(100)` | API model string (e.g., "gpt-4o-mini") |
-| `model_type` | `Enum` | `text`, `image`, `embedding` |
-| `capabilities` | `JSON` | Supported media types (derived from `model_type`) |
+| `model_type` | `String(20)` | Capability string; API accepts `text`, `image`, `embedding`, `decision` |
+| `custom_endpoint_path` | `String(255)` | Optional path for custom-format providers (0086) |
+| `last_request_cost` | `Float` | Last reported request cost (USD) |
+| `last_request_cost_at` | `DateTime` | Timestamp of last reported cost |
 | `input_cost_per_1k` | `Float` | Cost per 1K input tokens (USD) |
 | `output_cost_per_1k` | `Float` | Cost per 1K output tokens (USD) |
 | `max_tokens` | `Integer` | Max output tokens |
@@ -142,9 +144,14 @@ LLM model definitions per provider.
 
 **`is_default` semantics:** exactly one active model per `model_type` may have `is_default=True`. Creating/updating a model with `is_default=True` clears the flag on all other models of the same `model_type`. This is enforced by `LLMModelManager.create_model`/`update_model`, by `LLMModelAdmin.after_model_change` and by the API/agent tools (thin callers of the manager).
 
-**Default resolution order** (used by `resolve_default_model`, digest builder, agent fallback chain):
-1. `is_default=True` + active
-2. First active model of the same `model_type` ordered by `provider.is_default` DESC, then `model.is_default` DESC, then `id` ASC
+**Default resolution order:** active models on active providers, ordered by
+`provider.is_default` DESC, then `model.is_default` DESC, then `id` ASC.
+`capabilities` is a computed Python property, not a database column.
+Scenario auto-resolution calls `resolve_default_model(capability, strategy)`.
+Explicit scenario model IDs win when active, supported and on active providers.
+Provider/model default ranks come first. Within equal ranks, `cost_efficient`
+minimizes the combined input/output per-1K tariff, `multimodal` prefers more
+capabilities, and `quality` keeps the stable fleet order (price is not quality).
 
 **Usage/health counters** (`last_used_at`, `last_success_at`, `last_error_at`, `use_count`, `fail_count`) are updated by `llm_client._record_llm_usage` on every LLM call (both `chat_with_fallback` and direct client calls). `NULL` = unknown history (backward compatible). `last_success_at` is backfilled from `ai_analytics.created_at` per model name for legacy signal in default reassignment.
 
@@ -313,8 +320,6 @@ Content sources (VK groups, Telegram channels, etc.).
 | `is_active` | `Boolean` | Active flag |
 | `last_checked` | `DateTime` | Last collection timestamp |
 | `last_item_id` | `String(100)` | Watermark for push-based sources (Telegram) |
-| `date_from` | `DateTime` | Collection start date |
-| `date_to` | `DateTime` | Collection end date |
 | `user_id` | `Integer` FK → `users` | Owner user (nullable) |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
@@ -372,15 +377,21 @@ AI analysis results.
 | `tenant_id` | `Integer` FK | |
 | `source_id` | `Integer` FK → `sources` | |
 | `period_type` | `Enum` | `day`, `week`, `month`, `custom` |
-| `analysis_date` | `DateTime` | Date of the analysis period |
+| `analysis_date` | `Date` | Date of the analysis period |
+| `content_hash` | `String(64)` | Batch hash for deduplication (0049) |
 | `summary_data` | `JSON` | AI analysis results (sentiment, topics, etc.) |
-| `response_payload` | `JSON` | Raw LLM response |
-| `topic_chain_id` | `String` | Linked topic chain |
+| `response_payload` | `JSON` | LLM trace (full responses only in DEBUG) and request audit snapshot |
+| `topic_chain_id` | `String(100)` | Linked topic chain |
+| `chain_label` | `String(255)` | Human-readable chain label (0081) |
+| `normalized_label` | `String(255)` | Normalized label for chain matching (0085) |
+| `parent_analysis_id` | `Integer` FK → `ai_analytics` | Previous entry in the chain |
+| `main_topics` | `JSON` | Extracted topics |
+| `prompt_text` | `Text` | Analysis prompt |
 | `llm_model` | `String(100)` | Model used for analysis |
 | `request_tokens` | `Integer` | Input tokens used |
 | `response_tokens` | `Integer` | Output tokens generated |
 | `estimated_cost` | `Numeric(14,6)` | Cost in USD cents — sub-cent precision (NUMERIC(14,6)) |
-| `provider_type` | `String(30)` | LLM provider: `openai`, `anthropic`, etc. |
+| `provider_type` | `String(100)` | LLM provider: `openai`, `anthropic`, etc. |
 | `media_types` | `JSON` | Types analyzed: `["text", "image"]` |
 | `created_at` | `DateTime` | Auto |
 | `updated_at` | `DateTime` | Auto |
@@ -658,4 +669,10 @@ Action ledger (audit trail for automated actions).
 | `0080` | Replace `tenant_users.role` string column with `tenant_users.role_id` FK → `roles.id` |
 | `0083` | Drop `analyze_type` from `agent_scenarios` (grouping is now query-time: `group_by` + `time_breakdown`) |
 
-Head migration: `0083` (verify with `alembic current`).
+| `0076` | Simplify scenario prompts to base/media overrides/summary/output schema |
+| `0081` | Add human-readable chain labels |
+| `0084` | Add LLM model usage/health counters |
+| `0085` | Add normalized chain labels |
+| `0086` | Add custom LLM model endpoint paths |
+
+Head migration: `0086` (verify repository head with `alembic heads`, deployed state with `alembic current`).

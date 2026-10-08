@@ -704,7 +704,7 @@ async def get_engagement_metrics_aggregate(
 async def get_grouped_analytics(
     source_id: Optional[int] = Query(None, description="Filter by source"),
     days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
-    group_by: str = Query("themes", description="Grouping axis: themes, sources, entities, sentiment, content_type, intent"),
+    group_by: str = Query("themes", description="Grouping axis: themes, sources, entities, sentiment, content_type, intent, topic_chains"),
     time_breakdown: bool = Query(False, description="Enable per-date entries within each group"),
     entity_type: Optional[str] = Query(None, description="Filter entities by type (person, brand, org)"),
     _user = Depends(require_model_perm("aianalytics", ActionType.VIEW)),
@@ -724,7 +724,7 @@ async def get_grouped_analytics(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, sentiment, content_type, intent"
+            detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, sentiment, content_type, intent, topic_chains"
         )
 
     # "days" is a web-only grouping for the Chronology view; reject it here

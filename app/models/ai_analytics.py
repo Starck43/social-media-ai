@@ -51,6 +51,11 @@ class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
         nullable=True,
         comment="Human-readable name of the topic chain (latest analysis_title or top topic)",
     )
+    normalized_label: Mapped[str | None] = Column(
+        String(255),
+        nullable=True,
+        comment="Normalized topic label for chain deduplication (lowercase, ё→е, stemmed)",
+    )
     parent_analysis_id: Mapped[int] = Column(
         ForeignKey(f"{settings.DB_SCHEMA}.ai_analytics.id", ondelete="SET NULL"), nullable=True
     )

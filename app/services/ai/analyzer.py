@@ -6,7 +6,7 @@ from typing import Any, Optional
 from app.core.config import settings
 from app.core.analysis_constants import DEFAULT_ANALYSIS_PARAMS
 from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source
-from app.services.ai.chain_resolver import resolve_chain_async
+from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
 from app.services.ai.llm_client import LLMClientFactory
@@ -291,6 +291,7 @@ class AIAnalyzer:
                     topic_chain_id, chain_label = await resolve_chain_async(
                         source.tenant_id, source.id, topic_hint
                     )
+                    normalized_label = _normalize(topic_hint)
                     logger.info(f"Chain resolved: {topic_chain_id} for source {source.id} via hint={topic_hint!r}")
                 else:
                     # Fallback to source+scenario-based ID (no topic_hint in LLM response)
@@ -298,9 +299,11 @@ class AIAnalyzer:
                         source, main_topics, agent_scenario, analyze_type=analyze_type
                     )
                     chain_label = self._resolve_chain_label(main_topics, analysis_results)
+                    normalized_label = _normalize(chain_label) if chain_label else None
                     logger.info(f"Using topic chain: {topic_chain_id} for source {source.id}")
             else:
                 chain_label = self._resolve_chain_label(main_topics, analysis_results)
+                normalized_label = _normalize(chain_label) if chain_label else None
 
             # Save comprehensive analysis
             analysis = await self._save_analysis(
@@ -312,6 +315,7 @@ class AIAnalyzer:
                 agent_scenario,
                 topic_chain_id,
                 chain_label,
+                normalized_label=normalized_label,
                 parent_analysis_id=parent_analysis_id,
                 analysis_date=analysis_date,
                 content_hash=batch_hash(content),
@@ -1180,7 +1184,8 @@ class AIAnalyzer:
             return None
 
         # Normalize current topics for comparison
-        current_topics_normalized = [t.lower().strip() for t in current_topics if t]
+        current_topics_normalized = [_normalize(t) for t in current_topics if t]
+        current_topics_normalized = [t for t in current_topics_normalized if t]
 
         # Check each recent analysis for matching topics
         for analysis in recent_analyses:
@@ -1204,16 +1209,23 @@ class AIAnalyzer:
                 continue
 
             # Normalize previous topics
-            prev_topics_normalized = [t.lower().strip() for t in prev_topics if t]
+            prev_topics_normalized = [_normalize(t) for t in prev_topics if t]
+            prev_topics_normalized = [t for t in prev_topics_normalized if t]
 
-            # Check for matches (at least 50% overlap)
-            matches = sum(1 for topic in current_topics_normalized if topic in prev_topics_normalized)
+            # Check for exact normalized matches or similarity
+            matches = 0
+            for topic in current_topics_normalized:
+                for prev in prev_topics_normalized:
+                    if topic == prev or _token_set_ratio(topic, prev) >= 0.85:
+                        matches += 1
+                        break
+
             match_ratio = matches / len(current_topics_normalized) if current_topics_normalized else 0
 
-            if match_ratio >= 0.5:  # 50% of current topics match previous topics
+            if match_ratio >= 0.5:
                 logger.info(
-                    f"Found matching topic chain: {analysis.topic_chain_id} "
-                    f"(match ratio: {match_ratio:.2f}, source: {source.id})"
+                    "Found matching topic chain: %s (match ratio: %.2f, source: %s)",
+                    analysis.topic_chain_id, match_ratio, source.id,
                 )
                 return analysis.topic_chain_id
 
@@ -1343,6 +1355,7 @@ class AIAnalyzer:
         agent_scenario: Optional["AgentScenario"] = None,
         topic_chain_id: Optional[str] = None,
         chain_label: Optional[str] = None,
+        normalized_label: Optional[str] = None,
         parent_analysis_id: Optional[int] = None,
         analysis_date: Optional[date] = None,
         content_hash: Optional[str] = None,
@@ -1578,6 +1591,7 @@ class AIAnalyzer:
                 response_payload=self._make_json_serializable(response_payload) if response_payload else None,
                 topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
                 chain_label=chain_label or existing_analysis.chain_label,
+                normalized_label=normalized_label or existing_analysis.normalized_label,
                 # Preserve existing chain_id or set new one
                 parent_analysis_id=parent_analysis_id,
                 request_tokens=total_request_tokens if total_request_tokens > 0 else None,
@@ -1606,6 +1620,7 @@ class AIAnalyzer:
             period_type=PeriodType.DAY,
             topic_chain_id=topic_chain_id,
             chain_label=chain_label,
+            normalized_label=normalized_label,
             parent_analysis_id=parent_analysis_id,
             # Cost tracking fields
             request_tokens=total_request_tokens if total_request_tokens > 0 else None,

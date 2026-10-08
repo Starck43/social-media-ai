@@ -1275,7 +1275,7 @@ class ReportAggregator:
             key = group["key"]
             count = group["count"]
             avg_sent = group.get("avg_sentiment")
-            sent_str = f" (sent: {avg_sent})" if avg_sent is not None else ""
+            sent_str = f" (Тональность: {avg_sent:.2f} / 1)" if avg_sent is not None else ""
 
             # No extras — the old DAYS and MONITORED_USERS axes are gone.
             # Grouping is now pure axis-based; posts/messages/users are
@@ -1292,7 +1292,7 @@ class ReportAggregator:
                     day = entry["date"]
                     day_count = entry["count"]
                     day_sent = entry.get("avg_sentiment")
-                    day_sent_str = f" (sent: {day_sent})" if day_sent is not None else ""
+                    day_sent_str = f" (Тональность: {day_sent:.2f} / 1)" if day_sent is not None else ""
                     lines.append(f"  - {day}: {day_count} упом.{day_sent_str}")
             else:
                 lines.append(f"{i}. **{key}** — {count} упом.{extra_str}{sent_str}")

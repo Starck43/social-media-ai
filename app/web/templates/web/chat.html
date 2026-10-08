@@ -198,7 +198,7 @@
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
             <h1 class="text-2xl font-semibold tracking-tight">Чат с агентом</h1>
-            <p class="mt-1 text-sm text-slate-400">
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if is_owner %}
                 Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
                 {% else %}
@@ -209,28 +209,28 @@
         {% if messages %}
         <button
             x-on:click="clearHistory()"
-            class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors">
+            class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
             Очистить историю
         </button>
         {% endif %}
     </div>
 
     <!-- Messages area -->
-    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/50 p-4 md:p-5"
+    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 md:p-5"
          x-ref="messages"
          @scroll="onScroll()">
         <!-- Empty state -->
         <div x-show="messages.length === 0"
              class="flex h-full min-h-48 flex-col items-center justify-center text-center">
             <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24"
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-700 dark:text-cyan-400" fill="none" viewBox="0 0 24 24"
                      stroke-width="1.5" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round"
                           d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
                 </svg>
             </div>
-            <p class="text-sm font-medium text-slate-300">Спросите агента о ваших данных</p>
-            <p class="mt-2 max-w-md text-sm text-slate-500">
+            <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Спросите агента о ваших данных</p>
+            <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
                 Он видит источники, задачи и аналитику этого workspace и умеет их менять (с подтверждением). Начать
                 можно с «/help».
             </p>
@@ -242,7 +242,7 @@
             <div x-show="message.role !== 'user'"
                  class="mr-2 mt-auto shrink-0">
                 <div
-                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-400">
+                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-700 dark:text-cyan-400">
                     AI
                 </div>
             </div>
@@ -251,7 +251,7 @@
                 <!-- Message bubble -->
                 <div
                     class="rounded-2xl px-3.5 py-2 text-sm"
-                    :class="message.role === 'user' ? 'bg-cyan-600/25 text-cyan-50 rounded-tr-none' : 'bg-slate-800/80 text-slate-200 rounded-tl-none'">
+                    :class="message.role === 'user' ? 'bg-cyan-600/25 text-cyan-50 rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-none'">
                     <div x-show="message.role !== 'user'"
                          class="agent-msg break-words msg-prose"
                          x-html="renderMarkdown(message.content || '')"></div>
@@ -264,11 +264,11 @@
                 <div class="mt-0.5 flex items-center justify-end gap-1.5 px-1">
                     <!-- User message: always show date+time, with delete button -->
                     <span x-show="message.role === 'user'"
-                          class="text-[10px] text-slate-600"
+                          class="text-[10px] text-slate-600 dark:text-slate-400"
                           x-text="message.created_at"></span>
                     <button x-show="message.role === 'user'"
                             x-on:click="deleteMessage(message.id)"
-                            class="text-slate-600 hover:text-rose-400 transition-colors"
+                            class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                             title="Удалить" aria-label="Удалить сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
                              stroke-width="1.5" stroke="currentColor">
@@ -279,7 +279,7 @@
                     <!-- Assistant message: show copy + delete buttons -->
                     <button x-show="message.role !== 'user'"
                             x-on:click="copyText(message.content || '')"
-                            class="text-slate-600 hover:text-slate-300 transition-colors"
+                            class="text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
                             title="Копировать"
                             aria-label="Копировать сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
@@ -289,7 +289,7 @@
                         </svg>
                     </button>
                     <button x-on:click="deleteMessage(message.id, 'Удалить сообщение агента?')"
-                            class="text-slate-600 hover:text-rose-400 transition-colors"
+                            class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                             title="Удалить" aria-label="Удалить сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
                              stroke-width="1.5" stroke="currentColor">
@@ -304,7 +304,7 @@
             <div x-show="message.role === 'user'"
                  class="ml-2 mt-auto shrink-0">
                 <div
-                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/30 text-xs font-bold text-cyan-300">
+                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/30 text-xs font-bold text-cyan-700 dark:text-cyan-300">
                     Вы
                 </div>
             </div>
@@ -325,7 +325,7 @@
          x-transition:leave-end="opacity-0 translate-y-2"
          class="mt-2 flex justify-end">
         <button @click="scrollToBottom()"
-                class="scroll-btn flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700 hover:text-slate-200 backdrop-blur">
+                class="scroll-btn flex items-center gap-1.5 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 backdrop-blur">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2"
                  stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25" />
@@ -342,7 +342,7 @@
         <textarea name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
                   x-ref="input"
                   @keydown.shift.enter="insertNewLine"
-                  class="min-h-[2.5rem] flex-1 resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none placeholder-slate-500 focus:border-cyan-500 transition-colors"></textarea>
+                  class="min-h-[2.5rem] flex-1 resize-y rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2.5 text-sm outline-none placeholder-slate-500 focus:border-cyan-500 transition-colors"></textarea>
         <button type="submit"
                 class="h-10 shrink-0 rounded-xl bg-cyan-500 px-5 text-sm font-medium text-slate-950 hover:bg-cyan-400 transition-colors flex items-center gap-1.5"
                 :disabled="pending">
@@ -354,9 +354,9 @@
             <span>Отправить</span>
         </button>
     </form>
-    <p class="mt-1.5 flex items-center justify-between text-xs text-slate-600">
+    <p class="mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
         <span>Enter — отправить · Shift+Enter — новая строка</span>
-        <span x-show="pending" class="flex items-center gap-1.5 text-cyan-400">
+        <span x-show="pending" class="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
             <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor"

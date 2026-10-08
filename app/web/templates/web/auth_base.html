@@ -4,13 +4,22 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}AI Monitor{% endblock %}</title>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' };</script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/ui.css') }}">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>[x-cloak]{display:none!important}</style>
 </head>
-<body x-data="themeManager()" :class="{ 'dark': isDark }" class="flex min-h-screen items-center justify-center p-6 antialiased">
-<div class="w-full max-w-md">
+<body class="ui-shell bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex min-h-screen items-center justify-center p-6 antialiased">
+<div class="w-full min-w-0 max-w-md">
+    <div class="mb-4 flex justify-end">
+        <select data-theme-select class="ui-control" aria-label="Тема оформления">
+            <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
+        </select>
+    </div>
     <a href="/app/" class="mb-6 flex items-center justify-center gap-2 text-xl font-semibold tracking-tight">
         <span class="h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
         AI Monitor
@@ -24,24 +33,15 @@
         </div>
     {% endif %}
 
-    <div class="rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-6 shadow-xl">
+    <div class="ui-card p-6">
         <h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{% block heading %}{% endblock %}</h1>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{% block lead %}{% endblock %}</p>
         {% block card %}{% endblock %}
     </div>
 
-    <p class="mt-6 text-center text-sm text-slate-600 dark:text-slate-500">{% block footnote %}{% endblock %}</p>
+    <p class="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">{% block footnote %}{% endblock %}</p>
 </div>
 
-<script>
-document.addEventListener('alpine:init', () => {
-    Alpine.data('themeManager', () => ({
-        isDark: localStorage.getItem('theme') === 'dark',
-        init() {
-            document.documentElement.classList.toggle('dark', this.isDark);
-        }
-    }));
-});
-</script>
+
 </body>
 </html>

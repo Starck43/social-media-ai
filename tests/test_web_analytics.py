@@ -415,12 +415,14 @@ async def test_cross_filters_entities_work_in_web_and_api(client):
         response = await client.get("/app/analytics?group_by=entities&entity_type=brand&sentiment=negative&media=image&days=7")
         assert response.status_code == 200
         assert "Negative entity" in response.text
-        assert 'name="sentiment"' in response.text and 'name="media"' in response.text
+        assert 'aria-label="Тональность"' in response.text
+        assert 'id="sentiment-filter"' not in response.text and 'id="media-filter"' not in response.text
         assert 'href="?group_by=sentiment' not in response.text
         assert 'href="?group_by=content_type' not in response.text
         # Filter state survives switching axis/entity type/period.
         from html import unescape
-        links = [unescape(href) for href in re.findall(r'href="([^"]*group_by=[^"]*)"', response.text)]
+        navs = re.findall(r'<nav class="ui-segments" aria-label="(?:Группировать по|Тип упоминаний|Шаг хронологии)">(.*?)</nav>', response.text, re.S)
+        links = [unescape(href) for href in re.findall(r'href="([^"]+)"', "".join(navs))]
         assert links
         from urllib.parse import parse_qs, urlparse
         for link in links:
@@ -993,7 +995,7 @@ async def test_detail_metric_states_original_and_highlights_are_explicit(client,
     assert 'data-metric="total_reactions" data-state="available"' in page.text
     assert 'data-metric="total_comments" data-state="unknown"' in page.text
     assert 'data-metric="total_views" data-state="unknown"' in page.text
-    assert "0.95/1" in page.text and "95%" not in page.text
+    assert "0.95 / 1" in page.text and "95%" not in page.text
     assert "В сохранённом анализе не выделены." in page.text
     assert "Открыть исходный материал" in page.text and "https://example.com/original" in _analytics_links(page.text)
     assert "Период публикаций:" in page.text and "15.03.2026" in page.text and "Платформа: VK" in page.text

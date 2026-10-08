@@ -80,7 +80,7 @@
         <input id="{{ idp }}-monitored_users" name="monitored_users"
                placeholder="username1, username2, @durov"
                class="{{ control() }}">
-        <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">Через запятую. Можно оставить пустым.</p>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую. Можно оставить пустым.</p>
     </div>
 {%- endmacro %}
 
@@ -102,7 +102,7 @@
         <select id="{{ idp }}-job_type" name="job_type" required
                 class="{{ control() }}"{% if model %} x-model="{{ model }}"{% endif %}>
             {% for value, label in job_types %}
-                <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label }}</option>
+                <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label|ui_label }}</option>
             {% endfor %}
         </select>
     </div>
@@ -124,12 +124,12 @@
                     <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
                     <input type="date" name="start_date" required x-model="{{ m }}.start_date"
                            class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
                 </div>
                 <div>
                     <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
                     <input type="date" name="end_date" x-model="{{ m }}.end_date" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-500">Необязательно.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
                 </div>
             </div>
             {# One flag per type: collect's force_refresh is the documented full
@@ -140,18 +140,18 @@
                 <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="force_refresh" :value="{{ m }}.force_refresh ? 'on' : ''">
                     <input type="checkbox" x-model="{{ m }}.force_refresh"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
                     Перетирать данные за этот период
-                    <span class="text-xs text-slate-600 dark:text-slate-500">заново получить записи за период и перепрогнать их анализ (иначе — только новые)</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-400">заново получить записи за период и перепрогнать их анализ (иначе — только новые)</span>
                 </label>
             </template>
             <template x-if="{{ model }} === 'analyze'">
                 <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="force_reanalyze" :value="{{ m }}.force_reanalyze ? 'on' : ''">
                     <input type="checkbox" x-model="{{ m }}.force_reanalyze"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
                     Принудительный повторный анализ
-                    <span class="text-xs text-slate-600 dark:text-slate-500">перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-400">перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши</span>
                 </label>
             </template>
         </div>
@@ -171,12 +171,12 @@
                 <select name="trigger_type" x-model="{{ m }}.trigger_type" class="{{ control() }}">
                     <option value="">не задан</option>
                     {% for value, label in trigger_types %}
-                        <option value="{{ value }}">{{ label }}</option>
+                        <option value="{{ value }}">{{ label|ui_label }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="flex items-end">
-                <p class="text-xs text-slate-600 dark:text-slate-500">Без триггера контент проходит без фильтрации.</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
             </div>
         </div>
 
@@ -240,7 +240,7 @@
             <select name="action_type" x-model="{{ m }}.action_type" class="{{ control() }}">
                 <option value="">не выполнять</option>
                 {% for value, label in action_types %}
-                    <option value="{{ value }}">{{ label }}</option>
+                    <option value="{{ value }}">{{ label|ui_label }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -269,7 +269,7 @@
         </div>
         <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input type="checkbox" name="requires_approval" :checked="{{ m }}.requires_approval"
-                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
+                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
             Требовать подтверждение перед выполнением
         </label>
     </div>
@@ -286,14 +286,14 @@
    rather than inviting a click that would do nothing. #}
 {% macro connection_badge(status, href="") -%}
     {% if not status %}
-        <span class="text-slate-500 dark:text-slate-500">—</span>
+        <span class="text-slate-500 dark:text-slate-400">—</span>
     {% else %}
         {% set tone_class = {
             "ok": "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
             "bad": "bg-rose-500/10 text-rose-700 dark:text-rose-300",
             "warn": "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-            "idle": "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-500",
-        }.get(status.tone, "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-500") %}
+            "idle": "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+        }.get(status.tone, "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400") %}
         {% if href %}
             <a href="{{ href }}" title="{{ status.detail }}"
                class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {{ tone_class }} hover:brightness-125">{{ status.label }}</a>
@@ -306,7 +306,7 @@
 
 
 {% macro card(extra="") -%}
-    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 {{ extra }}">
+    <div class="ui-card {{ extra }}">
         {{ caller() }}
     </div>
 {%- endmacro %}
@@ -342,10 +342,10 @@
                 <tr class="border-b border-slate-200 dark:border-slate-800 text-left">
                     <th class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Возможности</th>
                     {% for plan in plans %}
-                        <th class="px-4 py-3 {% if plan == current_plan %}text-cyan-600 dark:text-cyan-300{% else %}text-slate-500 dark:text-slate-400{% endif %}">
+                        <th class="px-4 py-3 {% if plan == current_plan %}text-cyan-700 dark:text-cyan-300{% else %}text-slate-500 dark:text-slate-400{% endif %}">
                             {{ plan_labels.get(plan, plan) }}
                             {% if plan == current_plan %}
-                                <span class="ml-1 text-xs font-normal text-slate-500 dark:text-slate-500">(ваш)</span>
+                                <span class="ml-1 text-xs font-normal text-slate-500 dark:text-slate-400">(ваш)</span>
                             {% endif %}
                         </th>
                     {% endfor %}
@@ -356,7 +356,7 @@
                     <tr class="border-b border-slate-200/50 dark:border-slate-800/50 last:border-0">
                         <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ row.label }}</td>
                         {% for plan in plans %}
-                            <td class="px-4 py-3 {% if plan == current_plan %}text-slate-900 dark:text-slate-100{% else %}text-slate-600 dark:text-slate-500{% endif %}">
+                            <td class="px-4 py-3 {% if plan == current_plan %}text-slate-900 dark:text-slate-100{% else %}text-slate-600 dark:text-slate-400{% endif %}">
                                 {% set value = row.get(plan) %}
                                 {% if value is boolean %}
                                     {% if value %}
@@ -365,11 +365,11 @@
                                         <span class="text-slate-400 dark:text-slate-600" title="не включено">—</span>
                                     {% endif %}
                                 {% elif value is none %}
-                                    <span class="text-slate-400 dark:text-slate-500">∞</span>
+                                    <span class="text-slate-400 dark:text-slate-400">∞</span>
                                 {% else %}
                                     {{ value }}
                                     {% if plan == current_plan and usage.get(row.key) %}
-                                        <span class="ml-1 text-xs text-slate-500 dark:text-slate-500">{{ usage[row.key] }}</span>
+                                        <span class="ml-1 text-xs text-slate-500 dark:text-slate-400">{{ usage[row.key] }}</span>
                                     {% endif %}
                                 {% endif %}
                             </td>
@@ -402,7 +402,7 @@
         <p class="max-w-md px-4 text-center">
             {{ title }}
             {% if cta_label %}
-                {% if hint %}{{ hint }} <a href="{{ cta_href }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% else %}<a href="{{ cta_href }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% endif %}
+                {% if hint %}{{ hint }} <a href="{{ cta_href }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% else %}<a href="{{ cta_href }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">{{ cta_label }}</a>{% endif %}
             {% elif hint %}
                 {{ hint }}
             {% endif %}
@@ -498,6 +498,55 @@
 {% macro page_title(title, subtitle="") -%}
     <div class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">{{ title }}</h1>
-        {% if subtitle %}<p class="mt-1 text-sm text-slate-400">{{ subtitle }}</p>{% endif %}
+        {% if subtitle %}<p class="mt-1 text-sm ui-muted">{{ subtitle }}</p>{% endif %}
+    </div>
+{%- endmacro %}
+
+
+{# Stroke SVGs match the existing 24px/1.5px outline icons used by web controls. #}
+{% macro icon(name, extra="") -%}
+    {% set paths = {
+        'calendar': 'M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z',
+        'topics': 'M4 4h7v7H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+        'source': 'M3 5h18v14H3zM3 8l9 6 9-6',
+        'mentions': 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-7.87a4 4 0 0 1 0 7.75',
+        'intent': 'M12 3a9 9 0 1 0 9 9m-4-7-5 7m0-4a4 4 0 1 0 4 4M17 3v4h4',
+        'chain': 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2m3 6a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2',
+        'filter': 'M3 5h18M6 12h12m-8 7h4',
+        'sun': 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-6v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5',
+        'moon': 'M21 12.8A9 9 0 0 1 11.2 3 9 9 0 1 0 21 12.8Z',
+        'monitor': 'M3 4h18v13H3zM8 21h8m-4-4v4',
+        'settings': 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
+        'arrow': 'M5 12h14m-5-5 5 5-5 5'
+    } %}
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="ui-icon {{ extra|e }}" aria-hidden="true" focusable="false"><path d="{{ paths.get(name, paths['topics']) }}" /></svg>
+{%- endmacro %}
+
+{% macro segment(href, label, active=False, count=None, icon_name=None) -%}
+    <a href="{{ href|e }}" class="ui-segment" {% if active %}aria-current="page"{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label|e }}</span>{% if count is not none %}<span class="ui-count">{{ count }}</span>{% endif %}</a>
+{%- endmacro %}
+
+{% macro sentiment_badge(score, average=False) -%}
+    {% if score is not none %}
+        {% set tone = 'positive' if score > 0.6 else 'negative' if score < 0.4 else 'neutral' %}
+        <span class="ui-badge ui-{{ tone }}" title="{{ 'Средняя тональность' if average else 'Тональность' }}: оценка по шкале от 0 до 1, не вероятность"><span class="ui-dot" aria-hidden="true"></span>{{ {'positive':'Позитивная', 'neutral':'Нейтральная', 'negative':'Негативная'}[tone] }}<span class="ui-score">{{ '%.2f'|format(score) }} / 1</span></span>
+    {% endif %}
+{%- endmacro %}
+
+{% macro sentiment_filters(request, current=None, return_to=None) -%}
+    {% set base = request.url.remove_query_params('return_to') %}
+    {% if return_to %}{% set base = base.include_query_params(return_to=return_to) %}{% endif %}
+    <div class="ui-filter-row" aria-label="Фильтры тональности">
+        <span class="ui-filter-label">{{ icon('filter') }} Тональность</span>
+        <nav class="ui-segments" aria-label="Тональность">
+            {% for value, label in [('', 'Любая'), ('positive', 'Позитивная'), ('neutral', 'Нейтральная'), ('negative', 'Негативная')] %}
+                {% set url = base.include_query_params(sentiment=value) if value else base.remove_query_params('sentiment') %}
+                {{ segment(url.path ~ ('?' ~ url.query if url.query else ''), label, (current or '') == value) }}
+            {% endfor %}
+        </nav>
+        {% if request.query_params.get('media') %}
+            {% set url = base.remove_query_params('media') %}
+            <a href="{{ (url.path ~ ('?' ~ url.query if url.query else ''))|e }}" class="ui-segment ui-muted">Сбросить фильтр медиа из ссылки</a>
+        {% endif %}
     </div>
 {%- endmacro %}

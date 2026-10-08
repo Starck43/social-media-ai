@@ -4,16 +4,16 @@
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">Задания</h1>
-        <p class="mt-1 text-sm text-slate-400">
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Очередь выполнения: что ждёт запуска, что упало и с какой ошибкой.
         </p>
     </div>
     <div class="flex items-center gap-2">
         {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
-                <label for="f-tenant" class="text-xs text-slate-500">Пространство</label>
+                <label for="f-tenant" class="text-xs text-slate-600 dark:text-slate-400">Пространство</label>
                 <select id="f-tenant" name="tenant_id" onchange="this.form.submit()"
-                        class="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs">
+                        class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs">
                     <option value="">Все</option>
                     {% for t in tenants %}
                         <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
@@ -33,7 +33,7 @@
                 {% if is_superuser and filter_tenant_id %}
                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                 {% endif %}
-                <button class="rounded-lg border border-rose-900/70 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/40">
+                <button class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                     Очистить всё
                 </button>
             </form>
@@ -43,34 +43,34 @@
 
 <!-- Queue health ──────────────────────────────────────────────────────── -->
 <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">В очереди</p>
-        <p class="mt-1 text-2xl font-semibold text-amber-300">{{ stats.pending }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">В очереди</p>
+        <p class="mt-1 text-2xl font-semibold text-amber-800 dark:text-amber-300">{{ stats.pending }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Выполняется</p>
-        <p class="mt-1 text-2xl font-semibold text-slate-300">{{ stats.running }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Выполняется</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-700 dark:text-slate-300">{{ stats.running }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Успешно</p>
-        <p class="mt-1 text-2xl font-semibold text-emerald-400">{{ stats.done }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Успешно</p>
+        <p class="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{{ stats.done }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Ошибок</p>
-        <p class="mt-1 text-2xl font-semibold {% if stats.failed %}text-rose-400{% else %}text-slate-600{% endif %}">{{ stats.failed }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Ошибок</p>
+        <p class="mt-1 text-2xl font-semibold {% if stats.failed %}text-rose-700 dark:text-rose-400{% else %}text-slate-600{% endif %}">{{ stats.failed }}</p>
     </div>
 </div>
 
 {% if stats.failed %}
-    <div class="mt-4 rounded-xl border border-rose-900/50 bg-rose-950/20 px-4 py-3 text-sm text-rose-300">
+    <div class="mt-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
         Есть задания, которые завершились с ошибкой. Откройте их — в поле «Ошибка» причина,
         а кнопка «Перезапустить» повторяет попытку.
     </div>
 {% endif %}
 <!-- Job list ──────────────────────────────────────────────────────────── -->
-<div class="mt-6 overflow-x-auto rounded-2xl border border-slate-800" x-data="{ open: false }">
+<div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800" x-data="{ open: false }">
     <table class="w-full text-sm">
-        <thead class="bg-slate-900/70 text-left text-xs uppercase tracking-wider text-slate-500">
+        <thead class="bg-white dark:bg-slate-900/70 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <tr>
                 <th class="px-4 py-3">Задание</th>
                 <th class="px-4 py-3">Тип</th>
@@ -81,56 +81,56 @@
                 <th class="px-4 py-3 text-right">Действия</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/70">
+        <tbody class="divide-y divide-slate-200 dark:divide-slate-800/70">
         {% for job in jobs %}
             <tr>
                 <td class="px-4 py-3">
-                    <div class="font-medium text-slate-200">#{{ job.id }}</div>
+                    <div class="font-medium text-slate-800 dark:text-slate-200">#{{ job.id }}</div>
                     {% if job.agent_task_id %}
                         {# Points at the task's own page, not the task list: this row
                            is the answer to "which task ran and what happened", so
                            the link has to land on that task. `from=jobs` lets the
                            card send the reader back where they came from. #}
                         <a href="/app/tasks/{{ job.agent_task_id }}?from=jobs"
-                           class="text-xs text-cyan-400 hover:text-cyan-300">
+                           class="text-xs text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
                             Задача #{{ job.agent_task_id }}
                         </a>
                     {% else %}
-                        <div class="text-xs text-slate-600">разовая</div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400">разовая</div>
                     {% endif %}
                     {% if sources_map.get(job.id) %}
                         <div class="mt-1 flex flex-wrap gap-1">
                             {% for s in sources_map[job.id] %}
                                 <a href="/app/sources/{{ s.source_id }}"
-                                   class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-cyan-300"
+                                   class="rounded bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-cyan-700 dark:hover:text-cyan-300"
                                    title="Источник этого запуска">{{ s.name }}</a>
                             {% endfor %}
                         </div>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-xs text-slate-400">{{ job.job_type }}</td>
+                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ job.job_type }}</td>
                 <td class="px-4 py-3">
                     {% if job.status == 'done' %}
-                        <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">готово</span>
+                        <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">готово</span>
                     {% elif job.status == 'failed' %}
-                        <span class="rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                        <span class="rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                     {% elif job.status == 'running' %}
                         <span class="rounded-full bg-sky-950 px-2 py-0.5 text-xs text-sky-300">выполняется</span>
                     {% else %}
-                        <span class="rounded-full bg-amber-950 px-2 py-0.5 text-xs text-amber-300">в очереди</span>
+                        <span class="rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">в очереди</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-xs text-slate-400">{{ job.attempts or 0 }}</td>
+                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ job.attempts or 0 }}</td>
                 {% if is_superuser %}
                     {# Job carries `tenant_id` but no `tenant` relationship, so the id
                        is what a superuser can filter on without an extra query. #}
-                    <td class="px-4 py-3 text-xs text-slate-400">#{{ job.tenant_id }}</td>
+                    <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">#{{ job.tenant_id }}</td>
                 {% endif %}
-                <td class="px-4 py-3 text-xs text-slate-500">{{ job.created_at|human_dt(tz=_tz) }}</td>
+                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ job.created_at|human_dt(tz=_tz) }}</td>
                 <td class="px-4 py-3">
                     <div class="flex items-center justify-end gap-2">
                         {% if job.error %}
-                            <button @click="open = !open" class="text-xs text-rose-300 hover:text-rose-200">
+                            <button @click="open = !open" class="text-xs text-rose-700 dark:text-rose-300 hover:text-rose-200">
                                 <span x-show="!open">Причина</span>
                                 <span x-show="open" x-cloak>Скрыть</span>
                             </button>
@@ -141,7 +141,7 @@
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                                 {% endif %}
-                                <button class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-900">
+                                <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                                     Перезапустить
                                 </button>
                             </form>
@@ -153,7 +153,7 @@
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                                 {% endif %}
-                                <button class="rounded-lg border border-amber-800/70 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-950/40">
+                                <button class="rounded-lg border border-amber-800/70 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40">
                                     Прервать
                                 </button>
                             </form>
@@ -170,7 +170,7 @@
                                 {% endif %}
                                 <button type="submit" title="Удалить задание" aria-label="Удалить задание #{{ job.id }}"
                                         @click="if (!confirm('Удалить задание #{{ job.id }}?')) $event.preventDefault()"
-                                        class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                        class="rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                          stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -185,13 +185,13 @@
             {% if job.error %}
                 <tr x-show="open" x-cloak>
                     <td colspan="{{ 7 if is_superuser else 6 }}" class="px-4 pb-4">
-                        <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-rose-950/40 px-3 py-2 text-xs text-rose-300">{{ job.error }}</pre>
+                        <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">{{ job.error }}</pre>
                     </td>
                 </tr>
             {% endif %}
         {% else %}
             <tr>
-                <td colspan="{{ 7 if is_superuser else 6 }}" class="px-4 py-10 text-center text-sm text-slate-500">
+                <td colspan="{{ 7 if is_superuser else 6 }}" class="px-4 py-10 text-center text-sm text-slate-600 dark:text-slate-400">
                     Заданий ещё не было. Они появятся здесь после первого запуска расписания.
                 </td>
             </tr>

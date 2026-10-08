@@ -1,4 +1,5 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import segment %}
 {# `with context` because `plan_badge` reads `plan_labels` from the page context
    (see `app/web/deps.py::render`) rather than taking it per call — the tier
    names are the same on every page. #}
@@ -7,7 +8,7 @@
 {% block content %}
 <div class="mx-auto max-w-4xl">
     <h1 class="text-2xl font-semibold tracking-tight">Настройки</h1>
-    <p class="mt-1 text-sm text-slate-400">Пространство, команда, личные ключи и каналы доставки.</p>
+    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Пространство, команда, личные ключи и каналы доставки.</p>
 
     {% set tab_labels = {
         'workspace': 'Пространство',
@@ -16,67 +17,62 @@
         'agent': 'Персональный агент',
         'channels': 'Каналы',
     } %}
-    <div class="mt-6 flex flex-wrap gap-2 border-b border-slate-800 pb-3">
-        {% for key, label in tab_labels.items() %}
-            <a href="/app/settings?tab={{ key }}"
-               class="rounded-lg px-3 py-1.5 text-sm {% if tab == key %}bg-slate-800 font-medium text-white{% else %}text-slate-400 hover:bg-slate-900{% endif %}">
-                {{ label }}
-            </a>
-        {% endfor %}
-    </div>
+    <nav class="mt-6 ui-segments" aria-label="Разделы настроек">
+        {% for key, label in tab_labels.items() %}{{ segment('/app/settings?tab=' ~ key, label, tab == key) }}{% endfor %}
+    </nav>
 
     {# ── workspace ───────────────────────────────────────────────────── #}
     {% if tab == 'workspace' %}
-        <form method="post" action="/app/settings/workspace" class="mt-6 max-w-lg space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <form method="post" action="/app/settings/workspace" class="mt-6 max-w-lg space-y-4 ui-card">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             {% if is_superuser and tenant %}<input type="hidden" name="tenant_id" value="{{ tenant.id }}">{% endif %}
             <div>
-                <label for="ws-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                <label for="ws-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
                 <input id="ws-name" name="name" value="{{ tenant.name if tenant else '' }}" required maxlength="100"
                        {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
             </div>
             <div>
-                <label for="ws-tz" class="mb-1 block text-sm text-slate-300">Часовой пояс</label>
+                <label for="ws-tz" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Часовой пояс</label>
                 <input id="ws-tz" name="timezone" value="{{ tenant.timezone if tenant else 'Europe/Moscow' }}" required
                        {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
-                <p class="mt-1 text-xs text-slate-500">Расписания задач считаются в этой зоне.</p>
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Расписания задач считаются в этой зоне.</p>
             </div>
             <div>
-                <label for="ws-cost" class="mb-1 block text-sm text-slate-300">Лимит LLM-расхода в сутки, $</label>
+                <label for="ws-cost" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Лимит LLM-расхода в сутки, $</label>
                 <input id="ws-cost" name="daily_cost_limit" value="{{ tenant.daily_cost_limit if tenant else '5.0' }}" required
                        {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
-                <p class="mt-1 text-xs text-slate-500">Достигнут — чат, дайджесты и обучение пропускают вызов модели.</p>
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Достигнут — чат, дайджесты и обучение пропускают вызов модели.</p>
             </div>
             {% if perms.can('tenant', 'update') %}
                 <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                     Сохранить
                 </button>
             {% else %}
-                <p class="text-sm text-slate-500">Изменять настройки воркспейса может владелец.</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Изменять настройки воркспейса может владелец.</p>
             {% endif %}
         </form>
 
         {% if tenant %}
             <dl class="mt-6 grid gap-4 sm:grid-cols-3">
-                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                    <dt class="text-xs uppercase tracking-wider text-slate-500">Идентификатор</dt>
-                    <dd class="mt-1 font-mono text-sm text-slate-300">{{ tenant.slug }}</dd>
+                <div class="ui-card">
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Идентификатор</dt>
+                    <dd class="mt-1 font-mono text-sm text-slate-700 dark:text-slate-300">{{ tenant.slug }}</dd>
                 </div>
-                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                    <dt class="text-xs uppercase tracking-wider text-slate-500">Лимит источников</dt>
+                <div class="ui-card">
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Лимит источников</dt>
                     <dd class="mt-1 text-3xl font-semibold">{{ tenant.max_sources }}</dd>
                 </div>
-                <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                    <dt class="text-xs uppercase tracking-wider text-slate-500">Тариф</dt>
+                <div class="ui-card">
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Тариф</dt>
                     <dd class="mt-2">{{ plan_badge(tenant.plan) }}</dd>
                 </div>
             </dl>
 
-            <h2 class="mt-8 text-sm font-medium text-slate-300">Что входит в тарифы</h2>
-            <p class="mt-1 text-xs text-slate-500">
+            <h2 class="mt-8 text-sm font-medium text-slate-700 dark:text-slate-300">Что входит в тарифы</h2>
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 Ваш тариф — {{ plan_labels.get(tenant.plan, tenant.plan) }}. Смена тарифа применяется сразу:
                 новые лимиты начинают действовать при следующем добавлении.
             </p>
@@ -84,18 +80,18 @@
                 {{ plan_comparison_table(plans, plan_rows, tenant.plan, plan_usage) }}
             </div>
         {% endif %}
-        <p class="mt-4 text-xs text-slate-600">
+        <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
             Модели и провайдеры LLM настраиваются оператором в консоли администратора — это общий для всех воркспейсов парк.
 </p>
 {# Only a platform superuser may move a workspace between tiers: it is a
            billing act, not a workspace preference. Everyone else sees the
            comparison read-only and asks the operator. #}
         {% if is_superuser and tenant %}
-            <form method="post" action="/app/settings/plan" class="mt-6 max-w-lg space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <form method="post" action="/app/settings/plan" class="mt-6 max-w-lg space-y-4 ui-card">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="tenant_id" value="{{ tenant.id }}">
                 <div>
-                    <label for="ws-plan" class="mb-1 block text-sm text-slate-300">Сменить тариф</label>
+                    <label for="ws-plan" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сменить тариф</label>
                     <select id="ws-plan" name="plan" class="{{ control() }}">
                         {% for key in plans %}
                             <option value="{{ key }}" {% if key == tenant.plan %}selected{% endif %}>
@@ -103,7 +99,7 @@
                             </option>
                         {% endfor %}
                     </select>
-                    <p class="mt-1 text-xs text-slate-500">
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                         Понижение не удаляет данные, но превышенные лимиты придётся сократить,
                         чтобы продолжить добавлять.
                     </p>
@@ -116,17 +112,17 @@
 
     {# ── agent ───────────────────────────────────────────────────────── #}
     {% elif tab == 'agent' %}
-        <form method="post" action="/app/settings/agent" class="mt-6 max-w-2xl space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <form method="post" action="/app/settings/agent" class="mt-6 max-w-2xl space-y-4 ui-card">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             {% if is_superuser and tenant %}<input type="hidden" name="tenant_id" value="{{ tenant.id }}">{% endif %}
             <h2 class="text-lg font-semibold">Настройки агента для чата</h2>
-            <p class="text-sm text-slate-400">Персональные параметры LLM-вызовов для этого воркспейса. Оставленные поля используют глобальные настройки из .env.</p>
+            <p class="text-sm text-slate-600 dark:text-slate-400">Персональные параметры LLM-вызовов для этого воркспейса. Оставленные поля используют глобальные настройки из .env.</p>
 
             <!-- Модель -->
             <div>
-                <label for="ag-model" class="mb-1 block text-sm text-slate-300">Модель LLM</label>
+                <label for="ag-model" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Модель LLM</label>
                 <select id="ag-model" name="agent_model" {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                        class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
+                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
                     <option value="">Автовыбор (первая активная)</option>
                     {% for opt in agent_model_options %}
                         <option value="{{ opt.id }}" {% if tenant and tenant.agent_model == opt.id %}selected{% endif %}>
@@ -134,39 +130,39 @@
                         </option>
                     {% endfor %}
                 </select>
-                <p class="mt-1 text-xs text-slate-500">Оставьте пустым для автовыбора первой активной модели. ★ — модель по умолчанию.</p>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Оставьте пустым для автовыбора первой активной модели. ★ — модель по умолчанию.</p>
             </div>
 
             <!-- Max tokens -->
             <div>
-                <label for="ag-max-tokens" class="mb-1 block text-sm text-slate-300">Макс. токенов в ответе</label>
+                <label for="ag-max-tokens" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Макс. токенов в ответе</label>
                 <input id="ag-max-tokens" name="agent_max_tokens" type="number" min="64" max="8192"
                        value="{{ tenant.agent_max_tokens if tenant else '' }}" 
                        placeholder="1024 (по умолчанию)"
                        {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
-                <p class="mt-1 text-xs text-slate-500">Глобальный: AGENT_MAX_TOKENS (1024). Увеличьте для длинных ответов.</p>
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Глобальный: AGENT_MAX_TOKENS (1024). Увеличьте для длинных ответов.</p>
             </div>
 
             <!-- Temperature -->
             <div>
-                <label for="ag-temp" class="mb-1 block text-sm text-slate-300">Температура</label>
+                <label for="ag-temp" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Температура</label>
                 <input id="ag-temp" name="agent_temperature" type="number" min="0" max="2" step="0.1"
                        value="{{ tenant.agent_temperature if tenant else '' }}" 
                        placeholder="0.3 (по умолчанию)"
                        {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                       class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
-                <p class="mt-1 text-xs text-slate-500">Глобальный: AGENT_TEMPERATURE (0.3). 0 = детерминировано, 1 = креативно.</p>
+                       class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Глобальный: AGENT_TEMPERATURE (0.3). 0 = детерминировано, 1 = креативно.</p>
             </div>
 
             <!-- System prompt override -->
             <div>
-                <label for="ag-prompt" class="mb-1 block text-sm text-slate-300">Дополнительный системный промпт</label>
+                <label for="ag-prompt" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Дополнительный системный промпт</label>
                 <textarea id="ag-prompt" name="agent_system_prompt" rows="6"
                           placeholder="Дополнительные инструкции для агента..."
                           {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">{{ tenant.agent_system_prompt or '' }}</textarea>
-                <p class="mt-1 text-xs text-slate-500">Добавляется после встроенного системного промпта. Оставьте пустым для использования стандартного промпта.</p>
+                          class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">{{ tenant.agent_system_prompt or '' }}</textarea>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Добавляется после встроенного системного промпта. Оставьте пустым для использования стандартного промпта.</p>
             </div>
 
             <div class="pt-2">
@@ -175,7 +171,7 @@
                         Сохранить настройки агента
                     </button>
                 {% else %}
-                    <p class="text-sm text-slate-500">Изменение настроек недоступно</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Изменение настроек недоступно</p>
                 {% endif %}
             </div>
         </form>
@@ -196,10 +192,10 @@
 
     {# ── team ────────────────────────────────────────────────────────── #}
     {% elif tab == 'team' %}
-        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
+        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                    <tr class="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
                         <th class="px-5 py-3">Участник</th>
                         <th class="px-5 py-3">Роль</th>
                         {% if perms.can('tenant', 'update') %}<th class="px-5 py-3 text-right">Действия</th>{% endif %}
@@ -207,25 +203,25 @@
                 </thead>
                 <tbody>
                     {% for m in memberships %}
-                        <tr class="border-b border-slate-800/50 last:border-0">
+                        <tr class="border-b border-slate-200 dark:border-slate-800/50 last:border-0">
                             <td class="px-5 py-3">
-                                <span class="text-slate-200">{{ member_names.get(m.user_id, '—') }}</span>
+                                <span class="text-slate-800 dark:text-slate-200">{{ member_names.get(m.user_id, '—') }}</span>
                                 {% if m.user_id == user.id %}
-                                    <span class="ml-2 text-xs text-slate-500">это вы</span>
+                                    <span class="ml-2 text-xs text-slate-600 dark:text-slate-400">это вы</span>
                                 {% endif %}
                             </td>
-                            <td class="px-5 py-3 text-slate-400">{{ role_labels.get(m.role, m.role) }}</td>
+                            <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m.role, m.role) }}</td>
                             {% if perms.can('tenant', 'update') %}
                                 <td class="px-5 py-3 text-right">
                                     <form method="post" action="/app/settings/members/{{ m.id }}/role"
                                           class="inline-flex items-center gap-2">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                        <select name="role" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
+                                        <select name="role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
                                             {% for value, label in role_labels.items() %}
                                                 <option value="{{ value }}" {% if value == m.role %}selected{% endif %}>{{ label }}</option>
                                             {% endfor %}
                                         </select>
-                                        <button class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-900">Сохранить</button>
+                                        <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
                                     </form>
                                 </td>
                             {% endif %}
@@ -234,27 +230,27 @@
                 </tbody>
             </table>
         </div>
-        <p class="mt-4 text-xs text-slate-600">
+        <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
             Личный ключ участника может использоваться источником этого воркспейса — поэтому состав команды определяет, чьими токенами идёт сбор.
         </p>
 
     {# ── connections ────────────────────────────────────────────────── #}
     {% elif tab == 'connections' %}
-        <p class="mt-6 text-sm text-slate-400">
+        <p class="mt-6 text-sm text-slate-600 dark:text-slate-400">
             Личный доступ нужен для сбора закрытых сообществ и истории. Один раз подключили —
             токен продлевается сам, повторно входить не придётся.
         </p>
 
         <div class="mt-4 space-y-4">
             {% for card in connections %}
-                <section class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5"
+                <section class="ui-card"
                          aria-labelledby="conn-{{ card.platform }}">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div class="min-w-0">
-                            <h2 id="conn-{{ card.platform }}" class="text-sm font-semibold text-slate-100">
+                            <h2 id="conn-{{ card.platform }}" class="text-sm font-semibold text-slate-900 dark:text-slate-100">
                                 {{ card.title }}
                             </h2>
-                            <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ card.purpose }}</p>
+                            <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ card.purpose }}</p>
                         </div>
                         {% if card.status %}
                             {{ connection_badge(card.status) }}
@@ -262,7 +258,7 @@
                     </div>
 
                     {% if card.status and card.status.detail %}
-                        <p class="mt-3 text-xs text-slate-400">{{ card.status.detail }}</p>
+                        <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ card.status.detail }}</p>
                     {% endif %}
 
                     <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -276,14 +272,14 @@
                             </a>
                         {% elif card.is_oauth and card.status and card.status.state in ('connected', 'renewable') %}
                             <a href="/app/connections/{{ card.platform }}/authorize"
-                               class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                               class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 Обновить доступ
                             </a>
                         {% endif %}
                         {% if card.status and card.status.state in ('connected', 'renewable') %}
                             <form method="post" action="/app/connections/{{ card.platform }}/disconnect" class="inline">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                <button class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                                <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                     Отключить
                                 </button>
                             </form>
@@ -296,33 +292,33 @@
                        does not know exists. #}
                     {% if card.manual_kinds %}
                         {% set manual_open = not card.is_oauth or not card.status.is_configured or not card.rows %}
-                        <details class="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4" {% if manual_open %}open{% endif %}>
-                            <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                        <details class="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-4" {% if manual_open %}open{% endif %}>
+                            <summary class="cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">
                                 Ввести ключ вручную
                             </summary>
                             {% if card.manual_hint %}
-                                <p class="mt-2 text-xs leading-relaxed text-slate-500">{{ card.manual_hint }}</p>
+                                <p class="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ card.manual_hint }}</p>
                             {% endif %}
                             {% for row in card.rows %}
-                                <div class="mt-3 flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2">
-                                    <span class="truncate text-xs text-slate-300">
+                                <div class="mt-3 flex items-center justify-between gap-3 rounded-lg bg-white dark:bg-slate-900 px-3 py-2">
+                                    <span class="truncate text-xs text-slate-700 dark:text-slate-300">
                                         {{ row.label or row.kind }}
-                                        <span class="ml-1 font-mono text-slate-600">{{ row.kind }}</span>
+                                        <span class="ml-1 font-mono text-slate-600 dark:text-slate-400">{{ row.kind }}</span>
                                     </span>
                                     {% if row.is_active %}
                                         <form method="post" action="/app/settings/credentials/{{ row.id }}/disable" class="inline">
                                             <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                            <button class="text-xs text-slate-500 hover:text-rose-300">Отключить</button>
+                                            <button class="text-xs text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-300">Отключить</button>
                                         </form>
                                     {% else %}
-                                        <span class="shrink-0 text-xs text-slate-600">отключён</span>
+                                        <span class="shrink-0 text-xs text-slate-600 dark:text-slate-400">отключён</span>
                                     {% endif %}
                                 </div>
                             {% endfor %}
                             <form method="post" action="/app/settings/credentials" class="mt-3 space-y-3">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if card.manual_kinds | length > 1 %}
-                                    <select name="kind" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                    <select name="kind" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                                         {% for kind, label in card.manual_kinds %}
                                             <option value="{{ card.platform }}::{{ kind }}">{{ label }}</option>
                                         {% endfor %}
@@ -331,12 +327,12 @@
                                     <input type="hidden" name="kind" value="{{ card.platform }}::{{ card.manual_kinds[0][0] }}">
                                 {% endif %}
                                 <textarea name="secret" required rows="2"
-                                          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                                          class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
                                           placeholder="Токен или содержимое файла сессии"></textarea>
-                                <button class="w-full rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                                <button class="w-full rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                     Сохранить ключ
                                 </button>
-                                <p class="text-xs text-slate-600">Хранится зашифрованным и больше не показывается.</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">Хранится зашифрованным и больше не показывается.</p>
                             </form>
                         </details>
                     {% endif %}
@@ -344,17 +340,17 @@
             {% endfor %}
         </div>
 
-        <p class="mt-4 text-xs text-slate-600">
+        <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
             Это только ваши подключения. Источник использует подключение участника, выбранного
             в его настройках, иначе — владельца воркспейса.
         </p>
 
     {# ── channels ────────────────────────────────────────────────────── #}
     {% else %}
-        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
+        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
+                    <tr class="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
                         <th class="px-5 py-3">Канал</th>
                         <th class="px-5 py-3">Активен</th>
                         <th class="px-5 py-3">Дайджесты</th>
@@ -363,43 +359,43 @@
                 </thead>
                 <tbody>
                     {% for ch in channels %}
-                        <tr class="border-b border-slate-800/50 last:border-0">
+                        <tr class="border-b border-slate-200 dark:border-slate-800/50 last:border-0">
                             <td class="px-5 py-3">
-                                <span class="text-slate-200">{{ ch.channel_type or ch.platform or ch.channel_id }}</span>
-                                {% if ch.title %}<span class="ml-2 text-xs text-slate-500">{{ ch.title }}</span>{% endif %}
+                                <span class="text-slate-800 dark:text-slate-200">{{ ch.channel_type or ch.platform or ch.channel_id }}</span>
+                                {% if ch.title %}<span class="ml-2 text-xs text-slate-600 dark:text-slate-400">{{ ch.title }}</span>{% endif %}
                             </td>
                             <td class="px-5 py-3">
                                 {% if ch.is_active %}
-                                    <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">да</span>
+                                    <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">да</span>
                                 {% else %}
-                                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">нет</span>
+                                    <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">нет</span>
                                 {% endif %}
                             </td>
                             <td class="px-5 py-3">
                                 {% if ch.is_digest_target %}
-                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">получает</span>
+                                    <span class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">получает</span>
                                 {% else %}
-                                    <span class="text-xs text-slate-500">нет</span>
+                                    <span class="text-xs text-slate-600 dark:text-slate-400">нет</span>
                                 {% endif %}
                             </td>
                             <td class="px-5 py-3 text-right">
                                 <form method="post" action="/app/settings/channels/{{ ch.id }}" class="inline-flex items-center gap-2">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                    <label class="inline-flex items-center gap-2 text-xs text-slate-400">
+                                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
                                         <input type="checkbox" name="is_digest_target" {% if ch.is_digest_target %}checked{% endif %}
                                                {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                                               class="h-4 w-4 rounded border-slate-600 bg-slate-950">
+                                               class="h-4 w-4 rounded border-slate-600 bg-white dark:bg-slate-950">
                                         получать дайджесты
                                     </label>
                                     {% if perms.can('tenant', 'update') %}
-                                        <button class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-900">Сохранить</button>
+                                        <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
                                     {% endif %}
                                 </form>
                             </td>
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="4" class="px-5 py-8 text-center text-slate-500">
+                            <td colspan="4" class="px-5 py-8 text-center text-slate-600 dark:text-slate-400">
                                 Каналы не привязаны. Их добавляет оператор — после привязки агент отвечает в личном чате, а дайджесты приходят сюда.
                             </td>
                         </tr>
@@ -407,7 +403,7 @@
                 </tbody>
             </table>
         </div>
-        <p class="mt-4 text-xs text-slate-600">
+        <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
             Токены ботов (`bot_token`) настраиваются оператором в консоли администратора — это конфигурация развёртывания, а не воркспейса.
         </p>
     {% endif %}

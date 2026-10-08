@@ -63,6 +63,8 @@ parameters passed through the digest task payload:
 | `sentiment`| `false`           | Distribution by sentiment score                                        |
 | `content_type` | `false`       | Distribution by media type (text, image, video)                        |
 | `intent`   | `false`           | Distribution by user intent                                            |
+| `topic_chains` | `false`       | Thematic chains across the period (top chains by entry count)          |
+| `topic_chains` | `true`         | Per-day chain activity dynamics                                        |
 
 The digest handler reads `task.payload.group_by` (default `"themes"`) and
 `task.payload.time_breakdown` (default `false`). The same `ai_analytics` rows

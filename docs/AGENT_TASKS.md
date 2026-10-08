@@ -16,16 +16,7 @@ is never blocked behind a long collection.
 - `agent_tasks` — one cron definition **and the reaction it produces**:
   `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON: flat keys like `period`, `monitored_users`, `excluded_users`,
-  **target parameters**: `brands`, `competitors`, `hashtags`, `influencer_names`,
-  `keywords_list`),
-  **digest grouping**: `group_by` (`themes` | `sources` | `entities` | `sentiment` | `content_type` | `intent`, default `themes`),
-  `time_breakdown` (boolean, default `false` — enables per-date entries within each group),
-  `agent_scenario_id` (FK → `agent_scenarios`, optional), `is_active`,
-  `next_run_at`, `last_run_at`, `last_status`, `last_error`, plus
-  `trigger_type` / `trigger_config` / `action_type` and the guards
-  (`rate_limit_per_hour`, `cooldown_seconds`, `requires_approval`,
-  `blacklist`, `whitelist`). See "The reaction" below for why they sit here.
+  `payload` (JSON): **write-path keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `force_refresh`, `force_reanalyze`, `analyze_inline`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, `topic_list`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `sentiment` | `content_type` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override).
 - `agent_task_sources` — many-to-many between tasks and `sources`. A task's
   sources are linked here (not in `payload`); an empty set means all active
   sources. The `sources` relationship is loaded via `task.sources` (a list).
@@ -135,7 +126,9 @@ Task sources are linked via the `agent_task_sources` m2m table
 `excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Specific
 analysis targets (`--brands`, `--competitors`, `--hashtags`, `--influencers`,
 `--keywords`, `--topics`) go into the task `payload`, not the shared scenario.
-Use `task update <name> [options]` to change any field on an existing task —
+Date window: `--start-date`/`--end-date` → `cli_dates.start_date`/`end_date`.
+Flags: `--force-refresh` → `force_refresh`, `--force-reanalyze` → `force_reanalyze`,
+`--analyze-inline` → `analyze_inline`. Use `task update <name> [options]` to change any field on an existing task —
 only the fields you pass are modified.
 
 Adding a job type means adding a function to the `HANDLERS` registry in

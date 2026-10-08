@@ -14,7 +14,7 @@
 | # | Задача | Статус сейчас |
 |---|--------|---------------|
 | 0.1 | Синхронизировать доки с кодом: DIGEST.md (analyze_type → payload.group_by/time_breakdown), MODELS.md (триггеры/guards на agent_tasks; tenant_users.role_id; head миграций), API.md (base_prompt/media_overrides/summary_prompt; /analytics/aggregate/grouped) | GAP в доках |
-| 0.2 | Верифицировать в коде: финальный состав GroupingAxis (DAYS/MONITORED_USERS удалены, CHAINS→TOPIC_CHAINS); дайджест читает payload.group_by | не подтверждено |
+| 0.2 | Верифицировать в коде: финальный состав GroupingAxis (DAYS остался как web-only; CHAINS→TOPIC_CHAINS); дайджест читает payload.group_by | DONE |
 | 0.3 | Верифицировать/доделать chain_resolver (заполнение topic_chain_id/chain_label по topic_hint) | PARTIAL/не видно |
 
 ## Phase 1 — Надёжность и безопасность (high impact, low risk)

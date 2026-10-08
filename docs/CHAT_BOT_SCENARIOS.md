@@ -36,8 +36,6 @@ See also:
 | `media_overrides` | JSON | Per-media-type overrides: `{"image": "...", "video": "..."}` (optional) |
 | `summary_prompt` | text | Final summary prompt (optional) |
 
-**Planned migration:** replace the current 5 separate prompt fields (`text_prompt`, `image_prompt`, `video_prompt`, `audio_prompt`, `unified_summary_prompt`) with `base_prompt + media_overrides + summary_prompt`.
-
 ### AgentTask (reaction)
 
 | Field | Type | Purpose |
@@ -256,7 +254,7 @@ Bot: Let's go step by step.
               track their new products and audience reaction"
 
   4️⃣ Grouping for reports: themes (default), sources, entities, sentiment,
-     content_type, or intent. Time breakdown per-date? (yes/no)
+     content_type, intent, or topic_chains. Time breakdown per-date? (yes/no)
 ```
 
 ### Pattern 3: Clone + Modify

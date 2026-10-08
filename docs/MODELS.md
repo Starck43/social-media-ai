@@ -358,7 +358,7 @@ Reusable analysis methodology (prompt, models, scope). Triggers and actions live
 
 **Relationships:** `agent_tasks` (one-to-many), `text_llm_model`, `image_llm_model`, `video_llm_model`
 
-> **Note:** `analyze_type` column was dropped by migration `0083`. Grouping is now a query-time parameter (`group_by` + `time_breakdown`) on `agent_tasks.payload`, not a scenario property.
+> **Note:** `analyze_type` column was dropped by migration `0083`. Grouping is now a query-time parameter (`group_by` + `time_breakdown`) on `agent_tasks.payload`, not a scenario property. The analysis-time grouping (how content is batched into `AIAnalytics` rows) is fixed to **themes** — one analysis row per theme cluster per source per run.
 
 ---
 
@@ -379,7 +379,7 @@ AI analysis results.
 | `llm_model` | `String(100)` | Model used for analysis |
 | `request_tokens` | `Integer` | Input tokens used |
 | `response_tokens` | `Integer` | Output tokens generated |
-| `estimated_cost` | `Numeric(14,6)` | Cost in USD cents — sub-cent precision (1e-8 USD) |
+| `estimated_cost` | `Numeric(14,6)` | Cost in USD cents — sub-cent precision (NUMERIC(14,6)) |
 | `provider_type` | `String(30)` | LLM provider: `openai`, `anthropic`, etc. |
 | `media_types` | `JSON` | Types analyzed: `["text", "image"]` |
 | `created_at` | `DateTime` | Auto |

@@ -8,17 +8,17 @@ two independent query-time parameters that shape how those rows are presented.
 
 | Dimension | What it answers | Values |
 |-----------|----------------|--------|
-| **Grouping axis** (`GroupingAxis`) | *By what attribute* do we group? | `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
+| **Grouping axis** (`GroupingAxis`) | *By what attribute* do we group? | `days`, `themes`, `sources`, `entities`, `sentiment`, `content_type`, `intent`, `topic_chains` |
 | **Time slice** | *How* do we show dynamics? | aggregate (default) or per-date breakdown (`time_breakdown: true`, digest/API only) |
 
 They are orthogonal: any axis can be shown as an aggregate over the period OR
 as a per-date chronology.
 
-> **Important:** `days` is not a grouping axis — it is the default time view
-> controlled by `time_breakdown`. The valid `GroupingAxis` values are the 7
-> axes below. The old `AgentScenario.analyze_type` was dropped by migration
-> `0083`; grouping is now a query-time parameter passed to `group_analytics()`
-> via `group_by` (and `time_breakdown` for per-date sub-entries).
+> **Important:** `GroupingAxis` has 8 members. Seven are digest grouping axes 
+> (themes, sources, entities, sentiment, content_type, intent, topic_chains). 
+> The eighth, days, is a web-only chronology view: the digest brief never groups by it — it uses time_breakdown: true instead. 
+> The old `AgentScenario.analyze_type` was dropped by migration `0083`; grouping is now a query-time parameter passed to 
+> `group_analytics()` via `group_by` (and `time_breakdown` for per-date sub-entries).
 >
 > **Web UI note:** the web analytics page exposes `days` as a dedicated
 > **"Хронология"** tab (chronology as its own view) and hides `topic_chains`
@@ -37,9 +37,32 @@ as a per-date chronology.
 | `intent` | Why the post was written | `summary_data->'intent_type'` | |
 | `topic_chains` | Cross-row theme chains | `topic_chain_id` | Hidden from web axis switcher; accessible via direct URL |
 
-> **Note:** `days` is a web-only view mode presented as the **"Хронология"** tab
-> in the analytics page. The digest and API use `time_breakdown: true` for
-> per-date chronology within any axis group.
+> **Notes:**
+> - `days` is a **web-only chronology view** (per-date timeline), not a digest grouping axis.
+>   Digest uses `time_breakdown: true` instead (see DIGEST.md).
+> - `topic_chains` is **hidden from the web axis switcher** to avoid duplication with the
+>   top "Тематические цепочки" card. Access via direct URL `?group_by=topic_chains` or the
+>   dedicated `/analytics/chains` page.
+
+### Chain resolver
+
+`app/services/ai/chain_resolver.py` normalizes `topic_hint` for chain matching:
+- Lowercase + ё→е + punctuation strip
+- Lightweight Russian stemming (no NLTK dependency)
+- Trim to 255 chars
+
+Similarity fallback: `token_set_ratio(normalized_hint, chain.normalized_label) >= 0.85` 
+via `difflib.SequenceMatcher`, limited to lookback window (30 days).
+
+CLI tools for chain management:
+
+```bash
+python -m cli.main chains merge --apply  # Deduplicate by normalized_label
+python -m cli.main chains groups --min-size 2  # Inspect duplicate groups
+```
+
+The `normalized_label` column (migration 0085) stores the normalized form for 
+fast similarity comparisons.
 
 ### Time breakdown
 
@@ -73,7 +96,7 @@ The old `AgentScenario.analyze_type` enum (`themes`, `days`, `sources`,
 | Old `analyze_type` | New parameters |
 |-------------------|----------------|
 | `themes` | `group_by=themes` |
-| `days` | Use the default aggregate view; enable `time_breakdown: true` for per-date chronology |
+| `days` | Web-only chronology view (`?group_by=days`), not a digest grouping axis |
 | `sources` | `group_by=sources` |
 | `monitored_users` | `group_by=entities, entity_type=person` |
 
@@ -95,7 +118,7 @@ the digest can enable `time_breakdown: true` for a per-day chronology.
 │  - summary_data (JSON): AI анализ контента                 │
 │  - response_payload (JSON): сырые ответы LLM               │
 │  - request_tokens, response_tokens: использование токенов  │
-│  - estimated_cost: расчетная стоимость (в центах, с точностью до 1e-6 ¢)│
+│  - estimated_cost: расчетная стоимость (USD cents, NUMERIC(14,6))│
 │  - provider_type: провайдер LLM (openai, deepseek)         │
 │  - media_types: типы медиа (text, image, video)            │
 └─────────────────────────────────────────────────────────────┘
@@ -103,12 +126,22 @@ the digest can enable `time_breakdown: true` for a per-day chronology.
 ┌─────────────────────────────────────────────────────────────┐
 │ LAYER 2: Aggregation Service                               │
 ├─────────────────────────────────────────────────────────────┤
-│ ReportAggregator (app/services/ai/reporting.py):           │
-│  - get_sentiment_trends()      → тренды тональности        │
-│  - get_top_topics()             → топ темы/ключевые слова  │
-│  - get_llm_provider_stats()     → статистика провайдеров   │
-│  - get_content_mix()            → распределение медиа      │
-│  - get_engagement_metrics()     → метрики вовлеченности    │
+│ group_analytics(group_by, time_breakdown, ...)            │
+│   → универсальная группировка по любой оси                 │
+│                                                             │
+│ generate_digest_brief()                                    │
+│   → краткая сводка для дайджеста                           │
+│                                                             │
+│ ReportAggregator + специализированные агрегации           │
+│ (app/services/ai/grouping.py + reporting.py):             │
+│  - get_toxicity_summary()      → сводка по токсичности     │
+│  - get_sources_summary()       → сводка по источникам      │
+│  - get_sentiment_summary()     → сводка по тональности     │
+│  - get_content_type_summary()  → сводка по типам контента  │
+│  - get_entities_summary()      → сводка по сущностям       │
+│  - get_intent_summary()        → сводка по намерениям      │
+│  - get_topic_chains_summary()  → сводка по цепочкам тем    │
+│  - get_days_summary()          → хронология по дням        │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -120,6 +153,10 @@ the digest can enable `time_breakdown: true` for a per-day chronology.
 │  - GET /analytics/aggregate/llm-stats                      │
 │  - GET /analytics/aggregate/content-mix                    │
 │  - GET /analytics/aggregate/engagement                     │
+│  - GET /analytics/aggregate/grouped                        │
+│  - GET /analytics/topic-chains                             │
+│  - GET /analytics/topic-chains/{chain_id}                  │
+│  - GET /analytics/topic-chains/{chain_id}/evolution        │
 │                                                             │
 │ Admin Widgets (TODO):                                      │
 │  - Sentiment trends cards на AgentScenario/Source pages   │
@@ -435,58 +472,15 @@ class SourceAdmin(BaseAdmin):
     # - Recent topics list
 ```
 
-### 2. Кэширование (опционально)
+### Out of scope by design (one-VPS philosophy)
 
-Для больших датасетов можно добавить Redis кэш:
+Per `docs/design/competitive_analysis.md` reject list:
+- Redis cache
+- Materialized views
+- WebSocket / real-time dashboard
+- PDF/Excel export
 
-```python
-# В reporting.py
-from app.utils.cache import cache_result
-
-@cache_result(ttl=3600)  # 1 hour cache
-async def get_sentiment_trends(...):
-    # Heavy aggregation logic
-    ...
-```
-
-### 3. Материализованные view (для scale)
-
-Если количество analytics > 100k, можно создать materialized views:
-
-```sql
-CREATE MATERIALIZED VIEW analytics_daily_summary AS
-SELECT 
-    source_id,
-    analysis_date,
-    COUNT(*) as total_analyses,
-    AVG((summary_data->'sentiment_score')::float) as avg_sentiment,
-    SUM(request_tokens) as total_request_tokens,
-    SUM(response_tokens) as total_response_tokens,
-    SUM(estimated_cost) as total_cost
-FROM public.ai_analytics
-GROUP BY source_id, analysis_date;
-
--- Refresh периодически
-REFRESH MATERIALIZED VIEW analytics_daily_summary;
-```
-
-### 4. Экспорт отчетов
-
-Добавить endpoints для экспорта:
-- CSV export
-- PDF reports
-- Excel workbooks
-
-### 5. Real-time updates
-
-Добавить WebSocket для live dashboard:
-```python
-# app/api/v1/endpoints/websockets.py
-@router.websocket("/ws/analytics")
-async def analytics_websocket(websocket: WebSocket):
-    # Stream updates to dashboard
-    ...
-```
+These are explicitly rejected for single-VPS deployments at our scale.
 
 ## Структура файлов
 
@@ -501,7 +495,7 @@ app/
 ├── api/
 │   └── v1/
 │       └── endpoints/
-│           └── dashboard.py          # Обновлен: +5 endpoints
+│           └── dashboard.py          # Обновлен: +7 endpoints (incl. /grouped, /topic-chains*)
 └── admin/
     └── views.py                      # TODO: widgets
 
@@ -519,7 +513,7 @@ docs/
 ```bash
 cd /Users/admin/Projects/social-media-ai
 alembic current
-# Должно показать: 0031 (head)
+# Должно показать: 0085 (head)
 ```
 
 ### Проверка сервиса
@@ -568,6 +562,4 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 **Следующие шаги:**
 1. Добавить admin widgets для визуализации
-2. Создать scheduled task для pre-aggregation (опционально)
-3. Добавить export функции (CSV/PDF)
-4. Внедрить кэширование для performance
+2. Обновить документацию DIGEST.md и ARCHITECTURE.md под текущую схему

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import text as sa_text
+from sqlalchemy import JSON, bindparam, text as sa_text
 
 from app.core.config import settings
 
@@ -57,13 +57,12 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         json_columns = {"metrics", "author"}
         # CAST, not a trailing "::jsonb": next to a bind parameter that cast
         # syntax is parsed as part of the parameter's name and never bound.
-        placeholders = ", ".join(
-            f"CAST(:{c} AS jsonb)" if c in json_columns else f":{c}" for c in columns
-        )
+        placeholders = ", ".join(f"CAST(:{c} AS jsonb)" if c in json_columns else f":{c}" for c in columns)
         stmt = sa_text(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
             "ON CONFLICT (source_id, external_id) DO NOTHING"
         )
+        stmt = stmt.bindparams(*(bindparam(column, type_=JSON(none_as_null=True)) for column in json_columns))
         # Same tenant stamping the ORM path does: refuses to write rather than
         # guessing a workspace for rows collected outside a tenant context.
         params = [await self._apply_tenant(session, dict(row)) for row in rows]
@@ -80,9 +79,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             # Nothing ties these rows to a run, so there is no handle to count by.
             return len(params)
         stored = await session.execute(
-            sa_text(
-                f"SELECT count(*) FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id"
-            ),
+            sa_text(f"SELECT count(*) FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id"),
             {"run_id": probe},
         )
         return int(stored.scalar() or 0)

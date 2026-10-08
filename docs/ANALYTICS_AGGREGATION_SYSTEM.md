@@ -698,3 +698,58 @@ to workspace tier restrictions and active provider/model checks. Digest narrativ
 uses `strategy="quality"` (configured defaults, never price as a quality proxy).
 Existing caps and confirmation gates still apply. The system prompt requires
 aggregate-first context; this change does not retroactively erase old sessions.
+
+## Individual analysis detail
+
+`/app/analytics/{id}` represents one saved analysis, not a complete source report.
+It checks aianalytics.view and explicitly scopes the record and chain to the
+accessible workspace. Group/chronology/dashboard/source/timeline entry links
+preserve their complete read-only local origin via return_to. The primary back
+control is contextual (list, analysis, chain, source or home). Direct historic
+permalinks without days use an all-time source-list fallback, rather than losing
+their chain to a default current-month window.
+
+Themes link to the flat group view, including unchained analyses. The optional
+chain link/embedded chronology appears only for >=2 records in the timeline
+scope and returns to the originating analysis. Other timeline entries preserve
+navigation context. Safe return destinations include numeric analysis/source
+pages and URL-safe chain IDs; external/mutation/encoded unsafe paths are rejected.
+
+The detail context shows the source, platform, record date, saved publication
+window, material count and saved analysis timestamp. Saved HTTP(S) originals
+are optional links, not guessed from an analysis ID. New analyses retain up to
+50 unique original URLs handed over by collection; staging/replay preserves
+permalink, author IDs and metric metadata before staged rows are retired.
+
+### Metric availability and meaning
+
+The display renderer uses None/— for missing, invalid, partial or unverified
+values. Numeric 0 is displayed when the saved metric coverage confirms every
+material's value was available. metric_coverage records known/total material
+counts for new analyses. Normalizers flag unavailable API placeholders instead
+of treating them as measured zeros. Staging JSON fields use typed JSON binds
+and preserve these flags during deferred replay.
+
+Legacy records without coverage retain displayed nonzero saved values with a
+completeness disclaimer; historical zero placeholders are conservatively hidden.
+They are not backfilled or silently rewritten. Summed daily author counts in a
+period_rollup are not shown as distinct authors across the whole period.
+Author/account counts describe available material-author identifiers, not readers.
+
+Sentiment is a finite score in [0,1], labeled using the shared 0.4/0.6 boundaries.
+The UI shows the score out of 1, not an audience percentage or model-confidence
+claim. Parsed, flat and current nested stored payloads have compatible extraction.
+
+The detail separates reactions/material, comments/material, views/material and
+total views. Averages require a known total and positive material denominator.
+No misleading percentage ER or sum of views plus interactions is shown. The
+legacy engagement_rate stored formula is retained for compatibility elsewhere.
+VK's existing combined reactions include comments/reposts; the page discloses
+this and does not add comments a second time.
+
+Empty highlights (a saved list) mean no highlighted moments in the saved result;
+an absent field means not calculated or not saved. An absent summary is not proof
+that analysis never ran. Titles, summaries and URL-bearing labels are escaped;
+invalid sentiment scores and non-HTTP(S)/credential-bearing original URLs are
+not rendered as trusted values or links. The shared admin metric renderer also
+shows unknown values as — rather than converting them back to zero.

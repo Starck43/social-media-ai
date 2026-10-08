@@ -213,8 +213,8 @@ async def test_analytics_detail_shows_single_analysis(client: AsyncClient) -> No
         assert "Тема A" in resp.text
         assert "Тема B" in resp.text
         assert "позитивное" in resp.text
-        # The chain link is present (the analysis belongs to one).
-        assert "/app/analytics/chains" in resp.text
+        # A stored singleton ID must not advertise a continuation.
+        assert "Цепочка ·" not in resp.text
     finally:
         await _drop(user, tenant_id, source_id)
 
@@ -926,3 +926,124 @@ async def test_invalid_return_falls_back_without_external_links(client, drill_re
     assert chain.status_code == 200
     assert "← Все цепочки" in chain.text
     assert all("evil.example" not in link for link in _analytics_links(chain.text))
+
+
+async def test_individual_detail_returns_to_group_topics_and_chain_round_trip(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    main = "/app/analytics?days=all&group_by_period=month&group_by=sources"
+    page = await client.get(main)
+    group_url = next(
+        url
+        for url in _analytics_links(page.text)
+        if urlparse(url).path == "/app/analytics/group"
+        and parse_qs(urlparse(url).query)["value"] == [str(data["sources"][0])]
+    )
+    group = await client.get(group_url)
+    detail_url = next(
+        url for url in _analytics_links(group.text) if urlparse(url).path == f"/app/analytics/{data['ids'][1]}"
+    )
+    detail = await client.get(detail_url)
+    assert detail.status_code == 200
+    assert "← К списку анализов" in detail.text and group_url in _analytics_links(detail.text)
+    assert "95%" not in detail.text and "не вероятность" in detail.text
+    chain_url = next(
+        url for url in _analytics_links(detail.text) if urlparse(url).path == "/app/analytics/chains/drill-celebration"
+    )
+    assert "Цепочка · 2 анализ(ов)" in detail.text
+    chain = await client.get(chain_url)
+    assert "← К анализу" in chain.text and detail_url in _analytics_links(chain.text)
+    topic_url = next(
+        url
+        for url in _analytics_links(detail.text)
+        if urlparse(url).path == "/app/analytics/group" and parse_qs(urlparse(url).query).get("axis") == ["themes"]
+    )
+    topic = await client.get(topic_url)
+    assert topic.status_code == 200 and "← К анализу" in topic.text
+    assert detail_url in _analytics_links(topic.text)
+    again = await client.get(detail_url)
+    assert group_url in _analytics_links(again.text)
+
+
+async def test_detail_metric_states_original_and_highlights_are_explicit(client, drill_records):
+    data = drill_records
+    payload = {
+        "analysis_title": "Honest metrics",
+        "analysis_summary": "Saved summary",
+        "post_url": "https://example.com/original",
+        "source_metadata": {"platform": "vkontakte"},
+        "analysis_metadata": {"analysis_timestamp": "2026-03-15T12:00:00Z"},
+        "content_statistics": {
+            "total_posts": 1,
+            "total_reactions": 0,
+            "total_comments": 0,
+            "content_date_range": {"earliest": "2026-03-15T10:00:00Z", "latest": "2026-03-15T10:00:00Z"},
+            "metric_coverage": {
+                "total_reactions": {"known": 1, "total": 1},
+                "total_comments": {"known": 0, "total": 1},
+            },
+        },
+        "multi_llm_analysis": {"text_analysis": {"sentiment_score": 0.95, "highlights": []}},
+    }
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.update_by_id(data["ids"][0], summary_data=payload)
+    page = await client.get(f"/app/analytics/{data['ids'][0]}")
+    assert page.status_code == 200
+    assert 'data-metric="total_reactions" data-state="available"' in page.text
+    assert 'data-metric="total_comments" data-state="unknown"' in page.text
+    assert 'data-metric="total_views" data-state="unknown"' in page.text
+    assert "0.95/1" in page.text and "95%" not in page.text
+    assert "В сохранённом анализе не выделены." in page.text
+    assert "Открыть исходный материал" in page.text and "https://example.com/original" in _analytics_links(page.text)
+    assert "Период публикаций:" in page.text and "15.03.2026" in page.text and "Платформа: VK" in page.text
+    assert "Вовлечённость" not in page.text
+    payload["post_url"] = "javascript:alert(1)"
+    payload["multi_llm_analysis"]["text_analysis"].pop("highlights")
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.update_by_id(data["ids"][0], summary_data=payload)
+    page = await client.get(f"/app/analytics/{data['ids'][0]}")
+    assert "Не рассчитаны или не сохранены." in page.text
+    assert "Открыть исходный материал" not in page.text
+    assert "javascript:alert" not in page.text
+
+
+async def test_direct_historic_detail_has_reliable_source_fallback(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    page = await client.get(f"/app/analytics/{data['ids'][5]}")
+    assert page.status_code == 200 and "Цепочка ·" not in page.text
+    back = next(url for url in _analytics_links(page.text) if urlparse(url).path == "/app/analytics/group")
+    query = parse_qs(urlparse(back).query)
+    assert query["axis"] == ["sources"] and query["value"] == [str(data["sources"][0])] and query["days"] == ["all"]
+    assert (await client.get(back)).status_code == 200
+
+
+async def test_single_analysis_viewer_and_foreign_tenant_are_read_only(client, drill_records):
+    data = drill_records
+    viewer = await _invitee("detailViewer", UserRoleType.VIEWER, data["tenant_id"], "secret-password-1")
+    foreign_user = None
+    try:
+        async with await _client() as foreign_client:
+            foreign_user, foreign_tenant = await _register(foreign_client, "detailForeign")
+            foreign_source = await _make_source(foreign_client, foreign_tenant, "Private detail source")
+            with tenant_scope(foreign_tenant):
+                row = await AIAnalytics.objects.create(
+                    tenant_id=foreign_tenant,
+                    source_id=foreign_source,
+                    analysis_date=date.today(),
+                    period_type=PeriodType.DAY,
+                    summary_data={"analysis_title": "Private detail"},
+                )
+            async with await _client() as member_client:
+                await _login(member_client, viewer.username)
+                page = await member_client.get(f"/app/analytics/{data['ids'][1]}")
+                assert page.status_code == 200
+                assert not re.search(r'action="/app/analytics/[^\"]*/delete"', page.text)
+                denied = await member_client.get(f"/app/analytics/{row.id}?tenant_id={foreign_tenant}")
+                assert denied.status_code == 404 and "Private detail" not in denied.text
+    finally:
+        await User.objects.delete_user(viewer.id)
+        if foreign_user:
+            await _drop(foreign_user, foreign_tenant, foreign_source)

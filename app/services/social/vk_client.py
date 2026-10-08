@@ -547,11 +547,11 @@ class VKClient(BaseClient):
 		— views: View count
 
 		Args:
-				raw_data: Raw response from VK API
-				source_type: Type of source
+						raw_data: Raw response from VK API
+						source_type: Type of source
 
 		Returns:
-				List of normalized content items
+						List of normalized content items
 		"""
 		# Handle VK API response format
 		if "response" not in raw_data:
@@ -586,6 +586,14 @@ class VKClient(BaseClient):
 					"shares": reposts,
 					"views": views,
 					"reactions": likes + comments + reposts,  # Combined metric
+					"metric_availability": {
+						"reactions": all(
+							isinstance(item.get(k), dict) and item[k].get("count") is not None
+							for k in ("likes", "comments", "reposts")
+						),
+						"comments": isinstance(item.get("comments"), dict) and item["comments"].get("count") is not None,
+						"views": isinstance(item.get("views"), dict) and item["views"].get("count") is not None,
+					},
 					# Metadata
 					"source_type": get_enum_value(source_type),
 					"platform": "vkontakte",

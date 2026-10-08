@@ -681,23 +681,57 @@ class AIAnalyzer:
 
         # Extract basic data
         texts = [item.get("text", "") for item in content]
-        reactions = [item.get("reactions", 0) for item in content]
-        comments = [item.get("comments", 0) for item in content]
-        views = [item.get("views", 0) for item in content]
+        from app.services.ai.analysis_render import metric_number, safe_original_url
+
+        coverage = {}
+        values = {}
+        for field, key in (("reactions", "total_reactions"), ("comments", "total_comments"), ("views", "total_views")):
+            observed = []
+            known = 0
+            for item in content:
+                metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+                flags = item.get("metric_availability", metrics.get("metric_availability"))
+                value = metric_number(item.get(field, metrics.get(field)))
+                if value is not None:
+                    observed.append(value)  # Preserve the legacy saved numeric sum.
+                    if not isinstance(flags, dict) or flags.get(field) is True:
+                        known += 1
+            values[field] = sum(observed)
+            coverage[key] = {"known": known, "total": len(content)}
 
         # Distinct authors: VK items carry from_id/owner_id; Telegram comments a
         # from_id. Any of these is enough to count an active user.
         authors: set[str] = set()
         for item in content:
-            for key in ("from_id", "owner_id", "author_id", "user_id"):
-                if item.get(key) is not None:
-                    authors.add(str(item[key]))
-                    break
+            author = item.get("author") if isinstance(item.get("author"), dict) else {}
+            author_id = next(
+                (item[key] for key in ("from_id", "owner_id", "author_id", "user_id") if item.get(key) is not None),
+                author.get("id"),
+            )
+            if author_id is not None:
+                authors.add(str(author_id))
 
         total_posts = len(content)
-        total_reactions = sum(reactions)
-        total_comments = sum(comments)
-        total_views = sum(views)
+        total_reactions = values["reactions"]
+        total_comments = values["comments"]
+        total_views = values["views"]
+        known_authors = sum(
+            any(item.get(key) is not None for key in ("from_id", "owner_id", "author_id", "user_id"))
+            or (isinstance(item.get("author"), dict) and item["author"].get("id") is not None)
+            for item in content
+        )
+        coverage["active_users"] = {"known": known_authors, "total": total_posts}
+        for key in ("total_posts", "messages_count"):
+            coverage[key] = {"known": total_posts, "total": total_posts}
+        coverage["engagement_rate"] = {
+            "known": min(coverage[key]["known"] for key in ("total_reactions", "total_comments", "total_views")),
+            "total": total_posts,
+        }
+        originals = []
+        for item in content:
+            url = safe_original_url(item.get("permalink") or item.get("url"))
+            if url and url not in originals:
+                originals.append(url)
 
         # Extract and parse post dates using existing utility
         post_dates = []
@@ -736,6 +770,8 @@ class AIAnalyzer:
         # Calculate all statistics
         return {
             "total_posts": total_posts,
+            "metric_coverage": coverage,
+            "original_links": originals[:50],
             "messages_count": total_posts,
             "active_users": len(authors),
             "avg_text_length": sum(len(t) for t in texts) / total_posts if texts else 0,

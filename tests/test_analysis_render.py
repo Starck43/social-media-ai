@@ -6,6 +6,8 @@ the two surfaces render a stored `AIAnalytics.summary_data` identically. No DB.
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.ai.analysis_render import (
     extract_content_statistics,
     extract_text_analysis,
@@ -158,3 +160,31 @@ def test_rollup_authors_not_presented_as_unique_people():
     display = render_analysis(data)
     assert display["content_statistics"]["active_users"] is None
     assert display["content_window_start"] == "2026-03-01"
+
+
+@pytest.mark.parametrize("container", ["flat", "text", "parsed", "unified", "legacy"])
+def test_common_title_reads_all_supported_payload_shapes(container):
+    text = {"analysis_title": "  Дизайн интерьера  ", "analysis_summary": "Сводка", "topics": ["Тема"]}
+    data = {
+        "flat": text,
+        "text": {"multi_llm_analysis": {"text_analysis": text}},
+        "parsed": {"multi_llm_analysis": {"text_analysis": {"parsed": text}}},
+        "unified": {"unified_summary": {"parsed": text}},
+        "legacy": {"ai_analysis": text},
+    }[container]
+    display = render_analysis(data, source_name="Анна")
+    assert display["display_title"] == "Дизайн интерьера"
+    assert display["analysis_summary"] == "Сводка"
+
+
+def test_common_title_fallback_never_uses_database_id_or_chain_label():
+    assert render_analysis({"topics": ["дизайн интерьера"]})["display_title"] == "дизайн интерьера"
+    assert render_analysis({"analysis_title": "  ", "topics": [{"name": "Тема"}]})["display_title"] == "Тема"
+    assert (
+        render_analysis({"analysis_title": {"bad": "value"}}, source_name="Анна")["display_title"]
+        == "Материалы источника «Анна»"
+    )
+    assert (
+        render_analysis({"source_metadata": {"source_name": "Анна"}})["display_title"] == "Материалы источника «Анна»"
+    )
+    assert render_analysis({})["display_title"] == "Материалы источника"

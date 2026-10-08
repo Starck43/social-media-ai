@@ -1047,3 +1047,77 @@ async def test_single_analysis_viewer_and_foreign_tenant_are_read_only(client, d
         await User.objects.delete_user(viewer.id)
         if foreign_user:
             await _drop(foreign_user, foreign_tenant, foreign_source)
+
+
+async def test_titles_are_identical_in_group_chronology_detail_chain_and_dashboard(client, drill_records):
+    from html import unescape
+
+    def card(html, tag, row_id):
+        match = re.search(rf'<{tag}[^>]*data-analysis-id="{row_id}"[^>]*>(.*?)</{tag}>', html, re.S)
+        assert match is not None
+        return unescape(match.group(1))
+
+    def text(html, tag):
+        return re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", html, re.S).group(1).strip()
+
+    data = drill_records
+    specs = [
+        {"topics": ["дизайн интерьера"], "sentiment_score": 0.9},
+        {
+            "multi_llm_analysis": {
+                "text_analysis": {
+                    "parsed": {
+                        "analysis_title": "Сохранённый заголовок",
+                        "topics": ["дизайн интерьера"],
+                        "analysis_summary": "Сохранённая сводка",
+                    }
+                }
+            }
+        },
+        {},
+    ]
+    expected = ["дизайн интерьера", "Сохранённый заголовок", "Материалы источника «Same source name»"]
+    with tenant_scope(data["tenant_id"]):
+        for row_id, payload in zip(data["ids"][:3], specs):
+            await AIAnalytics.objects.filter(id=row_id).update(summary_data=payload)
+
+    group = await client.get(
+        "/app/analytics/group", params={"axis": "sources", "value": data["sources"][0], "days": "all"}
+    )
+    chronology = await client.get("/app/analytics", params={"group_by": "days", "days": "all"})
+    dashboard = await client.get("/app")
+    chain = await client.get("/app/analytics/chains/drill-celebration", params={"days": "all"})
+    for page in (group, chronology, dashboard, chain):
+        assert page.status_code == 200
+        assert "анализ не проводился" not in page.text
+    for row_id, title in zip(data["ids"][:3], expected):
+        group_card = card(group.text, "article", row_id)
+        day_card = card(chronology.text, "a", row_id)
+        assert text(group_card, "a") == title
+        assert text(day_card, "p") == title
+        assert f"Анализ #{row_id}" not in group_card
+        assert any(link.startswith(f"/app/analytics/{row_id}?") for link in _analytics_links(chronology.text))
+        detail = await client.get(f"/app/analytics/{row_id}", params={"days": "all"})
+        assert detail.status_code == 200
+        assert text(unescape(detail.text), "h1") == title
+        assert title in unescape(dashboard.text)
+    assert expected[1] in chain.text and expected[2] in chain.text
+    assert "Сводка для этой записи не сохранена." in group.text
+    assert "Сводка для этой записи не сохранена." in chronology.text
+    # Missing headline does not suppress a saved nested summary or make it a warning.
+    nested = card(chronology.text, "a", data["ids"][1])
+    assert "не сохранена" not in nested
+
+
+async def test_common_title_is_escaped_in_group_and_chronology(client, drill_records):
+    data = drill_records
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.filter(id=data["ids"][0]).update(summary_data={"topics": ["<script>alert(1)</script>"]})
+    for path in [
+        f'/app/analytics/group?axis=sources&value={data["sources"][0]}&days=all',
+        "/app/analytics?group_by=days&days=all",
+    ]:
+        page = await client.get(path)
+        assert page.status_code == 200
+        assert "<script>alert(1)</script>" not in page.text
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text

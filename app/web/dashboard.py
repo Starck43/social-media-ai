@@ -123,6 +123,7 @@ async def _analytics(tenant_id: int | None, is_superuser: bool = False) -> dict:
 
 async def _analytics_in_scope(tenant_filter: int | None) -> dict:
     """Report widgets for the ambient scope; `tenant_filter` narrows explicitly."""
+    from app.services.ai.analysis_render import render_analysis
     from app.services.ai.reporting import ReportAggregator
 
     agg = ReportAggregator()
@@ -135,23 +136,15 @@ async def _analytics_in_scope(tenant_filter: int | None) -> dict:
     rows = await AIAnalytics.objects.select_related("source").order_by(AIAnalytics.created_at.desc()).limit(8)
     for a in rows:
         sd = a.summary_data or {}
-        # Title fallback: analysis_title → top main_topic → chain_label → id.
-        title = sd.get("analysis_title")
-        if not title:
-            topics = sd.get("main_topics") or []
-            title = topics[0] if topics else None
-        if not title:
-            title = a.chain_label
-        if not title:
-            title = f"Анализ #{a.id}"
+        display = render_analysis(sd, source_name=a.source.name if a.source else None)
         recent.append(
             {
                 "id": a.id,
                 "source_name": a.source.name if a.source else f"#{a.source_id}",
                 "analysis_date": a.analysis_date,
-                "title": title,
-                "summary": (sd.get("analysis_summary") or "")[:220],
-                "topics": (sd.get("main_topics") or [])[:4],
+                "title": display["display_title"],
+                "summary": (display["analysis_summary"] or "")[:220],
+                "topics": display["main_topics"][:4],
                 "cost_usd": float(a.estimated_cost or 0) / 100,
             }
         )

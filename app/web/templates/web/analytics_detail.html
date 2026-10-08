@@ -3,9 +3,9 @@
 {% macro metric(value, decimals=0) -%}
     {% if value is none %}—{% elif decimals %}{{ "%.1f"|format(value) }}{% else %}{{ "%.0f"|format(value) }}{% endif %}
 {%- endmacro %}
-{% block title %}{{ (display.analysis_title or ('Анализ #' ~ analysis.id))|e }} — AI Monitor{% endblock %}
+{% block title %}{{ display.display_title|e }} — AI Monitor{% endblock %}
 {% block content %}
-    {{ page_title((display.analysis_title or ('Анализ #' ~ analysis.id))|e, (analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id))|e) }}
+    {{ page_title(display.display_title|e, (analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id))|e) }}
     <nav aria-label="Навигация анализа" class="mb-5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
         <a href="{{ back_url|e }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-cyan-600 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label|e }}</a>
         {% if analysis.source %}<a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-600 dark:text-cyan-400 hover:underline">Карточка источника</a>{% endif %}

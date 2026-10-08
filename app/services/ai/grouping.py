@@ -13,6 +13,7 @@ from datetime import date
 from typing import Any
 
 from app.models import AIAnalytics, Source
+from app.services.ai.analysis_render import render_analysis
 from app.services.ai.chain_resolver import human_chain_label
 from app.services.ai.reporting import MEDIA_FILTERS, SENTIMENT_FILTERS, sentiment_bucket
 from app.types.enums.bot_types import GroupingAxis
@@ -235,24 +236,19 @@ def _period_key(d: date, group_by_period: str | None) -> str:
 def _serialize_row(row: AIAnalytics) -> dict[str, Any]:
     """Serialize an AIAnalytics row for template rendering in timeline views."""
     sent = _extract_sentiment(row.summary_data)
-    title = None
-    if row.summary_data:
-        title = row.summary_data.get("analysis_title")
-        if not title:
-            topics = _extract_topics(row.summary_data)
-            if topics:
-                title = topics[0]
+    display = render_analysis(row.summary_data)
     return {
         "id": row.id,
         "analysis_date": row.analysis_date.isoformat() if row.analysis_date else None,
         "source_id": row.source_id,
-        "analysis_title": title,
+        "analysis_title": display["analysis_title"],
+        "display_title": display["display_title"],
         "sentiment_score": sent.get("score") if sent else None,
         "sentiment_label": sent.get("label") if sent else None,
         "main_topics": _extract_topics(row.summary_data),
         "topic_chain_id": row.topic_chain_id,
         "chain_label": row.chain_label,
-        "analysis_summary": (row.summary_data or {}).get("analysis_summary"),
+        "analysis_summary": display["analysis_summary"],
     }
 
 
@@ -268,7 +264,9 @@ async def _source_name_map(source_ids: list[int]) -> dict[int, str]:
 # ── main grouping function ────────────────────────────────────────────────────
 
 
-def filter_analytics(rows: list[AIAnalytics], sentiment: str | None = None, media: str | None = None) -> list[AIAnalytics]:
+def filter_analytics(
+    rows: list[AIAnalytics], sentiment: str | None = None, media: str | None = None
+) -> list[AIAnalytics]:
     """Apply cross-axis filters before counts, averages or chronological slices."""
     if sentiment is not None and sentiment not in SENTIMENT_FILTERS:
         raise ValueError(f"sentiment must be one of {', '.join(SENTIMENT_FILTERS)}")

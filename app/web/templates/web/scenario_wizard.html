@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import check_card, switch_toggle %}
+{% from "web/_macros.html" import check_card, switch_toggle, icon %}
 {% block title %}{% if create %}Новый сценарий{% else %}{{ draft.name }} | Сценарии{% endif %}{% endblock %}
 {% block content %}
 {% set editable = perms and perms.can('agentscenario', 'create' if create else 'update') %}
@@ -13,11 +13,11 @@
 <div class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-            <a href="/app/scenarios" class="text-sm text-slate-400 hover:text-slate-200">← Все сценарии</a>
+            <a href="/app/scenarios" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">← Все сценарии</a>
             <h1 class="mt-1 text-2xl font-semibold tracking-tight">
                 {% if create %}Новый сценарий{% else %}{{ draft.name }}{% endif %}
             </h1>
-            <p class="mt-1 text-sm text-slate-500">
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if not create %}
                     {% if draft.is_default %}
                         Сценарий по умолчанию для новых источников.
@@ -36,7 +36,7 @@
     </div>
 
     {% if not editable %}
-        <div class="mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
+        <div class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 text-sm text-slate-600 dark:text-slate-400">
             {% if create %}У вас нет прав создавать сценарии.{% else %}Вы можете читать сценарий, но не менять его — правомочие требуется ролью.{% endif %}
         </div>
     {% endif %}
@@ -47,12 +47,12 @@
             <input type="hidden" name="_csrf" value="{{ csrf }}">
 
             {# Steps nav #}
-            <ol class="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/50 p-2 text-sm">
+            <ol class="flex gap-1 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-2 text-sm">
                 {% for n, label in steps %}
                     <li class="flex-1">
                         <button type="button" @click="step = {{ n }}"
                                 class="w-full rounded-xl px-3 py-2 text-center transition"
-                                :class="step === {{ n }} ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/40' : 'text-slate-400 hover:bg-slate-800'">
+                                :class="step === {{ n }} ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'">
                             {{ n }}. {{ label }}
                         </button>
                     </li>
@@ -62,18 +62,18 @@
             {# ── Шаг 1: Интерес ─────────────────────────────────────────── #}
             <section x-show="step === 1" class="space-y-8">
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Основное</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Основное</h2>
+                    <fieldset class="ui-card {{ ro }}">
                     <div class="space-y-4">
                         <div>
-                            <label for="sc-name" class="mb-1 block text-sm text-slate-300">Название</label>
+                            <label for="sc-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
                             <input id="sc-name" name="name" required maxlength="255" value="{{ draft.name }}"
-                                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                   class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                         </div>
                         <div>
-                            <label for="sc-desc" class="mb-1 block text-sm text-slate-300">Описание</label>
+                            <label for="sc-desc" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Описание</label>
                             <textarea id="sc-desc" name="description" rows="2"
-                                      class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">{{ draft.description or '' }}</textarea>
+                                      class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">{{ draft.description or '' }}</textarea>
                         </div>
                         <div class="flex flex-wrap gap-6">
                             {{ switch_toggle("is_active", "Активен", checked=draft.is_active, disabled=not editable) }}
@@ -86,14 +86,14 @@
                 </div>
 
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Что мониторим</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-500">Типы контента, которые будут собираться и попадать в анализ.</p>
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Что мониторим</h2>
+                    <fieldset class="ui-card {{ ro }}">
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">Типы контента, которые будут собираться и попадать в анализ.</p>
                     <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {% for ct in content_types %}
                             {{ check_card(
                                 "sc-ct-" ~ ct.db_value, "content_types", ct.db_value,
-                                ct.emoji ~ " " ~ ct.display_name,
+                                icon("source") ~ " " ~ ct.display_name,
                                 checked=(draft.content_types and ct.db_value in draft.content_types),
                                 cls="content-cb"
                             ) }}
@@ -103,9 +103,9 @@
                 </div>
 
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Что анализировать</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-500">
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Что анализировать</h2>
+                    <fieldset class="ui-card {{ ro }}">
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">
                         Выберите виды анализа — параметры сценария сформируются сами.
                     </p>
                     <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -113,7 +113,7 @@
                             {# `.analysis-cb` is read by rebuildScope() to rebuild the scope JSON. #}
                             {{ check_card(
                                 "sc-at-" ~ at.db_value, "analysis_types", at.db_value,
-                                at.emoji ~ " " ~ at.display_name,
+                                icon("topics") ~ " " ~ at.display_name,
                                 checked=(draft.analysis_types and at.db_value in draft.analysis_types),
                                 cls="analysis-cb",
                                 attrs='@change="rebuildScope()"'
@@ -123,12 +123,12 @@
 
                     {# Advanced: the scope JSON the wizard maintains for the user. #}
                     <details class="mt-4" @toggle="scopeOpen = $event.target.open">
-                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                        <summary class="cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">
                             Дополнительные параметры (для продвинутых)
                         </summary>
                         <div class="mt-2">
-                            <textarea id="scope-input" name="scope" rows="6" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ pretty_json(draft.scope) }}</textarea>
-                            <p class="mt-1 text-xs text-slate-500">
+                            <textarea id="scope-input" name="scope" rows="6" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500">{{ pretty_json(draft.scope) }}</textarea>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                                 Параметры обновляются автоматически при выборе типов анализа. Меняйте только если понимаете формат.
                             </p>
                         </div>
@@ -140,52 +140,52 @@
             {# ── Шаг 2: Промпт ─────────────────────────────────────────── #}
             <section x-show="step === 2" class="space-y-8">
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Промпт анализа</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-500">
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Промпт анализа</h2>
+                    <fieldset class="ui-card {{ ro }}">
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">
                         Как модель должна анализировать собранный контент. Пусто — возьмётся промпт по умолчанию.
                         {% if media_types %}Охватывает: {{ media_types | join(', ') }}.{% endif %}
                     </p>
 
                     {% if editable %}
-                    <div class="mb-4 rounded-xl border border-slate-700 bg-slate-950 p-3">
-                        <p class="mb-1 text-sm text-slate-300">Сгенерировать промпт по описанию</p>
+                    <div class="mb-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+                        <p class="mb-1 text-sm text-slate-700 dark:text-slate-300">Сгенерировать промпт по описанию</p>
                         <textarea id="prompt-description" rows="2"
-                                  class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                                  class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
                                   placeholder="Например: следить за упоминаниями бренда и тональностью, выделять главные темы, ловить негатив"></textarea>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <button type="button" @click="suggestPrompt()" :disabled="generating"
-                                    class="rounded-lg border border-cyan-700 px-3 py-1.5 text-xs text-cyan-300 hover:bg-slate-800">
+                                    class="rounded-lg border border-cyan-700 px-3 py-1.5 text-xs text-cyan-700 dark:text-cyan-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 Сгенерировать
                             </button>
-                            <span x-show="generating" class="text-xs text-slate-400">Модель думает…</span>
+                            <span x-show="generating" class="text-xs text-slate-600 dark:text-slate-400">Модель думает…</span>
                             <span id="suggest-result" class="text-xs"></span>
                         </div>
                     </div>
                     {% endif %}
 
                     <div class="mb-2 flex items-center gap-2">
-                        <label for="var-select" class="text-xs text-slate-400">Вставить переменную:</label>
-                        <select id="var-select" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
+                        <label for="var-select" class="text-xs text-slate-600 dark:text-slate-400">Вставить переменную:</label>
+                        <select id="var-select" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
                             <option value="">— выберите —</option>
                             {% for var, desc in available_variables.items() %}
                                 <option value="{{ var }}">{{ '{' ~ var ~ '}' }} — {{ desc }}</option>
                             {% endfor %}
                         </select>
                         <button type="button" @click="insertVar('sc-prompt-text')"
-                                class="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">
+                                class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                             Вставить
                         </button>
                     </div>
 
                     <textarea id="sc-prompt-text" name="base_prompt" rows="7"
                               @input="validate($el)"
-                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
                               placeholder="Проанализируй посты из {platform}: {text}. Выдели темы и тональность.">{{ draft.base_prompt or '' }}</textarea>
-                    <p id="var-warnings" class="mt-1 text-xs text-rose-400"></p>
+                    <p id="var-warnings" class="mt-1 text-xs text-rose-700 dark:text-rose-400"></p>
 
                     <details class="mt-4">
-                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                        <summary class="cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">
                             Переопределения по типу контента (необязательно)
                         </summary>
                         <div class="mt-2 grid gap-3">
@@ -195,10 +195,10 @@
                                 ('media_overrides_audio', 'Аудио', 'Переменные: {count}, {platform}'),
                             ] %}
                                 <div>
-                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
                                     <textarea id="sc-{{ field }}" name="{{ field }}" rows="3"
                                               @input="validate($el)"
-                                              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                                              class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
                                               placeholder="{{ hint }}">{{ draft.media_overrides.get(field.removeprefix('media_overrides_')) or '' }}</textarea>
                                 </div>
                             {% endfor %}
@@ -206,13 +206,13 @@
                     </details>
 
                     <details class="mt-4">
-                        <summary class="cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                        <summary class="cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">
                             Сводный промпт для общего резюме (необязательно)
                         </summary>
                         <div class="mt-2">
                             <textarea id="sc-summary-prompt" name="summary_prompt" rows="3"
                                       @input="validate($el)"
-                                      class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+                                      class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
                                       placeholder="Переменные: {text_analysis}, {image_analysis}, {video_analysis}">{{ draft.summary_prompt or '' }}</textarea>
                         </div>
                     </details>
@@ -223,13 +223,13 @@
             {# ── Шаг 3: Модели ─────────────────────────────────────────── #}
             <section x-show="step === 3" class="space-y-8">
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Модели LLM</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Модели LLM</h2>
+                    <fieldset class="ui-card {{ ro }}">
                     <div class="space-y-4">
                         <div>
-                            <label for="sc-strategy" class="mb-1 block text-sm text-slate-300">Стратегия выбора</label>
+                            <label for="sc-strategy" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Стратегия выбора</label>
                             <select id="sc-strategy" name="llm_strategy"
-                                    class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                    class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                                 <option value="">Автовыбор (флот платформы)</option>
                                 {% for value, label in llm_strategies %}
                                     <option value="{{ value }}"
@@ -244,9 +244,9 @@
                                 ('video_llm_model_id', draft.video_llm_model_id, 'Видео'),
                             ] %}
                                 <div>
-                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-300">{{ label }}</label>
+                                    <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
                                     <select id="sc-{{ field }}" name="{{ field }}"
-                                            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                                            class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                                         <option value="">Автовыбор</option>
                                         {% for m in llm_models if m.model_type == field.split('_')[0] %}
                                             <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
@@ -256,10 +256,10 @@
                             {% endfor %}
                         </div>
                         <div>
-                            <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-300">Лимит токенов ответа</label>
+                            <label for="sc-max-tokens" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Лимит токенов ответа</label>
                             <input id="sc-max-tokens" name="max_tokens" type="number" min="0"
                                    value="{{ draft.max_tokens or '' }}"
-                                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
+                                   class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 {{ ro }}">
                         </div>
                     </div>
                     </fieldset>
@@ -274,9 +274,9 @@
             <section x-show="step === 4" class="space-y-8"
                      x-effect="step === 4 && document.getElementById('preview-btn')?.click()">
                 <div>
-                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-200">Предпросмотр финального промпта</h2>
-                    <fieldset class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 {{ ro }}">
-                    <p class="mb-3 text-xs text-slate-500">
+                    <h2 class="mb-3 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-200">Предпросмотр финального промпта</h2>
+                    <fieldset class="ui-card {{ ro }}">
+                    <p class="mb-3 text-xs text-slate-600 dark:text-slate-400">
                         Здесь видно, что реально уйдёт в модель: ваш промпт, общие поля и схема
                         ответа от выбранных типов анализа. Ничего не сохраняется и не вызывается.
                     </p>
@@ -290,7 +290,7 @@
                                 class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                             Показать предпросмотр
                         </button>
-                        <span id="preview-loading" class="htmx-indicator ml-2 text-xs text-slate-400">Собираю…</span>
+                        <span id="preview-loading" class="htmx-indicator ml-2 text-xs text-slate-600 dark:text-slate-400">Собираю…</span>
                     {% endif %}
                     <div id="preview-panel" class="mt-4"></div>
                     </fieldset>
@@ -301,12 +301,12 @@
             {# ── Навигация ─────────────────────────────────────────────── #}
             <div class="flex items-center justify-between">
                 <button type="button" @click="prev()" x-show="step > 1"
-                        class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                        class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                     ← Назад
                 </button>
                 <div class="flex gap-3">
                     <button type="button" @click="next()" x-show="step < {{ max_step }}"
-                            class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                            class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Далее →
                     </button>
                     <button type="submit" x-show="step === {{ max_step }}"

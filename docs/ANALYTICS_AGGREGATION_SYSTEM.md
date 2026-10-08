@@ -786,3 +786,24 @@ including missing titles/summaries, nested payloads, escaped topic text,
 summary-derived headings/truncation, Russian abbreviations/decimal numbers,
 mention-axis labels in the UI/digest and unchanged entities API parameters.
 No migrations, production data rewrite or API changes.
+
+
+### Shared analytics presentation and filters
+
+The web app uses shared outline SVG icons (no emoji in the grouping switcher),
+server-rendered active grouping/type/period links, light/dark semantic card styles
+and consistent sentiment badges: a label plus `0.80 / 1` (an average for groups).
+Plain-text digest sections use `Тональность`, not `sent:`.
+
+Sentiment is a four-choice link group (any/positive/neutral/negative), not a select.
+It is available on aggregate, drill-down and chain-list views, with scope, period,
+mention type and validated return destination preserved. Mention types include
+an explicit "Все" reset. Media is no longer a visible selector; the backend/API
+still support legacy `media` URLs. Such a URL displays a clear reset action so an
+active media constraint is not silently hidden. No scenario/media processing changes.
+
+Theme preference is `light|dark|system`, shared across web/auth/admin/dashboard
+entry points. System mode follows OS changes without converting them into a saved
+explicit theme; selectors are available on desktop and mobile. The shared components
+use the existing slate/cyan palette, keyboard focus, 44px controls and reduced motion.
+See `docs/design/analytics_ui_refactor.md` for implementation and verification scope.

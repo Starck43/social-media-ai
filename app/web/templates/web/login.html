@@ -7,14 +7,14 @@
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <input type="hidden" name="next" value="{{ next if next is defined and next else '' }}">
         <div>
-            <label for="username" class="mb-1 block text-sm text-slate-300">Имя пользователя или e-mail</label>
+            <label for="username" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Имя пользователя или e-mail</label>
             <input id="username" name="username" required autocomplete="username" autofocus
-                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                   class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
         </div>
         <div>
-            <label for="password" class="mb-1 block text-sm text-slate-300">Пароль</label>
+            <label for="password" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Пароль</label>
             <input id="password" type="password" name="password" required autocomplete="current-password"
-                   class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
+                   class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
         </div>
         <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
             Войти
@@ -22,5 +22,5 @@
     </form>
 {% endblock %}
 {% block footnote %}
-    Нет аккаунта? <a href="/app/register" class="text-cyan-400 hover:underline">Создать workspace</a>
+    Нет аккаунта? <a href="/app/register" class="text-cyan-700 dark:text-cyan-400 hover:underline">Создать workspace</a>
 {% endblock %}

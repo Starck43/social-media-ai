@@ -450,6 +450,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         back_label=_analysis_back_label(
             _safe_analytics_return(request.query_params.get("return_to")) or "/app/analytics", "К группам"
         ),
+        filter_return_to=_safe_analytics_return(request.query_params.get("return_to")),
         axis_label=DRILL_LABELS[axis],
         value=names.get(int(value), value) if axis == "sources" else value,
         back_url=_safe_analytics_return(request.query_params.get("return_to"))
@@ -597,6 +598,7 @@ async def _fetch_grouped(
         "group_counts": group_counts,
         "visible_axes": [value for value, _ in axes_for_counts if group_counts[value] >= 2 or value == axis.value],
         "sentiment": sentiment,
+        "filter_return_to": _safe_analytics_return(request.query_params.get("return_to")),
         "media": media,
         "axis_urls": {value: str(request.url.include_query_params(group_by=value)) for value, _ in axes_for_counts},
         "entity_urls": {
@@ -781,6 +783,7 @@ async def analytics_chains(request: Request):
     return render(
         request,
         "web/analytics_chains.html",
+        filter_return_to=_safe_analytics_return(request.query_params.get("return_to")),
         section="analytics",
         chains=chains,
         source_names=names,
@@ -822,9 +825,10 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     for step in chain_data.get("evolution", []):
         row = rows_by_id.get(step.get("id"))
         if row is not None:
-            step["analysis_title"] = render_analysis(row.summary_data, source_name=names.get(row.source_id))[
-                "display_title"
-            ]
+            display = render_analysis(row.summary_data, source_name=names.get(row.source_id))
+            step["analysis_title"] = display["display_title"]
+            step["analysis_summary"] = display["analysis_summary"]
+            step["display_sentiment"] = display["sentiment"]["score"]
 
     chains_url = _analytics_url(request, "/app/analytics/chains", days_key=days_key)
     back_url = _safe_analytics_return(request.query_params.get("return_to")) or chains_url

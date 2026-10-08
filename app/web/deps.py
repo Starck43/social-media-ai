@@ -47,6 +47,15 @@ def plural(n: int, one: str, few: str, many: str) -> str:
 	return many
 
 
+
+def human_choice_label(value: Any) -> str:
+	"""Plain labels for native select options, which cannot render inline SVG."""
+	text = str(value or "")
+	return "".join(c for c in text if not (
+		0x1F000 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF
+		or ord(c) in (0xFE0F, 0x200D)
+	)).strip()
+
 def human_datetime(value: Any, *, empty: str = "—", tz: str = "Europe/Moscow") -> str:
 	"""Render a timestamp the way a person reads it: `сегодня, 14:30`.
 
@@ -82,6 +91,8 @@ def human_datetime(value: Any, *, empty: str = "—", tz: str = "Europe/Moscow")
 
 
 templates.env.filters["human_dt"] = human_datetime
+templates.env.globals["plural"] = plural
+templates.env.filters["ui_label"] = human_choice_label
 
 
 def add_flash(request: Request, kind: str, text: str) -> None:

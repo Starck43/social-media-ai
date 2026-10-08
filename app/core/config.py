@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     TELEGRAM_API_ID: Optional[str] = None
     TELEGRAM_API_HASH: Optional[str] = None
     TELEGRAM_SESSION: Optional[str] = None
-    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Legacy notification fallback; never a digest recipient
+    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Fixed operator alerts only; no workspace/digest fallback
 
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50

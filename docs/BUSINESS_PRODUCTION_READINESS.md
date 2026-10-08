@@ -22,12 +22,19 @@ Baseline observation before that change: [broadcast_digest](../app/channels/regi
 
 Actions:
 - **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
-- **Notification boundary remains open:** the legacy `MessengerService` falls back to `TELEGRAM_ADMIN_CHAT_ID`; the collector can send source names/raw error text there, and report/trend helpers also omit a recipient. Separate explicitly addressed workspace notifications from scrubbed operator alerts; never treat the admin fallback as a client delivery route. See [configuration boundaries](CONFIGURATION.md#application-credentials-and-recipient-boundaries).
+- **Notification boundary implemented:** workspace messages require explicit active owned bindings; fixed operator templates alone use `TELEGRAM_ADMIN_CHAT_ID`. Source-owned DB failure notifications do not forward raw exceptions. Recipient-picker UX, persisted outcomes/rate limits and process-wide logging audit remain open. See [notification contract](NOTIFICATIONS.md).
 - **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
 - Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
 - Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.
 
 Acceptance: two tenants + configured legacy destination cannot leak reports; one successful/one failing destination only retries the failure; duplicate destinations, concurrent run attempts, lost acknowledgements and message splitting are covered. A no-channel configuration is visible and not a successful delivery. Persisted per-target progress may require a separately reviewed migration or versioned result structure.
+
+**Notification boundary progress:** the [notification contract](NOTIFICATIONS.md)
+implements explicitly owned workspace recipients, source-owned DB failure
+notifications and fixed-template operator alerts. It does not implement durable
+notification delivery progress, rate limiting, process-wide log redaction or
+digest retry/concurrency guarantees. Review together with the separate digest
+routing branch; this does not close PRD-01 or establish business production readiness.
 
 ### PRD-02 — Fail-closed identity and authorization (blocker)
 

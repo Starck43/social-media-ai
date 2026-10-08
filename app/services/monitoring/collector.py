@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 
+from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.models import Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.services.social.factory import get_social_client
@@ -300,16 +301,28 @@ class ContentCollector:
 			# Send critical notification if available
 			if NOTIFICATIONS_AVAILABLE:
 				try:
-					await notify.create(
-						title=f"Ошибка сбора источника {source.name}",
-						message=f"Не удалось собрать данные: {str(e)}",
-						ntype=NotificationType.API_ERROR,
-						entity_type="source",
-						entity_id=source.id,
-						send_to_messenger=True,
-					)
-				except:
-					pass  # Don't fail on notification error
+					# Operator collection may be unscoped; the source owns this notification.
+					notification_tenant = getattr(source, "tenant_id", None)
+					if notification_tenant is not None and (
+						is_bypass() or current_tenant_id() == notification_tenant
+					):
+						with tenant_scope(notification_tenant):
+							await notify.create(
+								title=f"Ошибка сбора источника {source.name}",
+								message="Не удалось собрать данные. Проверьте подключение и права доступа к источнику.",
+								ntype=NotificationType.API_ERROR,
+								entity_type="source",
+								entity_id=source.id,
+								send_to_messenger=False,
+							)
+					else:
+						logger.warning("Collection notification skipped: source workspace unavailable or unauthorized")
+				except Exception:
+					logger.warning("Collection workspace notification failed")
+				try:
+					await messenger_service.send_operator_alert("collection_failed")
+				except Exception:
+					logger.warning("Collection operator alert failed")
 
 			# Re-raise so the caller can tell a real failure (error) apart from a
 			# legitimately empty result (no content). Swallowing here turns every

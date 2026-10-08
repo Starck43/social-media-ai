@@ -15,7 +15,7 @@ The application reads config from `app/core/config.py` (Pydantic `Settings`).
 | Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
 | Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
 | Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
-| Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Intended technical-alert destination; the legacy fallback is not yet a safe separation, as explained below. |
+| Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
 | Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
 
 Keep infrastructure settings (`POSTGRES_URL`, `SECRET_KEY`, `CREDENTIALS_KEY`)
@@ -30,16 +30,13 @@ An installation with only env destinations must explicitly register/enable its
 workspace recipient; no automatic binding or schema migration is performed.
 Broadcast result keys are now uniformly `transport:chat_id`, including bootstrap.
 
-**Known notification-isolation gap, not fixed here:**
-`app/services/notifications/messenger.py` still sends messages without a
-recipient to `TELEGRAM_ADMIN_CHAT_ID`. The collector's error notifications can
-include source names and raw exception text; report/trend helpers also omit a
-recipient. Therefore this variable is currently a **legacy fallback**, not a
-guarantee that only technical information reaches the operator. Follow-up work
-must require explicit owned recipients for workspace notifications and a
-separate, scrubbed operator-alert path (no report content, secrets or raw errors).
-Until then, leave it unset if that fallback is unacceptable; legacy sends
-without an explicit recipient will return a failure instead of reaching a chat.
+**Notification isolation:** workspace notifications require an explicit active
+owned recipient. Only `send_operator_alert(event_code)` consults the admin chat,
+and its text comes from a fixed catalog. The legacy `send_critical_alert` shim
+discards all free-form title/message/error details. Collection errors retain a
+generic source-owned DB notification and emit only a generic operator event.
+Missing admin configuration does not redirect messages to a client workspace.
+See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
 ## .env.example
 
@@ -97,7 +94,7 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_API_ID=          # L2 MTProto
 TELEGRAM_API_HASH=        # L2 MTProto
 TELEGRAM_SESSION=         # L2 MTProto (StringSession, never printed)
-TELEGRAM_ADMIN_CHAT_ID=   # legacy notification fallback; see isolation warning above
+TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
 
 # Telegram (Channels)
 TELEGRAM_OWNER_IDS=       # comma-separated Telegram user ids for agent chat
@@ -222,7 +219,7 @@ LOG_LEVEL=INFO
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
 | `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
-| `TELEGRAM_ADMIN_CHAT_ID` | `None` | Legacy: default chat for admin notifications |
+| `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
 | `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
 | `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN` | `None` | MAX bot access token |
@@ -325,3 +322,17 @@ Two kinds of secret, resolved by `app/services/social/credentials.py`:
   the **environment** (`.env`), not from the DB.
 
 See also: [COLLECTION.md](./COLLECTION.md) — Credential vault.
+
+
+## Notification recipient boundaries
+
+`TELEGRAM_ADMIN_CHAT_ID` is used only by the fixed operator-alert catalog, not
+as a fallback for workspace notifications. Keep it in deployment configuration
+for an operator-only chat. A workspace messenger send needs an explicit active
+owned binding and workspace context (or an explicitly selected trusted operator
+workspace). Report/trend helpers without a recipient fail closed.
+
+The legacy `send_critical_alert` signature discards title/message/error details
+and emits a generic operator event. No new env variable or schema migration is
+needed. These rules apply to the notification service, not to the independently
+reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).

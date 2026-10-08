@@ -51,7 +51,7 @@ Scheduled idempotency and manual force/resend semantics are otherwise unchanged.
 | Files | Change |
 |---|---|
 | `app/channels/registry.py` | Shared active-workspace resolver; authorized bound targets; ignored env destinations; within-call dedup and uniform transport filter. |
-| `app/core/config.py` | Document deprecated destination settings and the distinct legacy admin fallback; retain accepted fields for compatibility. |
+| `app/core/config.py` | Document deprecated destination settings and the operator-alert setting; retain accepted fields for compatibility. |
 | `app/services/digest/builder.py` | Non-bypass workspace envelope around the existing entire build, without changing the public call signature. |
 | `tests/test_digest_destinations.py` | 21 regressions, marked tenancy to disable legacy manager bypass; real PostgreSQL binding/analytics/run queries, mocked transports/LLM. |
 | Existing channel/builder/e2e tests | Explicit bootstrap context and recipient binding fixtures; no assumption that env alone authorizes a send. |
@@ -114,20 +114,20 @@ and unavailable transports.
 No deployment, live Telegram/MAX send, production migration or complete
 production-readiness certification is part of this task.
 
-## Configuration decision and next boundary
+## Configuration decision and notification follow-up
 
 Application VK credentials/callback and the shared Telegram bot token stay in
 env. Personal VK tokens and MTProto sessions stay in the encrypted user vault.
 Workspace digest recipients stay in existing `tenant_channels`. No tables,
 migrations or deployment `.env` files were changed.
 
-The legacy notification service still defaults to `TELEGRAM_ADMIN_CHAT_ID`.
-Collection errors can include customer source names/raw error text; report/trend
-helpers omit a recipient too. That path is not fixed by digest isolation.
-The next bounded notification task should require explicit owned recipients
-for workspace messages and allow only scrubbed, explicitly designated operator
-alerts to use the admin destination. See the
-[configuration warning](../CONFIGURATION.md#application-credentials-and-recipient-boundaries).
+At the digest-only revision, the legacy notification service still defaulted to
+`TELEGRAM_ADMIN_CHAT_ID`. The follow-up [notification boundary](../NOTIFICATIONS.md)
+now requires explicitly owned recipients for workspace messages and uses fixed
+catalog-only operator alerts. Collection failures write a generic notification
+to the source's workspace, including trusted operator runs. General logging
+redaction, recipient-picker UI, rate limits and durable retry progress remain
+separate tasks. The original observation is historical, not the current contract.
 
 ## Deliberate remaining work
 

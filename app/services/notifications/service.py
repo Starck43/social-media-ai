@@ -32,6 +32,7 @@ class NotificationService:
         entity_type: Optional[str] = None,
         entity_id: Optional[int] = None,
         send_to_messenger: bool = False,
+        recipient_id: Optional[str] = None,
     ) -> Notification:
         """
         Create a notification.
@@ -42,12 +43,13 @@ class NotificationService:
             ntype: Notification type
             entity_type: Related entity type
             entity_id: Related entity ID
-            send_to_messenger: If True, also send to messenger (Telegram)
+            send_to_messenger: If True, attempt explicitly addressed workspace delivery
+            recipient_id: Active Telegram binding owned by the created row's workspace
 
         Returns:
             Created Notification object
         """
-        logger.info(f"Creating notification: {title} (type={ntype}, send_to_messenger={send_to_messenger})")
+        logger.info("Creating notification (type=%s, messenger_requested=%s)", ntype, send_to_messenger)
 
         notification = await Notification.objects.create_notification(
             title=title,
@@ -58,14 +60,22 @@ class NotificationService:
         )
 
         # Send to messenger if requested and available
-        if send_to_messenger and MESSENGER_AVAILABLE:
+        if send_to_messenger and MESSENGER_AVAILABLE and notification.tenant_id is not None:
             try:
-                await messenger_service.send_notification(
-                    title=title, message=message, notification_type=ntype, messenger="telegram"
+                result = await messenger_service.send_notification(
+                    title=title,
+                    message=message,
+                    notification_type=ntype,
+                    messenger="telegram",
+                    recipient_id=recipient_id,
+                    tenant_id=notification.tenant_id,
                 )
-                logger.info(f"Notification {notification.id} sent to messenger")
-            except Exception as e:
-                logger.error(f"Failed to send notification to messenger: {e}")
+                if (result.get("telegram") or {}).get("success") is True:
+                    logger.info("Notification %s delivered to messenger", notification.id)
+                else:
+                    logger.warning("Notification %s not delivered to messenger", notification.id)
+            except Exception:
+                logger.warning("Notification messenger delivery failed")
 
         return notification
 

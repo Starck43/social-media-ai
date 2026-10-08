@@ -287,3 +287,17 @@ Two kinds of secret, resolved by `app/services/social/credentials.py`:
   the **environment** (`.env`), not from the DB.
 
 See also: [COLLECTION.md](./COLLECTION.md) — Credential vault.
+
+
+## Notification recipient boundaries
+
+`TELEGRAM_ADMIN_CHAT_ID` is used only by the fixed operator-alert catalog, not
+as a fallback for workspace notifications. Keep it in deployment configuration
+for an operator-only chat. A workspace messenger send needs an explicit active
+owned binding and workspace context (or an explicitly selected trusted operator
+workspace). Report/trend helpers without a recipient fail closed.
+
+The legacy `send_critical_alert` signature discards title/message/error details
+and emits a generic operator event. No new env variable or schema migration is
+needed. These rules apply to the notification service, not to the independently
+reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).

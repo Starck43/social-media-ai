@@ -22,6 +22,13 @@ Actions:
 
 Acceptance: two tenants + configured legacy destination cannot leak reports; one successful/one failing destination only retries the failure; duplicate destinations, concurrent run attempts, lost acknowledgements and message splitting are covered. A no-channel configuration is visible and not a successful delivery. Persisted per-target progress may require a separately reviewed migration or versioned result structure.
 
+**Notification boundary progress:** the [notification contract](NOTIFICATIONS.md)
+implements explicitly owned workspace recipients, source-owned DB failure
+notifications and fixed-template operator alerts. It does not implement durable
+notification delivery progress, rate limiting, process-wide log redaction or
+digest retry/concurrency guarantees. Review together with the separate digest
+routing branch; this does not close PRD-01 or establish business production readiness.
+
 ### PRD-02 — Fail-closed identity and authorization (blocker)
 
 Observed: [permissions](../app/core/permissions.py) treats a None user as bypass and lets a workspace owner pass model rights. [runtime](../app/agent/runtime.py) can resolve messenger members to None. [TenantUser.is_owner](../app/models/tenant.py) treats missing role_id as owner. LLM fleet tables are global, while [LLM tools](../app/agent/toolset/llm.py) rely on these rights. [action tools](../app/agent/toolset/actions.py) lack explicit permission requirements.

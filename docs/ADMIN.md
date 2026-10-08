@@ -371,3 +371,13 @@ def setup_admin(app):
     # 6. Mount static files
     # 7. Attach admin to app.state
 ```
+
+
+## Notification messenger action
+
+The legacy one-click messenger button is hidden until an explicit recipient
+picker and delivery feedback are available. The authorized action endpoint
+requires `recipient_id` and checks that its active binding belongs to the
+notification row's active workspace. A missing/foreign recipient or ownerless
+notification cannot fall back to the env admin chat. The existing SQLAdmin
+session/role gate is unchanged. See [notification boundaries](NOTIFICATIONS.md).

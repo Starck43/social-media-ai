@@ -22,6 +22,7 @@
 - **[Data Models](./MODELS.md)** - Все таблицы, поля, связи, ER-диаграмма
 - **[Configuration](./CONFIGURATION.md)** - Полный список env vars, .env.example, генерация ключей
 - **[Channels](./CHANNELS.md)** - Telegram/MAX каналы, listener, ingest, routing
+- **[Notifications](./NOTIFICATIONS.md)** — workspace-owned recipients and fixed operator alerts
 - **[Deployment](./DEPLOYMENT.md)** - Docker Compose, systemd, nginx, бэкапы, first deployment checklist
 
 ## Анализ и мониторинг

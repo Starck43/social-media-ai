@@ -1188,8 +1188,8 @@ class NotificationAdmin(BaseAdmin, model=Notification):
     @action(
         name="send_to_messenger",
         label="Отправить в мессенджер",
-        add_in_list=True,
-        add_in_detail=True,
+        add_in_list=False,
+        add_in_detail=False,
     )
     async def send_to_messenger_action(self, request: Request):
         """Send notification to messenger (Telegram/VK)."""
@@ -1202,16 +1202,25 @@ class NotificationAdmin(BaseAdmin, model=Notification):
         pk = pks.split(",")[0]
         try:
             notification = await Notification.objects.get(id=int(pk))
-            if notification:
-                await messenger_service.send_notification(
+            if notification is not None and notification.tenant_id is not None:
+                result = await messenger_service.send_notification(
                     title=notification.title,
                     message=notification.message,
                     notification_type=notification.notification_type,
                     messenger="telegram",
+                    recipient_id=request.query_params.get("recipient_id"),
+                    tenant_id=notification.tenant_id,
                 )
-                logger.info(f"Notification {pk} sent to messenger")
-        except Exception as e:
-            logger.error(f"Error sending notification {pk} to messenger: {e}")
+                if (result.get("telegram") or {}).get("success") is True:
+                    logger.info("Notification %s delivered to messenger", pk)
+                else:
+                    logger.warning(
+                        "Notification %s not delivered: explicit owned recipient required or transport failed", pk
+                    )
+            elif notification is not None:
+                logger.warning("Ownerless notification cannot be delivered to a workspace")
+        except Exception:
+            logger.warning("Notification messenger action failed")
 
         return RedirectResponse(
             url=request.url_for("admin:list", identity=self.identity),

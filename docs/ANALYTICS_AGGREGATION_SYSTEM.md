@@ -58,7 +58,21 @@ Group cards link to this view with URL-encoded values. Chronology group headings
 link too, without nesting anchors around their existing analysis links. The
 breadcrumb preserves days, source_id, entity_type, tenant_id and cross-filters.
 The list shows date, source, title, sentiment and an optional chain link, with
-no write buttons. Empty results show an empty state, not a redirect to chains.
+no write buttons. The chain link is shown only when at least two analyses
+exist in the opened timeline's tenant/source/period scope, and includes that
+count (`Цепочка · N анализ(ов)`). Counts are computed from the same scoped rows
+before group/entity/sentiment/media matching, because the chain detail is a
+retrospective rather than a cross-filtered membership list. A stored chain ID
+alone does not imply a continuation; singleton IDs are retained for future runs.
+No per-row database query is needed for these counts.
+
+The explicit `← К группам` control and breadcrumb return to the exact main page
+origin. Chain detail's primary control returns to the exact group, main page or
+chain list it came from; `Все цепочки` remains secondary. Encoded `return_to`
+preserves the complete query (axis/value, grouping period, days/source/entity
+and cross-filters), including the group page's own parent. Only local read-only
+analytics paths are accepted; external, malformed, mutation and fragment URLs
+fall back to the existing local destination. Empty results show an empty state, not a redirect to chains.
 Titles/labels in the new view are HTML-escaped.
 
 Top thematic chain cards and direct `?group_by=topic_chains` groups link to
@@ -94,8 +108,8 @@ every timeline entry. It remains a retrospective, not a flat group filter.
 - Lightweight Russian stemming (no NLTK dependency)
 - Trim to 255 chars
 
-Similarity fallback: `token_set_ratio(normalized_hint, chain.normalized_label) >= 0.85` 
-via `difflib.SequenceMatcher`, limited to lookback window (30 days).
+Similarity fallback: `_token_set_ratio(normalized_hint, normalized_stored_hint) >= 0.85`
+using normalized token-set Sørensen–Dice overlap, limited to the lookback window (30 days).
 
 CLI tools for chain management:
 
@@ -103,6 +117,14 @@ CLI tools for chain management:
 python -m cli.main chains merge --apply  # Deduplicate by normalized_label
 python -m cli.main chains groups --min-size 2  # Inspect duplicate groups
 ```
+
+The token-set score is Sørensen–Dice overlap: `2 * |A ∩ B| / (|A| + |B|)`
+on normalized/stemmed token sets. Reordering tokens preserves a score of 1;
+a single shared token in two two-token topics scores 0.5, not 1. The previous
+intersection-versus-itself comparison spuriously promoted any shared word to
+1 and is removed. The threshold and 30-day/source/workspace boundaries remain.
+This applies to future resolution only: existing chain IDs are not silently
+merged, split, backfilled or removed. Chains may start as a single analysis.
 
 The `normalized_label` column (migration 0085) stores the normalized form for 
 fast similarity comparisons.

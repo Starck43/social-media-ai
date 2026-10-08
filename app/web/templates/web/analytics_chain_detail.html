@@ -4,7 +4,8 @@
 {% block content %}
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-            <a href="{{ chains_url|e }}" class="text-cyan-400 hover:underline">← Все цепочки</a>
+            <a href="{{ back_url|e }}" class="rounded-lg border border-slate-700 px-3 py-2 text-cyan-400 hover:border-cyan-500">← {{ back_label }}</a>
+            {% if back_url != chains_url %}<a href="{{ chains_url|e }}" class="text-slate-400 hover:text-cyan-400">Все цепочки</a>{% endif %}
             <span>·</span>
             <span>{{ chain.total_analyses }} анализ(ов)</span>
             {% if chain.date_range.start %}

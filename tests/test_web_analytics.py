@@ -580,7 +580,7 @@ async def drill_records(client):
             "announcement",
             "drill-celebration",
         ),
-        (first, 2, ["Other"], [{"name": "ACME", "type": "brand"}], 0.8, "text", "complaint", "drill-other"),
+        (first, 2, ["Other"], [{"name": "ACME", "type": "brand"}], 0.8, "text", "complaint", "drill-celebration"),
         (second, 0, [], [], 0.5, "image", None, None),
         (second, 1, None, [], None, "text", None, None),
         (first, 40, [birthday], [], 0.2, "image", "complaint", None),
@@ -825,3 +825,104 @@ async def test_drilldown_denied_before_rows_are_loaded(client, drill_records, mo
     response = await client.get("/app/analytics/group?axis=themes&value=x", follow_redirects=False)
     assert response.status_code == 302 and response.headers["location"] == "/app"
     read.assert_not_awaited()
+
+
+async def test_drilldown_chain_link_requires_two_entries_in_opened_scope(client, drill_records):
+    from urllib.parse import urlparse
+
+    data = drill_records
+    # An ID alone does not mean a multi-entry chain exists.
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.update_by_id(data["ids"][4], topic_chain_id="drill-singleton")
+    group = await client.get(
+        "/app/analytics/group", params={"axis": "sources", "value": data["sources"][1], "days": "all"}
+    )
+    assert group.status_code == 200
+    assert not any("/app/analytics/chains/" in urlparse(link).path for link in _analytics_links(group.text))
+    # Cross-filtered group has one matching row; opened timeline has two rows.
+    group = await client.get(
+        "/app/analytics/group", params={"axis": "themes", "value": data["birthday"], "days": 7, "media": "video"}
+    )
+    assert _drill_ids(group.text) == [data["ids"][1]]
+    assert "Цепочка · 2 анализ(ов)" in group.text
+    chain = next(
+        link
+        for link in _analytics_links(group.text)
+        if urlparse(link).path == "/app/analytics/chains/drill-celebration"
+    )
+    detail = await client.get(chain)
+    assert "Drill row 1" in detail.text and "Drill row 2" in detail.text
+    # Restricting the actual timeline to one day must hide the link too.
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.update_by_id(data["ids"][0], topic_chain_id="drill-celebration")
+    with tenant_scope(data["tenant_id"]):
+        await AIAnalytics.objects.update_by_id(data["ids"][1], analysis_date=date.today() - timedelta(days=3))
+    group = await client.get("/app/analytics/group", params={"axis": "sources", "value": data["sources"][0], "days": 1})
+    assert "Цепочка ·" not in group.text
+    group = await client.get("/app/analytics/group", params={"axis": "sources", "value": data["sources"][1], "days": 1})
+    assert "drill-singleton" not in group.text
+
+
+async def test_chain_back_restores_exact_group_and_group_back_restores_main(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    main = "/app/analytics?days=all&group_by_period=month&group_by=sources"
+    response = await client.get(main)
+    group_link = next(
+        link
+        for link in _analytics_links(response.text)
+        if urlparse(link).path == "/app/analytics/group"
+        and parse_qs(urlparse(link).query)["value"] == [str(data["sources"][0])]
+    )
+    assert parse_qs(urlparse(group_link).query)["return_to"] == [main]
+    group = await client.get(group_link)
+    assert "← К группам" in group.text
+    assert main in _analytics_links(group.text)
+    chain_link = next(
+        link
+        for link in _analytics_links(group.text)
+        if urlparse(link).path == "/app/analytics/chains/drill-celebration"
+    )
+    assert parse_qs(urlparse(chain_link).query)["return_to"] == [group_link]
+    chain = await client.get(chain_link)
+    assert "← К группе" in chain.text and group_link in _analytics_links(chain.text)
+    back = await client.get(group_link)
+    assert _drill_ids(back.text) == _drill_ids(group.text)
+    assert main in _analytics_links(back.text)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://evil.example/path",
+        "//evil.example/path",
+        "/app/analytics/../logout",
+        "/app/logout",
+        "/app/analytics\\evil",
+        "javascript:alert(1)",
+        "/%2F%2Fevil.example",
+        "/app/analytics#fragment",
+        "/app/analytics\n",
+    ],
+)
+def test_analytics_return_rejects_external_or_non_readonly_targets(bad):
+    from app.web.analytics import _safe_analytics_return
+
+    assert _safe_analytics_return(bad) is None
+
+
+async def test_invalid_return_falls_back_without_external_links(client, drill_records):
+    data = drill_records
+    group = await client.get(
+        "/app/analytics/group",
+        params={"axis": "sources", "value": data["sources"][0], "days": 7, "return_to": "https://evil.example"},
+    )
+    assert group.status_code == 200
+    assert all("evil.example" not in link for link in _analytics_links(group.text))
+    chain = await client.get(
+        "/app/analytics/chains/drill-celebration", params={"days": 7, "return_to": "//evil.example"}
+    )
+    assert chain.status_code == 200
+    assert "← Все цепочки" in chain.text
+    assert all("evil.example" not in link for link in _analytics_links(chain.text))

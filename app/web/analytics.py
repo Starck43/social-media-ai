@@ -13,7 +13,8 @@ mutation uses (`guard_web` + `perms.can`), never open to a plain viewer.
 
 from __future__ import annotations
 
-from urllib.parse import quote, urlencode
+from collections import Counter
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -67,6 +68,31 @@ DRILL_LABELS = {
     "intent": "По намерению",
     "days": "Хронология",
 }
+
+
+def _safe_analytics_return(value: str | None) -> str | None:
+    """Only local read-only analytics entry points may be used as return URLs."""
+    if not value or len(value) > 4096 or any(ord(char) < 32 for char in value) or "\\" in value:
+        return None
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        return None
+    if parsed.path not in {"/app/analytics", "/app/analytics/", "/app/analytics/group", "/app/analytics/chains"}:
+        return None
+    return value
+
+
+def _analytics_origin(request: Request, days_key: str) -> str:
+    """Keep the whole origin query, including axis/value and its parent return."""
+    params = dict(request.query_params)
+    params["days"] = days_key
+    # Never forward untrusted origins through another level of navigation.
+    if "return_to" in params and not _safe_analytics_return(params["return_to"]):
+        params.pop("return_to")
+    return request.url.path + "?" + urlencode(params)
 
 
 def _analytics_url(request: Request, path: str, *, days_key: str | None = None, **extra) -> str:
@@ -298,7 +324,10 @@ async def analytics_page(request: Request):
 
     for chain in data.get("chains", []):
         chain["url"] = _analytics_url(
-            request, "/app/analytics/chains/" + quote(chain["chain_id"], safe=""), days_key=days_key
+            request,
+            "/app/analytics/chains/" + quote(chain["chain_id"], safe=""),
+            days_key=days_key,
+            return_to=_analytics_origin(request, days_key),
         )
 
     return render(
@@ -344,6 +373,8 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     rows = await _scoped_analytics_rows(request, days, filter_tenant_id)
+    chain_counts = Counter(row.topic_chain_id for row in rows if row.topic_chain_id)
+    group_origin = _analytics_origin(request, days_key)
     try:
         rows = filter_analytics(
             rows,
@@ -372,11 +403,15 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
                 "sentiment": _extract_sentiment(row.summary_data),
                 "chain_url": (
                     _analytics_url(
-                        request, "/app/analytics/chains/" + quote(row.topic_chain_id, safe=""), days_key=days_key
+                        request,
+                        "/app/analytics/chains/" + quote(row.topic_chain_id, safe=""),
+                        days_key=days_key,
+                        return_to=group_origin,
                     )
-                    if row.topic_chain_id
+                    if row.topic_chain_id and chain_counts[row.topic_chain_id] > 1
                     else None
                 ),
+                "chain_count": chain_counts.get(row.topic_chain_id, 0),
             }
         )
     # Old sentiment/content_type groups are filters, not resurrected tabs.
@@ -390,7 +425,8 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         items=items,
         axis_label=DRILL_LABELS[axis],
         value=names.get(int(value), value) if axis == "sources" else value,
-        back_url=_analytics_url(request, "/app/analytics", days_key=days_key, group_by=back_axis),
+        back_url=_safe_analytics_return(request.query_params.get("return_to"))
+        or _analytics_url(request, "/app/analytics", days_key=days_key, group_by=back_axis),
     )
 
 
@@ -497,12 +533,20 @@ async def _fetch_grouped(
     for group in result.get("groups", []):
         if axis == GroupingAxis.TOPIC_CHAINS:
             group["url"] = _analytics_url(
-                request, "/app/analytics/chains/" + quote(str(group["chain_id"]), safe=""), days_key=days_key
+                request,
+                "/app/analytics/chains/" + quote(str(group["chain_id"]), safe=""),
+                days_key=days_key,
+                return_to=_analytics_origin(request, days_key),
             )
         else:
             value = group["source_id"] if axis == GroupingAxis.SOURCES else group["key"]
             group["url"] = _analytics_url(
-                request, "/app/analytics/group", days_key=days_key, axis=axis.value, value=value
+                request,
+                "/app/analytics/group",
+                days_key=days_key,
+                axis=axis.value,
+                value=value,
+                return_to=_analytics_origin(request, days_key),
             )
 
     return {
@@ -669,7 +713,10 @@ async def analytics_chains(request: Request):
         )
     for chain in chains:
         chain["url"] = _analytics_url(
-            request, "/app/analytics/chains/" + quote(chain["chain_id"], safe=""), days_key=days_key
+            request,
+            "/app/analytics/chains/" + quote(chain["chain_id"], safe=""),
+            days_key=days_key,
+            return_to=_analytics_origin(request, days_key),
         )
 
     chain_filters = {
@@ -745,12 +792,23 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     }
     names = await _source_names(source_ids)
 
+    chains_url = _analytics_url(request, "/app/analytics/chains", days_key=days_key)
+    back_url = _safe_analytics_return(request.query_params.get("return_to")) or chains_url
+    back_label = {
+        "/app/analytics/group": "К группе",
+        "/app/analytics": "К аналитике",
+        "/app/analytics/": "К аналитике",
+        "/app/analytics/chains": "Все цепочки",
+    }.get(urlsplit(back_url).path, "Все цепочки")
+
     return render(
         request,
         "web/analytics_chain_detail.html",
         section="analytics",
         chain=chain_data,
-        chains_url=_analytics_url(request, "/app/analytics/chains", days_key=days_key),
+        chains_url=chains_url,
+        back_url=back_url,
+        back_label=back_label,
         source_names=names,
         perms_can=perms_can,
     )

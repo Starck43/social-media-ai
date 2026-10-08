@@ -24,6 +24,52 @@ as a per-date chronology.
 > **"Хронология"** tab (chronology as its own view) and hides `topic_chains`
 > from the axis switcher. Chronology is web-only; chains have their own web page and API endpoints.
 
+
+### Drill-down (web-only)
+
+`GET /app/analytics/group?axis=...&value=...` opens a flat list of matching
+analyses, newest date first (ID descending breaks date ties), using the same
+period/source/tenant queryset as the group cards. Rows without topic_chain_id
+are included; the chain list is not used to determine group membership.
+The route checks `aianalytics.view` before fetching any rows. Invalid axes,
+source IDs, entity types or sentiment/media values return HTTP 400.
+
+| Drill-down axis | Row matching rule |
+| --- | --- |
+| themes | Case-insensitive membership in all distinct topics; `(без темы)` matches empty/missing topics |
+| sources | Exact source_id (integer), never the displayed source name |
+| entities | Exact entity name; optional entity_type person/brand/org |
+| sentiment | Shared sentiment_bucket(score): positive >0.6, negative <0.4, boundaries neutral |
+| content_type | Containment in normalized media_types (text/image/video) |
+| intent | Extracted intent_type; unknown matches missing intent |
+| days | Chronology key for the selected day/week/month view |
+
+Extraction supports current multi_llm_analysis.text_analysis and flat/legacy
+stored shapes. Sentiment and content_type remain row-filter names, not enum
+axes or restored switcher tabs. Existing sentiment/media cross-filters also
+apply to the drill-down list. Topics now count each matching analysis once for
+every distinct topic, rather than only its first topic; case variants merge
+under the first display label. Entity duplicates count once per analysis/name.
+This makes group counts agree with the flat list (not occurrence frequency).
+Source groups retain source_id alongside their display key, so same-named
+sources stay distinguishable. No migration or new API endpoint is introduced.
+
+Group cards link to this view with URL-encoded values. Chronology group headings
+link too, without nesting anchors around their existing analysis links. The
+breadcrumb preserves days, source_id, entity_type, tenant_id and cross-filters.
+The list shows date, source, title, sentiment and an optional chain link, with
+no write buttons. Empty results show an empty state, not a redirect to chains.
+Titles/labels in the new view are HTML-escaped.
+
+Top thematic chain cards and direct `?group_by=topic_chains` groups link to
+`/app/analytics/chains/{chain_id}`. The direct view is supported for existing
+links but topic_chains stays out of the switcher; normal page loads still use
+five group-count aggregations. The chain list's selection/filter/sort behavior
+is unchanged. Its title/open links, sort form and chain-detail back link keep
+the filter query. Nested source links are no longer nested inside a title link.
+Chain detail honors tenant/source/period scope and reads nested/flat titles for
+every timeline entry. It remains a retrospective, not a flat group filter.
+
 ### `GroupingAxis` values
 
 | Axis | Groups by | JSONB field | Notes |

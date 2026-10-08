@@ -13,11 +13,13 @@ mutation uses (`guard_web` + `perms.can`), never open to a plain viewer.
 
 from __future__ import annotations
 
+from urllib.parse import quote, urlencode
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from app.services.ai.reporting import MEDIA_FILTERS, REMOVED_GROUPING_AXES, SENTIMENT_FILTERS, ReportAggregator
 from app.services.ai.grouping import _extract_entities
+from app.services.ai.reporting import MEDIA_FILTERS, REMOVED_GROUPING_AXES, SENTIMENT_FILTERS, ReportAggregator
 
 from .deps import (
     action_tenant_id,
@@ -35,10 +37,87 @@ PERIODS = (("7", "7 дней"), ("30", "30 дней"), ("90", "3 месяца"),
 
 # Chain-list sort orders: `desc` is the default ("сначала новые" — the latest
 # analysis in the chain decides the position); `asc` flips the timeline.
-CHAIN_SORTS = (("desc", "Сначала новые"), ("asc", "Сначала старые"), ("sentiment_asc", "Сначала негативные — репутационный риск"))
+CHAIN_SORTS = (
+    ("desc", "Сначала новые"),
+    ("asc", "Сначала старые"),
+    ("sentiment_asc", "Сначала негативные — репутационный риск"),
+)
 
 
-async def _analytics(tenant_id: int | None, is_superuser: bool, days: int | None, filter_tenant_id: int | None) -> dict:
+NAV_FILTERS = (
+    "days",
+    "tenant_id",
+    "source_id",
+    "entity_type",
+    "sentiment",
+    "media",
+    "group_by_period",
+    "sort",
+    "entity_name",
+    "content_type",
+    "intent",
+    "chain_id",
+)
+DRILL_LABELS = {
+    "themes": "По темам",
+    "sources": "По источникам",
+    "entities": "По сущностям",
+    "sentiment": "По тональности",
+    "content_type": "По типу контента",
+    "intent": "По намерению",
+    "days": "Хронология",
+}
+
+
+def _analytics_url(request: Request, path: str, *, days_key: str | None = None, **extra) -> str:
+    """Encode navigation once; never interpolate untrusted query strings in HTML."""
+    params = {key: request.query_params[key] for key in NAV_FILTERS if key in request.query_params}
+    if days_key is not None:
+        params["days"] = days_key
+    params.update({key: value for key, value in extra.items() if value is not None})
+    return path + (("?" + urlencode(params)) if params else "")
+
+
+async def _scoped_analytics_rows(
+    request: Request, days: int | None, filter_tenant_id: int | None, *, chain_id: str | None = None
+):
+    """One queryset/window/source scope for groups, drill-down and chain detail."""
+    from datetime import date, timedelta
+
+    from app.core.tenant_context import tenant_scope
+    from app.models import AIAnalytics
+
+    qs = AIAnalytics.objects.all()
+    if days is not None:
+        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
+    effective_tenant_id = (
+        filter_tenant_id if filter_tenant_id is not None else getattr(request.state, "tenant_id", None)
+    )
+    if effective_tenant_id is not None:
+        qs = qs.filter(tenant_id=effective_tenant_id)
+    source_id = request.query_params.get("source_id")
+    if source_id:
+        try:
+            source_id = int(source_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="source_id must be an integer") from exc
+        qs = qs.filter(source_id=source_id)
+    if chain_id is not None:
+        qs = qs.filter(topic_chain_id=chain_id)
+    user = getattr(request.state, "web_user", None)
+    if user and user.is_superuser and getattr(request.state, "tenant_id", None) is None:
+        with tenant_scope(bypass=True):
+            return list(await qs)
+    return list(await qs)
+
+
+async def _analytics(
+    tenant_id: int | None,
+    is_superuser: bool,
+    days: int | None,
+    filter_tenant_id: int | None,
+    source_id: int | None = None,
+) -> dict:
     """Aggregate the analytics widgets for the ambient scope.
 
     A superuser without an active workspace sees global aggregates; a superuser
@@ -52,11 +131,15 @@ async def _analytics(tenant_id: int | None, is_superuser: bool, days: int | None
         from app.core.tenant_context import tenant_scope
 
         with tenant_scope(bypass=True):
-            return await _aggregate(agg, days, filter_tenant_id)
-    return await _aggregate(agg, days, filter_tenant_id)
+            return await _aggregate(
+                agg, days, filter_tenant_id if filter_tenant_id is not None else tenant_id, source_id
+            )
+    return await _aggregate(agg, days, filter_tenant_id if filter_tenant_id is not None else tenant_id, source_id)
 
 
-async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | None) -> dict:
+async def _aggregate(
+    agg: ReportAggregator, days: int | None, tenant_id: int | None, source_id: int | None = None
+) -> dict:
     # tenant_id narrows the methods that accept it (a superuser previewing one
     # workspace); the rest are scoped by the manager guard to the ambient scope.
     sentiment = await agg.get_sentiment_trends(days=days)
@@ -70,10 +153,15 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
 
     # Chains: group ai_analytics rows by topic_chain_id (Phase 4 display)
     from datetime import date, timedelta
+
     from app.models import AIAnalytics
     from app.services.ai.chain_resolver import human_chain_label
 
     chain_query = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
+    if tenant_id is not None:
+        chain_query = chain_query.filter(tenant_id=tenant_id)
+    if source_id is not None:
+        chain_query = chain_query.filter(source_id=source_id)
     if days is not None:
         cutoff = date.today() - timedelta(days=days)
         chain_query = chain_query.filter(AIAnalytics.analysis_date >= cutoff)
@@ -105,16 +193,18 @@ async def _aggregate(agg: ReportAggregator, days: int | None, tenant_id: int | N
     chains_result = []
     for cid, entry in chains_map.items():
         scores = entry.pop("scores")
-        chains_result.append({
-            "chain_id": entry["chain_id"],
-            "chain_label": entry["chain_label"],
-            "entry_count": entry["entry_count"],
-            "date_range": {
-                "start": entry["first_date"].strftime("%d.%m.%Y") if entry["first_date"] else None,
-                "end": entry["last_date"].strftime("%d.%m.%Y") if entry["last_date"] else None,
-            },
-            "avg_sentiment": round(sum(scores) / len(scores), 3) if scores else None,
-        })
+        chains_result.append(
+            {
+                "chain_id": entry["chain_id"],
+                "chain_label": entry["chain_label"],
+                "entry_count": entry["entry_count"],
+                "date_range": {
+                    "start": entry["first_date"].strftime("%d.%m.%Y") if entry["first_date"] else None,
+                    "end": entry["last_date"].strftime("%d.%m.%Y") if entry["last_date"] else None,
+                },
+                "avg_sentiment": round(sum(scores) / len(scores), 3) if scores else None,
+            }
+        )
     chains_result.sort(key=lambda c: -c["entry_count"])
 
     # Roll the sentiment distribution up for a headline widget.
@@ -194,10 +284,22 @@ async def analytics_page(request: Request):
 
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
-    data = await _analytics(tenant_id, is_superuser, days, filter_tenant_id)
+    source_id = request.query_params.get("source_id")
+    if source_id:
+        try:
+            source_id = int(source_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="source_id must be an integer") from exc
+    else:
+        source_id = None
+    data = await _analytics(tenant_id, is_superuser, days, filter_tenant_id, source_id)
     # Grouped analytics — axis switcher on the page.
-    grouped = await _fetch_grouped(days, filter_tenant_id, is_superuser, tenant_id,
-                                   request)
+    grouped = await _fetch_grouped(days, filter_tenant_id, is_superuser, tenant_id, request)
+
+    for chain in data.get("chains", []):
+        chain["url"] = _analytics_url(
+            request, "/app/analytics/chains/" + quote(chain["chain_id"], safe=""), days_key=days_key
+        )
 
     return render(
         request,
@@ -210,6 +312,85 @@ async def analytics_page(request: Request):
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
         grouped_data=grouped,
+        chains_url=_analytics_url(request, "/app/analytics/chains", days_key=days_key),
+    )
+
+
+@router.get("/group")
+async def analytics_group(request: Request, axis: str, value: str, entity_type: str | None = None):
+    """Read-only, flat membership list; chain-less rows are intentionally included."""
+    from datetime import date
+
+    from app.services.ai.grouping import _digest_value, _extract_sentiment, filter_analytics, matches_analytics_group
+
+    denied = guard_web(request, "aianalytics", "view", back="/app")
+    if denied is not None:
+        return denied
+    if axis not in DRILL_LABELS:
+        raise HTTPException(status_code=400, detail=f"Use axis: {', '.join(DRILL_LABELS)}")
+    if entity_type is not None and entity_type not in ("person", "brand", "org"):
+        raise HTTPException(status_code=400, detail="Use entity_type: person, brand, org")
+    if axis == "sources":
+        try:
+            int(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Source group value must be an integer ID") from exc
+    if axis == "sentiment" and value not in SENTIMENT_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Use sentiment value: {', '.join(SENTIMENT_FILTERS)}")
+    if axis == "content_type" and value not in MEDIA_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Use content_type value: {', '.join(MEDIA_FILTERS)}")
+    days, days_key = _resolve_days(request)
+    user = getattr(request.state, "web_user", None)
+    is_superuser = bool(user and user.is_superuser)
+    filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
+    rows = await _scoped_analytics_rows(request, days, filter_tenant_id)
+    try:
+        rows = filter_analytics(
+            rows,
+            sentiment=request.query_params.get("sentiment") or None,
+            media=request.query_params.get("media") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    rows = [
+        row
+        for row in rows
+        if matches_analytics_group(
+            row, axis, value, entity_type=entity_type, group_by_period=request.query_params.get("group_by_period")
+        )
+    ]
+    rows.sort(key=lambda row: (row.analysis_date or date.min, row.id), reverse=True)
+    names = await _source_names({row.source_id for row in rows})
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": row.id,
+                "date": row.analysis_date,
+                "source_name": names.get(row.source_id, f"Источник #{row.source_id}"),
+                "title": _digest_value(row.summary_data, ("analysis_title",)) or f"Анализ #{row.id}",
+                "sentiment": _extract_sentiment(row.summary_data),
+                "chain_url": (
+                    _analytics_url(
+                        request, "/app/analytics/chains/" + quote(row.topic_chain_id, safe=""), days_key=days_key
+                    )
+                    if row.topic_chain_id
+                    else None
+                ),
+            }
+        )
+    # Old sentiment/content_type groups are filters, not resurrected tabs.
+    back_axis = request.query_params.get("group_by") or (axis if axis not in REMOVED_GROUPING_AXES else "themes")
+    if back_axis not in ("days", "themes", "sources", "entities", "intent", "topic_chains"):
+        back_axis = "themes"
+    return render(
+        request,
+        "web/analytics_group.html",
+        section="analytics",
+        items=items,
+        axis_label=DRILL_LABELS[axis],
+        value=names.get(int(value), value) if axis == "sources" else value,
+        back_url=_analytics_url(request, "/app/analytics", days_key=days_key, group_by=back_axis),
     )
 
 
@@ -233,8 +414,11 @@ async def _fetch_grouped(
     from app.types.enums.bot_types import GroupingAxis
 
     group_by = request.query_params.get("group_by", "themes")
-    if group_by in REMOVED_GROUPING_AXES or group_by == "topic_chains":
-        raise HTTPException(status_code=400, detail="Use: days, themes, sources, entities, intent; topic_chains has its own /app/analytics/chains page")
+    if group_by in REMOVED_GROUPING_AXES:
+        raise HTTPException(
+            status_code=400,
+            detail="Use: days, themes, sources, entities, intent; topic_chains has its own /app/analytics/chains page",
+        )
     sentiment = request.query_params.get("sentiment") or None
     media = request.query_params.get("media") or None
     if sentiment is not None and sentiment not in SENTIMENT_FILTERS:
@@ -257,19 +441,7 @@ async def _fetch_grouped(
     if entity_type and entity_type not in {"person", "brand", "org"}:
         raise HTTPException(status_code=400, detail="Use entity_type: person, brand, org")
 
-    # Fetch raw rows with the same scope as the main analytics.
-    qs = AIAnalytics.objects.all()
-    if filter_tenant_id is not None:
-        qs = qs.filter(tenant_id=filter_tenant_id)
-    if days is not None:
-        from datetime import date, timedelta
-        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
-
-    if is_superuser and tenant_id is None:
-        with tenant_scope(bypass=True):
-            rows = list(await qs)
-    else:
-        rows = list(await qs)
+    rows = await _scoped_analytics_rows(request, days, filter_tenant_id)
 
     try:
         result = await group_analytics(
@@ -277,7 +449,8 @@ async def _fetch_grouped(
             axis=axis,
             entity_type=entity_type if axis == GroupingAxis.ENTITIES else None,
             group_by_period=group_by_period if axis == GroupingAxis.DAYS else None,
-            sentiment=sentiment, media=media,
+            sentiment=sentiment,
+            media=media,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -298,15 +471,39 @@ async def _fetch_grouped(
             try:
                 entity_type_filter = entity_type if ax_enum == GroupingAxis.ENTITIES else None
                 period = group_by_period if ax_enum == GroupingAxis.DAYS else None
-                res = await group_analytics(rows, axis=ax_enum, entity_type=entity_type_filter, group_by_period=period, sentiment=sentiment, media=media)
+                res = await group_analytics(
+                    rows,
+                    axis=ax_enum,
+                    entity_type=entity_type_filter,
+                    group_by_period=period,
+                    sentiment=sentiment,
+                    media=media,
+                )
                 group_counts[ax_val] = len(res.get("groups", []))
             except ValueError:
                 group_counts[ax_val] = 0
 
     source_names = {}
     if axis == GroupingAxis.DAYS and result.get("groups"):
-        source_ids = {entry.get("source_id") for group in result.get("groups", []) for entry in group.get("entries", []) if entry.get("source_id")}
+        source_ids = {
+            entry.get("source_id")
+            for group in result.get("groups", [])
+            for entry in group.get("entries", [])
+            if entry.get("source_id")
+        }
         source_names = await _source_names(source_ids)
+
+    days_key = "all" if days is None else str(days)
+    for group in result.get("groups", []):
+        if axis == GroupingAxis.TOPIC_CHAINS:
+            group["url"] = _analytics_url(
+                request, "/app/analytics/chains/" + quote(str(group["chain_id"]), safe=""), days_key=days_key
+            )
+        else:
+            value = group["source_id"] if axis == GroupingAxis.SOURCES else group["key"]
+            group["url"] = _analytics_url(
+                request, "/app/analytics/group", days_key=days_key, axis=axis.value, value=value
+            )
 
     return {
         "groups": result.get("groups", []),
@@ -316,9 +513,15 @@ async def _fetch_grouped(
         "visible_axes": [value for value, _ in axes_for_counts if group_counts[value] >= 2 or value == axis.value],
         "sentiment": sentiment,
         "media": media,
-        "axis_urls": {value: str(request.url.include_query_params(group_by=value).remove_query_params("entity_type")) if value != "entities" else str(request.url.include_query_params(group_by=value)) for value, _ in axes_for_counts},
-        "entity_urls": {value: str(request.url.include_query_params(group_by="entities", entity_type=value)) for value in ("brand", "person", "org")},
-        "period_urls": {value: str(request.url.include_query_params(group_by="days", group_by_period=value)) for value in ("day", "week", "month")},
+        "axis_urls": {value: str(request.url.include_query_params(group_by=value)) for value, _ in axes_for_counts},
+        "entity_urls": {
+            value: str(request.url.include_query_params(group_by="entities", entity_type=value))
+            for value in ("brand", "person", "org")
+        },
+        "period_urls": {
+            value: str(request.url.include_query_params(group_by="days", group_by_period=value))
+            for value in ("day", "week", "month")
+        },
         "group_by_period": group_by_period,
         "source_names": source_names,
     }
@@ -337,7 +540,7 @@ async def _source_names(source_ids: set[int]) -> dict[int, str]:
 @router.get("/chains")
 async def analytics_chains(request: Request):
     """All theme chains with a chronological retrospective per chain.
-    
+
     A chain groups the analyses of one ongoing theme/source/user over time.
     This page lists every chain the workspace has and, for each, a timeline of
     its analyses — the "удобный просмотр ретроспективы" the user asked for.
@@ -348,9 +551,9 @@ async def analytics_chains(request: Request):
     newest first) or `?sort=asc` (oldest first).
     """
     from app.models import AIAnalytics
+    from app.services.ai.grouping import _extract_entities, _extract_intent, _extract_sentiment, filter_analytics
     from app.services.ai.topic_chain_service import TopicChainService
-    from app.services.ai.grouping import _extract_entities, _extract_sentiment, _extract_intent, filter_analytics
-    
+
     # Resolve days and tenant context like the main analytics page
     days, days_key = _resolve_days(request)
     sort = request.query_params.get("sort", "desc")
@@ -360,7 +563,7 @@ async def analytics_chains(request: Request):
     user = getattr(request.state, "web_user", None)
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
-    
+
     # Get optional filters
     entity_name = request.query_params.get("entity_name")
     entity_type = request.query_params.get("entity_type")
@@ -369,23 +572,25 @@ async def analytics_chains(request: Request):
     media = request.query_params.get("media") or request.query_params.get("content_type") or None
     intent = request.query_params.get("intent")
     chain_id = request.query_params.get("chain_id")
-    
+
     # Build base query: rows with topic_chain_id not null
     qs = AIAnalytics.objects.filter(AIAnalytics.topic_chain_id.isnot(None))
-    
+
     # Apply date filter if days is specified
     if days is not None:
         from datetime import date, timedelta
+
         qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
-    
+
     # Apply tenant filter
     if is_superuser and tenant_id is None:
         from app.core.tenant_context import tenant_scope
+
         with tenant_scope(bypass=True):
             rows = list(await qs)
     else:
         rows = list(await qs)
-    
+
     if filter_tenant_id is not None:
         rows = [row for row in rows if row.tenant_id == filter_tenant_id]
     try:
@@ -397,21 +602,21 @@ async def analytics_chains(request: Request):
     filtered_rows = []
     for row in rows:
         match = True
-        
+
         # source_id filter
         if source_id is not None and str(row.source_id) != source_id:
             match = False
-        
+
         # intent filter
         if match and intent is not None:
             intnt = _extract_intent(row.summary_data or {})
             if intnt != intent:
                 match = False
-        
+
         # chain_id filter (topic_chain_id)
         if match and chain_id is not None and row.topic_chain_id != chain_id:
             match = False
-        
+
         # entity filter
         if match and entity_name and entity_type:
             entities = _extract_entities(row.summary_data or {})
@@ -422,20 +627,25 @@ async def analytics_chains(request: Request):
                     break
             if not entity_found:
                 match = False
-        
+
         if match:
             filtered_rows.append(row)
-    
+
     rows = filtered_rows
-    
+
     # Build chains from the (possibly filtered) rows
     chain_data = TopicChainService().build_topic_chain(rows)
-    
+
     # Source names for every source a chain's steps touch, so the list can show
     # "по источнику" вместо bare #id.
-    source_ids = {step["source_info"]["source_id"] for ch in chain_data.values() for step in ch.get("evolution", []) if step.get("source_info", {}).get("source_id")}
+    source_ids = {
+        step["source_info"]["source_id"]
+        for ch in chain_data.values()
+        for step in ch.get("evolution", [])
+        if step.get("source_info", {}).get("source_id")
+    }
     names = await _source_names(source_ids)
-    
+
     scores_by_chain = {}
     for row in rows:
         extracted = _extract_sentiment(row.summary_data)
@@ -445,16 +655,40 @@ async def analytics_chains(request: Request):
         scores = scores_by_chain.get(key, [])
         chain["avg_sentiment"] = sum(scores) / len(scores) if scores else None
     if sort == "sentiment_asc":
-        chains = sorted(chain_data.values(), key=lambda ch: (
-            ch["avg_sentiment"] is None,
-            ch["avg_sentiment"] if ch["avg_sentiment"] is not None else 0,
-            ch.get("chain_id") or "",
-        ))
+        chains = sorted(
+            chain_data.values(),
+            key=lambda ch: (
+                ch["avg_sentiment"] is None,
+                ch["avg_sentiment"] if ch["avg_sentiment"] is not None else 0,
+                ch.get("chain_id") or "",
+            ),
+        )
     else:
-        chains = sorted(chain_data.values(), key=lambda ch: ch.get("date_range", {}).get("end") or "", reverse=(sort == "desc"))
-    chain_filters = {key: value for key, value in request.query_params.items() if key in {
-        "days", "tenant_id", "source_id", "entity_name", "entity_type", "sentiment", "media", "content_type", "intent", "chain_id"
-    }}
+        chains = sorted(
+            chain_data.values(), key=lambda ch: ch.get("date_range", {}).get("end") or "", reverse=(sort == "desc")
+        )
+    for chain in chains:
+        chain["url"] = _analytics_url(
+            request, "/app/analytics/chains/" + quote(chain["chain_id"], safe=""), days_key=days_key
+        )
+
+    chain_filters = {
+        key: value
+        for key, value in request.query_params.items()
+        if key
+        in {
+            "days",
+            "tenant_id",
+            "source_id",
+            "entity_name",
+            "entity_type",
+            "sentiment",
+            "media",
+            "content_type",
+            "intent",
+            "chain_id",
+        }
+    }
     chain_filters["days"] = days_key
     return render(
         request,
@@ -466,36 +700,26 @@ async def analytics_chains(request: Request):
         sort=sort,
         sorts=CHAIN_SORTS,
         chain_filters=chain_filters,
+        analytics_url=_analytics_url(request, "/app/analytics", days_key=days_key),
         perms_can=perms_can,
     )
+
+
 @router.get("/chains/{chain_id}")
 async def analytics_chain_detail(request: Request, chain_id: str):
     """One chain's full retrospective: a chronological timeline of analyses."""
+    from app.core.tenant_context import tenant_scope
     from app.models import AIAnalytics
     from app.services.ai.topic_chain_service import TopicChainService
-    from app.core.tenant_context import tenant_scope
 
     # Resolve days and tenant context like the main analytics page
-    days, _ = _resolve_days(request)
+    days, days_key = _resolve_days(request)
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
     is_superuser = bool(user and user.is_superuser)
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
-    # Build base query: rows with this topic_chain_id
-    qs = AIAnalytics.objects.filter(topic_chain_id=chain_id)
-
-    # Apply date filter if days is specified
-    if days is not None:
-        from datetime import date, timedelta
-        qs = qs.filter(analysis_date__gte=date.today() - timedelta(days=days))
-
-    # Apply tenant filter
-    if is_superuser and tenant_id is None:
-        with tenant_scope(bypass=True):
-            rows = list(await qs)
-    else:
-        rows = list(await qs)
+    rows = await _scoped_analytics_rows(request, days, filter_tenant_id, chain_id=chain_id)
 
     if not rows:
         return render(request, "web/not_found.html", status_code=404)
@@ -504,7 +728,21 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     if chain_data is None:
         chain_data = {"chain_id": chain_id, "evolution": [], "total_analyses": 0, "date_range": {}}
 
-    source_ids = {step["source_info"]["source_id"] for step in chain_data.get("evolution", []) if step.get("source_info", {}).get("source_id")}
+    # The chain service's legacy title lookup is top-level only. Read the same
+    # nested/flat title contract as the drill-down list for every timeline entry.
+    from app.services.ai.grouping import _digest_value
+
+    rows_by_id = {row.id: row for row in rows}
+    for step in chain_data.get("evolution", []):
+        row = rows_by_id.get(step.get("id"))
+        if row is not None:
+            step["analysis_title"] = _digest_value(row.summary_data, ("analysis_title",)) or step.get("analysis_title")
+
+    source_ids = {
+        step["source_info"]["source_id"]
+        for step in chain_data.get("evolution", [])
+        if step.get("source_info", {}).get("source_id")
+    }
     names = await _source_names(source_ids)
 
     return render(
@@ -512,6 +750,7 @@ async def analytics_chain_detail(request: Request, chain_id: str):
         "web/analytics_chain_detail.html",
         section="analytics",
         chain=chain_data,
+        chains_url=_analytics_url(request, "/app/analytics/chains", days_key=days_key),
         source_names=names,
         perms_can=perms_can,
     )

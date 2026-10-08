@@ -10,8 +10,7 @@ import pytest
 
 from app.models import AIAnalytics, Platform, Source
 from app.services.ai.grouping import group_analytics
-from app.types import PlatformType, SourceType, PeriodType
-
+from app.types import PeriodType, PlatformType, SourceType
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -105,7 +104,7 @@ async def test_group_by_themes_counts_topics(source):
     assert result["groups"][0]["key"] == "отпуск"
     assert result["groups"][0]["count"] == 2
     assert result["groups"][1]["key"] == "цены"
-    assert result["groups"][1]["count"] == 1
+    assert result["groups"][1]["count"] == 2
 
 
 async def test_group_by_themes_falls_back_to_no_topic(source):
@@ -331,3 +330,25 @@ async def test_filter_missing_sentiment_is_not_neutral_and_media_uses_containmen
 async def test_invalid_filters_rejected_on_empty_input(filters):
     with pytest.raises(ValueError):
         await group_analytics([], "entities", **filters)
+
+
+async def test_theme_membership_all_topics_casefold_and_duplicates(source):
+    from app.services.ai.grouping import matches_analytics_group
+
+    first = await _row(source, day_offset=1, summary_data={"topics": ["A", "Birthday", "BIRTHDAY"]})
+    second = await _row(source, summary_data=_summary(topics=["birthday"]))
+    result = await group_analytics([first, second], "themes", time_breakdown=True)
+    group = next(group for group in result["groups"] if group["key"] == "Birthday")
+    assert group["count"] == 2 and sum(day["count"] for day in group["entries"]) == 2
+    assert all(matches_analytics_group(row, "themes", group["key"]) for row in (first, second))
+
+
+async def test_entity_counts_unique_analysis_not_duplicate_mentions(source):
+    from app.services.ai.grouping import matches_analytics_group
+
+    row = await _row(
+        source, summary_data={"entities": [{"name": "Ivan", "type": "person"}, {"name": "Ivan", "type": "person"}]}
+    )
+    result = await group_analytics([row], "entities", entity_type="person")
+    assert result["groups"][0]["count"] == 1
+    assert matches_analytics_group(row, "entities", "Ivan", entity_type="person")

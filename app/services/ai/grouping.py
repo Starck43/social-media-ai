@@ -17,7 +17,6 @@ from app.services.ai.chain_resolver import human_chain_label
 from app.services.ai.reporting import MEDIA_FILTERS, SENTIMENT_FILTERS, sentiment_bucket
 from app.types.enums.bot_types import GroupingAxis
 
-
 # ── low-level extractors ──────────────────────────────────────────────────────
 
 
@@ -50,18 +49,17 @@ def _extract_topics(summary_data: dict) -> list[str]:
     """Extract topics/keywords from summary_data JSON."""
     if not summary_data:
         return []
-    text = _text_analysis(summary_data)
-    topics = text.get("main_topics") or text.get("topics") or text.get("key_topics") or []
+    topics = _digest_value(summary_data, ("main_topics", "topics", "key_topics")) or []
     if not isinstance(topics, list):
         return []
     out: list[str] = []
     for t in topics:
-        if isinstance(t, str):
-            out.append(t)
+        if isinstance(t, str) and t.strip():
+            out.append(t.strip())
         elif isinstance(t, dict):
             name = t.get("topic") or t.get("name") or t.get("key")
             if name:
-                out.append(str(name))
+                out.append(str(name).strip())
     return out
 
 
@@ -73,8 +71,9 @@ def _extract_entities(summary_data: dict) -> list[dict]:
     """
     if not summary_data:
         return []
-    text_analysis = _text_analysis(summary_data)
-    entities = text_analysis.get("entities") or []
+    entities = _digest_value(summary_data, ("entities",)) or []
+    if not isinstance(entities, list):
+        return []
     result: list[dict] = []
     for e in entities:
         if not isinstance(e, dict):
@@ -117,7 +116,7 @@ def _extract_intent(summary_data: dict) -> str | None:
     if not summary_data:
         return None
     text = _text_analysis(summary_data)
-    flat = text.get("intent_type")
+    flat = _digest_value(summary_data, ("intent_type",))
     if flat:
         return str(flat).lower()
     primary = _digest_value(summary_data, ("primary_intent", "user_intent"))
@@ -171,15 +170,27 @@ def _format_period_key(key: str, group_by_period: str | None) -> str:
         if len(parts) == 2:
             year, month = int(parts[0]), int(parts[1])
             months = [
-                "январь", "февраль", "март", "апрель", "май", "июнь",
-                "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+                "январь",
+                "февраль",
+                "март",
+                "апрель",
+                "май",
+                "июнь",
+                "июль",
+                "август",
+                "сентябрь",
+                "октябрь",
+                "ноябрь",
+                "декабрь",
             ]
             return f"{months[month - 1]} {year}"
         return key
     # day: format ISO date for Russian locale
     parts = key.split("-")
     if len(parts) == 3:
-        from datetime import date as dt_date, timedelta
+        from datetime import date as dt_date
+        from datetime import timedelta
+
         try:
             d = dt_date(int(parts[0]), int(parts[1]), int(parts[2]))
             today = dt_date.today()
@@ -189,8 +200,18 @@ def _format_period_key(key: str, group_by_period: str | None) -> str:
             if d == yesterday:
                 return "вчера"
             months = [
-                "января", "февраля", "марта", "апреля", "мая", "июня",
-                "июля", "августа", "сентября", "октября", "ноября", "декабря",
+                "января",
+                "февраля",
+                "марта",
+                "апреля",
+                "мая",
+                "июня",
+                "июля",
+                "августа",
+                "сентября",
+                "октября",
+                "ноября",
+                "декабря",
             ]
             if d.year == today.year:
                 return f"{d.day} {months[d.month - 1]}"
@@ -262,6 +283,37 @@ def filter_analytics(rows: list[AIAnalytics], sentiment: str | None = None, medi
             continue
         filtered.append(row)
     return filtered
+
+
+def matches_analytics_group(
+    row: AIAnalytics, axis: str, value: str, entity_type: str | None = None, group_by_period: str | None = None
+) -> bool:
+    """Row membership for drill-down, including rows without topic_chain_id."""
+    if axis == "themes":
+        topics = _extract_topics(row.summary_data)
+        return (not topics) if value == "(без темы)" else any(t.casefold() == value.casefold() for t in topics)
+    if axis == "sources":
+        return row.source_id == int(value)
+    if axis == "entities":
+        return any(
+            ent["name"] == value and (not entity_type or ent["type"] == entity_type)
+            for ent in _extract_entities(row.summary_data)
+        )
+    if axis == "sentiment":
+        sent = _extract_sentiment(row.summary_data)
+        return bool(sent and sentiment_bucket(sent["score"]) == value)
+    if axis == "content_type":
+        return value in _extract_media_types(row)
+    if axis == "intent":
+        return (_extract_intent(row.summary_data) or "unknown") == value
+    if axis == "days":
+        key = (
+            _period_key(row.analysis_date, group_by_period)
+            if group_by_period in ("week", "month") and row.analysis_date
+            else (row.analysis_date.isoformat() if row.analysis_date else "unknown")
+        )
+        return key == value
+    raise ValueError(f"Unknown drill-down axis: {axis}")
 
 
 async def group_analytics(
@@ -340,25 +392,28 @@ async def group_analytics(
             continue
 
         elif axis == GroupingAxis.THEMES:
-            topics = _extract_topics(row.summary_data)
-            if topics:
-                key = topics[0]
-            else:
-                key = "(без темы)"
-            bucket = groups.setdefault(
-                key,
-                {"key": key, "count": 0, "scores": [], "entries": defaultdict(list), "chain_id": None},
-            )
-            bucket["count"] += 1
-            sent = _extract_sentiment(row.summary_data)
-            if sent and sent.get("score") is not None:
-                bucket["scores"].append(float(sent["score"]))
-            # Set chain_id to the first non-null topic_chain_id we encounter
-            if bucket["chain_id"] is None and row.topic_chain_id:
-                bucket["chain_id"] = row.topic_chain_id
-            if time_breakdown:
-                day = row.analysis_date.isoformat() if row.analysis_date else "unknown"
-                bucket["entries"][day].append(row)
+            # Membership is every distinct topic, not only the first topic.
+            # Use casefold for matching/grouping; keep the first display label.
+            topics = _extract_topics(row.summary_data) or ["(без темы)"]
+            seen = set()
+            for topic in topics:
+                canonical = topic.casefold()
+                if canonical in seen:
+                    continue
+                seen.add(canonical)
+                bucket = groups.setdefault(
+                    canonical,
+                    {"key": topic, "count": 0, "scores": [], "entries": defaultdict(list), "chain_id": None},
+                )
+                bucket["count"] += 1
+                sent = _extract_sentiment(row.summary_data)
+                if sent and sent.get("score") is not None:
+                    bucket["scores"].append(float(sent["score"]))
+                if bucket["chain_id"] is None and row.topic_chain_id:
+                    bucket["chain_id"] = row.topic_chain_id
+                if time_breakdown:
+                    day = row.analysis_date.isoformat() if row.analysis_date else "unknown"
+                    bucket["entries"][day].append(row)
             continue
 
         elif axis == GroupingAxis.SOURCES:
@@ -366,10 +421,14 @@ async def group_analytics(
             source_ids_needed.add(row.source_id)
 
         elif axis == GroupingAxis.ENTITIES:
+            seen_entities = set()
             for ent in _extract_entities(row.summary_data):
                 if entity_type and ent["type"] != entity_type:
                     continue
                 key = ent["name"]
+                if key in seen_entities:
+                    continue
+                seen_entities.add(key)
                 bucket = groups.setdefault(
                     key,
                     {"key": key, "count": 0, "scores": [], "entries": defaultdict(list)},
@@ -428,6 +487,8 @@ async def group_analytics(
             "count": bucket["count"],
             "avg_sentiment": avg_sent,
         }
+        if axis == GroupingAxis.SOURCES:
+            group["source_id"] = int(key)
         if axis == GroupingAxis.DAYS:
             group["display_key"] = _format_period_key(bucket["key"], group_by_period)
         if axis == GroupingAxis.TOPIC_CHAINS:

@@ -4,7 +4,7 @@
 {% block content %}
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-            <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
+            <a href="{{ chains_url|e }}" class="text-cyan-400 hover:underline">← Все цепочки</a>
             <span>·</span>
             <span>{{ chain.total_analyses }} анализ(ов)</span>
             {% if chain.date_range.start %}

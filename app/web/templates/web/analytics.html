@@ -9,7 +9,7 @@
             </p>
         </div>
         <form method="get" class="flex items-center gap-2">
-            {% for key in ['group_by', 'entity_type', 'sentiment', 'media', 'group_by_period'] %}
+            {% for key in ['group_by', 'entity_type', 'sentiment', 'media', 'group_by_period', 'source_id'] %}
                 {% if request.query_params.get(key) %}<input type="hidden" name="{{ key }}" value="{{ request.query_params.get(key) }}">{% endif %}
             {% endfor %}
             {% if is_superuser and tenants %}
@@ -58,11 +58,11 @@
     <div class="mt-6">
         <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">🔗 Тематические цепочки</h2>
-            <a href="/app/analytics/chains" class="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Все цепочки →</a>
+            <a href="{{ chains_url|e }}" class="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Все цепочки →</a>
         </div>
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for chain in analytics.chains[:6] %}
-            <a href="/app/analytics/chains/{{ chain.chain_id }}"
+            <a href="{{ chain.url|e }}"
                class="group rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 hover:border-cyan-500 dark:hover:border-cyan-700 transition-colors">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
@@ -144,8 +144,9 @@
         <form method="get" class="flex flex-wrap items-center gap-3" aria-label="Фильтры аналитики">
             <input type="hidden" name="group_by" value="{{ gd.axis }}">
             <input type="hidden" name="days" value="{{ days }}">
+            {% if request.query_params.get('source_id') %}<input type="hidden" name="source_id" value="{{ request.query_params.get('source_id')|e }}">{% endif %}
             {% if filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-            {% if gd.entity_type %}<input type="hidden" name="entity_type" value="{{ gd.entity_type }}">{% endif %}
+            {% if request.query_params.get('entity_type') %}<input type="hidden" name="entity_type" value="{{ request.query_params.get('entity_type')|e }}">{% endif %}
             {% if gd.axis == 'days' %}<input type="hidden" name="group_by_period" value="{{ gd.group_by_period }}">{% endif %}
             <label for="sentiment-filter" class="text-sm text-slate-500 dark:text-slate-400">Тональность</label>
             <select id="sentiment-filter" name="sentiment" onchange="this.form.submit()" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
@@ -167,7 +168,7 @@
         <div class="space-y-6">
             {% for group in gd.groups %}
             <div class="rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
-                <h3 class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">{{ group.display_key }}</h3>
+                <h3 class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300"><a href="{{ group.url|e }}" class="hover:text-cyan-500">{{ group.display_key }} →</a></h3>
                 <div class="space-y-2">
                     {% for entry in group.entries %}
                     {% if entry.analysis_summary %}
@@ -221,59 +222,19 @@
         {% else %}
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for group in gd.groups %}
-            <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <a href="{{ group.url|e }}" class="block rounded-xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
                 <div class="flex items-center justify-between">
                     <h3 class="truncate text-sm font-medium text-slate-200">
-                        {% set axis = gd.axis %}
-                        {% set key = group.key %}
-                        {% set link_params = [] %}
-                        {% set is_link = false %}
-
-                        {% if axis == 'sources' %}
-                            {% set _ = link_params.append('source_id=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'themes' %}
-                            {# For themes, we do not have a filter, so we skip linking for now #}
-                            {% set is_link = false %}
-                        {% elif axis == 'entities' %}
-                            {% set _ = link_params.append('entity_name=' ~ key) %}
-                            {% set _ = link_params.append('entity_type=' ~ (gd.entity_type or '')) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'sentiment' %}
-                            {% set _ = link_params.append('sentiment=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'content_type' %}
-                            {% set _ = link_params.append('content_type=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'intent' %}
-                            {% set _ = link_params.append('intent=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'topic_chains' %}
-                            {% set _ = link_params.append('chain_id=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'days' %}
-                            {# For days, we do not link #}
-                            {% set is_link = false %}
-                        {% endif %}
-
-                        {% if is_link %}
-                            {% set _ = link_params.append('days=' ~ days) %}
-                            {% if filter_tenant_id %}
-                                {% set _ = link_params.append('tenant_id=' ~ filter_tenant_id) %}
-                            {% endif %}
-                            <a href="/app/analytics/chains?{{ link_params|join('&') }}" class="hover:text-cyan-300">{{ group.key }}</a>
-                        {% else %}
-                            {{ group.key }}
-                        {% endif %}
+                        {{ group.key|e }}
                     </h3>
                     <span class="shrink-0 text-xs text-slate-400">
-                        {{ group.count }} упом.
+                        {{ group.count }} анализ(ов)
                         {% if group.avg_sentiment is not none %}
                         · sent: {{ "%.2f"|format(group.avg_sentiment) }}
                         {% endif %}
                     </span>
                 </div>
-            </div>
+            </a>
             {% endfor %}
         </div>
         {% endif %}

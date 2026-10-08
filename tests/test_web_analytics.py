@@ -78,6 +78,7 @@ async def _make_source(client: AsyncClient, tenant_id: int, name: str) -> int:
     external_id = secrets.token_hex(6)
     with tenant_scope(tenant_id):
         source = await Source.objects.create(
+            tenant_id=tenant_id,
             platform_id=platform.id,
             name=name,
             source_type=SourceType.USER,
@@ -120,6 +121,7 @@ async def test_analytics_page_shows_real_data(client: AsyncClient) -> None:
     try:
         with tenant_scope(tenant_id):
             await AIAnalytics.objects.create(
+                tenant_id=tenant_id,
                 source_id=source_id,
                 analysis_date=date.today(),
                 period_type=PeriodType.DAY,
@@ -138,6 +140,7 @@ async def test_analytics_page_shows_real_data(client: AsyncClient) -> None:
                 estimated_cost=25,  # USD cents
             )
             await AIAnalytics.objects.create(
+                tenant_id=tenant_id,
                 source_id=source_id,
                 analysis_date=date.today() - timedelta(days=1),
                 period_type=PeriodType.DAY,
@@ -179,6 +182,7 @@ async def test_analytics_detail_shows_single_analysis(client: AsyncClient) -> No
     try:
         with tenant_scope(tenant_id):
             a = await AIAnalytics.objects.create(
+                tenant_id=tenant_id,
                 source_id=source_id,
                 analysis_date=date.today(),
                 period_type=PeriodType.DAY,
@@ -233,6 +237,7 @@ async def test_analytics_chains_lists_chain_and_detail_shows_timeline(client: As
         with tenant_scope(tenant_id):
             for day_offset in (0, 1):
                 await AIAnalytics.objects.create(
+                    tenant_id=tenant_id,
                     source_id=source_id,
                     analysis_date=date.today() - timedelta(days=day_offset),
                     period_type=PeriodType.DAY,
@@ -263,6 +268,7 @@ async def test_analytics_chains_lists_chain_and_detail_shows_timeline(client: As
 async def _chain_analysis(tenant_id: int, source_id: int, chain_id: str, title: str, day_offset: int) -> int:
     with tenant_scope(tenant_id):
         row = await AIAnalytics.objects.create(
+            tenant_id=tenant_id,
             source_id=source_id,
             analysis_date=date.today() - timedelta(days=day_offset),
             period_type=PeriodType.DAY,
@@ -439,37 +445,80 @@ async def test_cross_filters_entities_work_in_web_and_api(client):
 
 async def test_switcher_runs_five_aggregations_and_hides_single_group_intent(monkeypatch):
     from types import SimpleNamespace
-    from starlette.requests import Request
-    import app.services.ai.grouping as grouping
-    from app.web.analytics import _fetch_grouped
     from unittest.mock import AsyncMock
 
-    rows = [SimpleNamespace(id=index, source_id=1, tenant_id=1, topic_chain_id=None, chain_label=None,
-        analysis_date=date.today() - timedelta(days=index), media_types=["text"], summary_data={"multi_llm_analysis": {"text_analysis": {
-            "main_topics": [f"theme-{index}"], "entities": [{"name": f"entity-{index}", "type": "brand"}],
-            "intent_type": "complaint", "sentiment_score": .2,
-        }}}) for index in (0, 1)]
+    from starlette.requests import Request
+
+    import app.services.ai.grouping as grouping
+    from app.web.analytics import _fetch_grouped
+
+    rows = [
+        SimpleNamespace(
+            id=index,
+            source_id=1,
+            tenant_id=1,
+            topic_chain_id=None,
+            chain_label=None,
+            analysis_date=date.today() - timedelta(days=index),
+            media_types=["text"],
+            summary_data={
+                "multi_llm_analysis": {
+                    "text_analysis": {
+                        "main_topics": [f"theme-{index}"],
+                        "entities": [{"name": f"entity-{index}", "type": "brand"}],
+                        "intent_type": "complaint",
+                        "sentiment_score": 0.2,
+                    }
+                }
+            },
+        )
+        for index in (0, 1)
+    ]
 
     class Rows:
-        def filter(self, *args, **kwargs): return self
+        def filter(self, *args, **kwargs):
+            return self
+
         def __await__(self):
-            async def load(): return rows
+            async def load():
+                return rows
+
             return load().__await__()
 
     monkeypatch.setattr(AIAnalytics.objects, "all", lambda: Rows())
     monkeypatch.setattr(grouping, "_source_name_map", AsyncMock(return_value={1: "Source"}))
     real_group = grouping.group_analytics
     calls = []
+
     async def count(*args, **kwargs):
         calls.append(kwargs["axis"].value)
         return await real_group(*args, **kwargs)
+
     monkeypatch.setattr(grouping, "group_analytics", count)
-    request = Request({"type": "http", "path": "/app/analytics", "headers": [], "query_string": b"group_by=entities&sentiment=negative&media=text", "scheme": "http", "server": ("testserver", 80)})
+    request = Request(
+        {
+            "type": "http",
+            "path": "/app/analytics",
+            "headers": [],
+            "query_string": b"group_by=entities&sentiment=negative&media=text",
+            "scheme": "http",
+            "server": ("testserver", 80),
+        }
+    )
     result = await _fetch_grouped(7, None, False, 1, request)
     assert len(calls) == 5 and set(calls) == {"days", "themes", "sources", "entities", "intent"}
     assert result["group_counts"]["intent"] == 1
     assert "intent" not in result["visible_axes"]
-    request = Request({"type": "http", "path": "/app/analytics", "headers": [], "query_string": b"group_by=intent", "scheme": "http", "server": ("testserver", 80)})
+    request = Request(
+        {
+            "type": "http",
+            "path": "/app/analytics",
+            "headers": [],
+            "query_string": b"group_by=intent",
+            "scheme": "http",
+            "server": ("testserver", 80),
+        }
+    )
     calls.clear()
     result = await _fetch_grouped(7, None, False, 1, request)
     assert len(calls) == 5 and "intent" in result["visible_axes"]
@@ -479,11 +528,17 @@ async def test_chains_risk_sort_missing_sentiment_last_and_filters_persist(clien
     user, tenant_id = await _register(client, "risk")
     source_id = await _make_source(client, tenant_id, "Risk sort source")
     try:
-        for index, (chain, score) in enumerate([("positive", .9), ("negative", .1), ("unknown", None)]):
+        for index, (chain, score) in enumerate([("positive", 0.9), ("negative", 0.1), ("unknown", None)]):
             with tenant_scope(tenant_id):
-                await AIAnalytics.objects.create(source_id=source_id, analysis_date=date.today()-timedelta(days=index),
-                    period_type=PeriodType.DAY, topic_chain_id=f"risk-{chain}", media_types=["image"],
-                    summary_data={"analysis_title":f"Risk title {chain}", "sentiment_score":score})
+                await AIAnalytics.objects.create(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    analysis_date=date.today() - timedelta(days=index),
+                    period_type=PeriodType.DAY,
+                    topic_chain_id=f"risk-{chain}",
+                    media_types=["image"],
+                    summary_data={"analysis_title": f"Risk title {chain}", "sentiment_score": score},
+                )
         await _login(client, user.username)
         response = await client.get("/app/analytics/chains?sort=sentiment_asc&days=7&media=image")
         assert response.status_code == 200
@@ -494,4 +549,279 @@ async def test_chains_risk_sort_missing_sentiment_last_and_filters_persist(clien
         assert response.status_code == 200
         assert "Risk title negative" in response.text and "Risk title positive" not in response.text
     finally:
-        await _drop(user,tenant_id,source_id)
+        await _drop(user, tenant_id, source_id)
+
+
+@pytest.fixture
+async def drill_records(client):
+    """Two sources (same display name), flat/nested rows and chain-less data."""
+    user, tenant_id = await _register(client, "drill")
+    first = await _make_source(client, tenant_id, "Same source name")
+    second = await _make_source(client, tenant_id, "Same source name")
+    birthday = "День рождения & друзья"
+    specs = [
+        (
+            first,
+            0,
+            [birthday, birthday.upper()],
+            [{"name": "Иван", "type": "person"}, {"name": "Иван", "type": "person"}],
+            0.2,
+            "image",
+            "complaint",
+            None,
+        ),
+        (
+            first,
+            1,
+            ["Other", birthday.lower()],
+            [{"name": "Иван", "type": "brand"}],
+            0.8,
+            "video",
+            "announcement",
+            "drill-celebration",
+        ),
+        (first, 2, ["Other"], [{"name": "ACME", "type": "brand"}], 0.8, "text", "complaint", "drill-other"),
+        (second, 0, [], [], 0.5, "image", None, None),
+        (second, 1, None, [], None, "text", None, None),
+        (first, 40, [birthday], [], 0.2, "image", "complaint", None),
+    ]
+    ids = []
+    try:
+        for index, (source_id, offset, topics, entities, score, media, intent, chain) in enumerate(specs):
+            text = {
+                "analysis_title": f"Drill row {index}",
+                "entities": entities,
+                "sentiment_score": score,
+                "intent_type": intent,
+            }
+            if topics is not None:
+                text["topics"] = topics
+            payload = text if index % 2 == 0 else {"multi_llm_analysis": {"text_analysis": text}}
+            with tenant_scope(tenant_id):
+                row = await AIAnalytics.objects.create(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    analysis_date=date.today() - timedelta(days=offset),
+                    period_type=PeriodType.DAY,
+                    summary_data=payload,
+                    media_types=[media],
+                    topic_chain_id=chain,
+                )
+            ids.append(row.id)
+        await _login(client, user.username)
+        yield {"user": user, "tenant_id": tenant_id, "sources": (first, second), "ids": ids, "birthday": birthday}
+    finally:
+        with tenant_scope(tenant_id):
+            await AIAnalytics.objects.delete(source_id=second)
+            await Source.objects.delete_by_id(second)
+        await _drop(user, tenant_id, first)
+
+
+def _drill_ids(html):
+    return [int(id_) for id_ in re.findall(r'data-analysis-id="(\d+)"', html)]
+
+
+def _analytics_links(html):
+    from html import unescape
+
+    return [unescape(link) for link in re.findall(r'href="([^"]+)"', html)]
+
+
+@pytest.mark.parametrize(
+    "axis,value,entity_type,indices",
+    [
+        ("themes", "День рождения & друзья", None, [0, 1]),
+        ("sources", "first", None, [0, 1, 2]),
+        ("entities", "Иван", "person", [0]),
+        ("entities", "Иван", "brand", [1]),
+        ("sentiment", "negative", None, [0]),
+        ("content_type", "image", None, [0, 3]),
+        ("intent", "complaint", None, [0, 2]),
+        ("themes", "(без темы)", None, [3, 4]),
+        ("intent", "unknown", None, [3, 4]),
+    ],
+)
+async def test_drilldown_membership_all_axes_includes_chainless(
+    client, drill_records, axis, value, entity_type, indices
+):
+    data = drill_records
+    if value == "first":
+        value = str(data["sources"][0])
+    params = {"axis": axis, "value": value, "days": 7}
+    if entity_type:
+        params["entity_type"] = entity_type
+    response = await client.get("/app/analytics/group", params=params)
+    assert response.status_code == 200
+    assert set(_drill_ids(response.text)) == {data["ids"][i] for i in indices}
+    assert f"({len(indices)} анализов)" in response.text
+    assert not re.search(r'action="/app/analytics/[^\"]*/delete"', response.text)
+
+
+async def test_group_cards_and_breadcrumb_keep_scope_and_stable_source_ids(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    source = str(data["sources"][0])
+    response = await client.get(
+        "/app/analytics",
+        params={
+            "group_by": "entities",
+            "entity_type": "person",
+            "days": 7,
+            "source_id": source,
+            "sentiment": "negative",
+            "media": "image",
+        },
+    )
+    assert response.status_code == 200
+    links = _analytics_links(response.text)
+    groups = [link for link in links if urlparse(link).path == "/app/analytics/group"]
+    assert len(groups) == 1
+    query = parse_qs(urlparse(groups[0]).query)
+    assert query["axis"] == ["entities"] and query["value"] == ["Иван"]
+    assert query["days"] == ["7"] and query["entity_type"] == ["person"] and query["source_id"] == [source]
+    drill = await client.get(groups[0])
+    assert drill.status_code == 200 and _drill_ids(drill.text) == [data["ids"][0]]
+    back = [
+        link for link in _analytics_links(drill.text) if urlparse(link).path == "/app/analytics" and "group_by=" in link
+    ][0]
+    back_query = parse_qs(urlparse(back).query)
+    for key in ("days", "source_id", "entity_type", "sentiment", "media"):
+        assert back_query[key] == query[key]
+    assert (await client.get(back)).status_code == 200
+    sources = await client.get("/app/analytics?group_by=sources&days=7")
+    links = [
+        parse_qs(urlparse(link).query)
+        for link in _analytics_links(sources.text)
+        if urlparse(link).path == "/app/analytics/group"
+    ]
+    assert {q["value"][0] for q in links} == {str(x) for x in data["sources"]}
+    assert all(q["axis"] == ["sources"] for q in links)
+
+
+async def test_theme_card_count_matches_drill_and_chain_navigation(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    response = await client.get("/app/analytics?group_by=themes&days=7")
+    links = _analytics_links(response.text)
+    birthday_link = next(
+        link
+        for link in links
+        if urlparse(link).path == "/app/analytics/group"
+        and parse_qs(urlparse(link).query)["value"] == [data["birthday"]]
+    )
+    response = await client.get(birthday_link)
+    assert _drill_ids(response.text) == data["ids"][:2]
+    chain = next(
+        link
+        for link in _analytics_links(response.text)
+        if urlparse(link).path == "/app/analytics/chains/drill-celebration"
+    )
+    assert parse_qs(urlparse(chain).query)["days"] == ["7"]
+    detail = await client.get(chain)
+    assert detail.status_code == 200 and "Drill row 1" in detail.text
+    back = next(link for link in _analytics_links(detail.text) if urlparse(link).path == "/app/analytics/chains")
+    assert parse_qs(urlparse(back).query)["days"] == ["7"]
+    listing = await client.get(back)
+    assert listing.status_code == 200
+    assert any(
+        urlparse(link).path == "/app/analytics/chains/drill-celebration" for link in _analytics_links(listing.text)
+    )
+    top = await client.get("/app/analytics?days=7")
+    assert any(urlparse(link).path == "/app/analytics/chains/drill-celebration" for link in _analytics_links(top.text))
+    direct = await client.get("/app/analytics?group_by=topic_chains&days=7")
+    assert direct.status_code == 200
+    assert any(
+        urlparse(link).path == "/app/analytics/chains/drill-celebration" for link in _analytics_links(direct.text)
+    )
+
+
+async def test_drilldown_viewer_read_only_and_tenant_isolation(client, drill_records):
+    data = drill_records
+    viewer = await _invitee("drillViewer", UserRoleType.VIEWER, data["tenant_id"], "secret-password-1")
+    other = None
+    try:
+        async with await _client() as other_client:
+            other, other_tenant = await _register(other_client, "drillForeign")
+            foreign_source = await _make_source(other_client, other_tenant, "Foreign source")
+            with tenant_scope(other_tenant):
+                foreign = await AIAnalytics.objects.create(
+                    tenant_id=other_tenant,
+                    source_id=foreign_source,
+                    analysis_date=date.today(),
+                    period_type=PeriodType.DAY,
+                    summary_data={"topics": [data["birthday"]], "analysis_title": "Foreign private row"},
+                )
+            async with await _client() as viewer_client:
+                await _login(viewer_client, viewer.username)
+                response = await viewer_client.get(
+                    "/app/analytics/group",
+                    params={"axis": "themes", "value": data["birthday"], "days": 7, "tenant_id": other_tenant},
+                )
+                assert response.status_code == 200
+                assert set(_drill_ids(response.text)) == set(data["ids"][:2])
+                assert foreign.id not in _drill_ids(response.text) and "Foreign private row" not in response.text
+                assert not re.search(r'action="/app/analytics/[^\"]*/delete"', response.text)
+    finally:
+        await User.objects.delete_user(viewer.id)
+        if other:
+            await _drop(other, other_tenant, foreign_source)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"axis": "invalid", "value": "x"},
+        {"axis": "sources", "value": "not-an-id"},
+        {"axis": "sentiment", "value": "unknown"},
+        {"axis": "content_type", "value": "audio"},
+        {"axis": "entities", "value": "Иван", "entity_type": "invalid"},
+        {"axis": "themes", "value": "x", "source_id": "invalid"},
+    ],
+)
+async def test_drilldown_invalid_filters_return_400(client, drill_records, params):
+    response = await client.get("/app/analytics/group", params=params)
+    assert response.status_code == 400
+
+
+async def test_chronology_groups_link_without_nested_anchors(client, drill_records):
+    from urllib.parse import parse_qs, urlparse
+
+    data = drill_records
+    for period in ("day", "week", "month"):
+        response = await client.get(
+            "/app/analytics",
+            params={
+                "group_by": "days",
+                "group_by_period": period,
+                "days": 7,
+                "source_id": data["sources"][0],
+                "entity_type": "person",
+            },
+        )
+        assert response.status_code == 200
+        links = [link for link in _analytics_links(response.text) if urlparse(link).path == "/app/analytics/group"]
+        assert links
+        found = set()
+        for link in links:
+            query = parse_qs(urlparse(link).query)
+            assert query["axis"] == ["days"] and query["group_by_period"] == [period]
+            assert query["entity_type"] == ["person"] and query["days"] == ["7"]
+            drill = await client.get(link)
+            assert drill.status_code == 200
+            found.update(_drill_ids(drill.text))
+        assert found == set(data["ids"][:3])
+
+
+async def test_drilldown_denied_before_rows_are_loaded(client, drill_records, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.web.perms import WebPerms
+
+    read = AsyncMock(side_effect=AssertionError("unauthorized rows loaded"))
+    monkeypatch.setattr(WebPerms, "can", lambda *args: False)
+    monkeypatch.setattr("app.web.analytics._scoped_analytics_rows", read)
+    response = await client.get("/app/analytics/group?axis=themes&value=x", follow_redirects=False)
+    assert response.status_code == 302 and response.headers["location"] == "/app"
+    read.assert_not_awaited()

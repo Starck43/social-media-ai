@@ -3,7 +3,7 @@
 {% block title %}Цепочки тем — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-1">
-        <a href="/app/analytics" class="text-sm text-slate-500 hover:text-cyan-400">← Аналитика</a>
+        <a href="{{ analytics_url|e }}" class="text-sm text-slate-500 hover:text-cyan-400">← Аналитика</a>
     </div>
     {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
 
@@ -25,8 +25,8 @@
             {% for chain in chains %}
                 {% call card(extra="transition hover:border-cyan-700") %}
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <a href="/app/analytics/chains/{{ chain.chain_id }}" class="min-w-0">
-                            <p class="truncate font-medium text-slate-200">{{ chain.name }}</p>
+                        <div class="min-w-0">
+                            <a href="{{ chain.url|e }}" class="block truncate font-medium text-slate-200 hover:text-cyan-300">{{ chain.name }}</a>
                             <p class="mt-1 text-xs text-slate-500">
                                 {{ chain.total_analyses }} анализ(ов)
                                 {% if chain.date_range.start %}
@@ -48,9 +48,9 @@
                                     {% endif %}
                                 </p>
                             {% endif %}
-                        </a>
+                        </div>
                         <div class="flex shrink-0 items-center gap-2">
-                            <a href="/app/analytics/chains/{{ chain.chain_id }}" class="text-xs text-cyan-400">Открыть →</a>
+                            <a href="{{ chain.url|e }}" class="text-xs text-cyan-400">Открыть →</a>
                             {% if perms_can(request, 'aianalytics', 'delete') %}
                                 <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">

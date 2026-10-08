@@ -2,7 +2,7 @@
 
 ## Authority and status
 
-Revised on 2026-10-08 against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`. **Proposed sequence; no implementation is claimed by this document.** The original roadmap is preserved in [archive](design/archive/roadmap_integrated_legacy.md); competitor research remains historical input, not a current backlog.
+Revised on 2026-10-08 against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`; revalidated before merge against dev `fa5fb1b224527865dd830e9024f37a67b1ea4748` ([delta recheck](design/business_readiness_recheck_2026_10_08.md)). **Proposed sequence; this documentation delivery does not implement application changes.** The original roadmap is preserved in [archive](design/archive/roadmap_integrated_legacy.md); competitor research remains historical input, not a current backlog.
 
 Read in this order:
 1. [Proposal review](design/proposal_review.md): 40 dispositions, implementation evidence, stale assumptions and verification limits.
@@ -10,7 +10,7 @@ Read in this order:
 3. [Local experience plan](LOCAL_EXPERIENCE_PLAN.md): bounded improvements on the existing architecture.
 4. [Future scale strategy](design/future_scale_strategy.md): optional investments and objective entry criteria.
 
-CA-01–04 are substantially present: strict local analysis validation, default/custom text framing, non-DEBUG audit snapshots and model strategy/default resolution. Keep regression coverage and close remaining boundary gaps rather than reimplement them. Repository migration graph head is 0086; this says nothing about deployed DB revision. Historical test counts are not today's green gate.
+CA-01–04 are substantially present: strict local analysis validation, default/custom text framing, non-DEBUG audit snapshots and model strategy/default resolution. The subsequent dev commit also delivers individual-analysis navigation, conservative metric availability and saved original URLs; these are removed from the remaining UX scope. Keep regression coverage and close remaining boundary gaps rather than reimplement them. Repository migration graph head is 0086; this says nothing about deployed DB revision. Historical test counts are not today's green gate.
 
 ## Recommended delivery order
 

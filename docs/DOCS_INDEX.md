@@ -4,6 +4,7 @@
 
 - **[Integrated roadmap](./ROADMAP_INTEGRATED.md)** — proposed sequence, small PRs and launch gates; reviewed against dev, not a production certification.
 - **[Proposal review](./design/proposal_review.md)** — dispositions of all research proposals, code evidence and stale assumptions.
+- **[Pre-merge delta recheck](./design/business_readiness_recheck_2026_10_08.md)** — new dev work accounted for before merging the documentation; remaining risks revalidated.
 - **[Local experience plan](./LOCAL_EXPERIENCE_PLAN.md)** — bounded onboarding, trust, recovery and report improvements; migration boundaries marked.
 - **[Business production readiness](./BUSINESS_PRODUCTION_READINESS.md)** — security, cost, delivery, deployment, retention, recovery and support gates.
 - **[Future scale strategy](./design/future_scale_strategy.md)** — deferred embeddings, alerts, billing and capacity work with entry criteria.

@@ -6,7 +6,7 @@ The personal-agent foundation can become a business product without immediately 
 
 Use progressive delivery: **managed pilot → repeatable B2B service → self-service SaaS**. A single VPS is a starting topology, not a promise of availability or an eternal infrastructure constraint. Availability requirements, measured bottlenecks and customer value decide the next architecture.
 
-Baseline and evidence: [proposal review](proposal_review.md), dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`. These are deferred proposals; nothing below is claimed implemented.
+Baseline and evidence: [proposal review](proposal_review.md), initially dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`, rechecked against dev `fa5fb1b224527865dd830e9024f37a67b1ea4748` ([delta recheck](business_readiness_recheck_2026_10_08.md)). The new analysis-detail UX does not implement the deferred initiatives below.
 
 ## Deferred initiatives with entry criteria
 

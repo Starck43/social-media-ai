@@ -2,7 +2,7 @@
 
 ## Release position
 
-Baseline: dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`, reviewed 2026-10-08. **Readiness has not been demonstrated.** This document defines proposed gates, not a report of an actual deployment or security certification.
+Baseline: dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`, reviewed 2026-10-08; revalidated before merge against dev `fa5fb1b224527865dd830e9024f37a67b1ea4748` ([delta recheck](design/business_readiness_recheck_2026_10_08.md)). The new individual-analysis UX work does not close the release gates below. **Readiness has not been demonstrated.** This document defines proposed gates, not a report of an actual deployment or security certification.
 
 Recommended first product: a managed, invite-only B2B monitoring service with clearly supported collection paths, human-approved actions and operator-owned provider configuration. Self-service billing and high-scale SaaS are later releases, not excuses to postpone basic safety.
 

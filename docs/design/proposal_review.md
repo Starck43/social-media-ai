@@ -2,7 +2,7 @@
 
 ## Scope and evidence
 
-Reviewed on 2026-10-08 against **dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`**. This is a point-in-time review, not a production certification. Later dev commits must be checked before implementation.
+Reviewed on 2026-10-08 against **dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3`** and revalidated before merge against **dev `fa5fb1b224527865dd830e9024f37a67b1ea4748`**. See the [delta recheck](business_readiness_recheck_2026_10_08.md) for newly completed UX work and remaining scope. This is a point-in-time review, not a production certification. Later dev commits must be checked before implementation.
 
 Inputs: [best experiences research](analysis_and_best_experiences.md), [competitive analysis](competitive_analysis.md), and the [archived integrated roadmap](archive/roadmap_integrated_legacy.md). Competitor names are inspiration, not verified benchmarks: the supplied research does not provide a reproducible source list. No competitor performance or adoption claim was independently verified here.
 
@@ -53,7 +53,7 @@ IDs below identify decisions in this review; original competitive matrix numbers
 | R22 / hybrid digest / cheap selector + writer | Algorithmic brief already does selection/aggregation without LLM; one narrative step. | Keep. An extra model stage is an experiment, not automatic improvement; benchmark quality and total cost. |
 | R23 / prompt_advice_apply | Reflect produces advice; no dedicated apply tool found. | Offer a targeted diff and use existing scenario_update confirmation; no silent rewrite or ambiguous target. UX-07. |
 | R24 / trigger_calibrate | Rule descriptions/evaluation exist; calibration tool not found. | Read-only suggestion over enough observations, scoped dates and rollbackable task_update; UX-07 / FUT-03. |
-| R25 / recommend grouping | Compact grouped reporting and analytics_chains tools exist. | Explain/recommend from existing aggregates; no automatic task changes or new LLM stage. UX-03. |
+| R25 / recommend grouping | Compact grouped reporting and analytics_chains tools exist. New dev also completes contextual individual-analysis navigation and conservative metric/original-link rendering. | Preserve delivered navigation/metric semantics; remaining scope is aggregate coverage/freshness and grouping explanation/recommendation, without task changes or a new LLM stage. UX-03. |
 | R26 / hash-guided reanalysis | Audit hash exists; raw items retire after successful analysis. | Reframe as eligibility preview: verify retrievable raw content or lawful source refetch, estimate budget and confirm. A hash alone cannot recreate deleted text; UX-05. |
 | R27 / warning at 80% spend | Partial spend metric exists, threshold notification not found. | Only after PRD-03. Deduplicate once per threshold/UTC day and show excluded/unknown costs until fixed; UX-06. |
 | R28 / suggest blacklist/whitelist edits | Guards and task lists exist; automatic suggestion workflow not found. | Optional reviewable suggestions, evidence and confirmation; never infer permanent bans solely from one model label; FUT-02. |

@@ -12,10 +12,10 @@
     </div>
 
     {% if show_welcome %}
-        <div class="mb-6 rounded-2xl border border-cyan-900/60 bg-cyan-950/30 p-5">
+        <div class="mb-6 rounded-2xl border border-cyan-200 dark:border-cyan-900/60 bg-cyan-50 dark:bg-cyan-950/30 p-5">
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-sm font-medium text-cyan-200">
+                    <h2 class="text-sm font-medium text-cyan-700 dark:text-cyan-200">
                         {% if not kpis.active_sources and not kpis.active_tasks %}
                             Добро пожаловать — собранный контент никуда не попадёт
                         {% elif not kpis.active_sources %}
@@ -24,7 +24,7 @@
                             Нет расписания — собранный контент никуда не попадёт
                         {% endif %}
                     </h2>
-                    <p class="mt-1 text-sm text-slate-400">Четыре шага, и конвейер работает сам.</p>
+                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Четыре шага, и конвейер работает сам.</p>
                 </div>
                 <a href="/app/onboarding"
                    class="shrink-0 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
@@ -33,32 +33,32 @@
             </div>
 
             <ol class="mt-4 grid gap-2 sm:grid-cols-2">
-                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
-                    <span class="shrink-0 {{ 'text-emerald-400' if kpis.active_sources else 'text-slate-600' }}">✓</span>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-500' if kpis.active_sources else 'text-slate-400' }}">✓</span>
                     <div class="min-w-0">
-                        <a href="/app/sources" class="font-medium text-cyan-400 hover:text-cyan-300">Подключите источник</a>
-                        {% if not kpis.active_sources %}<span class="ml-2 text-slate-500">с него начнётся сбор</span>{% endif %}
+                        <a href="/app/sources" class="font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Подключите источник</a>
+                        {% if not kpis.active_sources %}<span class="ml-2 text-slate-500 dark:text-slate-400">с него начнётся сбор</span>{% endif %}
                     </div>
                 </li>
-                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
-                    <span class="shrink-0 {{ 'text-emerald-400' if scenarios_count else 'text-slate-600' }}">✓</span>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-500' if scenarios_count else 'text-slate-400' }}">✓</span>
                     <div class="min-w-0">
-                        <a href="/app/scenarios/new" class="font-medium text-cyan-400 hover:text-cyan-300">Создайте сценарий агента</a>
-                        {% if not scenarios_count %}<span class="ml-2 text-slate-500">как агент анализирует контент</span>{% endif %}
+                        <a href="/app/scenarios/new" class="font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Создайте сценарий агента</a>
+                        {% if not scenarios_count %}<span class="ml-2 text-slate-500 dark:text-slate-400">как агент анализирует контент</span>{% endif %}
                     </div>
                 </li>
-                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
-                    <span class="shrink-0 {{ 'text-emerald-400' if kpis.active_tasks else 'text-slate-600' }}">✓</span>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 {{ 'text-emerald-500' if kpis.active_tasks else 'text-slate-400' }}">✓</span>
                     <div class="min-w-0">
-                        <a href="/app/tasks" class="font-medium text-cyan-400 hover:text-cyan-300">Создайте задачу по расписанию</a>
-                        {% if not kpis.active_tasks %}<span class="ml-2 text-slate-500">сбор и анализ по cron</span>{% endif %}
+                        <a href="/app/tasks" class="font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Создайте задачу по расписанию</a>
+                        {% if not kpis.active_tasks %}<span class="ml-2 text-slate-500 dark:text-slate-400">сбор и анализ по cron</span>{% endif %}
                     </div>
                 </li>
-                <li class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
-                    <span class="shrink-0 text-slate-600">✓</span>
+                <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
+                    <span class="shrink-0 text-slate-400">✓</span>
                     <div class="min-w-0">
-                        <a href="/app/digests" class="font-medium text-cyan-400 hover:text-cyan-300">Получайте дайджест</a>
-                        <span class="ml-2 text-slate-500">ежедневные сводки в канале</span>
+                        <a href="/app/digests" class="font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Получайте дайджест</a>
+                        <span class="ml-2 text-slate-500 dark:text-slate-400">ежедневные сводки в канале</span>
                     </div>
                 </li>
             </ol>
@@ -66,42 +66,42 @@
     {% endif %}
 
     <div class="grid grid-cols-2 gap-4 xl:grid-cols-6">
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Источники активны</p>
-            <p class="mt-2 text-3xl font-semibold">{{ kpis.active_sources }}</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">Источники активны</p>
+            <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ kpis.active_sources }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Постов за сутки</p>
-            <p class="mt-2 text-3xl font-semibold">{{ kpis.posts_today }}</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">Постов за сутки</p>
+            <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ kpis.posts_today }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Активных задач</p>
-            <p class="mt-2 text-3xl font-semibold">{{ kpis.active_tasks }}</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">Активных задач</p>
+            <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ kpis.active_tasks }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Средний sentiment</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">Средний sentiment</p>
             <p class="mt-2 text-3xl font-semibold
-               {% if not kpis.sentiment_analyzed %}text-slate-600{% elif kpis.avg_sentiment >= 0.6 %}text-emerald-400{% elif kpis.avg_sentiment < 0.4 %}text-rose-400{% else %}text-amber-300{% endif %}">
+               {% if not kpis.sentiment_analyzed %}text-slate-500{% elif kpis.avg_sentiment >= 0.6 %}text-emerald-600{% elif kpis.avg_sentiment < 0.4 %}text-rose-600{% else %}text-amber-600{% endif %}">
                 {% if kpis.sentiment_analyzed %}{{ "%.2f"|format(kpis.avg_sentiment) }}{% else %}—{% endif %}
             </p>
-            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">
+            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-500">
                 {% if kpis.sentiment_analyzed %}за 7 дней{% else %}появится после анализа{% endif %}
             </p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">LLM-расход за сутки</p>
-            <p class="mt-2 text-3xl font-semibold">${{ "%.2f"|format(kpis.cost_today_usd) }}</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">LLM-расход за сутки</p>
+            <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">${{ "%.2f"|format(kpis.cost_today_usd) }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <p class="text-sm text-slate-400">Токсичных за 7 дней</p>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <p class="text-sm text-slate-500 dark:text-slate-400">Токсичных за 7 дней</p>
             <p class="mt-2 text-3xl font-semibold
-               {% if not analytics.toxicity.analyzed %}text-slate-600
-               {% elif analytics.toxicity.toxic_percent >= 20 %}text-rose-400
-               {% elif analytics.toxicity.toxic_percent >= 10 %}text-amber-300
-               {% else %}text-emerald-400{% endif %}">
+               {% if not analytics.toxicity.analyzed %}text-slate-500
+               {% elif analytics.toxicity.toxic_percent >= 20 %}text-rose-600
+               {% elif analytics.toxicity.toxic_percent >= 10 %}text-amber-600
+               {% else %}text-emerald-600{% endif %}">
                 {% if analytics.toxicity.analyzed %}{{ "%.1f"|format(analytics.toxicity.toxic_percent) }}%{% else %}—{% endif %}
             </p>
-            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-700">
+            <p class="mt-2 text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-500">
                 {% if analytics.toxicity.analyzed %}
                     {{ analytics.toxicity.toxic }} из {{ analytics.toxicity.analyzed }}
                 {% else %}появится после анализа{% endif %}
@@ -110,13 +110,13 @@
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:col-span-2">
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 lg:col-span-2">
             <div class="flex items-center justify-between">
-                <h2 class="text-sm font-medium text-slate-300">Задачи</h2>
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Задачи</h2>
                 {% if is_superuser and tenants %}
                     <form method="get" class="flex items-center gap-2">
                         <select name="tenant_id" onchange="this.form.submit()"
-                                class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                                class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs text-slate-900 dark:text-slate-300 outline-none focus:border-cyan-500">
                             <option value="">Все пространства</option>
                             {% for t in tenants %}
                                 <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
@@ -124,13 +124,13 @@
                         </select>
                     </form>
                 {% else %}
-                    <a href="/app/tasks" class="text-sm text-cyan-400 hover:text-cyan-300">Все задачи →</a>
+                    <a href="/app/tasks" class="text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Все задачи →</a>
                 {% endif %}
             </div>
             {% if recent_tasks %}
-                <div class="mt-4 overflow-hidden rounded-xl border border-slate-800">
+                <div class="mt-4 overflow-hidden rounded-xl border border-slate-300 dark:border-slate-800">
                     <table class="w-full text-sm">
-                        <thead class="border-b border-slate-800 bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500">
+                        <thead class="border-b border-slate-300 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-left text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             <tr>
                                 <th class="px-3 py-2">Название</th>
                                 <th class="px-3 py-2">Тип</th>
@@ -142,44 +142,44 @@
                                 <th class="px-3 py-2"></th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-800">
+                        <tbody class="divide-y divide-slate-300 dark:divide-slate-800">
                             {% for task in recent_tasks %}
-                                <tr class="bg-slate-900/50 hover:bg-slate-900/80">
-                                    <td class="px-3 py-2 font-medium">{{ task.name }}</td>
+                                <tr class="bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/80">
+                                    <td class="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{{ task.name }}</td>
                                     <td class="px-3 py-2">
-                                        <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">{{ task.job_type }}</span>
+                                        <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">{{ task.job_type }}</span>
                                     </td>
-                                    {% if is_superuser %}<td class="px-3 py-2 text-xs text-slate-400">{{ task.tenant.name }}</td>{% endif %}
-                                    <td class="px-3 py-2 text-slate-300 text-xs">{{ cron_to_human(task.cron_expr) }}</td>
+                                    {% if is_superuser %}<td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ task.tenant.name }}</td>{% endif %}
+                                    <td class="px-3 py-2 text-slate-500 dark:text-slate-400 text-xs">{{ cron_to_human(task.cron_expr) }}</td>
                                     <td class="px-3 py-2">
                                         {% if task.id in effective_active %}
-                                            <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активна</span>
+                                            <span class="rounded-full bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">активна</span>
                                         {% else %}
-                                            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
+                                            <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">неактивна</span>
                                         {% endif %}
                                         {% if task.last_status == 'failed' %}
                                             <span title="{{ task.last_error or '' }}"
-                                                  class="ml-1 rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                                                  class="ml-1 rounded-full bg-rose-100 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-300">ошибка</span>
                                         {% elif task.last_status == 'ok' %}
-                                            <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">ок</span>
+                                            <span class="ml-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">ок</span>
                                         {% elif task.last_status == 'skipped' %}
-                                            <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">пропущено</span>
+                                            <span class="ml-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">пропущено</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-3 py-2 text-slate-400">
+                                    <td class="px-3 py-2 text-slate-500 dark:text-slate-400">
                                         {% if task.last_run_at %}
                                             {{ task.last_run_at|human_dt(tz=_tz) }}
                                         {% else %}
-                                            <span class="text-slate-600">—</span>
+                                            <span class="text-slate-400 dark:text-slate-500">—</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-3 py-2 text-slate-400">
+                                    <td class="px-3 py-2 text-slate-500 dark:text-slate-400">
                                         {% if task.cron_expr == '@once' and task.last_run_at %}
-                                            <span class="text-slate-600">—</span>
+                                            <span class="text-slate-400 dark:text-slate-500">—</span>
                                         {% elif task.next_run_at %}
                                             {{ task.next_run_at|human_dt(tz=_tz) }}
                                         {% else %}
-                                            <span class="text-slate-600">—</span>
+                                            <span class="text-slate-400 dark:text-slate-500">—</span>
                                         {% endif %}
                                     </td>
                                     <td class="px-3 py-2">
@@ -187,7 +187,7 @@
                                         <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
-                                                    class="rounded-md border border-emerald-700 p-1.5 text-emerald-400 hover:bg-emerald-950">
+                                                    class="rounded-md border border-emerald-500 dark:border-emerald-700 p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/>
                                                 </svg>
@@ -203,17 +203,17 @@
             {% else %}
                 {{ empty_state("Пока нет задач.", height="h-24", radius="rounded-xl") }}
                 <div class="mt-2 text-center">
-                    <a href="/app/tasks" class="text-sm text-cyan-400 hover:underline">Создайте первую</a>
+                    <a href="/app/tasks" class="text-sm text-cyan-600 dark:text-cyan-400 hover:underline">Создайте первую</a>
                 </div>
             {% endif %}
         </div>
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-300">Быстрые действия</h2>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Быстрые действия</h2>
             <div class="mt-4 space-y-2">
-                <a href="/app/tasks" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                <a href="/app/tasks" class="block w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-center text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                     Создать задачу
                 </a>
-                <a href="/app/sources" class="block w-full rounded-lg border border-slate-700 px-4 py-2 text-center text-sm text-slate-300 hover:bg-slate-800">
+                <a href="/app/sources" class="block w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-center text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                     Источники
                 </a>
             </div>
@@ -221,30 +221,30 @@
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:col-span-2">
-            <h2 class="text-sm font-medium text-slate-300">Последние анализы</h2>
+        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 lg:col-span-2">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние анализы</h2>
             {% if analytics.recent %}
                 <div class="mt-4 space-y-3">
                     {% for a in analytics.recent %}
-                        <a href="/app/analytics/{{ a.id }}" class="block rounded-xl border border-slate-800 bg-slate-950 p-4 transition hover:border-cyan-700">
+                        <a href="/app/analytics/{{ a.id }}" class="block rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
                             <div class="flex items-center justify-between gap-3">
-                                <p class="font-medium text-slate-200">{{ a.title }}</p>
-                                <span class="shrink-0 text-xs text-slate-500">
+                                <p class="font-medium text-slate-900 dark:text-slate-100">{{ a.title }}</p>
+                                <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
                                     {{ a.source_name }} · {{ a.analysis_date|human_dt(tz=_tz) }}
                                 </span>
                             </div>
                             {% if a.summary %}
-                                <p class="mt-2 text-sm text-slate-400">{{ a.summary }}</p>
+                                <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ a.summary }}</p>
                             {% endif %}
                             {% if a.topics %}
                                 <div class="mt-3 flex flex-wrap gap-1.5">
                                     {% for t in a.topics %}
-                                        <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t }}</span>
+                                        <span class="rounded-full bg-cyan-100 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-300">{{ t }}</span>
                                     {% endfor %}
                                 </div>
                             {% endif %}
                             {% if a.cost_usd > 0 %}
-                                <p class="mt-2 text-xs text-slate-600">LLM-расход: ${{ "%.4f"|format(a.cost_usd) }}</p>
+                                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">LLM-расход: ${{ "%.4f"|format(a.cost_usd) }}</p>
                             {% endif %}
                         </a>
                     {% endfor %}
@@ -255,50 +255,50 @@
         </div>
 
         <div class="space-y-4">
-            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                <h2 class="text-sm font-medium text-slate-300">Топ тем за 7 дней</h2>
+            <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Топ тем за 7 дней</h2>
                 {% if analytics.top_topics %}
                     <div class="mt-4 space-y-2">
                         {% for t in analytics.top_topics %}
                             <div class="flex items-center justify-between text-sm">
-                                <span class="text-slate-300">{{ t.topic }}</span>
-                                <span class="text-xs text-slate-500">{{ t.count }}×</span>
+                                <span class="text-slate-700 dark:text-slate-300">{{ t.topic }}</span>
+                                <span class="text-xs text-slate-500 dark:text-slate-400">{{ t.count }}×</span>
                             </div>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                    <p class="mt-4 text-sm text-slate-500 dark:text-slate-400">Нет данных</p>
                 {% endif %}
             </div>
 
-            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                <h2 class="text-sm font-medium text-slate-300">Хэштеги за 7 дней</h2>
+            <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Хэштеги за 7 дней</h2>
                 {% if analytics.hashtags %}
                     <div class="mt-4 flex flex-wrap gap-1.5">
                         {% for h in analytics.hashtags %}
-                            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                                #{{ h.hashtag|replace('#', '') }} <span class="text-slate-500">{{ h.count }}</span>
+                            <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">
+                                #{{ h.hashtag|replace('#', '') }} <span class="text-slate-500 dark:text-slate-400">{{ h.count }}</span>
                             </span>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                    <p class="mt-4 text-sm text-slate-500 dark:text-slate-400">Нет данных</p>
                 {% endif %}
             </div>
 
-            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-                <h2 class="text-sm font-medium text-slate-300">Типы контента</h2>
+            <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Типы контента</h2>
                 {% if analytics.content_mix.media_types %}
                     <div class="mt-4 space-y-2">
                         {% for media, info in analytics.content_mix.media_types.items() %}
                             <div class="flex items-center justify-between text-sm">
-                                <span class="capitalize text-slate-300">{{ media }}</span>
-                                <span class="text-xs text-slate-500">{{ info.count }} ({{ info.percentage }}%)</span>
+                                <span class="capitalize text-slate-700 dark:text-slate-300">{{ media }}</span>
+                                <span class="text-xs text-slate-500 dark:text-slate-400">{{ info.count }} ({{ info.percentage }}%)</span>
                             </div>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <p class="mt-4 text-sm text-slate-500">Нет данных</p>
+                    <p class="mt-4 text-sm text-slate-500 dark:text-slate-400">Нет данных</p>
                 {% endif %}
             </div>
         </div>

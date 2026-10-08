@@ -668,7 +668,7 @@ digest_app = typer.Typer(help="Digest operations")
 @digest_app.command("send-now")
 def digest_send_now(
     period: str = typer.Argument("day", help="Period: day | week"),
-    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent"),
+    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent | topic_chains"),
     time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
 ):
     """Build and publish a digest right now (manual run, not idempotent)."""
@@ -707,7 +707,7 @@ def digest_run(
     src: str = typer.Option(None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max)"),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     period: str = typer.Option("day", "--period", help="Period: day | week"),
-    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent"),
+    group_by: str = typer.Option("themes", "--group-by", help="Grouping axis: themes | sources | entities | sentiment | content_type | intent | topic_chains"),
     time_breakdown: bool = typer.Option(False, "--time-breakdown", help="Enable per-date sub-entries within each group"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):

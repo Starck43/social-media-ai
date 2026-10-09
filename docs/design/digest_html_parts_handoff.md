@@ -4,7 +4,11 @@
 
 Prepared in [PR #10](https://github.com/Starck43/social-media-ai/pull/10), branch
 `ai/digest-html-parts`, stacked on #9 -> #7 -> schema #6.
-Dev baseline: `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+Test baseline: `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+Final synchronized dev: `5d4a328bc2a0a2c90032339718e3aa7192b02455` (PR #8 cloud/hybrid documentation).
+All dependency branches and the PR #5 tracker contain this dev; cloud/hybrid
+docs and index links were preserved. Only docs changed since the completed
+196-test run; application/test inputs are unchanged, so tests were not repeated.
 Code/test checkpoint: `2321706a367ede878c632d21424ad7d76e4038c7`.
 **Not merged/deployed; existing splitter/send/broadcast/builder unchanged.**
 This bounded unit is not end-to-end retry and does not close PRD-01.

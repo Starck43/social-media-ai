@@ -1,7 +1,8 @@
 # Deployment Guide
 
 > **Status:** deployment examples are drafts, not a verified production profile.
-> Observation/recovery runbook: [PR #27](https://github.com/Starck43/social-media-ai/pull/27), prepared against dev `10212b5e`; NOT MERGED.
+> Observation/recovery runbook: [PR #27](https://github.com/Starck43/social-media-ai/pull/27), MERGED as `0234c21`; source baseline `10212b5e`.
+> GitGuardian and Kilo passed for head `a874ada`; eight tabletop cases remain unexecuted.
 > It is documentation, not executed recovery, staging acceptance or deployment.
 
 During an incident start at [Observation and conservative recovery](#observation-and-conservative-recovery),

@@ -249,7 +249,10 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             fresh = self.identity.RuntimeIdentity(**fields)
             runtime.refresh_runtime_identity = AsyncMock(return_value=None if revoked == "identity" else fresh)
             result = await self.authorized_turn(runtime, copy.deepcopy(self.pending))
-            self.assertIn("отклонено", result)
+            if revoked == "identity":
+                self.assertIn("Запрос остановлен", result)
+            else:
+                self.assertIn("отклонено", result)
             runtime.call_tool.assert_not_awaited()
 
     async def test_other_actor_yes_preserves_original_pending(self):

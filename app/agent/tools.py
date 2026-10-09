@@ -166,7 +166,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     _check_tool_permission(tool_obj)
     _check_tool_confirmation(tool_obj, arguments or {})
     result = await tool_obj.handler(**(arguments or {}))
-    if isinstance(result, dict) and "error" in result:
+    if isinstance(result, dict) and result.get("error"):
         raise ToolError(result["error"])
     return result
 

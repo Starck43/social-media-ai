@@ -116,29 +116,29 @@
                     {% if perms and perms.can('agenttask', 'update') %}
                     <div class="flex items-center gap-1">
                         {# Show a running indicator if a job is already in progress #}
-                        {% if task.id in running_jobs %}
-                        <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
-                           title="Job #{{ running_jobs[task.id] }} выполняется"
-                           class="rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
-                           aria-label="Job выполняется">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                 stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                      d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                            </svg>
-                        </a>
-                        {% else %}
+                         {% if task.id in running_jobs %}
+                         <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
+                            title="Job #{{ running_jobs[task.id] }} выполняется"
+                            class="flex items-center justify-center rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                            aria-label="Job выполняется">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                  stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
+                               <path stroke-linecap="round" stroke-linejoin="round"
+                                     d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                             </svg>
+                         </a>
+                         {% else %}
                         <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
-                            <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
-                                    class="rounded-md border border-emerald-700 p-1.5 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
-                                     stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z" />
-                                </svg>
-                            </button>
+                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
+                                     class="flex items-center justify-center rounded-md border border-emerald-700 p-1.5 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950">
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
+                                      stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z" />
+                                 </svg>
+                             </button>
                         </form>
                         {% endif %}
                         {# «Активировать» is a power switch, not a play triangle: the
@@ -150,23 +150,23 @@
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
-                            <button
-                                aria-label="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
-                                title="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
-                                class="rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
-                                {% if task.id in effective_active %}
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                     stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                </svg>
-                                {% else %}
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                     stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                          d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9" />
-                                </svg>
-                                {% endif %}
-                            </button>
+                             <button
+                                 aria-label="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
+                                 title="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
+                                 class="flex items-center justify-center rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                 {% if task.id in effective_active %}
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                      stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                 </svg>
+                                 {% else %}
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                      stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                     <path stroke-linecap="round" stroke-linejoin="round"
+                                           d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9" />
+                                 </svg>
+                                 {% endif %}
+                             </button>
                         </form>
                     </div>
                     {% endif %}

@@ -186,12 +186,12 @@
                                         {% if perms and perms.can('agenttask', 'update') %}
                                         <form method="post" action="/app/tasks/{{ task.id }}/run-now" class="inline">
                                             <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                            <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
-                                                    class="rounded-md border border-emerald-500 dark:border-emerald-700 p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </button>
+                                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
+                                                     class="flex items-center justify-center rounded-md border border-emerald-500 dark:border-emerald-700 p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950">
+                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z"/>
+                                                 </svg>
+                                             </button>
                                         </form>
                                         {% endif %}
                                     </td>

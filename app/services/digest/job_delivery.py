@@ -330,6 +330,8 @@ async def _publish(job: Any, ref: dict[str, Any], alive) -> dict[str, Any]:
     async with locked_checkpoint(ref["run_id"], generation=ref["generation"]) as store:
         state, _ = await store.load()
         for ti, target in enumerate(state["targets"]):
+            if rate_limited:
+                break  # scope of provider throttling is unknown: stop this publisher
             for pi, original in enumerate(target["parts"]):
                 if original["status"] == "sent":
                     continue
@@ -346,6 +348,11 @@ async def _publish(job: Any, ref: dict[str, Any], alive) -> dict[str, Any]:
                     await store.record_outcome(ti, pi, "blocked")
                     break
                 try:
+                    await alive()
+                except DeliveryFailure:
+                    await store.record_outcome(ti, pi, "blocked")
+                    raise  # proven pre-HTTP refusal, not an attempted message
+                try:
                     response = await channel.send_part(part["destination_id"], part["text"], parse_mode="HTML")
                 except asyncio.CancelledError:
                     raise  # persisted in-flight remains uncertain, never reset
@@ -357,7 +364,7 @@ async def _publish(job: Any, ref: dict[str, Any], alive) -> dict[str, Any]:
                 if outcome not in ("sent", "rejected", "uncertain", "blocked"):
                     outcome = "uncertain"
                 message_id = response.get("message_id") if isinstance(response, dict) else None
-                if outcome == "sent" and (not isinstance(message_id, str) or not message_id.strip()):
+                if outcome == "sent" and (not isinstance(message_id, str) or not message_id.strip() or message_id != message_id.strip()):
                     outcome = "uncertain"
                 await store.record_outcome(ti, pi, outcome, message_id=message_id if outcome == "sent" else None)
                 await asyncio.sleep(0.6)

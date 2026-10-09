@@ -269,14 +269,17 @@ async def test_disabled_rollout_never_falls_back_for_a_bound_job(workspace, fake
 
 
 async def test_rate_limit_without_retry_after_requires_operator_delay(workspace, fake_build, monkeypatch):
-    await target(workspace)
-    transport(monkeypatch, AsyncMock(return_value={"outcome": "rejected", "error_code": "http_429"}))
+    await target(workspace, "one")
+    await target(workspace, "two")
+    channel = transport(monkeypatch, AsyncMock(return_value={"outcome": "rejected", "error_code": "http_429"}))
     with tenant_scope(workspace.id):
         job = await claim()
         with pytest.raises(DeliveryFailure) as failure:
             await execute(job)
         assert not failure.value.retryable
         assert failure.value.result["reason"] == "rate_limit_requires_operator_delay"
+        assert failure.value.result["pending_parts"] == 1
+        channel.send_part.assert_awaited_once()
 
 
 async def test_foreign_run_reference_cannot_authorize_http(workspace, fake_build, monkeypatch):

@@ -40,7 +40,7 @@
 ## Implementation Plan (Prioritized)
 ### Phase 1: Foundation (High Impact, Low Risk)
 - [ ] Structured outputs: Add Pydantic models for all LLM responses (`AnalysisResult`, `DigestSummary`, `ExtractedFact`); replace `extract_json()` with `response_format={"type": "json_schema"}` where supported
-- [ ] Prompt injection guard: Add input sanitizer in `app/agent/runtime.py` before passing user text to LLM (block `ignore previous instructions`, etc.)
+- [x] Prompt injection guard: Add input sanitizer in `app/agent/runtime.py` before passing user text to LLM (block `ignore previous instructions`, etc.)
 - [ ] Two-model pipeline: Add `LLMModel` field `role: selector/writer/general`; update `LLMClientFactory` to pick by role; use cheap model for collection analysis, quality model for digests/agent chat
 - [ ] LLM observability: Integrate Langfuse (optional, via env) for trace logging in `chat_with_fallback()`
 

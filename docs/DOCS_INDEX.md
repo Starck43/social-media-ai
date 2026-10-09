@@ -11,7 +11,7 @@ Supporting references: [project map](./PROJECT_MAP.md),
 [integration/evidence ledger](./IMPLEMENTATION_STATUS.md),
 [documentation maintenance rules](./DOCUMENTATION_GUIDE.md).
 
-Navigation snapshot: dev `eb49d1d`, 2026-10-09. A roadmap is not a shipped-feature
+Navigation cleanup merged in PR #26 as `10212b5e`, 2026-10-09. A roadmap is not a shipped-feature
 list; owner reports, historical counts and current acceptance are distinct.
 Active PR #22 owns its shared status/next-session edits; do not overwrite it.
 
@@ -72,7 +72,7 @@ Do not infer new passing tests or live sender activation from a merge.
 ## Operator and developer references
 
 - **[Configuration](./CONFIGURATION.md)** — environment settings and keys.
-- **[Deployment](./DEPLOYMENT.md)** — operating examples; validate against release gates before production.
+- **[Deployment](./DEPLOYMENT.md)** — draft installation examples; [observation and conservative recovery](./DEPLOYMENT.md#observation-and-conservative-recovery) is the incident entry point. Changes need separate approval; neither guide nor health probe certifies production.
 - **[CLI](./CLI.md)** — operator commands.
 - **[API](./API.md)** — REST contracts.
 - **[Admin](./ADMIN.md)** — administration/authentication/CSRF.

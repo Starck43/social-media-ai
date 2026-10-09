@@ -198,13 +198,15 @@ warning package is now prepared below, not merged.
 
 ## Staged attempt-count warning privacy — prepared, not merged
 
-Fresh baseline `3373a1e`; branch `fix/staged-attempt-log-privacy`, code `9bb566a`.
+Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25); fresh baseline
+`3373a1e`, branch `fix/staged-attempt-log-privacy`, code `9bb566a`,
+tests/handoff `78a86be`. NOT MERGED; deployment/acceptance pending.
 
 - [ ] Prepared: only `_count_failed_staged` failure warning uses fixed event,
   bounded source ID and static storage-operation category, without raw exceptions.
 - [ ] Nine actual-helper/mocked-storage cases WRITTEN, NOT RUN. Static AST and
   new-test whitespace/line-length checks completed; no formatter/test execution.
-- [ ] PR/local acceptance and a NEW explicit owner merge command pending.
+- [ ] PR #25 review/local acceptance and a NEW explicit owner merge command pending.
 
 Hash filtering/order/duplicates, attempt-count arguments, fallback zero, cleanup,
 transaction and cancellation unchanged. No staged-row deletion, dispatcher/UI/

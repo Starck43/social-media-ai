@@ -1,7 +1,9 @@
 # Staged attempt-count warning privacy — owner handoff
 
 Baseline: fresh dev `3373a1eaa14a24e9e199e87d6021d6311e05cc45` (2026-10-09).
-Branch `fix/staged-attempt-log-privacy`; code `9bb566a`. PREPARED, NOT MERGED;
+Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25), branch
+`fix/staged-attempt-log-privacy`; code `9bb566a`, tests/handoff `78a86be`.
+PREPARED, NOT MERGED;
 local acceptance/deployment pending. A new explicit owner merge command is
 required; previous PR #23/#24 approval is not reused.
 

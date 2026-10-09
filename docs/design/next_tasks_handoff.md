@@ -17,7 +17,9 @@ Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
 
 ## Current bounded continuation — prepared, not merged
 
-Fresh dev `3373a1e` after PR #24; branch `fix/staged-attempt-log-privacy`.
+Fresh dev `3373a1e` after PR #24; open
+[PR #25](https://github.com/Starck43/social-media-ai/pull/25),
+branch `fix/staged-attempt-log-privacy`, tests/handoff `78a86be`. NOT MERGED.
 Code `9bb566a`: only `_count_failed_staged` warning, safe event/category/source ID.
 Nine helper/mocked-storage cases prepared, NOT RUN; static AST and new-file
 whitespace/line-length checks only. Existing attempt-count/hash/fallback/cleanup

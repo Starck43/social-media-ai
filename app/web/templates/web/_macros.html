@@ -539,7 +539,7 @@
     {% set base = request.url.remove_query_params('return_to') %}
     {% if return_to %}{% set base = base.include_query_params(return_to=return_to) %}{% endif %}
     <div class="ui-filter-row" aria-label="Фильтры тональности">
-        <span class="ui-filter-label">{{ icon('filter') }} Тональность</span>
+        <span class="ui-filter-label">{{ icon('filter') }} Тональность:</span>
         <nav class="ui-segments" aria-label="Тональность">
             {% for value, label in [('', 'Любая'), ('positive', 'Позитивная'), ('neutral', 'Нейтральная'), ('negative', 'Негативная')] %}
                 {% set url = base.include_query_params(sentiment=value) if value else base.remove_query_params('sentiment') %}

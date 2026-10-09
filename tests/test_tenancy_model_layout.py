@@ -26,8 +26,22 @@ MODELS = {
     "TenantInvite": ("tenant_invite", "tenant_invites", "TenantInviteManager", "tenant_invites"),
     "TenantChannel": ("tenant_channel", "tenant_channels", "TenantChannelManager", "tenant_channels"),
 }
-# Fresh-dev b4fd0f0b: schema-only AST snapshots, including defaults/FKs/indexes.
-SCHEMA_FINGERPRINTS = {'Tenant': '853fa07c83e6e33fd7f3a5e872c22aababb296ce84326d3fb40757204a75b2c9', 'TenantUser': 'e7c48b50c8e676df869cc60a5a1515a6b6e34bef99bf646f8382b6d9131bc76d', 'TenantInvite': 'b9897309b44351ac6d9bbdd380a37e606b5e9508c0916f26ee35abf0ed84f359', 'TenantChannel': '7effdc26f7ea107d9629325cd53d8c27196e39e1b496cfffec13ed072317d95b'}
+# Fresh-dev b4fd0f0b (unchanged at cb1a0a04): schema-only snapshots, including defaults/FKs/indexes.
+SCHEMA_FINGERPRINTS = {'Tenant': 'c5cb9fedf76000a00c625a499bf4f777848e6ca1c21398c19d436756276607a9', 'TenantUser': '22bc9b69f69ab56d91f0cb4c510b17c04099c12609073ac2d6abaa6446c7650b', 'TenantInvite': '8fae1388ca938f992fa91c509e85d19b31bdaa767143962d4a4c199398afedcf', 'TenantChannel': '0a171a5d6bf6ea2a95efc08bfd4f6a7252457600b918fdb82d6a583ebf2b84b4'}
+
+
+def _canonical_ast(node):
+    """Include empty/None fields explicitly; do not depend on ast.dump defaults.
+
+    Python 3.13 omits optional empty fields by default; 3.12 does not. The
+    selected schema-expression nodes have the same fields on both versions.
+    Ignore source locations, but retain node types, field names and all values.
+    """
+    if isinstance(node, ast.AST):
+        return [type(node).__name__, [[field, _canonical_ast(value)] for field, value in ast.iter_fields(node)]]
+    if isinstance(node, list):
+        return [_canonical_ast(value) for value in node]
+    return node
 
 
 @pytest.mark.parametrize("name", MODELS)
@@ -72,7 +86,10 @@ def test_existing_declarative_schema_expressions_are_unchanged(name):
             and node.annotation.value.id == "Mapped"
         )
     ]
-    fingerprint = hashlib.sha256(ast.dump(ast.Module(body=statements, type_ignores=[])).encode()).hexdigest()
+    payload = _canonical_ast(ast.Module(body=statements, type_ignores=[]))
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     assert fingerprint == SCHEMA_FINGERPRINTS[name]
 
 
@@ -134,3 +151,9 @@ for name, singleton in json.loads(sys.argv[2]).items():
         cwd=ROOT, text=True, capture_output=True, timeout=60, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_schema_snapshot_encoding_preserves_explicit_empty_fields():
+    assert _canonical_ast(ast.Module(body=[], type_ignores=[])) == [
+        "Module", [["body", []], ["type_ignores", []]],
+    ]

@@ -190,3 +190,34 @@ def transition(
     _require(_text(message_id) if outcome == "sent" else message_id is None)
     part.update(status=outcome, message_id=message_id)
     return validate_checkpoint(checked)
+
+
+def verify_parts(state: Any, target_index: int, parts: list[str]) -> None:
+    """Verify the ENTIRE ordered target payload list before any resumed send.
+
+    Count and every hash must match, including already-acknowledged parts. A
+    shorter list must not silently omit the tail of a frozen report.
+    """
+    checked = validate_checkpoint(state)
+    _require(type(target_index) is int and 0 <= target_index < len(checked["targets"]))
+    frozen = checked["targets"][target_index]["parts"]
+    _require(isinstance(parts, list) and len(parts) == len(frozen))
+    for expected, text in zip(frozen, parts):
+        _require(expected["sha256"] == _hash(text))
+
+
+def reconstruct_html_parts(state: Any, content: str) -> list[str]:
+    """Reconstruct v1 parts and verify ALL frozen targets, without HTTP/DB I/O.
+
+    The caller must first load_checkpoint with independently authorized run and
+    workspace identity. This verifies payload integrity only, not permission.
+    Unknown splitter versions fail; no fallback to current/default splitting.
+    """
+    from app.services.digest.html_parts import SPLITTER_VERSION, split_digest_html
+
+    checked = validate_checkpoint(state)
+    _require(checked["splitter"] == SPLITTER_VERSION and checked["content_sha256"] == _hash(content))
+    parts = split_digest_html(content)
+    for target_index in range(len(checked["targets"])):
+        verify_parts(checked, target_index, parts)
+    return parts

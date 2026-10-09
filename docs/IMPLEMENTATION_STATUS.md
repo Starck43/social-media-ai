@@ -40,7 +40,7 @@ see the proposal review rather than rebuilding them.
 
 ## Current task — digest retry checkpoints
 
-Status: **STORAGE APPROVED; SCHEMA PR PREPARED / NOT MERGED; RETRY CODE NOT IMPLEMENTED**.
+Status: **STORAGE APPROVED; SCHEMA AND PURE CONTRACT PREPARED / NOT MERGED; SENDER RETRY NOT IMPLEMENTED**.
 Owner decision: one dedicated JSONB field on DigestRun plus a separate migration.
 This approves schema preparation, not production migration or automatic PR merge.
 Task branch: `ai/digest-retry-checkpoints`, created from the verified dev above.
@@ -57,6 +57,15 @@ The local planning snapshot was refreshed when the new product docs landed.
   0086 -> 0087 and isolated-schema rollback were checked. PostgreSQL storage
   remains JSONB; ORM uses a SQLite-compatible variant for existing tests.
   No production upgrade was run; schema remains pending review/merge.
+- [ ] Merge the pure checkpoint contract after dependency review. Prepared in
+  [PR #7](https://github.com/Starck43/social-media-ai/pull/7), stacked on PR #6,
+  branch `ai/digest-checkpoint-contract`. Code commit `11f424a`: strict versioned
+  metadata/identity/payload hashes, copy-on-write state transitions, no automatic
+  replay of sent/in-flight/uncertain/blocked parts. **43 focused tests passed,
+  1 existing warning**; formatting/compilation/diff checks passed. Full suite
+  not repeated for this currently unused pure module. No sender/DB integration
+  or additional migration. Handoff: `docs/design/digest_checkpoint_contract_handoff.md`
+  in PR #7; schema and contract both remain unmerged.
 - [ ] Persist one immutable digest snapshot and per-recipient/part receipts.
 - [ ] Resume only unfinished known-failed parts without rebuilding the summary.
 - [ ] Recheck workspace ownership/activity/digest flag on every resumed send.
@@ -98,8 +107,10 @@ this checklist does not replace them or authorize deployment.
 3. Storage is approved. Review the schema branch/PR and its validation; confirm
    whether it was merged. Do not claim retry behavior exists merely because the
    field exists, and do not apply a production migration without a deployment step.
-4. Next unit after schema review: receipt/
-   transport/resume implementation against that approved schema. Do not reserve
+4. Inspect stacked PR #7 and its handoff before rebuilding checkpoint helpers.
+   Next unit after dependency review: versioned HTML-safe full-part reconstruction,
+   one-part transport and locked persistence, followed by builder/job resume.
+   The pure helpers do not provide authorization, locking or durability. Do not reserve
    a migration number until fresh dev's current graph has been checked.
 5. Keep done/in-review/in-progress/blocked distinct; append test evidence and
    exact continuation point at each handoff. Never mark the full gate complete

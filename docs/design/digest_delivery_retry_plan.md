@@ -9,6 +9,14 @@ checkpoint work must not be presented as implementing that general outbox.
 The owner approved the dedicated JSONB-field option. The schema unit is prepared in [PR #6](https://github.com/Starck43/social-media-ai/pull/6),
 `ai/digest-delivery-state-schema`, separately from this planning PR, not merged.
 No receipt/resume behavior is implemented in this branch.
+Pure checkpoint helpers are now prepared separately in [PR #7](https://github.com/Starck43/social-media-ai/pull/7),
+stacked on schema PR #6: 43 focused tests passed, 1 existing warning. They validate
+versioned snapshot/run/workspace metadata and part hashes, use copy-on-write
+transitions, and conservatively stop in-flight/uncertain/blocked targets. They
+are not merged or called by the sender; DB persistence, HTML-safe frozen parts,
+locking, authorization checks and builder/job resume remain unimplemented.
+Full suite was not rerun for this unused pure unit. Read the precise checklist in
+`docs/design/digest_checkpoint_contract_handoff.md` on the PR #7 branch.
 
 The current builder reuses a scheduled DigestRun row after failure, rebuilds the
 aggregation/summary and broadcasts to every current target again. DigestRun has

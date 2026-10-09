@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import connection_badge, empty_state %}
+{% from "web/_macros.html" import connection_badge, empty_state, switch_toggle %}
 {% block title %}{% if source %}{{ source.name }}{% else %}Источник не найден{% endif %} — AI Monitor{% endblock %}
 {% block content %}
 {% if not source %}
@@ -251,12 +251,7 @@
                            class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                     <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую: username1, username2, @durov</p>
                 </div>
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                    <input type="hidden" name="is_active" value="{{ 'on' if source.is_active else '' }}">
-                    <input type="checkbox" name="is_active" {{ 'checked' if source.is_active else '' }}
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                    Активен
-                </label>
+                {{ switch_toggle("is_active", "Активен", checked=source.is_active) }}
                 <div class="flex gap-2">
                     <button type="button" @click="openEdit = false"
                             class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">

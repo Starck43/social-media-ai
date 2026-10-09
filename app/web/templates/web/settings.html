@@ -3,7 +3,7 @@
 {# `with context` because `plan_badge` reads `plan_labels` from the page context
    (see `app/web/deps.py::render`) rather than taking it per call — the tier
    names are the same on every page. #}
-{% from "web/_macros.html" import connection_badge, control, plan_badge, plan_comparison_table with context %}
+{% from "web/_macros.html" import segment, connection_badge, control, plan_badge, plan_comparison_table, switch_toggle with context %}
 {% block title %}Настройки — AI Monitor{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-4xl">
@@ -378,17 +378,12 @@
                                     <span class="text-xs text-slate-600 dark:text-slate-400">нет</span>
                                 {% endif %}
                             </td>
-                            <td class="px-5 py-3 text-right">
+<td class="px-5 py-3 text-right">
                                 <form method="post" action="/app/settings/channels/{{ ch.id }}" class="inline-flex items-center gap-2">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                        <input type="checkbox" name="is_digest_target" {% if ch.is_digest_target %}checked{% endif %}
-                                               {% if not perms.can('tenant', 'update') %}disabled{% endif %}
-                                               class="h-4 w-4 rounded border-slate-600 bg-white dark:bg-slate-950">
-                                        получать дайджесты
-                                    </label>
+                                    {{ switch_toggle("is_digest_target", "получать дайджесты", checked=ch.is_digest_target, disabled=not perms.can('tenant', 'update')) }}
                                     {% if perms.can('tenant', 'update') %}
-                                        <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
+                                    <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
                                     {% endif %}
                                 </form>
                             </td>

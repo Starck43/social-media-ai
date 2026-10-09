@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import empty_state %}
+{% from "web/_macros.html" import empty_state, switch_toggle, check_card, check_mark %}
 {% block title %}{% if task %}{{ task.name }} — AI Monitor{% else %}Задача не найдена{% endif %}{% endblock %}
 {% block content %}
 {% if not task %}
@@ -322,16 +322,18 @@
             {% if sources %}
             <div>
                 <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
-                <div class="max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 space-y-1">
+                <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                     {% for s in sources %}
-                    <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer">
-                        <input type="checkbox" name="source_ids" value="{{ s.id }}"
-                               {% if s.id in linked_source_ids %}checked{% endif %}
-                               class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-cyan-500 focus:ring-cyan-500">
-                        {{ s.name }}
-                    </label>
+                    {{ check_card(
+                        cid="detail-src-" ~ s.id,
+                        name="source_ids",
+                        value=s.id,
+                        content=s.name,
+                        checked=s.id in linked_source_ids,
+                        cls="content-cb"
+                    ) }}
                     {% endfor %}
-                </div>
+                </ul>
             </div>
             {% endif %}
             {% if scenarios %}
@@ -361,12 +363,7 @@
                            class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
                 </div>
             </div>
-            <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                <input type="hidden" name="is_active" value="{{ 'on' if task.id in effective_active else '' }}">
-                <input type="checkbox" {% if task.id in effective_active %}checked{% endif %}
-                       class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                Активна
-            </label>
+            {{ switch_toggle("is_active", "Активна", checked=task.id in effective_active) }}
             <div class="flex flex-wrap items-center gap-2 pt-2">
                 {% if perms_can(request, 'agenttask', 'delete') %}
                 <button type="submit" formnovalidate

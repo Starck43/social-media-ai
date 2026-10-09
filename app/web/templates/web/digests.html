@@ -1,4 +1,5 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import switch_toggle %}
 {% block title %}Дайджесты — AI Monitor{% endblock %}
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -62,13 +63,7 @@
                     <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                 {% endfor %}
             </select>
-            <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                <input type="hidden" name="time_breakdown" value="">
-                <input type="checkbox" name="time_breakdown" value="true"
-                       {% if selected_time_breakdown %}checked{% endif %}
-                       class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                Разбивка по дням
-            </label>
+            {{ switch_toggle("time_breakdown", "Разбивка по дням", checked=selected_time_breakdown) }}
             <button class="rounded-lg bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
                 Показать
             </button>
@@ -109,12 +104,7 @@
                         <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                     {% endfor %}
                 </select>
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                    <input type="hidden" name="time_breakdown" value="">
-                    <input type="checkbox" name="time_breakdown" value="true"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                    Разбивка по дням
-                </label>
+                {{ switch_toggle("time_breakdown", "Разбивка по дням") }}
                 <button :disabled="busy"
                         class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50">
                     <span x-show="!busy">Отправить дайджест</span>

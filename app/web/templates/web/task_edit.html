@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_trigger_actions %}
+{% from "web/_macros.html" import control, task_dates, task_trigger_actions, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задача — AI Monitor{% endblock %}
 {% block content %}
@@ -131,20 +131,19 @@
         {% if sources %}
         <div>
             <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
-            <div class="max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 space-y-1">
+            <ul class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                 {% for source in sources %}
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer">
-                    <input type="checkbox" name="source_ids" value="{{ source.id }}"
-                           :checked="editing.source_ids.includes({{ source.id }})"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-cyan-500 focus:ring-cyan-500">
-                    <a href="/app/sources/{{ source.id }}"
-                       class="truncate hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name }}</a>
-                    {% if not source.is_active %}
-                    <span class="shrink-0 rounded bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-700 dark:text-rose-400">неактивен</span>
-                    {% endif %}
-                </label>
+                {{ check_card(
+                    cid="task-src-" ~ source.id,
+                    name="source_ids",
+                    value=source.id,
+                    content=source.name,
+                    checked=source.id in edit.source_ids,
+                    cls="content-cb",
+                    attrs=':checked="editing.source_ids.includes(' ~ source.id ~ ')"'
+                ) }}
                 {% endfor %}
-            </div>
+            </ul>
             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Отметка деактивированного источника активирует его.</p>
         </div>
         {% endif %}
@@ -210,12 +209,7 @@
                         </select>
                     </div>
                 </div>
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                    <input type="hidden" name="digest_time_breakdown" :value="editing.digest_time_breakdown ? 'on' : ''">
-                    <input type="checkbox" x-model="editing.digest_time_breakdown"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-                    Разбивка по дням внутри групп
-                </label>
+                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs='x-model="editing.digest_time_breakdown"') }}
             </div>
         </template>
 
@@ -244,12 +238,7 @@
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
-        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
-            <input type="checkbox" x-model="editing.is_active"
-                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
-            Активна
-        </label>
+        {{ switch_toggle("is_active", "Активна", checked=False, attrs='x-model="editing.is_active"') }}
         <div class="flex flex-wrap items-center gap-2 pt-2">
             {# Delete lives with the edit form, not in the row: it is the one
                action that cannot be undone, and a bare trash icon next to

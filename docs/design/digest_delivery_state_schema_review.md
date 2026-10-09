@@ -1,5 +1,12 @@
 # Digest delivery state schema unit
 
+## Current merged status
+
+PR #6 merged into dev (`0ae0a18`) on explicit owner instruction. The preparation
+status below is historical evidence, not current PR state. Foundation remains
+opt-in; builder activation and production migration are not claimed. Current
+continuation: [implementation status](../IMPLEMENTATION_STATUS.md).
+
 ## Scope and approval
 
 The owner explicitly selected one dedicated DigestRun JSONB field plus a

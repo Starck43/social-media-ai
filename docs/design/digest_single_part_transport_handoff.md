@@ -1,6 +1,13 @@
 # Single-part digest transport — bounded implementation handoff
 
-## Status and dependencies
+## Current merged status
+
+PR #9 merged into dev (`daf8e9c`) on explicit owner instruction. The preparation
+status below is historical evidence, not current PR state. Foundation remains
+opt-in; builder activation and production migration are not claimed. Current
+continuation: [implementation status](../IMPLEMENTATION_STATUS.md).
+
+## Historical preparation status and dependencies
 
 Prepared in [PR #9](https://github.com/Starck43/social-media-ai/pull/9), branch
 `ai/digest-single-part-transport`, stacked on contract PR #7, then schema PR #6.
@@ -40,7 +47,7 @@ edited narrowly without repository-wide reformatting.
 Full suite intentionally not rerun for this additive, unused transport path.
 All HTTP was mocked. No live sends or production DB/schema changes.
 
-## Checklist and exact next step
+## Historical checklist and exact next step
 
 Checked boxes mean implemented/tested in this branch, **not merged into dev**.
 

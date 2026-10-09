@@ -1,6 +1,13 @@
 # Deterministic digest HTML parts — implementation handoff
 
-## Status and dependencies
+## Current merged status
+
+PR #10 merged into dev (`0529956`) on explicit owner instruction. The preparation
+status below is historical evidence, not current PR state. Foundation remains
+opt-in; builder activation and production migration are not claimed. Current
+continuation: [implementation status](../IMPLEMENTATION_STATUS.md).
+
+## Historical preparation status and dependencies
 
 Prepared in [PR #10](https://github.com/Starck43/social-media-ai/pull/10), branch
 `ai/digest-html-parts`, stacked on #9 -> #7 -> schema #6.
@@ -44,7 +51,7 @@ trailing-whitespace grouping and explicit regression tests. No test was weakened
 Full suite deliberately not repeated for this currently unused additive path.
 Mocked HTTP only; no live sends or production DB/schema changes.
 
-## Checklist and next session
+## Historical checklist and next session
 
 Checked boxes mean implemented in this branch, **not merged into dev**.
 

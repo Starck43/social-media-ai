@@ -12,6 +12,9 @@ Product expansion supplements, rather than replaces, the readiness-first roadmap
 
 ## Business readiness: current decisions
 
+- **[Implementation status / start here](./IMPLEMENTATION_STATUS.md)** — merged work, open checklists, current blocker, validation and new-session continuation.
+- **[Digest retry checkpoint plan](./design/digest_delivery_retry_plan.md)** — proposed receipt storage, schema approval boundary and acceptance; not implemented.
+
 - **[Integrated roadmap](./ROADMAP_INTEGRATED.md)** — proposed sequence, small PRs and launch gates; reviewed against dev, not a production certification.
 - **[Proposal review](./design/proposal_review.md)** — dispositions of research proposals, code evidence and stale assumptions.
 - **[Pre-merge delta recheck](./design/business_readiness_recheck_2026_10_08.md)** — dev changes considered before the earlier documentation merge.

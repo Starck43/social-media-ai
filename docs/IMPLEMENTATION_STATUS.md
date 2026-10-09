@@ -2,9 +2,10 @@
 
 ## Read this first
 
-Verified continuation baseline: dev `081165a7aac1cbb5b2f093f6ead20a89e1ce28ec`
-(PR #14 model-reference reconciliation, after PR #13 documentation navigation).
-PR #12 was synchronized with this baseline before the continuation below.
+Latest checked dev: `1d26c1bfef7f02e6de8773e9761191e13d040bc2` (2026-10-09).
+PR #12 merged as `72a57cb`; PR #16 fixture correction merged as `c1bbc49`.
+Owner runtime guard `1d26c1b` is preserved; it is not a complete security gate.
+Earlier continuation baseline was `081165a` after PR #13/#14 documentation work.
 Cloud/hybrid planning from PR #8 and parallel application changes are preserved.
 Prepared, merged, deployed and production-accepted are DIFFERENT states.
 Checked boxes below mean merged bounded work, never automatic acceptance.
@@ -53,28 +54,28 @@ Historical CA-01–04 already exist; read the proposal review before rebuilding.
   checkpoint. Earlier schema full run: 1084 passed, 1 skipped on `7a06374`.
   Neither count is a test result for the new job/publisher integration.
 
-## Current task — PR #12 continuation
+## Digest job integration — merged, acceptance open
 
-Status: **IMPLEMENTATION PREPARED; DATABASE/INTEGRATION TESTS AND ACTIVATION OPEN**.
-[PR #12](https://github.com/Starck43/social-media-ai/pull/12), branch
-`ai/digest-atomic-snapshot`, remains unmerged and undeployed.
-Owner accepted performing tests separately; this does not authorize live activation.
+Status: **MERGED; DATABASE/INTEGRATION ACCEPTANCE AND ACTIVATION OPEN**.
+[PR #12](https://github.com/Starck43/social-media-ai/pull/12) merged into dev.
+Owner accepted performing tests separately; no new test results or deployment
+sign-off were supplied here. Live sender activation remains separately gated.
 
-Prepared in this branch (unchecked because NOT merged/accepted):
+Merged bounded implementation (checked, NOT production acceptance):
 
-- [ ] Atomic NEW snapshot factory, preserving complete immutable content, owned
+- [x] Atomic NEW snapshot factory, preserving complete immutable content, owned
   targets, parts and generation. Prior agent checkpoint `3b4e380`: 250 focused
   tests, 1 warning, including 16 factory cases. HISTORICAL only; not rerun here.
   [Original snapshot handoff](design/digest_atomic_snapshot_handoff.md).
-- [ ] Original server-owned Job/run/window/generation reference; reference and
+- [x] Original server-owned Job/run/window/generation reference; reference and
   snapshot commit together, not in separate crash-prone transactions.
-- [ ] Default-off checkpoint publisher, no delivery-only LLM rebuild, committed
+- [x] Default-off checkpoint publisher, no delivery-only LLM rebuild, committed
   per-part receipts, known-unsent retry only and conservative ambiguity stops.
-- [ ] Schedule build coordination, heartbeat/claim fencing, retained known build
+- [x] Schedule build coordination, heartbeat/claim fencing, retained known build
   cost on failed binding, no duplicate cost transfer; unknown usage remains NULL.
-- [ ] Claim-fenced Job outcomes, partial/blocked/uncertain detail, no false success
+- [x] Claim-fenced Job outcomes, partial/blocked/uncertain detail, no false success
   notification, and legacy-builder/flag-rollback protection for checkpoint runs.
-- [ ] Prepared PostgreSQL integration cases: two-target partial restart after
+- [x] Prepared PostgreSQL integration cases: two-target partial restart after
   midnight, cancellation/in-flight, revocation, atomic rollback, foreign reference,
   lost claims, concurrent schedule locks, force refusal and unknown cost.
 
@@ -88,9 +89,31 @@ for scope, recovery policy, test commands, rollout/rollback and known limitation
 The earlier snapshot handoff describes the earlier bounded factory checkpoint;
 its statement that builder/jobs were untouched does not describe this continuation.
 
+## Typed digest/learn/reflect boundary follow-up — prepared, not merged
+
+Baseline: `1d26c1b`, branch `ai/typed-digest-memory-boundaries`.
+No model/migration/owner runtime-guard changes; no live calls or activation.
+
+- [ ] Strict bounded Pydantic summary, fact and reflection-operation contracts.
+- [ ] Learn evidence restricted to rendered user messages; invalid output keeps
+  the watermark. A successful run does not consume unrendered rows.
+- [ ] Reflect rejects a whole invalid/foreign/duplicate-ID operation batch before
+  the first write. Prompt advice remains a proposal, not an applied instruction.
+- [ ] Frame digest brief, transcript and memory as untrusted data; redact local
+  error diagnostics. This is not proof against injection or a fleet-wide audit.
+- [ ] 44 contract/mocked-boundary tests actually passed locally; 5 additional
+  PostgreSQL regressions prepared but NOT run. Existing/full suite still required.
+
+See [typed-boundary handoff](design/typed_output_boundaries_handoff.md). PRD-07,
+PRD-02 and PRD-03 remain OPEN: no atomic memory-write transaction, spend ledger,
+interactive identity replacement or full injection/permission acceptance.
+The research checkbox does not turn this prepared work into a completed gate.
+
 ## Deployment and acceptance still required
 
-- [ ] Verify/apply migration 0087 BEFORE updated ORM code starts. One authorized
+- [ ] Verify target migration 0087 BEFORE updated ORM code starts. Owner reports
+  it applied and the local 0088 constraint experiment reverted; not independently
+  inspected here. One authorized
   migrator, backup/staging check and correct POSTGRES_URL/DB_SCHEMA; merge alone
   does not upgrade a target database. No production migration ran here.
 - [ ] Run isolated PostgreSQL tests and existing regressions, then full suite.
@@ -130,7 +153,8 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and the actual PR #12 head; check parallel changes before edits.
+1. Fetch fresh dev and open PR heads; PR #12/#16 are merged. Preserve the owner
+   runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.
 4. Run the isolated tests and record actual results/commit, not historical counts.

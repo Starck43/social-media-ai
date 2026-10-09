@@ -679,3 +679,11 @@ Action ledger (audit trail for automated actions).
 | `0086` | Add custom LLM model endpoint paths |
 
 Head migration: `0086` (verify repository head with `alembic heads`, deployed state with `alembic current`).
+
+## Digest delivery checkpoint storage
+
+The separate schema unit adds nullable `DigestRun.delivery_state` (JSONB),
+revision 0087 after 0086, for versioned per-recipient/part receipt data. Existing
+rows remain NULL: absence of history is not proof that all targets are unsent.
+This storage change alone does not implement retries or change delivery behavior.
+See [schema scope, upgrade/rollback and continuation](design/digest_delivery_state_schema_review.md).

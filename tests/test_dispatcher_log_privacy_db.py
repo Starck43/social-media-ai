@@ -14,7 +14,8 @@ import pytest
 from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.jobs import dispatcher
-from app.models import AgentTask, Job, Notification, Tenant, User
+from app.models import AgentTask, Job, Notification, Tenant, User, Role
+from app.types import UserRoleType
 from app.services.notifications import service
 
 pytestmark = pytest.mark.tenancy
@@ -36,6 +37,9 @@ async def workspace(monkeypatch):
 @pytest.fixture
 async def arrange_user():
     """Create an isolated actor; never depend on an existing DB account."""
+    # Get the VIEWER role that should exist due to seeding.
+    viewer_role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+    assert viewer_role is not None, "VIEWER role should exist due to seeding"
     name = f"privacy-arrange-{uuid4().hex}"
     user = await User.objects.create_user(
         username=name,
@@ -43,12 +47,13 @@ async def arrange_user():
         password="test-only-privacy-password",
         is_active=True,
         is_superuser=False,
-        role_id=None,
+        role_id=viewer_role.id,
     )
     try:
         loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
         assert loaded is not None and loaded.is_active
-        assert not loaded.is_superuser and loaded.role_id is None
+        assert not loaded.is_superuser
+        assert loaded.role_id == viewer_role.id
         yield loaded
     finally:
         await User.objects.delete_user(user.id)

@@ -20,7 +20,7 @@ Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); raw owner706bfea full suite1486 passed/68 failed; markdown PASSED | Import isolation `99c8294` PREPARED/UNRUN: replace dispatcher-fixture global doubles with module-local imports; owner runs ordered group, then separate CLI/digest arrange review. [Handoff](identity_permissions_handoff.md). PR29 deferred; no duplicate implementation. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); owner65d5b16 standalone8/25/13 and ordered95/95 PASSED | CLI-fixture compatibility49f5fe3 PREPARED/UNRUN (10 cases). Next digest/DB arrange package, not duplicate isolation. Historical68 failures are not a current count. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |

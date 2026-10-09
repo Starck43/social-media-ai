@@ -1,5 +1,35 @@
 # Implementation status and session handoff
 
+## Current continuation — isolation verified, CLI fixture package prepared
+
+Owner/local agent tested exact `65d5b16`: standalone import-isolation8 /
+returned-outcomes25 / dispatcher-privacy13 PASSED; the ordered producer-consumer
+pytest group PASSED95/95 in29.34s. Clean retained worktree; full suite not rerun.
+This validates the new fixture isolation for that group. It does NOT prove a
+producer must be outside it: historical full suite used706bfea BEFORE isolation
+99c8294. Original68 failures are a historical checkpoint; current remaining
+count unknown. No unchanged check rerun or full-suite acceptance inferred.
+
+Next bounded code `49f5fe3` changes ONLY tests/test_cli_task_run.py: _cli mirrors
+actual cli.main._run_platform with explicit operator_permission_scope; scoped
+arrange task/source inserts get exact model.create service grants around a
+single write. No autouse authority or full-test grant, no foreign-source check
+weakening. Nine existing test bodies are AST-identical; one new scope-narrowing/
+restoration regression added. Static AST/whitespace only; new CLI group NOT RUN.
+All owner source/UI/runtime corrections retained; application code unchanged.
+
+Owner next, in the clean retained worktree: git fetch origin; git merge --ff-only
+origin/ai/identity-permissions-boundary; git rev-parse HEAD; then
+`python -m pytest -q tests/test_cli_task_run.py` (expected10 cases). Use existing
+project venv and distinct DB_TEST_SCHEMA, no concurrent pytest/reset/drop/migration
+or live calls. Stop on dirty/diverged history. No reason to repeat the95-case
+isolation group merely because this separate CLI test file changed.
+
+Next agent task: remaining explicit-tenant digest/returned-failure DB arrangement
+compatibility, then owner targeted integration before a new full-suite checkpoint.
+No claim all historical68 failures fixed. PR22 remains Draft/unmerged; PR29
+separate/deferred. Older evidence below is historical, not current allocation.
+
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
 
 Attached owner log for `706bfea` was selectively inspected: actual run directory

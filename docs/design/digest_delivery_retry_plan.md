@@ -116,3 +116,17 @@ do not silently disguise it as durable business-grade delivery.
 
 Update [implementation status](../IMPLEMENTATION_STATUS.md) as each approved
 unit lands. Done means merged into dev; prepared/in-review is not done.
+
+
+## Latest bounded implementation checkpoint
+
+[PR #10](https://github.com/Starck43/social-media-ai/pull/10), stacked on #9,
+prepares versioned deterministic b/i/blockquote HTML parts and COMPLETE frozen
+part-list verification for all targets. 196 focused tests passed, 1 existing
+warning. Visible text/styles/whitespace and entities/code points are preserved;
+unsupported HTML/unrepresentable whitespace fails closed. No word/grapheme or
+general-HTML guarantee. Existing splitter/builder/send remain unchanged; full
+suite was not repeated. Handoff: `docs/design/digest_html_parts_handoff.md` in
+PR #10. Schema/contract/transports/parts are prepared only, not merged/deployed.
+Next: locked durable writes, authorization and caller pacing, then builder/job
+original-run resume and integration tests. End-to-end durable retry remains open.

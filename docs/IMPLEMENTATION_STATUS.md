@@ -40,7 +40,7 @@ see the proposal review rather than rebuilding them.
 
 ## Current task — digest retry checkpoints
 
-Status: **STORAGE APPROVED; SCHEMA, CONTRACT AND SINGLE-PART TRANSPORT PREPARED / NOT MERGED; DURABLE RETRY NOT IMPLEMENTED**.
+Status: **STORAGE APPROVED; SCHEMA, CONTRACT, TRANSPORT AND HTML PARTS PREPARED / NOT MERGED; DURABLE RETRY NOT IMPLEMENTED**.
 Owner decision: one dedicated JSONB field on DigestRun plus a separate migration.
 This approves schema preparation, not production migration or automatic PR merge.
 Task branch: `ai/digest-retry-checkpoints`, created from the verified dev above.
@@ -77,6 +77,17 @@ The local planning snapshot was refreshed when the new product docs landed.
   `docs/design/digest_single_part_transport_handoff.md` in PR #9.
   Caller pacing/backoff, HTML-safe splitting, locking, persistence and resume
   remain open. This also adds proven pre-HTTP in-flight -> blocked handling.
+- [ ] Merge the deterministic HTML/full-list unit after dependency review.
+  Prepared in [PR #10](https://github.com/Starck43/social-media-ai/pull/10),
+  stacked on #9, branch `ai/digest-html-parts`; code/test commit `2321706`.
+  Balanced renderer-subset b/i/blockquote parts, raw UTF-16 bound, preserved
+  visible text/styles/whitespace, atomic entities/code points. Entire ordered
+  count/hash list and exact snapshot/version checked for ALL frozen targets.
+  **196 focused tests passed, 1 existing warning**; full suite not repeated.
+  Existing sender/splitter remains unchanged. Handoff:
+  `docs/design/digest_html_parts_handoff.md` in PR #10.
+  Unsupported HTML and unrepresentable whitespace fail closed; no general
+  sanitizer or word/grapheme preservation claim. Durable retry still absent.
 - [ ] Persist one immutable digest snapshot and per-recipient/part receipts.
 - [ ] Resume only unfinished known-failed parts without rebuilding the summary.
 - [ ] Recheck workspace ownership/activity/digest flag on every resumed send.
@@ -118,10 +129,11 @@ this checklist does not replace them or authorize deployment.
 3. Storage is approved. Review the schema branch/PR and its validation; confirm
    whether it was merged. Do not claim retry behavior exists merely because the
    field exists, and do not apply a production migration without a deployment step.
-4. Inspect stacked PRs #7/#9 and their handoffs before rebuilding checkpoint
-   helpers or single-part transports.
-   Next unit after dependency review: versioned HTML-safe full-part reconstruction,
-   caller pacing/backoff and locked persistence, followed by builder/job resume.
+4. Inspect stacked PRs #7/#9/#10 and their handoffs before rebuilding checkpoint
+   helpers, transports or HTML parts.
+   Next unit after dependency review: locked durable snapshot/intent/receipt
+   persistence with authorization and caller pacing/backoff, followed by
+   original-window builder/job resume.
    The pure helpers do not provide authorization, locking or durability. Do not reserve
    a migration number until fresh dev's current graph has been checked.
 5. Keep done/in-review/in-progress/blocked distinct; append test evidence and

@@ -25,6 +25,53 @@ logger = logging.getLogger(__name__)
 jobs = JobManager()
 
 
+_FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
+_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect"})
+
+
+def _log_id(value: Any) -> int | None:
+    """Only persisted integer IDs; never stringify payload-like values."""
+    return value if type(value) is int and value > 0 else None
+
+
+def _log_job_type(value: Any) -> str:
+    return value if type(value) is str and value in _LOG_JOB_TYPES else "unknown"
+
+
+def _error_kind(error: BaseException) -> str:
+    """Bounded categories, not exception messages, repr, args or tracebacks."""
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionError):
+        return "connection_error"
+    if isinstance(error, OSError):
+        return "io_error"
+    if isinstance(error, ValueError):
+        return "value_error"
+    if isinstance(error, RuntimeError):
+        return "runtime_error"
+    return "unexpected_error"
+
+
+def _log_job(level: int, event: str, job: Any, *, error_code: str = "none") -> None:
+    """Dispatcher-only metadata log; event/code are internal static values.
+
+    Keep correlation without payloads, source names, provider bodies or errors.
+    No exc_info: tracebacks can reproduce credentials and customer SQL parameters.
+    This is not a filter for handlers, ORM, provider clients or external sinks.
+    """
+    logger.log(
+        level,
+        "%s job_id=%s tenant_id=%s task_id=%s job_type=%s error_code=%s",
+        event,
+        _log_id(getattr(job, "id", None)),
+        _log_id(getattr(job, "tenant_id", None)),
+        _log_id(getattr(job, "agent_task_id", None)),
+        _log_job_type(getattr(job, "job_type", None)),
+        error_code,
+    )
+
+
 def _job_label(job_type: str) -> str:
     labels = {
         "collect": "Сбор данных",
@@ -100,24 +147,25 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
     """Create a tenant-scoped Notification for a finished job.
 
     User-facing message (понятная пользователю формулировка) goes into the
-    Notification row; the technical error stays on the Job (`error`) and on the
+    Notification row; failures use a fixed template, never raw exception text.
+    The technical error stays on the Job (`error`) and on the
     AgentTask (`last_error`) for the admin UI. Runs inside `tenant_scope`.
     """
     from app.services.notifications.service import notify
     from app.types import NotificationType
 
-    label = _job_label(job.job_type)
+    label = _job_label(_log_job_type(job.job_type)) if not success else _job_label(job.job_type)
     if not success:
         try:
             await notify.create(
                 title=f"Ошибка задачи «{label}»",
-                message=f"Задача «{label}» не выполнена: {error or 'неизвестная ошибка'}",
+                message=f"Задача «{label}» не выполнена. {_FAILURE_MESSAGE}",
                 ntype=NotificationType.API_ERROR,
                 entity_type="task",
                 entity_id=job.agent_task_id,
             )
         except Exception:  # noqa: BLE001 — a failing notification must never break the worker
-            logger.exception(f"Failed to create error notification for job {job.id}")
+            _log_job(logging.ERROR, "job_error_notification_failed", job, error_code="notification_write_failed")
         return
 
     try:
@@ -129,7 +177,7 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
             entity_id=job.agent_task_id,
         )
     except Exception:  # noqa: BLE001
-        logger.exception(f"Failed to create success notification for job {job.id}")
+        _log_job(logging.ERROR, "job_success_notification_failed", job, error_code="notification_write_failed")
 
 
 async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) -> None:
@@ -169,22 +217,22 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
                     result=failure.audit_result(),
                     llm_cost=failure.llm_cost,
                 )
-                logger.error("Job %s (%s) returned failure: %s", job.id, job.job_type, failure.code)
+                _log_job(logging.ERROR, "job_returned_failure", job, error_code=failure.code)
                 await _notify_job_result(
                     job,
                     success=False,
-                    error="Не удалось завершить обработку. Подробности сохранены в задаче.",
+                    error=_FAILURE_MESSAGE,
                 )
                 return
             if checkpoint_mode:
                 from app.services.digest.job_delivery import finalize_digest_job
 
                 if await finalize_digest_job(job, result=result) is None:
-                    logger.warning("Digest job %s lost its claim before completion", job.id)
+                    _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
                     return
             else:
                 await jobs.mark_done(job.id, result=result, llm_cost=llm_cost)
-            logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
+            _log_job(logging.INFO, "job_done", job)
             if not (isinstance(result, dict) and result.get("status") == "skipped"):
                 await _notify_job_result(job, success=True, result=result)
         except Exception as e:
@@ -197,15 +245,15 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
 
                 will_retry = await finalize_digest_job(job, failure=e, allow_retry=retry)
                 if will_retry is None:
-                    logger.warning("Digest job %s lost its claim; outcome write refused", job.id)
+                    _log_job(logging.WARNING, "job_outcome_claim_lost", job, error_code="claim_lost")
                     return
             else:
                 will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=retry)
             if will_retry:
-                logger.warning(f"Job {job.id} failed (will retry): {e}")
+                _log_job(logging.WARNING, "job_retry_scheduled", job, error_code=_error_kind(e))
             else:
-                logger.error(f"Job {job.id} failed permanently: {e}", exc_info=True)
-                await _notify_job_result(job, success=False, error=str(e))
+                _log_job(logging.ERROR, "job_failed_terminal", job, error_code=_error_kind(e))
+                await _notify_job_result(job, success=False, error=_FAILURE_MESSAGE)
 
 
 async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> Optional[dict]:
@@ -319,14 +367,14 @@ async def drain(max_jobs: int | None = None) -> int:
 
 async def worker_forever(poll_seconds: int = 5) -> None:
     """Worker loop: poll the jobs table and process due jobs."""
-    logger.info(f"Worker started (poll every {poll_seconds}s)")
+    logger.info("worker_started")
     while True:
         try:
             processed = await drain(max_jobs=10)
             await asyncio.sleep(0 if processed else poll_seconds)
         except asyncio.CancelledError:
-            logger.info("Worker stopped")
+            logger.info("worker_stopped")
             break
-        except Exception:
-            logger.exception("Worker iteration failed")
+        except Exception as error:
+            logger.error("worker_iteration_failed error_code=%s", _error_kind(error))
             await asyncio.sleep(poll_seconds)

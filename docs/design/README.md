@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `274cb2cbd30ea18046d51f970a5ccdb95ccffb1c`, 2026-10-09. PR #22 includes this base via `8f09a83`; this is not a merge of PR #22 into dev.
+Snapshot: dev `6f810a43ff43e37a504c1371ffd33755156d280a`, 2026-10-09. PR #22 includes it via `ef9c417`; this is not a merge of PR #22 into dev.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`; continuation now taken over in this lane | Identity/confirmation/preview prepared; collect_now source.analyze gate `ec69981` adds six unrun regressions (dispatch suite now 16). Owner verifies in a separate worktree; [handoff](identity_permissions_handoff.md). No duplicate implementation. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); owner standalone16/18/19/9 passed at `70f58a1`, DB133 passed/6 failed, full suite timed out | Plan-tier arrange fix `31618a5` PREPARED/UNRUN; current dev UI/test included. Owner checks tiers/web then remaining integration; [handoff](identity_permissions_handoff.md). Separate manager follow-up [PR #29](https://github.com/Starck43/social-media-ai/pull/29) deferred; no duplicate work. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |

@@ -1,5 +1,45 @@
 # Identity and permission boundary: owner handoff
 
+## Latest checkpoint — owner results and five arrange fixes
+
+Current code checkpoint `31618a5`; includes dev `6f810a4` via `ef9c417`.
+Owner tested `70f58a1`: standalone16/18/19/9 passed; DB/API/web133 passed,
+6 failed; full suite reported1554 tests and timed out after10minutes.
+These are OWNER-REPORTED, not agent runs. Timeout is incomplete evidence;
+"pre-existing before the latest correction" does not waive PR integration failures.
+
+Five plan-tier arrange failures are addressed ONLY in tests/test_plan_tiers.py:
+isolated active non-superuser VIEWER actor with role_id, eager rights, ordinary
+create-denial assertions and cleanup; explicit owner scope around source
+inserts/deactivation and task inserts. Quota checks run after scope restoration.
+No autouse blanket privilege, altered quota assertions or production change.
+This fixture is PREPARED/NOT RUN. Owner's published UI/markdown test changes
+are included from dev rather than reimplemented. PR29 stays separate/deferred.
+
+Retained clean review worktree: git fetch origin; git merge --ff-only
+origin/ai/identity-permissions-boundary (stop if dirty/diverged); git rev-parse HEAD.
+After confirming the interrupted process is stopped and inspecting isolated
+schema state, no automatic reset/drop/migration:
+
+```bash
+python -m scripts.setup_test_db --check
+python -m pytest -q tests/test_plan_tiers.py tests/test_web_chat.py
+```
+
+If those pass, complete the existing DB/API/web group; do not separately repeat
+the four unchanged standalone scripts. For full-suite diagnosis, use verbose
+progress and pytest's faulthandler diagnostic (not a kill timeout):
+
+```bash
+python -m pytest -vv --durations=20 -o faulthandler_timeout=120
+```
+
+Normal project .venv/dependencies and distinct DB_TEST_SCHEMA; no concurrent
+pytest processes on one schema. Record exact testedSHA, completed summary or
+last active test + redacted diagnostic on a stall; don't infer that six known
+failures are the only failures in an interrupted run. No ready/merge/deployment
+claim. Below is earlier contract/history; latest evidence is this checkpoint.
+
 ## Current prepared block — identity, confirmation and action preview
 
 2026-10-09: draft PR #22, branch `ai/identity-permissions-boundary`.

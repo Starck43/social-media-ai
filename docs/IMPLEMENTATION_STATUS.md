@@ -1,8 +1,30 @@
 # Implementation status and session handoff
 
+## Latest PR22 verification and fixture continuation
+
+Owner/local-agent evidence at exact `70f58a1`: standalone dispatch16 /
+identity18 / confirmation19 / action9 PASSED; DB/API/web group 133 PASSED,
+6 FAILED. Owner attributes the six failures to earlier PR code, not the last
+two-file correction; they are still OPEN integration failures. Full suite
+reported 1554 tests and timed out after ten minutes: NOT a completed pass,
+not proof that only six failures exist. Agent has not rerun any tests.
+
+Fresh dev `6f810a4` is included via `ef9c417`, retaining owner UI changes and
+updated markdown asset test. Fixture-only `31618a5` prepares fixes for five
+plan-tier arrange errors: isolated VIEWER actor, role_id and eager rights;
+owner scope only around source/task writes, quota checks outside the scope.
+No application/UI guard weakened; new fixture NOT RUN. Recheck renderer case
+on this integrated code rather than replace owner UI/test files. PR29 deferred.
+
+Next: owner fast-forwards the retained review worktree, checks the interrupted
+test-process/schema state without automatic reset/drop, then reruns plan tiers
+and web chat. If clean, complete the10-file regression group and investigate
+full-suite progress/stalls with verbose output and a diagnostic thread dump.
+Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
+
 ## Read this first
 
-Latest checked dev: `274cb2cbd30ea18046d51f970a5ccdb95ccffb1c` (2026-10-09). PR #22 includes it via `8f09a83`; #22 remains Draft/unmerged.
+Latest checked dev: `6f810a43ff43e37a504c1371ffd33755156d280a` (2026-10-09). PR #22 includes it via `ef9c417`; #22 remains Draft/unmerged.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported

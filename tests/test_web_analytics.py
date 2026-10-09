@@ -23,6 +23,80 @@ from app.types import PeriodType, SourceType, UserRoleType
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
 
+def _visible_text(html: str) -> str:
+    """Assert rendered prose, independent of HTML indentation and assets."""
+    from html.parser import HTMLParser
+
+    class TextParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts = []
+            self.assets = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag in {"script", "style"}:
+                self.assets.append(tag)
+
+        def handle_endtag(self, tag):
+            if self.assets and self.assets[-1] == tag:
+                self.assets.pop()
+
+        def handle_data(self, data):
+            if not self.assets:
+                self.parts.append(data)
+
+    parser = TextParser()
+    parser.feed(html)
+    return " ".join(" ".join(parser.parts).split())
+
+
+@pytest.fixture
+async def analytics_delete_actor():
+    """Grant only analytics view/delete on a throwaway role, never a seeded role.
+
+    Owning a workspace is not authorization to destroy analyses. The positive
+    deletion subjects carry real structured permissions; cleanup restores their
+    original User role (if still present), clears links and removes the role.
+    """
+    from app.models import Permission
+    from app.types import ActionType
+
+    roles = []
+    originals = []
+
+    async def grant(user):
+        permissions = await Permission.objects.prefetch_related("model_type").filter(
+            action_type__in=[ActionType.VIEW, ActionType.DELETE],
+        )
+        selected = {}
+        for permission in permissions:
+            if permission.model_type and permission.model_type.model_name.lower() == "aianalytics":
+                selected.setdefault(permission.action_type, permission.id)
+        assert set(selected) == {ActionType.VIEW, ActionType.DELETE}, "analytics rights must be seeded"
+        role = await Role.objects.create_role(name=_name("analytics-delete-"), codename=UserRoleType.VIEWER)
+        roles.append(role.id)
+        await Role.objects.set_permissions(role.id, list(selected.values()))
+        originals.append((user.id, user.role_id))
+        await User.objects.update_by_id(user.id, role_id=role.id)
+        loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+        assert loaded.is_active and not loaded.is_superuser and not loaded._is_superuser_role()
+        assert len(loaded.role.permissions) == 2
+        assert loaded.has_perm_for("aianalytics", ActionType.VIEW)
+        assert loaded.has_perm_for("aianalytics", ActionType.DELETE)
+        for model in ("tenant", "role", "user", "job", "llmmodel", "llmprovider", "source"):
+            assert not loaded.has_perm_for(model, ActionType.DELETE), model
+        return loaded
+
+    try:
+        yield grant
+    finally:
+        for user_id, role_id in originals:
+            await User.objects.update_by_id(user_id, role_id=role_id)
+        for role_id in roles:
+            await Role.objects.set_permissions(role_id, [])
+            await Role.objects.delete_by_id(role_id)
+
+
 def _name(prefix: str) -> str:
     return f"{prefix}{secrets.token_hex(4)}"
 
@@ -303,13 +377,14 @@ async def test_chains_sort_desc_by_default_and_asc_on_request(client: AsyncClien
         await _drop(user, tenant_id, source_id)
 
 
-async def test_owner_deletes_a_single_analysis(client: AsyncClient) -> None:
+async def test_owner_deletes_a_single_analysis(client: AsyncClient, analytics_delete_actor) -> None:
     """`POST /app/analytics/{id}/delete` removes one row and returns to its chain."""
     user, tenant_id = await _register(client, "cd")
     source_id = await _make_source(client, tenant_id, "Удаление источник")
     first_id = await _chain_analysis(tenant_id, source_id, "chain_del", "Первый анализ", 1)
     second_id = await _chain_analysis(tenant_id, source_id, "chain_del", "Второй анализ", 0)
     try:
+        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_del")
         resp = await client.post(
@@ -326,12 +401,13 @@ async def test_owner_deletes_a_single_analysis(client: AsyncClient) -> None:
         await _drop(user, tenant_id, source_id)
 
 
-async def test_last_analysis_delete_leaves_no_404(client: AsyncClient) -> None:
+async def test_last_analysis_delete_leaves_no_404(client: AsyncClient, analytics_delete_actor) -> None:
     """Deleting the last analysis of a chain returns to the list, not a 404 page."""
     user, tenant_id = await _register(client, "ce")
     source_id = await _make_source(client, tenant_id, "Последний источник")
     only_id = await _chain_analysis(tenant_id, source_id, "chain_last", "Единственный анализ", 0)
     try:
+        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_last")
         resp = await client.post(
@@ -348,12 +424,13 @@ async def test_last_analysis_delete_leaves_no_404(client: AsyncClient) -> None:
         await _drop(user, tenant_id, source_id)
 
 
-async def test_owner_deletes_a_whole_chain(client: AsyncClient) -> None:
+async def test_owner_deletes_a_whole_chain(client: AsyncClient, analytics_delete_actor) -> None:
     """`POST /app/analytics/chains/{chain_id}/delete` drops every row of the chain."""
     user, tenant_id = await _register(client, "ch")
     source_id = await _make_source(client, tenant_id, "Цепочка-удаление источник")
     ids = [await _chain_analysis(tenant_id, source_id, "chain_gone", f"Анализ {i}", i) for i in range(3)]
     try:
+        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_gone")
         resp = await client.post(
@@ -1104,8 +1181,8 @@ async def test_titles_are_identical_in_group_chronology_detail_chain_and_dashboa
         assert text(unescape(detail.text), "h1") == title
         assert title in unescape(dashboard.text)
     assert expected[1] in chain.text and expected[2] in chain.text
-    assert "Сводка для этой записи не сохранена." in group.text
-    assert "Сводка для этой записи не сохранена." in chronology.text
+    assert "Сводка для этой записи не сохранена." in _visible_text(group.text)
+    assert "Сводка для этой записи не сохранена." in _visible_text(chronology.text)
     # Missing headline does not suppress a saved nested summary or make it a warning.
     nested = card(chronology.text, "a", data["ids"][1])
     assert "не сохранена" not in nested
@@ -1173,7 +1250,7 @@ async def test_entities_label_is_mentions_and_query_contract_unchanged(client, d
     data = drill_records
     response = await client.get("/app/analytics?group_by=entities&entity_type=brand&days=all")
     assert response.status_code == 200
-    assert "По упоминаниям" in response.text and "По сущностям" not in response.text
+    assert "По упоминаниям" in _visible_text(response.text) and "По сущностям" not in _visible_text(response.text)
     group_url = next(
         link
         for link in _analytics_links(response.text)
@@ -1183,7 +1260,7 @@ async def test_entities_label_is_mentions_and_query_contract_unchanged(client, d
     assert parse_qs(urlparse(group_url).query)["entity_type"] == ["brand"]
     group = await client.get(group_url)
     assert group.status_code == 200
-    assert "По упоминаниям" in group.text and "По сущностям" not in group.text
+    assert "По упоминаниям" in _visible_text(group.text) and "По сущностям" not in _visible_text(group.text)
     assert "Иван" in response.text and "ACME" in response.text
     login = await client.post(
         "/api/v1/auth/login", data={"username": data["user"].username, "password": "secret-password-1"}
@@ -1195,3 +1272,93 @@ async def test_entities_label_is_mentions_and_query_contract_unchanged(client, d
     )
     assert api.status_code == 200 and api.json()["axis"] == "entities"
     assert {g["key"] for g in api.json()["groups"]} == {"Иван", "ACME"}
+
+
+def test_visible_text_preserves_prose_contract_without_matching_assets_or_attributes():
+    assert _visible_text('<p>Сводка для этой записи не\n    сохранена.</p>') == "Сводка для этой записи не сохранена."
+    assert _visible_text('<a>По\n    <span>упоминаниям</span></a>') == "По упоминаниям"
+    assert _visible_text('<p>ACME &amp; Иван</p>') == "ACME & Иван"
+    assert _visible_text('<script>По упоминаниям</script><style>.missing { content: "Сводка"; }</style>') == ""
+    assert _visible_text('<p title="По упоминаниям">По сущностям</p>') == "По сущностям"
+
+
+@pytest.mark.tenancy
+async def test_workspace_owner_without_structured_delete_right_cannot_delete_analytics(client):
+    from app.core.permissions import service_permission_scope
+    from app.types import ActionType
+
+    user = None
+    tenant_id = source_id = None
+    try:
+        user, tenant_id = await _register(client, "deleteDenied")
+        with tenant_scope(tenant_id), service_permission_scope("source", "create"):
+            source_id = await _make_source(client, tenant_id, "Protected owner analysis")
+        chain_id = _name("protected-chain-")
+        row_id = await _chain_analysis(tenant_id, source_id, chain_id, "Protected owner row", 0)
+        loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+        assert not loaded.has_perm_for("aianalytics", ActionType.DELETE)
+        assert (await TenantUserManager().web_memberships(user.id))[0].is_owner
+        await _login(client, user.username)
+        page = await client.get(f"/app/analytics/chains/{chain_id}")
+        assert page.status_code == 200
+        assert f'action="/app/analytics/{row_id}/delete"' not in page.text
+        assert f'action="/app/analytics/chains/{chain_id}/delete"' not in page.text
+        token = await _csrf(client, f"/app/analytics/chains/{chain_id}")
+        for path in (f"/app/analytics/{row_id}/delete", f"/app/analytics/chains/{chain_id}/delete"):
+            response = await client.post(path, data={"_csrf": token, "tenant_id": str(tenant_id)})
+            assert "Недостаточно прав" in response.text, path
+            with tenant_scope(tenant_id):
+                assert await AIAnalytics.objects.get(id=row_id) is not None
+    finally:
+        if tenant_id is not None:
+            with tenant_scope(tenant_id), service_permission_scope("source", "delete"):
+                await _drop(user, tenant_id, source_id)
+        elif user is not None:
+            await User.objects.delete_user(user.id)
+
+
+@pytest.mark.tenancy
+async def test_analytics_delete_role_cannot_cross_workspace_even_with_forged_target(client, analytics_delete_actor):
+    from app.core.permissions import service_permission_scope
+
+    user = other = None
+    tenant_id = other_tenant_id = source_id = other_source_id = None
+    try:
+        user, tenant_id = await _register(client, "deleteBound")
+        async with await _client() as other_client:
+            other, other_tenant_id = await _register(other_client, "deleteForeign")
+        with tenant_scope(tenant_id), service_permission_scope("source", "create"):
+            source_id = await _make_source(client, tenant_id, "Owned analysis source")
+        with tenant_scope(other_tenant_id), service_permission_scope("source", "create"):
+            other_source_id = await _make_source(client, other_tenant_id, "Foreign analysis source")
+        chain_id = _name("shared-chain-")
+        own_id = await _chain_analysis(tenant_id, source_id, chain_id, "Owned analysis", 0)
+        foreign_id = await _chain_analysis(other_tenant_id, other_source_id, chain_id, "Foreign analysis", 0)
+        await analytics_delete_actor(user)
+        await _login(client, user.username)
+        token = await _csrf(client, f"/app/analytics/chains/{chain_id}")
+        response = await client.post(
+            f"/app/analytics/{foreign_id}/delete",
+            data={"_csrf": token, "tenant_id": str(other_tenant_id)},
+        )
+        assert "Анализ не найден" in response.text
+        with tenant_scope(tenant_id):
+            assert await AIAnalytics.objects.get(id=own_id) is not None
+        with tenant_scope(other_tenant_id):
+            assert await AIAnalytics.objects.get(id=foreign_id) is not None
+        response = await client.post(
+            f"/app/analytics/chains/{chain_id}/delete",
+            data={"_csrf": token, "tenant_id": str(other_tenant_id)},
+        )
+        assert "Цепочка удалена" in response.text
+        with tenant_scope(tenant_id):
+            assert await AIAnalytics.objects.get(id=own_id) is None
+        with tenant_scope(other_tenant_id):
+            assert await AIAnalytics.objects.get(id=foreign_id) is not None
+    finally:
+        for actor, tid, sid in ((user, tenant_id, source_id), (other, other_tenant_id, other_source_id)):
+            if tid is not None:
+                with tenant_scope(tid), service_permission_scope("source", "delete"):
+                    await _drop(actor, tid, sid)
+            elif actor is not None:
+                await User.objects.delete_user(actor.id)

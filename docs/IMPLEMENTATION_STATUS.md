@@ -1,41 +1,57 @@
 # Implementation status and session handoff
 
-## Current continuation — task source link, then analytics contracts
+## Current continuation — source link and analytics compatibility
 
 Owner verified exact439c200 unchanged before/after in a clean worktree:
-boundary19 OK (0.125s), settings16 PASSED (52s). No full/Telegram rerun. These
-are owner-reported targeted successes, including three prior settings failures;
-existing settings13 + new ASGI3 =16, not16 pre-existing cases. Keep this
-checkpoint; do not request those checks again by default.
+boundary19 OK in0.125s, settings16 PASSED in52s. Three prior settings failures
+are included in the13 existing settings cases, plus3 new ASGI cases =16.
+No full/Telegram rerun; do not ask for those successful checks again by default.
+Telegram4 owner reports fixed at3b63c4b. Last completed full run remains6900e4f:
+1549 passed/14 failed/58subtests10m35s. No new full-suite total is certified by
+subtracting targeted successes. Live Telegram unconfigured/not accepted.
 
-Prepared next: restore the source-name link inside the existing task check_card
-using an autoescaped captured Jinja label. Pointer-events-auto / relative z-10
-keeps the link above the checkbox overlay; card selection/Alpine attributes,
-shared macro, CSS, existing UI layout and runtime remain unchanged. Existing
-source-link test retained; one new hostile-name/checkbox/link-hit-area case
-PREPARED/NOT RUN. Browser click behavior still needs owner acceptance; markup
-checks are not a browser run. No unsafe safe-filter on source names.
+Source-link commit43585d2 restores the source name as an autoescaped captured
+Jinja anchor within the existing task check_card. Pointer-events-auto/relative
+z-10 keeps it above the checkbox overlay; Alpine/card/shared macro/CSS/runtime
+unchanged. Existing link test retained; new hostile-name/checkbox/hit-area test
+PREPARED/NOT RUN. Real browser click acceptance is separate from markup checks.
 
-Owner short check, only in the clean retained PR22 review worktree with existing
-venv/private environment/distinct DB_TEST_SCHEMA, no concurrent pytest/reset/
-drop/migration/live calls: fetch/ff-only branch, record exact HEAD, then:
+New analytics preparation changes tests ONLY, not production/UI/permission
+policy. Two text asserts now check normalized parsed prose rather than raw HTML
+indentation; a pure regression excludes script/style/attribute false matches.
+Titles, warning wording, entity query URLs/API, named entities and all existing
+data/delete/redirect/negative assertions remain. Three deletion subjects use a
+throwaway VIEWER-coded role with exactly structured aianalytics.view/delete,
+not seeded-role edits or ownership bypass. Cleanup restores surviving Users'
+original role, clears links and deletes the private role. No new global rights.
+
+Two new tenancy-marked HTTP cases refuse owner-without-delete single/chain POSTs
+and refuse cross-workspace row deletion/forged posted tenant. Same chain id in
+two workspaces must delete only the authorized workspace's rows. Exact service
+source.create/delete scopes cover arrange/cleanup only, not HTTP subjects; no
+legacy bypass inside these new cases. Total3 analytics regressions PREPARED/
+NOT RUN; existing31 test functions preserved except explicit positive arrange
+and prose normalization. Static parameter count predicts55 analytics cases.
+
+Owner short check in retained clean PR22 review worktree, existing venv/private
+environment/distinct DB_TEST_SCHEMA; stop if dirty/diverged. No concurrent
+pytest/reset/drop/stamp/migration/live calls. Fetch/ff-only branch, record HEAD:
 
 ```bash
-python -m pytest -q tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area
+python -m pytest -q tests/test_web_analytics.py tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area
 ```
 
-Expected2 success, not yet observed. Agent ran AST/text/git checks only; tests,
-collection, app imports, DB/live calls NOT RUN. Settings/global-right boundary
-is not changed by this follow-up. Telegram4 owner reports success at3b63c4b;
-last completed full run remains6900e4f:1549 passed/14 failed/58subtests10m35s.
-No new full-suite total is certified from subtracting targeted results.
+Expected57 cases (analytics55 + task-link2), a static prediction, not executed
+success. Return exactSHA/results and first complete redacted failure. Do not
+rerun settings/boundary/Telegram/CLI/isolation/full suite by default. Agent uses
+AST/text/git only: no tests/collection/app imports/DB/browser/live calls.
 
-Analytics5 is under contract review: two failures correspond to whitespace in
-rendered HTML, three deletion fixtures use VIEWER owners without structured
-aianalytics.delete. Do not expand owner/global rights or reformat the UI merely
-to satisfy these tests. Timezone/order1 remains open/unconfirmed on this head.
-PR22 Draft/unmerged; PR29 deferred; no deployment/live acceptance. Earlier
-sections below are historical checkpoints, not current execution commands.
+Five previous analytics failures and source-link1 are addressed in prepared
+code/tests but NOT yet verified. Timezone/order1 remains open/unconfirmed on
+this head; next inspect its original6900e4f complete traceback and scheduler
+fixture/state before touching production logic. PR22 Draft/unmerged; PR29
+unchanged/deferred; owner-local UI/runtime preserved. No new docs/design file,
+deployment or business/live acceptance. Earlier sections are historical.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

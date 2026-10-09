@@ -175,7 +175,15 @@ class JobManager(BaseManager["Job"]):
         if job:
             await self._record_task_result(job, status="ok")
 
-    async def mark_failed(self, job_id: int, error: str, allow_retry: bool = True) -> bool:
+    async def mark_failed(
+        self,
+        job_id: int,
+        error: str,
+        allow_retry: bool = True,
+        *,
+        result: Optional[dict] = None,
+        llm_cost: Optional[float] = None,
+    ) -> bool:
         """
         Record failure. Re-schedule with backoff if attempts to remain, else mark failed.
         Returns True if the job will be retried.
@@ -184,12 +192,19 @@ class JobManager(BaseManager["Job"]):
         сейчас") must not leave a retry behind: the caller asked for the work to
         happen now and get an answer, and a re-scheduled job would silently repeat
         the whole collection minutes later, on its own, with nobody watching.
+        Optional result/cost are stored together with the failure update; they
+        do not provide a billing ledger or atomic task/job transaction.
         """
         from app.core.config import settings
 
         job = await self.get(id=job_id)
         if not job:
             return False
+        metadata: dict = {}
+        if result is not None:
+            metadata["result"] = result
+        if llm_cost is not None:
+            metadata["llm_cost"] = float(llm_cost)
         if allow_retry and job.attempts < job.max_attempts:
             delay = settings.JOB_RETRY_BACKOFF_SECONDS * (2 ** (job.attempts - 1))
             await self.update_by_id(
@@ -197,6 +212,7 @@ class JobManager(BaseManager["Job"]):
                 status="pending",
                 run_at=datetime.now(timezone.utc) + timedelta(seconds=delay),
                 error=error[:2000],
+                **metadata,
             )
             return True
         now = datetime.now(timezone.utc)
@@ -205,6 +221,7 @@ class JobManager(BaseManager["Job"]):
             status="failed",
             error=error[:2000],
             finished_at=now,
+            **metadata,
         )
         await self._record_task_result(job, status="failed", error=error[:2000])
         return False

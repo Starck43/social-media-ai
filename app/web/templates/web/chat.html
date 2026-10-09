@@ -5,10 +5,11 @@
 <script>
     // Pass initial server-rendered messages to Alpine
     window.__chatMessages = {{ (messages | default([])) | tojson }};
+
 </script>
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script>
-    marked.setOptions({ breaks: true, gfm: true });
+    marked.setOptions({ breaks: true, gfm: true })
 </script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/chat.css') }}">
 <script src="{{ url_for('static', path='js/chat.js') }}"></script>
@@ -32,162 +33,170 @@
         {% if messages %}
         <button
             x-on:click="requestConfirmation('clear')"
-            class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+            class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+        >
             Очистить историю
         </button>
         {% endif %}
     </div>
 
     <section class="chat-window" aria-label="Диалог с агентом">
-    <!-- Messages area -->
-    <div class="chat-messages min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5" role="log" aria-live="polite" :aria-busy="pending"
-         x-ref="messages"
-         @scroll="onScroll()">
-        <!-- Empty state -->
-        <div x-show="messages.length === 0"
-             class="flex h-full min-h-48 flex-col items-center justify-center text-center">
-            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-700 dark:text-cyan-400" fill="none" viewBox="0 0 24 24"
-                     stroke-width="1.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+        <!-- Messages area -->
+        <div
+            class="chat-messages min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5" role="log" aria-live="polite"
+            :aria-busy="pending"
+            x-ref="messages"
+            @scroll="onScroll()"
+        >
+            <!-- Empty state -->
+            <div x-show="messages.length === 0"
+                 class="flex h-full min-h-48 flex-col items-center justify-center text-center">
+                <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-700 dark:text-cyan-400" fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+                    </svg>
+                </div>
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Спросите агента о ваших данных</p>
+                <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
+                    Он видит источники, задачи и аналитику этого workspace и умеет их менять (с подтверждением). Начать
+                    можно с «/help».
+                </p>
+            </div>
+
+            <!-- Message list -->
+            <template x-for="message in messages" :key="message.id">
+                <div class="chat-row msg-enter"
+                     :class="message.role === 'user' ? 'chat-row-user' : 'chat-row-assistant'">
+
+                    <div class="chat-message-body">
+                        <!-- Message bubble -->
+                        <div
+                            class="text-sm"
+                            :class="message.role === 'user' ? 'rounded-2xl px-3.5 py-2 chat-bubble-user rounded-tr-none' : 'chat-bubble-agent'">
+                            <div x-show="message.role !== 'user'"
+                                 class="agent-msg break-words msg-prose"
+                                 x-html="renderMarkdown(message.content || '')"></div>
+                            <div x-show="message.role === 'user'"
+                                 class="whitespace-pre-wrap break-words"
+                                 x-text="message.content || ''"></div>
+                        </div>
+
+                        <!-- Timestamp + actions -->
+                        <div class="chat-actions mt-0.5 flex items-center gap-1.5 px-1"
+                             :class="message.role === 'user' ? 'justify-end' : 'justify-start chat-actions-hover'">
+                            <!-- User message: always show date+time, with delete button -->
+                            <span
+                                x-show="message.role === 'user'"
+                                class="text-[10px] text-slate-600 dark:text-slate-400"
+                                x-text="message.created_at"
+                            ></span>
+                            <button
+                                x-show="message.role === 'user' && typeof message.id === 'number'"
+                                x-on:click="requestConfirmation('delete', message.id)"
+                                class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                                title="Удалить" aria-label="Удалить сообщение"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                            </button>
+                            <!-- Assistant message: show copy + delete buttons -->
+                            <button
+                                x-show="message.role !== 'user'"
+                                x-on:click="copyText(message.content || '', $event)"
+                                class="text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                title="Копировать"
+                                aria-label="Копировать сообщение"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+                                </svg>
+                            </button>
+                            <button
+                                x-show="message.role !== 'user' && message.id"
+                                x-on:click="requestConfirmation('delete', message.id)"
+                                class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                                title="Удалить" aria-label="Удалить сообщение"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+                                     viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Scroll anchor -->
+            <div x-ref="end"></div>
+        </div>
+
+        <!-- Scroll-to-bottom button (shows when user scrolled up) -->
+        <div x-show="!autoScroll && messages.length > 0"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 translate-y-2"
+             class="mt-2 flex justify-end">
+            <button @click="scrollToBottom()"
+                    class="scroll-btn flex items-center gap-1.5 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 backdrop-blur">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25" />
                 </svg>
-            </div>
-            <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Спросите агента о ваших данных</p>
-            <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
-                Он видит источники, задачи и аналитику этого workspace и умеет их менять (с подтверждением). Начать
-                можно с «/help».
-            </p>
+                Новые сообщения
+            </button>
         </div>
-        <!-- Message list -->
-        <template x-for="message in messages" :key="message.id">
-            <div class="flex msg-enter" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
-            <!-- Avatar for assistant -->
-            <div x-show="message.role !== 'user'"
-                 class="mr-2 mt-1 shrink-0">
-                <div
-                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-700 dark:text-cyan-400">
-                    AI
-                </div>
-            </div>
 
-            <div class="chat-message-body">
-                <!-- Message bubble -->
-                <div
-                    class="rounded-2xl px-3.5 py-2 text-sm"
-                    :class="message.role === 'user' ? 'chat-bubble-user rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-none'">
-                    <div x-show="message.role !== 'user'"
-                         class="agent-msg break-words msg-prose"
-                         x-html="renderMarkdown(message.content || '')"></div>
-                    <div x-show="message.role === 'user'"
-                         class="whitespace-pre-wrap break-words"
-                         x-text="message.content || ''"></div>
-                </div>
-
-                <!-- Timestamp + actions -->
-                <div class="mt-0.5 flex items-center justify-end gap-1.5 px-1">
-                    <!-- User message: always show date+time, with delete button -->
-                    <span x-show="message.role === 'user'"
-                          class="text-[10px] text-slate-600 dark:text-slate-400"
-                          x-text="message.created_at"></span>
-                    <button x-show="message.role === 'user' && typeof message.id === 'number'"
-                            x-on:click="requestConfirmation('delete', message.id)"
-                            class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
-                            title="Удалить" aria-label="Удалить сообщение">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                             stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                        </svg>
-                    </button>
-                    <!-- Assistant message: show copy + delete buttons -->
-                    <button x-show="message.role !== 'user'"
-                            x-on:click="copyText(message.content || '', $event)"
-                            class="text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-                            title="Копировать"
-                            aria-label="Копировать сообщение">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                             stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                  d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
-                        </svg>
-                    </button>
-                    <button x-show="message.role !== 'user' && message.id" x-on:click="requestConfirmation('delete', message.id)"
-                            class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
-                            title="Удалить" aria-label="Удалить сообщение">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
-                             stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Avatar for user -->
-            <div x-show="message.role === 'user'"
-                 class="ml-2 mt-1 shrink-0">
-                <div
-                    class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/30 text-xs font-bold text-cyan-700 dark:text-cyan-300">
-                    Вы
-                </div>
-            </div>
+        <div x-show="notice" x-cloak class="chat-notice" role="status"><span x-text="notice"></span>
+            <button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button>
         </div>
-        </template>
-
-        <!-- Scroll anchor -->
-        <div x-ref="end"></div>
-    </div>
-
-    <!-- Scroll-to-bottom button (shows when user scrolled up) -->
-    <div x-show="!autoScroll && messages.length > 0"
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0 translate-y-2"
-         x-transition:enter-end="opacity-100 translate-y-0"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100 translate-y-0"
-         x-transition:leave-end="opacity-0 translate-y-2"
-         class="mt-2 flex justify-end">
-        <button @click="scrollToBottom()"
-                class="scroll-btn flex items-center gap-1.5 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 backdrop-blur">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                 stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25" />
-            </svg>
-            Новые сообщения
-        </button>
-    </div>
-
-    <div x-show="notice" x-cloak class="chat-notice" role="status"><span x-text="notice"></span><button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button></div>
-    <div x-show="confirmation" x-cloak class="chat-notice">
-        <span x-text="confirmation?.label"></span><button type="button" @click="performConfirmation()" :disabled="pending">Подтвердить</button><button type="button" @click="confirmation = null">Отмена</button>
-    </div>
-    <div x-show="pending" x-cloak class="chat-pending" role="status">Агент готовит ответ…</div>
-    <!-- Composer -->
-    <form @submit.prevent="sendMessage()"
-          class="chat-composer"
-          x-ref="form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <textarea name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
-                  x-ref="input"
-                  @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
-                  @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
-                  class="chat-input"></textarea>
-        <button type="submit"
-                class="chat-send" aria-label="Отправить сообщение"
-                :disabled="pending">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                 stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-            </svg>
-            <span>Отправить</span>
-        </button>
-    <div class="chat-suggestions"><button type="button" @click="suggest('/help')" :disabled="pending">Возможности агента</button><button type="button" @click="suggest('Сводка за неделю')" :disabled="pending">Сводка за неделю</button><button type="button" @click="suggest('Покажи мои источники')" :disabled="pending">Мои источники</button></div>
-    </form>
-    <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-        <span>Enter — отправить · Shift+Enter — новая строка</span>
-        <span x-show="pending" class="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
+        <div x-show="confirmation" x-cloak class="chat-notice">
+            <span x-text="confirmation?.label"></span>
+            <button type="button" @click="performConfirmation()" :disabled="pending">Подтвердить</button>
+            <button type="button" @click="confirmation = null">Отмена</button>
+        </div>
+        <div x-show="pending" x-cloak class="chat-pending" role="status">Агент готовит ответ…</div>
+        <!-- Composer -->
+        <form @submit.prevent="sendMessage()" class="chat-composer" x-ref="form">
+            <div class="chat-suggestions">
+                <button type="button" @click="suggest('/help')" :disabled="pending">Возможности агента</button>
+                <button type="button" @click="suggest('Сводка за неделю')" :disabled="pending">Сводка за неделю</button>
+                <button type="button" @click="suggest('Покажи мои источники')" :disabled="pending">Мои источники
+                </button>
+            </div>
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <textarea
+                name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
+                x-ref="input"
+                @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
+                @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
+                class="chat-input"></textarea>
+            <button type="submit" class="chat-send" aria-label="Отправить сообщение" :disabled="pending">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                </svg>
+            </button>
+        </form>
+        <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+            <span class="">Enter — отправить · Shift+Enter — новая строка</span>
+            <span x-show="pending" class="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
             <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor"
@@ -195,7 +204,7 @@
             </svg>
             Отправка…
         </span>
-    </p>
-</section>
+        </p>
+    </section>
 </div>
 {% endblock %}

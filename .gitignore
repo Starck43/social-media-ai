@@ -49,7 +49,7 @@ logs/
 
 # Agent workspace is local-only except shared development rules.
 .agent/*
-!.agent/rules-dev.md
+!.agent/rules.md
 .gigacode/
 .kilo/
 

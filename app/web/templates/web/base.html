@@ -9,21 +9,21 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            darkMode: 'class',
+            darkMode: "class",
             theme: {
                 extend: {
                     colors: {
                         slate: {
-                            50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
-                            400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155',
-                            800: '#1e293b', 850: '#172033', 900: '#0f172a', 950: '#020617',
+                            50: "#f8fafc", 100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1",
+                            400: "#94a3b8", 500: "#64748b", 600: "#475569", 700: "#334155",
+                            800: "#1e293b", 850: "#172033", 900: "#0f172a", 950: "#020617",
                         },
                         cyan: {
-                            400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490',
-                        }
-                    }
-                }
-            }
+                            400: "#22d3ee", 500: "#06b6d4", 600: "#0891b2", 700: "#0e7490",
+                        },
+                    },
+                },
+            },
         }
     </script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
@@ -31,16 +31,20 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/ui.css') }}">
     <style>
-        [x-cloak]{display:none!important}
+        [x-cloak] {
+            display: none !important
+        }
     </style>
-    {# Child pages add their own <head> content here (scripts, styles). Without
-       this block a child's `{% block extra_head %}` is silently dropped by Jinja —
-       that is how the chat page ended up without marked.js. #}
-    {% block extra_head %}{% endblock %}
-</head>
+    {# Child pages add their own
+    <head> content here (scripts, styles). Without
+        this block a child's `{% block extra_head %}` is silently dropped by Jinja —
+        that is how the chat page ended up without marked.js. #}
+        {% block extra_head %}{% endblock %}
+    </head>
 <body class="ui-shell min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
 <div class="flex min-h-screen">
-    <aside class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 md:flex">
+    <aside
+        class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 md:flex">
         <a href="/app/" class="flex items-center gap-2 px-2 py-3 text-lg font-semibold tracking-tight">
             <span class="h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
             AI Monitor
@@ -48,38 +52,44 @@
         <div class="my-2 border-t border-slate-200 dark:border-slate-800"></div>
         <nav class="mt-1 flex-1 space-y-0.5 overflow-y-auto">
             {% for item in nav %}
-                {% if item.ready %}
-                    <a href="{{ item.href }}"
-                       class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-900 dark:bg-slate-800 font-medium text-white{% else %}text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100{% endif %}">{{ item.label }}</a>
-                {% else %}
-                    <span class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-400"
-                          title="Раздел появится в следующих вехах">
+            {% if item.ready %}
+            <a href="{{ item.href }}"
+               class="block rounded-lg px-3 py-2 text-sm {% if section == item.key %}bg-slate-900 dark:bg-slate-800 font-medium text-white{% else %}text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100{% endif %}">{{
+                item.label }}</a>
+            {% else %}
+            <span
+                class="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-400"
+                title="Раздел появится в следующих вехах">
                         {{ item.label }}
-                        <span class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-600">скоро</span>
+                        <span
+                            class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-600">скоро</span>
                     </span>
-                {% endif %}
+            {% endif %}
             {% endfor %}
         </nav>
         {% if user and user.is_superuser %}
-            <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
-                <a href="/admin/" target="_blank" rel="noopener"
-                   class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
-                    {{ icon('settings') }}
-                    <span>Админка</span>
-                    <span class="text-[10px] text-slate-400 dark:text-slate-600">↗</span>
-                </a>
-            </div>
+        <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
+            <a href="/admin/" target="_blank" rel="noopener"
+               class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+                {{ icon('settings') }}
+                <span>Админка</span>
+                <span class="text-[10px] text-slate-400 dark:text-slate-600">↗</span>
+            </a>
+        </div>
         {% endif %}
         <div class="border-t border-slate-200 dark:border-slate-800 pt-2">
             <label for="theme-desktop" class="mb-1 block px-3 text-xs ui-muted">Оформление</label>
             <select id="theme-desktop" data-theme-select class="ui-control w-full" aria-label="Тема оформления">
-                <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
+                <option value="light">Светлая</option>
+                <option value="dark">Тёмная</option>
+                <option value="system">Системная</option>
             </select>
         </div>
     </aside>
 
     <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-6 py-3 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
+        <header
+            class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-6 py-3 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
             <div x-data="{ open: false }" class="relative">
                 <button @click="open = !open"
                         class="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-900 dark:text-slate-300">
@@ -89,28 +99,33 @@
                 <div x-show="open" @click.outside="open = false" x-cloak
                      class="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 shadow-xl">
                     {% for w in workspaces %}
-                        {% if w.active %}
-                            <div class="flex items-center justify-between rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm">
-                                <span class="truncate">{{ w.tenant.name }}</span>
-                                <span class="text-xs text-emerald-600 dark:text-emerald-400">активен</span>
-                            </div>
-                        {% else %}
-                            <form method="post" action="/app/workspaces/select">
-                                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                <input type="hidden" name="tenant_id" value="{{ w.tenant.id }}">
-                                <button class="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
-                                    {{ w.tenant.name }} <span class="text-xs text-slate-500 dark:text-slate-400">{{ w.role }}</span>
-                                </button>
-                            </form>
-                        {% endif %}
+                    {% if w.active %}
+                    <div
+                        class="flex items-center justify-between rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm">
+                        <span class="truncate">{{ w.tenant.name }}</span>
+                        <span class="text-xs text-emerald-600 dark:text-emerald-400">активен</span>
+                    </div>
+                    {% else %}
+                    <form method="post" action="/app/workspaces/select">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        <input type="hidden" name="tenant_id" value="{{ w.tenant.id }}">
+                        <button
+                            class="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                            {{ w.tenant.name }} <span
+                            class="text-xs text-slate-500 dark:text-slate-400">{{ w.role }}</span>
+                        </button>
+                    </form>
+                    {% endif %}
                     {% endfor %}
                     <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
-                    <a href="/app/invite" class="block rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <a href="/app/invite"
+                       class="block rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Присоединиться по коду
                     </a>
                     <form method="post" action="/app/workspaces/new">
                         <input type="hidden" name="_csrf" value="{{ csrf }}">
-                        <button class="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                        <button
+                            class="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                             Создать workspace
                         </button>
                     </form>
@@ -119,90 +134,122 @@
 
             <div class="flex items-center gap-3">
                 {# Personal connections needing action. Silent when everything is
-                   healthy: a badge that is always on stops being read, and this
-                   one would cry wolf every time an hourly token aged out. #}
+                healthy: a badge that is always on stops being read, and this
+                one would cry wolf every time an hourly token aged out. #}
                 {% if connection_alerts %}
-                    <a href="/app/settings?tab=connections"
-                       title="{{ connection_alerts | map(attribute='detail') | join(' · ') }}"
-                       class="flex items-center gap-2 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-1.5 text-sm text-amber-800 dark:text-amber-200 hover:bg-amber-200/60 dark:hover:bg-amber-500/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-                        </svg>
-                        <span class="hidden sm:inline">
+                <a href="/app/settings?tab=connections"
+                   title="{{ connection_alerts | map(attribute='detail') | join(' · ') }}"
+                   class="flex items-center gap-2 rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-1.5 text-sm text-amber-800 dark:text-amber-200 hover:bg-amber-200/60 dark:hover:bg-amber-500/20">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                         stroke="currentColor" class="h-4 w-4 shrink-0">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                    <span class="hidden sm:inline">
                             {% for alert in connection_alerts %}
                                 {{ alert.label }}{% if not loop.last %}, {% endif %}
                             {% endfor %}
                         </span>
-                        <span class="sm:hidden">Подключения</span>
-                    </a>
+                    <span class="sm:hidden">Подключения</span>
+                </a>
                 {% endif %}
 
                 <div x-data="notificationsBell()">
-                    <button @click="open()"
-                            title="Уведомления"
-                            class="relative rounded-lg border border-slate-300 dark:border-slate-700 p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/>
+                    <button
+                        @click="open()"
+                        title="Уведомления"
+                        class="relative flex aspect-square items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                             stroke="currentColor" class="h-5 w-5"
+                        >
+                            <path
+                                stroke-linecap="round" stroke-linejoin="round"
+                                d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+                            />
                         </svg>
-                        <span x-show="unread > 0" x-cloak
-                              class="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+                        <span
+                            x-show="unread > 0" x-cloak
+                            class="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white"
+                        >
                             <span x-text="unread"></span>
                         </span>
                     </button>
 
                     <template x-teleport="body">
-                    <div x-show="openModal" @click.self="close()" @keydown.escape.window="close()" x-cloak
-                         @keydown.tab="trapFocus($event)" role="dialog" aria-modal="true" aria-labelledby="notifications-title" tabindex="-1" x-ref="dialog"
-                         class="ui-notification-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
-                        <div class="ui-notification-panel w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
-                            <div class="flex items-center justify-between">
-                                <h2 id="notifications-title" class="text-lg font-semibold text-slate-900 dark:text-slate-100">Уведомления</h2>
-                                <button type="button" @click="close()" aria-label="Закрыть уведомления" class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-white">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
-                                    </svg>
-                                </button>
-                            </div>
+                        <div
+                            x-show="openModal" @click.self="close()" @keydown.escape.window="close()" x-cloak
+                            @keydown.tab="trapFocus($event)" role="dialog" aria-modal="true"
+                            aria-labelledby="notifications-title" tabindex="-1" x-ref="dialog"
+                            class="ui-notification-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
+                        >
+                            <div
+                                class="ui-notification-panel w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
+                                <div class="flex items-center justify-between">
+                                    <h2 id="notifications-title"
+                                        class="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                                        Уведомления</h2>
+                                    <button type="button" @click="close()" aria-label="Закрыть уведомления"
+                                            class="flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                             stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                  d="M6 18 18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
 
-                            <div class="ui-notification-list mt-4 space-y-2 overflow-y-auto">
-                                <template x-if="loading">
-                                    <p class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Загрузка…</p>
-                                </template>
-                                <template x-if="!loading && items.length === 0">
-                                    <p class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Нет уведомлений</p>
-                                </template>
-                                <template x-for="n in items" :key="n.id">
-                                    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
-                                        <div class="flex items-start justify-between gap-2">
-                                            <div class="min-w-0">
-                                                <p class="text-sm font-medium text-slate-900 dark:text-slate-100" x-text="n.title"></p>
-                                                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="n.message"></p>
-                                                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400" x-text="n.created_at"></p>
+                                <div class="ui-notification-list mt-4 space-y-2 overflow-y-auto">
+                                    <template x-if="loading">
+                                        <p class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                                            Загрузка…</p>
+                                    </template>
+                                    <template x-if="!loading && items.length === 0">
+                                        <p class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Нет
+                                            уведомлений</p>
+                                    </template>
+                                    <template x-for="n in items" :key="n.id">
+                                        <div
+                                            class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+                                            <div class="flex items-start justify-between gap-2">
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-medium text-slate-900 dark:text-slate-100"
+                                                       x-text="n.title"></p>
+                                                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400"
+                                                       x-text="n.message"></p>
+                                                    <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400"
+                                                       x-text="n.created_at"></p>
+                                                </div>
+                                                <button type="button" @click="readOne(n)"
+                                                        title="Отметить прочитанным"
+                                                        aria-label="Отметить прочитанным"
+                                                        class="flex shrink-0 items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-500 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-600/20 hover:text-emerald-600 dark:hover:text-emerald-400"
+                                                        x-show="!n.is_read">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                                         viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+                                                         class="h-4 w-4">
+                                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                                              d="m4.5 12.75 6 6 9-13.5" />
+                                                    </svg>
+                                                </button>
                                             </div>
-                                            <button type="button" @click="readOne(n)"
-                                                    title="Отметить прочитанным"
-                                                    aria-label="Отметить прочитанным"
-                                                    class="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-500 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-600/20 hover:text-emerald-600 dark:hover:text-emerald-400"
-                                                    x-show="!n.is_read">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
-                                                </svg>
-                                            </button>
                                         </div>
-                                    </div>
-                                </template>
+                                    </template>
+                                </div>
                             </div>
                         </div>
-                    </div>
                     </template>
                 </div>
                 <select data-theme-select class="ui-control ui-theme-select md:hidden" aria-label="Тема оформления">
-                    <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
+                    <option value="light">Светлая</option>
+                    <option value="dark">Тёмная</option>
+                    <option value="system">Системная</option>
                 </select>
-                <span class="hidden text-sm text-slate-600 dark:text-slate-400 sm:inline">{{ user.username if user }}</span>
+                <span
+                    class="hidden text-sm text-slate-600 dark:text-slate-400 sm:inline">{{ user.username if user }}</span>
                 <form method="post" action="/app/logout">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900">
+                    <button
+                        class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900">
                         Выйти
                     </button>
                 </form>
@@ -211,70 +258,95 @@
 
         {% include "web/_flashes.html" %}
 
-        <main class="flex-1 bg-slate-50 dark:bg-slate-950 p-4 pb-28 md:p-6 md:pb-6">{% block content %}{% endblock %}</main>
+        <main class="flex-1 bg-slate-50 dark:bg-slate-950 p-4 pb-28 md:p-6 md:pb-6">{% block content %}{% endblock %}
+        </main>
     </div>
 </div>
 
 {# Mobile: the sidebar is hidden below `md`, so the ready sections move to a fixed
-   bottom bar. `pb-28` on <main> keeps the last row from hiding under it. #}
-<nav class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur md:hidden"
-     aria-label="Основные разделы">
-    <div class="flex">
-        {% for item in mobile_nav %}
+bottom bar. `pb-28` on
+<main> keeps the last row from hiding under it. #}
+    <nav
+        class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur md:hidden"
+        aria-label="Основные разделы">
+        <div class="flex">
+            {% for item in mobile_nav %}
             <a href="{{ item.href }}"
                class="flex-1 px-2 py-3 text-center text-xs {% if section == item.key %}font-medium text-cyan-700 dark:text-cyan-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">
                 {{ item.label }}
             </a>
-        {% endfor %}
-    </div>
-</nav>
+            {% endfor %}
+        </div>
+    </nav>
 
-<script>
-function notificationsBell() {
-    return {
-        openModal: false,
-        loading: false,
-        items: [],
-        unread: {{ unread_notifications }},
-        open() {
-            this.returnFocus = document.activeElement;
-            this.openModal = true;
-            this.savedOverflow = document.body.style.overflow;
-            document.body.style.overflow = "hidden";
-            this.$nextTick(() => this.$refs.dialog?.focus());
-            this.load();
-        },
-        close() {
-            if (!this.openModal) return;
-            this.openModal = false;
-            document.body.style.overflow = this.savedOverflow || "";
-            this.returnFocus?.focus();
-        },
-        trapFocus(event) {
-            const controls = Array.from(this.$refs.dialog.querySelectorAll('button, a[href], [tabindex="0"]')).filter(el => el.offsetParent !== null);
-            const first = controls[0], last = controls[controls.length - 1];
-            if (!first) { event.preventDefault(); return; }
-            if (event.shiftKey && (document.activeElement === first || document.activeElement === this.$refs.dialog)) { event.preventDefault(); last.focus(); }
-            else if (!event.shiftKey && (document.activeElement === last || document.activeElement === this.$refs.dialog)) { event.preventDefault(); first.focus(); }
-        },
-        readOne(n) {
-            fetch('/app/notifications/read/' + n.id, { method: 'POST', headers: { 'Accept': 'application/json' } })
-                .catch(() => {});
-            if (!n.is_read && this.unread > 0) this.unread -= 1;
-            this.items = this.items.filter((item) => item.id !== n.id);
-        },
-        load() {
-            this.loading = true;
-            fetch('/app/notifications', { headers: { 'Accept': 'application/json' } })
-                .then(r => r.json())
-                .then((data) => {
-                    this.items = data.notifications || [];
-                    this.loading = false;
-                })
-                .catch(() => { this.loading = false; });
-        },
-    };
-}
-</script>
+    <script>
+        function notificationsBell() {
+            return {
+                openModal: false,
+                loading: false,
+                items: [],
+                unread: {{ unread_notifications }},
+            open()
+            {
+                this.returnFocus = document.activeElement
+                this.openModal = true
+                this.savedOverflow = document.body.style.overflow
+                document.body.style.overflow = "hidden"
+                this.$nextTick(() => this.$refs.dialog?.focus())
+                this.load()
+            }
+        ,
+            close()
+            {
+                if (!this.openModal) return
+                this.openModal = false
+                document.body.style.overflow = this.savedOverflow || ""
+                this.returnFocus?.focus()
+            }
+        ,
+            trapFocus(event)
+            {
+                const controls = Array.from(this.$refs.dialog.querySelectorAll("button, a[href], [tabindex=\"0\"]")).filter(el => el.offsetParent !== null)
+                const first = controls[0], last = controls[controls.length - 1]
+                if (!first) {
+                    event.preventDefault()
+                    return
+                }
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === this.$refs.dialog)) {
+                    event.preventDefault()
+                    last.focus()
+                } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === this.$refs.dialog)) {
+                    event.preventDefault()
+                    first.focus()
+                }
+            }
+        ,
+            readOne(n)
+            {
+                fetch("/app/notifications/read/" + n.id, { method: "POST", headers: { "Accept": "application/json" } })
+                    .catch(() => {
+                    })
+                if (!n.is_read && this.unread > 0) this.unread -= 1
+                this.items = this.items.filter((item) => item.id !== n.id)
+            }
+        ,
+            load()
+            {
+                this.loading = true
+                fetch("/app/notifications", { headers: { "Accept": "application/json" } })
+                    .then(r => r.json())
+                    .then((data) => {
+                        this.items = data.notifications || []
+                        this.loading = false
+                    })
+                    .catch(() => {
+                        this.loading = false
+                    })
+            }
+        ,
+        }
+
+        }
+    </script>
 </body>
 </html>

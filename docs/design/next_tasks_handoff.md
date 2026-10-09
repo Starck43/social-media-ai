@@ -27,6 +27,16 @@ budget-reservation DESIGN third, with separate schema approval. Do not restore
 anonymous allowances, weaken security tests, redo digests or add personal routing.
 Parallel privacy inventory below remains separate; no final merge authority.
 
+## Latest owner result — focused fixture rerun passed
+
+Owner confirmed the requested `test_dispatcher_log_privacy_db.py` rerun passed
+with the narrowed fixture (two parameterized cases). OWNER-REPORTED; exact tested
+SHA/output not supplied. No agent test execution. Retesting that focused fixture
+is no longer an outstanding reported failure; remaining permission/identity
+regressions and completion of the timed-out full suite still need evidence.
+PR #22 remains draft/open, not merged. Continue compatibility review, not queue
+implementation or automatic merge.
+
 ## Already implemented — do not rebuild
 
 PR #12 bounded default-off digest checkpoint integration; PR #16 fixture fix;

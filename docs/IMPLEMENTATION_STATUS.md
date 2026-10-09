@@ -252,6 +252,19 @@ OWNER-REPORTED, not rerun by the agent. Exact tested SHA/full logs/dependency
 versions not supplied; count of unchanged warnings does not prove other tests
 unaffected. Historical authoring results above remain separately attributed.
 
+## Owner confirmation — narrowed privacy fixture rerun
+
+Owner confirmed the focused rerun of `tests/test_dispatcher_log_privacy_db.py`
+passed after the new isolated-actor/narrow-owner fixture was published. This
+confirmation refers to the two parameterized privacy cases requested in the
+latest handoff. Exact tested SHA/output was not supplied; do not claim a verified
+head or attribute it to the full suite. Agent did not run tests.
+
+Previous 24/24 bootstrap and 33/33 focused readiness reports remain separately
+recorded. Full suite previously timed out at 120 seconds; no completed full-suite
+result or acceptance of the remaining permission/identity gates was supplied.
+PR #22 stays draft/open; no merge or deployment authority was given.
+
 ## Test target — shared PostgreSQL, isolated schema
 
 Owner confirmed common `POSTGRES_URL` with different schemas. Use `DB_TEST_SCHEMA`

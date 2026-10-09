@@ -191,3 +191,17 @@ git pull --ff-only after saving local edits. Retest the NEW fixture with
 commands above. Prior 2/2 is not this revision's result. Tests remain unrun by the
 agent. Full suite must complete; its earlier 120-second timeout remains open.
 No sender activation, runtime/router rewrite, schema/migration or dev merge.
+
+
+## Latest owner confirmation
+
+After the narrowed fixture publication, the owner confirmed that the requested
+focused `tests/test_dispatcher_log_privacy_db.py` rerun passed. The handoff command
+covers two parameterized privacy cases. This is OWNER-REPORTED success for the
+new fixture, not an agent rerun; exact tested SHA/logs were not supplied.
+
+Do not confuse this focused result with the earlier 120-second full-suite timeout.
+Full-suite completion and the broader permission/identity compatibility gates
+remain open. No approval to merge PR #22 or deploy/activate was given. Next:
+collect remaining permission regression/full-suite evidence and continue the
+bounded identity compatibility review.

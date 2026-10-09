@@ -15,17 +15,23 @@ PR #20 dispatcher-owned log/failure-notification privacy. Merged does not mean
 accepted/deployed. API /health returns 503 on DB failure; /livez is process-only.
 Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
 
-## Current bounded continuation — prepared, not yet merged
+## Current bounded continuation — merged, acceptance open
 
-Fresh dev checked: `a88cd30` after PR #21. The selected first handler surface is
+Fresh dev checked: `98e3aad` after PR #23, merged on explicit owner instruction.
+The selected first handler surface is
 `_retire_staged` failure warning only; code `be3f67c` on
 `fix/staged-retirement-log-privacy`. Seven helper/mocked-storage cases are written,
-NOT run. Owner explicitly requested integration at the end of this task; pending
-PR merge, not deployment/acceptance. Dispatcher, UI and runtime guard untouched.
+NOT run; tests/handoff commit `a332a98`. This is integrated, not deployment or
+acceptance. Dispatcher, UI and runtime guard untouched. No new tests executed.
+GitGuardian/Kilo checks were still running at post-merge inspection, not passed.
 See [selected-surface handoff](staged_retirement_log_privacy_handoff.md).
-After integration do not rebuild this warning. Next small privacy candidate is
+Do not rebuild this merged warning. Next small privacy candidate is
 `_count_failed_staged`, or coordinate one collect exception path while preserving
 partial outcomes. Other handler/provider/ORM logs and stored errors remain open.
+
+Parallel open PR #22 is the identity/permissions branch; this task does not merge
+or supersede it. Both branches edit the implementation tracker and this list.
+Preserve both records when synchronizing; refresh dev before any further work.
 
 ## Next small sequential packages
 
@@ -36,7 +42,8 @@ partial outcomes. Other handler/provider/ORM logs and stored errors remain open.
    test run occurred at merge. Collect exact tested head/commands/results; do not
    infer new-package acceptance from the owner's earlier all-tests-pass report.
 2. **One remaining handler-log path:** start with inventory in
-   app/jobs/handlers.py (collect/analyze/staging/retention). Remove raw exceptions
+   app/jobs/handlers.py (collect/analyze/staging/retention); `_retire_staged` warning
+   is now merged via PR #23 and must not be rebuilt. Remove raw exceptions
    and tracebacks from one selected surface with safe correlation/category tests.
    Preserve collector partial outcomes and runtime guard; coordinate dispatcher
    overlap with queue work. This does not sanitize stored errors automatically.

@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `a88cd3001f184531d68a21e93ddff1aa9cb39e4c` (2026-10-09), after PR #20/#21.
+Latest checked dev: `98e3aadbb27bb2119c5e4876149345908afcc425` (2026-10-09), after PR #23.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -169,15 +169,23 @@ Next small work: review one remaining handler-log path or audit task-outcome UI
 with owner file coordination. Important separate packages: fail-closed identity,
 queue leases/atomicity, atomic memory batches and per-attempt budget reservations.
 
-## Staged retirement warning privacy — prepared, not yet merged
+## Staged retirement warning privacy — merged, acceptance open
 
-Baseline `a88cd30`; branch `fix/staged-retirement-log-privacy`, code `be3f67c`.
+PR #23 merged as `98e3aad` on the owner's explicit instruction. Original baseline
+`a88cd30`; code `be3f67c`, tests/handoff `a332a98`. Fresh dev verified after merge.
 
-- [ ] Prepared: only `_retire_staged` failure warning uses fixed event/category
+- [x] Only `_retire_staged` failure warning uses fixed event/category
   and bounded source ID; no raw exception/traceback or content hash in its logs.
-- [ ] Seven actual-helper/mocked-storage tests written, NOT run. No new test
+- [x] Seven actual-helper/mocked-storage tests written, NOT run. No new test
   acceptance evidence, PostgreSQL run, formatter run or production claim.
-- [ ] Merge into dev requested explicitly by the owner; pending PR integration.
+- [x] Integrated via [PR #23](https://github.com/Starck43/social-media-ai/pull/23).
+- [ ] Owner/local focused/full-suite acceptance remains pending. GitGuardian and
+  Kilo review were still running at the post-merge inspection; no pass claimed.
+
+Parallel open PR #22 (identity/permissions) is NOT merged by this task. It shares
+`docs/IMPLEMENTATION_STATUS.md` and `docs/design/next_tasks_handoff.md`, not this
+package's application/test files. Preserve BOTH journal sections when syncing
+that branch; do not overwrite its prepared identity work or redo this warning.
 
 Return-zero fallback, success deletion counts, transaction/cleanup and cancellation
 are unchanged. Dispatcher PR #20, UI and owner runtime guard are untouched.
@@ -238,7 +246,8 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20/#23 are merged.
+   PR #22 remains a separate open identity/permissions branch with journal overlap. Preserve the owner
    runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.

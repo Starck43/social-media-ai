@@ -5,6 +5,8 @@
 - **[Product vision](./design/vision.md)** — universal assistant principles; social monitoring as the first domain, not the product boundary.
 - **[Product plan](./PRODUCT_PLAN.md)** — research, knowledge search, communication, follow-up, calculations, cases and approvals; current versus planned capabilities and phased acceptance gates.
 - **[Target assistant architecture](./ASSISTANT_ARCHITECTURE.md)** — proposed connector/workflow/evidence contracts, local computer boundary, controlled outbox and scaling path. Not implemented schema/API contracts.
+- **[Cloud and hybrid deployment plan](./DEPLOYMENT_ARCHITECTURE.md)** — personal/server connectors, direct Web/Desktop access, local models, data-transfer policy and later autonomous installation; planned, not implemented.
+- **[Deployment plan work status](./design/deployment_architecture_handoff.md)** — PR scope, checks, parallel-work boundaries and next-session continuation.
 
 Product expansion supplements, rather than replaces, the readiness-first roadmap below. Reference documents describe current behavior; historical reviews retain their original baselines. A product plan is not a production certification.
 

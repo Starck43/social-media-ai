@@ -14,21 +14,19 @@
 - **R5 — Documentation sync.** Finish each phase by syncing docs to the actual
   code, migrations, permissions and CLI/API contracts. Record test results and
   limitations; do not claim a green suite without a completed run.
-
-- **R6 — Protect the main checkout.** Do not switch, clean, stash or commit in
-  `/Users/admin/Projects/social-media-ai` (the owner's `dev` checkout). Preserve
-  the owner's existing local `.agent/rules.md` changes; do not overwrite them.
-- **R7 — One PR, one review worktree.** Inspect `git worktree list` before
-  creating anything. Reuse the existing PR worktree; do not create duplicates
-  or reuse prunable/stale paths. Separate PRs keep separate worktrees.
-- **R8 — Shared test schema; sequential execution only.** The owner's local
-  review environment uses `test_schema` in `localhost:5432/social_manager`.
-  Run pytest strictly sequentially across ALL review worktrees; only read-only
-  review may run in parallel. Do not create/reset/drop/stamp/migrate schemas or
-  run Alembic without an explicit command. This approval requirement overrides
-  the automatic reset recommendations in R3/R4. Do not change the resolved
-  private environment or connect to production. The remote agent only prepares
-  tests/check commands; the owner/local agent executes them.
-- **R9 — Explicit integration approval.** Merge into `dev` only after fresh
-  compatibility review and an explicit owner command. Green tests are not merge,
-  Ready, deploy or live-sender approval. No direct dev push or force-push.
+- **R6 — Main folder is off limits.** `/Users/admin/Projects/social-media-ai`
+  (branch `dev`) belongs to the owner and may hold dirty UI work. Never switch,
+  clean, stash or commit there. Verification happens in worktrees only.
+- **R7 — One worktree per PR.** Never verify two PRs in one working tree:
+  PR #22 → `social-media-ai-pr22-review`, PR #30 (`refactor/tenancy-model-layout`)
+  → its own worktree, PR #31 (`refactor/notification-model-layout`) → its own
+  worktree. Check `git worktree list` before creating anything; reuse existing
+  folders. `/private/tmp/smai-head` is stale/prunable — do not use it.
+- **R8 — Shared test schema, sequential only.** Every worktree resolves the same
+  `test_schema` on `localhost:5432/social_manager`, so at most one pytest may run
+  at a time; parallel PR checks are code-review-only until separate schemas are
+  prepared. Never create, reset, drop, stamp or migrate schemas automatically —
+  `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
+  column fix require an explicit owner instruction.
+- **R9 — No merge without a command.** Merging any PR into `dev` happens only
+  after compatibility is verified and the owner explicitly asks for it.

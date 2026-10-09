@@ -37,6 +37,26 @@ regressions and completion of the timed-out full suite still need evidence.
 PR #22 remains draft/open, not merged. Continue compatibility review, not queue
 implementation or automatic merge.
 
+## Next linked identity tasks — dispatch unit prepared
+
+The next small unit in draft PR #22 now gates declared permissions before
+call_tool/execute handlers. Ten actual-source tests prepared, NOT RUN; undeclared
+rights/confirmation/DB freshness remain open. No runtime guard change or live send.
+
+Continuation order:
+1. Owner verifies dispatch + earlier policy/regressions and completes full suite.
+2. Resolved-tenant runtime identity and eager active User rights, no personal router.
+3. Actor/tenant/current-right confirmation binding and membership/role revocation.
+4. action_send helper/handler registration bug and explicit action tool rights,
+   without incidental live posting; preview/approve/send contract separate.
+5. Raw manager/legacy setup coverage; NULL-role ownership reconciliation policy
+   requires separate approval before any migration or automatic identity linking.
+
+The narrowed privacy fixture rerun is owner-confirmed passed. Do not repeat
+bootstrap/digest integration. Read the [detailed handoff](identity_permissions_handoff.md).
+Current next CODE unit is runtime identity, after coordinating parallel ownership.
+Queue and budget schema/design remain later packages. No final merge permission.
+
 ## Already implemented — do not rebuild
 
 PR #12 bounded default-off digest checkpoint integration; PR #16 fixture fix;

@@ -38,7 +38,8 @@ An inactive API user is refused before downstream processing.
 | monitoring/ingest, social/tg_client, checkpoint_manager | Anonymous source watermark/params update | Only source.update around the existing gated write, same tenant |
 | agent/runtime | Messenger binding may have no User; User loads are not eager rights loads | UNCHANGED. Declared tool rights now deny missing/detached identities; existing guard preserved |
 | TenantUser.is_owner / resolver | Legacy NULL role_id still means owner | UNCHANGED; migration/reconciliation requires an explicit owner decision |
-| agent/tools direct dispatch and toolset/actions | Direct dispatch lacks a central gate; actions metadata/binding contract incomplete | OPEN. Confirmation is not authorization; no posting/activation added |
+| agent/tools call_tool / execute | Declared permission could be skipped by a direct caller | PREPARED: both paths check current registry metadata and scoped user before handler effects; execute returns a static permission_denied result |
+| toolset/actions and undeclared tool rights | Actions registration/metadata contract incomplete; required_permission=None still ungated | OPEN. Authorization is not confirmation; no posting/activation added |
 | managers/BaseManager raw create/update/delete and bookkeeping | Only selected manager methods carry decorators | OPEN. No claim of complete manager authorization coverage |
 | operator HTTP middleware / standalone scripts | Trusted bypass and ambient identity assumptions | Preserve operator boundaries; audit access separately; scripts with no trusted scope may now be refused |
 
@@ -205,3 +206,72 @@ Full-suite completion and the broader permission/identity compatibility gates
 remain open. No approval to merge PR #22 or deploy/activate was given. Next:
 collect remaining permission regression/full-suite evidence and continue the
 bounded identity compatibility review.
+
+
+## Next related unit — declared tool-dispatch authorization
+
+Prepared in the SAME rights draft PR #22; not merged or tested. app/agent/tools.py
+now checks each non-None required_permission before handler invocation in BOTH
+call_tool and execute. The former raises PermissionDeniedError; execute returns
+static error/code permission_denied without a routine denial traceback/log.
+Unknown-tool, successful result and handler error-dict contracts are preserved.
+Invalid declared rights (including an empty string) deny, not treated as None.
+
+Ten actual-source standalone methods in tests/test_tool_dispatch_permissions.py
+are WRITTEN, NOT RUN: missing/inactive identity, owner/global boundaries, malformed
+rights, refusal before handler effects, no denial traceback/private arguments,
+allowed local/explicit global rights, per-call registry/scoped-user recheck, and
+unknown/undeclared/error-result compatibility. The script reuses the existing
+actual-policy boundary loader; only imports/handlers/toolset are isolated. No real
+provider, transport or DB calls. Pytest still uses the normal DB conftest.
+
+This does NOT make undeclared tools safe, enforce confirmation in direct calls,
+reload permissions from DB, solve revocation/membership/session freshness or
+validate action arguments. Per-call recheck uses the current scoped User; a cached
+ORM role/permission snapshot is not proof of fresh DB rights. Runtime/guard is
+UNCHANGED. Do not wrap dispatch in a service/operator grant to pass tests.
+
+## Concrete linked task list and continuation
+
+1. Owner/local verification of this declared dispatch gate, the 13 earlier policy
+   methods, permission/API/web/manager regressions and the complete suite. The
+   narrowed privacy fixture rerun is already owner-confirmed, do not re-open it
+   as an unexplained failure. No automatic ready/merge declaration.
+2. Runtime identity in the RESOLVED tenant: scope messenger membership lookup to
+   resolution.tenant_id, eager-load active User.role.permissions and model-type
+   references; refuse missing/inactive/revoked/mismatched identity before tools.
+   Preserve owner guard and exclude personal multi-workspace routing/new schema.
+3. Confirmation: actor/tenant/current registry right binding and role/membership
+   revocation on a later yes; avoid trusting stale pending metadata. Recheck fresh
+   identity, not merely an in-memory policy snapshot. No external publication.
+4. Action-tool contract: action_send is currently registered on the helper
+   _auto_actions_forced_dry_run, not its real argument-taking handler; actions_log
+   and action_send lack rights declarations. Audit/register correctly and define
+   rights with negative tests, but avoid enabling live sends as an incidental fix.
+   Preview/approve/send state semantics require a separate explicit safe contract.
+5. Remaining raw manager write paths/bookkeeping and legacy tenancy arrange
+   scripts: distinguish trusted internal delegation from interactive authority.
+   Keep tenant guards and negative tests intact; no global test bypass.
+6. Legacy NULL-role membership ownership: inventory and proposed reconciliation
+   policy only; migrations/automatic account linking need separate owner agreement.
+
+Next code unit after this dispatch change: runtime identity eager loading and
+resolved-tenant membership binding, with mocked negative tests only. Coordinate
+runtime file ownership before editing in parallel. Keep queue package 2 and
+attempt-cost/reservation DESIGN package 3 separate; no digest reimplementation.
+
+Owner commands (project .venv/dependencies, isolated DB_TEST_SCHEMA, no concurrent
+pytest on one schema, no blanket reset/drop):
+
+```bash
+python tests/test_tool_dispatch_permissions.py
+python tests/test_identity_permissions_boundary.py
+python -m scripts.setup_test_db --check
+python -m pytest -q tests/test_tool_dispatch_permissions.py tests/test_permission_scope.py tests/test_manager_permissions.py tests/test_web_permissions.py tests/test_api_permissions.py tests/test_api_scope.py tests/test_agent.py
+python -m pytest -q
+```
+
+Expected: declared denials invoke no handler; allowed results and error contracts
+remain compatible; report exact tested head/commands/redacted output. New tests
+remain unrun by the agent; only static AST and whitespace checked. A full-suite
+timeout is not acceptance. Final merge requires explicit owner instruction.

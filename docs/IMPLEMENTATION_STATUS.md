@@ -230,9 +230,16 @@ Resolved both shared-document conflicts; parallel handler privacy code preserved
 - [x] Owner push `963bf4f` verified in PR #22 (not dev).
 - [ ] Follow-up `4735859`: replace arbitrary existing account with an isolated
   active role-less/non-superuser test User and cleanup; owner scope ONLY around
-  AgentTask arrangement, with no-identity assertions inside handler. NOT RUN.
-- [ ] Owner/local must retest this NEW fixture and complete remaining legacy
-  arrangement/identity compatibility; full-suite/security acceptance still open.
+  AgentTask arrangement, with no-identity assertions inside handler. Focused
+  rerun subsequently owner-confirmed passed; exact tested SHA not supplied.
+- [ ] Remaining legacy arrangement/identity compatibility and full-suite/security
+  acceptance remain open; the focused narrowed-fixture failure is owner-closed.
+
+- [ ] Prepared next linked unit: direct call_tool/execute enforce each declared
+  permission before handler effects; 10 actual-source dispatch methods WRITTEN,
+  NOT RUN. No runtime edit/confirmation approval/live sends introduced.
+- [ ] Next code unit: resolved-tenant runtime identity + eager active User rights;
+  then actor-bound confirmation/revocation and action-tool registration/rights.
 
 See [identity/permissions handoff](design/identity_permissions_handoff.md).
 Runtime guard, dispatcher, parallel handlers and digest integration preserved.

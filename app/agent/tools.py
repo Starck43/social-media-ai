@@ -14,6 +14,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from app.core.permissions import PermissionDeniedError, get_current_user, has_permission_by_codename
+
 logger = logging.getLogger(__name__)
 
 JSONSchema = dict[str, Any]
@@ -57,7 +59,8 @@ def tool(
     """Register an async function as an agent tool.
 
     ``required_permission`` is a dotted codename like ``"agenttask.create"``
-    that is checked by the runtime before dispatch.  ``None`` (default) means
+    checked by the runtime and both public dispatch paths before the handler.
+    ``None`` (default) means
     no permission gate — every workspace member may call the tool.
     """
 
@@ -129,6 +132,17 @@ class ToolError(Exception):
     pass
 
 
+def _check_tool_permission(spec: Tool) -> None:
+    """Recheck the current registry right before effects, not a cached approval.
+
+    This is authorization only. Confirmation still belongs to the runtime;
+    undeclared (None) tool rights retain the existing contract for now.
+    """
+    permission = spec.required_permission
+    if permission is not None and not has_permission_by_codename(get_current_user(), permission):
+        raise PermissionDeniedError(f"Missing permission: {permission}")
+
+
 async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     """Dispatch a tool call, returning the raw handler result.
 
@@ -139,6 +153,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     tool_obj = _REGISTRY.get(name)
     if tool_obj is None:
         raise LookupError(f"Unknown tool: {name}")
+    _check_tool_permission(tool_obj)
     result = await tool_obj.handler(**(arguments or {}))
     if isinstance(result, dict) and "error" in result:
         raise ToolError(result["error"])
@@ -154,6 +169,11 @@ async def execute(name: str, arguments: dict[str, Any]) -> str:
     t = _REGISTRY.get(name)
     if t is None:
         return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
+    try:
+        _check_tool_permission(t)
+    except PermissionDeniedError:
+        # Ordinary denial is not a handler failure; no traceback or private data.
+        return json.dumps({"error": "Permission denied", "code": "permission_denied"}, ensure_ascii=False)
     try:
         result = await t.handler(**(arguments or {}))
     except TypeError as e:

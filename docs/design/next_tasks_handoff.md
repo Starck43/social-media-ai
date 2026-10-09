@@ -7,20 +7,22 @@ This path is retained for existing links; it is not a competing backlog.
 ## Current occupied lane: draft PR #22
 
 Branch `ai/identity-permissions-boundary` includes reviewed dev87bf82a via5f211a7;
-Draft/unmerged. Owner exact2f7beca clean/unchanged: short60 PASSED151s, manual
-0088 column-removal effect only in test_schema, timezone3 PASSED19s after DDL,
-full1577 PASSED/64subtests/0failures/errors/skips in688.77s,exit0. No production
-change/Alembic/reset. Boundary/settings/Telegram are covered in full suite; do
-not repeat them by default. Owner's full log remains local, not agent execution.
+Draft/unmerged. OWNER exacta87b550 task-file13 PASSED36s,exit0 (owner-link/member-
+text), clean unchanged HEAD/no local commits. Package verified; no repeat needed.
+Latest full checkpoint remains2f7beca1577 PASSED/64subtests/0failures/errors/skips
+in688.77s,exit0; short60 and post-test-schema-DDL timezone3 passed. No full run
+on a87b550 claimed; no boundary/settings/Telegram rerun debt by default.
 
-Current prepared small XSS continuation escapes task name in two list branches
-with two owner/member/inert-task regressions; NOT RUN. Next13 task-file cases,
-not full suite again. Broader template audit remains OPEN; no global autoescape
-or global-XSS-safe claim. Newer Owner dev changes intentionally not inspected
-per their request; synchronize/review before merge, not during this pinned work.
+This continuation is docs/static audit ONLY, no app/test/schema changes or new
+check request. Proposed next scope: source-name sinks in sources.html and
+source_detail.html (list/title/h1/dialog/quoted input), not global autoescape.
+Workspace/base/settings and shared page-title callers remain separate review.
+First lift Owner pause on newer dev inspection, refresh ownership and compare
+candidate UI files to avoid duplicating fixes; no implementation started in that
+proposed package. Fresh-dev compatibility review required before Ready/merge.
 See [current handoff](identity_permissions_handoff.md). PR29 deferred; no automatic
 ready/merge/deploy, concurrent pytest/reset/drop/migration/live calls or dirty
-Owner UI checkout edits. No new docs/design files.
+Owner checkout edits. Broader XSS/browser/live acceptance remains OPEN.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

@@ -1,57 +1,54 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — green full-suite checkpoint, bounded task-name escaping
+## Current continuation — verified task-name package; next scope bounded
 
-OWNER-REPORTED exact2f7becafcdb40ade0633e8a24fd785234d2ea56f unchanged before/
-after, clean retained review worktree, no local commits:
-- Short analytics55/link2/timezone3 group:60 PASSED,151s,exit0.
-- Owner applied only0088's column-removal effect in resolved test_schema:
-  tables27->27, agent_tasks columns22->21, only requires_approval removed.
-  Schema had been created by create_all; no Alembic run/reset/production change.
-  Owner reports public already lacked that column and was untouched.
-- Post-DDL timezone file:3 PASSED,19s.
-- Full python -m pytest -vv --durations=20 -o faulthandler_timeout=120:
-  1577 PASSED,64 subtests PASSED,0 failures/errors/skips,688.77s,exit0.
-Owner retained1924-line pr22-full-suite-2f7beca-2026-10-09-allpassed.txt locally;
-agent did not read local log or rerun tests/DDL. Earlier6900e4f1549pass/14fail
-is historical, no longer the latest completed suite. Boundary/settings/Telegram
-files passed in the full suite; no debt to repeat old standalone commands by
-default. Manual schema-effect verification is not Alembic upgrade/downgrade
-acceptance or a production deployment. Full green does not certify absent XSS.
+OWNER-REPORTED exacta87b55027a463f96758276e98f20f8ae435c58ac unchanged/clean
+before and after, no local commits: python -m pytest -q tests/test_task_run_now.py
+13 PASSED,36s,exit0. Both new owner-link/member-text cases passed. Task-name
+list package is now locally verified, not PREPARED/UNRUN. Exactly two e filters
+preserve readable stored text/owner edit link/member no-edit; no executable tag/
+event or queued Job. No default rerun required. This docs-only continuation
+changes NO app/tests/schema; its code matches a87b550 byte-for-byte.
 
-The included/reviewed dev baseline remains87bf82a via5f211a7. Owner reports
-newer dev changes and asked not to inspect them yet: no new dev fetch/diff/
-merge here. Current work is pinned to this tested PR head, preserving the
-included UI/CSS/macros/runtime guard. Before eventual merge, synchronize/review
-fresh dev with Owner; old full green does not cover omitted changes. PR22 still
-Draft/unmerged, PR29 unchanged/deferred. No automatic Ready/deploy/acceptance.
+Last completed full-suite checkpoint remains OWNER exact2f7beca unchanged/clean:
+1577 PASSED,64 subtests PASSED,0 failures/errors/skips,688.77s,exit0. Short60
+PASSED151s, post-DDL timezone3 PASSED19s. Owner only applied0088's column-removal
+effect in resolved test_schema (27 tables unchanged, task columns22->21; no
+Alembic/reset/production change); public reported unchanged/already absent.
+Owner local1924-line pr22-full-suite-2f7beca-2026-10-09-allpassed.txt not loaded
+by agent. Full checkpoint predates task-name patch, whose13 targeted cases are
+separate; no claim a full1577 run on a87b550. Boundary/settings/Telegram files
+were covered in full suite, so no default debt to rerun old standalone checks.
+Manual schema effect is not Alembic lifecycle/deployment acceptance.
 
-Next small XSS package PREPARED/NOT RUN: tasks.html renders task.name|e in its
-two list-row branches (owner edit link and read-only member plain text).
-No global autoescape change, macro/CSS/layout/permissions/router/migration or
-runtime change. Existing source.name|e and JSON/Alpine bindings preserved.
-Two parametrized ASGI regressions use an inert stored name with image/event
-payload, ampersand and quotes, parse the actual name cell, require exact readable
-text/no executable tag/event, preserve owner link and deny member edit link,
-check stored name unchanged and no queued Job. All11 existing test bodies kept.
-Data arrange uses exact scoped task.create; only own test records cleaned.
+### Bounded static XSS follow-up at a87b550
 
-Owner next: existing clean review worktree, venv/private env/distinct test schema
-already verified for0088; no concurrent pytest/reset/drop/migration/live calls.
-Fetch/ff-only PR branch (not dev), record exact HEAD, then:
+No new application patch or test execution in this continuation. Custom web
+Environment still has no autoescape; explicit e/tojson protect some contexts,
+so not every interpolation is automatically called vulnerable. Reviewed only
+selected current-PR fields, not an exhaustive all-template/browser audit:
 
-```bash
-python -m pytest -q tests/test_task_run_now.py
-```
+| Field/context | Static source finding | Next bounded action |
+| --- | --- | --- |
+| Source name: list link; detail title/h1/delete dialog/input value | sources.py accepts name.strip()[:100]; sources.html and source_detail.html interpolate it without e. Task selector escape does not protect these pages. | Proposed next package: source-name sinks in these two templates; hostile title/text/quoted-attribute regressions, preserve UI/actions and stored values. NOT implemented. |
+| Workspace name: base switcher text and settings name input | Raw tenant/w.tenant names in base.html; raw quoted value in settings.html. | Separate scope after Owner UI/dev compatibility review, not silently combined with source package. |
+| Shared page_title title/subtitle | Macro renders arguments without e; caller trust/context must be checked. | Separate caller-aware review; no blanket macro/global Environment change. |
 
-Expected13 cases (11 existing +2 new), static prediction NOT success. Do not
-replay full suite or successful boundary/settings/Telegram/analytics/timezone
-by default for this two-field package. Return exactSHA/result and first complete
-redacted failure. Agent uses AST/text/git only; no tests/collection/app imports/
-DB/browser/provider/messenger calls. Global Environment still disables
-escaping; other user-controlled template fields remain OPEN separate audit.
-Not every interpolation is vulnerable: explicit escaping/tojson already protects
-some contexts. Browser/live readiness separate; no new docs/design files.
+Source-name package is PROPOSED, not a second open PR or assigned implementation.
+Do not start it against unknown parallel Owner UI changes. Next coordination:
+Owner previously requested no inspection of newer dev. Keep that deferral until
+lifted; then refresh dev/open-PR ownership and compare candidate files, preserve
+intervening fixes and avoid duplicate work. Latest included/reviewed dev remains
+87bf82a via5f211a7; old green does not certify newer omitted dev. Fresh-dev
+review/sync is mandatory before eventual Ready/merge, not authorized by tests.
+
+Current check request: NONE. Do not rerun13/full/boundary/settings/Telegram/
+analytics/timezone simply for this documentation/audit record. No branch ready
+change, merge, deploy, production DDL, reset/drop/migration or live calls.
+Agent read source/AST/text/git only, ZERO tests/collection/app imports/DB/browser/
+provider/messenger calls. PR22 Draft/unmerged; PR29 unchanged/deferred. Broader
+XSS audit and live/browser/business readiness remain OPEN. Existing board/
+ledger/handoff/pointer updated; no new docs/design file.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

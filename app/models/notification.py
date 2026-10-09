@@ -1,42 +1,19 @@
+"""Compatibility facade for the notifications model domain.
+
+The canonical Notification declaration now lives in
+`app.models.notifications.notification`. This module keeps the legacy
+`app.models.notification` import path working and remains the place where
+`Notification.objects` is bound, so the manager import order is unchanged.
+
+Do not move manager creation into the leaf module: NotificationManager
+resolves the model by importing it back from this facade.
+"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from .notifications.notification import Notification  # noqa: F401
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Index
-from sqlalchemy.orm import Mapped
-
-from .base import Base, TenantScopedMixin, TimestampMixin
-from ..core.config import settings
-from ..core.decorators import app_label
-from ..types import NotificationType
-
-
-@app_label("social")
-class Notification(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "notifications"
-    __table_args__ = (Index("ix_notifications_tenant_id", "tenant_id"), {"schema": settings.DB_SCHEMA})
-
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    title: Mapped[str] = Column(String(200), nullable=False)
-    message: Mapped[str] = Column(Text, nullable=False)
-    # Используем существующий тип notification_type из базы данных
-    notification_type: Mapped[NotificationType] = NotificationType.sa_column(
-        type_name="notification_type", store_as_name=True  # Хранить как имена (REPORT_READY, MOOD_CHANGE, etc.)
-    )
-    is_read: Mapped[bool] = Column(Boolean, default=False)
-    related_entity_type: Mapped[str] = Column(String(50))  # 'source', 'platform', 'analysis'
-    related_entity_id: Mapped[int] = Column(Integer)
-
-    # Manager will be set after class definition to avoid circular imports
-    if TYPE_CHECKING:
-        from .managers.base_manager import BaseManager
-        from .managers.notification_manager import NotificationManager
-
-        objects: ClassVar[NotificationManager | BaseManager]
-    else:
-        objects: ClassVar = None
-
-
-from .managers.notification_manager import NotificationManager  # noqa: E402
+# Manager binding stays at this legacy entry point (import order preserved).
+from .managers.notification_manager import NotificationManager  # noqa: E402,F401
 
 Notification.objects = NotificationManager()

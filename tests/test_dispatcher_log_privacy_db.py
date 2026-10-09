@@ -12,8 +12,9 @@ from uuid import uuid4
 import pytest
 
 from app.core.tenant_context import tenant_scope
+from app.core.permissions import permission_scope
 from app.jobs import dispatcher
-from app.models import AgentTask, Job, Notification, Tenant
+from app.models import AgentTask, Job, Notification, Tenant, User
 from app.services.notifications import service
 
 pytestmark = pytest.mark.tenancy
@@ -32,8 +33,19 @@ async def workspace(monkeypatch):
         await Tenant.objects.delete_by_id(tenant.id)
 
 
+@pytest.fixture
+async def workspace_owner(workspace):
+    # Get an active user (e.g., the first one)
+    user = await User.objects.filter(is_active=True).limit(1).first()
+    if user is None:
+        raise RuntimeError("No active user found in test database")
+    with tenant_scope(workspace.id):
+        with permission_scope(user, is_owner=True):
+            yield
+
+
 @pytest.mark.parametrize("retry", [False, True], ids=["terminal", "retry"])
-async def test_exception_logs_and_notification_safe_without_changing_audit(workspace, retry, caplog):
+async def test_exception_logs_and_notification_safe_without_changing_audit(workspace, retry, caplog, workspace_owner):
     with tenant_scope(workspace.id):
         task = await AgentTask.objects.create(
             name=f"log-privacy-{uuid4().hex}", cron_expr="0 0 * * *", job_type="learn", payload={}, is_active=False

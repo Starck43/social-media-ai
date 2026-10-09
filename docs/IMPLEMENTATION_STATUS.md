@@ -2,9 +2,10 @@
 
 ## Read this first
 
-Latest checked dev: `1e908b2d55bae6ab2c71271321d2986a921ae9e4` (2026-10-09).
+Latest checked dev: `57b5612f28bc8d9621cf21670babe8a4195d536e` (2026-10-09), after PR #20.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
-PR #19 as `f0a4510`. Owner chat/notification UI update `1e908b2` is preserved. On 2026-10-09 the owner reported
+PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
+chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
 that all tests pass. This is OWNER-REPORTED, not independently rerun: exact commands,
 counts and tested SHA/logs were not supplied; do not attribute that report to the
 subsequent UI commits, bootstrap/readiness or new dispatcher-privacy package.
@@ -145,17 +146,20 @@ All four requested small tasks are merged, not deployment/acceptance evidence:
 NOT executed here. Full suite and real-driver/API acceptance for this new package
 remain pending. See [bootstrap/readiness handoff](design/bootstrap_readiness_handoff.md).
 
-## Dispatcher log privacy — prepared branch, owner handles PR
+## Dispatcher log privacy — merged, acceptance open
 
-Branch `ai/dispatcher-log-privacy`, baseline `1e908b2`. No PR created or merge.
+PR #20 merged as `57b5612` on the owner's explicit instruction. Original branch
+baseline `1e908b2`; fresh base `9d83c9a` had no overlapping files.
 
-- [ ] Replace dispatcher-owned raw result/exception/traceback logs with bounded
+- [x] Replace dispatcher-owned raw result/exception/traceback logs with bounded
   events, safe IDs and static categories; preserve severity and outcome decisions.
-- [ ] Fixed failure-notification template; no raw exception text in its message.
-- [ ] 13 actual-source privacy tests and 25 existing mocked-source outcome
-  regressions PASSED locally. 2 PostgreSQL cases prepared, NOT executed.
-- [ ] Handoff includes commands, compatibility/diagnostic trade-offs and limitations.
+- [x] Fixed failure-notification template; no raw exception text in its message.
+- [x] Historical authoring checks: 13 actual-source privacy tests and 25 existing
+  mocked-source outcome regressions PASSED. No new run at merge; 2 PostgreSQL
+  cases prepared, NOT executed. Full-suite/local acceptance remains pending.
+- [x] Handoff includes commands, compatibility/diagnostic trade-offs and limitations.
 
+Fresh continuation: [next-session task list](design/next_tasks_handoff.md).
 See [dispatcher-privacy handoff](design/dispatcher_log_privacy_handoff.md).
 Job.error/AgentTask.last_error and successful notification summaries are unchanged;
 handlers/provider/ORM/framework logs remain outside this bounded change. This does
@@ -217,7 +221,7 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20 are merged. Preserve the owner
    runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.

@@ -2,7 +2,11 @@
 
 ## Read this first
 
-Verified dev baseline: `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+Verified dev baseline: `5d4a328bc2a0a2c90032339718e3aa7192b02455`.
+PR #8 cloud/hybrid planning docs are merged and preserved; this is not
+implemented connector/local-inference capability. All five digest/task branches
+were synchronized with this docs-only dev update. Application/test inputs match
+the completed 196-test HTML-unit run on 7a06374; no repeat suite for docs only.
 The integrated delivery baseline is `4b57c14`. New product-direction docs and
 parallel UI/theme/sentiment changes in `7a06374` are preserved; their inclusion
 is not mislabeled as an application-unchanged baseline.
@@ -123,7 +127,7 @@ this checklist does not replace them or authorize deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and this task branch; inspect changes since `7a06374`.
+1. Fetch fresh dev and this task branch; inspect changes since `5d4a328`.
 2. Read this file, the retry design, `app/services/digest/builder.py`,
    `app/models/digest_run.py`, its manager, channel adapters and jobs/dispatcher.
 3. Storage is approved. Review the schema branch/PR and its validation; confirm

@@ -2,7 +2,10 @@
 
 ## Status and evidence
 
-Design only; synchronized with dev `7a0637412ae761fff83f26fb4f8b5a581dcf6e28`.
+Design only in this planning branch; synchronized with dev `5d4a328bc2a0a2c90032339718e3aa7192b02455`.
+Cloud/hybrid planning documents from merged PR #8 are preserved. All dependency
+branches contain this docs-only update; tested application inputs are unchanged
+since the 196-test run on 7a06374. No repeat suite for documentation-only sync.
 DigestRun/builder fields and call paths on dev still match `4b57c14` (the new UI changes are preserved). The new universal
 assistant architecture includes a future controlled outbox; this digest-specific
 checkpoint work must not be presented as implementing that general outbox.

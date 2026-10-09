@@ -1,33 +1,38 @@
 # Implementation status and session handoff
 
-## Current continuation — CLI verified, digest/DB arrangement prepared
+## Current continuation — four mocked Telegram compatibility cases
 
-Owner/local agent tested exact `a9199fb`: CLI file10/10 PASSED in9.38s,
-clean retained worktree. Earlier exact65d5b16 standalone8/25/13 and ordered
-producer-consumer95/95 passed. Agent did not repeat these checks. Historical
-706bfea full-suite68 failures are NOT a current remaining count.
+Owner/local agent tested exact6900e4f unchanged before/after: nine digest/DB
+cases PASSED in8.95s; NEW full suite1549 passed/14 failed/58 subtests10m35s.
+Six-file group13 failed/87 passed: these are reproducible within that group,
+not proof of no dependency inside it. Timezone case passed there but failed in
+full suite: investigate order/state separately. Agent did not rerun checks.
 
-New test-only `394a342` prepares nine former arrange failures: returned-failure
-DB3, snapshot3, shared job lock1, manual destinations2. Four existing test files;
-exact service grants around individual source/task creation and source cleanup
-only. New negative assertions prove grants close before handler, aggregate,
-snapshot and spawned concurrent work. All prior cost/outcome/tenant/conflict/
-uncertainty assertions preserved. Application/UI/runtime/schema untouched.
-New package NOT RUN; static AST/whitespace/assertion preservation only.
+New test-onlyccde651 addresses four Telegram categories: scoped arrange and
+cleanup source.create/delete in the two tenancy cases; caller-owned tenant
+context for full L2 pull; auto-mode pure test uses mocked owner lookup/watermark
+persistence, not a real row-id1 update. No legacy test bypass/operator authority
+around these subjects; assert source.update is available only at the actual
+service write and absent before/after. Existing assertions retained, fixture
+cleanup strengthened with finally. Production service_permission_scope, source
+client, ingest, runtime and UI unchanged; new cases NOT RUN.
 
-Owner: clean retained review worktree, fetch/ff-only PR22, record HEAD. Run the
-nine-case group in the handoff; no need to rerun CLI10 or isolation95 separately.
-Existing venv and distinct DB_TEST_SCHEMA; no concurrent pytest/reset/drop,
-migration or live calls. After nine pass, a NEW full-suite checkpoint is now
-useful for the combined isolation + CLI + DB-fixture integration; retain original
-log and exact SHA, do not update checkout during the process. Success of these
-small groups does not certify all1554 tests or all production gates.
+Owner has not connected Telegram. These contracts use mocked session/client/
+analyzer and isolated-schema ORM; no real session, API/Telethon connection or
+credential setup required. Their success would not be live Telegram acceptance.
+A stale arrange/caller assumption may be updated; tenant/watermark/refusal
+assertions are not removed simply because integration is unconfigured.
 
-Next: review actual remaining errors from the new full run, especially ingest/
-MTProto and authority/context paths; do not patch historical mocks blindly.
-PR22 remains Draft/unmerged pending current evidence/review; PR29 deferred.
-No deployment/live activation or automatic merge. Older checkpoints below are
-historical evidence, not the current allocation.
+Owner next: clean review worktree fetch/ff-only PR22, record HEAD; four-case
+selector below. Existing venv/private environment/distinct DB_TEST_SCHEMA,
+no concurrent pytest/reset/drop/migration/live calls. Do not rerun full suite,
+CLI10/isolation95 yet. Return exactSHA/result/redacted first error.
+
+Remaining web analytics/settings8, source-link1 and timezone1 need separate
+contract/state review, not blanket label "obsolete" or default test skipping.
+Preserve owner's parallel UI changes; distinguish authorized own-workspace
+writes from global model grants. PR22 Draft/unmerged; PR29 deferred; deployment
+and real integration acceptance remain separate. Older sections are historical.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

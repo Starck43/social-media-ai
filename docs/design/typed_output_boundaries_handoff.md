@@ -103,8 +103,9 @@ head, test output and migration head for handoff; redact credentials.
   still lose attempt cost. Shared clients may label unknown tariffs as zero and
   upstream logs may include raw errors. This is not a complete spend ledger or
   process-wide redaction audit; PRD-03/06/08 remain open.
-- Generic dispatcher semantics for returned `status=failed` remain open under
-  PRD-05; a boundary's failure dictionary is not proof of a failed Job UI state.
+- PR #18 now maps explicit non-checkpoint returned `status=failed` to terminal
+  Job/task failure. General leases/atomic outcomes/partial-status semantics still
+  remain open under PRD-05; see the returned-job-failure handoff.
 - Native output-protocol coverage, unsupported scenario schemas, multimodal
   metadata, acceptance quality and poisoned-memory tests remain broader PRD-07.
 - Langfuse, billing, embeddings and automatic global model disabling are not

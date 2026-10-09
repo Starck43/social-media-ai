@@ -1,8 +1,7 @@
-"""Atomic NEW digest snapshot creation; not yet wired into builder/jobs.
+"""Atomic NEW digest snapshots, optionally inside a caller's job transaction.
 
-Never overwrite/resume an existing run or interpret NULL legacy receipts. The
-caller supplies already-rendered content and its actual LLM cost. Job binding,
-force-generation recovery and coordinated publication are separate integration.
+No legacy replay, force overwrite or HTTP. create_snapshot preserves the original
+standalone API; create_snapshot_in_session lets the job binding commit atomically.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
@@ -36,7 +36,8 @@ class SnapshotRef:
     generation: str
 
 
-async def create_snapshot(
+async def create_snapshot_in_session(
+    session: AsyncSession,
     *,
     content: str,
     period: str,
@@ -45,16 +46,17 @@ async def create_snapshot(
     agent_task_id: int | None = None,
     llm_cost: float | None = None,
 ) -> SnapshotRef:
-    """Commit content + frozen owned targets/parts + generation in ONE transaction.
+    """Flush a complete NEW snapshot in an existing transaction; NEVER commit.
 
-    Dates are explicit inclusive bounds (current day digests have equal bounds),
-    never recomputed from today's date here. Targets use stable binding-ID order
-    and existing exact normalization; no env recipient or credential is consulted.
-    Missing targets fail without persisting a run, rather than invent delivery.
+    The caller must roll back the entire transaction on failure and must not use
+    the returned ID for HTTP until commit. This is a Python service API, not a
+    public/client-controlled transaction option.
     """
     tenant_id = current_tenant_id()
     if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
         raise TenantContextError("Snapshot creation requires an explicit non-bypass workspace")
+    if not session.in_transaction():
+        raise SnapshotError("Snapshot requires an existing transaction")
     if (
         period not in ("day", "week", "month")
         or type(period_start) is not date
@@ -67,83 +69,91 @@ async def create_snapshot(
         raise SnapshotError("Invalid digest snapshot cost")
     parts = split_digest_html(content)
     generation = uuid4().hex
+    tenant = await session.scalar(
+        select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update(read=True)
+    )
+    if tenant is None:
+        raise TenantContextError("Snapshot workspace is missing or inactive")
+    if agent_task_id is not None:
+        task = await session.scalar(
+            select(AgentTask.id)
+            .where(AgentTask.id == agent_task_id, AgentTask.tenant_id == tenant_id, AgentTask.job_type == "digest")
+            .with_for_update(read=True)
+        )
+        if task is None:
+            raise TenantContextError("Snapshot schedule unavailable in this workspace")
+    bindings = (
+        await session.scalars(
+            select(TenantChannel)
+            .where(
+                TenantChannel.tenant_id == tenant_id,
+                TenantChannel.is_active.is_(True),
+                TenantChannel.is_digest_target.is_(True),
+            )
+            .order_by(TenantChannel.id)
+            .with_for_update(read=True)
+        )
+    ).all()
+    targets, seen = [], set()
+    for binding in bindings:
+        destination = binding.chat_id.strip()
+        if destination.startswith("@"):
+            destination = destination.lower()
+        if binding.channel not in ("telegram", "max") or not destination:
+            raise SnapshotError("Invalid configured digest destination")
+        key = (binding.channel, destination)
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append({"binding_id": binding.id, "channel": binding.channel, "destination_id": destination, "parts": parts})
+    if not targets:
+        raise SnapshotError("No owned active digest destinations")
+    run = DigestRun(
+        tenant_id=tenant_id,
+        agent_task_id=agent_task_id,
+        period=period,
+        period_start=period_start,
+        period_end=period_end,
+        channel="auto",
+        content=content,
+        status="pending",
+        llm_cost=llm_cost,
+    )
+    session.add(run)
+    await session.flush()
+    run.delivery_state = new_checkpoint(
+        run_id=run.id,
+        tenant_id=tenant_id,
+        generation=generation,
+        content=content,
+        splitter=SPLITTER_VERSION,
+        targets=targets,
+    )
+    return SnapshotRef(run_id=run.id, generation=generation)
+
+
+async def create_snapshot(
+    *,
+    content: str,
+    period: str,
+    period_start: date,
+    period_end: date,
+    agent_task_id: int | None = None,
+    llm_cost: float | None = None,
+) -> SnapshotRef:
+    """Commit the standalone snapshot before returning, preserving PR #12 API."""
     try:
         async with async_session_maker() as session:
             async with session.begin():
-                tenant = await session.scalar(
-                    select(Tenant.id)
-                    .where(Tenant.id == tenant_id, Tenant.is_active.is_(True))
-                    .with_for_update(read=True)
-                )
-                if tenant is None:
-                    raise TenantContextError("Snapshot workspace is missing or inactive")
-                if agent_task_id is not None:
-                    task = await session.scalar(
-                        select(AgentTask.id)
-                        .where(
-                            AgentTask.id == agent_task_id,
-                            AgentTask.tenant_id == tenant_id,
-                            AgentTask.job_type == "digest",
-                        )
-                        .with_for_update(read=True)
-                    )
-                    if task is None:
-                        raise TenantContextError("Snapshot schedule unavailable in this workspace")
-                bindings = (
-                    await session.scalars(
-                        select(TenantChannel)
-                        .where(
-                            TenantChannel.tenant_id == tenant_id,
-                            TenantChannel.is_active.is_(True),
-                            TenantChannel.is_digest_target.is_(True),
-                        )
-                        .order_by(TenantChannel.id)
-                        .with_for_update(read=True)
-                    )
-                ).all()
-                targets, seen = [], set()
-                for binding in bindings:
-                    destination = binding.chat_id.strip()
-                    if destination.startswith("@"):
-                        destination = destination.lower()
-                    if binding.channel not in ("telegram", "max") or not destination:
-                        raise SnapshotError("Invalid configured digest destination")
-                    key = (binding.channel, destination)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    targets.append(
-                        {
-                            "binding_id": binding.id,
-                            "channel": binding.channel,
-                            "destination_id": destination,
-                            "parts": parts,
-                        }
-                    )
-                if not targets:
-                    raise SnapshotError("No owned active digest destinations")
-                run = DigestRun(
-                    tenant_id=tenant_id,
-                    agent_task_id=agent_task_id,
+                ref = await create_snapshot_in_session(
+                    session,
+                    content=content,
                     period=period,
                     period_start=period_start,
                     period_end=period_end,
-                    channel="auto",
-                    content=content,
-                    status="pending",
+                    agent_task_id=agent_task_id,
                     llm_cost=llm_cost,
                 )
-                session.add(run)
-                await session.flush()  # allocate ID; still invisible outside this transaction
-                run.delivery_state = new_checkpoint(
-                    run_id=run.id,
-                    tenant_id=tenant_id,
-                    generation=generation,
-                    content=content,
-                    splitter=SPLITTER_VERSION,
-                    targets=targets,
-                )
-                ref = SnapshotRef(run_id=run.id, generation=generation)
-            return ref  # transaction commit succeeded before returning
+            return ref
     except IntegrityError:
         raise SnapshotConflict("Snapshot integrity conflict requires explicit resume or repair") from None

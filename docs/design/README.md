@@ -86,9 +86,30 @@ from dev/ledger, not an old PREPARED label.
 
 ### Historical navigation/model work
 
-- [Navigation preparation record](documentation_organization_handoff.md).
-- [Model reconciliation record](model_reference_reconciliation_handoff.md).
-- [Historical archive](archive/) — preserved evidence, not release authority.
+- [Navigation preparation record](archive/documentation_organization_handoff.md).
+- [Model reconciliation record](archive/model_reference_reconciliation_handoff.md).
+- [Historical archive index](archive/README.md) — preserved evidence, not release authority.
+
+The two old top-level filenames remain compatibility pointers, not active
+reports. Other technical contract paths remain stable for active PR references.
+
+## This cleanup: delivery and continuation
+
+Branch `docs/development-plan-navigation`, baseline `eb49d1d`; first navigation
+commit `185a500`. Prepared, not merged. Global plan/stages/current-stage entry
+point and complete 34-document design catalog are in place. Two old navigation/
+model authoring reports are archived verbatim; old paths remain short pointers.
+Known index/model/catalog links migrated. No separate cleanup handoff is added.
+
+Static checks performed: changed/new navigation links against inspected path
+listings, known new anchors, fenced-block balance, added-line whitespace,
+complete catalog membership, archive byte equality and no reserved PR #22 files
+in the payload. This is not a full-repository link crawl, GitHub rendering,
+Mermaid render, application test or target deployment inspection.
+
+Next: owner reviews this reading path/PR; synchronize ledger/legacy notes only
+with the PR #22 lane, then select one genuinely independent stage-C package.
+Existing owner-run checks are not repeated. Merge requires explicit instruction.
 
 ## Maintenance rule
 

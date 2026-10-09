@@ -82,4 +82,4 @@ Do not infer new passing tests or live sender activation from a merge.
 
 Use the [categorized design catalog](./design/README.md), not a directory-wide reading order. [archive/](./design/archive/) preserves historical evidence, not the current roadmap. Keep active contract paths stable while open PRs depend on them; archive preparation records with compatibility links instead of deleting their evidence.
 
-Documentation organization work and checks: [handoff](./design/documentation_organization_handoff.md).
+Documentation organization work and checks: [handoff](./design/archive/documentation_organization_handoff.md).

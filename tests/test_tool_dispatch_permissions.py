@@ -5,6 +5,7 @@ Uses the existing boundary loader for actual policy/enums/context, not a mocked
 allow/deny predicate. Pytest still uses the repository DB conftest.
 """
 
+import ast
 import importlib.util
 import json
 import sys
@@ -50,6 +51,71 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.tools.TOOL_REGISTRY[spec.name] = spec
         return spec
+
+    def register_collect(self):
+        # Load the real declaration/handler, but never run a real collection job.
+        with patch.dict(sys.modules, {"app.agent.tools": self.tools}):
+            load_source("_collect_permission_source", "app/agent/toolset/collect.py")
+        spec = self.tools.get_tool("collect_now")
+        self.assertEqual(spec.required_permission, "source.analyze")
+        return spec
+
+    async def assert_collect_denied(self):
+        self.register_collect()
+        inline = AsyncMock()
+        with patch.dict(sys.modules, {"app.jobs.dispatcher": HELPERS.module_with(run_job_inline=inline)}):
+            with self.assertRaises(self.perms.PermissionDeniedError):
+                await self.tools.call_tool("collect_now", {"source_ids": [7]})
+            result = json.loads(await self.tools.execute("collect_now", {"source_ids": [7]}))
+        self.assertEqual(result, {"error": "Permission denied", "code": "permission_denied"})
+        inline.assert_not_awaited()
+
+    async def test_collect_missing_identity_denied_before_job(self):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(None):
+            await self.assert_collect_denied()
+
+    async def test_collect_view_only_actor_denied_before_job(self):
+        self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.VIEW
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+            await self.assert_collect_denied()
+
+    async def test_collect_inactive_actor_denied_before_job(self):
+        self.user.is_active = False
+        self.user.has_perm_for = lambda *args: True
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+            await self.assert_collect_denied()
+
+    async def test_collect_analyze_right_preserves_inline_result(self):
+        self.register_collect()
+        self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.ANALYZE
+        inline = AsyncMock(return_value={
+            "status": "done", "job_id": 901, "result": {"items": 2, "sources": 1, "collected": 1},
+        })
+        with patch.dict(sys.modules, {"app.jobs.dispatcher": HELPERS.module_with(run_job_inline=inline)}):
+            with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+                direct = await self.tools.call_tool("collect_now", {"source_ids": [7]})
+                encoded = json.loads(await self.tools.execute("collect_now", {"source_ids": [7]}))
+        self.assertEqual(direct, encoded)
+        self.assertEqual(direct, {
+            "status": "done", "job_id": 901, "items": 2, "sources": 1,
+            "collected": 1, "empty": 0, "errors": [], "error": None,
+        })
+        self.assertEqual(inline.await_count, 2)
+        inline.assert_awaited_with("collect", {"source_ids": [7]})
+
+    async def test_collect_removed_analyze_right_denied_on_next_dispatch(self):
+        self.register_collect()
+        self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.ANALYZE
+        inline = AsyncMock(return_value={"status": "done", "result": {}})
+        with patch.dict(sys.modules, {"app.jobs.dispatcher": HELPERS.module_with(run_job_inline=inline)}):
+            with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+                await self.tools.call_tool("collect_now", {})
+                self.user.has_perm_for = lambda *args: False
+                with self.assertRaises(self.perms.PermissionDeniedError):
+                    await self.tools.call_tool("collect_now", {})
+                result = json.loads(await self.tools.execute("collect_now", {}))
+        self.assertEqual(result["code"], "permission_denied")
+        inline.assert_awaited_once_with("collect", {"source_ids": []})
 
     async def test_direct_call_denies_missing_identity_before_handler(self):
         self.register()
@@ -136,6 +202,35 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(self.tools.ToolError):
             await self.tools.call_tool("test_write", {})
         self.assertEqual(json.loads(await self.tools.execute("test_write", {})), {"error": "test-only failure"})
+
+
+class BuiltinPermissionDeclarationTests(unittest.TestCase):
+    def test_every_builtin_tool_declares_a_static_permission(self):
+        # Inspect source only: importing production toolsets can load infrastructure.
+        declarations = []
+        for path in sorted((ROOT / "app/agent/toolset").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Name):
+                        continue
+                    if decorator.func.id != "tool":
+                        continue
+                    declarations.append((path, node.name))
+                    keywords = {keyword.arg: keyword.value for keyword in decorator.keywords}
+                    permission = keywords.get("required_permission")
+                    with self.subTest(path=str(path.relative_to(ROOT)), handler=node.name):
+                        self.assertIsInstance(permission, ast.Constant)
+                        self.assertIsInstance(permission.value, str)
+                        parts = permission.value.split(".")
+                        self.assertEqual(len(parts), 2)
+                        self.assertTrue(parts[0].isidentifier())
+                        self.assertIn(parts[1], {
+                            "view", "create", "update", "delete", "analyze", "moderate", "export", "configure",
+                        })
+        self.assertTrue(declarations, "The tool declaration inventory must not be empty")
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@
                             {% endif %}
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            {{ sentiment_badge(chain.avg_sentiment, average=True) }}
+                            {{ sentiment_badge(chain.avg_sentiment, average=True, mode="full") }}
                             <a href="{{ chain.url|e }}" class="text-xs text-cyan-700 dark:text-cyan-400">Открыть →</a>
                             {% if perms_can(request, 'aianalytics', 'delete') %}
                                 <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">

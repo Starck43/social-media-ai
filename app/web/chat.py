@@ -117,6 +117,15 @@ def _enrich_message(msg) -> dict:
     }
 
 
+def _display_transcript(messages) -> list[dict]:
+    """Presentation only: tool-call placeholders stay in storage, not in bubbles."""
+    return [
+        _enrich_message(msg)
+        for msg in messages
+        if msg.role in ("user", "assistant") and (msg.content or "").strip()
+    ]
+
+
 def _membership_role(request: Request) -> str | None:
     """The codename of the caller's platform role in the active workspace."""
     tenant_id = getattr(request.state, "tenant_id", None)
@@ -177,7 +186,7 @@ async def chat_page(request: Request):
         messages = await agent_messages.recent(session_id, limit=TRANSCRIPT_LIMIT)
 
     # Enrich messages with formatted fields
-    enriched = [_enrich_message(msg) for msg in messages]
+    enriched = _display_transcript(messages)
 
     if is_ajax:
         return JSONResponse(
@@ -251,12 +260,17 @@ async def chat_send(
             add_flash(request, "error", "Агент не ответил — попробуйте ещё раз")
 
         raw_messages = await _transcript(user.id)
-        enriched = [_enrich_message(msg) for msg in raw_messages]
+        enriched = _display_transcript(raw_messages)
 
         if is_ajax:
             return JSONResponse(
                 {
                     "messages": enriched,
+                    "warning": (
+                        "Агент завершил обработку без текстового ответа. "
+                        "Проверьте результат действия или уточните запрос."
+                        if not (reply or "").strip() else None
+                    ),
                     "is_owner": _membership_role(request) == "owner",
                 }
             )

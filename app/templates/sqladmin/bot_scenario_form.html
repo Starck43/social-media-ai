@@ -342,7 +342,7 @@
                 const obj = JSON.parse(textarea.value)
                 textarea.value = JSON.stringify(obj, null, 2)
             } catch (e) {
-                alert("Ошибка форматирования JSON: " + e.message)
+                uiNotice("Ошибка форматирования JSON: " + e.message)
             }
         }
 
@@ -365,7 +365,7 @@
                 textarea.value = JSON.stringify(current, null, 2)
                 syncScopeToForm()
             } catch (e) {
-                alert("Ошибка: " + e.message)
+                uiNotice("Ошибка: " + e.message)
             }
         }
 

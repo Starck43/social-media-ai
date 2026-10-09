@@ -1,0 +1,203 @@
+ */
+    marked.setOptions({
+        breaks: true,
+        gfm: true,
+    })
+</script>
+<style>
+    /* Markdown inside assistant bubbles */
+    .msg-prose p {
+        margin: 0.2rem 0;
+    }
+
+    .msg-prose strong {
+        font-weight: 600;
+    }
+
+    .msg-prose code {
+        background: var(--color-surface-secondary);
+        border-radius: 0.25rem;
+        padding: 0.1rem 0.35rem;
+        font-size: 0.85em;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .msg-prose pre {
+        background: var(--color-surface-secondary);
+        border: 1px solid var(--color-border);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        overflow-x: auto;
+        margin: 0.35rem 0;
+    }
+
+    .msg-prose pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.85rem;
+    }
+
+    .msg-prose ul {
+        list-style: disc;
+        padding-left: 1.25rem;
+        margin: 0.2rem 0;
+    }
+
+    .msg-prose ol {
+        list-style: decimal;
+        padding-left: 1.25rem;
+        margin: 0.2rem 0;
+    }
+
+    .msg-prose h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0.4rem 0 0.15rem;
+    }
+
+    .msg-prose h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin: 0.3rem 0 0.1rem;
+    }
+
+    .msg-prose blockquote {
+        border-left: 3px solid var(--color-border-strong);
+        padding-left: 0.75rem;
+        color: var(--color-text-secondary);
+        margin: 0.25rem 0;
+    }
+
+    .msg-prose a {
+        color: var(--ui-accent);
+        text-decoration: underline;
+    }
+
+    .agent-msg p {
+        padding-top: 0;
+    }
+
+    /* JSON block in assistant messages */
+    .json-block {
+        background: var(--color-surface-secondary);
+        border: 1px solid var(--color-border);
+        border-left: 3px solid #06b6d4;
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .json-block-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid #1e293b;
+    }
+
+    .json-block-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #06b6d4;
+    }
+
+    .json-copy-btn {
+        background: none;
+        border: 1px solid #334155;
+        border-radius: 0.25rem;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.7rem;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .json-copy-btn:hover {
+        background: #1e293b;
+        color: #e2e8f0;
+    }
+
+    /* Typing dots animation */
+    .typing-dot {
+        animation: typingBounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-dot:nth-child(1) {
+        animation-delay: 0ms;
+    }
+
+    .typing-dot:nth-child(2) {
+        animation-delay: 150ms;
+    }
+
+    .typing-dot:nth-child(3) {
+        animation-delay: 300ms;
+    }
+
+    @keyframes typingBounce {
+        0%, 60%, 100% {
+            transform: translateY(0);
+            opacity: 0.4;
+        }
+        30% {
+            transform: translateY(-6px);
+            opacity: 1;
+        }
+    }
+
+    /* Message entrance animation */
+    .msg-enter {
+        animation: msgSlideIn 0.2s ease-out;
+    }
+
+    @keyframes msgSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Scroll-to-bottom button */
+    .scroll-btn {
+        transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .scroll-btn:hover {
+        transform: scale(1.1);
+    }
+
+.chat-page { min-height: 0; height:calc(100dvh - 140px); }
+.chat-window { display:flex; flex-direction:column; flex:1; min-height:280px; border:1px solid var(--color-border); border-radius:16px; background:var(--color-surface); overflow:hidden; }
+.chat-messages { scrollbar-gutter:stable; }
+.chat-message-body { max-width:85%; min-width:0; }
+.chat-bubble-user { background:var(--ui-accent-soft); color:var(--color-text); border:1px solid var(--color-border); }
+.msg-prose { overflow-wrap:anywhere; }
+.msg-prose table { display:block; overflow:auto; }
+.json-block pre { color:var(--color-text); white-space:pre-wrap; overflow-wrap:anywhere; }
+.json-copy-btn { min-height:44px; color:var(--color-text-secondary); }
+.chat-composer { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin:12px 16px 0; padding:10px; border:1px solid var(--color-border-strong); border-radius:12px; background:var(--color-surface); }
+.chat-input { width:100%; min-height:60px; max-height:180px; resize:none; border:0; padding:8px; color:var(--color-text); background:transparent; font-size:16px; }
+.chat-send { align-self:end; display:flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:0 12px; border-radius:8px; background:#06b6d4; color:#020617; }
+.chat-send:disabled { opacity:.5; cursor:wait; }
+.chat-suggestions { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px; }
+.chat-suggestions button { color:var(--color-text-secondary); font-size:12px; padding:4px 8px; border-radius:6px; }
+.chat-suggestions button:hover { background:var(--color-surface-secondary); }
+.chat-hint { margin:8px 24px 12px; }
+.chat-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; color:var(--color-text); background:var(--color-surface-secondary); font-size:14px; }
+.chat-notice button { padding:4px 8px; text-decoration:underline; }
+.chat-pending { padding:8px 24px; color:var(--color-text-secondary); font-size:14px; }
+@media(max-width:639px) { .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-send span { display:none; } .chat-message-body { max-width:calc(100% - 36px); } .chat-hint { margin-inline:16px; font-size:11px; } }

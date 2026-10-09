@@ -26,8 +26,13 @@ def test_all_web_templates_compile_and_use_shared_components():
 def test_sentiment_badges_include_words_scale_and_shared_thresholds():
     macros = templates.env.get_template("web/_macros.html").module
     for score, label in ((0.2, "Негативная"), (0.4, "Нейтральная"), (0.6, "Нейтральная"), (0.8, "Позитивная")):
-        html = str(macros.sentiment_badge(score, average=True))
+        html = str(macros.sentiment_badge(score, average=True, mode="full"))
         assert label in html and f"{score:.2f} / 1" in html and "Средняя тональность" in html
+    compact = str(macros.sentiment_badge(0.8))
+    assert 'class="ui-tone ui-positive"' in compact and '>0.80<' in compact
+    assert ' / 1</span>' not in compact
+    dot = str(macros.sentiment_badge(0.8, mode="dot"))
+    assert 'ui-dot' in dot and '>0.80<' not in dot and 'aria-label=' in dot
     assert not str(macros.sentiment_badge(None)).strip()
 
 
@@ -123,3 +128,19 @@ def test_native_choice_labels_are_plain_and_settings_use_shared_segments():
     assert human_choice_label("Анализ 2–3 дня") == "Анализ 2–3 дня"
     template = Path("app/web/templates/web/settings.html").read_text()
     assert "ui-segments" in template and "segment('/app/settings?tab='" in template
+
+
+def test_chat_and_notification_presentation_contracts():
+    chat = Path("app/web/templates/web/chat.html").read_text()
+    js = Path("app/static/js/chat.js").read_text()
+    base = Path("app/web/templates/web/base.html").read_text()
+    assert 'class="chat-composer"' in chat and 'class="chat-suggestions"' in chat
+    assert 'message.role !== \'user\' && message.id' in chat  # one delete action per side
+    assert 'requestConfirmation' in js and 'confirm(' not in js and 'alert(' not in js
+    assert 'if (!text || this.pending) return' in js
+    assert 'safeMarkdown(html)' in js and 'el.removeAttribute(attr.name)' in js
+    assert '<template x-teleport="body">' in base and '@click.self="close()"' in base
+    assert 'aria-modal="true"' in base and 'trapFocus($event)' in base
+    assert 'document.body.style.overflow = "hidden"' in base
+    for path in Path("app/templates").rglob("*.html"):
+        assert 'alert(' not in path.read_text(), path

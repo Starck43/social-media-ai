@@ -8,192 +8,13 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script>
-    /* Configure marked.js — must be JS, not CSS: it used to live inside <style> */
-    marked.setOptions({
-        breaks: true,
-        gfm: true,
-    })
-</script>
-<style>
-    /* Markdown inside assistant bubbles */
-    .msg-prose p {
-        margin: 0.2rem 0;
-    }
+    /* Configure marked.js — must be JS, not CSS: it used to live inside <link rel="stylesheet" href="{{ url_for('static', path='css/chat.css') }}">
+<script src="{{ url_for('static', path='js/chat.js') }}"></script>
 
-    .msg-prose strong {
-        font-weight: 600;
-    }
-
-    .msg-prose code {
-        background: #0f172a;
-        border-radius: 0.25rem;
-        padding: 0.1rem 0.35rem;
-        font-size: 0.85em;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    }
-
-    .msg-prose pre {
-        background: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        overflow-x: auto;
-        margin: 0.35rem 0;
-    }
-
-    .msg-prose pre code {
-        background: none;
-        border: none;
-        padding: 0;
-        font-size: 0.85rem;
-    }
-
-    .msg-prose ul {
-        list-style: disc;
-        padding-left: 1.25rem;
-        margin: 0.2rem 0;
-    }
-
-    .msg-prose ol {
-        list-style: decimal;
-        padding-left: 1.25rem;
-        margin: 0.2rem 0;
-    }
-
-    .msg-prose h3 {
-        font-size: 1rem;
-        font-weight: 600;
-        margin: 0.4rem 0 0.15rem;
-    }
-
-    .msg-prose h4 {
-        font-size: 0.9rem;
-        font-weight: 600;
-        margin: 0.3rem 0 0.1rem;
-    }
-
-    .msg-prose blockquote {
-        border-left: 3px solid #334155;
-        padding-left: 0.75rem;
-        color: #94a3b8;
-        margin: 0.25rem 0;
-    }
-
-    .msg-prose a {
-        color: #22d3ee;
-        text-decoration: underline;
-    }
-
-    .agent-msg p {
-        padding-top: 0.75rem;
-    }
-
-    /* JSON block in assistant messages */
-    .json-block {
-        background: #0f172a;
-        border: 1px solid #1e293b;
-        border-left: 3px solid #06b6d4;
-        border-radius: 0.5rem;
-        padding: 0.75rem;
-        margin: 0.5rem 0;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.8rem;
-        line-height: 1.5;
-        overflow-x: auto;
-        white-space: pre-wrap;
-        word-break: break-all;
-    }
-
-    .json-block-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.35rem;
-        border-bottom: 1px solid #1e293b;
-    }
-
-    .json-block-label {
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #06b6d4;
-    }
-
-    .json-copy-btn {
-        background: none;
-        border: 1px solid #334155;
-        border-radius: 0.25rem;
-        padding: 0.15rem 0.5rem;
-        font-size: 0.7rem;
-        color: #94a3b8;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .json-copy-btn:hover {
-        background: #1e293b;
-        color: #e2e8f0;
-    }
-
-    /* Typing dots animation */
-    .typing-dot {
-        animation: typingBounce 1.4s infinite ease-in-out both;
-    }
-
-    .typing-dot:nth-child(1) {
-        animation-delay: 0ms;
-    }
-
-    .typing-dot:nth-child(2) {
-        animation-delay: 150ms;
-    }
-
-    .typing-dot:nth-child(3) {
-        animation-delay: 300ms;
-    }
-
-    @keyframes typingBounce {
-        0%, 60%, 100% {
-            transform: translateY(0);
-            opacity: 0.4;
-        }
-        30% {
-            transform: translateY(-6px);
-            opacity: 1;
-        }
-    }
-
-    /* Message entrance animation */
-    .msg-enter {
-        animation: msgSlideIn 0.2s ease-out;
-    }
-
-    @keyframes msgSlideIn {
-        from {
-            opacity: 0;
-            transform: translateY(8px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Scroll-to-bottom button */
-    .scroll-btn {
-        transition: opacity 0.2s, transform 0.2s;
-    }
-
-    .scroll-btn:hover {
-        transform: scale(1.1);
-    }
-</style>
 {% endblock %}
 
 {% block content %}
-<div class="mx-auto flex h-full max-w-3xl flex-col" x-data="chatApp()">
+<div class="chat-page mx-auto flex max-w-4xl flex-col" x-data="chatApp()">
     <!-- Header -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -208,15 +29,16 @@
         </div>
         {% if messages %}
         <button
-            x-on:click="clearHistory()"
+            x-on:click="requestConfirmation('clear')"
             class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
             Очистить историю
         </button>
         {% endif %}
     </div>
 
+    <section class="chat-window" aria-label="Диалог с агентом">
     <!-- Messages area -->
-    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 md:p-5"
+    <div class="chat-messages min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5" role="log" aria-live="polite" :aria-busy="pending"
          x-ref="messages"
          @scroll="onScroll()">
         <!-- Empty state -->
@@ -240,18 +62,18 @@
             <div class="flex msg-enter" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
             <!-- Avatar for assistant -->
             <div x-show="message.role !== 'user'"
-                 class="mr-2 mt-auto shrink-0">
+                 class="mr-2 mt-1 shrink-0">
                 <div
                     class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-700 dark:text-cyan-400">
                     AI
                 </div>
             </div>
 
-            <div class="max-w-[80%]">
+            <div class="chat-message-body">
                 <!-- Message bubble -->
                 <div
                     class="rounded-2xl px-3.5 py-2 text-sm"
-                    :class="message.role === 'user' ? 'bg-cyan-600/25 text-cyan-50 rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-none'">
+                    :class="message.role === 'user' ? 'chat-bubble-user rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-none'">
                     <div x-show="message.role !== 'user'"
                          class="agent-msg break-words msg-prose"
                          x-html="renderMarkdown(message.content || '')"></div>
@@ -266,8 +88,8 @@
                     <span x-show="message.role === 'user'"
                           class="text-[10px] text-slate-600 dark:text-slate-400"
                           x-text="message.created_at"></span>
-                    <button x-show="message.role === 'user'"
-                            x-on:click="deleteMessage(message.id)"
+                    <button x-show="message.role === 'user' && typeof message.id === 'number'"
+                            x-on:click="requestConfirmation('delete', message.id)"
                             class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                             title="Удалить" aria-label="Удалить сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
@@ -278,7 +100,7 @@
                     </button>
                     <!-- Assistant message: show copy + delete buttons -->
                     <button x-show="message.role !== 'user'"
-                            x-on:click="copyText(message.content || '')"
+                            x-on:click="copyText(message.content || '', $event)"
                             class="text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
                             title="Копировать"
                             aria-label="Копировать сообщение">
@@ -288,7 +110,7 @@
                                   d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
                         </svg>
                     </button>
-                    <button x-on:click="deleteMessage(message.id, 'Удалить сообщение агента?')"
+                    <button x-show="message.role !== 'user' && message.id" x-on:click="requestConfirmation('delete', message.id)"
                             class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                             title="Удалить" aria-label="Удалить сообщение">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
@@ -302,7 +124,7 @@
 
             <!-- Avatar for user -->
             <div x-show="message.role === 'user'"
-                 class="ml-2 mt-auto shrink-0">
+                 class="ml-2 mt-1 shrink-0">
                 <div
                     class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/30 text-xs font-bold text-cyan-700 dark:text-cyan-300">
                     Вы
@@ -334,17 +156,23 @@
         </button>
     </div>
 
+    <div x-show="notice" x-cloak class="chat-notice" role="status"><span x-text="notice"></span><button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button></div>
+    <div x-show="confirmation" x-cloak class="chat-notice">
+        <span x-text="confirmation?.label"></span><button type="button" @click="performConfirmation()" :disabled="pending">Подтвердить</button><button type="button" @click="confirmation = null">Отмена</button>
+    </div>
+    <div x-show="pending" x-cloak class="chat-pending" role="status">Агент готовит ответ…</div>
     <!-- Composer -->
     <form @submit.prevent="sendMessage()"
-          class="mt-3 flex items-end gap-2"
+          class="chat-composer"
           x-ref="form">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <textarea name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
                   x-ref="input"
-                  @keydown.shift.enter="insertNewLine"
-                  class="min-h-[2.5rem] flex-1 resize-y rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2.5 text-sm outline-none placeholder-slate-500 focus:border-cyan-500 transition-colors"></textarea>
+                  @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
+                  @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
+                  class="chat-input"></textarea>
         <button type="submit"
-                class="h-10 shrink-0 rounded-xl bg-cyan-500 px-5 text-sm font-medium text-slate-950 hover:bg-cyan-400 transition-colors flex items-center gap-1.5"
+                class="chat-send" aria-label="Отправить сообщение"
                 :disabled="pending">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2"
                  stroke="currentColor">
@@ -353,8 +181,9 @@
             </svg>
             <span>Отправить</span>
         </button>
+    <div class="chat-suggestions"><button type="button" @click="suggest('/help')" :disabled="pending">Возможности агента</button><button type="button" @click="suggest('Сводка за неделю')" :disabled="pending">Сводка за неделю</button><button type="button" @click="suggest('Покажи мои источники')" :disabled="pending">Мои источники</button></div>
     </form>
-    <p class="mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+    <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
         <span>Enter — отправить · Shift+Enter — новая строка</span>
         <span x-show="pending" class="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
             <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -365,253 +194,6 @@
             Отправка…
         </span>
     </p>
+</section>
 </div>
-
-<script>
-    function chatApp() {
-        return {
-            pending: false,
-            autoScroll: true,
-            messages: [],
-            csrf: document.querySelector('input[name="_csrf"]')?.value || '',
-
-            init() {
-                // Event delegation for JSON copy buttons (added via x-html)
-                document.addEventListener('click', (e) => {
-                    const btn = e.target.closest('[data-copy-json]')
-                    if (btn) {
-                        const json = btn.getAttribute('data-copy-json')
-                            .replace(/&amp;/g, '&')
-                            .replace(/&quot;/g, '"')
-                            .replace(/&lt;/g, '<')
-                            .replace(/&gt;/g, '>')
-                        navigator.clipboard.writeText(json).then(() => {
-                            const orig = btn.innerHTML
-                            btn.innerHTML = '✓'
-                            setTimeout(() => { btn.innerHTML = orig }, 1500)
-                        }).catch(() => {})
-                    }
-                })
-                // Initialize messages from server-rendered data
-                this.messages = window.__chatMessages || []
-                // Scroll to bottom on page load
-                this.$nextTick(() => this.scrollToBottom())
-            },
-
-            renderMarkdown(text) {
-                if (!text) return ""
-
-                // Extract ```json ... ``` blocks and standalone JSON, replace with placeholders
-                const jsonBlocks = []
-                let id = 0
-
-                // 1) ```json blocks
-                text = text.replace(/```json\s*([\s\S]*?)```/g, (match, code) => {
-                    const idx = id++
-                    jsonBlocks.push({ type: 'fenced', code: code })
-                    return `%%JSON_BLOCK_${idx}%%`
-                })
-
-                // 2) Standalone JSON (entire message is one object/array)
-                const stripped = text.trim()
-                if ((stripped.startsWith("{") || stripped.startsWith("[")) && !stripped.startsWith("<")) {
-                    try {
-                        JSON.parse(stripped)
-                        const idx = id++
-                        jsonBlocks.push({ type: 'standalone', code: stripped })
-                        text = `%%JSON_BLOCK_${idx}%%`
-                    } catch (e) {
-                        // Not valid JSON, fall through to markdown
-                    }
-                }
-
-                let html
-                try {
-                    html = marked.parse(text)
-                } catch (e) {
-                    html = text.replace(/\n/g, "<br>")
-                }
-
-                // Restore JSON blocks — use data-* + event delegation to avoid escaping hell
-                html = html.replace(/%%JSON_BLOCK_(\d+)%%/g, (match, num) => {
-                    const block = jsonBlocks[parseInt(num)]
-                    if (!block) return match
-                    const display = block.code
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                    const attrSafe = block.code
-                        .replace(/&/g, '&amp;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                    return (
-                        '<div class="json-block">' +
-                        '<div class="json-block-header">' +
-                        '<span class="json-block-label">JSON</span>' +
-                        '<button type="button" class="json-copy-btn" data-copy-json="' + attrSafe + '">Копировать</button>' +
-                        '</div>' +
-                        '<pre class="whitespace-pre-wrap break-all text-xs text-cyan-200">' +
-                        display +
-                        '</pre></div>'
-                    )
-                })
-
-                return html
-            },
-
-            async sendMessage() {
-                const textarea = this.$refs.input
-                const text = textarea.value.trim()
-                if (!text) return
-
-                this.pending = true
-
-                // Optimistic: show user message immediately
-                const userMsg = {
-                    role: 'user',
-                    content: text,
-                    created_at: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-                }
-                this.messages.push(userMsg)
-                textarea.value = ''
-                textarea.style.height = 'auto'
-
-                try {
-                    const response = await fetch('/app/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json, text/plain, */*',
-                        },
-                        body: new URLSearchParams({
-                            '_csrf': this.csrf,
-                            'text': text,
-                        }),
-                    })
-
-                    const data = await response.json()
-
-                    if (!response.ok || data.error) {
-                        throw new Error(data.error || 'Ошибка отправки')
-                    }
-
-                    // Replace with full transcript from server (includes user msg + assistant replies)
-                    this.messages = data.messages || []
-                    this.$nextTick(() => this.scrollToBottom())
-                } catch (err) {
-                    console.error('Chat send error:', err)
-                    // Remove the optimistic user message and show error
-                    this.messages.pop()
-                    this.messages.push({
-                        role: 'assistant',
-                        content: err.message || 'Не удалось отправить сообщение. Попробуйте ещё раз.',
-                        created_at: '',
-                    })
-                    this.$nextTick(() => this.scrollToBottom())
-                } finally {
-                    this.pending = false
-                }
-            },
-
-            async clearHistory() {
-                if (!confirm('Очистить историю диалога?')) return
-                this.pending = true
-                try {
-                    const response = await fetch('/app/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json, text/plain, */*',
-                        },
-                        body: new URLSearchParams({
-                            '_csrf': this.csrf,
-                            'text': '/stop',
-                        }),
-                    })
-                    const data = await response.json()
-                    if (!response.ok || data.error) throw new Error(data.error)
-                    this.messages = data.messages || []
-                    this.$nextTick(() => this.scrollToBottom())
-                } catch (err) {
-                    console.error('Clear history error:', err)
-                    alert('Не удалось очистить историю: ' + (err.message || ''))
-                } finally {
-                    this.pending = false
-                }
-            },
-
-            async deleteMessage(messageId, confirmMsg = 'Удалить сообщение?') {
-                if (!confirm(confirmMsg)) return
-                try {
-                    const response = await fetch(`/app/chat/message/${messageId}/delete`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json, text/plain, */*',
-                        },
-                        body: new URLSearchParams({
-                            '_csrf': this.csrf,
-                        }),
-                    })
-                    const data = await response.json()
-                    if (!response.ok || data.error) throw new Error(data.error)
-                    // Reload transcript
-                    const refresh = await fetch('/app/chat', {
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json, text/plain, */*',
-                        },
-                    })
-                    const refreshData = await refresh.json()
-                    this.messages = refreshData.messages || []
-                    this.$nextTick(() => this.scrollToBottom())
-                } catch (err) {
-                    console.error('Delete message error:', err)
-                    alert('Не удалось удалить сообщение: ' + (err.message || ''))
-                }
-            },
-
-            insertNewLine() {
-                const textarea = this.$refs.input
-                const start = textarea.selectionStart
-                const end = textarea.selectionEnd
-                textarea.value = textarea.value.substring(0, start) + "\n" + textarea.value.substring(end)
-                textarea.selectionStart = textarea.selectionEnd = start + 1
-            },
-
-            scrollToBottom() {
-                const el = this.$refs.messages
-                if (el) {
-                    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-                }
-            },
-
-            onScroll() {
-                const el = this.$refs.messages
-                if (!el) return
-                // Disable auto-scroll if user scrolled up more than 100px from bottom
-                this.autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 100
-            },
-
-            copyText(text) {
-                navigator.clipboard.writeText(text).then(() => {
-                    // Brief visual feedback
-                    const btn = event.target.closest("button")
-                    if (btn) {
-                        const orig = btn.innerHTML
-                        btn.innerHTML = "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"h-3.5 w-3.5 text-emerald-400\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m4.5 12.75 6 6 9-13.5\"/></svg>"
-                        setTimeout(() => {
-                            btn.innerHTML = orig
-                        }, 1500)
-                    }
-                }).catch(() => {
-                })
-            },
-        }
-    }
-</script>
 {% endblock %}

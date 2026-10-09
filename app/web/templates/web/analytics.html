@@ -76,7 +76,7 @@
                             {% endif %}
                         </p>
                     </div>
-                    {{ sentiment_badge(chain.avg_sentiment, average=True) }}
+                    {{ sentiment_badge(chain.avg_sentiment, average=True, mode="full") }}
                 </div>
             </a>
             {% endfor %}
@@ -226,7 +226,7 @@
                             <span class="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ {'person':'Персона','brand':'Бренд','org':'Организация'}.get(e.type,e.type)|e }}</span>
                         </span>
                          <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                             {{ sentiment_badge(e.avg_sentiment, average=True) }}
+                             {{ sentiment_badge(e.avg_sentiment, average=True, mode="dot") }}
                              {{ e.count }}×
                              <a href="/app/analytics/chains?entity_name={{ e.name|urlencode|e }}&entity_type={{ e.type|urlencode|e }}&days={{ days }}" class="ml-1 text-cyan-700 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">→</a>
                          </span>

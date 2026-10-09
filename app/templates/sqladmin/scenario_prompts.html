@@ -157,6 +157,7 @@
 		margin: 0 auto;
 	}
 </style>
+<script src="/static/js/ui-notice.js"></script>
 </head>
 <body>
 <div class="container">
@@ -401,7 +402,7 @@
 				button.classList.remove('copied');
 			}, 2000);
 		}, () => {
-			alert('Не удалось скопировать в буфер обмена');
+			uiNotice('Не удалось скопировать в буфер обмена');
 		});
 	}
 </script>

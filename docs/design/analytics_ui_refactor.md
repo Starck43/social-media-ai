@@ -53,3 +53,46 @@ page overflow; real browser OS-mode changes and explicit theme persistence passe
 Screenshots
 use seeded test fixture pages only; the user's localhost/production database is not
 accessed. No LLM calls or reanalysis required.
+
+
+## Follow-up: quieter tone, integrated chat, viewport notifications
+
+- Chain cards retain the full labelled tone badge. Other analysis/group cards use
+  dot + score; compact mention lists use a dot only. Title/aria-label retain the
+  category and 0–1 scale, including mean-score semantics and unknown omission.
+- Chat presentation/behavior moved to `chat.css` / `chat.js`. Composer, send action,
+  suggestions and keyboard hint live inside one bounded dialog surface. Errors and
+  destructive-action confirmations are inline, not native browser dialogs.
+- Blank assistant/tool-call placeholders are hidden at serialization and browser
+  boundaries; stored agent history is unchanged. Empty final replies produce a
+  non-message notice; failed sends keep the draft, and pending prevents duplicate
+  sends. Each visible message has one delete action. Markdown strips executable
+  tags/attributes and unsafe link schemes before insertion.
+- Native alert calls in legacy/admin templates are replaced by shared text-only
+  `uiNotice` feedback. This does not change the analysis/test operations themselves.
+- Notifications teleport to body, avoiding the navbar backdrop-filter containing
+  block. Viewport overlay, bounded internal scrolling, Escape/backdrop close,
+  focus return/trap and scroll lock are provided.
+
+Verification for this follow-up: no pytest suites or DB tests were run, by user
+request. Existing tests updated; syntax/patch review and local fixture image
+inspection only. Earlier full-suite numbers above describe the preceding commit,
+not this follow-up.
+
+### Local verification checklist
+
+1. Analytics: chain cards keep full badges; themes/sources/chronology/group lists
+   show dot + score; mentions widget shows dot with accessible descriptive tooltip.
+   Unknown values omitted; .4/.6 boundaries and all filters/links unchanged.
+2. Chat: send via button/Enter, multiline Shift+Enter, IME Enter, suggestions fill
+   without sending; pending/double-click, long markdown/JSON, clipboard, network
+   failure preserves draft, whitespace/tool placeholders, empty final response.
+3. Delete/clear: one delete per message, inline confirm/cancel, failed operation
+   feedback; no browser alert; agent write-confirmation gates unaffected.
+4. Notifications on analytics/chat: backdrop covers the viewport, list scrolls
+   inside panel, Escape/backdrop closes, focus returns to bell, Tab stays inside.
+   Check light/dark/system and mobile plus virtual keyboard in chat.
+5. Suggested focused tests (run locally):
+   `pytest --no-cov -q tests/test_web_chat.py tests/test_web_ui_components.py tests/test_web_analytics.py`
+6. Admin forms: invalid JSON, invalid/oversized image and clipboard-denied states
+   show inline feedback instead of native alert.

@@ -150,11 +150,13 @@
                         </span>
                     </button>
 
-                    <div x-show="openModal" @click.outside="close()" @keydown.escape.window="close()" x-cloak
-                         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
-                        <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
+                    <template x-teleport="body">
+                    <div x-show="openModal" @click.self="close()" @keydown.escape.window="close()" x-cloak
+                         @keydown.tab="trapFocus($event)" role="dialog" aria-modal="true" aria-labelledby="notifications-title" tabindex="-1" x-ref="dialog"
+                         class="ui-notification-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
+                        <div class="ui-notification-panel w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
                             <div class="flex items-center justify-between">
-                                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Уведомления</h2>
+                                <h2 id="notifications-title" class="text-lg font-semibold text-slate-900 dark:text-slate-100">Уведомления</h2>
                                 <button type="button" @click="close()" aria-label="Закрыть уведомления" class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-white">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
@@ -162,7 +164,7 @@
                                 </button>
                             </div>
 
-                            <div class="mt-4 max-h-80 space-y-2 overflow-y-auto">
+                            <div class="ui-notification-list mt-4 space-y-2 overflow-y-auto">
                                 <template x-if="loading">
                                     <p class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Загрузка…</p>
                                 </template>
@@ -192,6 +194,7 @@
                             </div>
                         </div>
                     </div>
+                    </template>
                 </div>
                 <select data-theme-select class="ui-control ui-theme-select md:hidden" aria-label="Тема оформления">
                     <option value="light">Светлая</option><option value="dark">Тёмная</option><option value="system">Системная</option>
@@ -234,11 +237,25 @@ function notificationsBell() {
         items: [],
         unread: {{ unread_notifications }},
         open() {
+            this.returnFocus = document.activeElement;
             this.openModal = true;
+            this.savedOverflow = document.body.style.overflow;
+            document.body.style.overflow = "hidden";
+            this.$nextTick(() => this.$refs.dialog?.focus());
             this.load();
         },
         close() {
+            if (!this.openModal) return;
             this.openModal = false;
+            document.body.style.overflow = this.savedOverflow || "";
+            this.returnFocus?.focus();
+        },
+        trapFocus(event) {
+            const controls = Array.from(this.$refs.dialog.querySelectorAll('button, a[href], [tabindex="0"]')).filter(el => el.offsetParent !== null);
+            const first = controls[0], last = controls[controls.length - 1];
+            if (!first) { event.preventDefault(); return; }
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === this.$refs.dialog)) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && (document.activeElement === last || document.activeElement === this.$refs.dialog)) { event.preventDefault(); first.focus(); }
         },
         readOne(n) {
             fetch('/app/notifications/read/' + n.id, { method: 'POST', headers: { 'Accept': 'application/json' } })

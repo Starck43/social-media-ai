@@ -376,3 +376,17 @@ async def test_a_stale_csrf_token_is_refused(client_free: None = None) -> None:
         finally:
             await _drop(user, tenant_id)
             await _drop(user, tenant_id)
+
+
+def test_display_transcript_omits_tool_placeholders_without_mutating_storage():
+    from types import SimpleNamespace
+    from datetime import datetime, timezone
+    from app.web.chat import _display_transcript
+
+    rows = [SimpleNamespace(id=i, role=role, content=content, created_at=datetime.now(timezone.utc))
+            for i, (role, content) in enumerate([
+                ("user", "Вопрос"), ("assistant", "  "), ("assistant", None),
+                ("tool", "internal result"), ("assistant", "Ответ"),
+            ])]
+    assert [m["content"] for m in _display_transcript(rows)] == ["Вопрос", "Ответ"]
+    assert len(rows) == 5 and rows[1].content == "  "

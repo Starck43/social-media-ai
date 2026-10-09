@@ -51,3 +51,10 @@ html.dark .ui-negative { background: #4c0519; color: #fecdd3; }
 
 .ui-shell button[aria-label] { min-width: 44px; }
 .ui-shell nav[aria-label="Основные разделы"] a { min-height: 44px; }
+
+/* Quiet inline tone; full semantic badges remain on thematic chain cards. */
+.ui-tone { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-size:12px; font-variant-numeric:tabular-nums; background:transparent; padding:0; }
+html.dark .ui-tone { background:transparent; }
+.ui-notification-overlay { z-index:100; }
+.ui-notification-panel { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); }
+.ui-notification-list { min-height:0; max-height:min(60dvh,560px); overscroll-behavior:contain; }

@@ -338,7 +338,7 @@
         testForm.addEventListener("submit", function (e) {
             const prompt = document.getElementById("real_prompt").value
             if (!prompt.trim()) {
-                alert("Введите запрос для тестирования")
+                uiNotice("Введите запрос для тестирования")
                 e.preventDefault()
                 return
             }
@@ -372,12 +372,12 @@
         const file = event.target.files[0]
         if (!file) return
         if (!file.type.startsWith("image/")) {
-            alert("Пожалуйста, выберите файл изображения")
+            uiNotice("Пожалуйста, выберите файл изображения")
             event.target.value = ""
             return
         }
         if (file.size > 5 * 1024 * 1024) {
-            alert("Размер файла не должен превышать 5MB")
+            uiNotice("Размер файла не должен превышать 5MB")
             event.target.value = ""
             return
         }

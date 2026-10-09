@@ -526,10 +526,12 @@
     <a href="{{ href|e }}" class="ui-segment" {% if active %}aria-current="page"{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label|e }}</span>{% if count is not none %}<span class="ui-count">{{ count }}</span>{% endif %}</a>
 {%- endmacro %}
 
-{% macro sentiment_badge(score, average=False) -%}
+{% macro sentiment_badge(score, average=False, mode='compact') -%}
     {% if score is not none %}
         {% set tone = 'positive' if score > 0.6 else 'negative' if score < 0.4 else 'neutral' %}
-        <span class="ui-badge ui-{{ tone }}" title="{{ 'Средняя тональность' if average else 'Тональность' }}: оценка по шкале от 0 до 1, не вероятность"><span class="ui-dot" aria-hidden="true"></span>{{ {'positive':'Позитивная', 'neutral':'Нейтральная', 'negative':'Негативная'}[tone] }}<span class="ui-score">{{ '%.2f'|format(score) }} / 1</span></span>
+        {% set label = {'positive':'Позитивная', 'neutral':'Нейтральная', 'negative':'Негативная'}[tone] %}
+        {% set description = ('Средняя тональность' if average else 'Тональность') ~ ': ' ~ label ~ ', ' ~ ('%.2f'|format(score)) ~ ' из 1' %}
+        <span class="{{ 'ui-badge' if mode == 'full' else 'ui-tone' }} ui-{{ tone }}" title="{{ description }}; оценка, не вероятность" aria-label="{{ description }}"><span class="ui-dot" aria-hidden="true"></span>{% if mode == 'full' %}{{ label }}<span class="ui-score">{{ '%.2f'|format(score) }} / 1</span>{% elif mode != 'dot' %}<span aria-hidden="true">{{ '%.2f'|format(score) }}</span>{% endif %}</span>
     {% endif %}
 {%- endmacro %}
 

@@ -995,7 +995,7 @@ async def test_detail_metric_states_original_and_highlights_are_explicit(client,
     assert 'data-metric="total_reactions" data-state="available"' in page.text
     assert 'data-metric="total_comments" data-state="unknown"' in page.text
     assert 'data-metric="total_views" data-state="unknown"' in page.text
-    assert "0.95 / 1" in page.text and "95%" not in page.text
+    assert "0.95" in page.text and "95%" not in page.text
     assert "В сохранённом анализе не выделены." in page.text
     assert "Открыть исходный материал" in page.text and "https://example.com/original" in _analytics_links(page.text)
     assert "Период публикаций:" in page.text and "15.03.2026" in page.text and "Платформа: VK" in page.text

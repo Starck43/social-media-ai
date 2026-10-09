@@ -9,6 +9,14 @@ from typing import Any
 from app.core.config import settings
 from app.services.ai.llm_client import LLMClientFactory
 from app.services.ai.reporting import ReportAggregator, normalize_digest_axis
+from app.services.ai.output_contracts import (
+    DigestSummary,
+    OutputContractError,
+    known_cost_usd,
+    validate_output,
+    response_is_incomplete,
+)
+from app.services.ai.prompt_sanitizer import frame_untrusted_text
 from app.services.digest.render import render_digest
 
 logger = logging.getLogger(__name__)
@@ -46,8 +54,6 @@ def period_bounds(period: str, today: date | None = None) -> tuple[date, date]:
 async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
     from app.services.tenancy.resolver import current_daily_cost_limit, daily_cost_today
 
-    # The daily cap is checked before the model is touched: past the limit the
-    # digest still ships, just rendered from raw aggregates without a summary.
     limit = await current_daily_cost_limit()
     if limit and await daily_cost_today() >= limit:
         logger.warning("Daily LLM cost cap reached — digest summary skipped")
@@ -60,22 +66,27 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         return None, {"model": None}
     try:
         client = LLMClientFactory.create(model)
-        # Hybrid step 2: the LLM narrates the algorithm's brief, not a raw dict.
-        # The brief is already a structured Markdown digest; the model's job is
-        # to turn it into 2-4 sentences of connected narrative.
         context = data.get("brief") or data
-        prompt = DIGEST_PROMPT_TEMPLATE.format(data=str(context)[:6000])
+        prompt = DIGEST_PROMPT_TEMPLATE.format(data=frame_untrusted_text(str(context)[:6000]))
         result = await client.analyze(prompt, max_tokens=500, temperature=0.3)
-        raw_cost = (result.get("usage") or {}).get("cost")
-        cost = float(raw_cost) if raw_cost is not None else None
-        parsed = result.get("parsed") or {}
-        summary = parsed.get("summary") or parsed.get("analysis")
-        if isinstance(summary, str) and summary.strip():
-            return summary.strip(), {"model": model.name, "cost": cost}
-        return None, {"model": model.name, "cost": cost}
-    except Exception as e:
-        logger.error(f"Digest LLM summary failed: {e}")
-        return None, {"model": getattr(model, "name", None), "error": str(e)}
+    except Exception:
+        logger.error("Digest LLM summary call failed")
+        return None, {"model": getattr(model, "name", None), "cost": None, "error": "llm_call_failed"}
+
+    info = {"model": model.name, "cost": known_cost_usd(result)}
+    if not isinstance(result, dict):
+        return None, {**info, "error": "invalid_structured_output"}
+    if response_is_incomplete(result):
+        return None, {**info, "error": "incomplete_structured_output"}
+    response = result.get("response")
+    if isinstance(response, dict) and response.get("error"):
+        return None, {**info, "error": "summary_provider_failed"}
+    try:
+        summary = validate_output(result.get("parsed"), DigestSummary)
+    except OutputContractError:
+        logger.warning("Digest summary output contract rejected")
+        return None, {**info, "error": "invalid_structured_output"}
+    return summary.summary, info
 
 
 async def aggregate(

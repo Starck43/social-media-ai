@@ -6,18 +6,19 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch ai/identity-permissions-boundary includes devcb1a0a0 viaad96aeb.
-OWNER106b683 unchanged/clean: short27 passed; full2 failed/1610 passed/
-64subtests,714.25s,exit1. Both failures: onboarding direct test context omits
-running_jobs, while route always supplies it. One-key test-only fix prepared,
-all14 test bodies unchanged. Next onboarding14, if green immediately full at
-same unchanged HEAD; no repeat27/105/19/15/42. [Handoff](identity_permissions_handoff.md).
-Owner R6–R9 persisted in PR rules: protect main dev checkout, reuse existing
-one-PR worktree, shared test_schema/localhost:5432/social_manager, strictly
-sequential pytest, no schema operations or dev merge without explicit command.
-Preserve owner's local dirty rules; no reset/stash/new worktree/live actions.
-PR22 Draft, PR29 deferred, PR30/31 separate occupied model-layout work.
-Agent ZERO tests/imports/DB/migrations/live calls; broader XSS/release gates OPEN.
+Branch ai/identity-permissions-boundary now includes deva983a15 viaa787a74,
+only rules/docs since tested5573aa4. Authoritative existing logs: only full2f7beca
+1577/64subtests green; full106b6832failed1610passed;5573aa4 onboarding14 passed
+31.77s but full interrupted15%, no summary/exit. test_apply_loss report withdrawn.
+Owner main and PR22 worktrees clean, no local dirty rules. Retain Owner R6–R9,
+clarify R3/R4 no auto-reset and interrupted-process/data read-only check. Shared
+test_schema/localhost:5432/social_manager, sequential pytest, existing PR22
+worktree only. If state uncertain stop; no schema operations without command.
+Next ONE full in persistent terminal with command/log/exit/SHA recorded, no
+onboarding14/older-group replay. [Handoff](identity_permissions_handoff.md).
+No current Ready/merge authorization; after full green recheck fresh dev. PR29
+unmixed, PR30/31 occupied separate/review-only. Agent prepares checks only;
+no tests/imports/DB/schema/live operations. Broader XSS/release gates OPEN.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

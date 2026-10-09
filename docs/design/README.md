@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Included baseline devcb1a0a0 viaad96aeb. Owner106b683 short27 passed; completed full2 failed/1610 passed/64subtests,714.25s,exit1. Two onboarding direct-render failures share missing running_jobs. One-key test context correction prepared; short14/full pending. PR22 Draft/unmerged, not green or accepted.
+Included baseline dev `a983a1568809c288f6bab135d2943ae67e3c0e3c` viaa787a74; rules/docs only, code/tests equal5573aa4. Owner onboarding14 passed31.77s; full5573 interrupted/no summary/exit. Full106b683 was RED2/1610; only older2f7beca completed green. No unsupported scheduler-flake claim. PR22 Draft/unmerged; full acceptance still OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); Owner106b683 short27 passed/full2 failed1610 passed | Test-only running_jobs={} context fix PREPARED/UNRUN; onboarding14 then one full on same unchanged HEAD, sequential shared schema. Fresh-dev/explicit Ready/merge decision afterward. [Handoff](identity_permissions_handoff.md); broader gates OPEN; PR29/30/31 separate. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); Owner5573aa4 onboarding14 passed/full interrupted; fresh deva983a15 rules included | Read-only interrupted-process/shared-schema sanity check; no automatic reset. ONE persistent-terminal full on unchanged HEAD with exact command/exit/SHA recorded; no short replay. Then fresh-dev/explicit Ready/merge decision. [Handoff](identity_permissions_handoff.md); PR29/30/31 separate. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,7 +32,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest owner evidence:106b683 short27 passed, full2 failed/1610 passed/64subtests/exit1. Both failures precede assertions in onboarding direct renderer; prepared one-key test-context fix retains all14 test bodies. This full result is not green. Older8af105/boundary19, source15/task42 and green2f7beca remain historical; no default replay.
+Latest Owner existing-log correction:2f7beca full1577/11warnings/64subtests green;106b683 full2 failed1610 passed;5573aa4 onboarding14/6warnings/31.77s passed but full interrupted15%, no summary/exit. Full exit codes were not stored in those logs. No invented test_apply_loss/flaky-baseline acceptance; no new run observed. Current rules/docs-only delta preserves5573 code/tests but cannot turn its incomplete full into green.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Navigation and consistency rules established 2026-10-09 against dev `234a23d`. This reorganizes reading paths without moving/deleting existing files or rewriting historical evidence. It is not a complete line-by-line code/reference audit.
+Navigation refreshed 2026-10-09 against dev `eb49d1d`. One global plan → engineering stages → current-stage task board; historical evidence is preserved separately. This is not a full line-by-line code/reference audit.
 
 ## Where each fact belongs
 
@@ -10,7 +10,8 @@ Navigation and consistency rules established 2026-10-09 against dev `234a23d`. T
 | --- | --- | --- |
 | Where do I start? | DOCS_INDEX.md | Full reference content |
 | How does the system fit together? | PROJECT_MAP.md | Every ORM field/import |
-| What is merged/in review/next? | IMPLEMENTATION_STATUS.md and the current task PR | Rolling checklists in every design file |
+| Which stage / task next? | ROADMAP_INTEGRATED.md → design/README.md | Competing session-wide backlogs |
+| What is merged / evidenced? | IMPLEMENTATION_STATUS.md + current dev/PR | Old PREPARED labels as current status |
 | What will the product do? | PRODUCT_PLAN.md and design/vision.md | Shipped-feature promises |
 | What are the architectural boundaries? | ASSISTANT_ARCHITECTURE.md | Current execution details |
 | Where can it be installed? | DEPLOYMENT_ARCHITECTURE.md | Tested deployment instructions |
@@ -33,19 +34,20 @@ Source code and migration graph establish repository behavior/schema; target env
 
 For each changing claim record baseline SHA, date, scope and evidence. A successful component test does not imply end-to-end readiness. A schema merge does not migrate production. A cloud/hybrid plan does not create connectors.
 
-Keep the shared status tracker owned by the active implementation task. Another agent updates its own handoff and references the tracker rather than overwriting in-review edits. On merge, reconcile both task branches. PR #12's newer delivery checklist remains in that branch until merged; this docs task does not mark its factory done.
+Keep occupied files with their active implementation lane. PR #22 currently owns shared tracker/next-session edits; this docs branch updates navigation only, without overwriting them. On integration reconcile both lanes. PR #12 is merged; its old preparation notes are evidence, not a new assignment. Do not create a new handoff merely to avoid coordination: use the existing board row and PR/commit handoff.
 
 ## Known reference discrepancies and correction queue
 
 Observed at the inspected baseline; do not treat affected prose as authoritative:
 
-- [ ] MODELS.md still says head 0086, while merged migration 0087 and its appended storage section exist. Verify with `alembic heads`; deployed revision requires `alembic current` in the target environment. The script was not run in this docs task.
+- [x] PR #14 corrected the source-linked MODELS inventory/ER and stale inspected-head wording to 0087. This does not verify current graph/drift or deployed DB state.
+- [ ] Current graph/drift/target DB evidence remains separate authorized work; no Alembic command ran in this docs task.
 - [ ] DEPLOYMENT_ARCHITECTURE.md retains baseline-time warnings about PR #5/#6 not being merged. They are now merged per the inspected tracker; topology is still proposed and no target migration/activation is established.
 - [ ] Root AGENTS.md references app/services/llm, but the inspected services directory has no such path. Update the detailed guidance only after checking actual client locations/contracts; PROJECT_MAP uses verified directory paths.
-- [ ] MODELS.md's text ER diagram/reference has historical assumptions (including source/scenario relationships); replace with a source-verified Mermaid ER view in a separate targeted model-reference pass. Do not infer every listed field from a stale diagram.
+- [x] MODELS already contains the bounded source-linked Mermaid ER reconciliation from PR #14; do not rebuild it. Refresh only evidenced deltas in a separate task.
 - [ ] Align older model/API-format, period and provider statements with actual code before claiming reference completeness.
 
-These are tracked, not silently declared fixed by navigation changes. Avoid replacing a large model reference from an incomplete read or editing implementation-owned delivery docs while its PR is open. Next documentation unit is a targeted model/migration reference reconciliation; preserve the parallel agent's checkpoint contracts.
+These are tracked, not silently declared fixed by navigation changes. Avoid replacing a large model reference from an incomplete read or editing implementation-owned delivery docs while its PR is open. The prior model-reference reconciliation is complete as bounded documentation, not DB acceptance. Select only unresolved reference deltas; preserve active PR contracts.
 
 ## Diagram policy
 
@@ -56,8 +58,8 @@ Validation should include relative links, fenced blocks, whitespace and Mermaid 
 ## PR maintenance checklist
 
 1. Read fresh dev and active PR status; use a new thematic branch.
-2. Preserve all existing links and historical reports; no bulk rename/move without an explicit migration of links.
+2. Check file ownership. Preserve historical reports and old-path compatibility; migrate known links before archiving. Do not move active PR contracts to tidy a directory.
 3. Update the relevant reference, PROJECT_MAP if behavior/placement changes, and DOCS_INDEX if adding a document.
-4. Record prepared versus merged status, exact checks, limits and next continuation in the task handoff.
+4. Update the current-stage board row and PR/English Owner handoff. Reuse existing technical evidence; add a new document only for a durable nonduplicated contract. No separate cleanup handoff file.
 5. Recheck fresh dev before merge; resolve both textual and semantic conflicts, especially shared index/checklists.
 6. Merge/deploy only with the owner's explicit instruction.

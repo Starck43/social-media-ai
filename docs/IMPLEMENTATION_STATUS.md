@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `98e3aadbb27bb2119c5e4876149345908afcc425` (2026-10-09), after PR #23.
+Latest checked dev: `3373a1eaa14a24e9e199e87d6021d6311e05cc45` (2026-10-09), after PR #24.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -179,8 +179,10 @@ PR #23 merged as `98e3aad` on the owner's explicit instruction. Original baselin
 - [x] Seven actual-helper/mocked-storage tests written, NOT run. No new test
   acceptance evidence, PostgreSQL run, formatter run or production claim.
 - [x] Integrated via [PR #23](https://github.com/Starck43/social-media-ai/pull/23).
-- [ ] Owner/local focused/full-suite acceptance remains pending. GitGuardian and
-  Kilo review were still running at the post-merge inspection; no pass claimed.
+- [ ] Owner/local focused/full-suite acceptance remains pending; seven helper
+  cases remain unrun. Follow-up inspection observed GitGuardian/Kilo success
+  for PR #23 head `a332a98` and docs PR #24 head `79aa1a8`. PR #23 reviews/threads
+  were empty. GitHub checks are NOT application-test acceptance.
 
 Parallel open PR #22 (identity/permissions) is NOT merged by this task. It shares
 `docs/IMPLEMENTATION_STATUS.md` and `docs/design/next_tasks_handoff.md`, not this
@@ -191,8 +193,29 @@ Return-zero fallback, success deletion counts, transaction/cleanup and cancellat
 are unchanged. Dispatcher PR #20, UI and owner runtime guard are untouched.
 Other handler/provider/ORM logs and stored errors remain open.
 See [retirement-warning handoff](design/staged_retirement_log_privacy_handoff.md).
-Next: owner/local acceptance evidence, then a separate `_count_failed_staged`
-warning package or one coordinated collect path; preserve partial outcomes.
+Next: owner/local acceptance evidence; the separate `_count_failed_staged`
+warning package is now prepared below, not merged.
+
+## Staged attempt-count warning privacy — prepared, not merged
+
+Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25); fresh baseline
+`3373a1e`, branch `fix/staged-attempt-log-privacy`, code `9bb566a`,
+tests/handoff `78a86be`. NOT MERGED; deployment/acceptance pending.
+
+- [ ] Prepared: only `_count_failed_staged` failure warning uses fixed event,
+  bounded source ID and static storage-operation category, without raw exceptions.
+- [ ] Nine actual-helper/mocked-storage cases WRITTEN, NOT RUN. Static AST and
+  new-test whitespace/line-length checks completed; no formatter/test execution.
+- [ ] PR #25 review/local acceptance and a NEW explicit owner merge command pending.
+
+Hash filtering/order/duplicates, attempt-count arguments, fallback zero, cleanup,
+transaction and cancellation unchanged. No staged-row deletion, dispatcher/UI/
+runtime-guard/collector outcome change. Prior PR #23/#24 remain merged; remaining
+collect/analyze/prune/provider/ORM/stored-error privacy and production gates open.
+See [attempt-warning handoff](design/staged_attempt_log_privacy_handoff.md).
+Next: owner/local results and PR review, then authorized integration; afterwards
+one separate prune warning or coordinated collect path. Preserve PR #22 journal
+entries when syncing; no identity/queue work or sender activation bundled here.
 
 ## Test target — shared PostgreSQL, isolated schema
 

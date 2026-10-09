@@ -6,8 +6,10 @@ after PR #20/#21. Code commit: `be3f67c`; tests/handoff: `a332a98`.
 `98e3aadbb27bb2119c5e4876149345908afcc425` on explicit owner instruction.
 Fresh dev/head/diff checked; integration is not acceptance or deployment.
 GitGuardian Security Checks and Kilo Code Review were still in progress at the
-post-merge inspection; no check success is claimed. No review threads existed
-at the pre-merge inspection. Collect final check/review outcomes locally.
+post-merge inspection. Follow-up inspection observed both checks successful
+for head `a332a98`; docs PR #24 head `79aa1a8` also succeeded. PR #23 reviews and
+threads were empty. This updates GitHub evidence only; all helper cases remain
+unrun here and application/full-suite acceptance is still pending.
 
 ## Selected surface and inventory
 
@@ -22,7 +24,8 @@ No new dependency on the dispatcher or refactor of PR #20.
 
 Remaining inventory, NOT fixed by this package:
 
-- `_count_failed_staged`: raw exception warning.
+- `_count_failed_staged`: subsequently prepared in a separate branch, NOT merged;
+  see [attempt-warning handoff](staged_attempt_log_privacy_handoff.md).
 - `handle_collect`: per-source raw exception and traceback; returned error strings
   and partial/auth_required outcomes stay unchanged.
 - `handle_analyze`: staged-processing and outer per-source exception/traceback logs;
@@ -75,8 +78,8 @@ Fetch fresh dev and open PRs before editing overlapping files. Open PR #22 has
 documentation overlap in the implementation tracker and next-session list, but
 no application/test overlap with this package. Do not merge it under this task
 or overwrite its separate identity work; retain both journal entries on sync. Collect owner/local
-acceptance evidence. Next privacy candidate: `_count_failed_staged` warning as a
-separate small package, or coordinate a single collect path preserving partial
-outcomes. Do not redo dispatcher-owned logs; do not touch owner UI/runtime guard.
+acceptance evidence. `_count_failed_staged` warning is now prepared separately,
+NOT merged. Review that package/local results before taking a new path; preserve
+partial outcomes. Do not redo dispatcher-owned logs; do not touch owner UI/runtime guard.
 Identity, queue, atomic memory and budget-ledger work remain separate branches.
 No sender activation, migration or live external operation is authorized here.

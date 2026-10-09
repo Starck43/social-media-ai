@@ -15,7 +15,22 @@ PR #20 dispatcher-owned log/failure-notification privacy. Merged does not mean
 accepted/deployed. API /health returns 503 on DB failure; /livez is process-only.
 Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
 
-## Current bounded continuation — merged, acceptance open
+## Current bounded continuation — prepared, not merged
+
+Fresh dev `3373a1e` after PR #24; open
+[PR #25](https://github.com/Starck43/social-media-ai/pull/25),
+branch `fix/staged-attempt-log-privacy`, tests/handoff `78a86be`. NOT MERGED.
+Code `9bb566a`: only `_count_failed_staged` warning, safe event/category/source ID.
+Nine helper/mocked-storage cases prepared, NOT RUN; static AST and new-file
+whitespace/line-length checks only. Existing attempt-count/hash/fallback/cleanup
+behavior, dispatcher PR #20, retirement PR #23, UI and runtime guard unchanged.
+See [attempt-warning handoff](staged_attempt_log_privacy_handoff.md).
+
+Next: owner/local acceptance results + PR review; merge only on NEW explicit
+owner instruction. Then consider one `handle_prune` stale-items warning or one
+coordinated collect path, separately. No live calls or deployment permission.
+
+## Previous bounded continuation — merged, acceptance open
 
 Fresh dev checked: `98e3aad` after PR #23, merged on explicit owner instruction.
 The selected first handler surface is
@@ -23,11 +38,12 @@ The selected first handler surface is
 `fix/staged-retirement-log-privacy`. Seven helper/mocked-storage cases are written,
 NOT run; tests/handoff commit `a332a98`. This is integrated, not deployment or
 acceptance. Dispatcher, UI and runtime guard untouched. No new tests executed.
-GitGuardian/Kilo checks were still running at post-merge inspection, not passed.
+Follow-up inspection: GitGuardian/Kilo succeeded for PR #23/#24 heads. This is
+not application-test evidence; the seven prepared helper cases remain unrun.
 See [selected-surface handoff](staged_retirement_log_privacy_handoff.md).
-Do not rebuild this merged warning. Next small privacy candidate is
-`_count_failed_staged`, or coordinate one collect exception path while preserving
-partial outcomes. Other handler/provider/ORM logs and stored errors remain open.
+Do not rebuild this merged warning. The `_count_failed_staged` warning is now
+prepared separately below, NOT merged. Other handler/provider/ORM logs and stored
+errors remain open; preserve partial collection outcomes.
 
 Parallel open PR #22 is the identity/permissions branch; this task does not merge
 or supersede it. Both branches edit the implementation tracker and this list.

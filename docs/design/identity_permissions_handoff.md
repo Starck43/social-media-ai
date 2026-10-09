@@ -1,50 +1,41 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — own-workspace settings boundary
+## Current continuation — task source link, then analytics contracts
 
-Owner reports four mocked Telegram cases fixed at3b63c4b. No full suite was
-run on that head; do not subtract reported cases into a certified new total.
-Last completed full suite remains exact6900e4f:1549 passed/14 failed/58
-subtests10m35s. Six-file group13 failed/87 passed; timezone passes there and
-fails in full suite, so order/state remains open. No live Telegram connected
-or accepted; fake-client tests need no real connection.
+Owner verified exact439c200 unchanged before/after in a clean worktree:
+boundary19 OK (0.125s), settings16 PASSED (52s). No full/Telegram rerun. These
+are owner-reported targeted successes, including three prior settings failures;
+existing settings13 + new ASGI3 =16, not16 pre-existing cases. Keep this
+checkpoint; do not request those checks again by default.
 
-Current bounded preparation: settings profile/agent/team/channel routes still
-required global tenant.update after the owner model allowlist was narrowed.
-A separate WebPerms.can_manage_workspace(target) now requires an active User,
-concrete target and active web membership bound to that User and the active
-workspace. Owner or actual structured tenant.update may manage that workspace;
-an active platform is_superuser may select another concrete workspace. The
-four server guards and13 existing template predicates use the same capability.
-No CSS/layout/switch redesign, core owner allowlist expansion, runtime change,
-plan-change grant, personal-vault grant or global model-right grant. Existing
-legacy web membership is_owner inference is retained, not a new runtime grant.
-Global/raw manager authorization and legacy NULL-role migration remain separate.
+Prepared next: restore the source-name link inside the existing task check_card
+using an autoescaped captured Jinja label. Pointer-events-auto / relative z-10
+keeps the link above the checkbox overlay; card selection/Alpine attributes,
+shared macro, CSS, existing UI layout and runtime remain unchanged. Existing
+source-link test retained; one new hostile-name/checkbox/link-hit-area case
+PREPARED/NOT RUN. Browser click behavior still needs owner acceptance; markup
+checks are not a browser run. No unsafe safe-filter on source names.
 
-Six standalone boundary regressions and three ASGI settings regressions are
-PREPARED/NOT RUN; all existing test bodies/assertions retained. New ASGI cases
-cover forged tenant selection, foreign member/channel ids, read-only POSTs,
-own agent/profile changes and CSRF-protected own-channel flag update. These
-store settings only, not send/collect or activate a live integration. Agent
-checks AST/text/git only: no tests, collection, app imports, DB/live calls.
-
-Owner next: clean retained PR22 worktree fetch/ff-only; record exact HEAD;
-run only the two short checks below using existing venv/private environment
-and distinct DB_TEST_SCHEMA. No concurrent pytest/reset/drop/migration. Expect
-19 boundary methods and16 settings cases to pass, including the original three
-settings failures; these counts are predictions, not observed success.
+Owner short check, only in the clean retained PR22 review worktree with existing
+venv/private environment/distinct DB_TEST_SCHEMA, no concurrent pytest/reset/
+drop/migration/live calls: fetch/ff-only branch, record exact HEAD, then:
 
 ```bash
-python tests/test_identity_permissions_boundary.py
-python -m pytest -q tests/test_web_settings.py
+python -m pytest -q tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area
 ```
 
-Do not rerun Telegram/CLI/isolation/full suite by default. Remaining analytics5,
-source-link1 and timezone/order1 are NOT claimed fixed; review their actual
-rights/render/state contracts separately. The nine web failures reported at
-3b63 are prior failures, not a new completed full-suite result. PR22 stays
-Draft/unmerged; PR29 deferred. Deployment/real integration acceptance separate.
-Older sections below preserve checkpoint evidence, not current commands.
+Expected2 success, not yet observed. Agent ran AST/text/git checks only; tests,
+collection, app imports, DB/live calls NOT RUN. Settings/global-right boundary
+is not changed by this follow-up. Telegram4 owner reports success at3b63c4b;
+last completed full run remains6900e4f:1549 passed/14 failed/58subtests10m35s.
+No new full-suite total is certified from subtracting targeted results.
+
+Analytics5 is under contract review: two failures correspond to whitespace in
+rendered HTML, three deletion fixtures use VIEWER owners without structured
+aianalytics.delete. Do not expand owner/global rights or reformat the UI merely
+to satisfy these tests. Timezone/order1 remains open/unconfirmed on this head.
+PR22 Draft/unmerged; PR29 deferred; no deployment/live acceptance. Earlier
+sections below are historical checkpoints, not current execution commands.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

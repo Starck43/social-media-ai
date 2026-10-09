@@ -333,6 +333,44 @@ async def test_the_task_form_source_names_link_to_the_source_page(client):
 
 
 @pytest.mark.asyncio
+async def test_task_source_link_escapes_names_and_keeps_checkbox_hit_area(client):
+    from html import escape
+    from html.parser import HTMLParser
+
+    from app.core.permissions import service_permission_scope
+
+    class SourceLinkParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.links = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                self.links.append(dict(attrs))
+
+    user, tenant_id = await _register(client, "srcsafe")
+    try:
+        source = await _make_source(tenant_id)
+        hostile_name = "<script>alert(1)</script>"
+        with tenant_scope(tenant_id), service_permission_scope("source", "update"):
+            await Source.objects.update_by_id(source.id, name=hostile_name)
+        page = await client.get("/app/tasks")
+        assert page.status_code == 200
+        parser = SourceLinkParser()
+        parser.feed(page.text)
+        link = next(link for link in parser.links if link.get("href") == f"/app/sources/{source.id}")
+        assert {"pointer-events-auto", "relative", "z-10"} <= set(link["class"].split()), (
+            "the source link must be clickable above the card's checkbox label"
+        )
+        assert hostile_name not in page.text
+        assert escape(hostile_name) in page.text
+        assert f'id="add-src-{source.id}" name="source_ids" value="{source.id}"' in page.text
+        assert f'<label for="add-src-{source.id}" class="absolute inset-0 cursor-pointer"></label>' in page.text
+    finally:
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_checking_a_deactivated_source_activates_it_and_the_task(client):
     """A ticked-but-off source becomes active with the save.
 

@@ -137,8 +137,13 @@ async def _retire_staged(analytics: Any, source_id: int) -> int:
     try:
         async with session.begin():
             return await CollectedItem.objects.delete_hashes(session, source_id, hashes)
-    except Exception as e:  # noqa: BLE001 — leftovers are swept by the retention pass
-        logger.warning(f"Could not retire staged rows of source {source_id}: {e}")
+    except Exception:  # noqa: BLE001 — leftovers are swept by the retention pass
+        # Log only bounded correlation, never storage errors, SQL or raw content.
+        safe_source_id = source_id if type(source_id) is int and 0 < source_id <= 2**63 - 1 else None
+        logger.warning(
+            "staged_retirement_failed source_id=%s error_code=storage_operation_failed",
+            safe_source_id,
+        )
         return 0
     finally:
         await session.close()

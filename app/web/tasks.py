@@ -177,7 +177,6 @@ def _trigger_and_action_fields(
 		whitelist: str,
 		rate_limit_per_hour: str,
 		cooldown_seconds: str,
-		requires_approval: str,
 ) -> dict:
 	"""The model columns (not payload) an analyze task carries.
 
@@ -215,7 +214,6 @@ def _trigger_and_action_fields(
 	except ValueError:
 		fields["rate_limit_per_hour"] = None
 		fields["cooldown_seconds"] = None
-	fields["requires_approval"] = requires_approval == "on"
 	return fields
 
 
@@ -265,7 +263,6 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"whitelist": ", ".join(task.whitelist or []),
 		"rate_limit_per_hour": task.rate_limit_per_hour or "",
 		"cooldown_seconds": task.cooldown_seconds or "",
-		"requires_approval": task.requires_approval if task.requires_approval is not None else True,
 	}
 	# The analysis targets live in payload under their own keys (brands, …) and
 	# are edited as comma separated strings, like monitored_users above.
@@ -543,7 +540,6 @@ async def task_create(
 		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
-		requires_approval: str = Form("on"),
 		run_now: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
@@ -648,7 +644,6 @@ async def task_create(
 		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
-		requires_approval,
 	)
 
 	from app.core.tenant_context import tenant_scope
@@ -1032,7 +1027,6 @@ async def task_update(
 		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
-		requires_approval: str = Form("on"),
 		run_now: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
@@ -1105,7 +1099,6 @@ async def task_update(
 		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
-		requires_approval,
 	)
 
 	# Merge into existing payload instead of replacing — keys like "period",

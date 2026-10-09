@@ -62,7 +62,6 @@ async def task(scenario, source):
         action_type=AgentActionType.COMMENT,
         rate_limit_per_hour=5,
         cooldown_seconds=60,
-        requires_approval=True,
         blacklist=["baduser"],
         whitelist=None,
         is_active=True,

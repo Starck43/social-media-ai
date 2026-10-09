@@ -2,8 +2,8 @@
 
 ## Read this first
 
-Latest checked dev: `1d26c1bfef7f02e6de8773e9761191e13d040bc2` (2026-10-09).
-PR #12 merged as `72a57cb`; PR #16 fixture correction merged as `c1bbc49`.
+Latest checked dev: `be333febb57bdf4e5b5c0b0ce79cf3c32e708d44` (2026-10-09).
+PR #12 merged as `72a57cb`; PR #16 fixture correction as `c1bbc49`; PR #17 as `be333fe`.
 Owner runtime guard `1d26c1b` is preserved; it is not a complete security gate.
 Earlier continuation baseline was `081165a` after PR #13/#14 documentation work.
 Cloud/hybrid planning from PR #8 and parallel application changes are preserved.
@@ -89,25 +89,48 @@ for scope, recovery policy, test commands, rollout/rollback and known limitation
 The earlier snapshot handoff describes the earlier bounded factory checkpoint;
 its statement that builder/jobs were untouched does not describe this continuation.
 
-## Typed digest/learn/reflect boundary follow-up — prepared, not merged
+## Typed digest/learn/reflect boundary follow-up — merged, acceptance open
 
-Baseline: `1d26c1b`, branch `ai/typed-digest-memory-boundaries`.
+PR #17 merged as `be333fe`; prior branch baseline was `1d26c1b`.
 No model/migration/owner runtime-guard changes; no live calls or activation.
 
-- [ ] Strict bounded Pydantic summary, fact and reflection-operation contracts.
-- [ ] Learn evidence restricted to rendered user messages; invalid output keeps
+- [x] Strict bounded Pydantic summary, fact and reflection-operation contracts.
+- [x] Learn evidence restricted to rendered user messages; invalid output keeps
   the watermark. A successful run does not consume unrendered rows.
-- [ ] Reflect rejects a whole invalid/foreign/duplicate-ID operation batch before
+- [x] Reflect rejects a whole invalid/foreign/duplicate-ID operation batch before
   the first write. Prompt advice remains a proposal, not an applied instruction.
-- [ ] Frame digest brief, transcript and memory as untrusted data; redact local
+- [x] Frame digest brief, transcript and memory as untrusted data; redact local
   error diagnostics. This is not proof against injection or a fleet-wide audit.
-- [ ] 44 contract/mocked-boundary tests actually passed locally; 5 additional
+- [x] 44 contract/mocked-boundary tests actually passed locally; 5 additional
   PostgreSQL regressions prepared but NOT run. Existing/full suite still required.
 
 See [typed-boundary handoff](design/typed_output_boundaries_handoff.md). PRD-07,
 PRD-02 and PRD-03 remain OPEN: no atomic memory-write transaction, spend ledger,
 interactive identity replacement or full injection/permission acceptance.
-The research checkbox does not turn this prepared work into a completed gate.
+The research checkbox and merge do not turn this bounded work into a completed gate.
+
+## Returned handler failure follow-up — prepared, not merged
+
+Branch `ai/returned-job-failure-outcomes`, baseline `be333fe`.
+
+- [ ] Explicit non-checkpoint handler status=failed is terminal, not done; preserve
+  known reported cost, a bounded audit result and failed task status.
+- [ ] No success notification or unattended replay of declared failures.
+- [ ] Exception backoff, legacy counters/skips and checkpoint finalizer preserved.
+- [ ] 25 policy/mocked-source tests actually passed; 3 PostgreSQL persistence cases
+  prepared but NOT run. Owner is testing independently; results not yet supplied.
+
+See [returned-failure handoff](design/returned_job_failures_handoff.md).
+PRD-05 remains open: no new claim fencing, task/job atomicity, durable notification
+outbox, scheduler correctness or exactly-once/billing-attempt guarantee.
+
+## Test target — shared PostgreSQL, isolated schema
+
+Owner confirmed common `POSTGRES_URL` with different schemas. Use `DB_TEST_SCHEMA`
+for tests, never the working `DB_SCHEMA` (default public). A separate database is
+OPTIONAL, not a requirement; do not provision one for this follow-up.
+Existing conftest redirects the schema before app engines/models import. Avoid
+parallel pytest processes sharing one test schema; no reset/drop command ran here.
 
 ## Deployment and acceptance still required
 
@@ -117,7 +140,7 @@ The research checkbox does not turn this prepared work into a completed gate.
   migrator, backup/staging check and correct POSTGRES_URL/DB_SCHEMA; merge alone
   does not upgrade a target database. No production migration ran here.
 - [ ] Run isolated PostgreSQL tests and existing regressions, then full suite.
-  Never use a working/production database as the test database.
+  Never target the working/production schema; a shared PostgreSQL database is allowed.
 - [ ] Stage receipt commit failures, backend/lease loss during HTTP, concurrent
   workers and changed requests/permissions; examine real UI error/result feedback.
 - [ ] Drain all old publishers before a coordinated explicit flag activation.
@@ -153,7 +176,7 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17 are merged. Preserve the owner
    runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.

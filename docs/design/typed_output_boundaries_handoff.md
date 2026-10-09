@@ -1,7 +1,7 @@
 # Typed digest and learned-memory boundaries: owner handoff
 
-Status: IMPLEMENTATION PREPARED, NOT MERGED OR DEPLOYED. No production gate is
-closed by this unit. Branch: `ai/typed-digest-memory-boundaries`, based on dev
+Status: MERGED IN PR #17 AS be333fe; DATABASE/FULL-SUITE ACCEPTANCE OPEN.
+No production gate is closed by the merge. Historical branch: `ai/typed-digest-memory-boundaries`, based on dev
 `1d26c1bfef7f02e6de8773e9761191e13d040bc2` (2026-10-09).
 
 The owner's `app/agent/runtime.py` prompt-injection guard is preserved unchanged.
@@ -71,8 +71,10 @@ PostgreSQL are unavailable in this sandbox. Do not claim the full suite passed.
 ## Owner test sequence
 
 Run from the repository root in the normal project environment. Pytest must
-use the dedicated disposable `TEST_POSTGRES_URL` / `DB_TEST_SCHEMA` configured
-by `tests/conftest.py`, never the working or production database.
+use the common `POSTGRES_URL` and a separate `DB_TEST_SCHEMA`, as confirmed by
+the owner. A separate database is optional, not required. Existing conftest
+redirects schema before app imports. Never use the working `DB_SCHEMA` as the
+test schema; do not run parallel suites sharing a single test schema.
 
 ```bash
 python tests/test_ai_output_boundaries.py
@@ -109,6 +111,6 @@ head, test output and migration head for handoff; redact credentials.
   silently bundled into this change. The historical research is not the active
   launch backlog; use proposal dispositions and production gates.
 
-Prepared code, merged code, target migrations and activation are different
-states. Commit messages include an owner handoff; merge/activation require
+PR #17 is merged; target migrations, full acceptance and activation remain
+different states. Commit messages include an owner handoff; further merge/activation require
 separate approval. No production data, secrets or live messenger were changed.

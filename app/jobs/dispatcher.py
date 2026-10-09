@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 
 from app.core.tenant_context import tenant_scope
 from app.jobs.handlers import HANDLERS
+from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.models.managers.job_manager import JobManager
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             from app.services.digest.job_delivery import REFERENCE_KEY, enabled
 
             checkpoint_mode = enabled() or REFERENCE_KEY in (getattr(job, "result", None) or {})
+        terminal_result_failure = False
         try:
             if job.job_type == "digest":
                 from app.services.digest.job_delivery import execute_digest_job
@@ -155,12 +157,25 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
                 result = await execute_digest_job(job, payload, handler)
             else:
                 result = await handler(payload)
-            llm_cost = None
-            if isinstance(result, dict) and result.get("llm_cost"):
-                try:
-                    llm_cost = float(result["llm_cost"])
-                except (TypeError, ValueError):
-                    llm_cost = None
+            llm_cost = reported_llm_cost(result)
+            failure = returned_failure(result) if not checkpoint_mode else None
+            if failure is not None:
+                # A result cannot establish replay safety. No unattended repeat.
+                terminal_result_failure = True
+                await jobs.mark_failed(
+                    job.id,
+                    error=failure.code,
+                    allow_retry=False,
+                    result=failure.audit_result(),
+                    llm_cost=failure.llm_cost,
+                )
+                logger.error("Job %s (%s) returned failure: %s", job.id, job.job_type, failure.code)
+                await _notify_job_result(
+                    job,
+                    success=False,
+                    error="Не удалось завершить обработку. Подробности сохранены в задаче.",
+                )
+                return
             if checkpoint_mode:
                 from app.services.digest.job_delivery import finalize_digest_job
 
@@ -176,7 +191,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             # Uncertain/blocked checkpoint outcomes are terminal, not hidden retries.
             from app.services.digest.delivery_outcomes import DeliveryFailure
 
-            retry = allow_retry and (not isinstance(e, DeliveryFailure) or e.retryable)
+            retry = allow_retry and not terminal_result_failure and (not isinstance(e, DeliveryFailure) or e.retryable)
             if checkpoint_mode:
                 from app.services.digest.job_delivery import finalize_digest_job
 

@@ -44,7 +44,7 @@ see the proposal review rather than rebuilding them.
 
 ## Current task — digest retry checkpoints
 
-Status: **STORAGE APPROVED; SCHEMA, CONTRACT, TRANSPORT AND HTML PARTS PREPARED / NOT MERGED; DURABLE RETRY NOT IMPLEMENTED**.
+Status: **STORAGE APPROVED; SCHEMA, CONTRACT, TRANSPORT, HTML PARTS AND STORE PREPARED / NOT MERGED; END-TO-END RETRY NOT IMPLEMENTED**.
 Owner decision: one dedicated JSONB field on DigestRun plus a separate migration.
 This approves schema preparation, not production migration or automatic PR merge.
 Task branch: `ai/digest-retry-checkpoints`, created from the verified dev above.
@@ -92,7 +92,20 @@ The local planning snapshot was refreshed when the new product docs landed.
   `docs/design/digest_html_parts_handoff.md` in PR #10.
   Unsupported HTML and unrepresentable whitespace fail closed; no general
   sanitizer or word/grapheme preservation claim. Durable retry still absent.
-- [ ] Persist one immutable digest snapshot and per-recipient/part receipts.
+- [ ] Merge the opt-in PostgreSQL store after dependency review. Prepared in
+  [PR #11](https://github.com/Starck43/social-media-ai/pull/11), stacked on #10,
+  branch `ai/digest-checkpoint-store`; code/test commit `47dcb0e`. Dedicated
+  session advisory lock survives per-part commits, scoped run/generation and
+  full-payload verification, current owned binding check, durable in-flight intent
+  and each outcome, CAS, failed-commit poisoning and safe lock cleanup.
+  **234 focused tests passed, 1 existing warning** (17 new PostgreSQL cases);
+  formatting/compilation/diff checks passed, full suite not repeated.
+  Handoff: `docs/design/digest_checkpoint_store_handoff.md` in PR #11.
+  Store accepts ALREADY frozen history only; first snapshot factory, job binding,
+  pacing/backoff and sender activation remain open. Old senders do not acquire
+  this advisory lock; no claim of current global duplicate protection.
+- [ ] Atomically create the first immutable snapshot/generation before HTTP;
+  explicitly handle legacy NULL/partial rows without guessed receipts.
 - [ ] Resume only unfinished known-failed parts without rebuilding the summary.
 - [ ] Recheck workspace ownership/activity/digest flag on every resumed send.
 - [ ] Handle in-flight/unknown outcomes conservatively; no exactly-once promise.
@@ -133,11 +146,12 @@ this checklist does not replace them or authorize deployment.
 3. Storage is approved. Review the schema branch/PR and its validation; confirm
    whether it was merged. Do not claim retry behavior exists merely because the
    field exists, and do not apply a production migration without a deployment step.
-4. Inspect stacked PRs #7/#9/#10 and their handoffs before rebuilding checkpoint
-   helpers, transports or HTML parts.
-   Next unit after dependency review: locked durable snapshot/intent/receipt
-   persistence with authorization and caller pacing/backoff, followed by
-   original-window builder/job resume.
+4. Inspect stacked PRs #7/#9/#10/#11 and their handoffs before rebuilding
+   helpers, transports, HTML parts or checkpoint store.
+   Next unit: atomic initial snapshot/generation and original owned run/window
+   job binding, then coordinated builder activation with caller pacing/backoff.
+   Store locking/writes are prepared only for already frozen history; legacy
+   policy, force-generation evidence and truthful outcome handling remain open.
    The pure helpers do not provide authorization, locking or durability. Do not reserve
    a migration number until fresh dev's current graph has been checked.
 5. Keep done/in-review/in-progress/blocked distinct; append test evidence and

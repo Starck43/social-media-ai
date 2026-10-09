@@ -133,3 +133,18 @@ suite was not repeated. Handoff: `docs/design/digest_html_parts_handoff.md` in
 PR #10. Schema/contract/transports/parts are prepared only, not merged/deployed.
 Next: locked durable writes, authorization and caller pacing, then builder/job
 original-run resume and integration tests. End-to-end durable retry remains open.
+
+
+## PostgreSQL persistence checkpoint
+
+[PR #11](https://github.com/Starck43/social-media-ai/pull/11), stacked on #10,
+prepares opt-in persistence for ALREADY frozen history: dedicated per-run session
+lock across commits; current workspace/exact owned binding checks; durable
+in-flight intent and per-part outcomes; full-list validation; CAS; poisoned
+failed-write contexts and cleanup invalidation. 234 focused tests passed,
+including 17 PostgreSQL store cases. Full suite was not repeated. No activation,
+initial snapshot factory, job binding or new migration. Advisory lock protects
+cooperating callers only; existing builder does not participate. Handoff:
+`docs/design/digest_checkpoint_store_handoff.md` in PR #11. Next: atomic initial
+snapshot/generation, original-run job binding, coordinated builder/pacing and
+truthful recovery, followed by integration/full tests. PRD-01 remains open.

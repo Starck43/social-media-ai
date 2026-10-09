@@ -84,7 +84,9 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
             ),
         }
         with patch.dict(sys.modules, modules):
-            return load_source("_runtime_identity_runtime", "app/agent/runtime.py")
+            confirmation = load_source("_runtime_identity_confirmation", "app/agent/confirmation.py")
+            with patch.dict(sys.modules, {"app.agent.confirmation": confirmation}):
+                return load_source("_runtime_identity_runtime", "app/agent/runtime.py")
 
     async def test_active_bound_identity_uses_exact_tenant_and_eager_rights(self):
         identity = await self.resolve()

@@ -18,7 +18,12 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from app.agent.identity import RuntimeIdentity, resolve_runtime_identity, session_matches_identity
+from app.agent.confirmation import (
+    confirmed_dispatch_scope, make_pending_intent, pending_actor_matches, pending_rejection,
+)
+from app.agent.identity import (
+    RuntimeIdentity, refresh_runtime_identity, resolve_runtime_identity, session_matches_identity,
+)
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
@@ -45,24 +50,20 @@ def is_owner(inbound: Any) -> bool:
 
 
 def _pending_confirmation(session: Any) -> Optional[dict]:
-    state = session.state or {}
+    state = session.state if isinstance(session.state, dict) else {}
     pending = state.get("pending_confirmation")
-    if isinstance(pending, dict) and pending.get("expires_at", "") > datetime.now(timezone.utc).isoformat():
-        return pending
-    if pending:
-        state.pop("pending_confirmation", None)
-        session.state = state
-    return None
+    # Expired/legacy intents must be explicitly refused on yes, never executed.
+    return pending if isinstance(pending, dict) else None
 
 
 async def _set_pending(session: Any, payload: dict) -> None:
-    state = dict(session.state or {})
+    state = dict(session.state) if isinstance(session.state, dict) else {}
     state["pending_confirmation"] = payload
     await session.save_state(state)
 
 
 async def _clear_pending(session: Any) -> None:
-    state = dict(session.state or {})
+    state = dict(session.state) if isinstance(session.state, dict) else {}
     if state.pop("pending_confirmation", None) is not None:
         await session.save_state(state)
 
@@ -407,19 +408,35 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
     if pending:
         verdict = text.lower()
         if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
-            # Re-check permission at confirmation time (user role may have changed)
-            perm = pending.get("required_permission")
-            if perm and not has_permission_by_codename(get_current_user(), perm):
-                await _clear_pending(session)
+            fresh = await refresh_runtime_identity(identity)
+            spec = TOOL_REGISTRY.get(pending.get("name"))
+            rejection = "identity_revoked" if fresh is None else pending_rejection(pending, fresh, session, spec)
+            if rejection is None:
+                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                        rejection = "permission_revoked"
+            if rejection is not None:
+                # Another group member cannot consume the rightful actor's intent.
+                if rejection != "actor_mismatch":
+                    await _clear_pending(session)
                 await session.append("user", text)
-                reply = f"Подтверждение отклонено: у вас нет прав для этого действия."
+                reply = "Подтверждение отклонено. Попросите подготовить действие заново."
                 await session.append("assistant", reply)
                 await session.touch()
                 return reply
             await _clear_pending(session)
             await session.append("user", text)
             try:
-                result = await call_tool(pending["name"], pending["args"])
+                # Consumption awaits storage; reload AFTER it, immediately before effects.
+                fresh = await refresh_runtime_identity(identity)
+                if fresh is None or pending_rejection(pending, fresh, session, TOOL_REGISTRY.get(pending["name"])):
+                    return "Подтверждение отклонено. Попросите подготовить действие заново."
+                spec = TOOL_REGISTRY[pending["name"]]
+                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                        return "Подтверждение отклонено: права изменились."
+                    with confirmed_dispatch_scope(fresh, spec, pending["args"]):
+                        result = await call_tool(pending["name"], pending["args"])
                 body = _format_tool_result(pending["name"], result)
                 seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
             except Exception as e:  # noqa: BLE001
@@ -435,21 +452,59 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             # plan, and the agent keeps going (create source -> create task)
             # instead of waiting for the next message.
             messages = await _build_messages(session)
-            return await _run_tool_loop(session, messages, tool_specs(), limit, seed_reply=seed)
+            return await _run_tool_loop(session, messages, tool_specs(), limit, identity, seed_reply=seed)
         if verdict in ("нет", "no", "n", "-", "отменяю"):
+            if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
+                return "Это подтверждение относится к другому пользователю."
             await _clear_pending(session)
             await session.append("user", text)
             reply = "Отменено."
             await session.append("assistant", reply)
             await session.touch()
             return reply
-        # Not a clear verdict - drop the pending action and fall through to the model
-        await _clear_pending(session)
+        # An unrelated group member must not cancel/overwrite another actor's intent.
+        if not isinstance(pending.get("authorization"), dict) or pending_actor_matches(pending, identity):
+            await _clear_pending(session)
 
     # 2) Model loop with tool calling
     await session.append("user", text)
     messages = await _build_messages(session)
-    return await _run_tool_loop(session, messages, tool_specs(), limit)
+    return await _run_tool_loop(session, messages, tool_specs(), limit, identity)
+
+
+async def _dispatch_or_stage(
+    session: Any, name: str, args: Any, call_id: Any, identity: RuntimeIdentity,
+) -> tuple[str, bool]:
+    """Fresh identity and declared rights for every tool, before any effect."""
+    spec = TOOL_REGISTRY.get(name)
+    if spec is None:
+        return f"Unknown tool: {name}", False
+    if not isinstance(args, dict) or any(not isinstance(key, str) for key in args):
+        return "Некорректные аргументы инструмента.", False
+    fresh = await refresh_runtime_identity(identity)
+    if fresh is None or not session_matches_identity(session, fresh):
+        return "Доступ изменился. Инструмент не выполнен.", True
+    with permission_scope(fresh.user, is_owner=fresh.is_owner):
+        if spec.required_permission is not None and not has_permission_by_codename(fresh.user, spec.required_permission):
+            return "У вас нет прав для вызова этого инструмента.", False
+        if spec.confirm:
+            existing = _pending_confirmation(session)
+            if (
+                existing is not None and isinstance(existing.get("authorization"), dict)
+                and not pending_actor_matches(existing, fresh)
+            ):
+                return "Ожидается подтверждение действия другого пользователя.", True
+            intent = make_pending_intent(fresh, session, spec, args, call_id)
+            if intent is None:
+                return "Не удалось безопасно подготовить подтверждение.", True
+            await _set_pending(session, intent)
+            return _human_confirmation(name, intent["args"]), True
+        try:
+            result = await call_tool(name, args)
+            return _format_tool_result(name, result), False
+        except Exception as e:  # existing handler-error semantics; global redaction is separate
+            logger.warning(f"Tool {name} failed: {e}")
+            return f"Tool error: {e}", False
 
 
 async def _run_tool_loop(
@@ -457,6 +512,7 @@ async def _run_tool_loop(
     messages: list[dict],
     specs: list[dict],
     limit: Optional[float],
+    identity: RuntimeIdentity,
     *,
     seed_reply: Optional[str] = None,
 ) -> str:
@@ -468,6 +524,11 @@ async def _run_tool_loop(
     """
     reply: Optional[str] = seed_reply
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
+        fresh = await refresh_runtime_identity(identity)
+        if fresh is None or not session_matches_identity(session, fresh):
+            denied = "Доступ к рабочему пространству изменился. Запрос остановлен."
+            await session.append("assistant", denied)
+            return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
             reply = _join_replies(reply, "Дневной лимит расходов исчерпан во время обработки запроса.")
             break
@@ -509,61 +570,24 @@ async def _run_tool_loop(
         )
 
         stop_loop = False
+        stop_output = None
         tool_output = ""
         for call in tool_calls:
             name = call.get("name") or ""
             args = call.get("arguments") or {}
-            spec = TOOL_REGISTRY.get(name)
-            if spec is None:
-                tool_output = f"Unknown tool: {name}"
-            elif spec.required_permission:
-                # Permission gate: check before dispatch
-                if not has_permission_by_codename(get_current_user(), spec.required_permission):
-                    tool_output = f"У вас нет прав для вызова инструмента «{name}». Обратитесь к владельцу workspace."
-                elif spec.confirm:
-                    await _set_pending(
-                        session,
-                        {
-                            "name": name,
-                            "args": args,
-                            "tool_call_id": call.get("id"),
-                            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                            "required_permission": spec.required_permission,
-                        },
-                    )
-                    tool_output = _human_confirmation(name, args)
-                    stop_loop = True
-                else:
-                    try:
-                        result = await call_tool(name, args)
-                        tool_output = _format_tool_result(name, result)
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning(f"Tool {name} failed: {e}")
-                        tool_output = f"Tool error: {e}"
-            elif spec.confirm:
-                await _set_pending(
-                    session,
-                    {
-                        "name": name,
-                        "args": args,
-                        "tool_call_id": call.get("id"),
-                        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    },
-                )
-                tool_output = _human_confirmation(name, args)
-                stop_loop = True
+            if stop_loop:
+                # Every provider tool_call needs a result, but no later call may run
+                # or replace the first staged intent in this assistant batch.
+                tool_output = "Не выполнено: обработка остановлена на предыдущем инструменте."
             else:
-                try:
-                    result = await call_tool(name, args)
-                    tool_output = _format_tool_result(name, result)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Tool {name} failed: {e}")
-                    tool_output = f"Tool error: {e}"
+                tool_output, stop_loop = await _dispatch_or_stage(session, name, args, call.get("id"), identity)
+                if stop_loop:
+                    stop_output = tool_output
             await session.append("tool", tool_output, tool_call_id=call.get("id"))
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": tool_output})
 
         if stop_loop:
-            reply = _join_replies(reply, tool_output)
+            reply = _join_replies(reply, stop_output)
             break
     else:
         reply = _join_replies(reply, "Достигнут лимит итераций агента.")

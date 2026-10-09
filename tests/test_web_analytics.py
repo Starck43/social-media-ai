@@ -73,7 +73,7 @@ async def analytics_delete_actor():
             if permission.model_type and permission.model_type.model_name.lower() == "aianalytics":
                 selected.setdefault(permission.action_type, permission.id)
         assert set(selected) == {ActionType.VIEW, ActionType.DELETE}, "analytics rights must be seeded"
-        role = await Role.objects.create_role(name=_name("analytics-delete-"), codename=UserRoleType.VIEWER)
+        role = await Role.objects.create_role(name=_name("analytics-delete-"), codename=UserRoleType.VIEWER.name)
         roles.append(role.id)
         await Role.objects.set_permissions(role.id, list(selected.values()))
         originals.append((user.id, user.role_id))

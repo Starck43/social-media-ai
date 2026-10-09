@@ -310,7 +310,7 @@
                     <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for source in sources %}
                         {% set source_label %}<a href="/app/sources/{{ source.id }}"
-                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name }}</a>{% endset %}
+                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
                         {{ check_card(
                             cid="add-src-" ~ source.id,
                             name="source_ids",

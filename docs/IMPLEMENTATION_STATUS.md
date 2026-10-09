@@ -2,7 +2,8 @@
 
 ## Read this first
 
-Verified code baseline: `1b52c723271ccaf38dea8c8eaadefc8a14e87aa1` (PR #11 merge).
+Verified merged baseline: `234a23dd7d1d2ce8dd3813f1ed63c7c7ef748669`
+(PR #5 documentation merge after code baseline 1b52c72).
 Cloud/hybrid planning documents from PR #8 are preserved. This tracker distinguishes
 merged code, deployment and production acceptance. Checked boxes mean merged
 bounded work, not a deployed capability or a closed end-to-end delivery gate.
@@ -42,6 +43,8 @@ see the proposal review rather than rebuilding them.
 Status: **FOUNDATION MERGED; END-TO-END RETRY NOT ACTIVATED / NOT COMPLETE**.
 Owner explicitly approved merge of the existing PR stack into dev.
 
+- [x] PR #5 — progress/roadmap reconciliation and deployment migration order;
+  merge `234a23d`. All previous PRs requested by the owner are merged.
 - [x] PR #6 — nullable delivery_state JSONB and migration 0087; merge `0ae0a18`.
   PostgreSQL/SQLite compatibility, round-trip and Alembic drift evidence are in
   [schema review](design/digest_delivery_state_schema_review.md).
@@ -63,7 +66,14 @@ Owner explicitly approved merge of the existing PR stack into dev.
   Production deployment, backup/staging check and migration remain operator steps.
 - [ ] Atomically create first immutable content/target/part snapshot and generation
   before HTTP, with current workspace/owned binding validation. Do not infer legacy
-  NULL/partial rows are definitely unsent. This is the NEXT bounded code unit.
+  NULL/partial rows are definitely unsent. Factory is now prepared in
+  [PR #12](https://github.com/Starck43/social-media-ai/pull/12), branch
+  `ai/digest-atomic-snapshot`, code/test commit `3b4e380`, NOT merged.
+  New content/owned targets/complete parts/generation commit together; legacy
+  schedule collisions never overwrite receipts. **250 focused tests passed,
+  1 existing warning**, including 16 new PostgreSQL factory cases. Full suite
+  not repeated; existing builder/jobs unchanged.
+  [Snapshot handoff](design/digest_atomic_snapshot_handoff.md).
 - [ ] Bind retries to original owned job/run/window/generation; cover midnight and
   force retries, retaining delivery evidence and avoiding another LLM charge.
 - [ ] Coordinate builder activation with every sender participating in the run lock,
@@ -103,8 +113,9 @@ this checklist does not replace them or authorize deployment.
    DigestRunManager, job handlers/dispatcher and JobManager before activation.
 3. Verify actual target migration state separately: 0087 is MERGED, not evidence
    that staging/production was upgraded. Never run production migration implicitly.
-4. Next bounded code unit: atomic fresh snapshot/generation factory. Then guarded
-   original job/run binding, coordinated builder activation and pacing/backoff.
+4. Read prepared PR #12 before rebuilding the atomic factory. Next code unit:
+   guarded atomic original job/run/window binding, then coordinated builder
+   activation and pacing/backoff. PR #12 is unmerged and not deployed.
 5. Legacy and force-generation policy, uncertainty recovery and truthful status
    handling remain open. Keep prepared/merged/deployed/accepted distinct and append
    each unit's tests/limits/commit and exact continuation.

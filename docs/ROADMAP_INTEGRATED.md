@@ -37,7 +37,8 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
   #9, HTML/full-list validation #10 and locked checkpoint store #11. Component
   suite: 234 passed, 1 warning. Existing sender is NOT switched.
 - [ ] **Current unit: atomic first snapshot and guarded retry integration.**
-  Apply migration 0087 before running updated app; then prepare atomic snapshot,
+  Apply migration 0087 before running updated app. Atomic snapshot factory is
+  prepared in PR #12 (250 focused tests passed), not merged/activated. Next:
   job/run/window binding, coordinated builder/pacing and truthful recovery.
   [Retry plan](design/digest_delivery_retry_plan.md). Do not mark PRD-01 closed:
   end-to-end retry/legacy/force/concurrency evidence and full integration run remain.
@@ -50,8 +51,8 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
 - [ ] First-report checklist (UX-01): supported source/window/scenario/delivery,
   not merely the presence of a task.
 
-Current continuation: merged foundation is available; implement atomic fresh
-snapshot creation, then guarded job binding and coordinated sender activation. [Implementation status](IMPLEMENTATION_STATUS.md)
+Current continuation: merged foundation is available; review prepared atomic
+snapshot PR #12, then guarded job binding and coordinated sender activation. [Implementation status](IMPLEMENTATION_STATUS.md)
 records merged SHAs, validation limits and the new-session restart checklist.
 
 ## Branch and validation policy

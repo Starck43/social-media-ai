@@ -104,3 +104,15 @@ Update [implementation status](../IMPLEMENTATION_STATUS.md) as each approved
 unit lands. Done means merged into dev; prepared/in-review is not done.
 
 
+
+
+## Atomic fresh snapshot preparation
+
+[PR #12](https://github.com/Starck43/social-media-ai/pull/12), directly from merged
+dev 234a23d, prepares a transactional NEW content/target/part/generation snapshot.
+250 focused tests passed, 1 existing warning, including 16 PostgreSQL factory
+cases. No existing/NULL ledger overwrite, job binding, force/resume API or sender
+activation. Full suite was not repeated. [Handoff](digest_atomic_snapshot_handoff.md).
+This NEW PR is not merged; foundation PRs #5/#6/#7/#9/#10/#11 are already merged.
+Next: original job/run/window binding, explicit legacy/force/evidence policy,
+coordinated summary/cost and builder/pacing/outcome integration. PRD-01 stays open.

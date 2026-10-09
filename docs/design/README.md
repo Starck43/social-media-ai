@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Included/reviewed baseline: dev `87bf82a9bc793dea9c715c94f330d1459d74463f` via PR #22 merge `5f211a7`, preserving owner UI and migration0088 code. Newer Owner dev changes are intentionally not reviewed yet, mandatory before eventual merge. This is not a merge of PR #22 into dev; no migration executed by agent.
+Included/reviewed baseline: dev `2b5b2313b2b49c815bbb6ef714bc1aa370b38fa5` via PR #22 merge `9c6ed3b` after Owner lifted pause. Queued UI/LLM-default changes and earlier0088 code retained. Prepared queued-detail scope fix unrun; old full suite does not certify this sync. No PR #22 merge into dev or agent migration.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); OWNER full2f7beca1577 passed/64 subtests,exit0; task-name a87b55013 passed36s,exit0 | No new checks requested. Source-name list/detail sinks proposed as next bounded XSS package, NOT implemented; broader audit OPEN. First lift Owner pause on newer dev review and check overlapping UI fixes before implementation/merge. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); fresh dev2b5b231 included via9c6ed3b, Owner queued UI/LLM defaults preserved | Queued task-detail authorized-scope/unbound-variable fix +8 ASGI cases PREPARED/UNRUN; next42 cases task21/LLM21. Source-name XSS proposed next, broader audit OPEN. Previous full2f7beca1577/64subtests and task a87b55013 verified, not synced-head acceptance. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |

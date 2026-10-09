@@ -516,3 +516,78 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
         if member is not None:
             await User.objects.delete_user(member.id)
         await _drop(owner, tenant_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["pending", "running"])
+@pytest.mark.parametrize("fallback", [False, True], ids=["recent", "outside-recent-ten"])
+@pytest.mark.parametrize("actor", ["owner", "superuser"])
+async def test_task_detail_renders_active_job_and_sources_inside_authorized_scope(client, status, fallback, actor):
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.permissions import service_permission_scope
+
+    owner = operator = None
+    tenant_id = operator_tenant_id = None
+    try:
+        owner, tenant_id = await _register(client, "detailtarget")
+        platform = await Platform.objects.filter(is_active=True).first()
+        assert platform is not None
+        with tenant_scope(tenant_id), service_permission_scope("source", "create"):
+            source = await Source.objects.create(
+                name=_name("detail-source"), platform_id=platform.id, external_id=_name("detail-ext"),
+                source_type=SourceType.USER, is_active=True, params={}, tenant_id=tenant_id,
+            )
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=_name("detail-task"), job_type="collect", cron_expr="@once", payload={},
+                is_active=False, tenant_id=tenant_id,
+            )
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTask.objects.set_sources(task.id, [source.id])
+        now = datetime.now(timezone.utc)
+        with tenant_scope(tenant_id):
+            active_job = await Job.objects.create(
+                agent_task_id=task.id, job_type=task.job_type, payload={}, status=status,
+                run_at=now - timedelta(minutes=10), created_at=now - timedelta(minutes=10),
+                started_at=now - timedelta(minutes=10) if status == "running" else None,
+            )
+            if fallback:
+                for offset in range(10):
+                    await Job.objects.create(
+                        agent_task_id=task.id, job_type=task.job_type, payload={}, status="done",
+                        run_at=now - timedelta(minutes=9),
+                        created_at=now - timedelta(minutes=9) + timedelta(seconds=offset),
+                    )
+            recent = await Job.objects.filter(agent_task_id=task.id).order_by(Job.created_at.desc()).limit(10)
+            assert (active_job.id not in {job.id for job in recent}) == fallback
+        if actor == "superuser":
+            async with AsyncClient(
+                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
+            ) as operator_client:
+                operator, operator_tenant_id = await _register(operator_client, "detailoperator")
+                assert operator_tenant_id != tenant_id
+                # Actual platform-superuser identity in its own active workspace,
+                # viewing the target task through the route's existing bypass.
+                await User.objects.update_by_id(operator.id, is_superuser=True)
+                page = await operator_client.get(f"/app/tasks/{task.id}", params={"tenant_id": tenant_id})
+        else:
+            page = await client.get(f"/app/tasks/{task.id}")
+        assert page.status_code == 200
+        assert task.name in page.text
+        assert f'href="/app/sources/{source.id}"' in page.text and source.name in page.text
+        match = re.search(
+            rf'<a href="/app/tasks\?job_id={active_job.id}"[^>]*>(.*?)</a>', page.text, re.S,
+        )
+        assert match is not None, "recent and fallback paths must identify the same active job"
+        expected = "в очереди" if status == "pending" else "выполняется"
+        assert expected in match.group(1)
+        opposite = "выполняется" if status == "pending" else "в очереди"
+        assert opposite not in match.group(1)
+        with tenant_scope(tenant_id):
+            unchanged = await Job.objects.get(id=active_job.id)
+            assert unchanged.status == status and unchanged.started_at == active_job.started_at
+            assert await Job.objects.filter(agent_task_id=task.id).count() == (11 if fallback else 1)
+    finally:
+        await _drop(operator, operator_tenant_id)
+        await _drop(owner, tenant_id)

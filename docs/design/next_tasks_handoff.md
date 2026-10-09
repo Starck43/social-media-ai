@@ -6,23 +6,21 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary` includes reviewed dev87bf82a via5f211a7;
-Draft/unmerged. OWNER exacta87b550 task-file13 PASSED36s,exit0 (owner-link/member-
-text), clean unchanged HEAD/no local commits. Package verified; no repeat needed.
-Latest full checkpoint remains2f7beca1577 PASSED/64subtests/0failures/errors/skips
-in688.77s,exit0; short60 and post-test-schema-DDL timezone3 passed. No full run
-on a87b550 claimed; no boundary/settings/Telegram rerun debt by default.
+Branch `ai/identity-permissions-boundary` includes fresh dev2b5b231 via9c6ed3b
+without conflicts after Owner lifted review pause. Queued-vs-running UI and
+per-capability LLM defaults preserved; runtime guard/task/source escaping kept.
+Static review found queued task-detail running block outside original scope and
+sources/scenario nested under fallback: recent active job can render unbound
+variables. Indentation-only correction +8 ASGI owner/superuser/status/window
+cases PREPARED/UNRUN. Owner next42 cases (task21/LLM21); source-name XSS package
+still proposed, not mixed here. See [current handoff](identity_permissions_handoff.md).
 
-This continuation is docs/static audit ONLY, no app/test/schema changes or new
-check request. Proposed next scope: source-name sinks in sources.html and
-source_detail.html (list/title/h1/dialog/quoted input), not global autoescape.
-Workspace/base/settings and shared page-title callers remain separate review.
-First lift Owner pause on newer dev inspection, refresh ownership and compare
-candidate UI files to avoid duplicating fixes; no implementation started in that
-proposed package. Fresh-dev compatibility review required before Ready/merge.
-See [current handoff](identity_permissions_handoff.md). PR29 deferred; no automatic
-ready/merge/deploy, concurrent pytest/reset/drop/migration/live calls or dirty
-Owner checkout edits. Broader XSS/browser/live acceptance remains OPEN.
+Earlier OWNER a87b550 task13 PASSED36s and full2f7beca1577 PASSED/64subtests/exit0
+are retained, not new synced-head evidence. Existing test schema0088 effect
+verified by Owner; no new migration, production or agent test execution. PR22
+Draft/unmerged, PR29 deferred; check fresh dev again before merge. No automatic
+ready/deploy, concurrent pytest/reset/drop/migration/live calls or dirty Owner
+checkout edits. Broader XSS/browser/live acceptance remain OPEN.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

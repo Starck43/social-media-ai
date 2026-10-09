@@ -14,6 +14,7 @@ daily cost cap.
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -146,6 +147,70 @@ def _human_confirmation(name: str, args: dict) -> str:
     return f"Требуется подтверждение: {name} с параметрами {preview}. Ответьте «да» или «нет»."
 
 
+def _check_prompt_injection(text: str) -> Optional[str]:
+    """Check for prompt injection attempts and return error message if detected.
+    
+    Blocks common prompt injection patterns like "ignore previous instructions",
+    "disregard system prompt", etc.
+    """
+    if not text:
+        return None
+    
+    text_lower = text.lower()
+    
+    injection_patterns = [
+        r"ignore.*previous.*instruction",
+        r"disregard.*system.*prompt",
+        r"forget.*previous.*instruction",
+        r"override.*system.*prompt",
+        r"bypass.*security.*check",
+        r"ignore.*security.*rule",
+        r"disregard.*policy",
+        r"forget.*about.*system",
+        r"ignore.*all.*previous",
+        r"forget.*everything",
+        r"ignore.*rules",
+        r"bypass.*auth",
+        r"ignore.*permission",
+        r"disregard.*access",
+        r"override.*auth",
+        r"bypass.*check",
+        r"ignore.*validation",
+        r"disregard.*verify",
+        r"forget.*about.*auth",
+        r"ignore.*security",
+        r"disregard.*security",
+        r"forget.*security",
+        r"override.*security",
+        r"bypass.*security",
+        r"ignore.*check",
+        r"disregard.*check",
+        r"forget.*check",
+        r"override.*check",
+        r"bypass.*check",
+        r"ignore.*rule",
+        r"disregard.*rule",
+        r"forget.*rule",
+        r"override.*rule",
+        r"bypass.*rule",
+        r"ignore.*policy",
+        r"disregard.*policy",
+        r"forget.*policy",
+        r"override.*policy",
+        r"bypass.*policy",
+    ]
+    
+    for pattern in injection_patterns:
+        if re.search(pattern, text_lower):
+            logger.warning(f"Prompt injection attempt detected: {text[:100]}...")
+            return (
+                "Ваш запрос содержит попытку обхода безопасности. "
+                "Пожалуйста, задайте нормальный вопрос."
+            )
+    
+    return None
+
+
 async def _write_tool_result(session: Any, pending: dict, content: str) -> None:
     """Replace a staged «Требуется подтверждение» tool row with the real result.
 
@@ -215,6 +280,11 @@ async def handle_web_message(
     if not text:
         return None
 
+    # Check for prompt injection attempts
+    injection_error = _check_prompt_injection(text)
+    if injection_error:
+        return injection_error
+
     resolution = Resolution(
         tenant_id=tenant_id,
         channel=WEB_CHANNEL,
@@ -268,6 +338,23 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
 
     with permission_scope(user, is_owner=resolution.is_owner):
         text = inbound.text.strip()
+
+        # Check for prompt injection attempts
+        injection_error = _check_prompt_injection(text)
+        if injection_error:
+            # Create a session for logging the injection attempt
+            from app.models.managers.agent_session_manager import agent_sessions
+            session = await agent_sessions.get_or_create(
+                channel=inbound.channel,
+                chat_id=str(inbound.chat_id),
+                kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
+                is_owner=resolution.is_owner,
+            )
+            if session:
+                await session.append("user", text)
+                await session.append("assistant", injection_error)
+                await session.touch()
+            return injection_error
 
         if resolution.onboarded:
             from app.models.managers.tenant_manager import tenants

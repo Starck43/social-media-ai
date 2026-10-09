@@ -15,7 +15,14 @@ versioned snapshot/run/workspace metadata and part hashes, use copy-on-write
 transitions, and conservatively stop in-flight/uncertain/blocked targets. They
 are not merged or called by the sender; DB persistence, HTML-safe frozen parts,
 locking, authorization checks and builder/job resume remain unimplemented.
-Full suite was not rerun for this unused pure unit. Read the precise checklist in
+Full suite was not rerun for this unused pure unit.
+Opt-in single-part Telegram/MAX transport is prepared separately in
+[PR #9](https://github.com/Starck43/social-media-ai/pull/9), stacked on #7.
+142 focused tests passed, including existing channel regressions and checkpoint
+tests. No hidden HTTP retry/split/truncation; malformed/ambiguous responses remain
+uncertain. Existing sender is unchanged; caller pacing/backoff and durable
+persistence/resume remain open. Full suite was not repeated. Read
+`docs/design/digest_single_part_transport_handoff.md` on the PR #9 branch. Read the precise checklist in
 `docs/design/digest_checkpoint_contract_handoff.md` on the PR #7 branch.
 
 The current builder reuses a scheduled DigestRun row after failure, rebuilds the

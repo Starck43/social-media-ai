@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_maker
 from app.core.tenant_context import tenant_scope
@@ -47,10 +49,13 @@ def fake_build(monkeypatch):
 
 
 async def target(tenant, destination="one"):
-    return await TenantChannel.objects.create(
-        tenant_id=tenant.id, channel="telegram", chat_id=destination,
-        is_active=True, is_digest_target=True,
-    )
+    # A destination label is test-local, not a globally shared messenger chat.
+    chat_id = f"delivery-{tenant.id}-{destination}-{uuid4().hex}"
+    with tenant_scope(tenant.id):
+        return await TenantChannel.objects.create(
+            tenant_id=tenant.id, channel="telegram", chat_id=chat_id,
+            is_active=True, is_digest_target=True,
+        )
 
 
 async def claim(payload=None, task_id=None):
@@ -115,15 +120,15 @@ async def test_job_binding_and_in_flight_intent_visible_before_http(workspace, f
 async def test_two_targets_partial_restart_after_midnight_has_no_rebuild_or_duplicate(workspace, fake_build, monkeypatch):
     from app.services.digest import render
     monkeypatch.setattr(render, "render_digest", lambda data, summary=None: "<b>" + "word " * 1000 + "</b>")
-    await target(workspace, "one")
-    await target(workspace, "two")
+    first_target = await target(workspace, "one")
+    second_target = await target(workspace, "two")
     calls = []
     rejected = False
 
     async def send(destination, text, **kwargs):
         nonlocal rejected
         calls.append((destination, text))
-        if destination == "one" and sum(d == "one" for d, _ in calls) == 2 and not rejected:
+        if destination == first_target.chat_id and sum(d == first_target.chat_id for d, _ in calls) == 2 and not rejected:
             rejected = True
             return {"success": False, "outcome": "rejected", "error_code": "http_400"}
         return {"success": True, "outcome": "sent", "message_id": str(len(calls))}
@@ -142,8 +147,8 @@ async def test_two_targets_partial_restart_after_midnight_has_no_rebuild_or_dupl
         result = await execute(retry)
         assert result["status"] == "sent" and await bound(retry) == ref
         assert len(calls) == 5  # 4 first-attempt requests, only rejected part retried
-        assert sum(d == "two" for d, _ in calls) == 2
-        assert sum(d == "one" and text == calls[0][1] for d, text in calls) == 1
+        assert sum(d == second_target.chat_id for d, _ in calls) == 2
+        assert sum(d == first_target.chat_id and text == calls[0][1] for d, text in calls) == 1
         run = await DigestRun.objects.get(id=ref["run_id"])
         assert run.content == first_run.content and run.period_start == DAY and run.llm_cost == 0.12
         fake_build.aggregate.assert_awaited_once()
@@ -284,10 +289,11 @@ async def test_rate_limit_without_retry_after_requires_operator_delay(workspace,
 
 async def test_foreign_run_reference_cannot_authorize_http(workspace, fake_build, monkeypatch):
     other = await Tenant.objects.create(slug=f"foreign-delivery-{uuid4().hex}", name="Other", plan="business")
-    await target(workspace)
-    await target(other)
     channel = transport(monkeypatch, AsyncMock(return_value={"outcome": "sent", "message_id": "ok"}))
     try:
+        own_target = await target(workspace)
+        foreign_target = await target(other)
+        assert own_target.chat_id != foreign_target.chat_id
         with tenant_scope(other.id):
             foreign_job = await claim()
             await execute(foreign_job)
@@ -338,3 +344,32 @@ async def test_unknown_summary_cost_is_not_reported_as_free(workspace, fake_buil
         row = await Job.objects.get(id=job.id)
         assert row.result["digest_build_cost_known"] is False
         assert (await DigestRun.objects.get(id=result["run_id"])).llm_cost is None
+
+
+def test_tenant_channel_constraint_keeps_global_chat_ownership():
+    constraint = next(
+        item for item in TenantChannel.__table__.constraints
+        if isinstance(item, UniqueConstraint) and item.name == "uq_tenant_channel_chat"
+    )
+    assert tuple(column.name for column in constraint.columns) == ("channel", "chat_id")
+
+
+async def test_database_rejects_same_chat_bound_to_two_workspaces(workspace):
+    other = await Tenant.objects.create(slug=f"duplicate-chat-{uuid4().hex}", name="Other", plan="business")
+    try:
+        original = await target(workspace)
+        with pytest.raises(IntegrityError) as failure:
+            async with async_session_maker() as session:
+                async with session.begin():
+                    session.add(TenantChannel(
+                        tenant_id=other.id, channel=original.channel, chat_id=original.chat_id,
+                        is_active=True, is_digest_target=True,
+                    ))
+                    await session.flush()
+        assert "uq_tenant_channel_chat" in str(failure.value.orig)
+        with tenant_scope(workspace.id):
+            assert (await TenantChannel.objects.get(id=original.id)).tenant_id == workspace.id
+        with tenant_scope(other.id):
+            assert await TenantChannel.objects.filter(tenant_id=other.id, chat_id=original.chat_id) == []
+    finally:
+        await Tenant.objects.delete_by_id(other.id)

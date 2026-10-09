@@ -115,3 +115,12 @@ Next session: fetch fresh dev/open PRs and this branch; inspect the tracker and
 owner test evidence; finish compatibility arrangements, then coordinate runtime
 identity/dispatch changes. Queue is package 2; attempt-accounting/reservations
 are package 3 and require separate schema agreement. Merge is owner's decision.
+
+
+## Publication/synchronization checkpoint
+
+Draft PR #22 was created with original implementation head `4244b5`. All 19
+published payload files matched the prepared files. Runtime and dispatcher
+sources were unchanged. Dev then advanced to `a88cd30` through documentation-only
+PR #21; its tracker and next_tasks_handoff are preserved and augmented here.
+13 tests remain prepared/unrun. Next: owner compatibility checks, not queue work.

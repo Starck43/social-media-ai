@@ -8,6 +8,20 @@ Recommended first product: a managed, invite-only B2B monitoring service with cl
 
 See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOCAL_EXPERIENCE_PLAN.md) and [roadmap](ROADMAP_INTEGRATED.md). Source observations are static unless explicitly stated otherwise. No live production database or credentials were used.
 
+## Current bounded progress (2026-10-09)
+
+Latest checked dev `7175e47` preserves owner UI changes. PR #12 digest integration,
+PR #17 typed outputs and PR #18 declared-failure outcomes are merged. The owner
+reported all tests pass; commands/counts/tested SHA/logs were not provided. This
+is not an independent rerun, release certification or evidence of live activation.
+
+The bootstrap/API-readiness follow-up is PREPARED on
+`ai/bootstrap-and-readiness`, not merged/deployed: working-schema default guard,
+redacted check diagnostics and DB-only readiness/liveness. 24 mocked-source tests
+passed; 8 ASGI cases are prepared but unrun. See its
+[handoff](design/bootstrap_readiness_handoff.md). Existing statements below that
+are labeled baseline observations describe historical code, not current claims.
+
 ## Critical gates and work packages
 
 ### PRD-01 — Tenant-safe, retry-safe delivery (blocker)
@@ -16,10 +30,12 @@ Status: **PARTIAL, OPEN**. Merged items and next-session continuation are in
 [Implementation status](IMPLEMENTATION_STATUS.md). The
 [retry design](design/digest_delivery_retry_plan.md) is prepared; storage/schema
 option was approved and foundation PRs #6/#7/#9/#10/#11 are now merged.
-Opt-in checkpoint writes/locks, single-part transport and frozen HTML helpers
-exist, but the builder is NOT switched. Atomic first snapshot, job binding,
-pacing/recovery and end-to-end integration tests remain. Migration 0087 must be
-applied to the target DB before starting updated ORM code; merge is not deployment.
+PR #12 adds the default-off checkpoint publisher, atomic first snapshot/job
+reference, conservative per-part recovery, pacing and claim-fenced finalization.
+Prepared code/tests are not staged concurrency/recovery acceptance or live sender
+activation. Verify target migration 0087 independently before updated ORM code;
+merge is not deployment. Retention, distributed rate control and operator recovery
+still need acceptance; see the job delivery handoff.
 
 **Routing progress:** the [tenant-safe delivery change](design/tenant_safe_digest_delivery_review.md)
 implements exclusively owned active DB recipients, ignored env destinations, within-call
@@ -33,8 +49,8 @@ Actions:
 - [x] **Routing implemented:** digest delivery ignores env destinations in all workspaces, including bootstrap; no automatic binding creation.
 - [x] **Notification boundary implemented:** workspace messages require explicit active owned bindings; fixed operator templates alone use `TELEGRAM_ADMIN_CHAT_ID`. Source-owned DB failure notifications do not forward raw exceptions. Recipient-picker UX, persisted outcomes/rate limits and process-wide logging audit remain open. See [notification contract](NOTIFICATIONS.md).
 - [x] **Within-call routing implemented:** deduplicate normalized transport/chat identifiers and enforce active owned bindings. Numeric-ID/username equivalence still requires platform identity validation; keep operational alerts free of customer report content.
-- [ ] Record outcomes per destination/part and retry only unfinished deliveries. Specify ambiguous transport-timeout behavior; external APIs may not provide exactly-once guarantees.
-- [ ] Atomically prevent two concurrent sends for the same scheduled run/period. Make force-resend an explicit permission/confirmation decision.
+- [x] Bounded implementation merged: frozen per-destination/part progress, known-unsent retries and conservative ambiguity stops. Fresh recovery/transport acceptance remains open; no exactly-once guarantee.
+- [ ] Accept concurrency/lease-loss behavior in staging for merged schedule locks/claim fencing; implement separately authorized force recovery. Do not reset receipts or enable a force UI automatically.
 
 Acceptance: two tenants + configured legacy destination cannot leak reports; one successful/one failing destination only retries the failure; duplicate destinations, concurrent run attempts, lost acknowledgements and message splitting are covered. A no-channel configuration is visible and not a successful delivery. Persisted per-target progress may require a separately reviewed migration or versioned result structure.
 
@@ -73,7 +89,7 @@ Acceptance: concurrent chat/analysis/digest cannot bypass the agreed cap; repeat
 
 ### PRD-04 — Repeatable, hardened deployment and recovery (blocker)
 
-Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. [HTTP health](../app/main.py) returns status ok/HTTP 200 on DB disconnection and default session configuration does not explicitly require secure cookies.
+Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. baseline [HTTP health](../app/main.py) returned status ok/HTTP 200 on DB disconnection. The prepared follow-up registers /livez (no DB) and /readyz plus /health (200 ready, 503 failed/timed-out DB probe); deployment is unverified. Default session configuration does not explicitly require secure cookies.
 
 Actions:
 - Provide a tested production profile with one migration job, API, exactly one scheduler/listener owner, and worker execution. Runtime already includes a worker: avoid unintentionally multiplying pollers/schedulers when adding dedicated workers.
@@ -87,7 +103,7 @@ Acceptance: clean deploy starts all required loops; DB is not public; process/DB
 
 ### PRD-05 — Honest outcomes and bounded task execution (blocker)
 
-Observed: [dispatcher](../app/jobs/dispatcher.py) marks a returned dictionary done even when a handler reports status failed. Collection records partial source errors; analysis can catch failures and continue. [reaper](../app/models/managers/job_manager.py) requeues by locked_at age with no heartbeat in that path.
+Merged progress: PR #18 records explicit non-checkpoint returned status=failed as terminal Job/task failure, retaining known cost and suppressing success notifications/replay. Collection partial errors and unknown status shapes retain legacy behavior. General claim CAS, Job/task atomicity, scheduler correctness and ordinary-job leases remain open; checkpoint-specific fencing is not a queue-wide guarantee.
 
 Actions:
 - Define success/partial/failed/skipped semantics per handler and mirror them in notifications/tasks/UI. Handler return status is not automatically success; all-source failure must be visible.
@@ -113,7 +129,7 @@ Acceptance: time-bound fixtures for each class and tier; tenant deletion cannot 
 
 ### PRD-07 — Structured, safe AI boundaries (blocker for write-enabled features)
 
-Retain existing strict analysis validation and text framing; do not repeat completed CA-01/02. Add typed digest/learn/reflect contracts, bounded fields/operations and safe failure paths. Validate supported scenario schemas at save time; an unsupported schema must not silently remove enforcement.
+Retain existing strict analysis validation and text framing; do not repeat completed CA-01/02. PR #17 merged typed digest/learn/reflect contracts, bounded fields/operations, owned evidence validation and safe validation-failure paths. Atomic memory batches, watermark concurrency, poisoned-input/factual-quality acceptance and complete billing are still open. Validate supported scenario schemas at save time; an unsupported schema must not silently remove enforcement.
 
 Treat social content, derived summaries, learned facts and error advice as untrusted data, not authority. Test Russian/English injection, boundary escaping, malformed nested outputs and external metadata. Never promise regex blocks all injection. Safety comes from server-side permissions, tool argument validation, scoped data, confirmation and publication restrictions.
 

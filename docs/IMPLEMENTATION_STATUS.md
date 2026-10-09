@@ -2,8 +2,12 @@
 
 ## Read this first
 
-Latest checked dev: `be333febb57bdf4e5b5c0b0ce79cf3c32e708d44` (2026-10-09).
-PR #12 merged as `72a57cb`; PR #16 fixture correction as `c1bbc49`; PR #17 as `be333fe`.
+Latest checked dev: `7175e47ee42548dd19f493cc6c65607f0208025c` (2026-10-09).
+PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`.
+Latest owner UI icon-centering change is preserved. On 2026-10-09 the owner reported
+that all tests pass. This is OWNER-REPORTED, not independently rerun: exact commands,
+counts and tested SHA/logs were not supplied; do not attribute that report to the
+subsequent UI commit or to the new bootstrap/readiness package.
 Owner runtime guard `1d26c1b` is preserved; it is not a complete security gate.
 Earlier continuation baseline was `081165a` after PR #13/#14 documentation work.
 Cloud/hybrid planning from PR #8 and parallel application changes are preserved.
@@ -58,8 +62,9 @@ Historical CA-01–04 already exist; read the proposal review before rebuilding.
 
 Status: **MERGED; DATABASE/INTEGRATION ACCEPTANCE AND ACTIVATION OPEN**.
 [PR #12](https://github.com/Starck43/social-media-ai/pull/12) merged into dev.
-Owner accepted performing tests separately; no new test results or deployment
-sign-off were supplied here. Live sender activation remains separately gated.
+Owner performed tests separately and reported all tests pass on 2026-10-09.
+Commands/counts/tested SHA/logs and deployment sign-off were not supplied.
+Live sender activation remains separately gated.
 
 Merged bounded implementation (checked, NOT production acceptance):
 
@@ -109,20 +114,36 @@ PRD-02 and PRD-03 remain OPEN: no atomic memory-write transaction, spend ledger,
 interactive identity replacement or full injection/permission acceptance.
 The research checkbox and merge do not turn this bounded work into a completed gate.
 
-## Returned handler failure follow-up — prepared, not merged
+## Returned handler failure follow-up — merged
 
-Branch `ai/returned-job-failure-outcomes`, baseline `be333fe`.
+PR #18 merged as `4f01edb`; original branch baseline `be333fe`.
 
-- [ ] Explicit non-checkpoint handler status=failed is terminal, not done; preserve
+- [x] Explicit non-checkpoint handler status=failed is terminal, not done; preserve
   known reported cost, a bounded audit result and failed task status.
-- [ ] No success notification or unattended replay of declared failures.
-- [ ] Exception backoff, legacy counters/skips and checkpoint finalizer preserved.
-- [ ] 25 policy/mocked-source tests actually passed; 3 PostgreSQL persistence cases
-  prepared but NOT run. Owner is testing independently; results not yet supplied.
+- [x] No success notification or unattended replay of declared failures.
+- [x] Exception backoff, legacy counters/skips and checkpoint finalizer preserved.
+- [x] 25 policy/mocked-source tests passed in the authoring sandbox; 3 PostgreSQL
+  cases were prepared but not run there. Owner subsequently reported all tests pass;
+  no precise test count/commands/SHA/log was supplied. These are distinct evidence sources.
 
 See [returned-failure handoff](design/returned_job_failures_handoff.md).
 PRD-05 remains open: no new claim fencing, task/job atomicity, durable notification
 outbox, scheduler correctness or exactly-once/billing-attempt guarantee.
+
+## Bootstrap/readiness follow-up — prepared, not merged
+
+Branch `ai/bootstrap-and-readiness`, baseline `7175e47`. All four requested
+small tasks are implemented/prepared in this branch, not deployed:
+
+- [ ] Reject shared working/test schema when DB_SCHEMA is unset (effective public).
+- [ ] Redact check diagnostics, including credentials in query/fragment; no DB calls.
+- [ ] Register /livez and /readyz on every application; /health aliases readiness
+  and returns 503 for a failed/timed-out DB probe. API process/DB only, not workers.
+- [ ] Reconcile merged PR #18 and owner-reported tests without closing release gates.
+
+24 actual-source/mocked-infrastructure tests PASSED locally; 8 ASGI cases prepared,
+NOT executed here. Full suite and real-driver/API acceptance for this new package
+remain pending. See [bootstrap/readiness handoff](design/bootstrap_readiness_handoff.md).
 
 ## Test target — shared PostgreSQL, isolated schema
 
@@ -166,7 +187,7 @@ acceptance; prepared guarded code is not evidence of safe live deployment.
 - [ ] PRD-05: general queue/scheduler correctness, leases and atomicity; investigate
   historically intermittent scheduler tests without weakening them.
 - [ ] PRD-06: retention/privacy, cleanup and revocation coverage.
-- [ ] PRD-07: typed digest/learn/reflect write boundaries and evidence.
+- [ ] PRD-07: remaining memory atomicity/concurrency, scenario-schema and poisoned-input acceptance; typed boundaries are merged.
 - [ ] Notification recipient-picker UX, durable results, rate limits and full
   process-wide logging redaction audit.
 - [ ] UX-01/03/04/05 and later UX/FUT packages: remaining roadmap scope.
@@ -176,7 +197,7 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16/#17 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18 are merged. Preserve the owner
    runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.

@@ -133,6 +133,8 @@ def _render(name: str, **extra) -> str:
         "sources": [],
         "tasks": [],
         "effective_active": set(),
+        # tasks_list supplies an empty map when no task has a queued/running job.
+        "running_jobs": {},
         "job_id": None,
         # The editor's row data and the task a `?task_id=` link names — both
         # empty here: the list pages under test carry no tasks.

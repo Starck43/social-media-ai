@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Included baseline dev `cb1a0a04f8b30f499f2f9b01f28a789c9bd753c5` viaad96aeb. Owner8af65bf agent105 + standalone boundary19 verified; new isolated registry fixture and outcome UI short27/full checks pending. PR22 Draft/unmerged; broader XSS/release acceptance OPEN.
+Included baseline devcb1a0a0 viaad96aeb. Owner106b683 short27 passed; completed full2 failed/1610 passed/64subtests,714.25s,exit1. Two onboarding direct-render failures share missing running_jobs. One-key test context correction prepared; short14/full pending. PR22 Draft/unmerged, not green or accepted.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); Owner8af65bf105 + boundary19; fresh devcb1a0a0 included viaad96aeb | Registry isolation9 + job-status18 PREPARED/UNRUN; short27, then one full suite at same unchanged HEAD. Fresh-dev recheck and explicit Ready/merge decision afterward. [Handoff](identity_permissions_handoff.md); broader XSS/release gates OPEN; PR29/30 separate. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); Owner106b683 short27 passed/full2 failed1610 passed | Test-only running_jobs={} context fix PREPARED/UNRUN; onboarding14 then one full on same unchanged HEAD, sequential shared schema. Fresh-dev/explicit Ready/merge decision afterward. [Handoff](identity_permissions_handoff.md); broader gates OPEN; PR29/30/31 separate. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,14 +32,15 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest owner evidence:8af65bf agent105 passed + boundary19 OK; older source15/task42 retained. Full2f7beca1577/64subtests/exit0 is historical. Scoped registry fixture correction and new dev outcome UI need short27 then one full run; no default old-group replay.
+Latest owner evidence:106b683 short27 passed, full2 failed/1610 passed/64subtests/exit1. Both failures precede assertions in onboarding direct renderer; prepared one-key test-context fix retains all14 test bodies. This full result is not green. Older8af105/boundary19, source15/task42 and green2f7beca remain historical; no default replay.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 
 ### Concurrent-work boundary
 
-PR30 owns the structural tenancy model split and its layout test; do not duplicate
-that lane or mix it into PR22. Its PR body is the current separate task record.
+PR30 owns the structural tenancy-model split; PR31 owns notification-model
+layout. Do not duplicate either lane or mix them into PR22. Their PR bodies
+are the current separate task records; review only until separately authorized.
 
 PR #22 owns current edits to `../IMPLEMENTATION_STATUS.md`,
 `next_tasks_handoff.md`, TENANCY and its identity source/tests. This documentation

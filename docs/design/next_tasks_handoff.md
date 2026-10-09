@@ -6,19 +6,18 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary`: Owner8af65bf genuine devb4 merge,
-production AST unchanged; agent/registry105 passed and boundary19 OK reported.
-New devcb1a0a0 outcome UI included viaad96aeb, no conflict. Registry fixture still
-had broad shared-session deletes/default IDs at8af: scoped unique tenant/chats,
-exact temporary rights, tenancy marker and foreign-session sentinel correction
-PREPARED/UNRUN. Eight old registry tests +one new retained; runtime comment only.
-Next short27 (registry9/job-status18), if green ONE full at same unchanged HEAD,
-then fresh-dev recheck/explicit Ready/merge decision. [Handoff](identity_permissions_handoff.md).
-No replay105/19/source15/task42 by default. Historical full2f7beca not current
-acceptance. No reset/drop/stamp/migration/new worktree/live setup/main UI edits.
-PR22 Draft; PR29 deferred; PR30 tenancy structural pilot separate/occupied.
-Agent ZERO tests/imports/DB/live calls; broader XSS/durable approval/release gates
-OPEN. Existing docs only; preview-only botaction.view, no publication enabled.
+Branch ai/identity-permissions-boundary includes devcb1a0a0 viaad96aeb.
+OWNER106b683 unchanged/clean: short27 passed; full2 failed/1610 passed/
+64subtests,714.25s,exit1. Both failures: onboarding direct test context omits
+running_jobs, while route always supplies it. One-key test-only fix prepared,
+all14 test bodies unchanged. Next onboarding14, if green immediately full at
+same unchanged HEAD; no repeat27/105/19/15/42. [Handoff](identity_permissions_handoff.md).
+Owner R6–R9 persisted in PR rules: protect main dev checkout, reuse existing
+one-PR worktree, shared test_schema/localhost:5432/social_manager, strictly
+sequential pytest, no schema operations or dev merge without explicit command.
+Preserve owner's local dirty rules; no reset/stash/new worktree/live actions.
+PR22 Draft, PR29 deferred, PR30/31 separate occupied model-layout work.
+Agent ZERO tests/imports/DB/migrations/live calls; broader XSS/release gates OPEN.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

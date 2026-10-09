@@ -1,58 +1,58 @@
 # Implementation status and session handoff
 
-## Current continuation — owner merge verified; registry fixture isolated
+## Current continuation — full suite localized; onboarding context correction
 
-Owner merge-SHA `8af65bf2f1bad8351da805549a82856f2d70c0e7` includes devb4fd0f0
-via a genuine two-parent conflict-resolution merge. AST of runtime/actions
-matches preceding6413821: code protections unchanged, comments added only.
-OWNER-REPORTED: seven-file agent/registry/action/authorization group **105 passed**
-(`pytest -q --no-cov`); standalone identity boundary **19 tests OK**. These are
-not agent executions or current-head full acceptance; logs not independently read.
+OWNER-REPORTED exact `106b68388add9bc0dcb596234d222118bed2c89a`, clean unchanged
+HEAD before/after: registry/job-status short group **27 passed**,exit0; full
+`python -m pytest -vv --durations=20 -o faulthandler_timeout=120` completed
+**2 failed /1610 passed /64 subtests passed**,714.25s,exit1. This is NOT green.
+Both failures are test_web_onboarding.py form-field/label assertions blocked
+before assertions by Jinja Undefined serialization of missing running_jobs.
+Owner traceback supplied; whole log not independently read.
 
-Fresh dev `cb1a0a04f8b30f499f2f9b01f28a789c9bd753c5` adds run-outcome UI and
-job-status tests. Included conflict-free via `ad96aeb7aff9cb43c62beaefdda7547d88a1ef9c`
-(parents8af65bf/cb1a0a0). Owner outcome UI, LLM defaults, queued-detail indentation
-and all escaping retained. PR22 remains Draft/unmerged into dev. PR29 unchanged;
-new PR30 structural tenancy-model pilot is a separate occupied lane, not copied.
+Source verified: tasks_list always supplies running_jobs (empty dict without
+active jobs); direct test _render claims route-equivalent context but omitted
+this required key. Prepared correction adds ONLY running_jobs={} to that test
+context, no template fallback/production change. All14 test function ASTs and
+assertions retained; original two failures remain the regression checks. No
+skips/weakened tests/new dependencies or test count inflation. NOT RUN by agent.
 
-Published8af65bf fixture still deleted all sessions before/after, used default
-workspace/fixed chat IDs, and lacked tenancy opt-out. Its105 success did NOT
-prove isolated cleanup. Bounded test correction PREPARED/NOT RUN: marker tenancy,
-fresh business workspace and unique chats/users, disposable VIEWER-coded roles
-(no rights vs exactly botaction.view), membership-only owner (User not superuser),
-scoped own-tenant cascade cleanup. Foreign sentinel session must survive both
-arrange and teardown; foreign reads fail closed. All eight registry tests retained
-plus one sentinel regression, nine predicted cases. Expiry asserted valid before
-aging and specifically expired_intent afterward. Runtime misleading anonymous-
-pass-through comment corrected; production AST unchanged. No new docs files.
+Fresh devcb1a0a0 remains included viaad96aeb. Owner8af65bf runtime/actions merge
+AST unchanged,105 agent checks +19 boundary OK retained; registry isolation
+and run-outcome UI now covered by Owner27/full results at106b683. Owner UI,
+LLM defaults, runtime/confirmation/preview/tenant protection unchanged here.
+PR22 Draft/unmerged; PR29 deferred; PR30/31 model-layout lanes occupied/separate.
 
-Owner next: retained clean review worktree, existing venv/private env/distinct
-DB_TEST_SCHEMA already0088; fetch/ff-only PR22, record actual HEAD/status. Run:
+Owner rules R6–R9 were reported only in dirty main-checkout .agent/rules.md;
+remote copy lacked them. Persist their policy in PR22 .agent/rules.md without
+touching the main folder: one PR/existing worktree, shared local test_schema in
+localhost:5432/social_manager, strictly sequential pytest, no schema creation/
+reset/drop/stamp/migration/Alembic without explicit command, no dev merge without
+fresh compatibility and explicit approval. R8 overrides old R3/R4 auto-reset
+advice. Preserve owner's local rule text; this does not claim it was committed.
+
+Owner next: retained clean PR22 worktree, existing venv/private env/shared schema,
+NO other pytest process. Fetch/ff-only PR22 and record exact HEAD/status:
 
 ```bash
-python -m pytest -q --no-cov tests/test_agent_tool_registry.py tests/test_job_status.py
+python -m pytest -q tests/test_web_onboarding.py
 ```
 
-Expected **27 passed** (registry9 + job-status18), static prediction only. This
-checks changed arrange and newly included outcomes, not a replay of all105/19.
-If green, immediately ONE full suite on the SAME unchanged HEAD/code/schema:
+Expected14 passed, static prediction only. If green, immediately ONE final full
+suite on SAME unchanged HEAD/code/schema, no extra coordination round:
 
 ```bash
 python -m pytest -vv --durations=20 -o faulthandler_timeout=120
 ```
 
-Record SHA/status before/after and actual totals/duration/exit; no guessed full
-count. Return first complete redacted failure if any, not whole log. No additional
-checkout/merge during run; stop dirty/diverged or concurrent same-schema pytest.
-No reset/drop/stamp/migration/Alembic/live setup/new worktree/main UI edits.
-Agent ZERO tests/collection/app imports/DB/migrations/browser/live operations.
-
-Historical source2bbd3ce15 passed56s and task/LLMa35496742 passed58s retained;
-latest full2f7beca1577/64subtests/exit0 does not cover new integrated head.
-Full will cover retained queued/running/LLM regressions without standalone replay.
-After full result recheck fresh dev and require explicit Ready/merge decision.
-Broader /app XSS audit, durable approval/CAS, release/browser/live/business gates
-remain OPEN; action_send stays botaction.view preview-only, no send activation.
+Return SHA/status before/after, actual short/full totals/duration/exit and first
+complete redacted failure if any; no whole log. Do not replay27/105/19/15/42 by
+default. No new Owner worktree, main checkout edits, production/live calls or
+schema operations. Agent ZERO tests/collection/app imports/DB/migrations/browser.
+Full result106b683 replaces old2f7beca as latest COMPLETED result, but not latest
+green. After full green recheck fresh dev before explicit Ready/merge decision.
+Broader /app XSS/durable approval/release/browser/live/business gates OPEN.
+Existing docs synchronized; no new docs/design files or live publication enabled.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
@@ -109,7 +109,7 @@ Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
 
 ## Read this first
 
-Latest included devcb1a0a0 viaad96aeb; Owner8af65bf105 passed + boundary19 OK. New isolated registry fixture/source-preserving merge prepared; short27 then one full suite at unchanged HEAD pending. PR22 Draft/unmerged, PR29/30 separate; agent runs no tests/migrations.
+Latest included devcb1a0a0 viaad96aeb. Owner106b683 short27 passed/full2 failed1610 passed64subtests exit1; two failures share omitted running_jobs in direct onboarding test context. One-key test-only correction prepared; short14 then full at same unchanged HEAD pending. PR22 Draft/unmerged; PR29/30/31 separate; agent runs no tests/schema operations.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported

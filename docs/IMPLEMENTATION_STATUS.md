@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `57b5612f28bc8d9621cf21670babe8a4195d536e` (2026-10-09), after PR #20.
+Latest checked dev: `a88cd3001f184531d68a21e93ddff1aa9cb39e4c` (2026-10-09), after PR #20/#21.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -168,6 +168,23 @@ not close global privacy, queue or production gates.
 Next small work: review one remaining handler-log path or audit task-outcome UI
 with owner file coordination. Important separate packages: fail-closed identity,
 queue leases/atomicity, atomic memory batches and per-attempt budget reservations.
+
+## Staged retirement warning privacy — prepared, not yet merged
+
+Baseline `a88cd30`; branch `fix/staged-retirement-log-privacy`, code `be3f67c`.
+
+- [ ] Prepared: only `_retire_staged` failure warning uses fixed event/category
+  and bounded source ID; no raw exception/traceback or content hash in its logs.
+- [ ] Seven actual-helper/mocked-storage tests written, NOT run. No new test
+  acceptance evidence, PostgreSQL run, formatter run or production claim.
+- [ ] Merge into dev requested explicitly by the owner; pending PR integration.
+
+Return-zero fallback, success deletion counts, transaction/cleanup and cancellation
+are unchanged. Dispatcher PR #20, UI and owner runtime guard are untouched.
+Other handler/provider/ORM logs and stored errors remain open.
+See [retirement-warning handoff](design/staged_retirement_log_privacy_handoff.md).
+Next: owner/local acceptance evidence, then a separate `_count_failed_staged`
+warning package or one coordinated collect path; preserve partial outcomes.
 
 ## Test target — shared PostgreSQL, isolated schema
 

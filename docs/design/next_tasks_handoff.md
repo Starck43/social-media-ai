@@ -15,6 +15,18 @@ PR #20 dispatcher-owned log/failure-notification privacy. Merged does not mean
 accepted/deployed. API /health returns 503 on DB failure; /livez is process-only.
 Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
 
+## Current bounded continuation — prepared, not yet merged
+
+Fresh dev checked: `a88cd30` after PR #21. The selected first handler surface is
+`_retire_staged` failure warning only; code `be3f67c` on
+`fix/staged-retirement-log-privacy`. Seven helper/mocked-storage cases are written,
+NOT run. Owner explicitly requested integration at the end of this task; pending
+PR merge, not deployment/acceptance. Dispatcher, UI and runtime guard untouched.
+See [selected-surface handoff](staged_retirement_log_privacy_handoff.md).
+After integration do not rebuild this warning. Next small privacy candidate is
+`_count_failed_staged`, or coordinate one collect exception path while preserving
+partial outcomes. Other handler/provider/ORM logs and stored errors remain open.
+
 ## Next small sequential packages
 
 1. **Owner/local acceptance:** focused PostgreSQL and notification regressions,

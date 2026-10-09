@@ -26,7 +26,7 @@ Do not restart merged digest integration or bounded logging work.
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
 | A/C / development documentation | **MERGED:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26) as `10212b5e`; no application change | Use the three-level entry point; do not redo this navigation cleanup. |
-| C / observation and recovery runbook, PRD-04/05 | **PREPARED:** `docs/operator-observation-recovery`, guide `b1cf91f`; not merged | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
+| C / observation and recovery runbook, PRD-04/05 | **IN REVIEW:** [PR #27](https://github.com/Starck43/social-media-ai/pull/27), `docs/operator-observation-recovery`, guide `b1cf91f`; not merged | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
 | D–G / UX, pilot, expansion and scale | Gated, not current automatic implementation scope | Use stage exit evidence and an explicit selected user journey, not old research checklists. |
 
 The owner reports having run checks and pushed changes. Do not ask for or execute
@@ -102,8 +102,10 @@ two original reports were archived byte-identically with compatibility pointers.
 Its static link/anchor/fence checks are historical documentation evidence, not
 application/deployment acceptance. Do not repeat the cleanup.
 
-Current independent package: `docs/operator-observation-recovery`, baseline
-`10212b5e`; runbook `b1cf91f` in existing DEPLOYMENT.md, NOT MERGED. Source-grounded
+Current independent package: open [PR #27](https://github.com/Starck43/social-media-ai/pull/27),
+`docs/operator-observation-recovery`, baseline `10212b5e`; runbook `b1cf91f`,
+navigation/status `24c91f8`, in existing DEPLOYMENT.md, NOT MERGED. Latest PR #22
+changed-file comparison confirms ZERO overlap with these three documentation files. Source-grounded
 process/HTTP observations, job/part outcome interpretation, evidence preservation
 and separately authorized change gates. Eight new tabletop cases are written,
 NOT executed; no probes, service commands, tests, DB or external calls here.

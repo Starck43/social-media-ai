@@ -1,7 +1,7 @@
 # Deployment Guide
 
 > **Status:** deployment examples are drafts, not a verified production profile.
-> An observation/recovery runbook is prepared below against dev `10212b5e`.
+> Observation/recovery runbook: [PR #27](https://github.com/Starck43/social-media-ai/pull/27), prepared against dev `10212b5e`; NOT MERGED.
 > It is documentation, not executed recovery, staging acceptance or deployment.
 
 During an incident start at [Observation and conservative recovery](#observation-and-conservative-recovery),
@@ -439,6 +439,8 @@ max_attempts, locked_at/started_at/finished_at; related task last status/time;
 original digest reference/run/generation/window; per-part statuses and aggregate
 counts. Missing or malformed metadata is unknown, not an empty/unsent ledger.
 Use the exact deployed contract: no new "partial Job status" is invented here.
+Missing/NULL cost is unknown, not zero or proof that the summary can be rebuilt
+for free; keep any known incurred cost and its original attribution.
 
 | Symptom / evidence | Safe interpretation and next step | Do not do |
 | --- | --- | --- |
@@ -447,7 +449,7 @@ Use the exact deployed contract: no new "partial Job status" is invented here.
 | Old running job / unchanged locked_at | Age alone does not prove the worker or external effect is dead. Capture IDs, timestamps, attempt and process evidence; escalate ownership/race investigation. | Set pending/clear locked_at, call reap_stale, delete/recreate job |
 | job_retry_scheduled | Existing automatic backoff may explain pending/future run_at. Observe original job rather than add another run. | Reduce run_at or force a second attempt while original may still run |
 | job_returned_failure / terminal failure | Declared failure is not success; inspect bounded status/category under authorization and keep audit. | Treat absent notification as proof of success or replay authorization |
-| job_*_claim_lost | Old completion/failure write was refused by the checkpoint claim guard; ownership must be reconciled. | Repair result/status manually or assume generic queue fencing is solved |
+| job_completion_claim_lost / job_outcome_claim_lost | Old completion/failure write was refused by the checkpoint claim guard; ownership must be reconciled. | Repair result/status manually or assume generic queue fencing is solved |
 | Collect run done with per-source errors/skips | Job completion need not mean every source succeeded. Preserve original partial/auth_required result and assess sources individually. | Reclassify partial results or overwrite the original audit |
 | Summary build started without bound snapshot | `summary_build_requires_reconciliation`: cost/build may already have happened. Keep reservation and investigate. | Rebuild the summary, clear build_started or create another snapshot |
 | Original request/window/run changed or missing | Original identity/reference cannot be trusted for resumption. Retain records and escalate. | Copy a payload reference, change period/window/generation or force_refresh |

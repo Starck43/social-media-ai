@@ -420,3 +420,99 @@ async def test_toggling_a_task_with_only_deactivated_sources_names_them(client):
         assert source.name in resp.text, "the message must name the source that blocks activation"
     finally:
         await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read_only", [False, True], ids=["owner-link", "member-text"])
+async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(client, read_only):
+    from html.parser import HTMLParser
+
+    from app.core.permissions import service_permission_scope
+    from app.models import Role
+    from app.types import UserRoleType
+
+    class TaskCellParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_name = False
+            self.parts = []
+            self.names = []
+            self.links = []
+            self.unsafe = []
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if tag == "td" and "font-medium" in attributes.get("class", "").split():
+                self.in_name = True
+                self.parts = []
+            if self.in_name:
+                if tag == "a":
+                    self.links.append(attributes.get("href"))
+                if tag in {"script", "img", "iframe", "svg"} or any(key.startswith("on") for key in attributes):
+                    self.unsafe.append((tag, attributes))
+
+        def handle_endtag(self, tag):
+            if tag == "td" and self.in_name:
+                self.names.append("".join(self.parts).strip())
+                self.in_name = False
+
+        def handle_data(self, data):
+            if self.in_name:
+                self.parts.append(data)
+
+    owner = member = None
+    tenant_id = None
+    hostile_name = 'Task <img src=x onerror=alert(1)> & "quoted"'
+    try:
+        owner, tenant_id = await _register(client, "taskname")
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=hostile_name,
+                job_type="prune",
+                cron_expr="@once",
+                payload={},
+                is_active=False,
+                tenant_id=tenant_id,
+            )
+        if read_only:
+            role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+            assert role is not None, "VIEWER reference role must be seeded"
+            username = _name("nameviewer")
+            member = await User.objects.create_user(
+                username=username,
+                email=f"{username}@example.com",
+                password="secret-password-1",
+                role_id=role.id,
+                is_superuser=False,
+            )
+            await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
+            async with AsyncClient(
+                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
+            ) as viewer_client:
+                token = await _csrf(viewer_client, "/app/login")
+                login = await viewer_client.post(
+                    "/app/login", data={"username": username, "password": "secret-password-1", "_csrf": token},
+                )
+                assert login.status_code == 200
+                page = await viewer_client.get("/app/tasks")
+        else:
+            page = await client.get("/app/tasks")
+        assert page.status_code == 200
+        parser = TaskCellParser()
+        parser.feed(page.text)
+        assert parser.names == [hostile_name], "escaping must preserve the exact stored name as readable text"
+        assert not parser.unsafe, "stored task names must not produce executable tags or event attributes"
+        assert hostile_name not in page.text
+        assert "&lt;img" in page.text and "&amp;" in page.text
+        if read_only:
+            assert f"/app/tasks/{task.id}/edit" not in parser.links
+        else:
+            assert f"/app/tasks/{task.id}/edit" in parser.links
+        with tenant_scope(tenant_id):
+            stored = await AgentTask.objects.get(id=task.id)
+            assert stored.name == hostile_name and not stored.is_active
+            assert not await Job.objects.filter(agent_task_id=task.id), "rendering must not run the inert task"
+    finally:
+        if member is not None:
+            await User.objects.delete_user(member.id)
+        await _drop(owner, tenant_id)

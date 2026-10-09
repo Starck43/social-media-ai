@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `87bf82a9bc793dea9c715c94f330d1459d74463f`. PR #22 includes it via `5f211a7`, preserving owner UI and migration0088 code; this is not a merge of PR #22 into dev. No migration executed by agent.
+Included/reviewed baseline: dev `87bf82a9bc793dea9c715c94f330d1459d74463f` via PR #22 merge `5f211a7`, preserving owner UI and migration0088 code. Newer Owner dev changes are intentionally not reviewed yet, mandatory before eventual merge. This is not a merge of PR #22 into dev; no migration executed by agent.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); exact88bfea6 owner web52 passed/5 failed; analytics55 only with temporary .name patch | Fresh dev87bf82a included via5f211a7; correctionbf2dbc0 (.name/explicit escaping) + real tenancy-marked timezone fixtures/foreign due-task regression PREPARED/UNRUN. Owner next60-case combined check. Broader template-escaping audit OPEN, no global XSS claim. Prior boundary19/settings16 verified439c200. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); OWNER exact2f7beca full1577 passed/64 subtests,exit0; short60 passed; timezone3 after isolated0088 effect | Two task-name list escapes + owner/member regressions PREPARED/UNRUN; next13 task-file cases, no default full rerun. Broader XSS audit OPEN; newer dev review deferred at Owner request, required before merge. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,7 +32,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest owner reports: four focused DB/policy checks passed (exact tested SHA not supplied); separately, 61 LLM/output/learning tests passed on dev `274cb2c`. Neither report certifies the new collect gate or complete PR #22. Three owner-local UI files remain outside this branch work.
+Latest owner evidence: exact `2f7beca` short60 passed, post-test-schema-DDL timezone3 passed and complete full suite1577 passed/64 subtests,exit0. The tests include boundary/settings/Telegram files; no default repeat required. New task-name escaping regressions are unrun and newer dev changes are excluded pending review; green is not global security/deployment acceptance.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

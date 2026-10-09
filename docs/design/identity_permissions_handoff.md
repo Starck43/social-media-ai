@@ -1,64 +1,57 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — explicit escape correction and real timezone isolation
+## Current continuation — green full-suite checkpoint, bounded task-name escaping
 
-Fresh dev87bf82a is included via GitHub merge5f211a7 (parentsbf2dbc0/87bf82a),
-without conflicts. Owner UI/CSS/macros/base and removal of unused task
-requires_approval are preserved; runtime confirmation/authorization guard is
-unchanged, no field consumers remain in app/tests/CLI. Owner dev adds migration
-0088 (schema-qualified column removal); code included only, NOT executed by
-agent. Owner must account for this new schema head in isolated test setup;
-no production migration/reset or automatic deployment here. Previous test
-results are not attributed to this merged head.
+OWNER-REPORTED exact2f7becafcdb40ade0633e8a24fd785234d2ea56f unchanged before/
+after, clean retained review worktree, no local commits:
+- Short analytics55/link2/timezone3 group:60 PASSED,151s,exit0.
+- Owner applied only0088's column-removal effect in resolved test_schema:
+  tables27->27, agent_tasks columns22->21, only requires_approval removed.
+  Schema had been created by create_all; no Alembic run/reset/production change.
+  Owner reports public already lacked that column and was untouched.
+- Post-DDL timezone file:3 PASSED,19s.
+- Full python -m pytest -vv --durations=20 -o faulthandler_timeout=120:
+  1577 PASSED,64 subtests PASSED,0 failures/errors/skips,688.77s,exit0.
+Owner retained1924-line pr22-full-suite-2f7beca-2026-10-09-allpassed.txt locally;
+agent did not read local log or rerun tests/DDL. Earlier6900e4f1549pass/14fail
+is historical, no longer the latest completed suite. Boundary/settings/Telegram
+files passed in the full suite; no debt to repeat old standalone commands by
+default. Manual schema-effect verification is not Alembic upgrade/downgrade
+acceptance or a production deployment. Full green does not certify absent XSS.
 
-Owner exact88bfea6 clean/unchanged: short57-case group52 PASSED/5 FAILED in29s.
-Four failures were the new analytics fixture's enum member; one was source-name
-XSS. Owner temporary local VIEWER.name patch yielded analytics55 success, then
-restored: uncommitted patched-tree evidence, not committed-head acceptance.
-Correctionbf2dbc0 writes VIEWER.name and source.name|e. Custom Jinja Environment
-has no autoescape; earlier capture-autoescaping assumption was wrong. Explicit
-field correction NOT RUN by agent; existing hostile-name assertion retained.
+The included/reviewed dev baseline remains87bf82a via5f211a7. Owner reports
+newer dev changes and asked not to inspect them yet: no new dev fetch/diff/
+merge here. Current work is pinned to this tested PR head, preserving the
+included UI/CSS/macros/runtime guard. Before eventual merge, synchronize/review
+fresh dev with Owner; old full green does not cover omitted changes. PR22 still
+Draft/unmerged, PR29 unchanged/deferred. No automatic Ready/deploy/acceptance.
 
-Timezone old6900e4f report count6 rather than1 is consistent with its missing
-tenancy marker: conftest._platform_scope forces BaseManager.is_bypass=True even
-inside tenant_scope. It can see foreign due rows, not necessarily tasks inside
-its fresh workspace. New test-only package marks this file tenancy, removes all
-fixture bypass blocks, and grants exact source.create / agenttask.create/update
-only for arrange, per-row model.delete only for cleanup. Tick subject runs with
-permission_scope(None), no arrange authority. Original count1 and both timezone
-schedule comparisons retained; due-id assertion narrows to its own created task.
-Default-bootstrap test keeps real scoped service creation, not operator bypass.
+Next small XSS package PREPARED/NOT RUN: tasks.html renders task.name|e in its
+two list-row branches (owner edit link and read-only member plain text).
+No global autoescape change, macro/CSS/layout/permissions/router/migration or
+runtime change. Existing source.name|e and JSON/Alpine bindings preserved.
+Two parametrized ASGI regressions use an inert stored name with image/event
+payload, ampersand and quotes, parse the actual name cell, require exact readable
+text/no executable tag/event, preserve owner link and deny member edit link,
+check stored name unchanged and no queued Job. All11 existing test bodies kept.
+Data arrange uses exact scoped task.create; only own test records cleaned.
 
-New deterministic regression creates one due prune task in each of two fresh
-workspaces. Tick must report due1/enqueued1/failed0, advance only own task in
-workspace timezone, write only own Job, leave foreign next/last/status and Job
-set unchanged. Both new workspaces/tasks cleaned through exact scoped grants;
-no shared-schema cleanup, mock jobs or production runner/bootstrap/core change.
-Three timezone cases PREPARED/NOT RUN; this is fixture isolation, not a claim to
-have identified/removed every producer of orphan data in the full suite.
-
-Owner short combined check in retained clean review worktree, existing venv/
-private env/distinct DB_TEST_SCHEMA; stop if dirty/diverged. Fetch/ff-only PR22,
-record HEAD; no concurrent pytest/reset/drop/stamp/migration/live calls:
+Owner next: existing clean review worktree, venv/private env/distinct test schema
+already verified for0088; no concurrent pytest/reset/drop/migration/live calls.
+Fetch/ff-only PR branch (not dev), record exact HEAD, then:
 
 ```bash
-python -m pytest -q tests/test_web_analytics.py tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area tests/test_task_timezone.py
+python -m pytest -q tests/test_task_run_now.py
 ```
 
-Expected60 cases (analytics55 + task-link2 + timezone3), static prediction not
-observed success. Explicitly repeat the failed88bfea6 group for corrected code,
-not successful boundary/settings/Telegram/CLI/isolation packages. Return exact
-SHA/results and first full redacted error. Full suite remains deferred until
-this short group is clean; old full totals cannot certify this head. Agent
-AST/text/git only: no tests/collection/app imports/DB/browser/live calls.
-
-Broader task-name/other-template escaping audit remains OPEN because global
-Environment still disables autoescape; this source-field fix is NOT global XSS
-safety. Do not enable global mode without HTML/JS/markup compatibility review.
-Card/macro/CSS/layout/Alpine/runtime protected; browser click acceptance separate.
-Keep owner boundary19/settings16 success439c200, Telegram4 report3b63c4b. Last
-complete full6900e4f remains1549 passed/14 failed. PR22 Draft/unmerged; PR29
-unchanged/deferred; no new docs/design files, deployment or live acceptance.
+Expected13 cases (11 existing +2 new), static prediction NOT success. Do not
+replay full suite or successful boundary/settings/Telegram/analytics/timezone
+by default for this two-field package. Return exactSHA/result and first complete
+redacted failure. Agent uses AST/text/git only; no tests/collection/app imports/
+DB/browser/provider/messenger calls. Global Environment still disables
+escaping; other user-controlled template fields remain OPEN separate audit.
+Not every interpolation is vulnerable: explicit escaping/tojson already protects
+some contexts. Browser/live readiness separate; no new docs/design files.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

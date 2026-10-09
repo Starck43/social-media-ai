@@ -131,6 +131,10 @@ def test_job_summary_failed():
 
 def test_job_summary_pending():
     job = type("J", (), {"job_type": "collect", "status": "pending", "error": None, "result": None})()
+    # Real columns on `jobs`; the summary reports them so the modal can show
+    # how long the job has been queued.
+    job.created_at = datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc)
+    job.started_at = None
     s = _job_summary(job, task_name="Ежедневный сбор")
     assert s["status"] == "pending"
     assert s["label"] == "Выполнение задачи «Ежедневный сбор»"
@@ -145,6 +149,69 @@ def test_job_summary_analyze_done():
     assert s["headline"]["value"] == 4
     tiles = {t["label"]: t["value"] for t in s["stats"]}
     assert tiles["действий создано"] == 2
+
+
+# ── run outcomes (UX-02: succeeded / partial / skipped / no new data) ────────
+
+
+def _done_job(job_type: str, result: dict):
+    job = type("J", (), {"job_type": job_type, "status": "done", "error": None})()
+    job.result = result
+    return job
+
+
+def test_collect_with_nothing_new_is_not_a_failure():
+    """A clean run that found nothing is its own outcome, not a green zero.
+
+    «Новых записей: 0» in the success box read as a broken run; the platform
+    re-serves the same posts, so zero new is the normal steady state.
+    """
+    s = _job_summary(_done_job("collect", {"sources": 2, "collected": 2, "items": 40, "new_items": 0, "error": 0}))
+    assert s["outcome"] == "no_data"
+    assert s["outcome_label"] == "Новых данных нет"
+    assert s["label"] == "Новых данных нет"
+    assert s["outcome_note"]
+
+
+def test_collect_with_failed_sources_is_partial():
+    """Per-source failures are caught by the handler, so the job is `done`.
+
+    Without the outcome the modal painted a half-broken run as a full success
+    and the error count sat in a stat tile nobody reads.
+    """
+    s = _job_summary(_done_job("collect", {"sources": 2, "collected": 1, "items": 12, "new_items": 3, "error": 1}))
+    assert s["outcome"] == "partial"
+    assert s["outcome_label"] == "Выполнено частично"
+    assert s["outcome_note"]
+
+
+def test_collect_legacy_result_without_new_items_is_not_no_data():
+    """Jobs recorded before `new_items` existed must not claim "nothing new"."""
+    s = _job_summary(_done_job("collect", {"sources": 1, "collected": 1, "items": 12}))
+    assert s["outcome"] == "ok"
+
+
+def test_analyze_skipped_sources_are_distinct_from_nothing_to_analyse():
+    """Skipped means no active scenario — a different fact and a different fix."""
+    skipped = _job_summary(_done_job("analyze", {"sources": 2, "analyzed": 0, "actions_created": 0, "skipped": 2}))
+    assert skipped["outcome"] == "skipped"
+    assert skipped["outcome_label"] == "Пропущено"
+
+    empty = _job_summary(_done_job("analyze", {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0}))
+    assert empty["outcome"] == "no_data"
+
+
+def test_prune_with_nothing_to_delete_is_no_data():
+    s = _job_summary(_done_job("prune", {"deleted": 0}))
+    assert s["outcome"] == "no_data"
+    assert s["outcome_label"] == "Новых данных нет"
+
+
+def test_clean_run_keeps_the_success_outcome():
+    s = _job_summary(_done_job("collect", {"sources": 1, "collected": 1, "items": 5, "new_items": 5, "error": 0}))
+    assert s["outcome"] == "ok"
+    assert s["outcome_label"] == "Готово"
+    assert "outcome_note" not in s
 
 
 # ── _source_links (run-now modal → source page) ─────────────────────────────

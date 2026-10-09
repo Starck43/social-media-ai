@@ -146,12 +146,19 @@ async def jobs_list(request: Request):
     else:
         sources_map = await _job_sources(rows)
 
+    # The same outcome classification the run-now modal and the task page use,
+    # so one run reads the same in all three places.
+    from app.web.tasks import _run_outcome
+
+    job_outcomes = {job.id: _run_outcome(job.job_type, job.result or {}) for job in rows if job.status == "done"}
+
     return render(
         request,
         "web/jobs.html",
         section="jobs",
         jobs=rows,
         sources_map=sources_map,
+        job_outcomes=job_outcomes,
         stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
         retryable=RETRYABLE,
         deletable=DELETABLE,

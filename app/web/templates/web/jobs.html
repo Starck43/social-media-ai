@@ -111,7 +111,17 @@
                 <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ job.job_type }}</td>
                 <td class="px-4 py-3">
                     {% if job.status == 'done' %}
-                        <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">готово</span>
+                        {# The badge carries the outcome, not just the status — the
+                           same classification the run-now modal and the task page
+                           use, so one run reads identically in all three places. #}
+                        {% set outcome = job_outcomes.get(job.id, 'ok') %}
+                        {% if outcome == 'partial' %}
+                            <span class="rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">частично</span>
+                        {% elif outcome in ('no_data', 'skipped') %}
+                            <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">{% if outcome == 'skipped' %}пропущено{% else %}нет данных{% endif %}</span>
+                        {% else %}
+                            <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">готово</span>
+                        {% endif %}
                     {% elif job.status == 'failed' %}
                         <span class="rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                     {% elif job.status == 'running' %}

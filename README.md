@@ -200,7 +200,10 @@ Keep implementation changes in thematic branches from fresh dev; recheck paralle
 
 ## Documentation
 
-Start at [DOCS_INDEX](docs/DOCS_INDEX.md).
+Development reading order: [global plan](docs/PRODUCT_PLAN.md) →
+[engineering stages](docs/ROADMAP_INTEGRATED.md) →
+[current-stage tasks](docs/design/README.md).
+For subsystem references start at [DOCS_INDEX](docs/DOCS_INDEX.md).
 
 - Direction: [vision](docs/design/vision.md), [product plan](docs/PRODUCT_PLAN.md), [target architecture](docs/ASSISTANT_ARCHITECTURE.md).
 - Release order: [integrated roadmap](docs/ROADMAP_INTEGRATED.md), [business readiness](docs/BUSINESS_PRODUCTION_READINESS.md), [future scale strategy](docs/design/future_scale_strategy.md).

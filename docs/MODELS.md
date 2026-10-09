@@ -269,4 +269,4 @@ Latest inspected repository revision is **0087**, replacing the stale head-0086 
 
 Apply migration 0087 before starting updated ORM code against a target database; merge is not deployment. Existing NULL states have no invented receipts. Dropping the checkpoint field destroys delivery evidence: pause senders and retain evidence before an approved downgrade. See [schema review](design/digest_delivery_state_schema_review.md).
 
-Verification scope, differences and continuation: [model reference reconciliation](design/model_reference_reconciliation_handoff.md).
+Verification scope, differences and continuation: [model reference reconciliation](design/archive/model_reference_reconciliation_handoff.md).

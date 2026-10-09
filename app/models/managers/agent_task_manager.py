@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from croniter import croniter
 
@@ -11,6 +11,8 @@ from app.types import ActionType
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from ..agent_task import AgentTask
 
 
@@ -40,6 +42,11 @@ class AgentTaskManager(BaseManager):
     @require_permission("agenttask", ActionType.DELETE)
     async def delete_by_id(self, instance_id: int) -> bool:
         return await super().delete_by_id(instance_id)
+
+    @require_permission("agenttask", ActionType.DELETE)
+    async def delete(self, session: AsyncSession | None = None, **filters: Any) -> Callable[[], int] | int:
+        """Gate filtered deletion just like delete_by_id; preserve base semantics."""
+        return await super().delete(session=session, **filters)
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def set_sources(self, task_id: int, source_ids: list[int]) -> int:

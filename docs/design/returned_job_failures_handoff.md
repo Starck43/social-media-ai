@@ -1,6 +1,7 @@
 # Returned job failures: owner handoff
 
-Status: PREPARED, NOT MERGED OR DEPLOYED. Baseline dev `be333fe` (PR #17 merged).
+Status: MERGED IN PR #18 AS `4f01edb`; DEPLOYMENT/PRODUCTION ACCEPTANCE NOT CERTIFIED.
+Original baseline dev `be333fe` (PR #17 merged).
 Branch: `ai/returned-job-failure-outcomes`. This is a bounded queue-outcome fix,
 not completion of the general queue/scheduler production gate.
 
@@ -71,8 +72,9 @@ payload identity. Compilation, AST and whitespace checks also passed.
 `tests/test_returned_job_failures_db.py` checks Job+AgentTask failure/cost,
 unknown-provider error redaction and the inline final-row outcome. Pytest,
 SQLAlchemy/httpx/asyncpg/PostgreSQL are unavailable in this sandbox. No live
-provider, transport or DB calls ran. Owner's independent test results were not
-supplied, so no full-suite or end-to-end acceptance is claimed.
+provider, transport or DB calls ran. On 2026-10-09 the owner subsequently reported
+all tests pass. This is owner-reported evidence: commands/counts/tested SHA/logs were
+not supplied. No sandbox rerun, production or end-to-end acceptance is inferred.
 
 ## Owner commands
 
@@ -106,5 +108,5 @@ Do not activate the checkpoint sender as part of this PR.
 - Manual reruns may repeat side effects; terminal status is not an exactly-once
   guarantee, an automatic recovery procedure or approval to reset receipts.
 
-PRD-03/05/06 remain OPEN. Merge and activation require separate approval. Every
+PRD-03/05/06 remain OPEN. PR #18 is merged; live activation still needs separate approval. Every
 commit contains an English owner handoff with actual checks and pending work.

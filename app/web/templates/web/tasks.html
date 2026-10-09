@@ -117,10 +117,11 @@
                     <div class="flex items-center gap-1">
                         {# Show a running indicator if a job is already in progress #}
                          {% if task.id in running_jobs %}
-                         <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
-                            title="Job #{{ running_jobs[task.id] }} выполняется"
+                         {% set rj = running_jobs[task.id] %}
+                         <a href="/app/tasks?job_id={{ rj.id }}"
+                            title="Job #{{ rj.id }} {% if rj.status == 'pending' %}в очереди{% else %}выполняется{% endif %}"
                             class="flex items-center justify-center rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
-                            aria-label="Job выполняется">
+                            aria-label="Job {% if rj.status == 'pending' %}в очереди{% else %}выполняется{% endif %}">
                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                   stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
                                <path stroke-linecap="round" stroke-linejoin="round"
@@ -462,15 +463,25 @@
             </div>
 
             <template x-if="runModal.loading">
-                <div class="mt-5 flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
-                    <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
-                         viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Задача выполняется…</span>
+                <div class="mt-5">
+                    <div class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+                        <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                             viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {# "Queued" and "running" are different facts: a pending
+                           job has not been claimed by any worker yet. #}
+                        <span x-text="runModal.data.status === 'pending' ? 'Задача в очереди…' : 'Задача выполняется…'"></span>
+                        <span class="ml-auto shrink-0 text-xs text-slate-600 dark:text-slate-400"
+                              x-text="runModal.elapsedLabel"></span>
+                    </div>
+                    <template x-if="runModal.data.hint">
+                        <p class="mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2 text-xs text-amber-800 dark:text-amber-300"
+                           x-text="runModal.data.hint"></p>
+                    </template>
                 </div>
             </template>
 
@@ -554,6 +565,7 @@
 
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
+    const RUNNING_JOBS = {{ running_jobs|tojson }};
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
     const TARGET_FIELDS = [
         { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
@@ -620,34 +632,52 @@
                 loading: RUN_JOB_ID !== null,
                 data: { label: "Запуск…" },
                 pollTimer: null,
+                watchTimer: null,
+                finished: false,
                 close() {
                     this.open = false
                     if (this.pollTimer) clearInterval(this.pollTimer)
+                    if (this.finished && RUN_JOB_ID !== null) {
+                        // A finished job must not re-open on the next reload:
+                        // drop ?job_id and re-render, so the row's run button
+                        // flips back from the spinner to the play triangle —
+                        // the button is server-rendered from the job status,
+                        // so only a fresh render can update it.
+                        const url = new URL(window.location.href)
+                        url.searchParams.delete("job_id")
+                        window.location.replace(url.toString())
+                    } else {
+                        // Still in flight: keep watching so the button does not
+                        // stay a spinner after the job ends behind the modal.
+                        this.watchRunningJobs()
+                    }
+                },
+                get elapsedLabel() {
+                    const since = this.data.started_at || this.data.created_at
+                    if (!since) return ""
+                    const secs = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000))
+                    if (secs < 60) return `${secs} с`
+                    const mins = Math.floor(secs / 60)
+                    if (mins < 60) return `${mins}:${String(secs % 60).padStart(2, "0")}`
+                    return `${Math.floor(mins / 60)} ч ${mins % 60} мин`
                 },
             },
             init() {
                 if (RUN_JOB_ID !== null) this.pollRun()
+                else this.watchRunningJobs()
             },
             pollRun() {
-                const start = Date.now()
-                const MAX_MS = 60000
+                // No client-side deadline: a long analyze run is legitimate, and
+                // a job stuck in the queue is reported by the server hint below
+                // instead of a bogus "timeout" that implies the work ended.
                 const poll = () => {
-                    if (Date.now() - start > MAX_MS) {
-                        this.runModal.loading = false
-                        this.runModal.data = {
-                            status: "timeout",
-                            label: "Время вышло",
-                            error: "Задача не завершилась за 60 секунд",
-                        }
-                        if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
-                        return
-                    }
                     fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { "Accept": "application/json" } })
                         .then(r => r.json())
                         .then((data) => {
                             this.runModal.data = data
                             if (data.status === "done" || data.status === "failed" || data.status === "not_found") {
                                 this.runModal.loading = false
+                                this.runModal.finished = true
                                 if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
                             }
                         })
@@ -656,6 +686,31 @@
                 }
                 poll()
                 this.runModal.pollTimer = setInterval(poll, 2000)
+            },
+            watchRunningJobs() {
+                // The run button is server-rendered from job status. A job that
+                // finishes while its modal is closed would otherwise leave the
+                // spinner stale until a manual reload; poll the in-flight jobs
+                // and re-render once every one of them has ended.
+                if (this.runModal.watchTimer) clearInterval(this.runModal.watchTimer)
+                const ids = Object.values(RUNNING_JOBS || {}).map((j) => j.id)
+                if (!ids.length) return
+                const check = () => {
+                    Promise.all(
+                        ids.map((id) =>
+                            fetch(`/app/tasks/job/${id}/status`, { headers: { "Accept": "application/json" } })
+                                .then((r) => r.json())
+                                .then((d) => d.status)
+                                .catch(() => "running")
+                        )
+                    ).then((statuses) => {
+                        const settled = statuses.every(
+                            (s) => s === "done" || s === "failed" || s === "not_found"
+                        )
+                        if (settled) window.location.reload()
+                    })
+                }
+                this.runModal.watchTimer = setInterval(check, 5000)
             },
         }
     }

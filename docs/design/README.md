@@ -13,7 +13,7 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `eb49d1d3b6bb249393f2719e056c77f1a0516d4a`, 2026-10-09.
+Snapshot: dev `10212b5e6a9f7808c103a0265b1a0aa8741f0bf3`, 2026-10-09, after owner merged PR #26.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
@@ -25,8 +25,8 @@ Do not restart merged digest integration or bounded logging work.
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
-| A/C / development documentation | **IN REVIEW:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26), `docs/development-plan-navigation`; no application change | Review the three-level reading path, catalog and compatibility archive. Not merged until expressly authorized. |
-| C / observation and recovery runbook, PRD-04/05 | No competing open PR observed; **next independent candidate, not started here** | Bounded read-only diagnostics/escalation, no reset/replay/receipt clearing; inspect source before drafting commands. |
+| A/C / development documentation | **MERGED:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26) as `10212b5e`; no application change | Use the three-level entry point; do not redo this navigation cleanup. |
+| C / observation and recovery runbook, PRD-04/05 | **PREPARED:** `docs/operator-observation-recovery`, guide `b1cf91f`; not merged | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
 | D–G / UX, pilot, expansion and scale | Gated, not current automatic implementation scope | Use stage exit evidence and an explicit selected user journey, not old research checklists. |
 
 The owner reports having run checks and pushed changes. Do not ask for or execute
@@ -93,26 +93,32 @@ from dev/ledger, not an old PREPARED label.
 The two old top-level filenames remain compatibility pointers, not active
 reports. Other technical contract paths remain stable for active PR references.
 
-## This cleanup: delivery and continuation
+## Current package and retained cleanup evidence
 
-Open [PR #26](https://github.com/Starck43/social-media-ai/pull/26), branch
-`docs/development-plan-navigation`, baseline `eb49d1d`; navigation `185a500`,
-archive/link cleanup `bd3d893`. IN REVIEW, not merged. PR #22 advanced to
-`783c345` during this task; latest changed-file comparison found no overlap
-with this documentation PR. Global plan/stages/current-stage entry
-point and complete 34-document design catalog are in place. Two old navigation/
-model authoring reports are archived verbatim; old paths remain short pointers.
-Known index/model/catalog links migrated. No separate cleanup handoff is added.
+PR #26 navigation/archive cleanup is **MERGED** as `10212b5e` on the owner's
+integration. Original preparation commits: navigation `185a500`, archive/link
+cleanup `bd3d893`, PR-state `35d4144`. All 34 design documents were cataloged;
+two original reports were archived byte-identically with compatibility pointers.
+Its static link/anchor/fence checks are historical documentation evidence, not
+application/deployment acceptance. Do not repeat the cleanup.
 
-Static checks performed: changed/new navigation links against inspected path
-listings, known new anchors, fenced-block balance, added-line whitespace,
-complete catalog membership, archive byte equality and no reserved PR #22 files
-in the payload. This is not a full-repository link crawl, GitHub rendering,
-Mermaid render, application test or target deployment inspection.
+Current independent package: `docs/operator-observation-recovery`, baseline
+`10212b5e`; runbook `b1cf91f` in existing DEPLOYMENT.md, NOT MERGED. Source-grounded
+process/HTTP observations, job/part outcome interpretation, evidence preservation
+and separately authorized change gates. Eight new tabletop cases are written,
+NOT executed; no probes, service commands, tests, DB or external calls here.
+Unsafe legacy incident stamp/direct-send/live-volume-tar suggestions removed;
+installation/update examples remain explicitly separate drafts, not a verified
+production profile. No new runbook/handoff file.
 
-Next: owner reviews this reading path/PR; synchronize ledger/legacy notes only
-with the PR #22 lane, then select one genuinely independent stage-C package.
-Existing owner-run checks are not repeated. Merge requires explicit instruction.
+Static checks: registered root health routes and main include; actual db/api
+Compose and auto-migration startup; job-manager defaults; digest static categories;
+new source links, anchors/fences/added whitespace and observation-command scope.
+These are text/source checks, not full-repo crawling, rendering, staging fault
+injection or restore acceptance. PR #22's occupied source/status/identity files
+are unchanged. Next: operator reviews this package/PR and eight tabletop scenarios,
+then explicitly decides integration; select further unoccupied work from fresh
+dev/open PRs. Previously owner-run application checks are not repeated.
 
 ## Maintenance rule
 

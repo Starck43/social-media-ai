@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Column, Date, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Column, Date, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 
 from ..core.config import settings
@@ -41,6 +42,8 @@ class DigestRun(Base, TenantScopedMixin, TimestampMixin):
     message_id: Mapped[str] = Column(String(100), nullable=True)
     content: Mapped[str] = Column(Text, nullable=True)
     error: Mapped[str] = Column(Text, nullable=True)
+    # NULL means no checkpoint history; it must never be interpreted as all-unsent.
+    delivery_state: Mapped[dict[str, Any] | None] = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
     # USD spent on the LLM summary for this run (NULL = none / unknown tariffs).
     # Priced from llm_models tariffs by the digest builder; feeds daily_cost_today().
     llm_cost: Mapped[float | None] = Column(Float, nullable=True)

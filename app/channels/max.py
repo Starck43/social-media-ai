@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator, Optional
 import httpx
 
 from app.channels.base import Inbound
+from app.channels.delivery_parts import REJECTED_HTTP_STATUSES, part_result, receipt_id, valid_part
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,45 @@ class MaxChannel:
         if results["message_ids"]:
             results["message_id"] = results["message_ids"][-1]
         return results
+
+    async def send_part(self, chat_id: str, text: str, parse_mode: str | None = "html") -> dict[str, Any]:
+        """Send one frozen part once. Caller owns pacing and checkpoint safety."""
+        if not self.enabled:
+            return part_result("blocked", error_code="transport_not_configured")
+        if not valid_part(chat_id, text, MAX_TEXT_LEN) or parse_mode not in (None, "html", "HTML"):
+            return part_result("blocked", error_code="invalid_part")
+        payload = {"text": text, "notify": True}
+        if parse_mode:
+            payload["format"] = "html"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.api_base}/messages",
+                    params={"chat_id": chat_id},
+                    json=payload,
+                    headers=self._headers(),
+                )
+            # A definitive request rejection needs no body/description in the ledger.
+            if response.status_code in REJECTED_HTTP_STATUSES:
+                return part_result("rejected", error_code=f"http_{response.status_code}")
+            if response.status_code != 200:
+                return part_result("uncertain", error_code="unconfirmed_response")
+            data = response.json()
+        except httpx.HTTPError:
+            return part_result("uncertain", error_code="transport_error")
+        except ValueError:
+            return part_result("uncertain", error_code="invalid_response")
+        if not isinstance(data, dict):
+            return part_result("uncertain", error_code="invalid_response")
+        message = data.get("message", data)
+        if not isinstance(message, dict):
+            return part_result("uncertain", error_code="invalid_response")
+        body = message.get("body")
+        mid = body.get("mid") if isinstance(body, dict) else None
+        message_id = receipt_id(mid) or receipt_id(message.get("mid"))
+        if message_id is not None:
+            return part_result("sent", message_id=message_id)
+        return part_result("uncertain", error_code="unconfirmed_response")
 
     async def poll(self) -> AsyncIterator[Inbound]:
         """Long-poll updates via GET /updates (marker-based)."""

@@ -2,12 +2,12 @@
 
 ## Read this first
 
-Latest checked dev: `7175e47ee42548dd19f493cc6c65607f0208025c` (2026-10-09).
-PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`.
-Latest owner UI icon-centering change is preserved. On 2026-10-09 the owner reported
+Latest checked dev: `1e908b2d55bae6ab2c71271321d2986a921ae9e4` (2026-10-09).
+PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
+PR #19 as `f0a4510`. Owner chat/notification UI update `1e908b2` is preserved. On 2026-10-09 the owner reported
 that all tests pass. This is OWNER-REPORTED, not independently rerun: exact commands,
 counts and tested SHA/logs were not supplied; do not attribute that report to the
-subsequent UI commit or to the new bootstrap/readiness package.
+subsequent UI commits, bootstrap/readiness or new dispatcher-privacy package.
 Owner runtime guard `1d26c1b` is preserved; it is not a complete security gate.
 Earlier continuation baseline was `081165a` after PR #13/#14 documentation work.
 Cloud/hybrid planning from PR #8 and parallel application changes are preserved.
@@ -130,20 +130,40 @@ See [returned-failure handoff](design/returned_job_failures_handoff.md).
 PRD-05 remains open: no new claim fencing, task/job atomicity, durable notification
 outbox, scheduler correctness or exactly-once/billing-attempt guarantee.
 
-## Bootstrap/readiness follow-up — prepared, not merged
+## Bootstrap/readiness follow-up — merged, acceptance open
 
-Branch `ai/bootstrap-and-readiness`, baseline `7175e47`. All four requested
-small tasks are implemented/prepared in this branch, not deployed:
+PR #19 merged as `f0a4510`; original branch baseline `7175e47`.
+All four requested small tasks are merged, not deployment/acceptance evidence:
 
-- [ ] Reject shared working/test schema when DB_SCHEMA is unset (effective public).
-- [ ] Redact check diagnostics, including credentials in query/fragment; no DB calls.
-- [ ] Register /livez and /readyz on every application; /health aliases readiness
+- [x] Reject shared working/test schema when DB_SCHEMA is unset (effective public).
+- [x] Redact check diagnostics, including credentials in query/fragment; no DB calls.
+- [x] Register /livez and /readyz on every application; /health aliases readiness
   and returns 503 for a failed/timed-out DB probe. API process/DB only, not workers.
-- [ ] Reconcile merged PR #18 and owner-reported tests without closing release gates.
+- [x] Reconcile merged PR #18 and owner-reported tests without closing release gates.
 
 24 actual-source/mocked-infrastructure tests PASSED locally; 8 ASGI cases prepared,
 NOT executed here. Full suite and real-driver/API acceptance for this new package
 remain pending. See [bootstrap/readiness handoff](design/bootstrap_readiness_handoff.md).
+
+## Dispatcher log privacy — prepared branch, owner handles PR
+
+Branch `ai/dispatcher-log-privacy`, baseline `1e908b2`. No PR created or merge.
+
+- [ ] Replace dispatcher-owned raw result/exception/traceback logs with bounded
+  events, safe IDs and static categories; preserve severity and outcome decisions.
+- [ ] Fixed failure-notification template; no raw exception text in its message.
+- [ ] 13 actual-source privacy tests and 25 existing mocked-source outcome
+  regressions PASSED locally. 2 PostgreSQL cases prepared, NOT executed.
+- [ ] Handoff includes commands, compatibility/diagnostic trade-offs and limitations.
+
+See [dispatcher-privacy handoff](design/dispatcher_log_privacy_handoff.md).
+Job.error/AgentTask.last_error and successful notification summaries are unchanged;
+handlers/provider/ORM/framework logs remain outside this bounded change. This does
+not close global privacy, queue or production gates.
+
+Next small work: review one remaining handler-log path or audit task-outcome UI
+with owner file coordination. Important separate packages: fail-closed identity,
+queue leases/atomicity, atomic memory batches and per-attempt budget reservations.
 
 ## Test target — shared PostgreSQL, isolated schema
 
@@ -197,7 +217,7 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19 are merged. Preserve the owner
    runtime guard and check parallel changes before edits.
 2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.

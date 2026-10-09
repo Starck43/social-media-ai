@@ -1,9 +1,11 @@
 # Test-schema safety and API readiness: owner handoff
 
-Status: PREPARED, NOT MERGED OR DEPLOYED. Branch `ai/bootstrap-and-readiness`.
+Status: MERGED IN PR #19 AS `f0a4510`; DEPLOYMENT/ACCEPTANCE NOT CERTIFIED.
+Original branch `ai/bootstrap-and-readiness`.
 Baseline dev `7175e47ee42548dd19f493cc6c65607f0208025c` (2026-10-09).
 Owner UI icon-centering and runtime guard are preserved. Four requested small
-work items are implemented/prepared; no broader production gate is certified.
+work items are merged; no broader production gate is certified. No fresh
+owner test results for this package were supplied after that merge.
 
 ## Test target and diagnostics
 

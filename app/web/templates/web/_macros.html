@@ -137,22 +137,10 @@
                Hidden + x-model rather than `:checked`, so the value survives
                the template being torn down and rebuilt on a job_type switch. #}
             <template x-if="{{ model }} === 'collect'">
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                    <input type="hidden" name="force_refresh" :value="{{ m }}.force_refresh ? 'on' : ''">
-                    <input type="checkbox" x-model="{{ m }}.force_refresh"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
-                    Перетирать данные за этот период
-                    <span class="text-xs text-slate-600 dark:text-slate-400">заново получить записи за период и перепрогнать их анализ (иначе — только новые)</span>
-                </label>
+                {{ switch_toggle("force_refresh", "Перетирать данные за этот период", hint="заново получить записи за период и перепрогнать их анализ (иначе — только новые)", attrs='x-model="' ~ m ~ '.force_refresh"') }}
             </template>
             <template x-if="{{ model }} === 'analyze'">
-                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                    <input type="hidden" name="force_reanalyze" :value="{{ m }}.force_reanalyze ? 'on' : ''">
-                    <input type="checkbox" x-model="{{ m }}.force_reanalyze"
-                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
-                    Принудительный повторный анализ
-                    <span class="text-xs text-slate-600 dark:text-slate-400">перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши</span>
-                </label>
+                {{ switch_toggle("force_reanalyze", "Принудительный повторный анализ", hint="перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши", attrs='x-model="' ~ m ~ '.force_reanalyze"') }}
             </template>
         </div>
     </template>
@@ -267,11 +255,6 @@
                        class="{{ control() }}">
             </div>
         </div>
-        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input type="checkbox" name="requires_approval" :checked="{{ m }}.requires_approval"
-                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 focus:ring-cyan-500 dark:focus:ring-cyan-400">
-            Требовать подтверждение перед выполнением
-        </label>
     </div>
 {%- endmacro %}
 
@@ -477,7 +460,7 @@
 
    Light theme: bg-white, border-slate-300, text-slate-700.
    Dark theme: bg-slate-900, border-slate-700, text-slate-300. #}
-{% macro switch_toggle(name, content, checked=False, disabled=False, attrs="") -%}
+{% macro switch_toggle(name, content, checked=False, disabled=False, attrs="", hint="") -%}
     <label class="group inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300 transition
                   hover:text-cyan-600 dark:hover:text-cyan-400 has-[:checked]:text-cyan-600 dark:has-[:checked]:text-cyan-400
                   {% if disabled %}pointer-events-none opacity-60{% endif %}">
@@ -491,6 +474,7 @@
                          group-has-[:checked]:translate-x-[18px] group-has-[:checked]:bg-white dark:group-has-[:checked]:bg-slate-950"></span>
         </span>
         <span class="pointer-events-none">{{ content }}</span>
+        {% if hint %}<span class="pointer-events-none text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}
     </label>
 {%- endmacro %}
 

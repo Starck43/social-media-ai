@@ -93,9 +93,6 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
         Integer, nullable=True, comment="Max actions per hour for this task"
     )
     cooldown_seconds: Mapped[int | None] = Column(Integer, nullable=True, comment="Min seconds between actions")
-    requires_approval: Mapped[bool] = Column(
-        Boolean, nullable=False, default=True, server_default="true", comment="Require owner approval before execution"
-    )
     blacklist: Mapped[list[str] | None] = Column(JSON, nullable=True, comment="Usernames/IDs to never act on")
     whitelist: Mapped[list[str] | None] = Column(
         JSON, nullable=True, comment="Usernames/IDs to always act on (if set, only these)"

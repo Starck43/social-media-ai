@@ -1934,7 +1934,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             "action_type": "Действие после анализа",
             "rate_limit_per_hour": "Лимит действий в час",
             "cooldown_seconds": "Пауза между действиями (сек)",
-            "requires_approval": "Требует подтверждения",
             "blacklist": "Чёрный список",
             "whitelist": "Белый список",
         },
@@ -1957,7 +1956,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "action_type",
         "rate_limit_per_hour",
         "cooldown_seconds",
-        "requires_approval",
         "blacklist",
         "whitelist",
     ]

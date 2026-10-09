@@ -96,3 +96,15 @@ not this follow-up.
    `pytest --no-cov -q tests/test_web_chat.py tests/test_web_ui_components.py tests/test_web_analytics.py`
 6. Admin forms: invalid JSON, invalid/oversized image and clipboard-denied states
    show inline feedback instead of native alert.
+
+### Chat asset regression hotfix
+
+The extraction accidentally matched the literal `<style>` in a JS comment, leaving
+asset tags inside an unclosed script and JS/HTML fragments in chat.css. Fixed the
+head boundaries and cleaned CSS. Earlier inline-asset previews masked this defect;
+future previews must retain external script/style tags. Added a rendered HTMLParser
+regression check to the existing UI test module. The check passed standalone without
+DB; pytest entry point was blocked by its global DB fixture (local PostgreSQL down).
+No full suite run. Local fixture image with external CSS/JS references inspected.
+Check locally: `/app/chat` shows existing messages, styled composer/suggestions;
+Network loads chat.css and chat.js; Console has no unterminated-comment/chatApp error.

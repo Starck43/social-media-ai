@@ -144,3 +144,48 @@ def test_chat_and_notification_presentation_contracts():
     assert 'document.body.style.overflow = "hidden"' in base
     for path in Path("app/templates").rglob("*.html"):
         assert 'alert(' not in path.read_text(), path
+
+
+def test_chat_head_has_real_assets_and_css_contains_no_script_fragments():
+    from html.parser import HTMLParser
+    from jinja2 import DictLoader, Environment, ChoiceLoader
+
+    env = Environment(loader=ChoiceLoader([
+        DictLoader({"web/base.html": "<html><head>{% block extra_head %}{% endblock %}</head><body>{% block content %}{% endblock %}</body></html>"}),
+        templates.env.loader,
+    ]))
+    html = env.get_template("web/chat.html").render(
+        messages=[], csrf="fixture", is_owner=True,
+        url_for=lambda name, **kwargs: "/static/" + kwargs["path"],
+    )
+    class AssetParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.assets = []
+            self.scripts = []
+            self.in_script = False
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag in ("link", "script"):
+                self.assets.append((tag, attrs))
+            if tag == "script":
+                self.in_script = True
+
+        def handle_endtag(self, tag):
+            if tag == "script":
+                self.in_script = False
+
+        def handle_data(self, data):
+            if self.in_script:
+                self.scripts.append(data)
+
+    parsed = AssetParser()
+    parsed.feed(html)
+    assert any(tag == "link" and attrs.get("href") == "/static/css/chat.css" for tag, attrs in parsed.assets)
+    assert any(tag == "script" and attrs.get("src") == "/static/js/chat.js" for tag, attrs in parsed.assets)
+    assert any("marked.setOptions" in text for text in parsed.scripts)
+    assert all("<link" not in text and "<script" not in text for text in parsed.scripts)
+    css = Path("app/static/css/chat.css").read_text()
+    assert "<script" not in css and "</script>" not in css and "<style>" not in css
+    assert "marked.setOptions" not in css

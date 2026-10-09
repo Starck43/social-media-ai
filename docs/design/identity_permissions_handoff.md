@@ -175,3 +175,19 @@ Expected: both privacy cases pass even with no pre-existing active account;
 no owner scope reaches the handler; audit/notification/log behavior unchanged.
 Record new tested SHA and redacted output. Full suite needs a suitable timeout;
 an interruption is not acceptance. PR #22 remains draft/open, not merged into dev.
+
+
+## Completed synchronization and exact continuation
+
+`4735859` contains the new narrow fixture and owner evidence; `5596797` merges
+fresh dev `eb49d1d` into the PR BRANCH (not PR #22 into dev). The two shared-doc
+conflicts are resolved. Fresh handler privacy changes from PR #23/#25, runtime
+and dispatcher are preserved; PR #25's merged status was checked through GitHub.
+Tracker/next_tasks now hold both parallel work and the identity continuation.
+
+Owner: git fetch origin; git switch ai/identity-permissions-boundary;
+git pull --ff-only after saving local edits. Retest the NEW fixture with
+`python -m pytest -q tests/test_dispatcher_log_privacy_db.py`, then the permission
+commands above. Prior 2/2 is not this revision's result. Tests remain unrun by the
+agent. Full suite must complete; its earlier 120-second timeout remains open.
+No sender activation, runtime/router rewrite, schema/migration or dev merge.

@@ -6,6 +6,27 @@ owner actively edits the project. Chat/notification UI and chat asset fix
 `9d83c9a` are preserved. This list is a plan, not new implementation authority
 for every package, live activation or future merge.
 
+## Current owner assignment — draft identity PR #22
+
+PR #22 branch `ai/identity-permissions-boundary` synced with dev `eb49d1d`
+(including merged PR #23/#24/#25), conflict resolution preserved both work lanes.
+Owner fix `963bf4f` is retained in history; `4735859` replaces its arbitrary-user
+fixture with a dedicated active actor (no role/superuser), cleanup and owner
+scope only around task arrangement. Handler asserts no inherited actor/grant.
+New setup/assertions are PREPARED, NOT RUN; PR stays draft, NOT merged into dev.
+
+Owner reported 24/24 bootstrap unit, 33/33 focused readiness and prior privacy
+2/2 passes; same DB public/test_schema isolation. Full suite timed out at 120s.
+These are prior owner results, not acceptance of the new fixture; tested SHA/logs
+not supplied. Read [the current handoff](identity_permissions_handoff.md).
+
+Next: owner/local retests NEW fixture and permission regressions, records tested
+SHA/commands/output, completes remaining identity/legacy arrange compatibility.
+Priority: identity/rights first, general queue second, attempt-accounting and
+budget-reservation DESIGN third, with separate schema approval. Do not restore
+anonymous allowances, weaken security tests, redo digests or add personal routing.
+Parallel privacy inventory below remains separate; no final merge authority.
+
 ## Already implemented — do not rebuild
 
 PR #12 bounded default-off digest checkpoint integration; PR #16 fixture fix;
@@ -15,19 +36,19 @@ PR #20 dispatcher-owned log/failure-notification privacy. Merged does not mean
 accepted/deployed. API /health returns 503 on DB failure; /livez is process-only.
 Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
 
-## Current bounded continuation — prepared, not merged
+## Parallel bounded privacy continuation — merged, acceptance open
 
-Fresh dev `3373a1e` after PR #24; open
-[PR #25](https://github.com/Starck43/social-media-ai/pull/25),
-branch `fix/staged-attempt-log-privacy`, tests/handoff `78a86be`. NOT MERGED.
+PR #25 merged as `eb49d1d`; original baseline `3373a1e` after PR #24,
+branch `fix/staged-attempt-log-privacy`, tests/handoff `78a86be`.
+Merge verified; deployment/application-test acceptance still open.
 Code `9bb566a`: only `_count_failed_staged` warning, safe event/category/source ID.
 Nine helper/mocked-storage cases prepared, NOT RUN; static AST and new-file
 whitespace/line-length checks only. Existing attempt-count/hash/fallback/cleanup
 behavior, dispatcher PR #20, retirement PR #23, UI and runtime guard unchanged.
 See [attempt-warning handoff](staged_attempt_log_privacy_handoff.md).
 
-Next: owner/local acceptance results + PR review; merge only on NEW explicit
-owner instruction. Then consider one `handle_prune` stale-items warning or one
+Next: owner/local acceptance results for the merged warning. Later consider
+one `handle_prune` stale-items warning or one
 coordinated collect path, separately. No live calls or deployment permission.
 
 ## Previous bounded continuation — merged, acceptance open
@@ -42,7 +63,7 @@ Follow-up inspection: GitGuardian/Kilo succeeded for PR #23/#24 heads. This is
 not application-test evidence; the seven prepared helper cases remain unrun.
 See [selected-surface handoff](staged_retirement_log_privacy_handoff.md).
 Do not rebuild this merged warning. The `_count_failed_staged` warning is now
-prepared separately below, NOT merged. Other handler/provider/ORM logs and stored
+merged separately via PR #25; acceptance remains open. Other handler/provider/ORM logs and stored
 errors remain open; preserve partial collection outcomes.
 
 Parallel open PR #22 is the identity/permissions branch; this task does not merge
@@ -75,7 +96,8 @@ Preserve both records when synchronizing; refresh dev before any further work.
    in readiness documents, including their earlier PREPARED privacy snapshot.
    Current integration authority is the implementation tracker and PR #20.
 
-Start a new implementation chat with item 2 after checking item 1 evidence.
+For the parallel privacy lane, item 2 follows item 1 evidence. This identity
+branch instead follows the owner assignment above.
 Do not bundle all packages into one broad refactor.
 
 ## Important complex packages — separate chats/branches

@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `3373a1eaa14a24e9e199e87d6021d6311e05cc45` (2026-10-09), after PR #24.
+Latest checked dev: `eb49d1d3b6bb249393f2719e056c77f1a0516d4a` (2026-10-09), after PR #25.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -196,26 +196,61 @@ See [retirement-warning handoff](design/staged_retirement_log_privacy_handoff.md
 Next: owner/local acceptance evidence; the separate `_count_failed_staged`
 warning package is now prepared below, not merged.
 
-## Staged attempt-count warning privacy — prepared, not merged
+## Staged attempt-count warning privacy — merged, acceptance open
 
-Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25); fresh baseline
-`3373a1e`, branch `fix/staged-attempt-log-privacy`, code `9bb566a`,
-tests/handoff `78a86be`. NOT MERGED; deployment/acceptance pending.
+PR #25 merged as `eb49d1d`; original baseline `3373a1e`,
+branch `fix/staged-attempt-log-privacy`, code `9bb566a`, tests/handoff `78a86be`.
+Merged status verified; deployment/application-test acceptance remains pending.
 
-- [ ] Prepared: only `_count_failed_staged` failure warning uses fixed event,
+- [x] Merged: only `_count_failed_staged` failure warning uses fixed event,
   bounded source ID and static storage-operation category, without raw exceptions.
 - [ ] Nine actual-helper/mocked-storage cases WRITTEN, NOT RUN. Static AST and
   new-test whitespace/line-length checks completed; no formatter/test execution.
-- [ ] PR #25 review/local acceptance and a NEW explicit owner merge command pending.
+- [x] PR #25 merge verified; this does not certify local/full-suite acceptance.
 
 Hash filtering/order/duplicates, attempt-count arguments, fallback zero, cleanup,
 transaction and cancellation unchanged. No staged-row deletion, dispatcher/UI/
 runtime-guard/collector outcome change. Prior PR #23/#24 remain merged; remaining
 collect/analyze/prune/provider/ORM/stored-error privacy and production gates open.
 See [attempt-warning handoff](design/staged_attempt_log_privacy_handoff.md).
-Next: owner/local results and PR review, then authorized integration; afterwards
+Next: owner/local results and acceptance after the verified merge; afterwards
 one separate prune warning or coordinated collect path. Preserve PR #22 journal
 entries when syncing; no identity/queue work or sender activation bundled here.
+
+## Identity/permissions boundary — draft PR #22, not merged
+
+Branch `ai/identity-permissions-boundary`, original baseline `57b5612`.
+Synced with fresh dev `eb49d1d` after parallel PR #23/#24/#25 by merge `5596797`.
+Resolved both shared-document conflicts; parallel handler privacy code preserved.
+
+- [ ] Prepared: anonymous denial; tenant/subject-bound source/task/scenario owner
+  override; API manager identity; explicit CLI/service authority. Not accepted.
+- [ ] 13 standalone boundary methods plus negative DB/web regressions written;
+  agent did NOT run tests. Only static syntax/whitespace/file checks performed.
+- [x] Owner push `963bf4f` verified in PR #22 (not dev).
+- [ ] Follow-up `4735859`: replace arbitrary existing account with an isolated
+  active role-less/non-superuser test User and cleanup; owner scope ONLY around
+  AgentTask arrangement, with no-identity assertions inside handler. NOT RUN.
+- [ ] Owner/local must retest this NEW fixture and complete remaining legacy
+  arrangement/identity compatibility; full-suite/security acceptance still open.
+
+See [identity/permissions handoff](design/identity_permissions_handoff.md).
+Runtime guard, dispatcher, parallel handlers and digest integration preserved.
+No personal router, schema/migration, queue redesign, cost package or live sends.
+
+## Owner-reported local evidence — previous fixture, not the follow-up
+
+- `python tests/test_bootstrap_readiness_unit.py`: 24/24 passed.
+- `python -m scripts.setup_test_db --check`: same PostgreSQL database, working
+  schema public and separate test_schema confirmed; no per-tenant role seeding.
+- `python -m pytest -q tests/test_bootstrap_readiness_unit.py tests/test_api_health.py tests/test_setup_test_db.py`: 33/33 passed.
+- `python -m pytest -q tests/test_dispatcher_log_privacy_db.py`: 2/2 passed with
+  owner's previous fixture. This is NOT evidence for new setup `4735859`.
+- `python -m pytest -q`: interrupted at 120 seconds, NOT a completed green suite.
+
+OWNER-REPORTED, not rerun by the agent. Exact tested SHA/full logs/dependency
+versions not supplied; count of unchanged warnings does not prove other tests
+unaffected. Historical authoring results above remain separately attributed.
 
 ## Test target — shared PostgreSQL, isolated schema
 
@@ -272,7 +307,11 @@ replaces acceptance criteria nor authorizes deployment.
 1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20/#23 are merged.
    PR #22 remains a separate open identity/permissions branch with journal overlap. Preserve the owner
    runtime guard and check parallel changes before edits.
-2. Read this tracker and new job delivery handoff before changing retry/sending.
+2. Retest the narrowed PR #22 fixture and permission regressions, then finish
+   identity/compatibility review. Owner priority: package 1 rights, package 2
+   general queue/lease/heartbeat/Job-task consistency, package 3 attempt-accounting
+   and budget-reservation DESIGN with separate schema approval. No personal router
+   or digest reintegration. Preserve parallel privacy continuation independently.
 3. Verify actual target migration state independently; 0087 merged is not deployed.
 4. Run the isolated tests and record actual results/commit, not historical counts.
 5. Keep force/legacy/uncertainty stops and frozen evidence intact. Do not restore

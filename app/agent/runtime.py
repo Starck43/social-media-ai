@@ -18,6 +18,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from app.agent.identity import RuntimeIdentity, resolve_runtime_identity, session_matches_identity
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
@@ -317,57 +318,53 @@ async def web_session_id(user_id: int) -> Optional[int]:
 
 
 async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
-    """Agent turn inside an already resolved workspace."""
-    # Resolve the User so permission checks have a subject.
-    # For web: resolution.user_id is the users.id.
-    # For telegram/MAX: resolve via tenant_users → user_id (may be None).
-    user = None
-    if resolution.channel == WEB_CHANNEL:
-        from app.models import User
-        user = await User.objects.get(id=int(resolution.user_id))
-    else:
-        from app.models.managers.tenant_manager import tenant_users
-        tu = await tenant_users.get(
-            channel=resolution.channel,
-            external_user_id=resolution.user_id,
+    """Admit a bound active identity and retain its scope for the WHOLE turn."""
+    if (
+        getattr(inbound, "channel", None) != getattr(resolution, "channel", None)
+        or str(getattr(inbound, "chat_id", "")) != getattr(resolution, "chat_id", None)
+        or str(getattr(inbound, "user_id", "")) != getattr(resolution, "user_id", None)
+    ):
+        return "Не удалось подтвердить пользователя этого рабочего пространства."
+    identity = await resolve_runtime_identity(resolution)
+    if identity is None:
+        return "Чат не связан с активным пользователем рабочего пространства. Обратитесь к администратору."
+    with permission_scope(identity.user, is_owner=identity.is_owner):
+        return await _handle_authorized_turn(inbound, resolution, identity)
+
+
+async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: RuntimeIdentity) -> Optional[str]:
+    """An admitted turn; routing and the existing injection guard are preserved."""
+    text = inbound.text.strip()
+
+    # Check for prompt injection attempts
+    injection_error = _check_prompt_injection(text)
+    if injection_error:
+        # Create a session for logging the injection attempt
+        from app.models.managers.agent_session_manager import agent_sessions
+        session = await agent_sessions.get_or_create(
+            channel=inbound.channel,
+            chat_id=str(inbound.chat_id),
+            kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
+            is_owner=identity.is_owner,
         )
-        if tu and tu.user_id is not None:
-            from app.models import User
-            user = await User.objects.get(id=tu.user_id)
-    # user is None for unmessenger users without web binding → bypass (legacy).
+        if session:
+            await session.append("user", text)
+            await session.append("assistant", injection_error)
+            await session.touch()
+        return injection_error
 
-    with permission_scope(user, is_owner=resolution.is_owner):
-        text = inbound.text.strip()
+    if resolution.onboarded:
+        from app.models.managers.tenant_manager import tenants
 
-        # Check for prompt injection attempts
-        injection_error = _check_prompt_injection(text)
-        if injection_error:
-            # Create a session for logging the injection attempt
-            from app.models.managers.agent_session_manager import agent_sessions
-            session = await agent_sessions.get_or_create(
-                channel=inbound.channel,
-                chat_id=str(inbound.chat_id),
-                kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-                is_owner=resolution.is_owner,
-            )
-            if session:
-                await session.append("user", text)
-                await session.append("assistant", injection_error)
-                await session.touch()
-            return injection_error
+        tenant = await tenants.get(id=resolution.tenant_id)
+        name = getattr(tenant, "name", "workspace")
+        role_label = "Суперпользователь" if identity.is_owner else "Участник"
+        return (
+            f"Готово! Этот чат привязан к рабочему пространству «{name}». "
+            f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
+        )
 
-        if resolution.onboarded:
-            from app.models.managers.tenant_manager import tenants
-
-            tenant = await tenants.get(id=resolution.tenant_id)
-            name = getattr(tenant, "name", "workspace")
-            role_label = "Суперпользователь" if resolution.is_owner else "Участник"
-            return (
-                f"Готово! Этот чат привязан к рабочему пространству «{name}». "
-                f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
-            )
-
-        limit = await tenant_daily_cost_limit(resolution.tenant_id)
+    limit = await tenant_daily_cost_limit(resolution.tenant_id)
     if limit and await _cost_today() >= limit:
         return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
 
@@ -377,9 +374,9 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         channel=inbound.channel,
         chat_id=str(inbound.chat_id),
         kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-        is_owner=resolution.is_owner,
+        is_owner=identity.is_owner,
     )
-    if session is None:
+    if not session_matches_identity(session, identity):
         logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
         return "Не удалось открыть сессию агента."
 
@@ -403,7 +400,7 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         return await _handle_feedback(session, inbound, command, text)
 
     if command == "/memory":
-        return await _handle_memory_command(session, resolution, text)
+        return await _handle_memory_command(session, identity, text)
 
     # 1) Confirmation flow first (before touching the model)
     pending = _pending_confirmation(session)

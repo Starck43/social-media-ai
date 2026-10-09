@@ -124,3 +124,54 @@ published payload files matched the prepared files. Runtime and dispatcher
 sources were unchanged. Dev then advanced to `a88cd30` through documentation-only
 PR #21; its tracker and next_tasks_handoff are preserved and augmented here.
 13 tests remain prepared/unrun. Next: owner compatibility checks, not queue work.
+
+
+## Owner evidence and fixture follow-up
+
+Owner pushed `963bf4f` to this PR branch and reported these local results:
+
+| Command | Owner-reported result |
+| --- | --- |
+| python tests/test_bootstrap_readiness_unit.py | 24/24 passed |
+| python -m scripts.setup_test_db --check | Common PostgreSQL database; working public, isolated test_schema |
+| python -m pytest -q tests/test_bootstrap_readiness_unit.py tests/test_api_health.py tests/test_setup_test_db.py | 33/33 passed |
+| python -m pytest -q tests/test_dispatcher_log_privacy_db.py | 2/2 passed with the owner's previous fixture |
+| python -m pytest -q | Interrupted by a 120-second timeout; NOT a completed pass |
+
+These are OWNER-REPORTED, not rerun here. Exact tested SHA/full logs/environment
+versions were not supplied; do not attribute the previous 2/2 result to the
+fixture revision below or certify other tests from an unchanged warning count.
+
+Follow-up replaces the arbitrary first-active-user lookup with a test-owned
+active User (no role, no superuser flag), eager-loaded for deterministic rights
+checks, and deleted in fixture teardown. Owner authority exists ONLY around
+AgentTask arrangement; Job arrangement and the mocked handler/dispatcher run
+without it. Added assertions verify that the actor's ordinary create right is
+absent and the handler receives no ambient user/anonymous create grant. Existing
+privacy/outcome/no-live-send assertions are preserved. No per-tenant role seeding
+is introduced: model role permissions are platform reference data.
+
+Fresh base is `eb49d1d3b6bb249393f2719e056c77f1a0516d4a` after parallel PR #23/#24/#25. Two conflicts were observed:
+implementation tracker and next_tasks_handoff. Shared docs are aligned to the
+fresh base before PR-branch synchronization; identity continuation is preserved
+here and will be restored alongside the parallel sections afterward. Keep both
+records; do not overwrite the new handler privacy code or reimplement it.
+
+New fixture/assertions are PREPARED, NOT RUN. Only static AST and whitespace
+checks performed. Run from the project .venv with dependencies and a DISTINCT
+DB_TEST_SCHEMA on the common POSTGRES_URL, not working/default public; no parallel
+pytest processes on one schema. Do not issue reset/drop without inspecting and
+explicitly authorizing the isolated target after the interrupted run.
+
+```bash
+python -m scripts.setup_test_db --check
+python -m pytest -q tests/test_dispatcher_log_privacy_db.py
+python tests/test_identity_permissions_boundary.py
+python -m pytest -q tests/test_permission_scope.py tests/test_manager_permissions.py tests/test_web_permissions.py tests/test_api_permissions.py tests/test_api_scope.py
+python -m pytest -q
+```
+
+Expected: both privacy cases pass even with no pre-existing active account;
+no owner scope reaches the handler; audit/notification/log behavior unchanged.
+Record new tested SHA and redacted output. Full suite needs a suitable timeout;
+an interruption is not acceptance. PR #22 remains draft/open, not merged into dev.

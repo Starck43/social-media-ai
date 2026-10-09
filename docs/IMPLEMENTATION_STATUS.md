@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `a88cd3001f184531d68a21e93ddff1aa9cb39e4c` (2026-10-09), after PR #21.
+Latest checked dev: `3373a1eaa14a24e9e199e87d6021d6311e05cc45` (2026-10-09), after PR #24.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -169,26 +169,53 @@ Next small work: review one remaining handler-log path or audit task-outcome UI
 with owner file coordination. Important separate packages: fail-closed identity,
 queue leases/atomicity, atomic memory batches and per-attempt budget reservations.
 
-## Identity/permissions boundary — prepared, not merged
+## Staged retirement warning privacy — merged, acceptance open
 
-Draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), branch
-`ai/identity-permissions-boundary`; original baseline `57b5612`. Rechecked dev
-`a88cd30` after parallel PR #21: only documentation changed, no application overlap.
+PR #23 merged as `98e3aad` on the owner's explicit instruction. Original baseline
+`a88cd30`; code `be3f67c`, tests/handoff `a332a98`. Fresh dev verified after merge.
 
-- [ ] Anonymous permission/role checks fail closed; ownership is limited to
-  source/task/scenario in the captured tenant, not global LLM fleet/roles/queue.
-- [ ] API carries identity into manager gates; trusted CLI authorization and
-  exact service bookkeeping grants replace implicit anonymous allowances.
-- [ ] 13 standalone boundary methods plus negative DB/web regressions prepared.
-  Tests NOT RUN. Only static AST parsing and whitespace inspection completed.
-- [ ] Complete legacy tenancy arrange/identity compatibility and run the owner's
-  targeted/full-suite checks before marking ready; no security gate is closed.
+- [x] Only `_retire_staged` failure warning uses fixed event/category
+  and bounded source ID; no raw exception/traceback or content hash in its logs.
+- [x] Seven actual-helper/mocked-storage tests written, NOT run. No new test
+  acceptance evidence, PostgreSQL run, formatter run or production claim.
+- [x] Integrated via [PR #23](https://github.com/Starck43/social-media-ai/pull/23).
+- [ ] Owner/local focused/full-suite acceptance remains pending; seven helper
+  cases remain unrun. Follow-up inspection observed GitGuardian/Kilo success
+  for PR #23 head `a332a98` and docs PR #24 head `79aa1a8`. PR #23 reviews/threads
+  were empty. GitHub checks are NOT application-test acceptance.
 
-See [identity/permissions handoff](design/identity_permissions_handoff.md) for
-matrix, bypass map, exact commands, compatibility limits and continuation.
-Runtime guard is unchanged; no personal router, new schema, posting activation,
-queue package, cost package or digest reintegration. This is a draft boundary
-package, NOT merged/deployed/production-accepted.
+Parallel open PR #22 (identity/permissions) is NOT merged by this task. It shares
+`docs/IMPLEMENTATION_STATUS.md` and `docs/design/next_tasks_handoff.md`, not this
+package's application/test files. Preserve BOTH journal sections when syncing
+that branch; do not overwrite its prepared identity work or redo this warning.
+
+Return-zero fallback, success deletion counts, transaction/cleanup and cancellation
+are unchanged. Dispatcher PR #20, UI and owner runtime guard are untouched.
+Other handler/provider/ORM logs and stored errors remain open.
+See [retirement-warning handoff](design/staged_retirement_log_privacy_handoff.md).
+Next: owner/local acceptance evidence; the separate `_count_failed_staged`
+warning package is now prepared below, not merged.
+
+## Staged attempt-count warning privacy — prepared, not merged
+
+Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25); fresh baseline
+`3373a1e`, branch `fix/staged-attempt-log-privacy`, code `9bb566a`,
+tests/handoff `78a86be`. NOT MERGED; deployment/acceptance pending.
+
+- [ ] Prepared: only `_count_failed_staged` failure warning uses fixed event,
+  bounded source ID and static storage-operation category, without raw exceptions.
+- [ ] Nine actual-helper/mocked-storage cases WRITTEN, NOT RUN. Static AST and
+  new-test whitespace/line-length checks completed; no formatter/test execution.
+- [ ] PR #25 review/local acceptance and a NEW explicit owner merge command pending.
+
+Hash filtering/order/duplicates, attempt-count arguments, fallback zero, cleanup,
+transaction and cancellation unchanged. No staged-row deletion, dispatcher/UI/
+runtime-guard/collector outcome change. Prior PR #23/#24 remain merged; remaining
+collect/analyze/prune/provider/ORM/stored-error privacy and production gates open.
+See [attempt-warning handoff](design/staged_attempt_log_privacy_handoff.md).
+Next: owner/local results and PR review, then authorized integration; afterwards
+one separate prune warning or coordinated collect path. Preserve PR #22 journal
+entries when syncing; no identity/queue work or sender activation bundled here.
 
 ## Test target — shared PostgreSQL, isolated schema
 
@@ -242,12 +269,10 @@ replaces acceptance criteria nor authorizes deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20 are merged. Preserve the owner
+1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20/#23 are merged.
+   PR #22 remains a separate open identity/permissions branch with journal overlap. Preserve the owner
    runtime guard and check parallel changes before edits.
-2. Current owner priority: finish draft PR #22 identity/permission compatibility
-   and owner acceptance first. Queue/lease/heartbeat/Job-task consistency is
-   package 2; attempt-cost/reservation DESIGN is package 3 (schema approval separate).
-   Keep personal routing and digest reintegration out of this sequence.
+2. Read this tracker and new job delivery handoff before changing retry/sending.
 3. Verify actual target migration state independently; 0087 merged is not deployed.
 4. Run the isolated tests and record actual results/commit, not historical counts.
 5. Keep force/legacy/uncertainty stops and frozen evidence intact. Do not restore

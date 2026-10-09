@@ -6,24 +6,6 @@ owner actively edits the project. Chat/notification UI and chat asset fix
 `9d83c9a` are preserved. This list is a plan, not new implementation authority
 for every package, live activation or future merge.
 
-## Current owner assignment — package 1 prepared in draft PR #22
-
-Rechecked dev `a88cd30` after PR #21. The owner explicitly assigned identity and
-rights FIRST, then general queue, then attempt-accounting/reservation DESIGN
-with separate schema agreement. This takes precedence over the earlier privacy
-continuation order below, which remains a parallel-work inventory.
-
-Draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), branch
-`ai/identity-permissions-boundary`, prepares the matrix/bypass map, anonymous
-denial, bounded owner rights and exact system grants. Tests are written, NOT RUN.
-Owner/local agent runs them. Compatibility of legacy tenancy arrange writes and
-messenger-only identities is still a gate; do not restore anonymous allow or
-weaken negative tests. Read [the handoff](identity_permissions_handoff.md).
-Runtime guard and digest integration are unchanged; personal router excluded.
-
-Next session: fetch fresh dev and PR #22 head; collect owner results and finish
-compatibility/identity follow-up before opening queue work. No merge authority.
-
 ## Already implemented — do not rebuild
 
 PR #12 bounded default-off digest checkpoint integration; PR #16 fixture fix;
@@ -32,6 +14,40 @@ PR #19 test-schema guard, redacted diagnostics, API liveness/readiness;
 PR #20 dispatcher-owned log/failure-notification privacy. Merged does not mean
 accepted/deployed. API /health returns 503 on DB failure; /livez is process-only.
 Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
+
+## Current bounded continuation — prepared, not merged
+
+Fresh dev `3373a1e` after PR #24; open
+[PR #25](https://github.com/Starck43/social-media-ai/pull/25),
+branch `fix/staged-attempt-log-privacy`, tests/handoff `78a86be`. NOT MERGED.
+Code `9bb566a`: only `_count_failed_staged` warning, safe event/category/source ID.
+Nine helper/mocked-storage cases prepared, NOT RUN; static AST and new-file
+whitespace/line-length checks only. Existing attempt-count/hash/fallback/cleanup
+behavior, dispatcher PR #20, retirement PR #23, UI and runtime guard unchanged.
+See [attempt-warning handoff](staged_attempt_log_privacy_handoff.md).
+
+Next: owner/local acceptance results + PR review; merge only on NEW explicit
+owner instruction. Then consider one `handle_prune` stale-items warning or one
+coordinated collect path, separately. No live calls or deployment permission.
+
+## Previous bounded continuation — merged, acceptance open
+
+Fresh dev checked: `98e3aad` after PR #23, merged on explicit owner instruction.
+The selected first handler surface is
+`_retire_staged` failure warning only; code `be3f67c` on
+`fix/staged-retirement-log-privacy`. Seven helper/mocked-storage cases are written,
+NOT run; tests/handoff commit `a332a98`. This is integrated, not deployment or
+acceptance. Dispatcher, UI and runtime guard untouched. No new tests executed.
+Follow-up inspection: GitGuardian/Kilo succeeded for PR #23/#24 heads. This is
+not application-test evidence; the seven prepared helper cases remain unrun.
+See [selected-surface handoff](staged_retirement_log_privacy_handoff.md).
+Do not rebuild this merged warning. The `_count_failed_staged` warning is now
+prepared separately below, NOT merged. Other handler/provider/ORM logs and stored
+errors remain open; preserve partial collection outcomes.
+
+Parallel open PR #22 is the identity/permissions branch; this task does not merge
+or supersede it. Both branches edit the implementation tracker and this list.
+Preserve both records when synchronizing; refresh dev before any further work.
 
 ## Next small sequential packages
 
@@ -42,7 +58,8 @@ Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
    test run occurred at merge. Collect exact tested head/commands/results; do not
    infer new-package acceptance from the owner's earlier all-tests-pass report.
 2. **One remaining handler-log path:** start with inventory in
-   app/jobs/handlers.py (collect/analyze/staging/retention). Remove raw exceptions
+   app/jobs/handlers.py (collect/analyze/staging/retention); `_retire_staged` warning
+   is now merged via PR #23 and must not be rebuilt. Remove raw exceptions
    and tracebacks from one selected surface with safe correlation/category tests.
    Preserve collector partial outcomes and runtime guard; coordinate dispatcher
    overlap with queue work. This does not sanitize stored errors automatically.
@@ -58,8 +75,7 @@ Personal multi-workspace chat routing remains a PLAN, not a shipped feature.
    in readiness documents, including their earlier PREPARED privacy snapshot.
    Current integration authority is the implementation tracker and PR #20.
 
-For the parallel privacy lane, item 2 follows item 1 evidence; the current owner
-identity/rights assignment above has priority for this branch.
+Start a new implementation chat with item 2 after checking item 1 evidence.
 Do not bundle all packages into one broad refactor.
 
 ## Important complex packages — separate chats/branches

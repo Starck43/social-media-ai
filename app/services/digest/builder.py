@@ -66,7 +66,8 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         context = data.get("brief") or data
         prompt = DIGEST_PROMPT_TEMPLATE.format(data=str(context)[:6000])
         result = await client.analyze(prompt, max_tokens=500, temperature=0.3)
-        cost = float((result.get("usage") or {}).get("cost") or 0.0)
+        raw_cost = (result.get("usage") or {}).get("cost")
+        cost = float(raw_cost) if raw_cost is not None else None
         parsed = result.get("parsed") or {}
         summary = parsed.get("summary") or parsed.get("analysis")
         if isinstance(summary, str) and summary.strip():
@@ -177,6 +178,12 @@ async def _build_and_publish_scoped(
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
     from app.models.managers.digest_run_manager import DigestRunManager
+    from app.services.digest.delivery_outcomes import DeliveryFailure
+    from app.services.digest.job_delivery import assert_legacy_allowed, enabled
+
+    if enabled():
+        raise DeliveryFailure("checkpoint_delivery_requires_claimed_job")
+    await assert_legacy_allowed(agent_task_id=agent_task_id, period=period)
 
     runs = DigestRunManager()
     start, end = period_bounds(period)

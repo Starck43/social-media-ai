@@ -138,31 +138,54 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     ("выполнить сейчас"): there is no worker loop that will ever come back for a
     retry, and re-scheduling would repeat the side effects unattended.
     """
-    # Job context travels in columns, not in payload. Handlers that need it
-    # (digest idempotency is keyed on agent_task_id) get it merged in here.
+    # Identity comes from columns, never from user-supplied payload overrides.
     payload = dict(job.payload or {})
-    payload.setdefault("agent_task_id", job.agent_task_id)
-    payload.setdefault("job_id", job.id)
-    # Everything below — the handler AND the bookkeeping writes — must see the
-    # job's workspace, otherwise mark_done() cannot even find the row.
+    payload["agent_task_id"] = job.agent_task_id
+    payload["job_id"] = job.id
     with tenant_scope(job.tenant_id):
+        checkpoint_mode = False
+        if job.job_type == "digest":
+            from app.services.digest.job_delivery import REFERENCE_KEY, enabled
+
+            checkpoint_mode = enabled() or REFERENCE_KEY in (getattr(job, "result", None) or {})
         try:
-            result = await handler(payload)
+            if job.job_type == "digest":
+                from app.services.digest.job_delivery import execute_digest_job
+
+                result = await execute_digest_job(job, payload, handler)
+            else:
+                result = await handler(payload)
             llm_cost = None
             if isinstance(result, dict) and result.get("llm_cost"):
                 try:
                     llm_cost = float(result["llm_cost"])
                 except (TypeError, ValueError):
                     llm_cost = None
-            await jobs.mark_done(job.id, result=result, llm_cost=llm_cost)
+            if checkpoint_mode:
+                from app.services.digest.job_delivery import finalize_digest_job
+
+                if await finalize_digest_job(job, result=result) is None:
+                    logger.warning("Digest job %s lost its claim before completion", job.id)
+                    return
+            else:
+                await jobs.mark_done(job.id, result=result, llm_cost=llm_cost)
             logger.info(f"Job {job.id} ({job.job_type}) done: {result}")
-            # A skip is a normal no-op (already sent digest, learn below its
-            # message threshold, cost cap, nothing to reflect on). It would fire
-            # a notification on every scheduled run, so only real work reports.
             if not (isinstance(result, dict) and result.get("status") == "skipped"):
                 await _notify_job_result(job, success=True, result=result)
         except Exception as e:
-            will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=allow_retry)
+            # Uncertain/blocked checkpoint outcomes are terminal, not hidden retries.
+            from app.services.digest.delivery_outcomes import DeliveryFailure
+
+            retry = allow_retry and (not isinstance(e, DeliveryFailure) or e.retryable)
+            if checkpoint_mode:
+                from app.services.digest.job_delivery import finalize_digest_job
+
+                will_retry = await finalize_digest_job(job, failure=e, allow_retry=retry)
+                if will_retry is None:
+                    logger.warning("Digest job %s lost its claim; outcome write refused", job.id)
+                    return
+            else:
+                will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=retry)
             if will_retry:
                 logger.warning(f"Job {job.id} failed (will retry): {e}")
             else:
@@ -183,7 +206,6 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> Optional[di
         return {"status": "failed", "error": f"Unknown job type: {job.job_type}", "job_id": job.id}
 
     await execute_job(job, handler, allow_retry=allow_retry)
-
     with tenant_scope(job.tenant_id):
         finished = await jobs.get(id=job.id)
     if finished is None:  # pragma: no cover - the row cannot disappear mid-run
@@ -197,7 +219,7 @@ async def run_job_now(job_id: int, *, allow_retry: bool = True) -> Optional[dict
     Used by `cli.main task run` and any "run this exact thing" surface. The
     difference from `run_pending_once` is the claim: it takes *this* job rather
     than the globally oldest pending one, so running a task of one workspace can
-    never execute somebody else's queued job by accident.
+    never execute somebody else's queued work by accident.
 
     `allow_retry=False` for a manual run: the operator is watching, and a
     background retry would repeat the side effects unattended.
@@ -218,47 +240,25 @@ async def _run_claimed_inline(job: Any) -> dict[str, Any]:
         with tenant_scope(job.tenant_id):
             await jobs.mark_failed(job.id, error=error, allow_retry=False)
         return {"status": "failed", "error": error, "job_id": job.id}
-
-    # No retry: nobody is watching this job, so a background retry would repeat
-    # the collection unattended minutes later.
     await execute_job(job, handler, allow_retry=False)
-
     with tenant_scope(job.tenant_id):
         finished = await jobs.get(id=job.id)
-    if finished is None:  # pragma: no cover — the row cannot disappear mid-run
+    if finished is None:  # pragma: no cover — the row was just written
         return {"status": "unknown", "error": "Job row not found after execution", "job_id": job.id}
-    return {
-        "status": finished.status,
-        "result": finished.result,
-        "error": finished.error,
-        "job_id": finished.id,
-    }
+    return {"status": finished.status, "result": finished.result, "error": finished.error, "job_id": finished.id}
 
 
 async def run_task_directly(task: Any) -> Optional[dict]:
     """Run a task's job immediately in the caller's process — no queue hop.
 
-    "Выполнить сейчас" means *now*: the user clicked the button and is staring
-    at the result modal. Going through `enqueue` + `claim_job` would leave a
-    `pending` row visible to the worker, which could claim it first and run the
-    same work twice (and return a `None` outcome to a user who just asked for it).
-
-    The Job row is still created — it is the audit trail (`result`, `error`,
-    `llm_cost`) that the modal, `/app/jobs` and the notifications all read, and
-    the worker never sees it because it is stamped `running` before commit rather
-    than `pending`. Runs the handler synchronously inside the task's tenant.
-
-    The returned outcome always carries `job_id`: the web layer redirects to
-    `/app/tasks?job_id=…` so the modal can render the finished job, including on
-    the failure paths.
+    The job is created as running, so the background worker cannot claim it.
+    The authoritative Job row remains the audit trail for inline execution.
     """
     from app.jobs.enqueue import enqueue_task_run
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(task.tenant_id):
         job = await enqueue_task_run(task)
-        # Pending -> running in one statement: the row must never be observable as
-        # claimable by the worker, so this is not enqueue-then-claim.
         await JobManager.start_running(job.id)
         claimed = await JobManager().get(id=job.id)
     if claimed is None:  # pragma: no cover — the row was just written
@@ -267,17 +267,7 @@ async def run_task_directly(task: Any) -> Optional[dict]:
 
 
 async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_kwargs: Any) -> Optional[dict]:
-    """Execute a one-off job of `job_type` immediately — no task row, no queue.
-
-    The source page's "Собрать сейчас" collects a single source and has no
-    AgentTask behind it, so there is nothing for `run_task_directly` to trigger.
-    It gets the same inline treatment: the row is stamped `running` before the
-    handler runs, so the worker can never duplicate the collection, and the
-    outcome comes back to the caller to report.
-
-    Enqueue kwargs (`agent_task_id`, `tenant_id`, …) pass through to
-    `JobManager.enqueue`, so the caller is responsible for the tenant scope.
-    """
+    """Execute a one-off job immediately; enqueue kwargs require tenant scope."""
     from app.models.managers.job_manager import JobManager
 
     job = await JobManager().enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
@@ -289,22 +279,13 @@ async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_k
 
 
 async def run_pending_once() -> int:
-    """Claim and execute one due job. Returns number of jobs processed (0 or 1).
-
-    `claim_next` deliberately runs without a tenant: a worker must be able to
-    pick up any workspace's job (it is a raw cross-tenant SELECT ... SKIP
-    LOCKED).
-    """
-    # Queue maintenance is cross-tenant by nature: reap stragglers everywhere
-    # and prune old "done" rows.
+    """Claim and execute one due job. Returns number processed (0 or 1)."""
     with tenant_scope(bypass=True):
         await jobs.reap_stale()
         await jobs.cleanup_done()
-
     job = await jobs.claim_next()
     if not job:
         return 0
-
     await _execute_claimed(job)
     return 1
 

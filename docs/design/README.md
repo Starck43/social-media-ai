@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Included/reviewed baseline: dev `2b5b2313b2b49c815bbb6ef714bc1aa370b38fa5` via PR #22 merge `9c6ed3b` after Owner lifted pause. Queued UI/LLM-default changes and earlier0088 code retained. Queued-detail correction targeted42 verified at a354967; source-name patch unrun, old full suite does not certify all new code. No PR #22 merge into dev or agent migration.
+Included baseline dev2b5b231 via9c6ed3b. Fresh dev `b4fd0f0bda4bd7d39df4b90d8dfcaafb7ba41d26` is NOT included: runtime/actions conflict; new registry tests need identity/preview-compatible isolated arrange. Owner source15 passed56s at2bbd3ce and earlier task/LLM42 at a354967. Final full run BLOCKED until reconciliation; PR22 Draft/unmerged.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED / Draft:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); OWNER a354967 task21/LLM21 group42 PASSED58s; fresh dev2b5b231 included | Five source-name sinks/two templates +6 ASGI regressions PREPARED/UNRUN; next15 source cases. Then fresh-dev/final diff review + one full suite before Owner Ready/merge decision. Broader XSS audit OPEN, no security/deployment acceptance. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft / integration blocked:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); source15 passed at2bbd3ce, earlier42 at a354967; fresh devb4fd0f0 NOT included | Owner/local-agent conflict-resolution merge into PR22 preserving fail-closed runtime/preview-only action_send and adapting seven registry tests. Return pushed SHA; compatibility checks then one full suite. Broader XSS/release gates OPEN. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,7 +32,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest owner evidence: exact `2f7beca` short60 passed, post-test-schema-DDL timezone3 passed and complete full suite1577 passed/64 subtests,exit0. The tests include boundary/settings/Telegram files; no default repeat required. New task-name escaping regressions are unrun and newer dev changes are excluded pending review; green is not global security/deployment acceptance.
+Latest owner evidence: source15 passed56s at exact2bbd3ce and task/LLM42 passed58s at a354967, both clean/unchanged. Full2f7beca1577 passed/64subtests/exit0 is historical, not current full acceptance. Next is fresh-dev conflict/test reconciliation before targeted compatibility and one full run; do not replay old short groups by default. Broader XSS/security/deployment gates remain open.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

@@ -6,21 +6,19 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary` includes fresh dev2b5b231 via9c6ed3b.
-OWNER a354967 clean/unchanged: task21/LLM21 group42 PASSED58s,exit0. Queued-detail
-indent-only correction and8 ASGI cases verified; Owner queued UI/LLM defaults
-preserved. No repeat42 needed. Next prepared source-name package: five e filters
-in two templates +6 owner/member text/title/quoted-attribute cases, NOT RUN.
-Owner next15 source-file cases, then fresh-dev/final diff review and one full
-suite before explicit Ready/merge decision. Broader XSS audit remains separately
-OPEN; no global Environment change or security/deployment acceptance.
-See [current handoff](identity_permissions_handoff.md).
-
-Prior task13 a87b550 and full2f7beca1577/64subtests/exit0 retained, not new full
-on a354967/source patch. Existing0088 test-schema effect Owner-verified; agent
-ZERO tests/imports/DB/migrations/live calls. PR22 Draft/unmerged, PR29 deferred;
-no automatic ready/deploy, concurrent pytest/reset/drop/migration/live setup or
-dirty Owner checkout edits. No new docs/design files.
+Branch `ai/identity-permissions-boundary` includes2b5b231 via9c6ed3b.
+OWNER source15 passed56s at exact2bbd3ce; earlier task/LLM42 at a354967 retained.
+Fresh dev NOWb4fd0f0 is NOT included: merge-tree conflicts runtime/actions,
+new registry tests require isolated bound identities/preview-contract alignment.
+Final full suite BLOCKED: local-agent conflict-resolution merge into PR22,
+preserve fail-closed runtime and preview-only action_send, adapt all seven tests
+without skips/weakened assertions, commit/push back same PR branch. Return SHA.
+Then compatibility checks and ONE full suite, fresh-dev check, explicit Ready/
+merge decision. See [handoff](identity_permissions_handoff.md).
+No unsafe intermediate runtime overwrite, live activation, dev push or PR29
+mixing. Existing0088 schema evidence/oldfull2f7beca retained, not new acceptance.
+Agent ZERO tests/imports/DB/migrations/live calls; broader XSS/release gates OPEN.
+No new docs files, new worktree or dirty main UI checkout edits.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

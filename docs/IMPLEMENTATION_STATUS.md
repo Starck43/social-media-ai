@@ -1,60 +1,53 @@
 # Implementation status and session handoff
 
-## Current continuation — verified queued compatibility; source-name escaping
+## Integration blocker — fresh dev changed during final review
 
-OWNER exacta3549676a73bb55d044dca9bed6f21602b1a35ec clean/unchanged before and
-after, no local commits: task21 + LLMmanager21 group42 PASSED58s,exit0.
-All8 queued-detail actor/status/window cases passed; correction is indentation
-only (Owner ignore-all-space diff empty). Queued/running UI and per-capability
-LLM defaults from dev507f9b3/2b5b231 were exercised by this targeted group, not
-claimed as full-suite or concurrent-default-selection acceptance. No repeat42
-request. Fresh dev remains2b5b231, included via9c6ed3b; no new open competing
-package observed beyond deferredPR29. Runtime/core/jobs/migrations preserved.
+Owner source-detail check at exact2bbd3ce: **15 passed**,56s,exit0; clean unchanged
+checkout before/after, no local commits. Owner-local log not independently read.
+Earlier task/LLM42 at a354967 retained; no short-group replay requested.
 
-Next bounded XSS package PREPARED/NOT RUN: five source.name e filters across
-two templates only: sources.html list link, source_detail.html title/h1/delete
-paragraph/quoted name input. No Environment/macro/CSS/layout/router/model/
-permissions/runtime changes. Existing task/source-selector escaping retained.
-Stored values are not sanitized or mutated; encode only at HTML output sinks.
+Fresh dev is NOW `b4fd0f0bda4bd7d39df4b90d8dfcaafb7ba41d26`, not yet included.
+Static merge-tree preview found conflicts in app/agent/runtime.py and
+app/agent/toolset/actions.py. Do NOT run final full suite on the stale integrated
+baseline or mark Ready/merge. PR22 remains Draft; PR29 unchanged/deferred.
 
-Six new tenancy ASGI cases: owner/member x image+event text/title-close/quoted
-attribute payload. Parse actual source link/title/h1/dialog and input value,
-require exact readable/stored name with full quote/ampersand round-trip, no
-injected probe/event attributes. Owner delete form retained, member refused that
-affordance; source remains active/name unchanged and no Job queued by rendering.
-Exact source.create service scope only for arrange, no legacy operator bypass
-in new cases; only test-created actors/tenant cleaned. All9 prior test bodies
-retained. Static count predicts15 source-detail cases (9+6); NOT execution.
+The new dev whole-turn permission scope and real-handler registry binding are
+already implemented by PR22's stronger identity/confirmation boundary. Preserve
+PR22 runtime scope, fresh bound actor/session checks, exact one-use approval,
+preview-only action_send (`botaction.view`, literal dry_run=True, no sender or
+ledger mutation). Do not replace these with dev's legacy None-user admission or
+live-capable action_send (`botaction.update`). No sender activation authorized.
 
-Owner next: clean retained review worktree, existing venv/private environment /
-distinct DB_TEST_SCHEMA already verified0088; stop if dirty/diverged. Fetch /
-ff-only PR22 and record exact HEAD, then:
+New dev test_agent_tool_registry.py has seven useful registry/scope/confirmation
+checks, but contracts/arrange need reconciliation, not deletion or skipping:
+write-vs-preview permission expectations; owner member lacks a bound User;
+fixture globally deletes sessions, reuses fixed chats/default tenant and has no
+tenancy marker. Prepare isolated bound actors, exact explicit preview rights,
+cleanup only owned records, no legacy bypass or broad shared-session deletion.
+Retain real registry identity/signature/helper-exclusion, negative no-right
+refusal, bound authorized confirmation and expired-intent no-dispatch assertions.
+Use a separate no-right actor rather than assume seeded VIEWER lacks view rights.
 
-```bash
-python -m pytest -q tests/test_web_source_detail.py
-```
+Next Owner/local-agent step: merge fresh dev INTO the retained PR22 review
+worktree/branch, resolve the two code conflicts preserving those protections,
+reconcile the seven new tests and docs, commit with English Owner handoff and
+push to origin/ai/identity-permissions-boundary. No force, dev push, PR merge,
+main UI checkout changes or mixed PR29 work. Return exact pushed SHA/diff.
+Agent tools cannot publish a two-parent conflict-resolution merge; no unsafe
+intermediate replacement of protected runtime is used to trick an auto-merge.
 
-Expected15 success, not observed. No repeat42/task13/full/boundary/settings/
-Telegram/analytics/timezone by default. Return exactSHA/result/first complete
-redacted error. Agent only AST/text/git checks; ZERO tests/collection/app
-imports/DB/browser/provider/messenger calls. No reset/drop/stamp/migration/
-concurrent pytest/live setup or owner dirty-UI checkout changes.
+Then inspect the returned merged SHA; first the new registry file plus existing
+runtime identity/confirmation/action authorization checks. Do NOT repeat old
+source15/task42 by default. After this compatibility group is clean, ONE full
+suite on unchanged integrated HEAD, then fresh-dev recheck and explicit
+Ready/merge decision. Counts must come from actual output, not guessed totals.
+No reset/drop/stamp/migration/live calls or concurrent pytest on one schema.
+Agent ZERO tests/collection/app imports/DB/migrations/browser/live operations.
 
-After targeted group is clean: recheck fresh dev/parallel changes and bounded
-PR diff, then one final full suite at the resulting unchanged code/schema head
-before Owner decision on Ready/merge. Do not convert tests to merge approval
-or postpone compatibility forever; older green does not cover this new patch.
-Broader /app escaping audit remains a separate OPEN task with known workspace/
-base/settings/task-detail/shared macro/other-field contexts; no global XSS-safe
-claim. Owner final review must acknowledge remaining risks/release gates,
-not silently mark security/deployment accepted because tests pass.
-
-Prior checkpoints retained: a87b550 task13 PASSED36s; latest completed full
-2f7beca1577 PASSED/64subtests/0failures/errors/skips688.77s exit0, short60 and
-post-test-schema-DDL timezone3 passed. Owner applied only0088 effect in resolved
-test_schema (tables27 unchanged/task22->21), no Alembic/reset/production change.
-Owner-local full log not read by agent. PR22 Draft/unmerged; PR29 unchanged/
-deferred. Existing board/ledger/handoff/pointer updated; no new docs/design file.
+Last completed full2f7beca1577/64subtests/exit0 is historical and does not cover
+current code/new dev. Owner0088 isolated test-schema evidence retained, not
+rerun. Broader /app XSS audit/release/security/browser/live/business gates OPEN.
+No new docs/design files; preserve new Owner UI/LLM/defaults and dev docs.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
@@ -111,7 +104,7 @@ Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
 
 ## Read this first
 
-Latest included/reviewed dev: `2b5b2313b2b49c815bbb6ef714bc1aa370b38fa5` via `9c6ed3b`. Owner lifted pause; queued UI and LLM defaults retained. Owner a354967 task/LLM42 PASSED58s; next source-name escaping PREPARED/UNRUN. Previous full2f7beca green does not certify new code. PR #22 Draft/unmerged; no migration executed by agent.
+Latest included baseline2b5b231 via9c6ed3b. Fresh dev NOWb4fd0f0 is NOT included; runtime/actions merge conflicts and new registry-test compatibility BLOCK final full run. Owner source15 passed56s at2bbd3ce, earlier42 at a354967. PR22 Draft/unmerged; no agent tests/migrations.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported

@@ -91,7 +91,10 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_legacy_actorless_intent_is_denied(self):
         legacy = {k: v for k, v in self.pending.items() if k != "authorization"}
-        self.assertEqual(self.confirmation.pending_rejection(legacy, self.actor, self.session, self.spec), "unbound_intent")
+        self.assertEqual(
+            self.confirmation.pending_rejection(legacy, self.actor, self.session, self.spec),
+            "unbound_intent",
+        )
 
     async def test_other_actor_tenant_session_and_role_changes_are_denied(self):
         for field, value, expected in (
@@ -101,24 +104,45 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             fields = dict(vars(self.actor))
             fields[field] = value
             other = self.identity.RuntimeIdentity(**fields)
-            self.assertEqual(self.confirmation.pending_rejection(self.pending, other, self.session, self.spec), expected)
+            self.assertEqual(
+                self.confirmation.pending_rejection(self.pending, other, self.session, self.spec),
+                expected,
+            )
         wrong_session = SimpleNamespace(**vars(self.session))
         wrong_session.id = 52
-        self.assertEqual(self.confirmation.pending_rejection(self.pending, self.actor, wrong_session, self.spec), "session_mismatch")
+        self.assertEqual(
+            self.confirmation.pending_rejection(self.pending, self.actor, wrong_session, self.spec),
+            "session_mismatch",
+        )
 
     async def test_expired_naive_and_malformed_expiry_are_denied(self):
-        for expiry in ((self.now - timedelta(seconds=1)).isoformat(), self.now.replace(tzinfo=None).isoformat(), "bad", None):
+        for expiry in (
+            (self.now - timedelta(seconds=1)).isoformat(),
+            self.now.replace(tzinfo=None).isoformat(), "bad", None,
+        ):
             changed = {**self.pending, "expires_at": expiry}
-            self.assertEqual(self.confirmation.pending_rejection(changed, self.actor, self.session, self.spec), "expired_intent")
+            self.assertEqual(
+                self.confirmation.pending_rejection(changed, self.actor, self.session, self.spec),
+                "expired_intent",
+            )
 
     async def test_argument_and_registry_contract_changes_are_denied(self):
         changed = {**self.pending, "args": {"source_id": 10}}
-        self.assertEqual(self.confirmation.pending_rejection(changed, self.actor, self.session, self.spec), "arguments_changed")
+        self.assertEqual(
+            self.confirmation.pending_rejection(changed, self.actor, self.session, self.spec),
+            "arguments_changed",
+        )
         self.spec.required_permission = "source.delete"
-        self.assertEqual(self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec), "tool_changed")
+        self.assertEqual(
+            self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec),
+            "tool_changed",
+        )
         self.spec.required_permission = "source.update"
         self.spec.parameters = {"required": ["new"]}
-        self.assertEqual(self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec), "tool_changed")
+        self.assertEqual(
+            self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec),
+            "tool_changed",
+        )
 
     async def test_malformed_stage_requests_cannot_create_intent(self):
         for args, call_id in (([], "c1"), ({1: "bad"}, "c1"), ({"nan": float("nan")}, "c1"), ({}, None)):
@@ -191,10 +215,15 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         runtime.call_tool = AsyncMock()
         runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
         with self.tenant.tenant_scope(31):
-            output, stop = await runtime._dispatch_or_stage(self.session, "test_write", {"source_id": 9}, "c1", self.actor)
+            output, stop = await runtime._dispatch_or_stage(
+                self.session, "test_write", {"source_id": 9}, "c1", self.actor,
+            )
         self.assertTrue(stop)
         self.assertEqual(output, "Подтвердите действие")
-        self.assertEqual(self.session.state["pending_confirmation"]["authorization"]["actor"], self.actor.actor_binding())
+        self.assertEqual(
+            self.session.state["pending_confirmation"]["authorization"]["actor"],
+            self.actor.actor_binding(),
+        )
         runtime.call_tool.assert_not_awaited()
 
     async def test_confirm_valid_intent_refreshes_after_storage_and_resumes(self):
@@ -207,7 +236,7 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         runtime._run_tool_loop = AsyncMock(return_value="continued")
         result = await self.authorized_turn(runtime, self.pending)
         self.assertEqual(result, "continued")
-        self.assertEqual(runtime.refresh_runtime_identity.await_count, 2)
+        self.assertEqual(runtime.refresh_runtime_identity.await_count, 3)
         self.handler.assert_awaited_once_with(source_id=9)
         self.assertNotIn("pending_confirmation", self.session.state)
 
@@ -234,10 +263,33 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("pending_confirmation", self.session.state)
         runtime.call_tool.assert_not_awaited()
 
+    async def test_other_actor_cannot_cancel_or_stop_pending_intent(self):
+        for text in ("нет", "/stop"):
+            runtime = self.runtime()
+            runtime.call_tool = AsyncMock()
+            runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+            wrong = copy.deepcopy(self.pending)
+            wrong["authorization"]["actor"]["user_id"] = 99
+            result = await self.authorized_turn(runtime, wrong, text=text)
+            self.assertIn("другому пользователю", result)
+            self.assertIn("pending_confirmation", self.session.state)
+            self.session.save_state.assert_not_awaited()
+            runtime.call_tool.assert_not_awaited()
+
+    async def test_memory_command_uses_fresh_membership_owner_not_resolution_flag(self):
+        runtime = self.runtime()
+        fields = dict(vars(self.actor))
+        fields["is_owner"] = False
+        fresh = self.identity.RuntimeIdentity(**fields)
+        runtime.refresh_runtime_identity = AsyncMock(return_value=fresh)
+        result = await self.authorized_turn(runtime, self.pending, text="/memory clear")
+        self.assertIn("только владелец", result)
+        self.assertIn("pending_confirmation", self.session.state)
+
     async def test_second_identity_refresh_after_consumption_can_refuse(self):
         runtime = self.runtime()
         runtime.call_tool = AsyncMock()
-        runtime.refresh_runtime_identity = AsyncMock(side_effect=[self.actor, None])
+        runtime.refresh_runtime_identity = AsyncMock(side_effect=[self.actor, self.actor, None])
         result = await self.authorized_turn(runtime, self.pending)
         self.assertIn("отклонено", result)
         self.assertNotIn("pending_confirmation", self.session.state)

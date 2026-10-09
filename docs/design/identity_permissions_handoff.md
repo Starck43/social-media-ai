@@ -1,56 +1,50 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — four mocked Telegram compatibility cases
+## Current continuation — own-workspace settings boundary
 
-Owner/local agent tested exact6900e4f unchanged before/after: nine digest/DB
-cases PASSED in8.95s; NEW full suite1549 passed/14 failed/58 subtests10m35s.
-Six-file group13 failed/87 passed: these are reproducible within that group,
-not proof of no dependency inside it. Timezone case passed there but failed in
-full suite: investigate order/state separately. Agent did not rerun checks.
+Owner reports four mocked Telegram cases fixed at3b63c4b. No full suite was
+run on that head; do not subtract reported cases into a certified new total.
+Last completed full suite remains exact6900e4f:1549 passed/14 failed/58
+subtests10m35s. Six-file group13 failed/87 passed; timezone passes there and
+fails in full suite, so order/state remains open. No live Telegram connected
+or accepted; fake-client tests need no real connection.
 
-New test-onlyccde651 addresses four Telegram categories: scoped arrange and
-cleanup source.create/delete in the two tenancy cases; caller-owned tenant
-context for full L2 pull; auto-mode pure test uses mocked owner lookup/watermark
-persistence, not a real row-id1 update. No legacy test bypass/operator authority
-around these subjects; assert source.update is available only at the actual
-service write and absent before/after. Existing assertions retained, fixture
-cleanup strengthened with finally. Production service_permission_scope, source
-client, ingest, runtime and UI unchanged; new cases NOT RUN.
+Current bounded preparation: settings profile/agent/team/channel routes still
+required global tenant.update after the owner model allowlist was narrowed.
+A separate WebPerms.can_manage_workspace(target) now requires an active User,
+concrete target and active web membership bound to that User and the active
+workspace. Owner or actual structured tenant.update may manage that workspace;
+an active platform is_superuser may select another concrete workspace. The
+four server guards and13 existing template predicates use the same capability.
+No CSS/layout/switch redesign, core owner allowlist expansion, runtime change,
+plan-change grant, personal-vault grant or global model-right grant. Existing
+legacy web membership is_owner inference is retained, not a new runtime grant.
+Global/raw manager authorization and legacy NULL-role migration remain separate.
 
-Owner has not connected Telegram. These contracts use mocked session/client/
-analyzer and isolated-schema ORM; no real session, API/Telethon connection or
-credential setup required. Their success would not be live Telegram acceptance.
-A stale arrange/caller assumption may be updated; tenant/watermark/refusal
-assertions are not removed simply because integration is unconfigured.
+Six standalone boundary regressions and three ASGI settings regressions are
+PREPARED/NOT RUN; all existing test bodies/assertions retained. New ASGI cases
+cover forged tenant selection, foreign member/channel ids, read-only POSTs,
+own agent/profile changes and CSRF-protected own-channel flag update. These
+store settings only, not send/collect or activate a live integration. Agent
+checks AST/text/git only: no tests, collection, app imports, DB/live calls.
 
-Owner next: clean review worktree fetch/ff-only PR22, record HEAD; four-case
-selector below. Existing venv/private environment/distinct DB_TEST_SCHEMA,
-no concurrent pytest/reset/drop/migration/live calls. Do not rerun full suite,
-CLI10/isolation95 yet. Return exactSHA/result/redacted first error.
-
-Remaining web analytics/settings8, source-link1 and timezone1 need separate
-contract/state review, not blanket label "obsolete" or default test skipping.
-Preserve owner's parallel UI changes; distinguish authorized own-workspace
-writes from global model grants. PR22 Draft/unmerged; PR29 deferred; deployment
-and real integration acceptance remain separate. Older sections are historical.
-
-### Owner short check — no Telegram connection
-
-In the clean retained review worktree (stop if dirty/diverged):
+Owner next: clean retained PR22 worktree fetch/ff-only; record exact HEAD;
+run only the two short checks below using existing venv/private environment
+and distinct DB_TEST_SCHEMA. No concurrent pytest/reset/drop/migration. Expect
+19 boundary methods and16 settings cases to pass, including the original three
+settings failures; these counts are predictions, not observed success.
 
 ```bash
-git fetch origin
-git merge --ff-only origin/ai/identity-permissions-boundary
-git rev-parse HEAD
-python -m pytest -q tests/test_telegram_ingest.py::test_ingest_resolves_workspace_itself tests/test_telegram_mtproto.py::test_l2_pull_is_tenant_fail_closed tests/test_telegram_mtproto.py::test_auto_mode_pulls_via_l2_when_session_exists tests/test_telegram_mtproto.py::test_l2_pull_fetches_new_messages_and_advances_watermark
+python tests/test_identity_permissions_boundary.py
+python -m pytest -q tests/test_web_settings.py
 ```
 
-Expected4 cases success. No real API credentials or connecting Telegram. Tests
-patch load_session/build_client/analyzer; the auto unit additionally isolates
-owner lookup and watermark write. Existing conftest still uses its isolated DB
-schema. Keep missing/expired session, foreign-tenant, watermark and permission
-checks; passing fakes is not proof of a working live integration. No full-suite
-rerun until these cases and remaining web/state contracts are reviewed.
+Do not rerun Telegram/CLI/isolation/full suite by default. Remaining analytics5,
+source-link1 and timezone/order1 are NOT claimed fixed; review their actual
+rights/render/state contracts separately. The nine web failures reported at
+3b63 are prior failures, not a new completed full-suite result. PR22 stays
+Draft/unmerged; PR29 deferred. Deployment/real integration acceptance separate.
+Older sections below preserve checkpoint evidence, not current commands.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

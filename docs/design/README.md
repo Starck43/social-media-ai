@@ -20,7 +20,7 @@ Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); exact6900e4f owner full1549 passed/14 failed; digest9 PASSED | Mocked Telegram scopeccde651 PREPARED/UNRUN (4 cases; no live setup). Next web rights-vs-render contract and timezone/state review, preserving owner UI. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); owner reports four mocked Telegram cases fixed at3b63c4b; last full suite remains6900e4f:1549 passed/14 failed | Own-workspace settings capability +6 boundary/+3 ASGI regressions PREPARED/UNRUN, without global tenant grants or UI redesign. Owner next: boundary19/settings16. Analytics5/source-link1/timezone-order1 remain open. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |

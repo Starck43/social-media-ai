@@ -6,22 +6,19 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary`, synchronized with dev `274cb2c` by
-`8f09a83` (earlier `0234c21` by `f28b70f`). Identity (`b1e5d5`), fresh actor-bound confirmation (`f4f3fd`) and safe
-PENDING action preview (`ccb8905`) are prepared/pushed, NOT merged or accepted.
-46 new standalone test methods plus earlier policy/dispatch and updated DB
-regressions are written, NOT run by the agent. Parallel VIEWER fixture edits
-are preserved; required deleted imports are restored in the follow-up.
+Branch `ai/identity-permissions-boundary` includes fresh dev6f810a4; Draft,
+unmerged. Owner reports four mocked Telegram cases fixed at3b63c4b, with no
+full suite on that head. Last complete full run6900e4f:1549 passed/14 failed.
+Current continuation prepares a target-bound own-workspace settings capability
+and6 boundary/3 ASGI regressions; NOT RUN by the agent. No global tenant right,
+runtime/UI redesign or live Telegram activation. Analytics5/source-link1 and
+timezone/order1 remain open. Use the [current handoff](identity_permissions_handoff.md)
+for the two short owner checks and exact evidence; do not replay historical
+runtime/collect/Telegram/CLI/isolation commands from earlier notes.
 
-Read [the existing detailed handoff](identity_permissions_handoff.md) for exact
-contracts, compatibility risks, owner commands and evidence. Next: local
-verification of this new block and remaining coverage/compatibility review,
-not a replay of completed substeps. Recheck dev/open PRs before further edits.
-Latest owner focused setup/privacy/identity/permission checks passed, but their
-exact tested SHA is not supplied. Separate dev `274cb2c` LLM/output/learning
-report: 61 passed. Neither certifies the new runtime block or collect_now gate
-`ec69981` (six unrun regressions). Full-suite completion remains open. Use a
-separate worktree; owner-local dirty UI files stay untouched. No automatic merge, deploy or live send.
+Keep owner-local dirty UI files in their existing checkout. Review via the
+retained clean PR22 worktree and existing venv with distinct DB_TEST_SCHEMA;
+no concurrent pytest/reset/drop/migration. No automatic ready/merge/deploy.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

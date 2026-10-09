@@ -5,8 +5,9 @@ way the sqladmin console and the machine API answer it (`User.has_perm_for`,
 structured `permissions.model_type_id` + `action_type`, never the stored
 codename), with the one exception the product needs: whoever *owns* a workspace
 may configure source/task/scenario resources, whatever their platform role is.
-Ownership grants no global fleet/role/queue right. Superusers always
-pass.
+Ownership grants no global fleet/role/queue right. Settings use a separate
+User/membership/target-bound ``can_manage_workspace()`` capability, not a
+global tenant-model grant. Superusers always pass valid model checks.
 
 Built once per request by `TenantUIMiddleware` and handed to templates as
 `perms` (to hide write affordances) and to route handlers through
@@ -119,6 +120,34 @@ class WebPerms:
             return bool(self._user.has_perm_for(model_name, resolved))
         except Exception:  # noqa: BLE001 - a rights check must never 500 a page
             return False
+
+    def can_manage_workspace(self, tenant_id: int | None) -> bool:
+        """Manage settings of a concrete workspace, not the global tenant model.
+
+        Interactive owners need an active web membership bound to this User
+        in the request's active workspace. Ordinary role grants are likewise
+        limited to that workspace here; only a platform superuser may target
+        another workspace. This capability does not change ``can()`` or the
+        core owner-model allowlist.
+        """
+        user = self._user
+        if user is None or not getattr(user, "is_active", False):
+            return False
+        if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id <= 0:
+            return False
+        if user.is_superuser:
+            return True
+        if tenant_id != self._tenant_id or getattr(user, "id", None) is None:
+            return False
+        for membership in self._memberships:
+            if (
+                membership.tenant_id == tenant_id
+                and getattr(membership, "user_id", None) == user.id
+                and getattr(membership, "channel", None) == "web"
+                and getattr(membership, "is_active", False)
+            ):
+                return bool(membership.is_owner or self.can("tenant", "update"))
+        return False
 
     def can_any(self, model_name: str, *actions: ActionType | str) -> bool:
         """True when at least one of the actions is allowed (toolbar buttons)."""

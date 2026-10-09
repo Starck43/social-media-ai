@@ -226,5 +226,66 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.web.WebPerms(self.user, [membership], 32).can("source", "create"))
 
 
+    def _settings_membership(self, **changes):
+        values = dict(tenant_id=31, user_id=42, channel="web", is_active=True, is_owner=True)
+        values.update(changes)
+        self.user.id = 42
+        return SimpleNamespace(**values)
+
+    def test_web_settings_owner_capability_does_not_grant_global_rights(self):
+        membership = self._settings_membership()
+        w = self.web.WebPerms(self.user, [membership], 31)
+        self.assertTrue(w.can_manage_workspace(31))
+        for model in ("tenant", "user", "role", "permission", "job", "llmmodel", "llmprovider"):
+            self.assertFalse(w.can(model, "update"), model)
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+            self.assertFalse(self.perms.has_permission(self.user, "tenant", "update"))
+
+    def test_web_settings_requires_active_bound_web_membership(self):
+        for changes in (
+            {"user_id": 43}, {"user_id": None}, {"channel": "telegram"},
+            {"is_active": False}, {"tenant_id": 32}, {"is_owner": False},
+        ):
+            with self.subTest(changes=changes):
+                membership = self._settings_membership(**changes)
+                self.assertFalse(self.web.WebPerms(self.user, [membership], 31).can_manage_workspace(31))
+        self.assertFalse(self.web.WebPerms(self.user, [], 31).can_manage_workspace(31))
+
+    def test_web_settings_owner_capability_does_not_follow_target_switch(self):
+        memberships = [self._settings_membership(), self._settings_membership(tenant_id=32)]
+        w = self.web.WebPerms(self.user, memberships, 31)
+        self.assertFalse(w.can_manage_workspace(32))
+        self.assertFalse(self.web.WebPerms(self.user, memberships).can_manage_workspace(31))
+        self.user.has_perm_for = lambda *args: True
+        self.assertFalse(w.can_manage_workspace(32))
+
+    def test_web_settings_anonymous_inactive_and_unbound_users_are_denied(self):
+        membership = self._settings_membership()
+        self.assertFalse(self.web.WebPerms(None, [membership], 31).can_manage_workspace(31))
+        self.user.is_active = False
+        self.assertFalse(self.web.WebPerms(self.user, [membership], 31).can_manage_workspace(31))
+        self.user.is_active = True
+        self.user.id = None
+        self.assertFalse(self.web.WebPerms(self.user, [membership], 31).can_manage_workspace(31))
+
+    def test_web_settings_member_keeps_actual_role_right_for_bound_workspace(self):
+        membership = self._settings_membership(is_owner=False)
+        self.user.has_perm_for = lambda model, action: model == "tenant" and action == self.action.UPDATE
+        w = self.web.WebPerms(self.user, [membership], 31)
+        self.assertTrue(w.can_manage_workspace(31))
+        self.assertFalse(w.can_manage_workspace(32))
+        self.user.has_perm_for = lambda *args: (_ for _ in ()).throw(RuntimeError("detached"))
+        self.assertFalse(w.can_manage_workspace(31))
+
+    def test_web_settings_superuser_still_needs_active_identity_and_concrete_target(self):
+        self.user.is_superuser = True
+        w = self.web.WebPerms(self.user)
+        self.assertTrue(w.can_manage_workspace(32))
+        for target in (None, 0, -1, True, "32"):
+            self.assertFalse(w.can_manage_workspace(target), target)
+        self.user.is_active = False
+        self.assertFalse(w.can_manage_workspace(32))
+
+
 if __name__ == "__main__":
     unittest.main()

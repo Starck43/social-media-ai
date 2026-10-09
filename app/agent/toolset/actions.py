@@ -39,23 +39,6 @@ async def actions_log(limit: int = 10) -> dict[str, Any]:
     }
 
 
-@tool(
-    name="action_send",
-    description=(
-        "Отправить действие бота (bot_action) по ID. "
-        "Действие должно быть в статусе PENDING. "
-        "Если dry_run=True, действие не публикуется, а возвращается payload."
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "action_id": {"type": "integer", "description": "ID действия из actions_log"},
-            "dry_run": {"type": "boolean", "description": "Если True, не публиковать (по умолчанию True)"},
-        },
-        "required": ["action_id"],
-    },
-    confirm=True,
-)
 async def _auto_actions_forced_dry_run() -> Optional[str]:
     """Why the ambient workspace may not publish an action, or None.
 
@@ -73,11 +56,37 @@ async def _auto_actions_forced_dry_run() -> Optional[str]:
     tenant = await tenants.get(id=tenant_id)
     if tenant is None or tenant.has_feature("allow_auto_actions"):
         return None
-    return (
-        f"Тариф «{tenant.plan_label}» не включает автопубликацию — действие выполнено в режиме dry-run."
-    )
+    return f"Тариф «{tenant.plan_label}» не включает автопубликацию — действие выполнено в режиме dry-run."
 
 
+@tool(
+    name="action_send",
+    description=(
+        "Отправить действие бота (bot_action) по ID. "
+        "Действие должно быть в статусе PENDING. "
+        "Если dry_run=True, действие не публикуется, а возвращается payload."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "action_id": {"type": "integer", "description": "ID действия из actions_log"},
+            "dry_run": {"type": "boolean", "description": "Если True, не публиковать (по умолчанию True)"},
+        },
+        "required": ["action_id"],
+    },
+    confirm=True,
+    # Publishing writes to a live platform and moves the ledger row out of
+    # PENDING, so it is gated on the same right the admin action declares.
+    # The codename is the bare model name (`botaction.update`), the shape
+    # `has_permission_by_codename` splits — not the stored `social.`-prefixed
+    # permission codename. The decorator must sit on this handler: it used to
+    # decorate the `_auto_actions_forced_dry_run` helper above, which
+    # registered the helper under the tool's name — the registry then
+    # dispatched every «action_send» call to a function that takes no
+    # arguments and only returns a reason string, so the agent could never
+    # actually send an action.
+    required_permission="botaction.update",
+)
 async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
     from app.models import BotAction, AgentScenario, Platform, Source
     from app.models.managers.bot_action_manager import BotActionManager

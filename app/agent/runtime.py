@@ -336,6 +336,10 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             user = await User.objects.get(id=tu.user_id)
     # user is None for unmessenger users without web binding → bypass (legacy).
 
+    # The scope must wrap the whole turn, not just the preamble: the tool
+    # loop's permission gate reads `get_current_user()`, and a scope that
+    # closes early leaves it None — which every check treats as the legacy
+    # pass-through, silently ungating every write tool.
     with permission_scope(user, is_owner=resolution.is_owner):
         text = inbound.text.strip()
 
@@ -368,91 +372,91 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
             )
 
         limit = await tenant_daily_cost_limit(resolution.tenant_id)
-    if limit and await _cost_today() >= limit:
-        return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
+        if limit and await _cost_today() >= limit:
+            return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
 
-    from app.models.managers.agent_session_manager import agent_sessions
+        from app.models.managers.agent_session_manager import agent_sessions
 
-    session = await agent_sessions.get_or_create(
-        channel=inbound.channel,
-        chat_id=str(inbound.chat_id),
-        kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-        is_owner=resolution.is_owner,
-    )
-    if session is None:
-        logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
-        return "Не удалось открыть сессию агента."
+        session = await agent_sessions.get_or_create(
+            channel=inbound.channel,
+            chat_id=str(inbound.chat_id),
+            kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
+            is_owner=resolution.is_owner,
+        )
+        if session is None:
+            logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
+            return "Не удалось открыть сессию агента."
 
-    if text.split()[0].split("@")[0].lower() == "/stop":
-        from app.models.managers.agent_message_manager import agent_messages
+        if text.split()[0].split("@")[0].lower() == "/stop":
+            from app.models.managers.agent_message_manager import agent_messages
 
-        await agent_messages.clear(session.id)
-        await _clear_pending(session)
-        return "История диалога очищена."
+            await agent_messages.clear(session.id)
+            await _clear_pending(session)
+            return "История диалога очищена."
 
-    if text.split()[0].split("@")[0].lower() == "/help":
-        from app.agent.prompts import AGENT_HELP_TEXT
+        if text.split()[0].split("@")[0].lower() == "/help":
+            from app.agent.prompts import AGENT_HELP_TEXT
 
-        await session.append("user", text)
-        await session.append("assistant", AGENT_HELP_TEXT)
-        await session.touch()
-        return AGENT_HELP_TEXT
+            await session.append("user", text)
+            await session.append("assistant", AGENT_HELP_TEXT)
+            await session.touch()
+            return AGENT_HELP_TEXT
 
-    command = text.split()[0].split("@")[0].lower()
-    if command in ("/good", "/bad"):
-        return await _handle_feedback(session, inbound, command, text)
+        command = text.split()[0].split("@")[0].lower()
+        if command in ("/good", "/bad"):
+            return await _handle_feedback(session, inbound, command, text)
 
-    if command == "/memory":
-        return await _handle_memory_command(session, resolution, text)
+        if command == "/memory":
+            return await _handle_memory_command(session, resolution, text)
 
-    # 1) Confirmation flow first (before touching the model)
-    pending = _pending_confirmation(session)
-    if pending:
-        verdict = text.lower()
-        if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
-            # Re-check permission at confirmation time (user role may have changed)
-            perm = pending.get("required_permission")
-            if perm and not has_permission_by_codename(get_current_user(), perm):
+        # 1) Confirmation flow first (before touching the model)
+        pending = _pending_confirmation(session)
+        if pending:
+            verdict = text.lower()
+            if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
+                # Re-check permission at confirmation time (user role may have changed)
+                perm = pending.get("required_permission")
+                if perm and not has_permission_by_codename(get_current_user(), perm):
+                    await _clear_pending(session)
+                    await session.append("user", text)
+                    reply = f"Подтверждение отклонено: у вас нет прав для этого действия."
+                    await session.append("assistant", reply)
+                    await session.touch()
+                    return reply
                 await _clear_pending(session)
                 await session.append("user", text)
-                reply = f"Подтверждение отклонено: у вас нет прав для этого действия."
+                try:
+                    result = await call_tool(pending["name"], pending["args"])
+                    body = _format_tool_result(pending["name"], result)
+                    seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
+                    body = str(e)
+                    seed = f"Ошибка выполнения {pending['name']}: {e}"
+                # Overwrite the staged «Требуется подтверждение» tool row so a
+                # resumed model loop sees the tool as executed, not still pending.
+                await _write_tool_result(session, pending, body)
+                await session.append("assistant", seed)
+                await session.touch()
+                # Resume the model loop: the owner's «да» completes one step of the
+                # plan, and the agent keeps going (create source -> create task)
+                # instead of waiting for the next message.
+                messages = await _build_messages(session)
+                return await _run_tool_loop(session, messages, tool_specs(), limit, seed_reply=seed)
+            if verdict in ("нет", "no", "n", "-", "отменяю"):
+                await _clear_pending(session)
+                await session.append("user", text)
+                reply = "Отменено."
                 await session.append("assistant", reply)
                 await session.touch()
                 return reply
+            # Not a clear verdict - drop the pending action and fall through to the model
             await _clear_pending(session)
-            await session.append("user", text)
-            try:
-                result = await call_tool(pending["name"], pending["args"])
-                body = _format_tool_result(pending["name"], result)
-                seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
-                body = str(e)
-                seed = f"Ошибка выполнения {pending['name']}: {e}"
-            # Overwrite the staged «Требуется подтверждение» tool row so a
-            # resumed model loop sees the tool as executed, not still pending.
-            await _write_tool_result(session, pending, body)
-            await session.append("assistant", seed)
-            await session.touch()
-            # Resume the model loop: the owner's «да» completes one step of the
-            # plan, and the agent keeps going (create source -> create task)
-            # instead of waiting for the next message.
-            messages = await _build_messages(session)
-            return await _run_tool_loop(session, messages, tool_specs(), limit, seed_reply=seed)
-        if verdict in ("нет", "no", "n", "-", "отменяю"):
-            await _clear_pending(session)
-            await session.append("user", text)
-            reply = "Отменено."
-            await session.append("assistant", reply)
-            await session.touch()
-            return reply
-        # Not a clear verdict - drop the pending action and fall through to the model
-        await _clear_pending(session)
 
-    # 2) Model loop with tool calling
-    await session.append("user", text)
-    messages = await _build_messages(session)
-    return await _run_tool_loop(session, messages, tool_specs(), limit)
+        # 2) Model loop with tool calling
+        await session.append("user", text)
+        messages = await _build_messages(session)
+        return await _run_tool_loop(session, messages, tool_specs(), limit)
 
 
 async def _run_tool_loop(

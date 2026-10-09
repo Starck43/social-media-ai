@@ -253,7 +253,10 @@ acceptance; prepared guarded code is not evidence of safe live deployment.
 ## Remaining production/local work
 
 - [ ] PRD-02 / UX-02: fail-closed interactive identity, tenant/global permissions,
-  action_send contract and confirmations; no new live posting.
+  action_send contract and confirmations; no new live posting. (The action_send
+  registry binding and its `botaction.update` permission gate are delivered —
+  see `tests/test_agent_tool_registry.py`; the remaining items are the
+  fail-closed identity work and the confirmation semantics.)
 - [ ] PRD-03: complete spend accounting/reservations; approve billing-grade schema.
 - [ ] PRD-04: production profile, readiness, one migrator, private DB/restore drill.
 - [ ] PRD-05: general queue/scheduler correctness, leases and atomicity; investigate

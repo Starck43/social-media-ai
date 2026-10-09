@@ -19,7 +19,7 @@
 ## What analogs have that this project could adopt
 | Capability | Best Example(s) | Gap in current project |
 | --- | --- | --- |
-| Structured LLM outputs (Pydantic models) | SmIA, Ratatoskr, IntelFlow | Uses regex `extract_json()` — fragile |
+| Structured LLM outputs (Pydantic models) | SmIA, Ratatoskr, IntelFlow | Strict write boundaries done (PR #17); legacy `extract_json()` retained for compat only |
 | Semantic dedup (embeddings + pgvector) | Telo-watch-tower, Ratatoskr, Syne | Only content-hash dedup; no near-duplicate detection |
 | Two-model pipeline (cheap select + quality write) | ai-news-digest, rss-bot | Single model for everything |
 | LLM observability (tracing, cost per call) | SmIA (Langfuse), OpenCrow | Cost tracked but no trace visibility |
@@ -39,7 +39,7 @@
 
 ## Implementation Plan (Prioritized)
 ### Phase 1: Foundation (High Impact, Low Risk)
-- [ ] Structured outputs: Add Pydantic models for all LLM responses (`AnalysisResult`, `DigestSummary`, `ExtractedFact`); replace `extract_json()` with `response_format={"type": "json_schema"}` where supported
+- [x] Structured outputs (partial, PR #17): strict local Pydantic contracts added (`DigestSummary`, `LearnedFacts`/`ExtractedFact`, `ReflectionResult` in `app/services/ai/output_contracts.py`, enforced in digest builder and learn/reflect before writes); legacy `extract_json()`/`_clamp_confidence` retained only for compatibility (covered by `tests/test_learning.py`, not used by writes). Provider-native `response_format={"type": "json_schema"}` still open
 - [x] Prompt injection guard: Add input sanitizer in `app/agent/runtime.py` before passing user text to LLM (block `ignore previous instructions`, etc.)
 - [ ] Two-model pipeline: Add `LLMModel` field `role: selector/writer/general`; update `LLMClientFactory` to pick by role; use cheap model for collection analysis, quality model for digests/agent chat
 - [ ] LLM observability: Integrate Langfuse (optional, via env) for trace logging in `chat_with_fallback()`
@@ -68,7 +68,7 @@
 - Payment integration: Telegram Stars only, or also Stripe/YooKassa for web UI? (Recommend: Stars first, web later)
 
 ## Validation Checklist
-- [ ] All LLM calls return validated Pydantic models (no regex parsing in production paths)
+- [x] Write-path LLM outputs validated by strict Pydantic contracts (PR #17; digest/learn/reflect); provider-native schema protocols still open
 - [ ] `pytest` passes with new structured outputs
 - [ ] Daily cost cap still enforced with two-model pipeline
 - [ ] Memory recall tool returns relevant facts in <200ms (pgvector HNSW index)

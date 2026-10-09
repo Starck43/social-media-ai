@@ -2,6 +2,12 @@
 
 Baseline: dev `234a23dd7d1d2ce8dd3813f1ed63c7c7ef748669`, inspected 2026-10-09. Diagrams are explanatory views, not deployed-state evidence or complete dependency/FK graphs. Current views and separately labeled planned views prevent a roadmap being mistaken for shipped features. See [documentation index](DOCS_INDEX.md) and [status rules](DOCUMENTATION_GUIDE.md).
 
+Navigation note (dev `eb49d1d`, 2026-10-09): diagrams retain their stated original
+baseline. PR #12 integration and later bounded follow-ups are merged; section 5
+is a **historical baseline view**, not today's assignment or activation status.
+For work now, read [stages](ROADMAP_INTEGRATED.md) → [current tasks](design/README.md)
+and current dev/PR evidence. No new diagram/runtime validation is claimed here.
+
 ## 1. Current system context
 
 ```mermaid
@@ -111,7 +117,7 @@ sequenceDiagram
 
 Conceptual happy path, not proof of complete fail-closed identity or actor/TTL-bound approval. Those remain readiness work; rejected operations must not execute.
 
-## 5. Delivery: merged components versus inactive integration
+## 5. Historical delivery baseline — not current work status
 
 ```mermaid
 flowchart TB

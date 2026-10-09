@@ -1,19 +1,26 @@
 # AI Assistant documentation index
 
-## Start here
+## Development: one three-level reading path
 
-1. **[Project map](./PROJECT_MAP.md)** — six visual views: current context, code responsibilities, data flow, agent sequence, delivery foundation and planned hybrid topology.
-2. **[Implementation status](./IMPLEMENTATION_STATUS.md)** — merged work, current blockers and continuation. Check the active PR for work not yet merged; PR #12's newer checklist is not automatically this file's state.
-3. **[Documentation guide](./DOCUMENTATION_GUIDE.md)** — ownership, proposed/in-review/merged/deployed distinctions, maintenance and known reference discrepancies.
+1. **[Global plan](./PRODUCT_PLAN.md)** — what the product is intended to achieve.
+2. **[Engineering stages](./ROADMAP_INTEGRATED.md)** — A–G order and exit gates.
+3. **[Current-stage tasks and design catalog](./design/README.md)** — occupied PRs,
+   merged bounded work, independent candidates and topic-specific evidence.
 
-Baseline for this navigation pass: dev `234a23d`, 2026-10-09. No files are moved or removed. A roadmap is not a shipped-feature list; historical test results are not today's checks.
+Supporting references: [project map](./PROJECT_MAP.md),
+[integration/evidence ledger](./IMPLEMENTATION_STATUS.md),
+[documentation maintenance rules](./DOCUMENTATION_GUIDE.md).
+
+Navigation snapshot: dev `eb49d1d`, 2026-10-09. A roadmap is not a shipped-feature
+list; owner reports, historical counts and current acceptance are distinct.
+Active PR #22 owns its shared status/next-session edits; do not overwrite it.
 
 ## Reading paths
 
 | Goal | Read in order |
 | --- | --- |
 | Understand the project | PROJECT_MAP → PRODUCT_PLAN → ASSISTANT_ARCHITECTURE |
-| Continue engineering work | IMPLEMENTATION_STATUS + current PR → ROADMAP_INTEGRATED → relevant subsystem reference |
+| Continue engineering work | PRODUCT_PLAN → ROADMAP_INTEGRATED → design/README + active PR → relevant contract |
 | Evaluate cloud/hybrid installation | DEPLOYMENT_ARCHITECTURE → BUSINESS_PRODUCTION_READINESS → CONFIGURATION / DEPLOYMENT |
 | Configure monitoring | COLLECTION → CHAT_BOT_SCENARIOS → AGENT_TASKS → DIGEST |
 | Review isolation/security | TENANCY → AGENT → NOTIFICATIONS → production gates |
@@ -28,16 +35,14 @@ Baseline for this navigation pass: dev `234a23d`, 2026-10-09. No files are moved
 - **[Deployment plan handoff](./design/deployment_architecture_handoff.md)** — historical preparation/checks; current merge status comes from GitHub/tracker.
 - **[Product direction handoff](./design/product_direction_handoff.md)** — prior delivery and its continuation.
 
-## Delivery work — status and component evidence
+## Delivery work — merged scope versus acceptance
 
-- **[Implementation status](./IMPLEMENTATION_STATUS.md)** — merged foundation versus unactivated end-to-end retry.
-- **[Retry design](./design/digest_delivery_retry_plan.md)** — intended recovery/acceptance; not proof of complete activation.
-- **[Schema unit](./design/digest_delivery_state_schema_review.md)** — nullable checkpoint field/migration and historical checks.
-- **[Checkpoint contract](./design/digest_checkpoint_contract_handoff.md)** — versioned metadata/state machine.
-- **[Single-part transport](./design/digest_single_part_transport_handoff.md)** — opt-in transport component.
-- **[HTML parts](./design/digest_html_parts_handoff.md)** — deterministic part boundaries/hash verification.
-- **[Checkpoint store](./design/digest_checkpoint_store_handoff.md)** — locks, persistence and ownership checks.
-- **[PR #12](https://github.com/Starck43/social-media-ai/pull/12)** — at this baseline draft/in review; atomic fresh snapshot and newer task checklist, not merged.
+PR #12 integration is merged, not the old "next task". Default-off delivery,
+activation and end-to-end acceptance remain distinct. Use the
+[implementation ledger](./IMPLEMENTATION_STATUS.md) and
+[delivery catalog](./design/README.md#delivery-contracts-and-acceptance-evidence)
+for original contract/schema/transport/parts/store/snapshot/job evidence.
+Do not infer new passing tests or live sender activation from a merge.
 
 ## Business readiness and prioritization
 
@@ -75,6 +80,6 @@ Baseline for this navigation pass: dev `234a23d`, 2026-10-09. No files are moved
 
 ## Historical design, UI reviews and archive
 
-Other files under [design/](./design/) retain their original review scope/baseline; [archive/](./design/archive/) is historical input, not the current roadmap. Do not move/delete reviews just to simplify the sidebar. Add per-topic links when a historical report supports a current decision.
+Use the [categorized design catalog](./design/README.md), not a directory-wide reading order. [archive/](./design/archive/) preserves historical evidence, not the current roadmap. Keep active contract paths stable while open PRs depend on them; archive preparation records with compatibility links instead of deleting their evidence.
 
 Documentation organization work and checks: [handoff](./design/documentation_organization_handoff.md).

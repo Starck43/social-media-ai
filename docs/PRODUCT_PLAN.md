@@ -6,6 +6,13 @@ Product direction proposed on 2026-10-09 after reading documentation on dev at `
 
 The assistant helps people turn information distributed across public sources and authorized private systems into evidence-backed decisions and controlled business actions. Social monitoring is the first vertical, not the boundary of the product.
 
+## Development navigation
+
+This is the **global product plan**, not a rolling session checklist. Follow the
+existing [engineering stages](ROADMAP_INTEGRATED.md), then the
+[current-stage task board](design/README.md). The Foundation phase remains gated
+by release safety; product expansion is not permission to start every proposal.
+
 ## Universal workflow
 
 **Goal → authorized sources → collect/search → normalize and verify → analyze/calculate → proposed result/action → approval when required → deliver/execute → audit and follow-up.**

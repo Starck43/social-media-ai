@@ -777,6 +777,13 @@ async def task_detail(request: Request, task_id: int):
 		if source.agent_scenario_id is not None:
 			scenario = await AgentScenario.objects.get(id=source.agent_scenario_id, tenant_id=source.tenant_id)
 
+	# The same outcome classification the run-now modal uses, so a run reads
+	# the same on this page and in the modal: a half-broken collect is not a
+	# green "готово" in one place and "частично" in the other.
+	job_outcomes = {
+		job.id: _run_outcome(job.job_type, job.result or {}) for job in recent_jobs if job.status == "done"
+	}
+
 	return render(
 		request,
 		"web/task_detail.html",
@@ -786,6 +793,7 @@ async def task_detail(request: Request, task_id: int):
 		recent_jobs=recent_jobs,
 		running_job_id=running_job_id,
 		running_job_status=running_job_status,
+		job_outcomes=job_outcomes,
 		sources=linked_sources,
 		scenario=scenario,
 		cron_to_human=cron_to_human,
@@ -1282,6 +1290,64 @@ def _stat(value: Any, label: str) -> dict[str, Any]:
 	return {"value": number, "label": label}
 
 
+def _as_int(value: Any) -> int:
+	try:
+		return int(value)
+	except (TypeError, ValueError):
+		return 0
+
+
+def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
+	"""Classify a finished run: `ok` | `no_data` | `partial` | `skipped`.
+
+	A green box reading «Новых записей: 0» looks like a failure, and a run
+	where half the sources errored looks like a success — the numbers alone
+	tell both lies. The outcome is what the modal's tone and label are chosen
+	from, so "nothing new" and "partly broken" stop being things the reader
+	has to infer from a stat tile.
+	"""
+	if job_type == "collect":
+		# Per-source failures are caught by the handler, so the job is `done`
+		# even when every source failed — the outcome carries that instead.
+		if _as_int(result.get("error")):
+			return "partial"
+		# Jobs recorded before `new_items` existed have no such key; fall back
+		# to the total rather than calling a legacy run "no data".
+		found = result.get("new_items", result.get("items", 0))
+		return "no_data" if not _as_int(found) else "ok"
+	if job_type == "analyze":
+		if _as_int(result.get("analyzed")):
+			return "ok"
+		# Skipped sources are the ones without an active scenario — a different
+		# fact from "there was nothing to analyse", and a different fix.
+		return "skipped" if _as_int(result.get("skipped")) else "no_data"
+	if job_type == "prune":
+		return "no_data" if not _as_int(result.get("deleted")) else "ok"
+	return "ok"
+
+
+_OUTCOME_LABELS = {
+	"ok": "Готово",
+	"no_data": "Новых данных нет",
+	"partial": "Выполнено частично",
+	"skipped": "Пропущено",
+}
+
+_OUTCOME_NOTES = {
+	"collect": {
+		"no_data": "Все источники ответили, но новых записей не нашлось — всё уже собрано ранее.",
+		"partial": "Часть источников не ответила или требует авторизации — подробности ниже.",
+	},
+	"analyze": {
+		"no_data": "Нечего анализировать — новых данных нет.",
+		"skipped": "Источники пропущены: вероятно, нет активного сценария.",
+	},
+	"prune": {
+		"no_data": "Удалять нечего — старых записей нет.",
+	},
+}
+
+
 def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	"""Structured result summary for a finished job (run-now modal).
 
@@ -1362,7 +1428,18 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	elif job_type == "prune":
 		stats = [_stat(result.get("deleted", 0), "записей удалено")]
 
-	summary: dict[str, Any] = {"status": "done", "label": "Готово", "title": title, "stats": stats}
+	outcome = _run_outcome(job_type, result)
+	summary: dict[str, Any] = {
+		"status": "done",
+		"label": _OUTCOME_LABELS[outcome],
+		"title": title,
+		"stats": stats,
+		"outcome": outcome,
+		"outcome_label": _OUTCOME_LABELS[outcome],
+	}
+	note = _OUTCOME_NOTES.get(job_type, {}).get(outcome)
+	if note:
+		summary["outcome_note"] = note
 	if headline is not None:
 		summary["headline"] = headline
 	if task_name:

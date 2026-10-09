@@ -10,17 +10,24 @@ See the [proposal review/evidence map](design/proposal_review.md), [UX plan](LOC
 
 ## Current bounded progress (2026-10-09)
 
-Latest checked dev `7175e47` preserves owner UI changes. PR #12 digest integration,
-PR #17 typed outputs and PR #18 declared-failure outcomes are merged. The owner
+Latest checked dev `1e908b2` preserves owner chat/notification UI changes.
+PR #12 digest integration, PR #17 typed outputs, PR #18 declared-failure outcomes
+and PR #19 bootstrap/API readiness are merged. The owner
 reported all tests pass; commands/counts/tested SHA/logs were not provided. This
 is not an independent rerun, release certification or evidence of live activation.
 
-The bootstrap/API-readiness follow-up is PREPARED on
-`ai/bootstrap-and-readiness`, not merged/deployed: working-schema default guard,
-redacted check diagnostics and DB-only readiness/liveness. 24 mocked-source tests
-passed; 8 ASGI cases are prepared but unrun. See its
-[handoff](design/bootstrap_readiness_handoff.md). Existing statements below that
-are labeled baseline observations describe historical code, not current claims.
+PR #19 merged the working-schema default guard, redacted check diagnostics
+and API DB readiness/liveness. Its 24 mocked-source tests passed in the authoring
+sandbox; 8 ASGI cases were prepared but unrun there. No fresh post-merge owner
+results or deployment acceptance were supplied. See its
+[handoff](design/bootstrap_readiness_handoff.md).
+
+Dispatcher-owned log/failure-notification privacy is PREPARED in
+`ai/dispatcher-log-privacy`, not merged (no PR created): 13 privacy tests plus
+25 existing mocked outcome regressions passed; 2 PostgreSQL cases are unrun.
+Audit columns and other process logs are unchanged. See the
+[privacy handoff](design/dispatcher_log_privacy_handoff.md). Historical baseline
+observations below are not statements of current implementation status.
 
 ## Critical gates and work packages
 
@@ -89,7 +96,7 @@ Acceptance: concurrent chat/analysis/digest cannot bypass the agreed cap; repeat
 
 ### PRD-04 — Repeatable, hardened deployment and recovery (blocker)
 
-Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. baseline [HTTP health](../app/main.py) returned status ok/HTTP 200 on DB disconnection. The prepared follow-up registers /livez (no DB) and /readyz plus /health (200 ready, 503 failed/timed-out DB probe); deployment is unverified. Default session configuration does not explicitly require secure cookies.
+Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. baseline [HTTP health](../app/main.py) returned status ok/HTTP 200 on DB disconnection. Merged PR #19 registers /livez (no DB) and /readyz plus /health (200 ready, 503 failed/timed-out DB probe); deployment is unverified. Default session configuration does not explicitly require secure cookies.
 
 Actions:
 - Provide a tested production profile with one migration job, API, exactly one scheduler/listener owner, and worker execution. Runtime already includes a worker: avoid unintentionally multiplying pollers/schedulers when adding dedicated workers.

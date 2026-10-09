@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Awaitable
 
 from fastapi import FastAPI, Request
@@ -17,7 +16,7 @@ from app.api.v1 import entry
 from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
-from app.models import Permission
+from app.core.health import router as health_router
 from app.core.tenant_context import PlatformScopeMiddleware
 from app.web import web_router
 from app.web.middleware import TenantUIMiddleware
@@ -59,6 +58,7 @@ def create_application() -> FastAPI:
 
     # Include API routes with rate limiting
     application.include_router(entry.router, prefix="/api/v1")
+    application.include_router(health_router)
 
     # Client-facing UI (docs/design/ui.md): pages under /app, tenant-scoped.
     # Kept out of OpenAPI docs — it is HTML, not a machine API.
@@ -118,21 +118,6 @@ app = create_application()
 @app.get("/", tags=["Root"])
 async def root():
     return RedirectResponse("/app/")
-
-
-@app.get("/health", tags=["Health"])
-async def health_check():
-    # Probe through the manager layer: a real ORM read against a global model
-    # (Permission needs no tenant context). The previous version called
-    # `conn.execute("SELECT 1")` on the async engine without awaiting it, so
-    # the coroutine never ran and the check passed even with the database down.
-    try:
-        await Permission.objects.count()
-        db_status = "connected"
-    except Exception:
-        db_status = "disconnected"
-
-    return {"status": "ok", "database": db_status, "timestamp": datetime.now()}
 
 
 # Только для разработки

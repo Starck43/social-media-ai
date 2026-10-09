@@ -1,56 +1,20 @@
 #!/usr/bin/env python3
-"""Create, seed and reset the *test* database used by the pytest suite.
+"""Create, seed and reset the isolated test schema used by pytest.
 
-The suite must never touch the working database. Everything the tests need in
-their own database is created here, so a run against ``TEST_POSTGRES_URL`` is
-reproducible: same schema, same reference rows, no leftovers from the previous
-run.
+The common POSTGRES_URL is supported with a separate DB_TEST_SCHEMA; a second
+TEST_POSTGRES_URL database is optional. Never target the working schema.
+resolve_and_redirect must run before app imports: engines and model schemas
+are configured at import time. Shared-database bootstrap leaves the working
+Alembic version table alone. Schema separation is not a privilege sandbox.
 
-Two levels of isolation
------------------------
-The database and the schema are switched separately, because the two settings
-are read at different moments:
-
-* ``TEST_POSTGRES_URL`` — the database. Optional; by default the working one is
-  reused and the schema alone isolates the suite, so no ``CREATEDB`` privilege
-  is needed. Set it to a separate database for a second line of defence.
-* ``DB_TEST_SCHEMA`` — the schema inside it. Defaults to ``test_schema``.
-
-:func:`resolve_and_redirect` republishes both under the names the application
-reads (``POSTGRES_URL`` and ``DB_SCHEMA``) and must therefore run before the
-first ``app`` import: the engines are built at import time, and the models bake
-``settings.DB_SCHEMA`` into their ``__table_args__`` while they load. The
-working values are kept to reject the one combination that is never safe — a
-test target resolving to the working database *and* the working schema.
-
-Why the bootstrap looks like this
----------------------------------
-``alembic upgrade head`` cannot build the schema from nothing. ``0001`` is a
-no-op and ``0002`` was never committed, while ``0003`` immediately does
-``ALTER TABLE <schema>.users`` — so the first real migration expects a
-schema and a ``users`` table that no revision creates. A fresh deployment
-therefore gets its schema from ``Base.metadata.create_all`` (see
-``app.core.database.init_db``), and the migrations only carry it forward from
-there. This module does the same: create the schema and the tables, stamp
-``head`` so Alembic considers the database current, then insert the reference
-rows the migrations would never create for us.
-
-Seeded rows are the ones the suite *reads*:
-
-* ``model_types`` + ``permissions`` — via the same ``register_model_types``
-  the migration hook uses, so permission codenames are real, not fixtures;
-* the ``roles`` of ``UserRoleType`` and their permission matrix
-  (``scripts.setup.*``, the canonical role/permission source);
-* the platforms the tests select by ``platform_type`` (``vk``, ``telegram``);
-* the bootstrap tenant ``settings.DEFAULT_TENANT_SLUG``.
-
-Everything else (sources, tasks, users, LLM rows) the tests create themselves.
-
-Run directly to inspect or repair a test database::
+Fresh tables come from Base.metadata.create_all because the early migration
+chain expects existing tables. Reference roles, permissions, platforms and the
+bootstrap tenant are seeded with the canonical setup scripts. Existing drift
+is reported, not automatically migrated.
 
     python -m scripts.setup_test_db            # create + seed if absent
-    python -m scripts.setup_test_db --reset    # truncate, then re-seed
-    python -m scripts.setup_test_db --check    # report the resolved URL only
+    python -m scripts.setup_test_db --reset    # truncate, then re-seed (destructive)
+    python -m scripts.setup_test_db --check    # redacted diagnostics; no DB calls
 """
 
 import argparse
@@ -68,6 +32,8 @@ WORKING_URL_ENV = "POSTGRES_URL"
 TEST_URL_ENV = "TEST_POSTGRES_URL"
 WORKING_SCHEMA_ENV = "DB_SCHEMA"
 TEST_SCHEMA_ENV = "DB_TEST_SCHEMA"
+# Keep aligned with Settings without importing app before the redirect.
+DEFAULT_WORKING_SCHEMA = "public"
 DEFAULT_TEST_SCHEMA = "test_schema"
 
 # Platform rows the suite selects by platform_type. Keep in sync with
@@ -84,14 +50,7 @@ def database_name(url: str) -> str:
 
 
 def resolve_test_url() -> str:
-    """The database the suite may use, derived from the environment.
-
-    An explicit ``TEST_POSTGRES_URL`` wins. Otherwise the working database is
-    reused and the suite is isolated by schema alone (``DB_TEST_SCHEMA``): that
-    needs no ``CREATEDB`` privilege, and a separate database is a second line of
-    defence rather than the only one. ``""`` is returned when neither variable is
-    set — the caller decides whether that is fatal.
-    """
+    """Return optional TEST_POSTGRES_URL or the common POSTGRES_URL."""
     load_dotenv()
     explicit = os.environ.get(TEST_URL_ENV, "").strip()
     if explicit:
@@ -100,37 +59,41 @@ def resolve_test_url() -> str:
 
 
 def resolve_test_schema() -> str:
-    """The schema the suite may use, derived from the environment.
-
-    An explicit ``DB_TEST_SCHEMA`` wins. Otherwise ``test_schema`` is used, so
-    tests never share a schema with the working database even when both live
-    in the same one.
-    """
+    """Return DB_TEST_SCHEMA or test_schema; redirect validates isolation."""
     load_dotenv()
     return os.environ.get(TEST_SCHEMA_ENV, "").strip() or DEFAULT_TEST_SCHEMA
 
 
+def resolve_working_schema() -> str:
+    """Effective canonical working schema, without importing application settings."""
+    return os.environ.get(WORKING_SCHEMA_ENV, "").strip() or DEFAULT_WORKING_SCHEMA
+
+
 def redact(url: str) -> str:
-    """A URL safe to print in an error message (password masked)."""
-    parts = urlsplit(url)
-    if "@" in parts.netloc:
-        user, _, host = parts.netloc.rpartition("@")
-        parts = parts._replace(netloc=f"{user.split(':', 1)[0]}:***@{host}")
-    return urlunsplit(parts)
+    """Display only endpoint/path; remove userinfo, query and fragment secrets."""
+    if not url:
+        return "(unset)"
+    try:
+        parts = urlsplit(url)
+        if not parts.scheme or not parts.hostname:
+            return "(invalid URL)"
+        host = parts.hostname
+        if ":" in host:
+            host = f"[{host}]"
+        port = f":{parts.port}" if parts.port is not None else ""
+        credentials = "***@" if "@" in parts.netloc else ""
+        return urlunsplit((parts.scheme, f"{credentials}{host}{port}", parts.path, "", ""))
+    except ValueError:
+        return "(invalid URL)"
 
 
 def suggest_create_database(url: str) -> str:
-    """The ``createdb`` line a superuser can run when the role lacks CREATEDB."""
+    """The createdb line a superuser can run when the role lacks CREATEDB."""
     return f'createdb -O {urlsplit(url).username or "postgres"} "{database_name(url)}"'
 
 
 async def _create_database_if_missing(test_url: str) -> str:
-    """Create the test database if the server does not have it yet.
-
-    Needs the CREATEDB privilege. Without it asyncpg raises a bare
-    ``InsufficientPrivilegeError``; the caller turns that into the
-    ``createdb`` hint.
-    """
+    """Create the test database if absent; an existing common DB needs no CREATEDB."""
     import asyncpg
 
     dsn = test_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -171,11 +134,7 @@ async def _create_schema() -> None:
 
 
 async def _create_tables() -> None:
-    """Create every table from the models.
-
-    This is the same path a fresh deployment takes (``init_db``); see the
-    module docstring for why the migration chain cannot be used instead.
-    """
+    """Create tables via the same metadata path as a fresh deployment."""
     from app.core.database import async_engine
     from app.models import Base
 
@@ -184,15 +143,7 @@ async def _create_tables() -> None:
 
 
 async def _missing_columns(conn, metadata, schema: str) -> list[str]:
-    """Model columns the test schema does not have.
-
-    ``Base.metadata.create_all(checkfirst=True)`` adds missing *tables* but never
-    missing *columns*, so a schema built before a column was added stays silently
-    behind the models and every test that writes it fails with a bare
-    ``column "x" of relation "y" does not exist`` until someone drops the schema
-    by hand. Read back what actually exists from ``information_schema.columns``
-    and diff it against the models, so the report names the exact columns.
-    """
+    """Model columns missing in the schema; create_all only adds tables."""
     result = await conn.execute(
         text("select table_name, column_name from information_schema.columns " "where table_schema = :schema"),
         {"schema": schema},
@@ -210,12 +161,7 @@ async def _missing_columns(conn, metadata, schema: str) -> list[str]:
 
 
 def _stamp_head(url: str) -> None:
-    """Mark the database as being at the latest revision.
-
-    The tables are already the current shape, so the chain has nothing left to
-    do; without the stamp the next ``alembic upgrade`` would replay
-    ``0003``...``0064`` on top of them and fail.
-    """
+    """Stamp an independently isolated database after metadata table creation."""
     from alembic import command
     from alembic.config import Config
 
@@ -225,12 +171,7 @@ def _stamp_head(url: str) -> None:
 
 
 async def _truncate_all() -> None:
-    """Empty every table, so a run starts from a known state.
-
-    A safety net, not the main mechanism: tests clean up after themselves. It
-    only matters when an interrupted run left rows behind, and it is what
-    ``--reset`` uses. Seed rows are restored right after.
-    """
+    """Destructive reset of the redirected test schema; never a normal test step."""
     from app.core.config import settings
     from app.core.database import async_engine
 
@@ -250,13 +191,11 @@ async def _truncate_all() -> None:
 
 
 async def _seed_reference_rows() -> None:
-    """Insert the rows the suite reads. Assumes the tables are empty."""
+    """Insert canonical reference rows the suite reads."""
     from app.core.tenant_context import tenant_scope
     from scripts.setup.assign_roles_permissions import assign_roles_permissions
     from scripts.setup.roles import seed_roles
 
-    # The canonical role/permission source, shared with a real deployment:
-    # the 7 UserRoleType roles and their matrix.
     seed_roles()
     with tenant_scope(bypass=True):
         await assign_roles_permissions()
@@ -267,7 +206,7 @@ async def _seed_reference_rows() -> None:
 
 
 async def _seed_platforms() -> None:
-    """One row per platform, so tests can select them by ``platform_type``."""
+    """One row per platform, so tests can select them by platform_type."""
     from app.models import Platform
     from app.types import PlatformType
 
@@ -282,11 +221,7 @@ async def _seed_platforms() -> None:
 
 
 async def _seed_bootstrap_tenant() -> None:
-    """The workspace ``settings.DEFAULT_TENANT_SLUG`` names.
-
-    ``BaseManager._default_tenant_id`` looks it up by slug and raises without
-    it, so every tenant-scoped write fails closed on an empty database.
-    """
+    """Create the workspace used by tenant-scoped legacy fixtures."""
     from app.core.config import settings
     from app.models.managers.tenant_manager import tenants
 
@@ -294,13 +229,7 @@ async def _seed_bootstrap_tenant() -> None:
 
 
 async def _seed_permissions() -> None:
-    """Register the models and their permissions.
-
-    Normally written by the ``on_version_apply`` hook in ``migrations/env.py``,
-    which ``stamp`` never reaches. Running ``register_model_types`` by hand
-    keeps the codenames real (``social.Source.view`` and friends) instead of
-    inventing a fixture set that would drift from production.
-    """
+    """Use the canonical migration-hook permissions, not fixture codenames."""
     from app.core.database import engine
     from scripts.migrations.register_model_types import register_model_types
 
@@ -309,38 +238,26 @@ async def _seed_permissions() -> None:
 
 
 def resolve_and_redirect() -> tuple[str, str, str]:
-    """Decide which database and schema the suite may use, then point the process at them.
+    """Validate isolation before app imports or changing URL/schema variables.
 
-    Returns ``(working_url, test_url, test_schema)``. Splitting this from
-    :func:`ensure_test_database` matters for two reasons:
-
-    * the comparison against the working database has to read ``POSTGRES_URL``
-      *before* the redirect overwrites it;
-    * the redirect has to happen before anything imports ``app.core.database``,
-      because the engines are built at import time and a later change is
-      ignored. The same holds for the schema: the models bake
-      ``settings.DB_SCHEMA`` into their ``__table_args__`` when they are
-      imported, so the test schema is published under ``DB_SCHEMA`` — the name
-      the application itself reads.
-
-    Isolation only needs the schema, so a shared database is allowed: the suite
-    may run in ``test_schema`` next to the working schema. What is refused is
-    the one combination that reaches the real data — the working database *and*
-    the working schema at the same time.
+    Return (working_url, test_url, test_schema). Common POSTGRES_URL is allowed
+    only with a different test schema. Database-name comparison is deliberately
+    conservative; this is not live endpoint/alias identity verification.
     """
     test_url = resolve_test_url()
     if not test_url:
         raise RuntimeError(
             f"Neither {TEST_URL_ENV} nor {WORKING_URL_ENV} is set — cannot tell which database "
-            f"the test suite may write to. Add {TEST_URL_ENV} to .env and try again."
+            f"the test suite may write to. Set {WORKING_URL_ENV} and a separate {TEST_SCHEMA_ENV}; "
+            f"{TEST_URL_ENV} is optional."
         )
 
     working_url = os.environ.get(WORKING_URL_ENV, "").strip()
     test_schema = resolve_test_schema()
-    working_schema = os.environ.get(WORKING_SCHEMA_ENV, "").strip()
+    working_schema = resolve_working_schema()
 
     same_database = bool(working_url) and database_name(working_url) == database_name(test_url)
-    same_schema = bool(working_schema) and test_schema == working_schema
+    same_schema = test_schema == working_schema
     if same_database and same_schema:
         raise RuntimeError(
             f"{TEST_URL_ENV} and {TEST_SCHEMA_ENV} both resolve to the working target "
@@ -355,12 +272,7 @@ def resolve_and_redirect() -> tuple[str, str, str]:
 
 
 async def ensure_test_database(test_url: str, *, shares_working_database: bool = False, reset: bool = False) -> None:
-    """Create the test database, give it a schema and the reference rows.
-
-    Safe to call on every run: an existing database is left alone unless
-    ``reset`` is set. ``test_url`` must come from :func:`resolve_and_redirect`,
-    which has to run before the first ``app`` import.
-    """
+    """Ensure redirected test tables/reference rows; reset is explicitly destructive."""
     from app.core.database import async_engine
 
     def say(message: str) -> None:
@@ -384,12 +296,7 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
         await _create_schema()
         await _create_tables()
         if shares_working_database:
-            # Alembic's version table is not schema-qualified, so it always lands
-            # in `public` — the one table a shared database cannot spare. That one
-            # records the *working* schema's revision, and stamping it from here
-            # would mark real data as migrated when it is not. The test schema is
-            # built from the models above and no migration ever targets it, so it
-            # needs no stamp.
+            # Shared bootstrap must not stamp the working public version table.
             say("schema created from the models (shared database: version table left alone)")
         else:
             _stamp_head(test_url)
@@ -398,16 +305,9 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
         await _truncate_all()
         say("existing schema truncated (--reset)")
 
-    # Create any tables the models gained since the schema was first built
-    # (`create_all` is idempotent/checkfirst, so this only adds missing tables).
     await _create_schema()
     await _create_tables()
 
-    # A schema that predates a model change is worse than a missing one: the
-    # tables exist, so nothing is created, and the drift only surfaces later as
-    # `column "x" does not exist` from a random test. Fail here instead, naming
-    # the columns — `create_all` cannot add them, so the remedy is to drop the
-    # schema and let this run rebuild it from the models.
     from app.core.config import settings
     from app.core.database import async_engine
     from app.models import Base
@@ -429,16 +329,20 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
 
 
 async def _main() -> int:
-    parser = argparse.ArgumentParser(description="Create/seed/reset the test database.")
-    parser.add_argument("--reset", action="store_true", help="truncate every table before seeding")
-    parser.add_argument("--check", action="store_true", help="only print the resolved URL, change nothing")
+    parser = argparse.ArgumentParser(description="Create/seed/reset the isolated test schema.")
+    parser.add_argument("--reset", action="store_true", help="truncate every test table before seeding")
+    parser.add_argument("--check", action="store_true", help="print redacted targets only, change nothing")
     args = parser.parse_args()
 
     if args.check:
-        print(f"working: {os.environ.get(WORKING_URL_ENV, '(unset)')}")
-        print(f"         schema={os.environ.get(WORKING_SCHEMA_ENV, '(unset)')}")
-        print(f"test:    {resolve_test_url() or '(unset)'}")
-        print(f"         schema={resolve_test_schema()}")
+        # Resolve/load dotenv before displaying the working target. No redirect,
+        # app import, connection, schema creation, stamp or reset on this path.
+        test_url = resolve_test_url()
+        test_schema = resolve_test_schema()
+        print(f"working: {redact(os.environ.get(WORKING_URL_ENV, ''))}")
+        print(f"         schema={resolve_working_schema()}")
+        print(f"test:    {redact(test_url)}")
+        print(f"         schema={test_schema}")
         return 0
 
     sys.path.insert(0, str(PROJECT_ROOT))

@@ -30,11 +30,17 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         HELPERS.BoundaryTests.setUp(self)
         # Isolate toolset registration; handlers below are mocks, no live effects.
-        with patch.dict(sys.modules, {
+        modules = {
             "app.core.permissions": self.perms,
+            "app.core.tenant_context": self.tenant,
             "app.agent": HELPERS.module_with(toolset=HELPERS.module_with()),
-        }):
-            self.tools = load_source("_permission_dispatch_source", "app/agent/tools.py")
+        }
+        with patch.dict(sys.modules, modules):
+            identity = load_source("_dispatch_identity", "app/agent/identity.py")
+            with patch.dict(sys.modules, {"app.agent.identity": identity}):
+                self.confirmation = load_source("_dispatch_confirmation", "app/agent/confirmation.py")
+            with patch.dict(sys.modules, {"app.agent.confirmation": self.confirmation}):
+                self.tools = load_source("_permission_dispatch_source", "app/agent/tools.py")
         self.handler = AsyncMock(return_value={"ok": True})
 
     def register(self, permission="source.update"):

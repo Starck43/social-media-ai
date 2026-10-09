@@ -11,13 +11,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.permissions import get_current_user, has_permission, permission_scope
-from app.core.tenant_context import tenant_scope
-from app.jobs import dispatcher
-from app.models import AgentTask, Job, Notification, Tenant, User, Role
+from app.models import AgentTask, Job, Notification, Role, Tenant, User
 from app.types import UserRoleType
-from app.services.notifications import service
-
 pytestmark = pytest.mark.tenancy
 SECRET = "PRIVATE-CUSTOMER-AND-FAKE-TOKEN"
 

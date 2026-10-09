@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from app.agent.confirmation import consume_tool_confirmation
 from app.core.permissions import PermissionDeniedError, get_current_user, has_permission_by_codename
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,15 @@ class ToolError(Exception):
     pass
 
 
+class ToolConfirmationRequiredError(PermissionError):
+    """A confirmed tool was called without its exact one-use runtime grant."""
+
+
+def _check_tool_confirmation(spec: Tool, arguments: dict[str, Any]) -> None:
+    if spec.confirm and not consume_tool_confirmation(spec, arguments):
+        raise ToolConfirmationRequiredError("Confirmation required")
+
+
 def _check_tool_permission(spec: Tool) -> None:
     """Recheck the current registry right before effects, not a cached approval.
 
@@ -154,6 +164,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     if tool_obj is None:
         raise LookupError(f"Unknown tool: {name}")
     _check_tool_permission(tool_obj)
+    _check_tool_confirmation(tool_obj, arguments or {})
     result = await tool_obj.handler(**(arguments or {}))
     if isinstance(result, dict) and "error" in result:
         raise ToolError(result["error"])
@@ -171,6 +182,9 @@ async def execute(name: str, arguments: dict[str, Any]) -> str:
         return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
     try:
         _check_tool_permission(t)
+        _check_tool_confirmation(t, arguments or {})
+    except ToolConfirmationRequiredError:
+        return json.dumps({"error": "Confirmation required", "code": "confirmation_required"}, ensure_ascii=False)
     except PermissionDeniedError:
         # Ordinary denial is not a handler failure; no traceback or private data.
         return json.dumps({"error": "Permission denied", "code": "permission_denied"}, ensure_ascii=False)

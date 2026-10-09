@@ -3,9 +3,10 @@
 ## Current prepared block — identity, confirmation and action preview
 
 2026-10-09: draft PR #22, branch `ai/identity-permissions-boundary`.
-Implementation is PREPARED/PUSHED, NOT MERGED, TESTED OR ACCEPTED. Fresh dev
-`0234c21` (merged documentation #26 and operator runbook #27) was integrated into
-this PR branch by `f28b70f`; this does not merge PR #22 into dev.
+Implementation is PREPARED/PUSHED, NOT MERGED OR FULLY ACCEPTED. Fresh dev
+`274cb2c` was integrated into this PR branch by `8f09a83`, preserving #26/#27/#28
+and the owner LLM tests (earlier `0234c21` by `f28b70f`). This does not merge PR #22
+into dev. Owner-reported focused evidence is recorded below; agent runs no tests.
 Code stages: identity `b1e5d5`, confirmation `f4f3fd`, action preview `ccb8905`.
 Owner's parallel VIEWER-fixture revision `4b6e450` and merge history are retained;
 this follow-up restores its accidentally removed imports, without weakening tests.
@@ -43,6 +44,62 @@ this follow-up restores its accidentally removed imports, without weakening test
    NOT NULL), owner scope only around the arrange insert, stronger PENDING/no
    approval DB assertions. No broad anonymous/operator test workaround or
    per-tenant reference-data reseeding. Board/ledger/runtime/tenancy docs updated.
+
+### Bounded continuation: collection authorization and local round-trip
+
+`collect_now` was the only one of 33 statically inventoried built-in @tool
+handlers without a declared permission. `ec69981` adds **source.analyze**, matching
+app/web/sources.py's existing collection gate (collection writes rows and can
+cost LLM money, not merely view/edit a source). Both registry dispatch paths
+already enforce declared rights before the handler. The generic None contract
+is unchanged for custom tools; direct handler/raw-manager paths remain outside
+this bounded fix. No new confirmation, queue policy, provider action or role
+migration is introduced.
+
+Six additional methods are WRITTEN, NOT RUN in the existing
+`tests/test_tool_dispatch_permissions.py`: missing identity, view-only and
+inactive denials before mocked run_job_inline; allowed result compatibility;
+rights removal before the next dispatch; built-in static permission inventory.
+The dispatch script now has 16 methods. The source inventory recognizes current
+@tool declarations, not arbitrary alias/dynamic registration or end-to-end access.
+Source-level AST/whitespace checks and the preserved injection-guard comparison
+are completed; no test, application import, DB or external action ran here.
+
+Owner reports setup --check, dispatcher privacy, identity boundary and
+permission_scope passed, without a tested SHA/exact logs for that group.
+Separately **61 passed** across test_llm_client_factory, test_ai_output_boundaries
+and test_learning after integration on dev `274cb2c`; exact invocation/logs not
+supplied. Neither is acceptance of new runtime/confirmation/action/collect code.
+Do not duplicate unchanged owner checks without an integration reason.
+
+Owner-local dev is dirty in chat.css, chat.html and test_web_chat.py: preserve
+all three, no branch switch/stash/reset. Review the PR separately:
+
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+git fetch origin
+git worktree add --detach ../social-media-ai-pr22-review origin/ai/identity-permissions-boundary
+cd ../social-media-ai-pr22-review
+source "$REPO_ROOT/.venv/bin/activate"
+git rev-parse HEAD
+python tests/test_tool_dispatch_permissions.py
+python tests/test_runtime_identity_authorization.py
+python tests/test_runtime_confirmation_authorization.py
+python tests/test_action_tool_authorization.py
+```
+
+Use an unused worktree path; if it exists, inspect it instead of removing it.
+The worktree does not automatically inherit an ignored .env: configure the
+existing local environment privately before DB checks. Common POSTGRES_URL with
+distinct DB_TEST_SCHEMA; no concurrent pytest on one schema, reset/drop or
+migration. Then use the focused DB/API/web group below and a complete full suite
+for this broad authorization integration. Report tested SHA + each command/result;
+no full-suite pass from timeout. New corrections belong on the PR branch, not
+owner's dirty dev; coordinate before committing from a detached worktree.
+
+Next agent step while owner verifies: bounded raw-manager/legacy arrangement
+review, not redo merged privacy or the completed runtime/confirmation/action
+implementation. Keep this PR Draft pending evidence/review; no automatic merge.
 
 ### Current authorization matrix and remaining bypasses
 

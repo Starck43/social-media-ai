@@ -6,8 +6,8 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary`, synchronized with dev `0234c21` by
-`f28b70f`. Identity (`b1e5d5`), fresh actor-bound confirmation (`f4f3fd`) and safe
+Branch `ai/identity-permissions-boundary`, synchronized with dev `274cb2c` by
+`8f09a83` (earlier `0234c21` by `f28b70f`). Identity (`b1e5d5`), fresh actor-bound confirmation (`f4f3fd`) and safe
 PENDING action preview (`ccb8905`) are prepared/pushed, NOT merged or accepted.
 46 new standalone test methods plus earlier policy/dispatch and updated DB
 regressions are written, NOT run by the agent. Parallel VIEWER fixture edits
@@ -17,8 +17,11 @@ Read [the existing detailed handoff](identity_permissions_handoff.md) for exact
 contracts, compatibility risks, owner commands and evidence. Next: local
 verification of this new block and remaining coverage/compatibility review,
 not a replay of completed substeps. Recheck dev/open PRs before further edits.
-Previous owner bootstrap/readiness/privacy passes belong to earlier revisions;
-full-suite timeout remains open. No automatic merge, deploy or live send.
+Latest owner focused setup/privacy/identity/permission checks passed, but their
+exact tested SHA is not supplied. Separate dev `274cb2c` LLM/output/learning
+report: 61 passed. Neither certifies the new runtime block or collect_now gate
+`ec69981` (six unrun regressions). Full-suite completion remains open. Use a
+separate worktree; owner-local dirty UI files stay untouched. No automatic merge, deploy or live send.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `0234c21ed2c1f171d46732153d91e654e9b3cfdb`, 2026-10-09, after authorized PR #27 integration.
+Snapshot: dev `274cb2cbd30ea18046d51f970a5ccdb95ccffb1c`, 2026-10-09. PR #22 includes this base via `8f09a83`; this is not a merge of PR #22 into dev.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Linked identity/fresh-confirmation/safe-preview block PREPARED; 46 new methods NOT RUN. Owner verification and remaining coverage/compatibility gates: [handoff](identity_permissions_handoff.md). Do not duplicate it. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`; continuation now taken over in this lane | Identity/confirmation/preview prepared; collect_now source.analyze gate `ec69981` adds six unrun regressions (dispatch suite now 16). Owner verifies in a separate worktree; [handoff](identity_permissions_handoff.md). No duplicate implementation. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,7 +32,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-PR #22's newer fixture is distinct from its earlier owner-run baseline.
+Latest owner reports: four focused DB/policy checks passed (exact tested SHA not supplied); separately, 61 LLM/output/learning tests passed on dev `274cb2c`. Neither report certifies the new collect gate or complete PR #22. Three owner-local UI files remain outside this branch work.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

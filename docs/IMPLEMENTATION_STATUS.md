@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `0234c21ed2c1f171d46732153d91e654e9b3cfdb` (2026-10-09), after PR #27.
+Latest checked dev: `274cb2cbd30ea18046d51f970a5ccdb95ccffb1c` (2026-10-09). PR #22 includes it via `8f09a83`; #22 remains Draft/unmerged.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -220,8 +220,9 @@ entries when syncing; no identity/queue work or sender activation bundled here.
 ## Identity/permissions boundary — draft PR #22, not merged
 
 Branch `ai/identity-permissions-boundary`; original baseline `57b5612`.
-Fresh dev `0234c21` integrated into PR branch by `f28b70f`; parallel documentation
-#26/#27, privacy #20/#23/#25 and owner fixture history are preserved.
+Fresh dev `274cb2c` integrated into PR branch by `8f09a83`, after the earlier
+`0234c21` integration `f28b70f`; documentation #26/#27/#28, privacy #20/#23/#25,
+owner LLM tests and VIEWER fixture history are preserved.
 Implementation checkboxes below mean PREPARED code, NOT merged/accepted.
 
 - [x] Core anonymous denial, tenant/subject-bound source/task/scenario owner
@@ -240,6 +241,9 @@ Implementation checkboxes below mean PREPARED code, NOT merged/accepted.
 - [x] Owner push `963bf4f`, narrowed fixture `4735859` and owner-reported focused
   rerun retained. User.role_id NOT NULL now satisfied with isolated VIEWER;
   owner's `4b6e450` role change preserved, deleted imports restored separately.
+- [x] Prepared collect_now `source.analyze` declaration (`ec69981`), matching the
+  existing web collection right. Six additional dispatch/declaration regressions
+  WRITTEN, NOT RUN; no live collection, role/schema or dispatcher change.
 - [ ] Owner verification of this new block; full-suite completion; remaining raw
   manager/unannotated tool and legacy arrangement coverage.
 - [ ] Legacy NULL-role reconciliation/automatic linking and durable confirmation
@@ -283,6 +287,29 @@ Previous 24/24 bootstrap and 33/33 focused readiness reports remain separately
 recorded. Full suite previously timed out at 120 seconds; no completed full-suite
 result or acceptance of the remaining permission/identity gates was supplied.
 PR #22 stays draft/open; no merge or deployment authority was given.
+
+## Current owner round-trip — recorded without rerunning
+
+Owner reports local setup --check, dispatcher privacy, identity boundary and
+permission_scope checks passed; exact tested SHA/commands/counts/logs were not
+supplied for this group. These are owner-reported focused results, not acceptance
+of the newer runtime/confirmation/action block or `ec69981` collection gate.
+Separately, owner reports **61 passed** across test_llm_client_factory,
+test_ai_output_boundaries and test_learning after integration on dev `274cb2c`.
+No complete-suite claim or exact invocation/log is supplied; do not rerun those
+61 tests merely to repeat their evidence.
+
+The owner's local dev has uncommitted chat.css, chat.html and test_web_chat.py.
+These files were not modified by this continuation; local-only edits cannot be
+certified from GitHub. Use an isolated review worktree, not switch/stash/reset
+that dev. Merge `8f09a83` reconciled only the board conflict and retained all
+incoming dev changes. New code is bounded to collect_now permission metadata;
+new checks add six methods to the existing dispatch test file. AST/whitespace
+and preserved injection-guard comparison completed; agent ran ZERO tests.
+
+Next: owner validates the pushed PR head, sends SHA + command/result evidence;
+review compatibility/raw-manager limits before Ready for review. Draft, merge,
+deployment and acceptance remain separate. No extra handoff file was created.
 
 ## Test target — shared PostgreSQL, isolated schema
 

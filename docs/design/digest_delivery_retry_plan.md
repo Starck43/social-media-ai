@@ -1,43 +1,26 @@
 # Digest delivery retry checkpoint design
 
-## Status and evidence
+## Current status and evidence
 
-Design only in this planning branch; synchronized with dev `5d4a328bc2a0a2c90032339718e3aa7192b02455`.
-Cloud/hybrid planning documents from merged PR #8 are preserved. All dependency
-branches contain this docs-only update; tested application inputs are unchanged
-since the 196-test run on 7a06374. No repeat suite for documentation-only sync.
-DigestRun/builder fields and call paths on dev still match `4b57c14` (the new UI changes are preserved). The new universal
-assistant architecture includes a future controlled outbox; this digest-specific
-checkpoint work must not be presented as implementing that general outbox.
-The owner approved the dedicated JSONB-field option. The schema unit is prepared in [PR #6](https://github.com/Starck43/social-media-ai/pull/6),
-`ai/digest-delivery-state-schema`, separately from this planning PR, not merged.
-No receipt/resume behavior is implemented in this branch.
-Pure checkpoint helpers are now prepared separately in [PR #7](https://github.com/Starck43/social-media-ai/pull/7),
-stacked on schema PR #6: 43 focused tests passed, 1 existing warning. They validate
-versioned snapshot/run/workspace metadata and part hashes, use copy-on-write
-transitions, and conservatively stop in-flight/uncertain/blocked targets. They
-are not merged or called by the sender; DB persistence, HTML-safe frozen parts,
-locking, authorization checks and builder/job resume remain unimplemented.
-Full suite was not rerun for this unused pure unit.
-Opt-in single-part Telegram/MAX transport is prepared separately in
-[PR #9](https://github.com/Starck43/social-media-ai/pull/9), stacked on #7.
-142 focused tests passed, including existing channel regressions and checkpoint
-tests. No hidden HTTP retry/split/truncation; malformed/ambiguous responses remain
-uncertain. Existing sender is unchanged; caller pacing/backoff and durable
-persistence/resume remain open. Full suite was not repeated. Read
-`docs/design/digest_single_part_transport_handoff.md` on the PR #9 branch. Read the precise checklist in
-`docs/design/digest_checkpoint_contract_handoff.md` on the PR #7 branch.
+Foundation PRs #6/#7/#9/#10/#11 are merged into dev (code baseline `1b52c72`).
+Approved nullable JSONB storage, strict checkpoint helpers, one-part transports,
+versioned HTML/full-list guards and PostgreSQL receipt store are implemented.
+Latest component suite: 234 passed, 1 existing warning; no post-merge full suite
+or production migration. Cloud/hybrid planning documents are preserved.
 
-The current builder reuses a scheduled DigestRun row after failure, rebuilds the
-aggregation/summary and broadcasts to every current target again. DigestRun has
-content, one message_id, status/error and llm_cost, but **no per-target receipt
-field**. A process-local map would lose its receipts on worker restart.
+**End-to-end retry remains open:** existing builder still rebuilds/broadcasts as
+before and does not acquire the new lock. The store accepts ALREADY frozen
+history; atomic first snapshot, guarded job/run/window/generation binding, caller
+pacing, truthful outcomes and legacy/force/uncertainty recovery remain to implement.
+Migrate target DB to 0087 BEFORE starting the updated ORM code, one migrator;
+merge alone does not change a database. Read [implementation status](../IMPLEMENTATION_STATUS.md)
+and component handoffs for merged evidence and exact next bounded unit.
+This digest-specific foundation is not the future general controlled outbox.
 
-Job.result is JSON and survives mark_failed, but mark_done replaces it and
-successful jobs can be cleaned up. It is job-scoped, not a persistent
-DigestRun-owned delivery ledger; a new job/manual retry cannot automatically
-assume another job's receipt history. Do not repurpose the human-readable error
-or HTML content fields as a hidden checkpoint container.
+Job.result can carry a validated original run reference while failures/retries
+retain it, but mark_done replaces it and cleanup may remove it. It is not the
+receipt ledger. Delivery history belongs to DigestRun.delivery_state; do not
+repurpose content/error as hidden checkpoint containers or guess NULL receipts.
 
 ## Approved storage decision
 
@@ -121,30 +104,3 @@ Update [implementation status](../IMPLEMENTATION_STATUS.md) as each approved
 unit lands. Done means merged into dev; prepared/in-review is not done.
 
 
-## Latest bounded implementation checkpoint
-
-[PR #10](https://github.com/Starck43/social-media-ai/pull/10), stacked on #9,
-prepares versioned deterministic b/i/blockquote HTML parts and COMPLETE frozen
-part-list verification for all targets. 196 focused tests passed, 1 existing
-warning. Visible text/styles/whitespace and entities/code points are preserved;
-unsupported HTML/unrepresentable whitespace fails closed. No word/grapheme or
-general-HTML guarantee. Existing splitter/builder/send remain unchanged; full
-suite was not repeated. Handoff: `docs/design/digest_html_parts_handoff.md` in
-PR #10. Schema/contract/transports/parts are prepared only, not merged/deployed.
-Next: locked durable writes, authorization and caller pacing, then builder/job
-original-run resume and integration tests. End-to-end durable retry remains open.
-
-
-## PostgreSQL persistence checkpoint
-
-[PR #11](https://github.com/Starck43/social-media-ai/pull/11), stacked on #10,
-prepares opt-in persistence for ALREADY frozen history: dedicated per-run session
-lock across commits; current workspace/exact owned binding checks; durable
-in-flight intent and per-part outcomes; full-list validation; CAS; poisoned
-failed-write contexts and cleanup invalidation. 234 focused tests passed,
-including 17 PostgreSQL store cases. Full suite was not repeated. No activation,
-initial snapshot factory, job binding or new migration. Advisory lock protects
-cooperating callers only; existing builder does not participate. Handoff:
-`docs/design/digest_checkpoint_store_handoff.md` in PR #11. Next: atomic initial
-snapshot/generation, original-run job binding, coordinated builder/pacing and
-truthful recovery, followed by integration/full tests. PRD-01 remains open.

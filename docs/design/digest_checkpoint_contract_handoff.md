@@ -1,6 +1,13 @@
 # Digest checkpoint contract — bounded implementation handoff
 
-## Status
+## Current merged status
+
+PR #7 merged into dev (`053de6f`) on explicit owner instruction. The preparation
+status below is historical evidence, not current PR state. Foundation remains
+opt-in; builder activation and production migration are not claimed. Current
+continuation: [implementation status](../IMPLEMENTATION_STATUS.md).
+
+## Historical preparation status
 
 Prepared in [PR #7](https://github.com/Starck43/social-media-ai/pull/7),
 `ai/digest-checkpoint-contract`, stacked on schema PR #6
@@ -42,7 +49,7 @@ An initial test setup attempt failed because the local PostgreSQL server was
 started on its default port instead of sandbox port 55432; no application fix
 or weakening of fixtures was used. The server was restarted on the correct port.
 
-## Checklist and precise continuation
+## Historical checklist and precise continuation
 
 Checked boxes here mean implemented in this branch, **not merged into dev**.
 

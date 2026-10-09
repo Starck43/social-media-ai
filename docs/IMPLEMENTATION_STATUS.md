@@ -2,18 +2,13 @@
 
 ## Read this first
 
-Verified dev baseline: `5d4a328bc2a0a2c90032339718e3aa7192b02455`.
-PR #8 cloud/hybrid planning docs are merged and preserved; this is not
-implemented connector/local-inference capability. All five digest/task branches
-were synchronized with this docs-only dev update. Application/test inputs match
-the completed 196-test HTML-unit run on 7a06374; no repeat suite for docs only.
-The integrated delivery baseline is `4b57c14`. New product-direction docs and
-parallel UI/theme/sentiment changes in `7a06374` are preserved; their inclusion
-is not mislabeled as an application-unchanged baseline.
-This tracker separates merged work from proposals and work in a task branch.
-A checked box means the bounded item is merged into dev, **not** deployed or
-that its entire production gate is closed. Update this file and the roadmap
-at each handoff; keep original research/archive documents as historical input.
+Verified code baseline: `1b52c723271ccaf38dea8c8eaadefc8a14e87aa1` (PR #11 merge).
+Cloud/hybrid planning documents from PR #8 are preserved. This tracker distinguishes
+merged code, deployment and production acceptance. Checked boxes mean merged
+bounded work, not a deployed capability or a closed end-to-end delivery gate.
+Full schema suite: 1084 passed, 1 skipped on 7a06374. Latest component suite:
+234 passed, 1 warning on the final store branch; merged application/test files
+match that tested branch. No post-merge full suite or production migration ran.
 
 ## Merged into dev
 
@@ -42,83 +37,45 @@ readiness task and were not overwritten.
 Historical CA-01–04 capabilities are already present;
 see the proposal review rather than rebuilding them.
 
-## Current task — digest retry checkpoints
+## Current task — digest retry integration
 
-Status: **STORAGE APPROVED; SCHEMA, CONTRACT, TRANSPORT, HTML PARTS AND STORE PREPARED / NOT MERGED; END-TO-END RETRY NOT IMPLEMENTED**.
-Owner decision: one dedicated JSONB field on DigestRun plus a separate migration.
-This approves schema preparation, not production migration or automatic PR merge.
-Task branch: `ai/digest-retry-checkpoints`, created from the verified dev above.
-The local planning snapshot was refreshed when the new product docs landed.
+Status: **FOUNDATION MERGED; END-TO-END RETRY NOT ACTIVATED / NOT COMPLETE**.
+Owner explicitly approved merge of the existing PR stack into dev.
 
-- Storage/schema decision **APPROVED**: nullable `DigestRun.delivery_state` JSONB,
-  no new table; separate schema-qualified migration PR. See [design](design/digest_delivery_retry_plan.md).
-- [ ] Merge the schema unit after review. Prepared and tested in
-  [PR #6](https://github.com/Starck43/social-media-ai/pull/6),
-  `ai/digest-delivery-state-schema`; it is not yet in dev. Two migration tests,
-  PostgreSQL/SQLite coverage, schema/digest regressions passed (62 tests).
-  Schema full run on fresh UI dev 7a06374: **1084 passed, 1 skipped**,
-  10 warnings; local Alembic head/current 0087, no drift. Actual local upgrade
-  0086 -> 0087 and isolated-schema rollback were checked. PostgreSQL storage
-  remains JSONB; ORM uses a SQLite-compatible variant for existing tests.
-  No production upgrade was run; schema remains pending review/merge.
-- [ ] Merge the pure checkpoint contract after dependency review. Prepared in
-  [PR #7](https://github.com/Starck43/social-media-ai/pull/7), stacked on PR #6,
-  branch `ai/digest-checkpoint-contract`. Code commit `11f424a`: strict versioned
-  metadata/identity/payload hashes, copy-on-write state transitions, no automatic
-  replay of sent/in-flight/uncertain/blocked parts. **43 focused tests passed,
-  1 existing warning**; formatting/compilation/diff checks passed. Full suite
-  not repeated for this currently unused pure module. No sender/DB integration
-  or additional migration. Handoff: `docs/design/digest_checkpoint_contract_handoff.md`
-  in PR #7; schema and contract both remain unmerged.
-- [ ] Merge the opt-in single-part transport after dependency review. Prepared
-  in [PR #9](https://github.com/Starck43/social-media-ai/pull/9), stacked on #7,
-  branch `ai/digest-single-part-transport`; code/test commit `314738e`.
-  Telegram/MAX send exactly one part without hidden split/truncation/retry,
-  return validated receipts or rejected/uncertain/blocked outcomes, and redact
-  raw response/exception details. **142 focused tests passed, 1 existing warning**
-  including old channel and checkpoint regressions; full suite not repeated.
-  Existing sender remains unchanged. Handoff:
-  `docs/design/digest_single_part_transport_handoff.md` in PR #9.
-  Caller pacing/backoff, HTML-safe splitting, locking, persistence and resume
-  remain open. This also adds proven pre-HTTP in-flight -> blocked handling.
-- [ ] Merge the deterministic HTML/full-list unit after dependency review.
-  Prepared in [PR #10](https://github.com/Starck43/social-media-ai/pull/10),
-  stacked on #9, branch `ai/digest-html-parts`; code/test commit `2321706`.
-  Balanced renderer-subset b/i/blockquote parts, raw UTF-16 bound, preserved
-  visible text/styles/whitespace, atomic entities/code points. Entire ordered
-  count/hash list and exact snapshot/version checked for ALL frozen targets.
-  **196 focused tests passed, 1 existing warning**; full suite not repeated.
-  Existing sender/splitter remains unchanged. Handoff:
-  `docs/design/digest_html_parts_handoff.md` in PR #10.
-  Unsupported HTML and unrepresentable whitespace fail closed; no general
-  sanitizer or word/grapheme preservation claim. Durable retry still absent.
-- [ ] Merge the opt-in PostgreSQL store after dependency review. Prepared in
-  [PR #11](https://github.com/Starck43/social-media-ai/pull/11), stacked on #10,
-  branch `ai/digest-checkpoint-store`; code/test commit `47dcb0e`. Dedicated
-  session advisory lock survives per-part commits, scoped run/generation and
-  full-payload verification, current owned binding check, durable in-flight intent
-  and each outcome, CAS, failed-commit poisoning and safe lock cleanup.
-  **234 focused tests passed, 1 existing warning** (17 new PostgreSQL cases);
-  formatting/compilation/diff checks passed, full suite not repeated.
-  Handoff: `docs/design/digest_checkpoint_store_handoff.md` in PR #11.
-  Store accepts ALREADY frozen history only; first snapshot factory, job binding,
-  pacing/backoff and sender activation remain open. Old senders do not acquire
-  this advisory lock; no claim of current global duplicate protection.
-- [ ] Atomically create the first immutable snapshot/generation before HTTP;
-  explicitly handle legacy NULL/partial rows without guessed receipts.
-- [ ] Resume only unfinished known-failed parts without rebuilding the summary.
-- [ ] Recheck workspace ownership/activity/digest flag on every resumed send.
-- [ ] Handle in-flight/unknown outcomes conservatively; no exactly-once promise.
-- [ ] Prevent overlapping publication from corrupting checkpoints or duplicating
-  sends; agree the bounded locking mechanism with the retry design.
-- [ ] Cover restarts, partial success, failed checkpoint writes, revoked bindings,
-  period rollover, force resend and legacy runs lacking receipt history.
-- [ ] Run focused/full isolated tests and schema/upgrade checks for the approved
-  scope; record exact dev/task SHA and validation limits.
-- [ ] Review task PR; synchronize with new dev; merge only on owner instruction.
+- [x] PR #6 — nullable delivery_state JSONB and migration 0087; merge `0ae0a18`.
+  PostgreSQL/SQLite compatibility, round-trip and Alembic drift evidence are in
+  [schema review](design/digest_delivery_state_schema_review.md).
+- [x] PR #7 — versioned checkpoint metadata and conservative state machine;
+  merge `053de6f`. [Contract handoff](design/digest_checkpoint_contract_handoff.md).
+- [x] PR #9 — opt-in exact one-part Telegram/MAX transport; merge `daf8e9c`.
+  [Transport handoff](design/digest_single_part_transport_handoff.md).
+- [x] PR #10 — deterministic renderer-subset HTML parts and COMPLETE ordered
+  count/hash verification; merge `0529956`. [HTML handoff](design/digest_html_parts_handoff.md).
+- [x] PR #11 — dedicated PostgreSQL session lock, committed intents/outcomes,
+  CAS, failed-write poisoning and current owned binding checks; merge `1b52c72`.
+  [Store handoff](design/digest_checkpoint_store_handoff.md).
+- [x] Component validation: 234 focused tests passed, 1 existing warning; includes
+  17 real PostgreSQL store cases and prior component/tenant-routing regressions.
+  Source files in merged dev match the tested component branch; no repeat full run.
+- [ ] Deploy migration 0087 to the target database BEFORE starting updated app:
+  `python -m alembic upgrade head`, one migrator with correct POSTGRES_URL/DB_SCHEMA.
+  Merge alone does not migrate. ORM reads the new column even before activation.
+  Production deployment, backup/staging check and migration remain operator steps.
+- [ ] Atomically create first immutable content/target/part snapshot and generation
+  before HTTP, with current workspace/owned binding validation. Do not infer legacy
+  NULL/partial rows are definitely unsent. This is the NEXT bounded code unit.
+- [ ] Bind retries to original owned job/run/window/generation; cover midnight and
+  force retries, retaining delivery evidence and avoiding another LLM charge.
+- [ ] Coordinate builder activation with every sender participating in the run lock,
+  one-part transport, immediate receipts and caller pacing/backoff.
+- [ ] Truthful partial/blocked/uncertain run/job/UI results and explicit legacy/
+  uncertainty recovery; no exactly-once claim or blind ambiguous replay.
+- [ ] Two-target/partial-part restart, concurrency and revoked-binding integration
+  tests; fresh isolated full suite at activation checkpoint.
 
-Nothing in this list is marked completed just because this plan exists. PRD-01
-is **partially implemented, still open**.
+Existing builder/send/broadcast remains unchanged. The store only accepts an
+ALREADY frozen ledger and does not yet create one. Foundation merge alone does
+not close PRD-01 or justify switching to the new sender.
 
 ## Remaining production/local work
 
@@ -140,22 +97,16 @@ this checklist does not replace them or authorize deployment.
 
 ## Resume in a new session
 
-1. Fetch fresh dev and this task branch; inspect changes since `5d4a328`.
-2. Read this file, the retry design, `app/services/digest/builder.py`,
-   `app/models/digest_run.py`, its manager, channel adapters and jobs/dispatcher.
-3. Storage is approved. Review the schema branch/PR and its validation; confirm
-   whether it was merged. Do not claim retry behavior exists merely because the
-   field exists, and do not apply a production migration without a deployment step.
-4. Inspect stacked PRs #7/#9/#10/#11 and their handoffs before rebuilding
-   helpers, transports, HTML parts or checkpoint store.
-   Next unit: atomic initial snapshot/generation and original owned run/window
-   job binding, then coordinated builder activation with caller pacing/backoff.
-   Store locking/writes are prepared only for already frozen history; legacy
-   policy, force-generation evidence and truthful outcome handling remain open.
-   The pure helpers do not provide authorization, locking or durability. Do not reserve
-   a migration number until fresh dev's current graph has been checked.
-5. Keep done/in-review/in-progress/blocked distinct; append test evidence and
-   exact continuation point at each handoff. Never mark the full gate complete
-   based on a passing bounded routing test alone.
+1. Fetch fresh dev and check changes after code baseline `1b52c72` (documentation
+   PR #5 merges afterward). Do not rebuild the merged foundation helpers.
+2. Read this tracker, retry plan and four component handoffs. Inspect builder,
+   DigestRunManager, job handlers/dispatcher and JobManager before activation.
+3. Verify actual target migration state separately: 0087 is MERGED, not evidence
+   that staging/production was upgraded. Never run production migration implicitly.
+4. Next bounded code unit: atomic fresh snapshot/generation factory. Then guarded
+   original job/run binding, coordinated builder activation and pacing/backoff.
+5. Legacy and force-generation policy, uncertainty recovery and truthful status
+   handling remain open. Keep prepared/merged/deployed/accepted distinct and append
+   each unit's tests/limits/commit and exact continuation.
 
 No production environment, database, credentials or live messenger were changed.

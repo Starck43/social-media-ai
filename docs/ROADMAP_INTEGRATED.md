@@ -33,10 +33,14 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
   — merged in PR #3; [evidence](design/tenant_safe_digest_delivery_review.md).
 - [x] Explicit workspace notifications vs fixed operator alerts — merged in
   PR #4; [contract and combined tests](NOTIFICATIONS.md).
-- [ ] **Current unit: durable per-recipient/part retry.** Design prepared;
-  dedicated JSONB field and separate migration approved; schema unit prepared in PR #6, not merged. See [retry plan](design/digest_delivery_retry_plan.md).
-  Do not mark PRD-01 closed: retries, concurrency/acknowledgement policy and
-  external identity verification still require evidence.
+- [x] Delivery foundation merged: schema #6, contract #7, single-part transport
+  #9, HTML/full-list validation #10 and locked checkpoint store #11. Component
+  suite: 234 passed, 1 warning. Existing sender is NOT switched.
+- [ ] **Current unit: atomic first snapshot and guarded retry integration.**
+  Apply migration 0087 before running updated app; then prepare atomic snapshot,
+  job/run/window binding, coordinated builder/pacing and truthful recovery.
+  [Retry plan](design/digest_delivery_retry_plan.md). Do not mark PRD-01 closed:
+  end-to-end retry/legacy/force/concurrency evidence and full integration run remain.
 - [ ] Agent authorization and registry contract (PRD-02 / UX-02): action_send,
   explicit rights, tenant/global powers and legacy identity migration.
 - [ ] Spend accounting design + regression harness (PRD-03): every-call units,
@@ -46,8 +50,8 @@ Some read-only UX work can run alongside safety work if files do not overlap, bu
 - [ ] First-report checklist (UX-01): supported source/window/scenario/delivery,
   not merely the presence of a task.
 
-Current continuation: review the approved schema unit, then implement the approved
-schema/receipt units in separate thematic PRs. [Implementation status](IMPLEMENTATION_STATUS.md)
+Current continuation: merged foundation is available; implement atomic fresh
+snapshot creation, then guarded job binding and coordinated sender activation. [Implementation status](IMPLEMENTATION_STATUS.md)
 records merged SHAs, validation limits and the new-session restart checklist.
 
 ## Branch and validation policy

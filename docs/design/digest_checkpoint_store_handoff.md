@@ -1,6 +1,13 @@
 # PostgreSQL digest checkpoint store — bounded handoff
 
-## Status
+## Current merged status
+
+PR #11 merged into dev (`1b52c72`) on explicit owner instruction. The preparation
+status below is historical evidence, not current PR state. Foundation remains
+opt-in; builder activation and production migration are not claimed. Current
+continuation: [implementation status](../IMPLEMENTATION_STATUS.md).
+
+## Historical preparation status
 
 Prepared in [PR #11](https://github.com/Starck43/social-media-ai/pull/11), branch
 `ai/digest-checkpoint-store`, stacked on #10 -> #9 -> #7 -> schema #6.
@@ -51,7 +58,7 @@ repeated for this unused opt-in path; it remains an integration acceptance gate.
 No live HTTP/LLM calls or production DB/schema changes. Fixtures seed frozen
 rows solely to test the store; they are NOT a production snapshot factory.
 
-## Checklist and exact continuation
+## Historical checklist and exact continuation
 
 Checked boxes mean prepared/tested in this branch, **not merged into dev**.
 

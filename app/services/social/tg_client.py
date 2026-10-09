@@ -215,10 +215,7 @@ class TelegramClient(BaseClient):
 
 		peer = getattr(message, "peer_id", None)
 		chat_id = (
-				getattr(message, "chat_id", None)
-				or getattr(peer, "channel_id", None)
-				or getattr(peer, "chat_id", None)
-				or ""
+			getattr(message, "chat_id", None) or getattr(peer, "channel_id", None) or getattr(peer, "chat_id", None) or ""
 		)
 
 		reactions_count = 0
@@ -237,6 +234,11 @@ class TelegramClient(BaseClient):
 			"forwards": getattr(message, "forwards", 0) or 0,
 			"reactions": reactions_count,
 			"comments": getattr(replies, "replies", 0) if replies else 0,
+			"metric_availability": {
+				"reactions": reactions is not None,
+				"comments": replies is not None,
+				"views": getattr(message, "views", None) is not None,
+			},
 			"source_type": getattr(source_type, "value", source_type) or "channel",
 			"platform": "telegram",
 			"message_type": "post" if getattr(message, "is_channel", False) else "message",
@@ -291,11 +293,11 @@ class TelegramClient(BaseClient):
 		- forwards: Forward count
 
 		Args:
-				raw_data: Raw response from Telethon (list of messages)
-				source_type: Type of source
+						raw_data: Raw response from Telethon (list of messages)
+						source_type: Type of source
 
 		Returns:
-				List of normalized content items
+						List of normalized content items
 		"""
 		# Telethon returns list of Message objects or dict representation
 		messages = raw_data.get("messages", []) if isinstance(raw_data, dict) else raw_data
@@ -339,6 +341,12 @@ class TelegramClient(BaseClient):
 					"views": views,
 					"forwards": forwards,
 					"reactions": reactions_count,
+					"comments": msg.get("replies", {}).get("replies", 0) if msg.get("replies") else 0,
+					"metric_availability": {
+						"reactions": isinstance(msg.get("reactions"), dict),
+						"comments": isinstance(msg.get("replies"), dict),
+						"views": msg.get("views") is not None,
+					},
 					"replies": msg.get("replies", {}).get("replies", 0) if msg.get("replies") else 0,
 					# Metadata
 					"source_type": source_type.value if source_type else "unknown",

@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator, Optional
 import httpx
 
 from app.channels.base import Inbound
+from app.channels.delivery_parts import REJECTED_HTTP_STATUSES, part_result, valid_part
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,42 @@ class TelegramChannel:
         if results["message_ids"]:
             results["message_id"] = results["message_ids"][-1]
         return results
+
+    async def send_part(self, chat_id: str, text: str, parse_mode: str | None = "HTML") -> dict[str, Any]:
+        """Send exactly one frozen part once; no split, truncation or HTTP retry.
+
+        Future checkpoint caller owns authorization, intent/receipt persistence,
+        serialization and pacing. Cancellation leaves its persisted intent in-flight.
+        """
+        if not self.enabled:
+            return part_result("blocked", error_code="transport_not_configured")
+        if not valid_part(chat_id, text, MAX_TEXT_LEN) or parse_mode not in (None, "HTML"):
+            return part_result("blocked", error_code="invalid_part")
+        payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(self._api("sendMessage"), json=payload)
+            data = response.json()
+        except httpx.HTTPError:
+            return part_result("uncertain", error_code="transport_error")
+        except ValueError:
+            return part_result("uncertain", error_code="invalid_response")
+        if not isinstance(data, dict):
+            return part_result("uncertain", error_code="invalid_response")
+        result = data.get("result")
+        message_id = result.get("message_id") if isinstance(result, dict) else None
+        if response.status_code == 200 and data.get("ok") is True and type(message_id) is int and message_id > 0:
+            return part_result("sent", message_id=str(message_id))
+        if (
+            response.status_code in REJECTED_HTTP_STATUSES
+            and data.get("ok") is False
+            and type(data.get("error_code")) is int
+            and data["error_code"] == response.status_code
+        ):
+            return part_result("rejected", error_code=f"http_{response.status_code}")
+        return part_result("uncertain", error_code="unconfirmed_response")
 
     async def poll(self) -> AsyncIterator[Inbound]:
         """Long-poll updates (messages, channel posts, edited messages ignored)."""

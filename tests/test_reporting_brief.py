@@ -347,7 +347,7 @@ async def test_brief_groups_by_monitored_users(source):
             ],
         )
         brief = await ReportAggregator().generate_digest_brief(period="day", group_by="entities", entity_type="person")
-        assert "## По сущностям" in brief
+        assert "## По упоминаниям" in brief
 
 
 async def test_brief_returns_empty_when_no_analytics():

@@ -38,32 +38,20 @@ async def source(platform):
     await Source.objects.delete_by_id(s.id)
 
 
-async def test_analyze_content_only_supports_themes_mode(monkeypatch, source):
-    """Only themes mode is supported; other modes were dead code removed."""
+async def test_analyze_content_has_no_report_grouping_parameter(monkeypatch, source):
+    """Write-path analysis always clusters by theme, not a reporting axis."""
+    import inspect
+
     called = []
 
-    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, task_payload=None, **kwargs):
-        called.append("themes")
+    async def fake_by_themes(self, content, source, **kwargs):
+        called.append(kwargs)
         return []
 
     monkeypatch.setattr(AIAnalyzer, "_analyze_content_by_themes", fake_by_themes)
-
-    # analyze_by parameter is ignored - only themes path executes
-    result = await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="themes")
-    assert called == ["themes"]
-
-    # Other values also route to themes (no dispatch anymore)
-    called.clear()
-    result = await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="days")
-    assert called == ["themes"]
-
-    called.clear()
-    result = await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="sources")
-    assert called == ["themes"]
-
-    called.clear()
-    result = await AIAnalyzer().analyze_content([{"text": "x"}], source, analyze_by="monitored_users")
-    assert called == ["themes"]
+    assert "analyze_by" not in inspect.signature(AIAnalyzer.analyze_content).parameters
+    assert await AIAnalyzer().analyze_content([{"text": "x"}], source) == []
+    assert len(called) == 1
 
 
 async def test_base_analyze_does_not_save_a_timed_out_llm_stub(monkeypatch, source):
@@ -121,7 +109,6 @@ async def test_analyze_content_uses_passed_scenario_when_forwarded(monkeypatch, 
     sc = AgentScenario(id=999, name="Сценарий 6", analysis_types=["sentiment"])
     await AIAnalyzer().analyze_content(
         [{"text": "x"}], source,
-        analyze_by="themes",
         agent_scenario=sc,
     )
     assert mode_called == [sc]

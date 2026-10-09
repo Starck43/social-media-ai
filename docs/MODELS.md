@@ -1,661 +1,272 @@
 # Data Model Reference
 
-Entity-relationship reference for all database tables in the configured schema (`settings.DB_SCHEMA`, default `public`).
+Reconciled against dev `234a23dd7d1d2ce8dd3813f1ed63c7c7ef748669` on 2026-10-09 by inspecting the ORM model definitions, BaseManager and revisions 0086/0087. This is a source reference, not an inspection of a running database or a certification of every historical migration. Schema comes from `settings.DB_SCHEMA`; do not hardcode it in application code.
 
-## Base Classes
+All current model tables and both association tables are indexed below. Field inventories omit inherited fields where indicated. Exact SQLAlchemy declarations, defaults and nullability remain linked at each table; the critical mismatches in the previous reference are corrected explicitly. For deployment state use Alembic in the target environment. For retry activation and work in review use [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not this schema reference.
 
-### `Base`
+## Base classes and isolation boundaries
 
-SQLAlchemy `DeclarativeBase` with:
-- Default schema: `settings.DB_SCHEMA` (default `public`)
-- Custom `save()` and `delete()` methods
-- `objects` class attribute set to `BaseManager` after class definition
+[Source: base.py](../app/models/base.py), [BaseManager](../app/models/managers/base_manager.py).
 
-### `TimestampMixin`
+- `Base` supplies schema-aware metadata and a class-level manager placeholder. It does not define generic instance `save()`/`delete()` methods; specialized models may define their own methods.
+- `TimestampMixin` supplies non-null `created_at` and `updated_at`, `DateTime(timezone=True)`, server default `now()`; `updated_at` also has SQLAlchemy `onupdate=now()`.
+- `TenantScopedMixin` supplies non-null `tenant_id` FK → `tenants.id`, `ON DELETE CASCADE`, and the `__tenant_scoped__` marker. It does not itself enforce query authorization.
+- Normal BaseManager querysets apply tenant criteria and fail without context for marked models; create rejects mismatched tenants. Explicit bypass, caller-built/raw SQL and association helpers require separate authorization. This is not automatic PostgreSQL row-level security or a guarantee that every direct SQL path is safe.
+- `Tenant`, `TenantUser`, `TenantInvite`, `TenantChannel` do not inherit the marker, even though the latter three contain workspace FKs. Their managers/callers must enforce ownership explicitly. The tenant row itself has no `tenant_id`.
 
-Adds to any model:
-| Column | Type | Default |
-|---|---|---|
-| `created_at` | `DateTime(timezone=True)` | `func.now()` |
-| `updated_at` | `DateTime(timezone=True)` | `func.now()`, auto-updated |
+## Global catalog and identity tables
 
-### `TenantScopedMixin`
-
-Adds to any model:
-| Column | Type | Default |
-|---|---|---|
-| `tenant_id` | `Integer` (FK → `tenants.id`) | Required, CASCADE delete |
-
-**Enforcement:** `BaseManager` filters all SELECT queries by `current_tenant_id()`, stamps `tenant_id` on `create()`, and re-fetches `update_by_id`/`delete_by_id` through the scoped queryset.
-
----
-
-## Global Tables (not tenant-scoped)
-
-These tables are shared across all tenants and are resolved before a tenant context exists.
+Timestamp fields apply to every table in this section except `platforms` and `role_permission`.
 
 ### `platforms`
 
-Social media platforms.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `name` | `String(100)` | Platform name (e.g., "VK", "Telegram") |
-| `platform_type` | `Enum` | Platform type enum |
-| `base_url` | `String` | Base URL for the platform |
-| `is_active` | `Boolean` | Whether the platform is active |
-| `params` | `JSON` | API request settings |
-| `rate_limit_remaining` | `Integer` | Current rate limit remaining |
-| `rate_limit_reset_at` | `DateTime` | When rate limit resets |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Relationships:** `sources` (one-to-many)
-
----
+[Source](../app/models/platform.py). Fields: `id` PK; `name` String(50), unique/non-null; `platform_type` native enum; `base_url` String(255), non-null; `params` JSON, non-null, default dict; `is_active` nullable Boolean, default true. No rate-limit columns, `created_at` or `updated_at` are declared. Reverse relationship: `sources`.
 
 ### `roles`
 
-RBAC roles.
+[Source](../app/models/role.py). Fields: `id` PK; `name` String(100), unique/non-null; `codename` native `user_role_type` enum stored as names; `description` nullable Text. Relationships: one role → many users; permissions through **`role_permission`**, not `permissions_roles`.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `name` | `String(100)` | Display name |
-| `codename` | `String(50)` Unique | Machine-readable name |
-| `description` | `Text` | Role description |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+### `role_permission`
 
-**Relationships:** `users`, `permissions` (many-to-many via `permissions_roles`)
-
----
-
-### `permissions`
-
-Individual permission entries.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `model_type` | `String(50)` | App label (e.g., "social", "account") |
-| `model_type_id` | `Integer` | Model type ID |
-| `action_type` | `Enum` | Permission action (add, change, delete, view) |
-| `codename` | `String(100)` Unique | Machine-readable codename |
-| `name` | `String(100)` | Human-readable name |
-| `description` | `Text` | Permission description |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Relationships:** `roles` (many-to-many via `permissions_roles`)
-
----
-
-### `llm_providers`
-
-LLM provider configuration.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `name` | `String(100)` | Provider name (e.g., "OpenAI") |
-| `description` | `Text` | Description |
-| `api_format` | `String(20)` | `openai` or `anthropic` |
-| `base_url` | `String(255)` | API base URL |
-| `auth_header` | `String(50)` | Auth header (e.g., "Bearer") |
-| `encrypted_api_key` | `Text` | Fernet-encrypted API key |
-| `is_active` | `Boolean` | Whether the provider is active |
-| `is_default` | `Boolean` | Default provider flag |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Relationships:** `models` (one-to-many)
-
----
-
-### `llm_models`
-
-LLM model definitions per provider.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `provider_id` | `Integer` FK → `llm_providers` | Owning provider |
-| `name` | `String(100)` | Human-readable name (e.g., "GPT-4o Mini") |
-| `model_id` | `String(100)` | API model string (e.g., "gpt-4o-mini") |
-| `model_type` | `Enum` | `text`, `image`, `embedding` |
-| `capabilities` | `JSON` | Supported media types (derived from `model_type`) |
-| `input_cost_per_1k` | `Float` | Cost per 1K input tokens (USD) |
-| `output_cost_per_1k` | `Float` | Cost per 1K output tokens (USD) |
-| `max_tokens` | `Integer` | Max output tokens |
-| `default_temperature` | `Float` | Default temperature |
-| `is_active` | `Boolean` | Whether the model is available |
-| `is_default` | `Boolean` | Default for this `model_type` (global uniqueness per type) |
-| `last_used_at` | `DateTime` | Last time this model was invoked (NULL = unknown) |
-| `last_success_at` | `DateTime` | Last successful invocation (no 5xx/timeout) |
-| `last_error_at` | `DateTime` | Last failed invocation (5xx/timeout/network) |
-| `use_count` | `Integer` | Total invocations (once per model attempt) |
-| `fail_count` | `Integer` | Total failed calls (since migration) |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**`is_default` semantics:** exactly one active model per `model_type` may have `is_default=True`. Creating/updating a model with `is_default=True` clears the flag on all other models of the same `model_type`. This is enforced by `LLMModelManager.create_model`/`update_model`, by `LLMModelAdmin.after_model_change` and by the API/agent tools (thin callers of the manager).
-
-**Default resolution order** (used by `resolve_default_model`, digest builder, agent fallback chain):
-1. `is_default=True` + active
-2. First active model of the same `model_type` ordered by `provider.is_default` DESC, then `model.is_default` DESC, then `id` ASC
-
-**Usage/health counters** (`last_used_at`, `last_success_at`, `last_error_at`, `use_count`, `fail_count`) are updated by `llm_client._record_llm_usage` on every LLM call (both `chat_with_fallback` and direct client calls). `NULL` = unknown history (backward compatible). `last_success_at` is backfilled from `ai_analytics.created_at` per model name for legacy signal in default reassignment.
-
-**Relationships:** `provider`, `text_scenarios`, `image_scenarios`, `video_scenarios`
-
----
+[Source](../app/models/role.py). Composite PK (`role_id`, `permission_id`), both FK columns to roles/permissions. No timestamps or tenant column. Association updates are not tenant-scoped queryset operations.
 
 ### `model_types`
 
-Enum values for LLM model types.
+[Source](../app/models/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; `app_name`, `model_name`, `table_name` String(100), non-null; `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `name` | `String(50)` Unique | Type name |
-| `description` | `Text` | Description |
+### `permissions`
 
----
+[Source](../app/models/permission.py). Fields: `id` PK; `codename` String(100), non-null; `name` String(200), non-null; `action_type` native enum stored as names; `model_type_id` FK → model_types. `model_type` is an ORM relationship, not a String column. Unique (`codename`, `model_type_id`); model declaration also contains a codename-format CHECK. Python validation and historical stored codenames are not proof of deployed CHECK behavior; permission checks use structured model/action data.
 
 ### `users`
 
-Application users (admin panel operators).
+[Source](../app/models/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; nullable `is_superuser` Boolean; non-null `role_id` FK → roles. No `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `username` | `String(50)` Unique | Login name |
-| `email` | `String(100)` Unique | Email address |
-| `hashed_password` | `String(255)` | Bcrypt-hashed password |
-| `is_active` | `Boolean` | Account active |
-| `is_superuser` | `Boolean` | Superuser flag |
-| `role_id` | `Integer` FK → `roles` | Assigned role |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+### `llm_providers`
 
-**Relationships:** `role`, `notifications` (one-to-many)
+[Source](../app/models/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active`, `is_default` Boolean. Relationship: models. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
 
----
+### `llm_models`
 
-### `tenant_invites`
+[Source](../app/models/llm_model.py).
 
-Invite codes for bringing clients into workspaces.
+| Column group | Declaration / meaning |
+| --- | --- |
+| `id`, `provider_id` | Integer PK; non-null indexed provider FK, CASCADE |
+| `name`, `model_id`, `description` | String(100), String(100), nullable Text |
+| `model_type` | String(20), default text; `capabilities` is computed by splitting commas, not a column/native capability enum |
+| `custom_endpoint_path` | Nullable **String(200)**, added by 0086 |
+| `input_cost_per_1k`, `output_cost_per_1k` | Non-null Float, default 0; configured USD per 1K tokens |
+| `last_request_cost`, `last_request_cost_at` | Nullable Float and timezone-unspecified DateTime |
+| `last_used_at`, `last_success_at`, `last_error_at` | Nullable timezone-unspecified DateTime |
+| `use_count`, `fail_count` | Non-null Integer, default/server default 0 |
+| `max_tokens`, `default_temperature` | Non-null Integer default 4096; Float default 0.3 |
+| `is_active`, `is_default` | Boolean defaults true/false |
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `code_hash` | `String(64)` | SHA-256 hash of the plaintext code |
-| `role_id` | `Integer` FK → `roles.id` (nullable) | Platform role to assign on invite redemption |
-| `expires_at` | `DateTime` | Code expiry (nullable) |
-| `max_uses` | `Integer` | Max redemptions (default: 1) |
-| `used_count` | `Integer` | Current redemption count |
-| `is_active` | `Boolean` | Whether the code is valid |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+Relationships: provider and text/image/video scenario model references. `is_default` is a Boolean, not a unique DB constraint per capability; manager/admin behavior must be reviewed separately. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
-**Unique constraint:** `(code_hash)`
+## Workspace and personal credential tables
 
----
-
-## Tenant Tables (tenant-scoped)
-
-All these tables have `tenant_id` FK and are filtered by tenant context.
+All tables in this section have TimestampMixin. The tables are not marked with TenantScopedMixin.
 
 ### `tenants`
 
-Client workspaces.
+[Source](../app/models/tenant.py). Fields: `id`, `name` String(100), unique `slug` String(50), `plan` **String(20), default `pro`**, `timezone` String(50), `is_active`, `daily_cost_limit` Float(default 5), `max_sources` Integer(default 20), nullable `agent_style` JSON, `agent_model` String(100), `agent_max_tokens` Integer(default 1024), `agent_temperature` Float(default 0.3), `agent_system_prompt` Text.
 
-| Column | Type | Default | Description |
-|---|---|---|---|
-| `id` | `Integer` PK | | |
-| `name` | `String(100)` | | Workspace name |
-| `slug` | `String(50)` | | Unique slug |
-| `plan` | `String(30)` | `"personal"` | Subscription plan |
-| `timezone` | `String(50)` | `"Europe/Moscow"` | Workspace timezone |
-| `is_active` | `Boolean` | `true` | Active flag |
-| `daily_cost_limit` | `Float` | `5.0` | USD daily cost cap |
-| `max_sources` | `Integer` | `20` | Max sources allowed |
-| `agent_style` | `JSON` | | Reply style: `{tone, length, language, quiet_hours}` |
-| `created_at` | `DateTime` | | Auto |
-| `updated_at` | `DateTime` | | Auto |
-
-**Unique constraint:** `(slug)`
-
----
+Declared CHECK allows **starter/pro/business**; `personal` is historical, migrated in 0071. `PLAN_LIMITS` is a class-level policy, not a table. `effective_limits()` takes min(column override, finite tier ceiling); unlimited business ceilings ignore those column overrides. Source budgets/features/retention policy declarations do not demonstrate complete spend accounting or cleanup.
 
 ### `tenant_users`
 
-Membership: which messenger identity belongs to which workspace.
+[Source](../app/models/tenant.py). Fields: `id`; non-null `tenant_id` FK CASCADE; `channel` String(20) (includes web membership); `external_user_id` String(100); nullable `user_id` FK → users CASCADE; nullable `role_id` FK → roles SET NULL; `is_active`. Unique (`tenant_id`, `channel`, `external_user_id`); PostgreSQL partial unique index (`tenant_id`, `user_id`) where user_id IS NOT NULL. Current `is_owner` treats null role_id as legacy owner; describe this compatibility behavior without recommending it as the future fail-closed policy.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `channel` | `String(20)` | `'telegram'` or `'max'` |
-| `external_user_id` | `String(100)` | Messenger user ID |
-| `user_id` | `Integer` FK (nullable) | Web user ID (if linked) |
-| `role_id` | `Integer` FK → `roles.id` (nullable) | Platform role for this membership |
-| `is_active` | `Boolean` | Membership active |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+### `tenant_invites`
 
-**Unique constraint:** `(tenant_id, channel, external_user_id)`
-
-**Note:** Migration `0080` replaced the old `role` `String(20)` column with
-`role_id` (FK to `roles.id`). Legacy rows with `role_id IS NULL` are treated as
-owners for backward compatibility.
-
----
+[Source](../app/models/tenant.py). **Workspace-owned**, not an unowned global invite. Fields: `id`; non-null `tenant_id` FK CASCADE; unique `code_hash` String(64); nullable `role_id` FK SET NULL; nullable `expires_at` timezone-aware DateTime; `max_uses` Integer(default 1), `used_count` Integer(default 0), `is_active` Boolean(default true).
 
 ### `tenant_channels`
 
-Messenger chat → tenant binding.
-
-| Column | Type | Default | Description |
-|---|---|---|---|
-| `id` | `Integer` PK | | |
-| `tenant_id` | `Integer` FK | | |
-| `channel` | `String(20)` | | `'telegram'` or `'max'` |
-| `chat_id` | `String(100)` | | Messenger chat ID |
-| `kind` | `String(20)` | `"private"` | `'private'` or `'channel'` |
-| `is_digest_target` | `Boolean` | `false` | Receives scheduled digests |
-| `is_active` | `Boolean` | `true` | |
-| `created_at` | `DateTime` | | Auto |
-| `updated_at` | `DateTime` | | Auto |
-
-**Unique constraint:** `(channel, chat_id)`
-
----
+[Source](../app/models/tenant.py). Fields: `id`, non-null `tenant_id` FK CASCADE; `channel` String(20), `chat_id` String(100), `kind` String(20, default private); Boolean `is_digest_target` default false and `is_active` default true. Unique **(`channel`, `chat_id`)** globally; the same chat is not bound independently to multiple workspaces.
 
 ### `user_credentials`
 
-Personal (per-user) L2 secrets, keyed by `users.id` — deliberately not
-tenant-scoped (a person's tokens are valid in every workspace they belong to).
+[Source](../app/models/user_credential.py). Personal vault: `id`; non-null `user_id` FK → users CASCADE; `platform`, `kind` String(30); nullable `label` String(100); non-null `secret_encrypted` Text; nullable `expires_at` timezone-aware DateTime and `meta` JSON; `is_active` default true. Indexes on user_id and (user_id, platform). No tenant_id. Membership/owner resolution is required before workspace use; global storage is not unrestricted shared access. `reveal()` decrypts the secret; deployment/application secrets stay in configuration.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `user_id` | `Integer` FK → `users` | Owner of the secret |
-| `platform` | `String(30)` | `'vk'`, `'telegram'` |
-| `kind` | `String(30)` | `'user_token'`, `'session'`, `'api_id'`, `'api_hash'` |
-| `label` | `String(100)` | Free-form note |
-| `secret_encrypted` | `Text` | Fernet-encrypted secret |
-| `expires_at` | `DateTime` | Credential expiry |
-| `meta` | `JSON` | Additional metadata |
-| `is_active` | `Boolean` | Active flag |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+## Tenant-scoped collection and analysis
 
-**Method:** `reveal()` — decrypts and returns the plaintext secret.
-
----
+Every table below inherits tenant_id and timestamps.
 
 ### `sources`
 
-Content sources (VK groups, Telegram channels, etc.).
+[Source](../app/models/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime and `last_item_id` String(100).
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `platform_id` | `Integer` FK → `platforms` | |
-| `name` | `String(255)` | Source name |
-| `source_type` | `Enum` | `GROUP`, `CHANNEL`, `USER` |
-| `external_id` | `String(100)` | Platform-specific ID |
-| `params` | `JSON` | Collection settings (`mode`, `incremental_mode`, etc.) |
-| `is_active` | `Boolean` | Active flag |
-| `last_checked` | `DateTime` | Last collection timestamp |
-| `last_item_id` | `String(100)` | Watermark for push-based sources (Telegram) |
-| `date_from` | `DateTime` | Collection start date |
-| `date_to` | `DateTime` | Collection end date |
-| `user_id` | `Integer` FK → `users` | Owner user (nullable) |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is **no `user_id` or scenario FK**. Token owner selection uses params/personal-vault resolution, not a nonexistent owner column. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
 
-**Unique constraint:** `(tenant_id, user_id, platform_id, external_id)`
+### `collected_items`
 
-**Relationships:** `user` (owner), `platform`, `analytics` (one-to-many)
+[Source](../app/models/collected_item.py). Previously missing from this reference. Fields: `id`; nullable `run_id` Integer; non-null `source_id` Integer; nullable `external_id` String(255); non-null `content_hash` String(64); nullable `platform` String(50), `published_at` timezone-aware DateTime, `media_type` String(20), `text` Text, `metrics`/`author` JSON, `permalink` String(500); non-null `analyze_attempts` default 0 and `give_up_after_attempts` default 3.
 
-> A source does not carry a scenario — the scenario lives on the task that
-> drives it (`agent_tasks.agent_scenario_id`), with the workspace default as
-> the fallback for taskless runs (push ingest, CLI, agent collect).
-
----
+**source_id and run_id are logical references, NOT declared FKs.** Unique non-partial index (`source_id`, `external_id`); multiple NULL external IDs remain legal in PostgreSQL. Other indexes: tenant, source/hash, run, source/published. A failed analysis is not evidence that raw content can be deleted; actual retention/cleanup belongs to runtime policy.
 
 ### `agent_scenarios`
 
-Reusable analysis methodology (prompt, models, scope). Triggers and actions live on `agent_tasks` — a scenario says *how to analyse*, a task says *whether to act*.
+[Source](../app/models/agent_scenario.py). Fields: `id`, `name` String(255); nullable `description`, `base_prompt`, `summary_prompt` Text; nullable `content_types`, `analysis_types`, `scope`, `media_overrides`, `output_schema` JSON; nullable `max_tokens` Integer; `is_active` Boolean; non-null `is_default` Boolean default false; nullable `text_llm_model_id`, `image_llm_model_id`, `video_llm_model_id` FKs SET NULL; nullable native `llm_strategy` enum. `ai_prompt` is a compatibility property, not a column.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `name` | `String(255)` | Scenario name |
-| `description` | `Text` | Description |
-| `content_types` | `JSON` | What to collect: `["posts", "comments"]` |
-| `analysis_types` | `JSON` | What to analyze: `["sentiment", "keywords"]` |
-| `scope` | `JSON` | METHODOLOGY config only: categories, scale, max_keywords, context_window, etc. Specific targets (brands, competitors) go in `AgentTask.payload`, not here. |
-| `base_prompt` | `Text` | Core LLM instruction for analysis |
-| `media_overrides` | `JSON` | Per-media-type prompt overrides |
-| `summary_prompt` | `Text` | Custom prompt for unified summary |
-| `max_tokens` | `Integer` | Max tokens for LLM responses |
-| `output_schema` | `JSON` | JSON Schema for structured LLM output |
-| `is_active` | `Boolean` | Active flag |
-| `is_default` | `Boolean` | Default for new sources |
-| `text_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for text |
-| `image_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for images |
-| `video_llm_model_id` | `Integer` FK → `llm_models` | Explicit model for video |
-| `llm_strategy` | `Enum` | Auto-resolve strategy: `cost_efficient`, `quality`, `multimodal` |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Relationships:** `agent_tasks` (one-to-many), `text_llm_model`, `image_llm_model`, `video_llm_model`
-
-> **Note:** `analyze_type` column was dropped by migration `0083`. Grouping is now a query-time parameter (`group_by` + `time_breakdown`) on `agent_tasks.payload`, not a scenario property. The analysis-time grouping (how content is batched into `AIAnalytics` rows) is fixed to **themes** — one analysis row per theme cluster per source per run.
-
----
+Methodology belongs here; schedule, source selection, triggers and approval guards belong to tasks. `analyze_type` was removed in 0083; do not draw a direct Source→Scenario FK. Query grouping is not a stored scenario field.
 
 ### `ai_analytics`
 
-AI analysis results.
+[Source](../app/models/ai_analytics.py). Fields: `id`; non-null `source_id` FK CASCADE; nullable `analysis_date` **Date**; non-null native `period_type` enum; nullable `content_hash` String(64); nullable `topic_chain_id` String(100), `chain_label`/`normalized_label` String(255); nullable `parent_analysis_id` self-FK SET NULL; non-null `summary_data` JSON; nullable `response_payload`, `main_topics`, `media_types` JSON; nullable `prompt_text` Text, `llm_model`/`provider_type` String(100), `request_tokens`/`response_tokens` Integer, `estimated_cost` Numeric(14,6).
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `source_id` | `Integer` FK → `sources` | |
-| `period_type` | `Enum` | `day`, `week`, `month`, `custom` |
-| `analysis_date` | `DateTime` | Date of the analysis period |
-| `summary_data` | `JSON` | AI analysis results (sentiment, topics, etc.) |
-| `response_payload` | `JSON` | Raw LLM response |
-| `topic_chain_id` | `String` | Linked topic chain |
-| `llm_model` | `String(100)` | Model used for analysis |
-| `request_tokens` | `Integer` | Input tokens used |
-| `response_tokens` | `Integer` | Output tokens generated |
-| `estimated_cost` | `Numeric(14,6)` | Cost in USD cents — sub-cent precision (NUMERIC(14,6)) |
-| `provider_type` | `String(30)` | LLM provider: `openai`, `anthropic`, etc. |
-| `media_types` | `JSON` | Types analyzed: `["text", "image"]` |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`); indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
 
-**Indexes:** `provider_type`, `analysis_date`, `source_id`
+## Tenant-scoped scheduling and delivery
 
----
+Every table below inherits tenant_id and timestamps, except agent_task_sources.
 
 ### `agent_tasks`
 
-Cron-based task definitions. Triggers and actions live here (not on scenarios) — a scenario says *how to analyse*, a task says *whether to act*.
+[Source](../app/models/agent_task.py). Fields: `id`, `name` String(100), `cron_expr` String(100), `job_type` String(20), `payload` JSON; `is_active`; nullable `next_run_at`/`last_run_at` timezone-aware DateTime, `last_status` String(20), `last_error` Text; nullable native `trigger_type`/`action_type` enums and `trigger_config` JSON; nullable `rate_limit_per_hour`/`cooldown_seconds` Integer; non-null `requires_approval` Boolean default true; nullable `blacklist`/`whitelist` JSON; nullable `agent_scenario_id` FK SET NULL.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `name` | `String(100)` | Unique task name |
-| `cron_expr` | `String(100)` | 5-field cron expression |
-| `job_type` | `String(20)` | `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
-| `payload` | `JSON` | Task-specific params. For `digest`: `period` (day/week/month), `group_by` (themes/sources/entities/sentiment/content_type/intent/topic_chains), `time_breakdown` (bool). For `collect`/`analyze`: `monitored_users`, `excluded_users`, `cli_dates` (start_date/end_date), `force_refresh`, `force_reanalyze`, `analyze_inline`. For `digest` + `analyze`: `scenario_id` override. |
-| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Reusable scenario (nullable, `SET NULL`) |
-| `trigger_type` | `Enum` | `KEYWORD_MATCH`, `SENTIMENT_THRESHOLD`, `USER_MENTION`, `ACTIVITY_SPIKE` |
-| `trigger_config` | `JSON` | Trigger parameters (keywords, threshold, spike multiplier...) |
-| `action_type` | `Enum` | `COMMENT`, `REPLY`, `DIRECT_MESSAGE`, `POST`, `REACTION`, `MODERATION`, `NOTIFICATION` |
-| `rate_limit_per_hour` | `Integer` | Max actions per hour |
-| `cooldown_seconds` | `Integer` | Min seconds between actions |
-| `requires_approval` | `Boolean` | Require owner approval (default `true`) |
-| `blacklist` | `JSON` | Usernames/IDs to never act on |
-| `whitelist` | `JSON` | Only act on these users |
-| `is_active` | `Boolean` | Active flag |
-| `next_run_at` | `DateTime` | Next scheduled run (UTC) |
-| `last_run_at` | `DateTime` | Last run timestamp |
-| `last_status` | `String(20)` | `success`, `failed`, `skipped` |
-| `last_error` | `Text` | Error message if failed |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Unique constraint:** `(tenant_id, name)`
-
-**Relationships:** `tenant`, `agent_scenario`, `sources` (many-to-many via `agent_task_sources`)
-
----
+Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through association. job_type/payload and textual last_status are application contracts, not DB enums. See [task reference](AGENT_TASKS.md) for supported operations.
 
 ### `agent_task_sources`
 
-Many-to-many join between `agent_tasks` and `sources`. A task's sources are
-linked here (not in `payload`); an empty set means all active sources.
-
-| Column | Type | Description |
-|---|---|---|
-| `agent_task_id` | `Integer` FK → `agent_tasks` (PK, CASCADE) | |
-| `source_id` | `Integer` FK → `sources` (PK, CASCADE) | |
-
----
+[Source](../app/models/agent_task.py). Composite PK (`agent_task_id`, `source_id`), both FK CASCADE. No tenant_id/timestamps. Caller must validate both endpoints belong to the allowed workspace. Empty source assignment means all active sources according to task behavior, not a database constraint.
 
 ### `jobs`
 
-Background job queue.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `agent_task_id` | `Integer` FK → `agent_tasks` | Source agent task (nullable for manual) |
-| `job_type` | `String(20)` | Same values as agent_tasks |
-| `payload` | `JSON` | Job parameters |
-| `status` | `Enum` | `pending`, `running`, `done`, `failed` |
-| `run_at` | `DateTime` | When to run (UTC) |
-| `locked_at` | `DateTime` | When claimed by worker |
-| `attempts` | `Integer` | Current attempt count |
-| `max_attempts` | `Integer` | Max retries |
-| `result` | `JSON` | Job result (for `learn`/`reflect` includes priced `llm_cost`) |
-| `error` | `Text` | Error message |
-| `llm_cost` | `Float` | USD spent on the LLM call (NULL = none); feeds the daily cap |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Index:** `(status, run_at)` for `SKIP LOCKED` claiming
-
----
+[Source](../app/models/job.py). Fields: `id`; nullable `agent_task_id` FK SET NULL; non-null `job_type` String(20), `payload` JSON, **`status` String(20)** (not enum); non-null `run_at` timezone-aware DateTime; nullable `locked_at`, **`started_at`, `finished_at`** timezone-aware DateTime; non-null `attempts` Integer(default 0), `max_attempts` Integer(settings default, server default 3); nullable `result` JSON, `error` Text, `llm_cost` Float **USD**. Indexes: tenant, (status, run_at), agent_task_id. NULL cost is none/unknown, not guaranteed zero. Queue claims do not establish distributed connector leases.
 
 ### `digest_runs`
 
-Digest delivery history.
+[Source](../app/models/digest_run.py).
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `agent_task_id` | `Integer` FK → `agent_tasks` | |
-| `period_start` | `DateTime` | Start of the digest period |
-| `period_end` | `DateTime` | End of the digest period |
-| `status` | `Enum` | `pending`, `sent`, `failed`, `skipped` |
-| `results` | `JSON` | Per-channel delivery results |
-| `llm_cost` | `Float` | USD spent on the LLM summary (NULL = none); feeds the daily cap |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+| Column | Declaration |
+| --- | --- |
+| `id`, `agent_task_id` | Integer PK; nullable task FK SET NULL |
+| `period` | Non-null String(10); not a DB enum. Supported periods are caller contracts |
+| `period_start`, `period_end` | Non-null **Date**, not DateTime |
+| `channel`, `chat_id` | Non-null String(20); nullable String(100) |
+| `status` | Non-null **String(20)**, default pending; not native enum |
+| `message_id` | Nullable String(100) |
+| `content`, `error` | Nullable Text |
+| `delivery_state` | Nullable JSON, **JSONB on PostgreSQL**, migration 0087 |
+| `llm_cost` | Nullable Float, **USD**, none/unknown allowed |
 
-**Unique constraint:** `(agent_task_id, period_start, period_end)`
-
----
+Unique (`agent_task_id`, `period_start`, `period_end`); nullable task FK means manual runs are not uniquely constrained as scheduled runs are. There is **no `results` JSON column**. Nullable checkpoint history must not be interpreted as definitely unsent. Merged storage/contract/store/parts/transport helpers do not mean the builder activates retry delivery; PR #12's atomic factory is in review at this baseline.
 
 ### `notifications`
 
-System notifications.
+[Source](../app/models/notification.py). Fields: `id`, `title` **String(200)**, `message` Text, native `notification_type` enum stored as names, `is_read` Boolean(default false), `related_entity_type` String(50), `related_entity_id` Integer. Related entity fields are generic attribution, not FKs. Source of allowed notification types: [enum definitions](../app/types/enums/). Workspace notifications and fixed operator alerts have different transport/security paths; see [NOTIFICATIONS](NOTIFICATIONS.md).
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `title` | `String(255)` | Notification title |
-| `message` | `Text` | Notification body |
-| `notification_type` | `Enum` | `alert`, `info`, `digest`, etc. |
-| `is_read` | `Boolean` | Read status |
-| `related_entity_type` | `String(50)` | Related entity type |
-| `related_entity_id` | `Integer` | Related entity ID |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+## Tenant-scoped conversation, memory and action audit
 
----
-
-## Agent Tables (tenant-scoped)
+All tables here inherit tenant_id/timestamps.
 
 ### `agent_sessions`
 
-One row per (channel, chat_id).
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `channel` | `String(20)` | `'telegram'` or `'max'` |
-| `chat_id` | `String(100)` | Messenger chat ID |
-| `state` | `JSON` | Volatile: pending confirmations, etc. |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Unique constraint:** `(tenant_id, channel, chat_id)`
-
----
+[Source](../app/models/agent_session.py). Fields: `id`, `channel` String(20), `chat_id` String(100); `kind` String(20, default private); `is_owner` false, `is_active` true; nullable `state` JSON, `last_message_at` timezone-aware DateTime. Unique **(`channel`, `chat_id`)**, not (tenant_id, channel, chat_id). `update_offset`/`pending_confirmation` are properties derived from state. Session ownership is not a substitute for current user/operation authorization.
 
 ### `agent_messages`
 
-Dialog transcript.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `session_id` | `Integer` FK → `agent_sessions` | |
-| `role` | `Enum` | `user`, `assistant`, `tool` |
-| `content` | `Text` | Message content |
-| `tool_calls` | `JSON` | Tool call data (for assistant) |
-| `tool_outputs` | `JSON` | Tool output data (for tool) |
-| `tokens` | `Integer` | Tokens used |
-| `cost` | `Float` | Cost in USD (not cents) |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
----
+[Source](../app/models/agent_message.py). Fields: `id`; non-null `session_id` FK CASCADE; **`role` String(20)**, not enum; nullable `content` Text, `tool_calls` JSON, **`tool_name` String(64)**, `tokens` Integer, `cost` Float USD. No `tool_outputs` column. Tool result content is stored through the message contract. Indexes: tenant and session.
 
 ### `agent_memory`
 
-Durable fact storage.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `scope` | `String(50)` | Scope category |
-| `key` | `String(100)` | Fact key |
-| `value` | `Text` | Fact value |
-| `source` | `String(20)` | `manual`, `learn`, `reflect` |
-| `confidence` | `Float` | 0.1–1.0 |
-| `evidence_message_id` | `Integer` FK → `agent_messages` | SET NULL |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
-**Unique constraint:** `(tenant_id, scope, key)`
-
----
+[Source](../app/models/agent_memory.py). Fields: `id`; `scope` **String(20)** default global; `key` String(100); nullable `value` Text; `source` String(20) default manual; `confidence` Float default 1; nullable `evidence_message_id` FK → messages SET NULL. Unique (tenant_id, scope, key). No declared CHECK bounds confidence to 0.1–1.0. Small durable preferences/facts, not a vector store or business-case ledger.
 
 ### `agent_feedback`
 
-Owner feedback on agent replies.
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `session_id` | `Integer` FK → `agent_sessions` | |
-| `message_id` | `Integer` FK → `agent_messages` | Message being rated |
-| `vote` | `Enum` | `good`, `bad` |
-| `note` | `Text` | Optional note (for /bad) |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
-
----
-
-## Bot Action Tables
+[Source](../app/models/agent_feedback.py). Fields: `id`; non-null `session_id` FK CASCADE; nullable `message_id` FK SET NULL; **`vote` String(10)**, not enum; nullable `note` Text, `voter_channel` String(20), `voter_external_id` String(100). Indexes: tenant, session, vote. Feedback itself does not mutate prompts.
 
 ### `bot_actions`
 
-Action ledger (audit trail for automated actions).
+[Source](../app/models/bot_action.py). Fields: `id`; non-null `agent_scenario_id` and `source_id` FKs CASCADE; nullable **`agent_task_id`, `analytics_id`** FKs SET NULL; native `action_type` and `status` enums stored as names; non-null `payload` JSON; nullable **`result` JSON** and `error` Text; non-null **`dry_run` Boolean(default true)**; nullable **`confirmed_by` FK → tenant_users SET NULL**, `confirmed_at` timezone-aware DateTime; non-null `attempts` default 0. No `approved_by` String column. Enum status and dry_run are separate, not a manufactured dry_run enum value. Confirmation columns alone do not prove complete actor-bound approval/replay safety.
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `Integer` PK | |
-| `tenant_id` | `Integer` FK | |
-| `source_id` | `Integer` FK → `sources` | Source that triggered the action |
-| `agent_scenario_id` | `Integer` FK → `agent_scenarios` | Scenario that defined the action |
-| `action_type` | `Enum` | Type of action performed |
-| `payload` | `JSON` | Action payload |
-| `status` | `Enum` | `pending`, `sent`, `failed`, `dry_run` |
-| `error` | `Text` | Error message if failed |
-| `approved_by` | `String(100)` | Who approved (if requires_approval) |
-| `created_at` | `DateTime` | Auto |
-| `updated_at` | `DateTime` | Auto |
+## ER views from declared foreign keys
 
----
+Views are intentionally split for readability. Common tenant FKs and some fields are omitted; nullable parent FKs use o|. Arrows do not guarantee equal tenant IDs across endpoints: source FKs are not composite tenant-identity constraints. Logical references are noted separately, never invented as FKs.
 
-## ER Diagram (simplified)
+### Identity and membership
 
-```
-┌──────────┐     ┌──────────────┐     ┌──────────┐
-│  users   │────<│   roles      │     │platforms │
-└──────────┘     └──────┬───────┘     └────┬─────┘
-                        │                  │
-               ┌────────┴────────┐    ┌────┴─────┐
-               │  permissions    │    │ sources  │──┐
-               └─────────────────┘    └────┬─────┘  │
-                                          │        │
-               ┌──────────────────┐       │
-               │  agent_scenarios │<──────┘
-               └────────┬─────────┘
-                        │
-               ┌────────┴─────────┐
-               │  ai_analytics    │
-               └──────────────────┘
-
-┌──────────┐     ┌──────────────────┐     ┌──────────────────┐
-│ tenants  │────<│ tenant_users     │     │ tenant_channels  │
-└────┬─────┘     └──────────────────┘     └──────────────────┘
-     │     ┌──────────────────┐     ┌──────────────────┐
-     │     │ tenant_invites   │     │user_credentials  │
-     │     └──────────────────┘     └──────────────────┘
-     │
-     ├────< sources
-     ├────< agent_scenarios
-     ├────< ai_analytics
-     ├────< agent_tasks
-     ├────< jobs
-     ├────< digest_runs
-     ├────< notifications
-     ├────< agent_sessions
-     ├────< agent_messages
-     ├────< agent_memory
-     ├────< agent_feedback
-     └────< bot_actions
+```mermaid
+erDiagram
+    roles ||--o{ users : role_id
+    roles ||--o{ role_permission : role_id
+    permissions ||--o{ role_permission : permission_id
+    model_types ||--o{ permissions : model_type_id
+    tenants ||--o{ tenant_users : tenant_id
+    users o|--o{ tenant_users : user_id
+    roles o|--o{ tenant_users : role_id
+    tenants ||--o{ tenant_invites : tenant_id
+    roles o|--o{ tenant_invites : role_id
+    tenants ||--o{ tenant_channels : tenant_id
+    users ||--o{ user_credentials : user_id
 ```
 
----
+### Collection, scenarios, scheduling and actions
 
-## Migration History
+```mermaid
+erDiagram
+    tenants ||--o{ sources : tenant_id
+    platforms ||--o{ sources : platform_id
+    sources ||--o{ ai_analytics : source_id
+    ai_analytics o|--o{ ai_analytics : parent_analysis_id
+    llm_providers ||--o{ llm_models : provider_id
+    llm_models o|--o{ agent_scenarios : text_model_id
+    llm_models o|--o{ agent_scenarios : image_model_id
+    llm_models o|--o{ agent_scenarios : video_model_id
+    agent_scenarios o|--o{ agent_tasks : agent_scenario_id
+    agent_tasks ||--o{ agent_task_sources : agent_task_id
+    sources ||--o{ agent_task_sources : source_id
+    agent_tasks o|--o{ jobs : agent_task_id
+    agent_tasks o|--o{ digest_runs : agent_task_id
+    agent_scenarios ||--o{ bot_actions : agent_scenario_id
+    sources ||--o{ bot_actions : source_id
+    agent_tasks o|--o{ bot_actions : agent_task_id
+    ai_analytics o|--o{ bot_actions : analytics_id
+    tenant_users o|--o{ bot_actions : confirmed_by
+```
 
-| Migration | Description |
-|---|---|
-| `0031` | Add LLM cost tracking to `ai_analytics` |
-| `0040` | Add `analyze_type` to `agent_scenarios` (deprecated, replaced by query-time `group_by`) |
-| `0044` | Add tenancy core tables (`tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, workspace `tenant_credentials`) + add `tenant_id` to 10 business tables |
-| `0049` | Add `content_hash` to `ai_analytics` for deduplication |
-| `0065` | Add `user_credentials` (personal L2 vault, keyed by `users.id`) |
-| `0066` | Drop `tenant_credentials` (app/bot config moves to the environment) |
-| `0073` | Move trigger_type/trigger_config/action_type/guards from `agent_scenarios` to `agent_tasks` |
-| `0080` | Replace `tenant_users.role` string column with `tenant_users.role_id` FK → `roles.id` |
-| `0083` | Drop `analyze_type` from `agent_scenarios` (grouping is now query-time: `group_by` + `time_breakdown`) |
+Model arrows labeled text/image/video_model_id abbreviate the actual text/image/video_llm_model_id columns. collected_items.source_id/run_id are soft references, deliberately omitted from the FK graph. No direct Source→Scenario or Scenario→Analytics FK exists.
 
-Head migration: `0083` (verify with `alembic current`).
+### Conversations and provenance
+
+```mermaid
+erDiagram
+    tenants ||--o{ agent_sessions : tenant_id
+    agent_sessions ||--o{ agent_messages : session_id
+    agent_sessions ||--o{ agent_feedback : session_id
+    agent_messages o|--o{ agent_feedback : message_id
+    agent_messages o|--o{ agent_memory : evidence_message_id
+```
+
+## Migration history and deployment
+
+Selected milestones, not a complete replay audit:
+
+| Revision | Change |
+| --- | --- |
+| 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
+| 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
+| 0044 | Tenancy foundation |
+| 0049 | Analytics content hash |
+| 0053 | Remove platform rate-limit columns |
+| 0061 | Remove source user ownership column |
+| 0063 | Task/source association |
+| 0065 / 0066 | Personal vault / remove tenant credential table |
+| 0067 | Remove source scenario FK |
+| 0068 / 0075 / 0082 | Raw staging / attempts / non-partial dedup index |
+| 0071 | Starter/pro/business tiers |
+| 0073 / 0076 | Task-owned actions / scenario prompt simplification |
+| 0077 / 0078 | Workspace chat settings / job execution timestamps |
+| 0080 / 0081 | Membership role FK / chain labels |
+| 0083 / 0084 / 0085 | Remove scenario analyze_type / fleet usage / normalized labels |
+| 0086 | Nullable custom_endpoint_path String(200) |
+| **0087** | Nullable digest delivery_state JSONB; down_revision **0086** |
+
+Latest inspected repository revision is **0087**, replacing the stale head-0086 statement. [0086](../migrations/versions/0086_add_custom_endpoint_path_to_llm_models.py) points to 0085; [0087](../migrations/versions/0087_add_digest_delivery_state.py) points to 0086. Full graph resolution (`alembic heads`), metadata drift (`alembic check`) and deployed version (`alembic current`) were NOT executed in this documentation task.
+
+Apply migration 0087 before starting updated ORM code against a target database; merge is not deployment. Existing NULL states have no invented receipts. Dropping the checkpoint field destroys delivery evidence: pause senders and retain evidence before an approved downgrade. See [schema review](design/digest_delivery_state_schema_review.md).
+
+Verification scope, differences and continuation: [model reference reconciliation](design/model_reference_reconciliation_handoff.md).

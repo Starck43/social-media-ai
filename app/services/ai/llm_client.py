@@ -10,6 +10,7 @@ import httpx
 
 from app.core.config import settings
 from app.models import LLMModel
+from app.services.ai.json_schema_builder import validate_with_pydantic
 
 logger = logging.getLogger(__name__)
 
@@ -198,9 +199,11 @@ class OpenAICompatibleClient(LLMClient):
         parsed = self._parse_response(data)
         if pydantic_model is not None:
             try:
-                parsed = pydantic_model.model_validate(parsed).model_dump()
+                parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
             except Exception as exc:
                 logger.warning("Pydantic validation failed for %s: %s", self.provider.name, exc)
+                data["error"] = "invalid_structured_output"
+                parsed = {}
 
         response = {
             "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
@@ -210,7 +213,7 @@ class OpenAICompatibleClient(LLMClient):
                 (data.get("usage") or {}).get("prompt_tokens", 0), (data.get("usage") or {}).get("completion_tokens", 0)
             ),
         }
-        await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
 
     async def chat(
@@ -244,7 +247,7 @@ class OpenAICompatibleClient(LLMClient):
                 data = r.json()
 
             response = self._parse_chat(data)
-            await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+            await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
             await _record_llm_usage(self.model, success=False)
@@ -286,11 +289,9 @@ class OpenAICompatibleClient(LLMClient):
         return payload
 
     def _parse_response(self, response: dict) -> dict[str, Any]:
-        try:
-            content = response.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-            return json.loads(content)
-        except (json.JSONDecodeError, KeyError, IndexError):
-            return {"analysis": content}
+        choices = response.get("choices") or [{}]
+        content = (choices[0].get("message") or {}).get("content")
+        return _try_json(content)
 
     def _parse_chat(self, data: dict) -> dict[str, Any]:
         choice = (data.get("choices") or [{}])[0]
@@ -374,9 +375,11 @@ class AnthropicClient(LLMClient):
         parsed = _try_json(text)
         if pydantic_model is not None:
             try:
-                parsed = pydantic_model.model_validate(parsed).model_dump()
+                parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
             except Exception as exc:
                 logger.warning("Pydantic validation failed for Anthropic %s: %s", self.provider.name, exc)
+                data["error"] = "invalid_structured_output"
+                parsed = {}
 
         usage = data.get("usage") or {}
         response = {
@@ -385,7 +388,7 @@ class AnthropicClient(LLMClient):
             "parsed": parsed,
             "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
         }
-        await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
 
     async def chat(
@@ -426,7 +429,7 @@ class AnthropicClient(LLMClient):
                 data = r.json()
 
             response = self._parse_chat(data)
-            await _record_llm_usage(self.model, success=True, usage=response.get("usage"))
+            await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
             await _record_llm_usage(self.model, success=False)
@@ -466,9 +469,7 @@ class CustomClient(LLMClient):
 
         endpoint = self.model.custom_endpoint_path
         if not endpoint:
-            raise ValueError(
-                f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set"
-            )
+            raise ValueError(f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set")
         payload: dict[str, Any] = {"model": self.model_name, "prompt": prompt}
         if media_urls:
             payload["media_urls"] = media_urls
@@ -501,9 +502,11 @@ class CustomClient(LLMClient):
         parsed = _try_json(content) if isinstance(content, str) else content
         if pydantic_model is not None:
             try:
-                parsed = pydantic_model.model_validate(parsed).model_dump()
+                parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
             except Exception as exc:
                 logger.warning("Pydantic validation failed for custom %s: %s", self.provider.name, exc)
+                data["error"] = "invalid_structured_output"
+                parsed = {}
 
         response = {
             "request": request_meta,
@@ -511,7 +514,7 @@ class CustomClient(LLMClient):
             "parsed": parsed,
             "usage": self._usage_block(0, 0),
         }
-        await _record_llm_usage(self.model, success=True)
+        await _record_llm_usage(self.model, success=not bool(data.get("error")))
         return response
 
     async def chat(
@@ -523,9 +526,7 @@ class CustomClient(LLMClient):
 
         endpoint = self.model.custom_endpoint_path
         if not endpoint:
-            raise ValueError(
-                f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set"
-            )
+            raise ValueError(f"Model {self.model.name} has api_format=custom but no custom_endpoint_path set")
         payload: dict[str, Any] = {"model": self.model_name, "messages": messages}
         if tools:
             payload["tools"] = tools
@@ -613,7 +614,8 @@ async def _llm_models(query) -> list[LLMModel]:
 
 
 async def chat_with_fallback(
-    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
+    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
+    preferred_model: Optional[LLMModel] = None, **kwargs
 ) -> dict[str, Any]:
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
@@ -621,7 +623,14 @@ async def chat_with_fallback(
     text_models = [m for m in models if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types)]
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    text_models.sort(key=default_model_sort_key)
+    text_models = [m for m in text_models if m.provider and m.provider.is_active]
+    # The tier filter always wins over the preferred global model. If the
+    # cost-efficient preference fails/is disallowed, keep fallback economical.
+    text_models.sort(key=lambda m: (
+        m.id != getattr(preferred_model, "id", None),
+        ((m.input_cost_per_1k or 0) + (m.output_cost_per_1k or 0)) if preferred_model is not None else 0,
+        default_model_sort_key(m),
+    ))
 
     last_err: Optional[Exception] = None
     for model in text_models:
@@ -714,9 +723,10 @@ def _system_prompt(has_media: bool) -> str:
 
 def _try_json(text: str) -> dict[str, Any]:
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except (json.JSONDecodeError, TypeError):
         return {"analysis": text}
+    return parsed if isinstance(parsed, dict) else {"analysis": text}
 
 
 def _num(value: Any) -> Optional[float]:

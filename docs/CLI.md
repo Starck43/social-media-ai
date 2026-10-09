@@ -324,9 +324,18 @@ python -m cli.main digest send-now week
 Manual runs are **not idempotent** — useful for testing channel setup without
 waiting for a task.
 
+An unscoped operator run selects `DEFAULT_TENANT_SLUG` (bootstrap), and the
+complete build runs with tenant bypass disabled. For another workspace use an
+explicitly scoped task/direct run. Env recipients alone do not authorize sends:
+they must match an active, digest-enabled binding of bootstrap. Other workspaces
+use only their own active bindings. See [delivery setup](DIGEST.md#configuration).
+
 ### Run Digest Direct
 
 Same as `send-now`, but resolves sources via the unified `--src` flag:
+Without `--tenant`, publication still uses bootstrap scope, not an all-client
+digest. With `--tenant`, aggregation and delivery are restricted to that active
+workspace; a source filter cannot widen the selected workspace.
 
 ```bash
 python -m cli.main digest run [options]
@@ -580,3 +589,11 @@ def _run(coro):
 
 The CLI uses the `rich` library for formatted tables and colored output.
 No JSON output — the CLI is operator-facing, not machine-facing.
+
+
+### Digest grouping values
+
+Digest command help lists `themes`, `sources`, `entities`, `intent` and
+`topic_chains`. `days` is web-only chronology; use `time_breakdown` for digest
+chronology. Sentiment and media are metrics/cross-filters, not grouping axes.
+Saved legacy task payloads with `sentiment` or `content_type` normalize to themes.

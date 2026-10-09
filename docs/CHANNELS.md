@@ -68,7 +68,7 @@ class Inbound:
 | Env Var | Purpose |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Bot token (required for both agent chat and digest) |
-| `TELEGRAM_DIGEST_CHANNEL_ID` | Target channel/chat for scheduled digests |
+| `TELEGRAM_DIGEST_CHANNEL_ID` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `TELEGRAM_OWNER_IDS` | Comma-separated Telegram user IDs allowed to chat with the agent |
 
 ### Inbound: Long Polling
@@ -134,7 +134,7 @@ POST https://api.telegram.org/bot{token}/sendMessage
 | `MAX_BOT_TOKEN` | Bot access token |
 | `MAX_API_BASE` | API base URL (default: `https://platform-api2.max.ru`) |
 | `MAX_OWNER_ID` | MAX user ID allowed to chat with the agent |
-| `MAX_CHANNEL_ID` | Target channel/chat for scheduled digests |
+| `MAX_CHANNEL_ID` | Deprecated; ignored by digest delivery (use workspace bindings) |
 
 ### Inbound: Long Polling
 
@@ -196,14 +196,29 @@ A channel is "enabled" if its token is configured:
 
 Returns all enabled channel instances. Used by `listen_forever()`.
 
-### `broadcast_digest(text, channel_filter=None)`
+### `broadcast_digest(text, channel_filter=None, tenant_id=None)`
 
-Sends digest text to configured digest targets. Returns per-channel results.
+Sends only to active digest-enabled bindings of one active workspace. An
+explicit ID cannot override a non-operator's ambient workspace; no ambient
+scope without operator bypass fails closed. Unscoped operator calls select the
+bootstrap workspace. `build_and_publish` scopes the entire build without bypass.
 
 ```python
-results = await broadcast_digest("Daily digest text...")
-# {"telegram": {"success": True, "message_id": 123}, "max": {"success": False, "error": "channel not configured"}}
+from app.channels.registry import broadcast_digest
+from app.core.tenant_context import tenant_scope
+
+with tenant_scope(workspace_id):
+    results = await broadcast_digest("Daily digest text...")
+# {"telegram:123": {"success": True, "message_id": 123}}
 ```
+
+`channel_filter` applies to every workspace target. Deprecated env destinations
+are ignored even for bootstrap; `TELEGRAM_ADMIN_CHAT_ID` is not a digest target.
+Only active, digest-enabled owned bindings authorize delivery. Result keys are
+consistently `transport:chat_id`, not the old `telegram` / `max` keys. Dedup uses
+trimmed exact identifiers and case-insensitive `@usernames`, not a platform
+lookup between numeric IDs and username aliases. Cross-call retries and
+concurrent publication are not made exactly-once by this routing change.
 
 ---
 
@@ -283,13 +298,17 @@ channels/listener.py::poll()
 
 Digests are sent via `broadcast_digest()` from `app/services/digest/builder.py`:
 
-1. Build digest text (aggregation + LLM summary)
-2. Call `broadcast_digest(text)` → iterates over Telegram + MAX targets
-3. Each target with both token and channel ID configured receives the digest
-4. Results recorded in `digest_runs.results`
-5. Delivery failures raise `DigestDeliveryError` → job queue retries with backoff
+1. Resolve one active workspace; disable bypass for aggregation and run writes.
+2. Build digest text (aggregation + LLM summary).
+3. Call `broadcast_digest(text)` → send once per eligible owned destination.
+4. Per-target results are returned; `digest_runs` stores aggregate status,
+   message_id, rendered content and error, not a durable per-target results ledger.
+5. Delivery failures raise `DigestDeliveryError` → job queue retries with backoff.
 
-Only channels with both token and target set receive anything. Missing credentials return `{}` silently.
+No eligible bound targets returns `{}`; missing transport credentials produce a
+failed result for that target. Env-only recipients require explicit binding
+setup. A retry can still repeat a previously successful target after partial
+failure; durable destination/part progress is a separate follow-up.
 
 ---
 

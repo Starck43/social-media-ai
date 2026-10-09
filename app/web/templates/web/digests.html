@@ -4,15 +4,15 @@
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">Дайджесты</h1>
-        <p class="mt-1 text-sm text-slate-400">
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Что уходит в каналы, чем это стоит и что отправить прямо сейчас.
         </p>
     </div>
     {% if is_superuser and tenants %}
         <form method="get" class="flex items-center gap-2">
-            <label for="f-tenant" class="text-xs text-slate-500">Пространство</label>
+            <label for="f-tenant" class="text-xs text-slate-600 dark:text-slate-400">Пространство</label>
             <select id="f-tenant" name="tenant_id" onchange="this.form.submit()"
-                    class="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs">
+                    class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs">
                 <option value="">Все</option>
                 {% for t in tenants %}
                     <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
@@ -24,20 +24,20 @@
 
 <!-- KPI ──────────────────────────────────────────────────────────────── -->
 <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Отправлено</p>
-        <p class="mt-1 text-2xl font-semibold text-emerald-400">{{ stats.sent }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Отправлено</p>
+        <p class="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{{ stats.sent }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Ошибок</p>
-        <p class="mt-1 text-2xl font-semibold {% if stats.failed %}text-rose-400{% else %}text-slate-600{% endif %}">{{ stats.failed }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Ошибок</p>
+        <p class="mt-1 text-2xl font-semibold {% if stats.failed %}text-rose-700 dark:text-rose-400{% else %}text-slate-600{% endif %}">{{ stats.failed }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">Пропущено</p>
-        <p class="mt-1 text-2xl font-semibold text-slate-600">{{ stats.skipped }}</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Пропущено</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-600 dark:text-slate-400">{{ stats.skipped }}</p>
     </div>
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-        <p class="text-sm text-slate-400">LLM-расход</p>
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">LLM-расход</p>
         <p class="mt-1 text-2xl font-semibold">${{ "%.2f"|format(stats.cost_usd) }}</p>
         <p class="mt-1 text-[11px] uppercase tracking-wider text-slate-700">за {{ runs|length }} последних</p>
     </div>
@@ -45,48 +45,48 @@
 
 <!-- Preview ───────────────────────────────────────────────────────────── -->
 <div class="mt-6 grid gap-4 lg:grid-cols-2">
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-        <h2 class="text-sm font-medium text-slate-300">Предпросмотр</h2>
-        <p class="mt-1 text-sm text-slate-500">
-            Что дайджест скажет за выбранный период — <span class="text-slate-400">без AI-сводки</span>
+    <div class="ui-card">
+        <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Предпросмотр</h2>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Что дайджест скажет за выбранный период — <span class="text-slate-600 dark:text-slate-400">без AI-сводки</span>
             и без отправки. Смотреть можно сколько угодно: LLM не вызывается, каналы не трогаются.
         </p>
         <form method="get" action="/app/digests/preview" class="mt-4 flex flex-wrap gap-2">
-            <select name="period" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+            <select name="period" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
                 {% for value, label in periods %}
                     <option value="{{ value }}" {% if value == selected_period %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <select name="group_by" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+            <select name="group_by" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+                {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По упоминаниям'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
                     <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                 {% endfor %}
             </select>
-            <label class="flex items-center gap-2 text-sm text-slate-300">
+            <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <input type="hidden" name="time_breakdown" value="">
                 <input type="checkbox" name="time_breakdown" value="true"
                        {% if selected_time_breakdown %}checked{% endif %}
-                       class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                       class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
                 Разбивка по дням
             </label>
-            <button class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+            <button class="rounded-lg bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
                 Показать
             </button>
         </form>
 
         {% if preview_text is not none %}
-            <div class="mt-4 max-h-96 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <pre class="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-300">{{ preview_text }}</pre>
+            <div class="mt-4 max-h-96 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
+                <pre class="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700 dark:text-slate-300">{{ preview_text }}</pre>
             </div>
-            <p class="mt-2 text-xs text-slate-600">
+            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">
                 Период: {{ preview_period[0] }} · {{ preview_period[1] }} — {{ preview_period[2] }}
             </p>
         {% endif %}
     </div>
 
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-        <h2 class="text-sm font-medium text-slate-300">Отправить сейчас</h2>
-        <p class="mt-1 text-sm text-slate-500">
+    <div class="ui-card">
+        <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Отправить сейчас</h2>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Та же сборка, что запускает расписание, но с AI-сводкой и доставкой в каналы.
             Каждый запуск — отдельная запись в истории ниже.
         </p>
@@ -99,20 +99,20 @@
                 {% if is_superuser and filter_tenant_id %}
                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                 {% endif %}
-                <select name="period" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                <select name="period" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
                     {% for value, label in periods %}
                         <option value="{{ value }}" {% if value == selected_period %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <select name="group_by" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                    {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По сущностям'), ('sentiment', 'По тональности'), ('content_type', 'По типу контента'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
+                <select name="group_by" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+                    {% for g in [('themes', 'По темам'), ('sources', 'По источникам'), ('entities', 'По упоминаниям'), ('intent', 'По намерению'), ('topic_chains', 'Тематические цепочки')] %}
                         <option value="{{ g[0] }}" {% if g[0] == selected_group_by %}selected{% endif %}>{{ g[1] }}</option>
                     {% endfor %}
                 </select>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="time_breakdown" value="">
                     <input type="checkbox" name="time_breakdown" value="true"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
                     Разбивка по дням
                 </label>
                 <button :disabled="busy"
@@ -120,12 +120,12 @@
                     <span x-show="!busy">Отправить дайджест</span>
                     <span x-show="busy" x-cloak>Отправляем…</span>
                 </button>
-                <p class="text-xs text-slate-600">
+                <p class="text-xs text-slate-600 dark:text-slate-400">
                     Если каналы не настроены, отправка будет пропущена — это видно в истории.
                 </p>
             </form>
         {% else %}
-            <p class="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-500">
+            <p class="mt-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3 text-sm text-slate-600 dark:text-slate-400">
                 Недостаточно прав, чтобы отправлять дайджесты — обратитесь к владельцу workspace.
             </p>
         {% endif %}
@@ -133,12 +133,12 @@
 </div>
 
 <!-- History ───────────────────────────────────────────────────────────── -->
-<h2 class="mb-3 mt-8 text-sm font-medium text-slate-300">История</h2>
+<h2 class="mb-3 mt-8 text-sm font-medium text-slate-700 dark:text-slate-300">История</h2>
 {% if runs %}
     {# `open` lives on the wrapper so the "Показать" button toggles the detail row. #}
-    <div class="overflow-x-auto rounded-2xl border border-slate-800" x-data="{ open: false }">
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800" x-data="{ open: false }">
         <table class="w-full text-sm">
-            <thead class="bg-slate-900/70 text-left text-xs uppercase tracking-wider text-slate-500">
+            <thead class="bg-white dark:bg-slate-900/70 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 <tr>
                     <th class="px-4 py-3">Период</th>
                     <th class="px-4 py-3">Статус</th>
@@ -148,34 +148,34 @@
                     <th class="px-4 py-3"></th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800/70">
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800/70">
                 {% for run in runs %}
                     <tr x-data="{ open: false }">
                         <td class="px-4 py-3">
-                            <div class="font-medium text-slate-200">{{ run.period }}</div>
-                            <div class="text-xs text-slate-500">{{ run.period_start }} — {{ run.period_end }}</div>
+                            <div class="font-medium text-slate-800 dark:text-slate-200">{{ run.period }}</div>
+                            <div class="text-xs text-slate-600 dark:text-slate-400">{{ run.period_start }} — {{ run.period_end }}</div>
                         </td>
                         <td class="px-4 py-3">
                             {% if run.status == 'sent' %}
-                                <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">отправлен</span>
+                                <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">отправлен</span>
                             {% elif run.status == 'failed' %}
-                                <span class="rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                                <span class="rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                             {% elif run.status == 'skipped' %}
-                                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">пропущен</span>
+                                <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">пропущен</span>
                             {% else %}
-                                <span class="rounded-full bg-amber-950 px-2 py-0.5 text-xs text-amber-300">{{ run.status }}</span>
+                                <span class="rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">{{ run.status }}</span>
                             {% endif %}
                         </td>
-                        <td class="px-4 py-3 text-xs text-slate-400">
+                        <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                             {{ run.channel }}
-                            {% if run.chat_id %}<div class="text-slate-600">{{ run.chat_id }}</div>{% endif %}
+                            {% if run.chat_id %}<div class="text-slate-600 dark:text-slate-400">{{ run.chat_id }}</div>{% endif %}
                         </td>
-                        <td class="px-4 py-3 text-xs text-slate-400">
+                        <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                             {% if run.llm_cost is not none %}${{ "%.4f"|format(run.llm_cost) }}{% else %}—{% endif %}
                         </td>
-                        <td class="px-4 py-3 text-xs text-slate-500">{{ run.created_at|human_dt(tz=_tz) }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ run.created_at|human_dt(tz=_tz) }}</td>
                         <td class="px-4 py-3 text-right">
-                            <button @click="open = !open" class="text-xs text-cyan-400 hover:text-cyan-300">
+                            <button @click="open = !open" class="text-xs text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
                                 <span x-show="!open">Показать</span>
                                 <span x-show="open" x-cloak>Скрыть</span>
                             </button>
@@ -184,12 +184,12 @@
                     <tr x-show="open" x-cloak>
                         <td colspan="6" class="px-4 pb-4">
                             {% if run.error %}
-                                <p class="mb-2 rounded-lg bg-rose-950/40 px-3 py-2 text-xs text-rose-300">{{ run.error }}</p>
+                                <p class="mb-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">{{ run.error }}</p>
                             {% endif %}
                             {% if run.content %}
-                                <pre class="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs leading-relaxed text-slate-400">{{ run.content }}</pre>
+                                <pre class="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ run.content }}</pre>
                             {% else %}
-                                <p class="text-xs text-slate-600">Текст не сохранён.</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">Текст не сохранён.</p>
                             {% endif %}
                         </td>
                     </tr>

@@ -366,3 +366,22 @@ Foundation  Dashboard   Analytics  Schedules    Digests    Scenarios
 - **Не делаем** PWA / offline mode — платформа живёт на VPS, offline-сценариев нет.
 
 ---
+
+
+## Shared presentation update — analytics and themes
+
+Implemented in `theme.css`, `ui.css`, `theme.js` and `web/_macros.html`:
+- Slate/cyan visual language retained; shared card, filter, segment and badge components.
+- Outline SVG icons replace emoji in analytics navigation and scenario choices.
+- Active analytical tabs are rendered by the server, independent of Alpine.
+- Tone filters are labelled links; mention types include "Все". No visible media select.
+  Legacy media URLs and API filtering still work, with an explicit reset in the UI.
+- Tone badges use positive/neutral/negative words plus a 0–1 score, with an average
+  tooltip for aggregate values. Text reports use "Тональность", not "sent:".
+- Light/dark/system preference shared by web, auth and admin; OS and cross-tab
+  changes supported. System preference is not overwritten by the resolved OS theme.
+- Light/dark surfaces, table separators, status/alert contrast and form states audited
+  across all 28 web templates. Duplicate scenario flash rendering removed.
+- Keyboard focus, 44px controls, reduced motion and wrapping mobile filters included.
+
+Verification details and limits: `docs/design/analytics_ui_refactor.md`.

@@ -1,28 +1,56 @@
-"""Tools: build reports and trigger digests."""
+"""Report tools expose compact aggregates, never raw analytics rows or prompts."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from app.agent.tools import tool
+from app.services.ai.reporting import ReportAggregator
+
+REPORT_AXES = ["themes", "sources", "entities", "intent", "topic_chains"]
+LIMIT_SCHEMA = {
+    "type": "integer",
+    "minimum": 0,
+    "default": 10,
+    "description": "Maximum groups, default 10. Explicit 0 requests the full aggregate list.",
+}
+FILTER_SCHEMA = {
+    "sentiment": {"type": "string", "enum": ["positive", "neutral", "negative"]},
+    "media": {"type": "string", "enum": ["text", "image", "video"]},
+}
+
+
+def compact_groups(groups: list[dict], limit: int = 10, *, chain_keys: bool = False) -> list[dict]:
+    """Allowlist output keys even when the underlying service gains new fields."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise ValueError("limit must be a non-negative integer (0 means all)")
+    selected = groups if limit == 0 else groups[:limit]
+    return [
+        {
+            "key": g.get("chain_id", g["key"]) if chain_keys else g["key"],
+            "count": g["count"],
+            "avg_sentiment": g.get("avg_sentiment"),
+        }
+        for g in selected
+    ]
 
 
 @tool(
     name="report_period",
-    description=(
-        "Собрать сводку активности в соцсетях за период (day/week) и вернуть её текст. "
-        "Не отправляет в канал — только показывает вам."
-    ),
+    description="Сводка за day/week: компактные агрегаты без вызова LLM и без отправки в канал.",
     parameters={
         "type": "object",
         "properties": {
-            "period": {"type": "string", "enum": ["day", "week"], "description": "Период (по умолчанию day)"},
+            "period": {"type": "string", "enum": ["day", "week"]},
             "group_by": {
                 "type": "string",
-                "enum": ["themes", "sources", "entities", "sentiment", "content_type", "intent"],
-                "description": "Ось группировки (по умолчанию themes)",
+                "enum": REPORT_AXES,
+                "description": "Ось группировки; entities — по упоминаниям людей, брендов и организаций.",
             },
-            "time_breakdown": {"type": "boolean", "description": "Разбивка по дням внутри каждой группы (по умолчанию false)"},
+            "time_breakdown": {"type": "boolean", "description": "Include compact per-date aggregate slices"},
+            "entity_type": {"type": "string", "enum": ["person", "brand", "org"]},
+            "limit": LIMIT_SCHEMA,
+            **FILTER_SCHEMA,
         },
         "required": [],
     },
@@ -32,51 +60,71 @@ async def report_period(
     period: str = "day",
     group_by: str = "themes",
     time_breakdown: bool = False,
+    entity_type: str | None = None,
+    sentiment: str | None = None,
+    media: str | None = None,
+    limit: int = 10,
 ) -> dict[str, Any]:
-    from app.services.digest.builder import aggregate, period_bounds
-    from app.services.digest.render import render_plain
+    from app.services.digest.builder import period_bounds
 
     if period not in ("day", "week"):
         return {"error": f"Unknown period: {period!r}. Use day or week"}
-
-    data, start, end = await aggregate(period, group_by=group_by, time_breakdown=time_breakdown)
-    text = render_plain(data)
+    if group_by not in REPORT_AXES:
+        return {"error": f"Unknown group_by: {group_by!r}. Use: {', '.join(REPORT_AXES)}"}
+    start, end = period_bounds(period)
+    try:
+        result = await ReportAggregator().get_grouped_analytics(
+            axis=group_by,
+            days=(end - start).days + 1,
+            time_breakdown=time_breakdown,
+            entity_type=entity_type,
+            sentiment=sentiment,
+            media=media,
+        )
+        groups = compact_groups(result["groups"], limit)
+        if time_breakdown:
+            for compact, full in zip(groups, result["groups"]):
+                compact["entries"] = [
+                    {"date": e["date"], "count": e["count"], "avg_sentiment": e.get("avg_sentiment")}
+                    for e in full.get("entries", [])
+                ]
+    except ValueError as exc:
+        return {"error": str(exc)}
     return {
         "period": period,
         "group_by": group_by,
-        "time_breakdown": time_breakdown,
         "period_start": str(start),
         "period_end": str(end),
-        "text": text,
+        "time_breakdown": time_breakdown,
+        "sentiment": sentiment,
+        "media": media,
+        "groups": groups,
+        "total": len(result["groups"]),
+        "limit": limit,
     }
 
 
 @tool(
     name="digest_send_now",
-    description=(
-        "Построить сводку и отправить её в настроенные каналы (Telegram/MAX) прямо сейчас. "
-        "То же самое, что ежедневная сводка по расписанию, но вручную."
-    ),
+    description="Построить дайджест и отправить в настроенные каналы после подтверждения.",
     confirm=True,
     required_permission="digestrun.update",
     parameters={
         "type": "object",
         "properties": {
-            "period": {"type": "string", "enum": ["day", "week"], "description": "Период (по умолчанию day)"},
+            "period": {"type": "string", "enum": ["day", "week"]},
             "group_by": {
                 "type": "string",
-                "enum": ["themes", "sources", "entities", "sentiment", "content_type", "intent"],
-                "description": "Ось группировки (по умолчанию themes)",
+                "enum": REPORT_AXES,
+                "description": "Ось группировки; entities — по упоминаниям людей, брендов и организаций.",
             },
-            "time_breakdown": {"type": "boolean", "description": "Разбивка по дням внутри каждой группы (по умолчанию false)"},
+            "time_breakdown": {"type": "boolean"},
         },
         "required": [],
     },
 )
 async def digest_send_now(
-    period: str = "day",
-    group_by: str = "themes",
-    time_breakdown: bool = False,
+    period: str = "day", group_by: str = "themes", time_breakdown: bool = False
 ) -> dict[str, Any]:
     from app.services.digest.builder import build_and_publish
 
@@ -87,53 +135,54 @@ async def digest_send_now(
 
 @tool(
     name="analytics_chains",
-    description=(
-        "Список тематических цепочек аналитики: label, число анализов, период, "
-        "средняя тональность и топ-темы. Полезно, чтобы подсказать группировку "
-        "нового анализа по уже существующим цепочкам."
-    ),
+    description="Топ цепочек: key (chain_id), count и avg_sentiment. По умолчанию 10, без сырых анализов и без LLM.",
     parameters={
         "type": "object",
         "properties": {
-            "source_id": {"type": "integer", "description": "ID источника; пусто = все источники"},
-            "days": {"type": "integer", "description": "Смотреть анализы за последние N дней (по умолчанию 30)"},
+            "source_id": {"type": "integer"},
+            "days": {"type": "integer", "minimum": 1, "default": 30},
+            "limit": LIMIT_SCHEMA,
+            **FILTER_SCHEMA,
         },
         "required": [],
     },
     required_permission="aianalytics.view",
 )
-async def analytics_chains(source_id: int | None = None, days: int = 30) -> dict[str, Any]:
-    from datetime import date, timedelta
-
-    from app.models.managers.ai_analytics_manager import AIAnalyticsManager
-
-    end = date.today()
-    start = end - timedelta(days=days)
-    chains = await AIAnalyticsManager().get_chains_summary(source_id=source_id, start_date=start, end_date=end)
-    if not chains:
-        return {"chains": [], "total": 0}
-    return {"chains": chains, "total": len(chains)}
+async def analytics_chains(
+    source_id: int | None = None,
+    days: int = 30,
+    limit: int = 10,
+    sentiment: str | None = None,
+    media: str | None = None,
+) -> dict[str, Any]:
+    try:
+        result = await ReportAggregator().get_grouped_analytics(
+            axis="topic_chains", days=days, source_id=source_id, sentiment=sentiment, media=media
+        )
+        chains = compact_groups(result["groups"], limit, chain_keys=True)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"chains": chains, "total": len(result["groups"]), "limit": limit}
 
 
 @tool(
     name="analytics_chain_detail",
-    description=(
-        "Хронология одной тематической цепочки: все анализы с датами, темами и "
-        "метриками. Вход — topic_chain_id (см. analytics_chains)."
-    ),
+    description="Хронология цепочки как дневные агрегаты key (date), count, avg_sentiment; сырые строки не возвращаются.",
     parameters={
         "type": "object",
-        "properties": {
-            "chain_id": {"type": "string", "description": "topic_chain_id из analytics_chains"},
-        },
+        "properties": {"chain_id": {"type": "string"}, "limit": LIMIT_SCHEMA},
         "required": ["chain_id"],
     },
     required_permission="aianalytics.view",
 )
-async def analytics_chain_detail(chain_id: str) -> dict[str, Any]:
-    from app.models.managers.ai_analytics_manager import AIAnalyticsManager
-
-    detail = await AIAnalyticsManager().get_chain_detail(chain_id)
-    if not detail:
+async def analytics_chain_detail(chain_id: str, limit: int = 10) -> dict[str, Any]:
+    try:
+        result = await ReportAggregator().get_grouped_analytics(
+            axis="days", days=None, chain_id=chain_id, time_breakdown=True
+        )
+        groups = compact_groups(result["groups"], limit)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if not result["groups"]:
         return {"error": f"Цепочка {chain_id!r} не найдена"}
-    return detail
+    return {"chain_id": chain_id, "groups": groups, "total": len(result["groups"]), "limit": limit}

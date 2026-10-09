@@ -1,17 +1,18 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import card, empty_state, page_title %}
+{% from "web/_macros.html" import card, empty_state, page_title, sentiment_badge, sentiment_filters %}
 {% block title %}Цепочки тем — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-1">
-        <a href="/app/analytics" class="text-sm text-slate-500 hover:text-cyan-400">← Аналитика</a>
+        <a href="{{ analytics_url|e }}" class="text-sm text-slate-600 dark:text-slate-400 hover:text-cyan-700 dark:hover:text-cyan-400">← Аналитика</a>
     </div>
     {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
 
     <div class="mb-4 flex items-center justify-end">
         <form method="get" class="flex items-center gap-2">
-            <label for="sort" class="text-xs text-slate-500">Сортировка</label>
+            {% for key, value in chain_filters.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+            <label for="sort" class="text-xs text-slate-600 dark:text-slate-400">Сортировка</label>
             <select name="sort" id="sort" onchange="this.form.submit()"
-                    class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                    class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500">
                 {% for value, label in sorts %}
                     <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
@@ -19,14 +20,16 @@
         </form>
     </div>
 
+    <div class="mb-4">{{ sentiment_filters(request, request.query_params.get('sentiment'), filter_return_to) }}</div>
+
     {% if chains %}
         <div class="space-y-4">
             {% for chain in chains %}
                 {% call card(extra="transition hover:border-cyan-700") %}
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <a href="/app/analytics/chains/{{ chain.chain_id }}" class="min-w-0">
-                            <p class="truncate font-medium text-slate-200">{{ chain.name }}</p>
-                            <p class="mt-1 text-xs text-slate-500">
+                        <div class="min-w-0">
+                            <a href="{{ chain.url|e }}" class="block truncate font-medium text-slate-800 dark:text-slate-200 hover:text-cyan-700 dark:hover:text-cyan-300">{{ chain.name }}</a>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                                 {{ chain.total_analyses }} анализ(ов)
                                 {% if chain.date_range.start %}
                                     · {{ chain.date_range.start }} — {{ chain.date_range.end }}
@@ -38,24 +41,25 @@
                                     {% for sid in src_ids[:3] %}
                                         {% set src_name = source_names.get(sid) %}
                                         <a href="/app/sources/{{ sid }}"
-                                           class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-cyan-300">
+                                           class="rounded bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-cyan-700 dark:hover:text-cyan-300">
                                             {% if src_name %}{{ src_name }}{% else %}Источник #{{ sid }}{% endif %}
                                         </a>
                                     {% endfor %}
                                     {% if src_ids|length > 3 %}
-                                        <span class="text-[11px] text-slate-600">+{{ src_ids|length - 3 }}</span>
+                                        <span class="text-[11px] text-slate-600 dark:text-slate-400">+{{ src_ids|length - 3 }}</span>
                                     {% endif %}
                                 </p>
                             {% endif %}
-                        </a>
-                        <div class="flex shrink-0 items-center gap-2">
-                            <a href="/app/analytics/chains/{{ chain.chain_id }}" class="text-xs text-cyan-400">Открыть →</a>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            {{ sentiment_badge(chain.avg_sentiment, average=True) }}
+                            <a href="{{ chain.url|e }}" class="text-xs text-cyan-700 dark:text-cyan-400">Открыть →</a>
                             {% if perms_can(request, 'aianalytics', 'delete') %}
                                 <form method="post" action="/app/analytics/chains/{{ chain.chain_id }}/delete">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                                     <button type="submit" title="Удалить цепочку" aria-label="Удалить цепочку {{ chain.name }}"
                                             @click="if (!confirm('Удалить цепочку «{{ chain.name }}» и все её анализы?')) $event.preventDefault()"
-                                            class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                            class="rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                              stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                             <path stroke-linecap="round" stroke-linejoin="round"
@@ -70,7 +74,7 @@
                         <div class="mt-3 flex flex-wrap gap-1.5">
                             {% for step in chain.evolution[:4] %}
                                 {% for t in step.topics[:3] %}
-                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
+                                    <span class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">{{ t.topic }}</span>
                                 {% endfor %}
                             {% endfor %}
                         </div>

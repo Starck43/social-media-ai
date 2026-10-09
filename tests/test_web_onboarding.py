@@ -43,7 +43,9 @@ WIZARD_MARKER = 'name="next" value="/app/onboarding"'
 # The control class as it was written out by hand, 80 times across the
 # templates. One macro (`_macros.control`) owns it now; a template that spells
 # it out again has reintroduced the drift that macro removed.
-RAW_CONTROL_CLASS = "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+RAW_CONTROL_CLASS = (
+    "w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2"
+)
 FORM_FIELD_RE = re.compile(r'<form[^>]*\baction="([^"]+)"[^>]*>(.*?)</form>', re.S)
 FIELD_NAME_RE = re.compile(r'\bname="([^"]+)"')
 LABEL_FOR_RE = re.compile(r'<label[^>]*\bfor="([^"]+)"')
@@ -84,7 +86,23 @@ def _render(name: str, **extra) -> str:
     from app.web.nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 
     platforms = [SimpleNamespace(platform_type=SimpleNamespace(db_value="vk"), name="ВКонтакте")]
+    from starlette.requests import Request
+
+    application = create_application()
+    request = Request(
+        {
+            "type": "http",
+            "app": application,
+            "router": application.router,
+            "path": "/app/",
+            "root_path": "",
+            "headers": [],
+            "scheme": "http",
+            "server": ("testserver", 80),
+        }
+    )
     context: dict = {
+        "request": request,
         "nav": NAV_ITEMS,
         "mobile_nav": MOBILE_NAV_ITEMS,
         "user": None,
@@ -288,7 +306,10 @@ async def test_wizard_creates_a_source_and_returns_to_the_wizard() -> None:
             # return-to-wizard marker until a schedule exists.
             page = await client.get("/app/onboarding")
             assert DONE in page.text
-            assert page.text.count(WIZARD_MARKER) == 1, "only the schedule form keeps the marker"
+            assert 'action="/app/sources"' not in page.text, "the completed source step has no form"
+            assert page.text.count(WIZARD_MARKER) == page.text.count(TODO)
+            # With bypass, another workspace's task may make the schedule step
+            # done as well; its form is checked independently by _render().
         finally:
             if source_id is not None:
                 with tenant_scope(bypass=True):

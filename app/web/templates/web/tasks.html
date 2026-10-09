@@ -9,7 +9,7 @@
             {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
                 <select name="tenant_id" onchange="this.form.submit()"
-                        class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                        class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500">
                     <option value="">Все пространства</option>
                     {% for t in tenants %}
                     <option value="{{ t.id }}" {% if filter_tenant_id== t.id %}selected{% endif %}>{{ t.name }}</option>
@@ -27,10 +27,10 @@
     </div>
 
     {% if tasks %}
-    <div class="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
         <table class="w-full text-sm">
             <thead
-                class="border-b border-slate-800 bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-400">
+                class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <tr>
                 <th class="px-4 py-3">Название</th>
                 <th class="px-4 py-3">Тип</th>
@@ -45,68 +45,68 @@
                 <th class="px-4 py-3"></th>
             </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800">
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
             {% for task in tasks %}
-            <tr class="hover:bg-slate-900/80">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
                     {# The name is the way into the editor, the same way the sources
                        and scenarios lists do it. The editor is a page, so the name
                        is a link, not a button opening a modal. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                         <a href="/app/tasks/{{ task.id }}/edit"
-                           class="text-left hover:text-cyan-400 hover:underline">{{ task.name }}</a>
+                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name }}</a>
                     {% else %}
                         {{ task.name }}
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
-                                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+                                <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">
                                     {{ task.job_type }}
                                 </span>
                 </td>
-                <td class="px-4 py-3 text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
-                <td class="px-4 py-3 text-slate-400">
+                <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.sources %}
-                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">
+                    <span class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">
                                         {{ task.sources|length }} источников
                                     </span>
                     {% else %}
-                    <span class="text-slate-600">все</span>
+                    <span class="text-slate-600 dark:text-slate-400">все</span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
                     {% if task.id in effective_active %}
-                    <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активна</span>
+                    <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">активна</span>
                     {% else %}
-                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивна</span>
+                    <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">неактивна</span>
                     {% endif %}
                     {% if task.last_status == 'failed' %}
                     <span title="{{ task.last_error or '' }}"
-                          class="ml-1 rounded-full bg-rose-950 px-2 py-0.5 text-xs text-rose-400">ошибка</span>
+                          class="ml-1 rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                     {% elif task.last_status == 'ok' %}
-                    <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">ок</span>
+                    <span class="ml-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">ок</span>
                     {% elif task.last_status == 'skipped' %}
-                    <span class="ml-1 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">пропущено</span>
+                    <span class="ml-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">пропущено</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-400">
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.last_run_at %}
                     {{ task.last_run_at|human_dt(tz=_tz) }}
                     {% else %}
-                    <span class="text-slate-600">—</span>
+                    <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-400">
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.cron_expr == '@once' and task.last_run_at %}
-                    <span class="text-slate-600">—</span>
+                    <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% elif task.next_run_at %}
                     {{ task.next_run_at|human_dt(tz=_tz) }}
                     {% else %}
-                    <span class="text-slate-600">—</span>
+                    <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
                 {% if is_superuser %}
-                <td class="px-4 py-3 text-xs text-slate-400">{{ task.tenant.name }}</td>
+                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ task.tenant.name }}</td>
                 {% endif %}
                 <td class="px-4 py-3">
                     {# Both remaining controls are `agenttask.update`; delete moved
@@ -119,7 +119,7 @@
                         {% if task.id in running_jobs %}
                         <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
                            title="Job #{{ running_jobs[task.id] }} выполняется"
-                           class="rounded-md border border-amber-700 p-1.5 text-amber-400 hover:bg-amber-950"
+                           class="rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
                            aria-label="Job выполняется">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                  stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
@@ -133,7 +133,7 @@
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
                             <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
-                                    class="rounded-md border border-emerald-700 p-1.5 text-emerald-400 hover:bg-emerald-950">
+                                    class="rounded-md border border-emerald-700 p-1.5 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
                                      stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z" />
@@ -153,7 +153,7 @@
                             <button
                                 aria-label="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
                                 title="{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}"
-                                class="rounded-md border border-slate-700 p-1.5 text-slate-300 hover:bg-slate-800">
+                                class="rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 {% if task.id in effective_active %}
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                      stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
@@ -188,16 +188,16 @@
     {% endif %}
 
     <!-- Add modal -->
-    <div x-show="openAdd" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+    <div x-show="openAdd" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
          @keydown.escape.window="openAdd = false">
-        <div class="w-[95%] max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div class="w-[95%] max-w-4xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
             <div class="mb-5 flex items-center justify-between">
                 <div>
                     <h2 class="text-lg font-semibold">Создать задачу</h2>
-                    <p class="mt-1 text-sm text-slate-400">Настройте название, источники и расписание.</p>
+                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Настройте название, источники и расписание.</p>
                 </div>
                 <button type="button" @click="openAdd = false" aria-label="Закрыть"
-                        class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                        class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -213,28 +213,28 @@
                 {{ task_fields(job_types, "add", "task.job_type") }}
 
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Расписание</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
                     <div x-data="scheduleBuilder()"
-                         class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+                         class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
                         <div class="flex flex-wrap gap-2">
                             <button type="button" @click="applyPreset('daily')"
                                     class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('daily') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                                    :class="isPreset('daily') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                                 Ежедневно 9:00
                             </button>
                             <button type="button" @click="applyPreset('weekly')"
                                     class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                                    :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                                 Еженедельно (пн 9:00)
                             </button>
                             <button type="button" @click="applyPreset('every_6_hours')"
                                     class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                                    :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                                 Каждые 6 часов
                             </button>
                             <button type="button" @click="applyPreset('once')"
                                     class="rounded-lg border px-3 py-1.5 text-sm"
-                                    :class="isPreset('once') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                                    :class="isPreset('once') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                                 Разово
                             </button>
                         </div>
@@ -243,12 +243,12 @@
                             <div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Время</label>
+                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Время</label>
                                         <input type="time" name="sched_time" x-model="time" value="09:00"
                                                class="{{ control() }}">
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
+                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Периодичность</label>
                                         <select x-model="freq"
                                                 class="{{ control() }}">
                                             <option value="daily">Каждый день</option>
@@ -261,12 +261,12 @@
 
                                 <template x-if="freq === 'weekly'">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Дни недели</label>
+                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дни недели</label>
                                         <div class="flex gap-2">
                                             <template x-for="d in days" :key="d.value">
                                                 <button type="button" @click="toggleDay(d.value)"
                                                         class="h-9 w-9 rounded-lg text-sm font-medium"
-                                                        :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'">
+                                                        :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'">
                                                     <span x-text="d.label"></span>
                                                 </button>
                                             </template>
@@ -276,7 +276,7 @@
 
                                 <template x-if="freq === 'monthly'">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-400">День месяца</label>
+                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">День месяца</label>
                                         <select x-model.number="monthday"
                                                 class="{{ control() }}">
                                             <template x-for="d in 28" :key="d">
@@ -288,7 +288,7 @@
 
                                 <template x-if="freq === 'interval'">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-400">Интервал</label>
+                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Интервал</label>
                                         <select x-model.number="everyHours"
                                                 class="{{ control() }}">
                                             <template x-for="h in intervalOptions" :key="h">
@@ -306,27 +306,27 @@
 
                 {% if sources %}
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Источники</label>
-                    <div class="max-h-32 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-2 space-y-1">
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
+                    <div class="max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 space-y-1">
                         {% for source in sources %}
-                        <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer">
                             <input type="checkbox" name="source_ids" value="{{ source.id }}"
-                                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-cyan-500 focus:ring-cyan-500">
                             <a href="/app/sources/{{ source.id }}"
-                               class="truncate hover:text-cyan-400 hover:underline">{{ source.name }}</a>
+                               class="truncate hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name }}</a>
                             {% if not source.is_active %}
-                            <span class="shrink-0 rounded bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-400">неактивен</span>
+                            <span class="shrink-0 rounded bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-700 dark:text-rose-400">неактивен</span>
                             {% endif %}
                         </label>
                         {% endfor %}
                     </div>
-                    <p class="mt-1 text-xs text-slate-500">Оставьте пустым для всех источников. Отметка деактивированного источника активирует его.</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Оставьте пустым для всех источников. Отметка деактивированного источника активирует его.</p>
                 </div>
                 {% endif %}
 
                 {% if scenarios %}
                 <div>
-                    <label for="add-scenario_id" class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
+                    <label for="add-scenario_id" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сценарий для агента</label>
                     <select id="add-scenario_id" name="scenario_id" x-model="task.scenario_id"
                             class="{{ control() }}">
                         <option value="">— не выбран —</option>
@@ -334,7 +334,7 @@
                         <option value="{{ scenario.id }}">{{ scenario.name }}</option>
                         {% endfor %}
                     </select>
-                    <p class="mt-1 text-xs text-slate-500">Применяется для типа «Анализ»</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется для типа «Анализ»</p>
                 </div>
                 {% endif %}
 
@@ -342,18 +342,18 @@
                    scenario's analysis types pick which payload keys the form
                    asks for (param_registry.PAYLOAD_PARAMS); the inputs stay in
                    the DOM so switching the scenario keeps what was typed. #}
-                <div class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3"
+                <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3"
                      x-show="targetFields.length > 0" x-cloak>
-                    <p class="text-sm text-slate-300">Цели анализа
-                        <span class="text-xs text-slate-500">— какие именно данные искать, требует выбранный сценарий</span>
+                    <p class="text-sm text-slate-700 dark:text-slate-300">Цели анализа
+                        <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
                     </p>
                     <div class="grid grid-cols-2 gap-3">
                         <template x-for="f in targetDefs" :key="f.key">
                             <div x-show="isTargetVisible(f)">
-                                <label class="mb-1 block text-xs text-slate-400" x-text="f.label"></label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-text="f.label"></label>
                                 <input type="text" :name="f.key" x-model="task[f.key]" :placeholder="f.ph"
                                        class="{{ control() }}">
-                                <p class="mt-1 text-xs text-slate-500" x-text="f.hint"></p>
+                                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="f.hint"></p>
                             </div>
                         </template>
                     </div>
@@ -362,11 +362,11 @@
                 {{ task_dates("task", "task.job_type") }}
 
                 <template x-if="task.job_type === 'digest'">
-                    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-4">
-                        <h3 class="text-sm font-medium text-slate-300">Параметры дайджеста</h3>
+                    <div class="ui-card space-y-4">
+                        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300">Параметры дайджеста</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-sm text-slate-300">Период</label>
+                                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Период</label>
                                 <select name="digest_period" x-model="task.digest_period"
                                         class="{{ control() }}">
                                     <option value="day">День</option>
@@ -375,12 +375,12 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="mb-1 block text-sm text-slate-300">Ось группировки</label>
+                                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ось группировки</label>
                                 <select name="digest_group_by" x-model="task.digest_group_by"
                                         class="{{ control() }}">
                                     <option value="themes">По темам</option>
                                     <option value="sources">По источникам</option>
-                                    <option value="entities">По сущностям</option>
+                                    <option value="entities">По упоминаниям</option>
                                     <option value="sentiment">По тональности</option>
                                     <option value="content_type">По типу контента</option>
                                     <option value="intent">По намерению</option>
@@ -388,10 +388,10 @@
                                 </select>
                             </div>
                         </div>
-                        <label class="flex items-center gap-2 text-sm text-slate-300">
+                        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                             <input type="hidden" name="digest_time_breakdown" :value="task.digest_time_breakdown ? 'on' : ''">
                             <input type="checkbox" x-model="task.digest_time_breakdown"
-                                   class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-cyan-500 focus:ring-cyan-500">
                             Разбивка по дням внутри групп
                         </label>
                     </div>
@@ -403,22 +403,22 @@
                 <div class="grid grid-cols-2 gap-3">
                     <template x-if="task.job_type === 'collect'">
                         <div>
-                            <label for="add-monitored" class="mb-1 block text-sm text-slate-300">Отслеживать
+                            <label for="add-monitored" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживать
                                 пользователей</label>
                             <input id="add-monitored" name="monitored_users" x-model="task.monitored_users"
                                    placeholder="username1, username2"
                                    class="{{ control() }}">
-                            <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор)</p>
                         </div>
                     </template>
                     <template x-if="task.job_type === 'collect' || task.job_type === 'analyze'">
                         <div>
-                            <label for="add-excluded" class="mb-1 block text-sm text-slate-300">Исключить
+                            <label for="add-excluded" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Исключить
                                 пользователей</label>
                             <input id="add-excluded" name="excluded_users" x-model="task.excluded_users"
                                    placeholder="username1, username2"
                                    class="{{ control() }}">
-                            <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор/анализ)</p>
                         </div>
                     </template>
                 </div>
@@ -427,7 +427,7 @@
 
                 <div class="flex gap-2 pt-2">
                     <button type="button" @click="openAdd = false"
-                            class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Отмена
                     </button>
                     <button type="submit" x-bind:disabled="sending"
@@ -444,19 +444,19 @@
     </div>
 
     <!-- Run-now result modal -->
-    <div x-show="runModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-        <div class="w-[95%] max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+    <div x-show="runModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
+        <div class="w-[95%] max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs uppercase tracking-wider text-slate-500"
+                    <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400"
                        x-text="runModal.data.title || 'Задание'"></p>
-                    <h2 class="text-lg font-semibold text-slate-100" x-text="runModal.data.label || 'Запуск…'"></h2>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100" x-text="runModal.data.label || 'Запуск…'"></h2>
                     <template x-if="runModal.data.task_name">
-                        <p class="mt-0.5 text-xs text-slate-400" x-text="runModal.data.task_name"></p>
+                        <p class="mt-0.5 text-xs text-slate-600 dark:text-slate-400" x-text="runModal.data.task_name"></p>
                     </template>
                 </div>
                 <button type="button" @click="runModal.close()" aria-label="Закрыть"
-                        class="rounded-lg border border-slate-700 p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                        class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -465,8 +465,8 @@
             </div>
 
             <template x-if="runModal.loading">
-                <div class="mt-5 flex items-center gap-3 text-sm text-slate-300">
-                    <svg class="h-5 w-5 animate-spin text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                <div class="mt-5 flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+                    <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
                          viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
                                 stroke-width="4"></circle>
@@ -480,12 +480,12 @@
             <template x-if="!runModal.loading">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
-                        <div class="rounded-lg border border-emerald-800/60 bg-emerald-950/40 p-4">
+                        <div class="rounded-lg border border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 p-4">
                             <!-- Headline: the one number that answers "did it work?" -->
                             <template x-if="runModal.data.headline">
                                 <div>
                                     <div class="flex items-baseline gap-2">
-                                        <span class="text-3xl font-semibold text-emerald-300"
+                                        <span class="text-3xl font-semibold text-emerald-700 dark:text-emerald-300"
                                               x-text="runModal.data.headline.value"></span>
                                         <span class="text-sm text-emerald-200/70"
                                               x-text="runModal.data.headline.noun"></span>
@@ -517,9 +517,9 @@
                                     <div class="mt-2 flex flex-wrap gap-2">
                                         <template x-for="src in runModal.data.sources" :key="src.source_id">
                                             <a :href="`/app/sources/${src.source_id}`"
-                                               class="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-xs text-slate-200 hover:border-cyan-500 hover:text-cyan-300">
+                                               class="inline-flex items-center gap-1.5 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1 text-xs text-slate-800 dark:text-slate-200 hover:border-cyan-500 hover:text-cyan-700 dark:hover:text-cyan-300">
                                                 <span class="max-w-[10rem] truncate" x-text="src.name"></span>
-                                                <span :class="src.error ? 'text-rose-400' : 'text-slate-400'"
+                                                <span :class="src.error ? 'text-rose-700 dark:text-rose-400' : 'text-slate-600 dark:text-slate-400'"
                                                       x-text="src.note"></span>
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                                      stroke-width="2" stroke="currentColor" class="h-3 w-3">
@@ -534,18 +534,18 @@
                         </div>
                     </template>
                     <template x-if="runModal.data.status === 'failed'">
-                        <div class="rounded-lg border border-rose-700 bg-rose-950 p-4 text-sm text-rose-200">
+                        <div class="rounded-lg border border-rose-700 bg-rose-50 dark:bg-rose-950 p-4 text-sm text-rose-200">
                             <p x-text="runModal.data.error || 'Ошибка выполнения'"></p>
                         </div>
                     </template>
                     <template x-if="runModal.data.status === 'not_found'">
-                        <div class="rounded-lg border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">
+                        <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 text-sm text-slate-700 dark:text-slate-300">
                             Задача не найдена.
                         </div>
                     </template>
                     <div class="mt-4 flex justify-end">
                         <button @click="runModal.close()"
-                                class="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+                                class="rounded-lg bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
                             Закрыть
                         </button>
                     </div>

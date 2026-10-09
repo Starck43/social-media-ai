@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.core.config import settings
-from app.services.ai.llm_client import LLMClientFactory, resolve_model
-from app.services.ai.reporting import ReportAggregator
+from app.services.ai.llm_client import LLMClientFactory
+from app.services.ai.reporting import ReportAggregator, normalize_digest_axis
 from app.services.digest.render import render_digest
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,9 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         logger.warning("Daily LLM cost cap reached — digest summary skipped")
         return None, {"model": None, "cost_cap": True}
 
-    model = await resolve_model()
+    from app.models import LLMModel
+
+    model = await LLMModel.objects.resolve_default_model("text", strategy="quality")
     if not model:
         return None, {"model": None}
     try:
@@ -84,8 +86,9 @@ async def aggregate(
 ) -> tuple[dict[str, Any], date, date]:
     # "days" is a web-only grouping for the Chronology view; it must not be used
     # for digest generation (the API and CLI should reject it before reaching here).
+    group_by = normalize_digest_axis(group_by)
     if group_by == "days":
-        raise ValueError("group_by='days' is web-only; use themes, sources, entities, sentiment, content_type, intent, or topic_chains")
+        raise ValueError("group_by='days' is web-only; use themes, sources, entities, intent, or topic_chains")
 
     start, end = period_bounds(period)
     days = (end - start).days + 1
@@ -151,6 +154,26 @@ async def build_and_publish(
     group_by: str = "themes",
     time_breakdown: bool = False,
     scenario_id: int | None = None,
+) -> dict[str, Any]:
+    """Resolve and scope the entire run, including manual operator execution."""
+    from app.channels.registry import resolve_digest_tenant
+    from app.core.tenant_context import tenant_scope
+
+    tenant = await resolve_digest_tenant()
+    with tenant_scope(tenant.id):
+        return await _build_and_publish_scoped(
+            period, agent_task_id, force, source_ids, group_by, time_breakdown, scenario_id
+        )
+
+
+async def _build_and_publish_scoped(
+    period: str,
+    agent_task_id: int | None,
+    force: bool,
+    source_ids: list[int] | None,
+    group_by: str,
+    time_breakdown: bool,
+    scenario_id: int | None,
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
     from app.models.managers.digest_run_manager import DigestRunManager

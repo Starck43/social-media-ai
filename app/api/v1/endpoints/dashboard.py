@@ -2,7 +2,7 @@
 
 import logging
 from datetime import date, timedelta
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 
@@ -704,9 +704,11 @@ async def get_engagement_metrics_aggregate(
 async def get_grouped_analytics(
     source_id: Optional[int] = Query(None, description="Filter by source"),
     days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
-    group_by: str = Query("themes", description="Grouping axis: themes, sources, entities, sentiment, content_type, intent"),
+    group_by: str = Query("themes", description="Grouping axis: themes, sources, entities, intent, topic_chains"),
     time_breakdown: bool = Query(False, description="Enable per-date entries within each group"),
     entity_type: Optional[str] = Query(None, description="Filter entities by type (person, brand, org)"),
+    sentiment: Optional[Literal["positive", "neutral", "negative"]] = Query(None, description="Filter sentiment on any axis"),
+    media: Optional[Literal["text", "image", "video"]] = Query(None, description="Filter media_types containment on any axis"),
     _user = Depends(require_model_perm("aianalytics", ActionType.VIEW)),
 ):
     """
@@ -724,29 +726,30 @@ async def get_grouped_analytics(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, sentiment, content_type, intent"
+            detail=f"Invalid group_by value: {group_by!r}. Use: themes, sources, entities, intent, topic_chains"
         )
 
     # "days" is a web-only grouping for the Chronology view; reject it here
     if group_by == "days":
         raise HTTPException(
             status_code=400,
-            detail="group_by='days' is web-only; use themes, sources, entities, sentiment, content_type, intent, or topic_chains"
+            detail="group_by='days' is web-only; use themes, sources, entities, intent, or topic_chains"
         )
 
     # Fetch analytics rows
     end = date.today()
     start = end - timedelta(days=days - 1)
-    analytics = await AIAnalytics.objects.filter(
-        source_id=source_id if source_id else None,
-        analysis_date__gte=start,
-    ).order_by(AIAnalytics.analysis_date.asc())
+    query = AIAnalytics.objects.filter(analysis_date__gte=start, analysis_date__lte=end)
+    if source_id is not None:
+        query = query.filter(source_id=source_id)
+    analytics = await query.order_by(AIAnalytics.analysis_date.asc())
 
-    result = group_analytics(
-        list(analytics),
-        axis=axis,
-        time_breakdown=time_breakdown,
-        entity_type=entity_type,
-    )
+    try:
+        result = await group_analytics(
+            list(analytics), axis=axis, time_breakdown=time_breakdown,
+            entity_type=entity_type, sentiment=sentiment, media=media,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return result

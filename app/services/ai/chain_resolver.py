@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, timedelta
-from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -67,22 +66,9 @@ def _token_set_ratio(a: str, b: str) -> float:
     inter = tokens_a & tokens_b
     if not inter:
         return 0.0
-    a_common = " ".join(sorted(inter))
-    b_common = " ".join(sorted(inter))
-    a_full = " ".join(sorted(tokens_a))
-    b_full = " ".join(sorted(tokens_b))
-
-    def ratio(x: str, y: str) -> float:
-        if not x and not y:
-            return 1.0
-        if not x or not y:
-            return 0.0
-        return SequenceMatcher(None, x, y).ratio()
-
-    return max(
-        ratio(a_common, b_common),
-        ratio(a_common + " " + a_full, b_common + " " + b_full),
-    )
+    # Sørensen–Dice overlap on normalized/stemmed token sets. Comparing the
+    # intersection with itself would return 1 for any shared word.
+    return 2.0 * len(inter) / (len(tokens_a) + len(tokens_b))
 
 
 def human_chain_label(summary_data: dict | None) -> str | None:
@@ -101,11 +87,7 @@ def human_chain_label(summary_data: dict | None) -> str | None:
     topics = parsed.get("main_topics") or text_analysis.get("main_topics") or []
     if topics:
         return str(topics[0]).strip()[:255]
-    title = (
-        parsed.get("analysis_title")
-        or text_analysis.get("analysis_title")
-        or summary_data.get("analysis_title")
-    )
+    title = parsed.get("analysis_title") or text_analysis.get("analysis_title") or summary_data.get("analysis_title")
     if title:
         return str(title).strip()[:255]
     return None

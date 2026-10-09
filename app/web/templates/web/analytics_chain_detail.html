@@ -1,10 +1,11 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import card, empty_state, page_title %}
+{% from "web/_macros.html" import card, empty_state, page_title, sentiment_badge %}
 {% block title %}{{ chain.name }} — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-            <a href="/app/analytics/chains" class="text-cyan-400 hover:underline">← Все цепочки</a>
+        <div class="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+            <a href="{{ back_url|e }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-cyan-700 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label }}</a>
+            {% if back_url != chains_url %}<a href="{{ chains_url|e }}" class="text-slate-600 dark:text-slate-400 hover:text-cyan-700 dark:hover:text-cyan-400">Все цепочки</a>{% endif %}
             <span>·</span>
             <span>{{ chain.total_analyses }} анализ(ов)</span>
             {% if chain.date_range.start %}
@@ -17,7 +18,7 @@
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button type="submit"
                         @click="if (!confirm('Удалить цепочку «{{ chain.name }}» и все её анализы?')) $event.preventDefault()"
-                        class="rounded-lg border border-rose-900/70 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/40">
+                        class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                     Удалить цепочку
                 </button>
             </form>
@@ -26,22 +27,23 @@
 
     {% if chain.evolution %}
         <div class="relative space-y-0">
-            <div class="absolute bottom-2 left-4 top-2 w-px bg-slate-800"></div>
+            <div class="absolute bottom-2 left-4 top-2 w-px bg-slate-100 dark:bg-slate-800"></div>
             {% for step in chain.evolution %}
                 <div class="relative pl-12 pb-8">
-                    <span class="absolute left-2.5 top-1 h-3.5 w-3.5 rounded-full border-2 border-cyan-500 bg-slate-950"></span>
-                    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                    <span class="absolute left-2.5 top-1 h-3.5 w-3.5 rounded-full border-2 border-cyan-500 bg-white dark:bg-slate-950"></span>
+                    <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-3">
                         <div class="flex flex-wrap items-center justify-between gap-2">
-                            <p class="text-sm font-medium text-slate-200">
-                                {{ step.date }}
-                                {% if step.analysis_title %} — {{ step.analysis_title }}{% endif %}
+                            <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                {% if step.analysis_url %}<a href="{{ step.analysis_url|e }}" class="hover:text-cyan-700 dark:hover:text-cyan-400">{% endif %}
+                                {{ step.date|e }}{% if step.analysis_title %} — {{ step.analysis_title|e }}{% endif %}
+                                {% if step.analysis_url %}</a>{% endif %}
                             </p>
                             {% if perms_can(request, 'aianalytics', 'delete') and step.id %}
                                 <form method="post" action="/app/analytics/{{ step.id }}/delete">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                                     <button type="submit" title="Удалить запись" aria-label="Удалить анализ за {{ step.date }}"
                                             @click="if (!confirm('Удалить этот анализ?')) $event.preventDefault()"
-                                            class="rounded-md border border-slate-700 p-1.5 text-slate-500 hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300">
+                                            class="rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                              stroke-width="1.5" stroke="currentColor" class="h-3.5 w-3.5">
                                             <path stroke-linecap="round" stroke-linejoin="round"
@@ -52,22 +54,20 @@
                             {% endif %}
                         </div>
                         {% if step.analysis_summary %}
-                            <p class="mt-2 text-sm leading-relaxed text-slate-400">{{ step.analysis_summary }}</p>
+                            <p class="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{{ step.analysis_summary }}</p>
                         {% endif %}
                         {% if step.topics %}
                             <div class="mt-2 flex flex-wrap gap-1.5">
                                 {% for t in step.topics %}
-                                    <span class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ t.topic }}</span>
+                                    <span class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">{{ t.topic }}</span>
                                 {% endfor %}
                             </div>
                         {% endif %}
                         {% if step.metrics %}
-                            <div class="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                            <div class="mt-2 flex flex-wrap gap-4 text-xs text-slate-600 dark:text-slate-400">
                                 <span>Постов: {{ step.metrics.total_posts }}</span>
                                 <span>Реакций: {{ step.metrics.total_reactions }}</span>
-                                {% if step.metrics.sentiment_label %}
-                                    <span>Настроение: {{ step.metrics.sentiment_label }}</span>
-                                {% endif %}
+                                {{ sentiment_badge(step.display_sentiment) }}
                                 {% if step.metrics.toxicity_category %}
                                     <span>Токсичность: {{ step.metrics.toxicity_category }}</span>
                                 {% endif %}
@@ -76,7 +76,7 @@
                         {% if step.source_info and step.source_info.source_id %}
                             {% set src_name = source_names.get(step.source_info.source_id) %}
                             <a href="/app/sources/{{ step.source_info.source_id }}"
-                               class="mt-2 inline-block text-xs text-cyan-400 hover:underline">
+                               class="mt-2 inline-block text-xs text-cyan-700 dark:text-cyan-400 hover:underline">
                                 {% if src_name %}Источник: {{ src_name }}{% else %}Источник #{{ step.source_info.source_id }}{% endif %}
                             </a>
                         {% endif %}

@@ -72,15 +72,15 @@ async def _test_database():
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _seed_reference_data():
+async def _seed_reference_data(_test_database):
     """Idempotent seed of roles/permissions at session start.
 
     Runs on every test session (not only first deploy) so an interrupted run
     leaves no stale reference rows. The seed scripts are idempotent by design.
     """
-    from scripts.setup.roles import seed_roles
-    from scripts.setup.assign_roles_permissions import assign_roles_permissions
     from app.core.tenant_context import tenant_scope
+    from scripts.setup.assign_roles_permissions import assign_roles_permissions
+    from scripts.setup.roles import seed_roles
 
     seed_roles()
     with tenant_scope(bypass=True):
@@ -90,3 +90,20 @@ async def _seed_reference_data():
     seed_roles()
     with tenant_scope(bypass=True):
         await assign_roles_permissions()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _local_vault_key():
+    """Tests encrypt fake credentials without needing a deployment secret.
+
+    Function-level fixtures may still override this setting, including tests
+    that deliberately exercise the missing-key error. The key is ephemeral.
+    """
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+
+    previous = settings.CREDENTIALS_KEY
+    settings.CREDENTIALS_KEY = Fernet.generate_key().decode()
+    yield
+    settings.CREDENTIALS_KEY = previous

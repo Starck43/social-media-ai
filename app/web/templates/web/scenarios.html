@@ -4,7 +4,7 @@
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
         <h1 class="text-2xl font-semibold tracking-tight">Сценарии</h1>
-        <p class="mt-1 text-sm text-slate-400">Управление сценариями анализа и автоматизации</p>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Управление сценариями анализа и автоматизации</p>
     </div>
     {% if perms and perms.can('agentscenario', 'create') %}
         <a href="/app/scenarios/new"
@@ -14,20 +14,10 @@
     {% endif %}
 </div>
 
-{% if flashes %}
-<div class="mb-4 space-y-2">
-    {% for flash in flashes %}
-        <div class="rounded-lg px-4 py-3 text-sm {% if flash.kind == 'error' %}bg-red-900/30 text-red-400 border border-red-800{% else %}bg-green-900/30 text-green-400 border border-green-800{% endif %}">
-            {{ flash.text }}
-        </div>
-    {% endfor %}
-</div>
-{% endif %}
-
 {% if scenarios %}
-<div class="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
+<div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
     <table class="w-full text-sm">
-        <thead class="border-b border-slate-800 bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-400">
+        <thead class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <tr>
                 <th class="px-4 py-3">Название</th>
                 <th class="px-4 py-3">Описание</th>
@@ -37,42 +27,42 @@
                 <th class="px-4 py-3 text-center">Статус</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800">
+        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
             {% for s in scenarios %}
-            <tr class="hover:bg-slate-900/80">
-                <td class="px-4 py-3 font-medium text-slate-100">
-                    <a href="/app/scenarios/{{ s.id }}" class="hover:text-cyan-400 hover:underline">{{ s.name }}</a>
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
+                <td class="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                    <a href="/app/scenarios/{{ s.id }}" class="hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ s.name }}</a>
                 </td>
-                <td class="px-4 py-3 text-slate-400 max-w-xs truncate">{{ s.description or "—" }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400 max-w-xs truncate">{{ s.description or "—" }}</td>
                 <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-1">
                         {% for at in s.analysis_types %}
-                            <span class="inline-flex rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">{{ at }}</span>
+                            <span class="inline-flex rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400">{{ at }}</span>
                         {% endfor %}
                         {% if not s.analysis_types %}
-                            <span class="text-slate-600">—</span>
+                            <span class="text-slate-600 dark:text-slate-400">—</span>
                         {% endif %}
                     </div>
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-1">
                         {% for ct in s.content_types %}
-                            <span class="inline-flex rounded bg-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-300">{{ ct }}</span>
+                            <span class="inline-flex rounded bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-700 dark:text-slate-300">{{ ct }}</span>
                         {% endfor %}
                         {% if not s.content_types %}
-                            <span class="text-slate-600">—</span>
+                            <span class="text-slate-600 dark:text-slate-400">—</span>
                         {% endif %}
                     </div>
                 </td>
-                <td class="px-4 py-3 text-center text-slate-300">{{ s.task_count }}</td>
+                <td class="px-4 py-3 text-center text-slate-700 dark:text-slate-300">{{ s.task_count }}</td>
                 <td class="px-4 py-3 text-center">
                     {# The same pill the sources and tasks lists use. The dot-plus-word
                        pair this had before was the only state on the page not wearing
                        it, so a column of statuses read as a column of sentences. #}
                     {% if s.is_active %}
-                        <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активен</span>
+                        <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">активен</span>
                     {% else %}
-                        <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивен</span>
+                        <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">неактивен</span>
                     {% endif %}
                 </td>
             </tr>
@@ -81,8 +71,8 @@
     </table>
 </div>
 {% else %}
-<div class="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-12 text-center">
-    <p class="text-slate-500">Нет сценариев. Создайте первый через мастер — это займёт пару шагов:</p>
+<div class="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-12 text-center">
+    <p class="text-slate-600 dark:text-slate-400">Нет сценариев. Создайте первый через мастер — это займёт пару шагов:</p>
     <a href="/app/scenarios/new" class="mt-3 inline-block rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
         Создать сценарий
     </a>

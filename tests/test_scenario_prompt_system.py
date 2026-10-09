@@ -10,7 +10,7 @@ model.
 from __future__ import annotations
 
 from app.models import AgentScenario
-from app.services.ai.prompt_variables import PromptVariables, PromptSubstitution
+from app.services.ai.prompt_variables import PromptSubstitution, PromptVariables
 from app.services.ai.prompts import PromptBuilder
 from app.services.ai.scenario_builder import ScenarioBuilder, ScenarioDraft
 from app.types import MediaType
@@ -65,7 +65,8 @@ def test_get_prompt_uses_base_prompt_and_substitutes() -> None:
     prompt = PromptBuilder.get_prompt(
         MediaType.TEXT, scenario=scenario, platform_name="VK", text="пост", stats={}, source_type=""
     )
-    assert "Анализ из VK: пост" in prompt
+    assert "Анализ из VK:" in prompt
+    assert "<untrusted_text>\nпост\n</untrusted_text>" in prompt
     assert "analysis_title" in prompt, "COMMON_FIELDS must auto-append"
 
 

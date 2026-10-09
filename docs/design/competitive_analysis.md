@@ -1,5 +1,24 @@
 # Обзор конкурентов и итоговая матрица заимствований
 
+> **Historical research — not the active implementation backlog.** Reviewed against dev `f11acefba8fbc2f47e3a17f670a97587208f1dd3` on 2026-10-08. Several gaps below are now implemented, while performance/competitor claims remain unverified. See [proposal review](proposal_review.md), [current roadmap](../ROADMAP_INTEGRATED.md), [local UX plan](../LOCAL_EXPERIENCE_PLAN.md) and [production gates](../BUSINESS_PRODUCTION_READINESS.md). Original research is preserved below.
+
+## Implementation status (verified against master 1df34e7 and this change)
+
+This document is historical research. The status below supersedes assertions
+that the analysis pipeline still uses regex parsing or lacks LLM chat tools.
+
+| ID | Current implementation |
+|---|---|
+| CA-01 | Existing JSON decoding/Pydantic strengthened: invalid structured results are rejected; nested supported schema fields validated; common relevance fields retained. No new provider-native strict schema protocol. |
+| CA-02 | Existing sanitizer extended to default prompts and untrusted-data framing; task payload cannot override `{text}`. Heuristic defense, not complete injection prevention. |
+| CA-03 | Request audit snapshot added to `ai_analytics.response_payload.request`, available without DEBUG; methodology hash and per-stage rendered prompt hashes. Historical rows not backfilled. |
+| CA-04 | Analyzer now returns an LLMModel, not an LLMProvider; capability resolution uses active providers, tariff-first cost_efficient selection, fleet-default quality selection and capability-aware multimodal tie-breaks. Quality is fleet configuration, not inferred from price. |
+
+`llm_model_add/update/delete/test` and digest CLI `topic_chains` help were already
+implemented on master. Migration head is 0086, not 0085. CA-05 onward and MAX L1
+remain separate roadmap work; no embeddings, billing, probes or new infrastructure
+were added in this change.
+
 ## Оговорка по ссылкам
 
 Точные URL репозиториев лежат в вашем исследовательском документе `analysis_and_best_experiences.md` (там таблица аналогов без ссылок). Чтобы не фабриковать адреса, я цитирую **имена из вашего исследования**, а уверенные публичные URL даю только для общеизвестных проектов: Mem0 — github.com/mem0ai/mem0, Cognee — github.com/topoteretes/cognee, Langfuse — github.com/langfuse/langfuse, pgvector — github.com/pgvector/pgvector, Telethon — github.com/LonamiWebs/Telethon.
@@ -70,7 +89,7 @@
 - детекция «промпт уже содержит JSON» по словам «формат»/«json» → явный флаг или парсер;
 - пересечение двух force-флагов в форме задачи (флагировали ранее);
 - декоративный `is_default` → единый `resolve_default_model()`;
-- из `ANALYTICS_AGGREGATION_SYSTEM.md` раздел «Будущие улучшения» (Redis-кэш, WebSocket, PDF-экспорт, materialized views) — **вычеркнуть**: противоречит философии одного VPS и вашим объёмам.
+- из `ANALYTICS_AGGREGATION_SYSTEM.md` раздел «Будущие улучшения» (Redis-кэш, WebSocket, PDF-экспорт, materialized views) — **вычеркнуть**: противоречит философии одного VPS и вашим объёмам. Но это может быть полезно для масштабирования сервиса и им в дальнейшем будут пользоваться все желающие, приобретая тариф. Тут надо подумать и может поменять философию и сделать правки в документации.
 
 ---
 

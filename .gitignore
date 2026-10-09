@@ -47,8 +47,9 @@ ENV/
 logs/
 *.log
 
-# Agent workspace (local-only, never commit)
-.agent/
+# Agent workspace is local-only except shared development rules.
+.agent/*
+!.agent/rules.md
 .gigacode/
 .kilo/
 

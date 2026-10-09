@@ -51,6 +51,11 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
         "views": post.get("views", 0) or 0,
         "forwards": post.get("forward_count", 0) or 0,
         "reactions": 0,
+        "metric_availability": {
+            "reactions": False,
+            "views": post.get("views") is not None,
+            "comments": post.get("reply_count") is not None,
+        },
         "comments": post.get("reply_count", 0) or 0,
         "source_type": "channel",
         "platform": "telegram",

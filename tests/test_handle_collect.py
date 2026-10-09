@@ -63,7 +63,7 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
         ):
             called.append(source.id)
             return _fake_result()
@@ -141,7 +141,7 @@ async def test_handle_collect_records_a_per_source_breakdown(platform, sources, 
         await _replace_task_sources(task.id, [sources[0].id, sources[1].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
         ):
             if source.id == sources[1].id:
                 raise RuntimeError("токен истёк")
@@ -182,7 +182,7 @@ async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources
         await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
         ):
             return None
 
@@ -216,7 +216,7 @@ async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", analyze_by=None, force_reanalyze=False, run_id=None
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None
         ):
             called.append(source.id)
             return _fake_result()

@@ -574,7 +574,7 @@ async def _build_messages(session: Any) -> list[dict]:
 
 async def build_system_prompt() -> str:
     """System prompt (+ style and learned memory) and session history."""
-    from app.agent.prompts import SCENARIO_SECTION, TASK_SECTION, render_style_block
+    from app.agent.prompts import ANALYTICS_SECTION, SCENARIO_SECTION, TASK_SECTION, render_style_block
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.agent_memory_manager import agent_memory
     from app.models.managers.tenant_manager import tenants
@@ -582,7 +582,7 @@ async def build_system_prompt() -> str:
     # Use env var if set, otherwise fall back to the built-in default.
     system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
 
-    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION]
+    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION, ANALYTICS_SECTION]
 
     tenant = None
     tid = current_tenant_id()
@@ -623,8 +623,12 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
             if tenant.agent_temperature is not None:
                 temperature = tenant.agent_temperature
 
+    from app.models import LLMModel
+
+    narrative_model = await LLMModel.objects.resolve_default_model("text", strategy="cost_efficient")
     return await chat_with_fallback(
         messages,
+        preferred_model=narrative_model,
         tools=specs,
         max_tokens=max_tokens,
         temperature=temperature,

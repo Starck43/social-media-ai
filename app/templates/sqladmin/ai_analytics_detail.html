@@ -198,20 +198,20 @@
 		<h3 class="section-title"><i class="fa fa-chart-line"></i> Статистика контента</h3>
 		<div class="analytics-grid">
 			<div class="metric-card">
-				<div class="metric-value">{{ stats.get('total_posts', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_posts') if stats.get('total_posts') is not none else '—' }}</div>
 				<div class="metric-label">Постов</div>
 			</div>
 			<div class="metric-card">
-				<div class="metric-value">{{ stats.get('total_reactions', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_reactions') if stats.get('total_reactions') is not none else '—' }}</div>
 				<div class="metric-label">Реакций</div>
 			</div>
 			<div class="metric-card">
-				<div class="metric-value">{{ stats.get('total_comments', 0) }}</div>
+				<div class="metric-value">{{ stats.get('total_comments') if stats.get('total_comments') is not none else '—' }}</div>
 				<div class="metric-label">Комментариев</div>
 			</div>
 			<div class="metric-card">
-				<div class="metric-value">{{ "%.1f"|format(stats.get('avg_reactions_per_post', 0) | float) }}</div>
-				<div class="metric-label">Средняя вовлеченность</div>
+				<div class="metric-value">{{ "%.1f"|format(stats.get('avg_reactions_per_post')) if stats.get('avg_reactions_per_post') is not none else '—' }}</div>
+				<div class="metric-label">Реакций / материал</div>
 			</div>
 		</div>
 	</div>

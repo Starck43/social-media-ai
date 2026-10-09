@@ -10,6 +10,7 @@ Provides aggregated metrics for dashboard and admin panels:
 """
 
 import logging
+import math
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
@@ -20,6 +21,32 @@ from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
+
+
+SENTIMENT_FILTERS = ("positive", "neutral", "negative")
+MEDIA_FILTERS = ("text", "image", "video")
+REMOVED_GROUPING_AXES = frozenset({"sentiment", "content_type"})
+
+
+def sentiment_bucket(score: Any) -> str | None:
+    """Canonical buckets: >0.6 positive, <0.4 negative, boundaries neutral.
+
+    Missing/non-numeric/non-finite values have no bucket, never fake neutrality.
+    """
+    if score is None or isinstance(score, bool):
+        return None
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(score):
+        return None
+    return "positive" if score > 0.6 else "negative" if score < 0.4 else "neutral"
+
+
+def normalize_digest_axis(group_by: str | None) -> str:
+    """Compatibility for saved tasks; public grouping APIs reject old axes."""
+    return "themes" if not group_by or group_by in REMOVED_GROUPING_AXES else group_by
 
 
 class ReportAggregator:
@@ -121,6 +148,26 @@ class ReportAggregator:
         # raise. Returns a list in both branches so the callers iterate a list
         # either way.
         return list(await qs.order_by(AIAnalytics.analysis_date.asc()))
+
+    async def get_grouped_analytics(
+        self, axis: str = "themes", days: int | None = 7,
+        source_id: int | None = None, tenant_id: int | None = None,
+        chain_id: str | None = None, time_breakdown: bool = False,
+        entity_type: str | None = None, sentiment: str | None = None, media: str | None = None,
+    ) -> dict[str, Any]:
+        """Token-free grouping over the scoped, inclusive reporting window."""
+        from app.services.ai.grouping import group_analytics
+
+        if days is not None and days < 1:
+            raise ValueError("days must be positive")
+        rows = await self._analytics_query(days=days, source_id=source_id, tenant_id=tenant_id)
+        today = date.today()
+        lower = today - timedelta(days=days - 1) if days is not None else None
+        rows = [row for row in rows if row.analysis_date is not None and row.analysis_date <= today
+                and (lower is None or row.analysis_date >= lower)
+                and (chain_id is None or row.topic_chain_id == chain_id)]
+        return await group_analytics(rows, axis, time_breakdown=time_breakdown,
+                                     entity_type=entity_type, sentiment=sentiment, media=media)
 
     async def get_sentiment_trends(
         self, source_id: Optional[int] = None, days: int = 7, group_by: str = "day"
@@ -999,7 +1046,7 @@ class ReportAggregator:
         self,
         period: str = "day",  # "day" | "week"
         source_ids: Optional[list[int]] = None,
-        group_by: str = "themes",  # GroupingAxis value: themes | sources | entities | sentiment | content_type | intent
+        group_by: str = "themes",  # GroupingAxis value: themes | sources | entities | intent | topic_chains
         time_breakdown: bool = False,
         entity_type: str | None = None,
         scenario_id: Optional[int] = None,
@@ -1008,15 +1055,14 @@ class ReportAggregator:
 
         Hybrid digest step 1. It aggregates the period's `ai_analytics` rows into
         a human-readable brief, groups them by the `group_by` axis (themes → top
-        themes, sources → per source, entities → per entity, sentiment → by
-        sentiment bucket, content_type → by media type, intent → by intent) and
+        themes, sources → per source, entities → per entity, intent → by intent, topic_chains → by chain) and
         appends a section for each `analysis_types` the scenario enables. The
         narrative step turns this brief into the final digest text.
 
         Args:
             period: The period to report on ("day", "week", or "month")
             source_ids: Optional list of source IDs to filter by
-            group_by: The grouping axis to use (themes, sources, entities, sentiment, content_type, intent)
+            group_by: The grouping axis to use (themes, sources, entities, intent, topic_chains)
             time_breakdown: If True, include per-date sub-entries within each group
             entity_type: Optional filter for entities axis. One of "brand", "person", "org".
                 When None, all entity types are included. Ignored for other axes.
@@ -1049,7 +1095,7 @@ class ReportAggregator:
         lines.append(f"## {title}")
         lines.append(f"**Период:** {start.isoformat()} — {end.isoformat()}")
 
-        mode = group_by or "themes"
+        mode = normalize_digest_axis(group_by)
         section = await self._brief_base_group(analytics, mode, time_breakdown, entity_type)
         if section:
             lines.extend(section)
@@ -1229,7 +1275,7 @@ class ReportAggregator:
             key = group["key"]
             count = group["count"]
             avg_sent = group.get("avg_sentiment")
-            sent_str = f" (sent: {avg_sent})" if avg_sent is not None else ""
+            sent_str = f" (Тональность: {avg_sent:.2f} / 1)" if avg_sent is not None else ""
 
             # No extras — the old DAYS and MONITORED_USERS axes are gone.
             # Grouping is now pure axis-based; posts/messages/users are
@@ -1246,7 +1292,7 @@ class ReportAggregator:
                     day = entry["date"]
                     day_count = entry["count"]
                     day_sent = entry.get("avg_sentiment")
-                    day_sent_str = f" (sent: {day_sent})" if day_sent is not None else ""
+                    day_sent_str = f" (Тональность: {day_sent:.2f} / 1)" if day_sent is not None else ""
                     lines.append(f"  - {day}: {day_count} упом.{day_sent_str}")
             else:
                 lines.append(f"{i}. **{key}** — {count} упом.{extra_str}{sent_str}")
@@ -1538,14 +1584,8 @@ class ReportAggregator:
         # New structure: sentiment_score in text_analysis
         if "sentiment_score" in text_analysis:
             score = text_analysis["sentiment_score"]
-            # Determine label from score
-            if score > 0.6:
-                label = "positive"
-            elif score < 0.4:
-                label = "negative"
-            else:
-                label = "neutral"
-            return {"label": label, "score": score}
+            label = sentiment_bucket(score)
+            return {"label": label, "score": float(score)} if label else None
 
         # Fallback: Try to infer from overall_mood (text description)
         if "overall_mood" in text_analysis:

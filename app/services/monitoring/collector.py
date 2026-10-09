@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 
+from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.models import Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.services.social.factory import get_social_client
@@ -99,6 +100,8 @@ class ContentCollector:
 			permalink = item.get("permalink") or item.get("url")
 			if not permalink and external_id:
 				permalink = _build_permalink(source, external_id)
+			if permalink:
+				item.setdefault("permalink", permalink)  # Same saved URL reaches immediate analysis.
 			rows.append(
 				{
 					"run_id": run_id,
@@ -109,8 +112,29 @@ class ContentCollector:
 					"published_at": published,
 					"media_type": item.get("media_type") or item.get("type"),
 					"text": item.get("text"),
-					"metrics": item.get("metrics") if isinstance(item.get("metrics"), dict) else None,
-					"author": item.get("author") if isinstance(item.get("author"), dict) else None,
+					"metrics": {
+						**(item.get("metrics") if isinstance(item.get("metrics"), dict) else {}),
+						**{
+							key: item[key]
+							for key in ("reactions", "comments", "views", "metric_availability")
+							if key in item
+						},
+					},
+					"author": (
+						item.get("author")
+						if isinstance(item.get("author"), dict)
+						else (
+							{
+								"id": next(
+									item[k]
+									for k in ("from_id", "owner_id", "author_id", "user_id")
+									if item.get(k) is not None
+								)
+							}
+							if any(item.get(k) is not None for k in ("from_id", "owner_id", "author_id", "user_id"))
+							else None
+						)
+					),
 					"permalink": permalink,
 				}
 			)
@@ -163,7 +187,6 @@ class ContentCollector:
 			source: Source,
 			content_type: str = "posts",
 			analyze: bool = True,
-			analyze_by: str = None,
 			force_reanalyze: bool = False,
 			run_id: Optional[int] = None,
 	) -> Optional[dict]:
@@ -174,7 +197,6 @@ class ContentCollector:
 			source: Source to collect from
 			content_type: Type of content to collect (posts, comments, etc.)
 			analyze: Whether to run AI analysis on collected content
-			analyze_by: Analysis method - "days" (group by days) or "themes" (theme-based analysis)
 			force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
 
 		Returns:
@@ -251,7 +273,7 @@ class ContentCollector:
 			analytics = None
 			if analyze and content:
 				analytics = await self.analyzer.analyze_content(
-					content, source, analyze_by=analyze_by, force_reanalyze=force_reanalyze
+					content, source, force_reanalyze=force_reanalyze
 				)
 				await self._retire_staged(source, analytics)
 			# No analysis this run: the staged rows are the deliverable, left for
@@ -264,7 +286,6 @@ class ContentCollector:
 				"content_count": len(content),
 				"new_items": new_count,
 				"analyzed": analyze,
-				"analyze_by": analyze_by,
 				"analytics_count": len(analytics) if analytics else 0,
 				# Rows written to `collected_items` this run. Still there if the
 				# analysis failed or is deferred — that is the honest count of the
@@ -280,16 +301,28 @@ class ContentCollector:
 			# Send critical notification if available
 			if NOTIFICATIONS_AVAILABLE:
 				try:
-					await notify.create(
-						title=f"Ошибка сбора источника {source.name}",
-						message=f"Не удалось собрать данные: {str(e)}",
-						ntype=NotificationType.API_ERROR,
-						entity_type="source",
-						entity_id=source.id,
-						send_to_messenger=True,
-					)
-				except:
-					pass  # Don't fail on notification error
+					# Operator collection may be unscoped; the source owns this notification.
+					notification_tenant = getattr(source, "tenant_id", None)
+					if notification_tenant is not None and (
+						is_bypass() or current_tenant_id() == notification_tenant
+					):
+						with tenant_scope(notification_tenant):
+							await notify.create(
+								title=f"Ошибка сбора источника {source.name}",
+								message="Не удалось собрать данные. Проверьте подключение и права доступа к источнику.",
+								ntype=NotificationType.API_ERROR,
+								entity_type="source",
+								entity_id=source.id,
+								send_to_messenger=False,
+							)
+					else:
+						logger.warning("Collection notification skipped: source workspace unavailable or unauthorized")
+				except Exception:
+					logger.warning("Collection workspace notification failed")
+				try:
+					await messenger_service.send_operator_alert("collection_failed")
+				except Exception:
+					logger.warning("Collection operator alert failed")
 
 			# Re-raise so the caller can tell a real failure (error) apart from a
 			# legitimately empty result (no content). Swallowing here turns every

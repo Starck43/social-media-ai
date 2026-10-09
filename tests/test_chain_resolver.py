@@ -142,3 +142,39 @@ async def test_find_existing_chain_respects_lookback(source):
 
     matched = await AIAnalyzer()._find_matching_topic_chain(source, ["отпуск"], lookback_days=7)
     assert matched is None
+
+
+@pytest.mark.parametrize(
+    "left,right,expected",
+    [
+        ("день рождения", "день победы", 0.5),
+        ("съемки команды", "работа команды", 0.5),
+        ("день рождения", "рождения день", 1.0),
+        ("день", "день рождения", 2 / 3),
+        ("день рождения", "финансовый отчет", 0.0),
+        ("", "день", 0.0),
+    ],
+)
+def test_token_overlap_does_not_promote_any_shared_word_to_one(left, right, expected):
+    from app.services.ai.chain_resolver import _token_set_ratio
+
+    assert _token_set_ratio(left, right) == pytest.approx(expected)
+
+
+async def test_resolver_does_not_join_different_topics_with_one_shared_word(source):
+    from app.services.ai.chain_resolver import resolve_chain_async
+
+    old = "existing-birthday"
+    await AIAnalytics.objects.create(
+        tenant_id=source.tenant_id,
+        source_id=source.id,
+        analysis_date=date.today() - timedelta(days=1),
+        period_type=PeriodType.DAY,
+        topic_chain_id=old,
+        chain_label="День рождения",
+        summary_data={"topic_hint": "День рождения"},
+    )
+    new, label = await resolve_chain_async(source.tenant_id, source.id, "День победы")
+    assert new != old and label == "День победы"
+    reused, _ = await resolve_chain_async(source.tenant_id, source.id, "ДЕНЬ РОЖДЕНИЯ!")
+    assert reused == old

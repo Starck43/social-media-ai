@@ -1,25 +1,30 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import icon, segment, sentiment_badge, sentiment_filters %}
 {% block title %}Аналитика — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl font-semibold tracking-tight">Аналитика</h1>
-            <p class="mt-1 text-sm text-slate-400">
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {{ tenant.name if tenant else 'Все пространства' }} · агрегация по сохранённым анализам
             </p>
         </div>
-        <form method="get" class="flex items-center gap-2">
+        <form method="get" class="ui-toolbar">
+            {% for key in ['group_by', 'entity_type', 'sentiment', 'media', 'group_by_period', 'source_id'] %}
+                {% if request.query_params.get(key) %}<input type="hidden" name="{{ key }}" value="{{ request.query_params.get(key) }}">{% endif %}
+            {% endfor %}
             {% if is_superuser and tenants %}
                 <select name="tenant_id" onchange="this.form.submit()"
-                        class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                        class="ui-control">
                     <option value="">Все пространства</option>
                     {% for t in tenants %}
                         <option value="{{ t.id }}" {% if filter_tenant_id == t.id %}selected{% endif %}>{{ t.name }}</option>
                     {% endfor %}
                 </select>
             {% endif %}
-            <select name="days" onchange="this.form.submit()"
-                    class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-cyan-500">
+            <label for="analytics-days" class="sr-only">Период аналитики</label>
+            <select id="analytics-days" name="days" onchange="this.form.submit()"
+                    class="ui-control">
                 {% for value, label in periods %}
                     <option value="{{ value }}" {% if days == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
@@ -28,24 +33,24 @@
     </div>
 
     <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <p class="text-sm text-slate-500 dark:text-slate-400">Анализов</p>
             <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ analytics.kpis.total_analyses }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <p class="text-sm text-slate-500 dark:text-slate-400">Постов</p>
             <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ analytics.kpis.total_posts }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <p class="text-sm text-slate-500 dark:text-slate-400">Пик активных пользователей</p>
             <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">{{ analytics.kpis.peak_users }}</p>
         </div>
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <p class="text-sm text-slate-500 dark:text-slate-400">LLM-расход</p>
             <p class="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">
                 ${{ "%.2f"|format(analytics.kpis.cost_usd) }}
                 {% if analytics.kpis.cost_usd == 0 %}
-                <span class="text-base text-slate-500 dark:text-slate-400">(тариф не задан)</span>
+                <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">тариф не задан</span>
                 {% endif %}
             </p>
         </div>
@@ -53,15 +58,15 @@
 
     {% if analytics.chains %}
     <div class="mt-6">
-        <div class="mb-3 flex items-center justify-between">
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">🔗 Тематические цепочки</h2>
-            <a href="/app/analytics/chains" class="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Все цепочки →</a>
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ icon('chain') }} Тематические цепочки</h2>
+            <a href="{{ chains_url|e }}" class="text-xs text-cyan-700 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">Все цепочки →</a>
         </div>
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for chain in analytics.chains[:6] %}
-            <a href="/app/analytics/chains/{{ chain.chain_id }}"
+            <a href="{{ chain.url|e }}"
                class="group rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 hover:border-cyan-500 dark:hover:border-cyan-700 transition-colors">
-                <div class="flex items-start justify-between gap-2">
+                <div class="flex flex-wrap items-start justify-between gap-2">
                     <div class="min-w-0">
                         <p class="truncate font-medium text-slate-900 dark:text-slate-200 group-hover:text-cyan-600 dark:group-hover:text-cyan-300">{{ chain.chain_label }}</p>
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -71,14 +76,7 @@
                             {% endif %}
                         </p>
                     </div>
-                    {% if chain.avg_sentiment is not none %}
-                    <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
-                        {% if chain.avg_sentiment >= 0.3 %}text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950
-                        {% elif chain.avg_sentiment <= -0.3 %}text-rose-700 bg-rose-100 dark:text-rose-300 dark:bg-rose-950
-                        {% else %}text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950{% endif %}">
-                        {{ "%.1f"|format(chain.avg_sentiment) }}
-                    </span>
-                    {% endif %}
+                    {{ sentiment_badge(chain.avg_sentiment, average=True) }}
                 </div>
             </a>
             {% endfor %}
@@ -91,106 +89,45 @@
 
     {# ── Axis switcher + grouped results ─────────────────────────────── #}
     {% set gd = grouped_data %}
-    <div x-data="{ axis: '{{ gd.axis }}', period: '{{ gd.group_by_period }}' }" class="mt-6 space-y-4">
-        <div class="flex flex-wrap items-center gap-3">
-            <div class="flex gap-1 rounded-xl border border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 p-1">
-                {% set axes = [
-                    ('days', 'Хронология', '📅'),
-                    ('themes', 'По темам', '🧩'),
-                    ('sources', 'По источникам', '🔗'),
-                    ('entities', 'По сущностям', '👤'),
-                    ('sentiment', 'По тональности', '😊'),
-                    ('content_type', 'По типу контента', '📊'),
-                    ('intent', 'По намерению', '🎯'),
-                ] %}
-                {% for ax_val, ax_label, ax_icon in axes %}
-                {% set count = (gd.group_counts or {}).get(ax_val, 0) %}
-                {% if count > 0 or ax_val == gd.axis %}
-                <a href="?group_by={{ ax_val }}{% if ax_val == 'entities' and gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
-                   class="rounded-lg px-3 py-1.5 text-sm transition"
-                   :class="axis === '{{ ax_val }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'">
-                    {{ ax_icon }} {{ ax_label }}
-                    {% if count > 0 %}<span class="text-xs opacity-70">({{ count }})</span>{% endif %}
-                </a>
-                {% endif %}
-                {% endfor %}
-            </div>
-            <template x-if="axis === 'entities'">
-                <div class="flex gap-2">
-                    {% for et in [('brand', 'Бренды'), ('person', 'Персоны'), ('org', 'Организации')] %}
-                    <a href="?group_by=entities&entity_type={{ et[0] }}"
-                       class="rounded-lg border px-3 py-1.5 text-sm transition"
-                       :class="(axis === 'entities' && '{{ gd.entity_type or "" }}' === '{{ et[0] }}') ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'">
-                        {{ et[1] }}
-                    </a>
-                    {% endfor %}
-                </div>
-            </template>
-            {% if gd.axis == 'days' %}
-            <div class="flex gap-1 rounded-xl border border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 p-1">
-                {% set periods = [('day', 'По дням'), ('week', 'По неделям'), ('month', 'По месяцам')] %}
-                {% for pval, plabel in periods %}
-                <a href="?group_by=days&group_by_period={{ pval }}&days={{ days }}{% if gd.entity_type %}&entity_type={{ gd.entity_type }}{% endif %}"
-                   class="rounded-lg px-3 py-1.5 text-sm transition"
-                   :class="period === '{{ pval }}' ? 'bg-cyan-500 text-slate-950' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'">
-                    {{ plabel }}
-                </a>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-
+    <section class="mt-6 space-y-4" aria-label="Группировка анализов">
+        <nav class="ui-segments" aria-label="Группировать по">
+            {% for value, label, icon_name in [('days','Хронология','calendar'),('themes','По темам','topics'),('sources','По источникам','source'),('entities','По упоминаниям','mentions'),('intent','По намерению','intent')] %}
+                {% if value in gd.visible_axes %}{{ segment(gd.axis_urls[value], label, gd.axis == value, (gd.group_counts or {}).get(value,0), icon_name) }}{% endif %}
+            {% endfor %}
+        </nav>
+        {% if gd.axis == 'entities' %}
+        <nav class="ui-segments" aria-label="Тип упоминаний">
+            {% for value, label in [('', 'Все'), ('person','Персоны'), ('brand','Бренды'), ('org','Организации')] %}
+                {% set url = request.url.include_query_params(group_by='entities', entity_type=value) if value else request.url.remove_query_params('entity_type') %}
+                {{ segment(url.path ~ ('?' ~ url.query if url.query else ''), label, (gd.entity_type or '') == value) }}
+            {% endfor %}
+        </nav>
+        {% elif gd.axis == 'days' %}
+        <nav class="ui-segments" aria-label="Шаг хронологии">
+            {% for value, label in [('day','По дням'),('week','По неделям'),('month','По месяцам')] %}{{ segment(gd.period_urls[value], label, gd.group_by_period == value) }}{% endfor %}
+        </nav>
+        {% endif %}
+        {{ sentiment_filters(request, gd.sentiment, gd.filter_return_to) }}
         {% if gd.groups %}
         {% if gd.axis == 'days' %}
         <div class="space-y-6">
             {% for group in gd.groups %}
             <div class="rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
-                <h3 class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">{{ group.display_key }}</h3>
+                <h3 class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300"><a href="{{ group.url|e }}" class="hover:text-cyan-500">{{ group.display_key }} →</a></h3>
                 <div class="space-y-2">
                     {% for entry in group.entries %}
-                    {% if entry.analysis_summary %}
-                    <a href="/app/analytics/{{ entry.id }}"
-                       class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/30 p-3 hover:border-cyan-700 transition-colors">
+                    <a href="{{ entry.url|e }}" data-analysis-id="{{ entry.id }}"
+                       class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3 hover:border-cyan-700 transition-colors">
                         <div class="min-w-0 flex-1">
-                            <p class="truncate text-sm text-slate-200">
-                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
+                            <p class="truncate text-sm text-slate-800 dark:text-slate-200">{{ entry.display_title|e }}</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">
+                                {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id)|e }}
+                                {% if entry.main_topics %} · {{ entry.main_topics[0]|e }}{% endif %}
                             </p>
-                            <p class="text-xs text-slate-500">
-                                {{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}
-                                {% if entry.main_topics %}
-                                · {{ entry.main_topics[0] }}
-                                {% endif %}
-                            </p>
+                            {% if not entry.analysis_summary %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Сводка для этой записи не сохранена.</p>{% endif %}
                         </div>
-                        {% if entry.sentiment_score is not none %}
-                        <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono
-                            {% if entry.sentiment_score >= 0.3 %}text-emerald-400 bg-emerald-950
-                            {% elif entry.sentiment_score <= -0.3 %}text-rose-400 bg-rose-950
-                            {% else %}text-amber-400 bg-amber-950{% endif %}">
-                            {{ "%.1f"|format(entry.sentiment_score) }}
-                        </span>
-                        {% endif %}
+                        {{ sentiment_badge(entry.sentiment_score) }}
                     </a>
-                    {% else %}
-                    <div class="rounded-lg border border-amber-600/60 dark:border-amber-700/60 bg-amber-100/80 dark:bg-amber-500/10 px-3 py-2">
-                        <div class="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-                            </svg>
-                            <p class="truncate text-sm text-amber-800 dark:text-amber-200">
-                                {{ entry.analysis_title or 'Анализ #' ~ entry.id }}
-                            </p>
-                            <span class="text-xs text-amber-700 dark:text-amber-300">— Данные получены, но анализ не проводился.</span>
-                        </div>
-                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <span>{{ gd.source_names.get(entry.source_id, 'Источник #' ~ entry.source_id) }}</span>
-                            {% if entry.analysis_date %}
-                            <span>·</span>
-                            <span>{{ entry.analysis_date }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endif %}
                     {% endfor %}
                 </div>
             </div>
@@ -199,90 +136,37 @@
         {% else %}
         <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {% for group in gd.groups %}
-            <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <div class="flex items-center justify-between">
-                    <h3 class="truncate text-sm font-medium text-slate-200">
-                        {% set axis = gd.axis %}
-                        {% set key = group.key %}
-                        {% set link_params = [] %}
-                        {% set is_link = false %}
-
-                        {% if axis == 'sources' %}
-                            {% set _ = link_params.append('source_id=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'themes' %}
-                            {# For themes, we do not have a filter, so we skip linking for now #}
-                            {% set is_link = false %}
-                        {% elif axis == 'entities' %}
-                            {% set _ = link_params.append('entity_name=' ~ key) %}
-                            {% set _ = link_params.append('entity_type=' ~ (gd.entity_type or '')) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'sentiment' %}
-                            {% set _ = link_params.append('sentiment=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'content_type' %}
-                            {% set _ = link_params.append('content_type=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'intent' %}
-                            {% set _ = link_params.append('intent=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'topic_chains' %}
-                            {% set _ = link_params.append('chain_id=' ~ key) %}
-                            {% set is_link = true %}
-                        {% elif axis == 'days' %}
-                            {# For days, we do not link #}
-                            {% set is_link = false %}
-                        {% endif %}
-
-                        {% if is_link %}
-                            {% set _ = link_params.append('days=' ~ days) %}
-                            {% if filter_tenant_id %}
-                                {% set _ = link_params.append('tenant_id=' ~ filter_tenant_id) %}
-                            {% endif %}
-                            <a href="/app/analytics/chains?{{ link_params|join('&') }}" class="hover:text-cyan-300">{{ group.key }}</a>
-                        {% else %}
-                            {{ group.key }}
-                        {% endif %}
-                    </h3>
-                    <span class="shrink-0 text-xs text-slate-400">
-                        {{ group.count }} упом.
-                        {% if group.avg_sentiment is not none %}
-                        · sent: {{ "%.2f"|format(group.avg_sentiment) }}
-                        {% endif %}
-                    </span>
-                </div>
-            </div>
+            <a href="{{ group.url|e }}" class="ui-card ui-card-link ui-group-card">
+                <h3 class="ui-group-title">{{ group.key|e }}</h3>
+                <div class="ui-group-meta"><span>{{ group.count }} {{ plural(group.count,'анализ','анализа','анализов') }}</span>{{ sentiment_badge(group.avg_sentiment, average=True) }}</div>
+            </a>
             {% endfor %}
         </div>
         {% endif %}
         {% else %}
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-8">
-            <p class="text-sm text-slate-500">Нет данных за выбранный период</p>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-8">
+            <p class="text-sm text-slate-600 dark:text-slate-400">Нет данных за выбранный период</p>
         </div>
         {% endif %}
-    </div>
+    </section>
 
 <div class="mt-6 grid gap-4 lg:grid-cols-2">
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
-            <div class="flex items-center justify-between">
-                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Настроение по пользователям</h2>
-                <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>позитив</span>
-                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-300"></span>нейтр</span>
-                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-rose-400"></span>негатив</span>
+        <div class="ui-card">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Тональность по пользователям</h2>
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>Позитивная</span>
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-300"></span>Нейтральная</span>
+                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-rose-400"></span>Негативная</span>
                 </div>
             </div>
             {% if analytics.sentiment_by_user %}
                 <div class="mt-4 space-y-2">
                     {% for u in analytics.sentiment_by_user %}
-                    <div class="flex items-center justify-between text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span class="text-slate-600 dark:text-slate-400 truncate">{{ u.user }}</span>
                         <div class="flex items-center gap-4">
-                            <span class="w-8 text-right text-slate-500 dark:text-slate-400">
-                                {% if u.avg_sentiment is not none %}
-                                    {{ "%.2f"|format(u.avg_sentiment) }}
-                                {% else %}—{% endif %}
-                            </span>
+                            {{ sentiment_badge(u.avg_sentiment, average=True) }}
                             <span class="w-6 text-right text-xs text-slate-500 dark:text-slate-400">{{ u.count }}×</span>
                         </div>
                     </div>
@@ -293,16 +177,16 @@
             {% endif %}
         </div>
 
-<div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+<div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Активность по пользователям</h2>
             {% if analytics.activity_by_user %}
                 <div class="mt-4 space-y-2">
                     {% for u in analytics.activity_by_user %}
-                    <div class="flex items-center justify-between text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span class="text-slate-600 dark:text-slate-400 truncate">{{ u.user }}</span>
                         <div class="flex items-center gap-4 text-xs">
                             <span class="text-slate-500 dark:text-slate-400">{{ u.messages }} сообщ.</span>
-                            <span class="w-6 text-right text-cyan-600 dark:text-cyan-400">{{ u.days }} дн.</span>
+                            <span class="w-6 text-right text-cyan-700 dark:text-cyan-400">{{ u.days }} дн.</span>
                             <span class="w-10 text-right text-slate-500 dark:text-slate-400">{{ u.engagement_rate }} eng.</span>
                         </div>
                     </div>
@@ -315,12 +199,12 @@
     </div>
 
 <div class="mt-6 grid gap-4 lg:grid-cols-3">
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Топ тем</h2>
             {% if analytics.topics %}
                 <div class="mt-4 space-y-2">
                     {% for t in analytics.topics %}
-                    <div class="flex items-center justify-between text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span class="truncate text-slate-700 dark:text-slate-300">{{ t.topic }}</span>
                         <span class="ml-2 shrink-0 text-xs text-slate-500 dark:text-slate-400">{{ t.count }}×</span>
                     </div>
@@ -331,22 +215,20 @@
             {% endif %}
         </div>
 
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Упоминания сущностей</h2>
+        <div class="ui-card">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Упоминания людей, брендов и организаций</h2>
             {% if analytics.entities %}
                 <div class="mt-4 space-y-2">
                     {% for e in analytics.entities %}
-                    <div class="flex items-center justify-between gap-2 text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span class="min-w-0">
-                            <span class="truncate text-slate-700 dark:text-slate-300">{{ e.name }}</span>
-                            <span class="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ e.type }}</span>
+                            <span class="truncate text-slate-700 dark:text-slate-300">{{ e.name|e }}</span>
+                            <span class="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ {'person':'Персона','brand':'Бренд','org':'Организация'}.get(e.type,e.type)|e }}</span>
                         </span>
                          <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                             {% if e.avg_sentiment is not none %}
-                                 {{ "%.2f"|format(e.avg_sentiment) }} ·
-                             {% endif %}
+                             {{ sentiment_badge(e.avg_sentiment, average=True) }}
                              {{ e.count }}×
-                             <a href="/app/analytics/chains?entity_name={{ e.name }}&entity_type={{ e.type }}&days={{ days }}" class="ml-1 text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">→</a>
+                             <a href="/app/analytics/chains?entity_name={{ e.name|urlencode|e }}&entity_type={{ e.type|urlencode|e }}&days={{ days }}" class="ml-1 text-cyan-700 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300">→</a>
                          </span>
                     </div>
                     {% if e.context %}
@@ -359,23 +241,23 @@
             {% endif %}
         </div>
 
-        <div class="rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+        <div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Вовлечённость</h2>
             {% if analytics.engagement %}
                 <div class="mt-4 space-y-3 text-sm">
-                    <div class="flex items-center justify-between">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
                         <span class="text-slate-500 dark:text-slate-400">Реакций / пост</span>
                         <span class="text-slate-900 dark:text-slate-100">{{ "%.1f"|format(analytics.engagement.avg_reactions_per_post) }}</span>
                     </div>
-                    <div class="flex items-center justify-between">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
                         <span class="text-slate-500 dark:text-slate-400">Комментариев / пост</span>
                         <span class="text-slate-900 dark:text-slate-100">{{ "%.1f"|format(analytics.engagement.avg_comments_per_post) }}</span>
                     </div>
-                    <div class="flex items-center justify-between">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
                         <span class="text-slate-500 dark:text-slate-400">Всего реакций</span>
                         <span class="text-slate-900 dark:text-slate-100">{{ analytics.engagement.total_reactions }}</span>
                     </div>
-                    <div class="flex items-center justify-between">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
                         <span class="text-slate-500 dark:text-slate-400">Всего комментариев</span>
                         <span class="text-slate-900 dark:text-slate-100">{{ analytics.engagement.total_comments }}</span>
                     </div>
@@ -386,7 +268,7 @@
         </div>
     </div>
 
-    <div class="mt-6 rounded-2xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+    <div class="mt-6 ui-card">
         <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Расход по LLM-провайдерам</h2>
         {% if analytics.llm.providers %}
             <div class="mt-4 overflow-x-auto">

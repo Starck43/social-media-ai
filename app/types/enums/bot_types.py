@@ -160,8 +160,6 @@ class GroupingAxis(str, Enum):
     THEMES        = "themes"
     SOURCES       = "sources"
     ENTITIES      = "entities"
-    SENTIMENT     = "sentiment"
-    CONTENT_TYPE  = "content_type"
     INTENT        = "intent"
     TOPIC_CHAINS  = "topic_chains"
 
@@ -171,9 +169,7 @@ class GroupingAxis(str, Enum):
             "days": "По дням",
             "themes": "По темам",
             "sources": "По источникам",
-            "entities": "По сущностям",
-            "sentiment": "По тональности",
-            "content_type": "По типу контента",
+            "entities": "По упоминаниям",
             "intent": "По намерению",
             "topic_chains": "Тематические цепочки",
         }.get(self.value, self.value)

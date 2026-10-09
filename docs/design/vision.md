@@ -1,193 +1,53 @@
-# Видение продукта: персональный AI-агент для соцсетей
+# Product vision: universal AI Assistant
 
-Один процесс (`python -m app.runtime`) — cron-планировщик, воркер задач и
-long-polling чат-ботов. Владелец общается с агентом в личном чате Telegram/MAX,
-получает дайджесты в канал и управляет источниками, расписаниями и задачами
-обычными сообщениями.
+## Direction
 
-**Главный принцип: агент — тонкий слой над детерминированным пайплайном.**
-Данные собирает и анализирует конвейер (`cron → jobs → collect → analyze →
-digest`), а LLM вызывается только там, где нужен смысл: классификация, резюме,
-черновик ответа, разговор с владельцем. Планировщик из LLM («модель решает,
-какие шаги выполнить») сознательно не используется: он дорогой, нестабильный и
-ломает лимиты, идемпотентность и предсказуемость.
+**AI Assistant turns distributed information into evidence-backed business decisions and controlled actions.** Users express an outcome, choose authorized sources and review a compact plan instead of manually searching many services. Social monitoring is the first working domain; research, personal knowledge search, communication, follow-up and case workflows are the expansion direction.
 
-Этот файл — целевое состояние и что осознанно не делаем. Реализованные детали
-здесь не дублируются: см. `docs/DOCS_INDEX.md`.
+The product name remains **AI Assistant** (ИИ Ассистент); the repository remains `social-media-ai`. This document replaces the former social-only vision. It describes direction, not feature availability or production certification.
 
----
+Detailed capability plan and delivery phases: [PRODUCT_PLAN](../PRODUCT_PLAN.md). Target extension contracts: [ASSISTANT_ARCHITECTURE](../ASSISTANT_ARCHITECTURE.md). Reliability priorities: [ROADMAP_INTEGRATED](../ROADMAP_INTEGRATED.md) and [BUSINESS_PRODUCTION_READINESS](../BUSINESS_PRODUCTION_READINESS.md).
 
-## 1. Что уже работает
+## Universal process
 
-| Контур | Что умеет | Где смотреть |
-|---|---|---|
-| Планировщик и очередь | cron → `agent_tasks`, очередь `jobs` на Postgres (`FOR UPDATE SKIP LOCKED`), ретраи, reap | `docs/AGENT_TASKS.md` |
-| Каналы | Telegram/MAX: long polling + отправка, split длинных сообщений | `app/channels/` |
-| Агент в чате | tool calling, сессии, транскрипт, KV-память, подтверждения опасных действий, суточный лимит расходов | `docs/AGENT.md` |
-| Дайджесты | агрегация за день/неделю, LLM-саммари, доставка в канал, идемпотентность | `docs/DIGEST.md` |
-| Мультитенантность | один бот — много рабочих пространств, инвайт-коды, изоляция на уровне менеджеров | `docs/TENANCY.md` |
-| Анализ контента | `AIAnalyzer` + `AgentScenario` (text/image/video/audio/unified промпты, scope, JSON-схема) | `docs/guide/AI_PIPELINE_AND_PROMPTS.md` |
-| LLM-провайдеры | конфигурация в БД, OpenAI-совместимые и Anthropic, fallback, учёт стоимости, тест подключения в админке | `AGENTS.md` |
-| Сбор контента | VK по API, Telegram по Bot API (L1) и по MTProto-сессии (L2); слой выбирается на источнике, дедуп отсекает повторы до вызова LLM | `docs/COLLECTION.md` |
-| Промпты агента | промпты живут в `AgentScenario` (старый `TaskTemplate` отменён), правятся в админке/API; тулы `task_*` управляют cron-задачами | `docs/AGENT.md` |
-| Действия бота | триггеры без LLM → черновик действия, guards, dry-run по умолчанию, леджер `bot_actions` | `docs/AGENT_TASKS.md` |
-| Обучение в чате | факты с provenance, `/good` `/bad` `/memory clear`, фоновое извлечение предпочтений | `docs/AGENT.md` |
+Goal → authorized sources → collect/search → normalize/verify → analyze/calculate → propose → approve when required → deliver/execute → audit/follow-up.
 
-## 2. Целевая архитектура
+The core is domain-neutral. Templates may describe competitor intelligence, a client order, procurement, customer support or document approval. Bitrix24, 1C, email, local files, YouTube and VK Video are candidate integrations, not mandatory product dependencies or implemented promises.
 
-```mermaid
-flowchart TB
-    CRON["cron tick (app/tasks)"] --> JOBS[("jobs queue")]
-    JOBS --> J1["collect"]
-    JOBS --> J2["analyze"]
-    JOBS --> J3["digest"]
-    JOBS --> J4["learn"]
+## Current foundation
 
-    subgraph COLLECT["Сбор: source.mode"]
-        L1["L1 official API (service/bot token)"]
-        L2["L2 авторизованная сессия (user token)"]
-        L3["L3 браузер (отложено)"]
-    end
-    CREDS[("user_credentials / env Fernet")] --> COLLECT
-    J1 --> COLLECT --> NORM["нормализация + дедуп"] --> AN[("ai_analytics")]
+Documentation describes:
+- PostgreSQL-backed schedules/jobs, a runtime combining scheduler, worker and messenger listener;
+- VK collection via API/user authorization, Telegram Bot API push and MTProto historical collection;
+- scenario-based structured analysis, aggregates and source navigation;
+- Telegram/MAX chat and digest delivery, workspace-scoped notifications;
+- encrypted credentials, tenant-scoped data, persistent memory and feedback;
+- OpenAI-compatible/Anthropic LLM clients with DB-managed provider/model configuration.
 
-    J2 --> TRIG["триггеры (правила, без LLM)"] --> ANA["AIAnalyzer + промпт задачи"] --> AN
-    ANA --> ACT["действия (guards, dry-run)"] --> LEDGER[("bot_actions")]
+Reference contracts: [collection](../COLLECTION.md), [analysis](../AI_PIPELINE_AND_PROMPTS.md), [agent](../AGENT.md), [tasks](../AGENT_TASKS.md), [digest](../DIGEST.md), [tenancy](../TENANCY.md). Existing readiness gaps remain: confirmation is not complete authorization, current cost tracking is not a billing-grade cap, and scheduled-run bookkeeping does not prove exactly-once external delivery. MAX transport is not MAX collection.
 
-    AN --> J3 --> CH["Telegram / MAX канал"]
-    J4 --> MEM[("agent_memory")]
+## Principles to preserve
 
-    CHAT["чат владельца"] --> AGENT["agent runtime (tools)"] --> JOBS
-    AGENT --> STAT["ответ в чат"]
-    AGENT --> MEM
-```
+- Agent is an interaction/planning layer over bounded, deterministic execution; LLM output does not authorize actions or replace the scheduler.
+- Scenario = methodology; task = schedule/sources/reaction/targets; report grouping = read-time projection.
+- Official APIs and authorized access first. No bypass of privacy, access controls or platform rules.
+- Evidence, coverage and uncertainty are visible; never market incomplete observation as full analytics.
+- Authorization, budgets, tenant isolation, approvals and retries are server-side contracts.
+- Calculations and commercial totals use deterministic validated arithmetic.
+- Secrets never enter prompts/chats/logs. Private local and business data require explicit scopes and retention policies.
+- Risky sends/deletes/business approvals require human control; signature validity requires separate legal/provider review.
+- Small tested changes and measured scale, not a wholesale microservice rewrite.
 
-Два независимых пути, связанных только через БД: **пайплайн** (без LLM-решений)
-и **агент в чате** (управляет пайплайном, отвечает по данным, выполняет задачи
-по промптам из админки, учится у владельца).
+## Evolving assumptions
 
-## 3. Гибридный сбор: API и авторизация (подход Hermes)
+A single VPS and PostgreSQL queue are the current starting topology, not permanent scale limits. MCP, authorization brokers, exports, embeddings and additional infrastructure are evaluated by demonstrated need, security, cost and operability rather than prohibited categorically.
 
-Три слоя, включаются на уровне источника (`Source.params["mode"]`), а не всей
-системы: большинству источников достаточно первого, редким нужен второй.
+Do not revive frozen Celery/Redis or Streamlit as the default runtime. Existing rights remain relevant; fail-closed authorization must be strengthened, not discarded as legacy RBAC. Do not fine-tune models or introduce an autonomous LLM scheduler without a separate evidence-backed decision.
 
-| Слой | Как работает | Что требуется от владельца | Покрытие |
-|---|---|---|---|
-| **L1 official API** | service-токен VK, Bot API Telegram | токен; бот добавлен админом в канал/чат | открытые сообщества; чаты и каналы, где бот участник |
-| **L2 user session** | VK user token (доступ к тому, что видит аккаунт владельца) | одноразовый ввод токена в админке/CLI | закрытые сообщества и стены |
-| **L3 браузер** (отложено) | headless-браузер, парсинг страниц | разовая настройка сессии | «всё остальное», где API нет — последний рубеж, самый хрупкий |
+Monitoring's staged content is not a permanent raw archive. Future correspondence/case/document history requires explicit purpose-bound storage and deletion rules. Shared hosting and business workflows do not imply permission to retain everything forever.
 
-Правила, которые не обсуждаются:
+## Delivery order
 
-- Персональные L2-секреты живут в `user_credentials` (Fernet, ключ
-  `CREDENTIALS_KEY` из env), привязанные к `users.id`; app/bot-конфиг
-  (VK app, bot-токены) читается из env. Секрет никогда не хранится в открытом
-  виде и не логируется.
-- **Агент и LLM никогда не видят plaintext**: инструментам доступно только
-  «подключение работает / нет», платформа и срок жизни токена. Секрет не
-  попадает ни в промпт, ни в лог, ни в чат.
-- **MCP-сервер и внешний брокер авторизации не нужны**: своя БД, свои шифры,
-  один оператор. Внешний сервис добавил бы зависимость без выгоды.
-- **Ограничение Telegram:** Bot API не отдаёт историю канала или чата. Посты
-  берутся из апдейтов, которые бот реально получает (`getUpdates`), а историческая
-  глубина доступна только через L2 (MTProto user session) — отдельное решение с
-  отдельной зависимостью и отдельным хранением сессии.
-- **Ограничение VK:** OAuth-web ради read-only не нужен, device flow у VK нет —
-  достаточно одноразового ручного ввода user token.
-- Источник можно «выключить» мгновенно: истёк токен или платформа отвечает
-  4xx — источник помечается нерабочим, пайплайн не падает целиком.
+Close existing safety/operability gates → trustworthy monitoring pilot → evidence-backed research expansion → authorized local/mail knowledge search → verified unified communication/outbox → reminders and audits → configurable cases/calculations → versioned remote approval/signature integration → measured B2B/self-service scale.
 
-## 4. Промпты: где и для чего
-
-| Сущность | Назначение | Ключевые поля | Где правится |
-|---|---|---|---|
-| `AgentScenario` | **контракт анализа источника**: чем и как анализировать конкретный источник | `text_prompt`, `image_prompt`, `video_prompt`, `audio_prompt`, `unified_summary_prompt`, `analysis_types`, `scope` (JSON-схема), `trigger_type/config`, `action_type` | админка (уже реализовано) |
-
-Порядок резолва промптов — как у LLM-провайдеров: конфиг рабочего
-пространства (`AgentScenario`) → дефолт в коде (`app/agent/prompts.py`,
-`app/services/ai/prompts.py`). Пустая конфигурация обязана давать рабочий
-результат, поэтому код-дефолт стоит в конце цепочки, а не в начале.
-
-Промпты аналитики (per-media) измеряются по качеству извлечения; полезность
-результата оценивается обратной связью в чате (`/good`, `/bad`).
-Слияние сделало бы обе конфигурации непредсказуемыми; не сливаем.
-
-
-## 5. Как агент «обучается» на диалоге
-
-Дообучение модели недоступно и не нужно. Обучение = накопление знаний о
-владельце и эволюция конфигурации, всё — с его подтверждением.
-
-| Механизм | Как работает | Что даёт |
-|---|---|---|
-| Память с provenance | факты и предпочтения (`agent_memory`) получают источник (`manual` — сохранил сам агент, `learn` — извлечено из диалога), уверенность и ссылку на сообщение-доказательство | агент вспоминает контекст, а владелец видит, откуда факт взялся |
-| Обратная связь | `/good`, `/bad <заметка>` после ответа; запись в журнал обратной связи | понятно, какие ответы были неверны и почему |
-| Эволюция промптов | агент предлагает правку промпта/стиля (`prompt_advice` из `reflect`), владелец применяет её вручную в админке | качество растёт без перенастройки с нуля |
-| Стиль рабочего пространства | `agent_style` (тон, длина, язык, тихие часы) уходит в системный промпт | ответы и уведомления подстраиваются под владельца |
-
-Обязательные ограничения: память видна и удаляема из чата (`/memory clear`),
-`learn`-джоб не удваивает работу LLM (запускается после N сообщений или простоя),
-персональные данные не уходят в общий глобальный профиль между workspace.
-
-## 6. Автоматические действия и безопасность
-
-Реакции (комментарии, ответы) выполняются тем же конвейером, но за жёсткими
-правилами, и всегда с записью в леджер `bot_actions`:
-
-- триггеры декларативные (`AgentScenario.trigger_type/config`): ключевые слова,
-  упоминания, порог тональности, всплеск активности — решает правило, не модель;
-- guards перед отправкой: права модератора, лимит в час, cooldown, чёрный и
-  белый списки;
-- по умолчанию **dry-run**: вызов возвращает подготовленный payload, а не
-  публикует его;
-- рискованное действие уходит владельцу как запрос подтверждения в чат (тот же
-  механизм, что для опасных инструментов агента);
-- в леджере хранится результат и ошибка. Поля `attempts` / `confirmed_by` /
-  `confirmed_at` заведены в модели, но пока не заполняются — прикручиваются
-  вместе с реальной (не dry-run) публикацией.
-
-## 7. Роадмап
-
-| Этап | Содержание | Статус |
-|---|---|---|
-| M0–M3 | baseline, scheduler+jobs, каналы+дайджест, tenancy, агент-рантайм | сделано |
-| M4 | деплой на VPS (prod compose, systemd, бэкапы) | ожидает |
-| M5 | hardening: алерты, retention, бюджеты сбора и анализа | ожидает |
-| M6 | гибридный сбор: волт кредов, VK user token, ingest Telegram Bot API, дедуп, MTProto L2 | сделано |
-| M7 | промпты задач (`TaskTemplate`) + инструменты `task_*` у агента | отменено: `TaskTemplate` удалён, промпты переехали в `AgentScenario`, тулы `task_*` управляют cron-задачами |
-| M8 | триггеры → `bot_actions`, guards, write-клиенты (dry-run) | сделано частично: `analyze` создаёт действия и принимается CLI/тулом (`task add ... analyze`), но дефолтное расписание для него не создаётся; автопубликации нет — только dry-run |
-| M9 | обучение из чата: память с provenance, обратная связь, эволюция промптов | сделано |
-
-Детали и ретроспективы по этапам — в `.agent/lessons/` и `.agent/index.md`
-(локально, не в git).
-
-## 8. Риски
-
-| Риск | Митигация |
-|---|---|
-| Бан/лимиты соцсетей | rate limit и бэкофф на платформу, приоритет официальных API, минимум запросов за счёт дедупа |
-| Telegram Bot API не даёт историю | честно фиксируем в докладе владельцу; история — только через L2-сессию |
-| Перерасход на LLM | дедуп контента, триггеры до анализа, суточные лимиты на workspace и агента |
-| Неудачная автоматическая реакция | dry-run по умолчанию, guards, подтверждение владельцем, полный леджер |
-| Потеря доступа к источнику | источник отключается точечно, пайплайн и остальные источники продолжают работать |
-| Дрейф документации | в доках — инварианты и указатели, а не значения; после каждой задачи свежесть фактов перепроверяется |
-
-## 9. Метрики
-
-- **Покрытие сбора**: доля активных источников, успешно обработанных за сутки.
-- **Экономия**: доля контента, отсеянного триггерами и дедупом до вызова LLM.
-- **Полезность**: доля дайджестов и ответов, помеченных владельцем как полезные.
-- **Автономность**: доля действий, выполненных без ручного вмешательства владельца.
-
-## Что осознанно не делаем
-
-- LLM-планировщик вместо конвейера и «агент сам решает, что собрать».
-- MCP-сервер и внешние брокеры авторизации.
-- Fine-tuning моделей.
-- Streamlit-дашборд, Celery/Redis как рабочий контур, RBAC-матрицу,
-  Prometheus/Grafana — это замороженное наследие, не часть продукта.
-- Вечное хранение сырого контента: его больше нет в архиве. Собранное
-  складывается в `collected_items` и живёт ровно до того момента, пока анализ
-  его не разберёт; что было собрано — остаётся счётчиками и хешами в истории
-  задач, а не текстами.
-
+Each step needs a bounded pilot and acceptance evidence. The expanded vision does not supersede the readiness-first order or authorize application changes.

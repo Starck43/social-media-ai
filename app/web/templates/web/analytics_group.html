@@ -1,0 +1,29 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import sentiment_badge, sentiment_filters %}
+{% block title %}{{ value|e }} — Аналитика — AI Monitor{% endblock %}
+{% block content %}
+    <nav aria-label="Навигация группы" class="mb-6 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+        <a href="{{ back_url|e }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">Аналитика</a>
+        <span>→</span><span>{{ axis_label|e }}</span><span>→</span>
+        <span class="text-slate-800 dark:text-slate-200">{{ value|e }} ({{ items|length }} анализов)</span>
+    </nav>
+    <a href="{{ back_url|e }}" class="mb-5 inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-cyan-700 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label|default("К группам")|e }}</a>
+    <div class="mb-4">{{ sentiment_filters(request, request.query_params.get('sentiment'), filter_return_to) }}</div>
+    <div class="space-y-3">
+        {% for item in items %}
+        <article data-analysis-id="{{ item.id }}" class="rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">{{ item.date|human_dt }} · {{ item.source_name|e }}</p>
+                    <a href="{{ item.url|e }}" class="mt-1 block font-medium text-slate-900 dark:text-slate-200 hover:text-cyan-500">{{ item.title|e }}</a>
+                    {% if item.summary_missing %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Сводка для этой записи не сохранена.</p>{% endif %}
+                </div>
+                {% if item.sentiment %}{{ sentiment_badge(item.sentiment.score) }}{% endif %}
+            </div>
+            {% if item.chain_url %}<a href="{{ item.chain_url|e }}" class="mt-2 inline-block text-xs text-cyan-700 dark:text-cyan-400 hover:underline">Цепочка · {{ item.chain_count }} анализ(ов) →</a>{% endif %}
+        </article>
+        {% else %}
+        <p class="rounded-xl border border-slate-300 dark:border-slate-800 p-6 text-sm text-slate-600 dark:text-slate-400">В этой группе нет анализов за выбранный период.</p>
+        {% endfor %}
+    </div>
+{% endblock %}

@@ -1,9 +1,42 @@
 # Configuration Reference
 
-All configuration is done via environment variables. Load them from a `.env`
-file or pass directly to the process. **Never commit `.env` files.**
+Application-level configuration comes from environment variables. Load it from
+a `.env` file or pass it directly to the process. Personal credentials and
+workspace recipients belong in the database as described below.
+**Never commit `.env` files.**
 
 The application reads config from `app/core/config.py` (Pydantic `Settings`).
+
+## Application credentials and recipient boundaries
+
+| Scope | Storage | Purpose |
+|---|---|---|
+| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`, `VK_CLIENT_ACCESS_KEY`, `VK_REDIRECT_URI` | Application identity, L1 service access and registered OAuth callback; a client secret is not a user's access token. |
+| Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
+| Personal integrations | encrypted `user_credentials` | User VK access/refresh tokens and Telegram MTProto sessions; existing collection-owner resolution selects the user. |
+| Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
+| Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
+| Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
+
+Keep infrastructure settings (`POSTGRES_URL`, `SECRET_KEY`, `CREDENTIALS_KEY`)
+in env/your deployment secret store. Preserve and back up `CREDENTIALS_KEY`
+securely: replacing it without re-encryption makes existing vault/provider keys
+unreadable. No actual secret values belong in documentation or source control.
+
+`TELEGRAM_DIGEST_CHANNEL_ID` and `MAX_CHANNEL_ID` remain accepted by Settings
+for compatibility, but digest delivery ignores both. Do not add them to new
+installations. `TELEGRAM_ADMIN_CHAT_ID` is never consulted for digest delivery.
+An installation with only env destinations must explicitly register/enable its
+workspace recipient; no automatic binding or schema migration is performed.
+Broadcast result keys are now uniformly `transport:chat_id`, including bootstrap.
+
+**Notification isolation:** workspace notifications require an explicit active
+owned recipient. Only `send_operator_alert(event_code)` consults the admin chat,
+and its text comes from a fixed catalog. The legacy `send_critical_alert` shim
+discards all free-form title/message/error details. Collection errors retain a
+generic source-owned DB notification and emit only a generic operator event.
+Missing admin configuration does not redirect messages to a client workspace.
+See [notification boundaries and remaining limits](NOTIFICATIONS.md).
 
 ## .env.example
 
@@ -18,7 +51,7 @@ SECRET_KEY=change-me-in-production   # Pydantic: required, generate with:
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
 
 # ─── Database ──────────────────────────────────────────────────
-POSTGRES_URL=postgresql+asyncpg://user:pass@localhost:5432/social_media
+POSTGRES_URL=postgresql://user:pass@localhost:5432/social_media
 DB_SCHEMA=public
 
 # ─── Redis (optional — only for frozen Celery / sqladmin storage) ─
@@ -54,23 +87,24 @@ ADMIN_ENABLED=true
 VK_APP_ID=
 VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
 VK_CLIENT_ACCESS_KEY=       # VK "Защищённый ключ" (OAuth client secret)
+VK_REDIRECT_URI=https://your-domain/api/v1/social/callback
 
 # Telegram (Bot API)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_API_ID=          # L2 MTProto
 TELEGRAM_API_HASH=        # L2 MTProto
 TELEGRAM_SESSION=         # L2 MTProto (StringSession, never printed)
-TELEGRAM_ADMIN_CHAT_ID=   # legacy: default chat for admin notifications
+TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
 
 # Telegram (Channels)
 TELEGRAM_OWNER_IDS=       # comma-separated Telegram user ids for agent chat
-TELEGRAM_DIGEST_CHANNEL_ID=  # target channel/chat for scheduled digests
+# Digest recipients: workspace channel bindings in DB, not env
 
 # MAX
 MAX_BOT_TOKEN=
 MAX_API_URL=https://platform-api2.max.ru
 MAX_OWNER_ID=             # MAX user id for agent chat
-MAX_CHANNEL_ID=           # target channel/chat for scheduled digests
+# MAX digest recipients also come from workspace channel bindings
 
 # ─── Tenancy ──────────────────────────────────────────────────
 CREDENTIALS_KEY=          # Fernet key — generate with:
@@ -180,17 +214,18 @@ LOG_LEVEL=INFO
 | `VK_APP_ID` | `None` | VK application ID |
 | `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
 | `VK_CLIENT_ACCESS_KEY` | `None` | VK OAuth client secret — console "Защищённый ключ" |
+| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | OAuth callback; set the registered public HTTPS URL in production |
 | `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
 | `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
 | `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
 | `TELEGRAM_SESSION` | `None` | Telegram StringSession (L2 MTProto) |
-| `TELEGRAM_ADMIN_CHAT_ID` | `None` | Legacy: default chat for admin notifications |
+| `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
 | `TELEGRAM_OWNER_IDS` | `""` | Comma-separated Telegram user IDs allowed to chat with the agent |
-| `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Target channel/chat for scheduled digests |
+| `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
 | `MAX_BOT_TOKEN` | `None` | MAX bot access token |
-| `MAX_API_BASE` | `https://platform-api2.max.ru` | MAX API base URL |
+| `MAX_API_URL` | `https://platform-api2.max.ru` | MAX API base URL |
 | `MAX_OWNER_ID` | `""` | MAX user ID allowed to chat with the agent |
-| `MAX_CHANNEL_ID` | `""` | Target channel/chat for scheduled digests |
+| `MAX_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
 
 ### Tenancy
 
@@ -287,3 +322,17 @@ Two kinds of secret, resolved by `app/services/social/credentials.py`:
   the **environment** (`.env`), not from the DB.
 
 See also: [COLLECTION.md](./COLLECTION.md) — Credential vault.
+
+
+## Notification recipient boundaries
+
+`TELEGRAM_ADMIN_CHAT_ID` is used only by the fixed operator-alert catalog, not
+as a fallback for workspace notifications. Keep it in deployment configuration
+for an operator-only chat. A workspace messenger send needs an explicit active
+owned binding and workspace context (or an explicitly selected trusted operator
+workspace). Report/trend helpers without a recipient fail closed.
+
+The legacy `send_critical_alert` signature discards title/message/error details
+and emits a generic operator event. No new env variable or schema migration is
+needed. These rules apply to the notification service, not to the independently
+reviewed digest transport. See [notification contract and setup impact](NOTIFICATIONS.md).

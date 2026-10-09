@@ -3,7 +3,7 @@
    Unified dark/light theme variables for both
    web app (Tailwind) and admin (Tabler CSS).
    Theme is persisted in localStorage as "theme"
-   ("light" | "dark") and applied via the
+   ("light" | "dark" | "system") and applied via the
    `dark` class on <html> (web) or `data-theme`
    attribute on <main> (admin).
    ============================================ */
@@ -222,13 +222,9 @@ html.dark,
     margin-right: 0.5rem;
 }
 
-/* ── Smooth transitions ───────────────────────────────────────────────── */
-*,
-*::before,
-*::after {
-    transition-property: background-color, border-color, color, box-shadow;
-    transition-duration: 150ms;
-    transition-timing-function: ease;
+/* Respect reduced motion on both app surfaces. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
 /* ── Theme persistence script (shared) ─────────────────────────────────

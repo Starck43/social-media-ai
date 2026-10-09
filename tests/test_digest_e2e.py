@@ -10,11 +10,31 @@ import pytest
 
 from app.jobs import dispatcher
 from app.jobs.handlers import handle_digest
-from app.models import DigestRun, Job, AgentTask
-from app.tasks import runner
+from app.models import AgentTask, DigestRun, Job
 from app.services.digest import builder
+from app.tasks import runner
 
 SCHEDULE_NAME = "it-e2e-digest"
+
+
+@pytest.fixture(autouse=True)
+async def _bound_digest_recipient(_cleanup):
+    """Legacy env addresses alone are not authorization to deliver."""
+    from app.core.config import settings
+    from app.models import Tenant, TenantChannel
+
+    tenant = await Tenant.objects.get(slug=settings.DEFAULT_TENANT_SLUG)
+    binding = await TenantChannel.objects.create(
+        tenant_id=tenant.id,
+        channel="telegram",
+        chat_id="@chan",
+        is_active=True,
+        is_digest_target=True,
+    )
+    try:
+        yield
+    finally:
+        await TenantChannel.objects.delete_by_id(binding.id)
 
 
 @pytest.fixture(autouse=True)

@@ -158,7 +158,7 @@ async def test_monitored_users_group_lists_the_author(source):
         text_data = {"entities": [{"name": "ivan", "type": "person"}]}
         await _row(source, day_offset=0, text=text_data, topic_chain_id=f"src_{source.id}_user_ivan")
         brief = await ReportAggregator().generate_digest_brief(period="week", group_by="entities", entity_type="person")
-        assert "## По сущностям" in brief
+        assert "## По упоминаниям" in brief
 
 
 async def test_specialized_sections_are_filtered_by_the_scenario(source):
@@ -309,3 +309,10 @@ async def test_chain_dynamics_reports_new_and_continued_chains(source):
     assert "## Динамика цепочек" in brief
     assert "Новая цепочка: **Новый проект** (2 записей)" in brief
     assert "Продолжение: **Отпуск** (+2 записей)" in brief
+
+
+@pytest.mark.parametrize("old_axis", ["sentiment", "content_type"])
+async def test_saved_removed_axis_falls_back_to_themes(source, old_axis):
+    await _row(source, day_offset=0, topics=["Stored topic"])
+    brief = await ReportAggregator().generate_digest_brief(group_by=old_axis)
+    assert "По темам" in brief and "Stored topic" in brief

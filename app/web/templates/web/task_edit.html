@@ -8,58 +8,58 @@
 <div x-data="taskEditPage()" class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-            <p class="text-xs uppercase tracking-wider text-slate-500">Редактирование задачи</p>
+            <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Редактирование задачи</p>
             <h1 class="text-2xl font-semibold tracking-tight" x-text="editing.name || 'Задача'"></h1>
         </div>
         <a href="/app/tasks"
-           class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+           class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
             ← К списку задач
         </a>
     </div>
 
     <form method="post" :action="'/app/tasks/' + editing.id"
-          class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-6"
+          class="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6"
           x-data="{ sending: false }"
           x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                          value="{{ filter_tenant_id }}">{% endif %}
         <div>
-            <label class="mb-1 block text-sm text-slate-300">Название</label>
+            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
             <input name="name" required maxlength="100" x-model="editing.name"
                    class="{{ control() }}">
         </div>
         <div>
-            <label class="mb-1 block text-sm text-slate-300">Тип задачи</label>
+            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Тип задачи</label>
             <select name="job_type" required x-model="editing.job_type"
                     class="{{ control() }}">
                 {% for value, label in job_types %}
-                <option value="{{ value }}">{{ label }}</option>
+                <option value="{{ value }}">{{ label|ui_label }}</option>
                 {% endfor %}
             </select>
         </div>
         <div>
-            <label class="mb-1 block text-sm text-slate-300">Расписание</label>
-            <div x-data="editSched" class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
+            <div x-data="editSched" class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
                 <div class="flex flex-wrap gap-2">
                     <button type="button" @click="applyPreset('daily')"
                             class="rounded-lg border px-3 py-1.5 text-sm"
-                            :class="isPreset('daily') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                            :class="isPreset('daily') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                         Ежедневно 9:00
                     </button>
                     <button type="button" @click="applyPreset('weekly')"
                             class="rounded-lg border px-3 py-1.5 text-sm"
-                            :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                            :class="isPreset('weekly') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                         Еженедельно (пн 9:00)
                     </button>
                     <button type="button" @click="applyPreset('every_6_hours')"
                             class="rounded-lg border px-3 py-1.5 text-sm"
-                            :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                            :class="isPreset('every_6_hours') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                         Каждые 6 часов
                     </button>
                     <button type="button" @click="applyPreset('once')"
                             class="rounded-lg border px-3 py-1.5 text-sm"
-                            :class="isPreset('once') ? 'border-cyan-500 text-cyan-400' : 'border-slate-700 text-slate-300 hover:bg-slate-800'">
+                            :class="isPreset('once') ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
                         Разово
                     </button>
                 </div>
@@ -68,12 +68,12 @@
                     <div>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-xs text-slate-400">Время</label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Время</label>
                                 <input type="time" name="sched_time" x-model="time"
                                        class="{{ control() }}">
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs text-slate-400">Периодичность</label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Периодичность</label>
                                 <select x-model="freq"
                                         class="{{ control() }}">
                                     <option value="daily">Каждый день</option>
@@ -86,12 +86,12 @@
 
                         <template x-if="freq === 'weekly'">
                             <div>
-                                <label class="mb-1 block text-xs text-slate-400">Дни недели</label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дни недели</label>
                                 <div class="flex gap-2">
                                     <template x-for="d in days" :key="d.value">
                                         <button type="button" @click="toggleDay(d.value)"
                                                 class="h-9 w-9 rounded-lg text-sm font-medium"
-                                                :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'">
+                                                :class="weekdays.includes(d.value) ? 'bg-cyan-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'">
                                             <span x-text="d.label"></span>
                                         </button>
                                     </template>
@@ -101,7 +101,7 @@
 
                         <template x-if="freq === 'monthly'">
                             <div>
-                                <label class="mb-1 block text-xs text-slate-400">День месяца</label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">День месяца</label>
                                 <select x-model.number="monthday"
                                         class="{{ control() }}">
                                     <template x-for="d in 28" :key="d">
@@ -113,7 +113,7 @@
 
                         <template x-if="freq === 'interval'">
                             <div>
-                                <label class="mb-1 block text-xs text-slate-400">Интервал</label>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Интервал</label>
                                 <select x-model.number="everyHours"
                                         class="{{ control() }}">
                                     <template x-for="h in intervalOptions" :key="h">
@@ -130,27 +130,27 @@
         </div>
         {% if sources %}
         <div>
-            <label class="mb-1 block text-sm text-slate-300">Источники</label>
-            <div class="max-h-40 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-2 space-y-1">
+            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
+            <div class="max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 space-y-1">
                 {% for source in sources %}
-                <label class="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer">
                     <input type="checkbox" name="source_ids" value="{{ source.id }}"
                            :checked="editing.source_ids.includes({{ source.id }})"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-cyan-500 focus:ring-cyan-500">
                     <a href="/app/sources/{{ source.id }}"
-                       class="truncate hover:text-cyan-400 hover:underline">{{ source.name }}</a>
+                       class="truncate hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name }}</a>
                     {% if not source.is_active %}
-                    <span class="shrink-0 rounded bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-400">неактивен</span>
+                    <span class="shrink-0 rounded bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 text-xs text-rose-700 dark:text-rose-400">неактивен</span>
                     {% endif %}
                 </label>
                 {% endfor %}
             </div>
-            <p class="mt-1 text-xs text-slate-500">Отметка деактивированного источника активирует его.</p>
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Отметка деактивированного источника активирует его.</p>
         </div>
         {% endif %}
         {% if scenarios %}
         <div>
-            <label class="mb-1 block text-sm text-slate-300">Сценарий для агента</label>
+            <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сценарий для агента</label>
             <select name="scenario_id" x-model="editing.scenario_id"
                     class="{{ control() }}">
                 <option value="">— не выбран —</option>
@@ -165,18 +165,18 @@
            target matter, the task says the actual brands/hashtags. Every input
            stays in the DOM — a hidden one still submits its value, so the
            payload round-trips untouched when the scenario changes. #}
-        <div class="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3"
+        <div class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3"
              x-show="targetFields.length > 0" x-cloak>
-            <p class="text-sm text-slate-300">Цели анализа
-                <span class="text-xs text-slate-500">— какие именно данные искать, требует выбранный сценарий</span>
+            <p class="text-sm text-slate-700 dark:text-slate-300">Цели анализа
+                <span class="text-xs text-slate-600 dark:text-slate-400">— какие именно данные искать, требует выбранный сценарий</span>
             </p>
             <div class="grid grid-cols-2 gap-3">
                 <template x-for="f in targetDefs" :key="f.key">
                     <div x-show="isTargetVisible(f)">
-                        <label class="mb-1 block text-xs text-slate-400" x-text="f.label"></label>
+                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-text="f.label"></label>
                         <input type="text" :name="f.key" x-model="editing[f.key]" :placeholder="f.ph"
                                class="{{ control() }}">
-                        <p class="mt-1 text-xs text-slate-500" x-text="f.hint"></p>
+                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400" x-text="f.hint"></p>
                     </div>
                 </template>
             </div>
@@ -184,11 +184,11 @@
         {{ task_dates("editing", "editing.job_type") }}
 
         <template x-if="editing.job_type === 'digest'">
-            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-4">
-                <h3 class="text-sm font-medium text-slate-300">Параметры дайджеста</h3>
+            <div class="ui-card space-y-4">
+                <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300">Параметры дайджеста</h3>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="mb-1 block text-sm text-slate-300">Период</label>
+                        <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Период</label>
                         <select name="digest_period" x-model="editing.digest_period"
                                 class="{{ control() }}">
                             <option value="day">День</option>
@@ -197,12 +197,12 @@
                         </select>
                     </div>
                     <div>
-                        <label class="mb-1 block text-sm text-slate-300">Ось группировки</label>
+                        <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ось группировки</label>
                         <select name="digest_group_by" x-model="editing.digest_group_by"
                                 class="{{ control() }}">
                             <option value="themes">По темам</option>
                             <option value="sources">По источникам</option>
-                            <option value="entities">По сущностям</option>
+                            <option value="entities">По упоминаниям</option>
                             <option value="sentiment">По тональности</option>
                             <option value="content_type">По типу контента</option>
                             <option value="intent">По намерению</option>
@@ -210,10 +210,10 @@
                         </select>
                     </div>
                 </div>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="digest_time_breakdown" :value="editing.digest_time_breakdown ? 'on' : ''">
                     <input type="checkbox" x-model="editing.digest_time_breakdown"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
                     Разбивка по дням внутри групп
                 </label>
             </div>
@@ -226,28 +226,28 @@
         <div class="grid grid-cols-2 gap-3">
             <template x-if="editing.job_type === 'collect'">
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Отслеживать пользователей</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживать пользователей</label>
                     <input name="monitored_users" x-model="editing.monitored_users"
                            placeholder="username1, username2"
                            class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор)</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор)</p>
                 </div>
             </template>
             <template x-if="editing.job_type === 'collect' || editing.job_type === 'analyze'">
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Исключить пользователей</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Исключить пользователей</label>
                     <input name="excluded_users" x-model="editing.excluded_users" placeholder="username1, username2"
                            class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-500">Через запятую или пробел (сбор/анализ)</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор/анализ)</p>
                 </div>
             </template>
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
-        <label class="flex items-center gap-2 text-sm text-slate-300">
+        <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
             <input type="checkbox" x-model="editing.is_active"
-                   class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                   class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
             Активна
         </label>
         <div class="flex flex-wrap items-center gap-2 pt-2">
@@ -260,13 +260,13 @@
             <button type="submit" formnovalidate
                     :formaction="'/app/tasks/' + editing.id + '/delete'"
                     @click="if (!confirm('Удалить задачу «' + editing.name + '»?')) $event.preventDefault()"
-                    class="rounded-lg border border-rose-900/70 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/40">
+                    class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                 Удалить
             </button>
             {% endif %}
             <div class="ml-auto flex flex-1 gap-2">
             <a href="/app/tasks"
-                    class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 text-center">
+                    class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-center">
                 Отмена
             </a>
             <button type="submit"

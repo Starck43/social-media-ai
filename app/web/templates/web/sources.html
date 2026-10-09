@@ -10,7 +10,7 @@
             <form method="get" class="flex items-center gap-2">
                 <label>
                     <select name="tenant_id" onchange="this.form.submit()"
-                            class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-cyan-500">
+                            class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500">
                         <option value="">Все пространства</option>
                         {% for t in tenants %}
                         <option value="{{ t.id }}" {% if filter_tenant_id== t.id %}selected{% endif %}>{{ t.name }}
@@ -59,10 +59,10 @@
     </div>
 
     {% if sources %}
-    <div class="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
         <table class="w-full text-sm">
             <thead
-                class="border-b border-slate-800 bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-400">
+                class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
             <tr>
                 <th class="px-4 py-3">Название</th>
                 <th class="px-4 py-3">Платформа</th>
@@ -81,17 +81,17 @@
                 {% endif %}
             </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800">
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
             {% for source in sources %}
             {% set monitored = source.params.get("monitored_users", []) if source.params else [] %}
-            <tr class="hover:bg-slate-900/80">
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
-                    <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-400 hover:underline">{{ source.name
+                    <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name
                         }}</a>
                 </td>
-                <td class="px-4 py-3 text-slate-400">{{ source.platform.name }}</td>
-                <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ source.external_id }}</td>
-                <td class="px-4 py-3 text-slate-400">{{ source.source_type.display_name }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.platform.name }}</td>
+                <td class="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">{{ source.external_id }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.source_type.display_name }}</td>
                 {% set conn = source_connections.get(source.id) %}
                 <td class="px-4 py-3 text-center">
                     {# The owner's own access, not the caller's: a source may collect
@@ -107,30 +107,30 @@
                         {# Nothing to click when the deployment itself has no app
                            credentials, so the reason is spelled out instead. #}
                         {% if conn.needs_action and not conn.can_connect %}
-                            <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ conn.detail }}</p>
+                            <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ conn.detail }}</p>
                         {% endif %}
                     {% else %}
-                        <span class="text-slate-600">—</span>
+                        <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-400">
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if monitored %}
                     <span
-                        class="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-400">{{ monitored|length }}</span>
+                        class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">{{ monitored|length }}</span>
                     {% else %}
-                    <span class="text-slate-600">—</span>
+                    <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
                     {% if source.is_active %}
-                    <span class="rounded-full bg-emerald-950 px-2 py-0.5 text-xs text-emerald-400">активен</span>
+                    <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">активен</span>
                     {% else %}
-                    <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-500">неактивен</span>
+                    <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">неактивен</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-400">{{ source.created_at|human_dt(tz=_tz) }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.created_at|human_dt(tz=_tz) }}</td>
                 {% if is_superuser %}
-                <td class="px-4 py-3 text-xs text-slate-400">{{ source.tenant.name }}</td>
+                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ source.tenant.name }}</td>
                 {% endif %}
             </tr>
             {% endfor %}
@@ -149,18 +149,18 @@
     {% endif %}
 
     <!-- Add modal -->
-    <div x-show="openAdd" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+    <div x-show="openAdd" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
          @keydown.escape.window="openAdd = false">
-        <div class="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
             <h2 class="text-lg font-semibold">Добавить источник</h2>
-            <p class="mt-1 text-sm text-slate-400">Укажите платформу и внешний идентификатор (ID сообщества, канала и
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Укажите платформу и внешний идентификатор (ID сообщества, канала и
                 т.д.).</p>
             <form method="post" action="/app/sources" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ source_fields(platforms, source_types, "add") }}
                 <div>
-                    <label for="add-mode" class="mb-1 block text-sm text-slate-300">Режим сбора</label>
+                    <label for="add-mode" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Режим сбора</label>
                     <select id="add-mode" name="mode" class="{{ control() }}">
                         {% for value, hint in modes %}
                         <option value="{{ value }}">{{ value }} — {{ hint }}</option>
@@ -168,7 +168,7 @@
                     </select>
                 </div>
                 <div>
-                    <label for="add-token_owner" class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
+                    <label for="add-token_owner" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Чей личный токен</label>
                     <select id="add-token_owner" name="token_owner" class="{{ control() }}">
                         <option value="">владелец workspace по умолчанию</option>
                         {% for member in members %}
@@ -178,7 +178,7 @@
                 </div>
                 <div class="flex gap-2">
                     <button type="button" @click="openAdd = false"
-                            class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Отмена
                     </button>
                     <button
@@ -191,20 +191,20 @@
     </div>
 
     <!-- Edit modal -->
-    <div x-show="openEdit" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+    <div x-show="openEdit" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
          @keydown.escape.window="openEdit = false">
-        <div class="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
             <h2 class="text-lg font-semibold">Редактировать источник</h2>
-            <p class="mt-1 text-sm text-slate-400">Обновите данные источника.</p>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Обновите данные источника.</p>
             <form method="post" :action="'/app/sources/' + editing.id" class="mt-5 space-y-4">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Название</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
                     <input name="name" maxlength="100" x-model="editing.name" class="{{ control() }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Платформа</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Платформа</label>
                     <select name="platform" required x-model="editing.platform" class="{{ control() }}">
                         {% for platform in platforms %}
                         <option value="{{ platform.platform_type.db_value }}">{{ platform.name }}</option>
@@ -212,7 +212,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Тип</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Тип</label>
                     <select name="source_type" required x-model="editing.source_type" class="{{ control() }}">
                         {% for st in source_types %}
                         <option value="{{ st.db_value }}">{{ st.display_name }}</option>
@@ -220,18 +220,18 @@
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Внешний ID</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Внешний ID</label>
                     <input name="external_id" required maxlength="200" x-model="editing.external_id"
                            class="{{ control('font-mono') }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Отслеживаемые пользователи</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые пользователи</label>
                     <input name="monitored_users" x-model="editing.monitored_users_str"
                            placeholder="username1, username2, @durov" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-500">Через запятую: username1, username2, @durov</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую: username1, username2, @durov</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Режим сбора</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Режим сбора</label>
                     <select name="mode" x-model="editing.mode" class="{{ control() }}">
                         {% for value, hint in modes %}
                         <option value="{{ value }}">{{ value }} — {{ hint }}</option>
@@ -239,7 +239,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-300">Чей личный токен</label>
+                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Чей личный токен</label>
                     <select name="token_owner" x-model="editing.token_owner" class="{{ control() }}">
                         <option value="">владелец workspace по умолчанию</option>
                         {% for member in members %}
@@ -247,15 +247,15 @@
                         {% endfor %}
                     </select>
                 </div>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input type="hidden" name="is_active" :value="editing.is_active ? 'on' : ''">
                     <input type="checkbox" x-model="editing.is_active"
-                           class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500">
+                           class="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-cyan-500 focus:ring-cyan-500">
                     Активен
                 </label>
                 <div class="flex gap-2">
                     <button type="button" @click="openEdit = false"
-                            class="flex-1 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Отмена
                     </button>
                     <button

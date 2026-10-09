@@ -196,3 +196,12 @@ def test_rejected_is_retryable_but_uncertain_has_no_operator_shortcut():
             transition(uncertain, 0, 0, outcome, message_id="receipt" if outcome == "sent" else None)
     rejected = transition(state, 0, 0, "rejected")
     assert transition(rejected, 0, 0, "in_flight")["targets"][0]["parts"][0]["status"] == "in_flight"
+
+
+def test_local_no_request_refusal_can_block_a_persisted_intent():
+    state = transition(checkpoint(), 0, 0, "in_flight")
+    blocked = transition(state, 0, 0, "blocked")
+    assert next_parts(blocked) == [(1, 0)]
+    assert blocked["targets"][0]["parts"][0]["message_id"] is None
+    with pytest.raises(CheckpointError):
+        transition(blocked, 0, 0, "in_flight")

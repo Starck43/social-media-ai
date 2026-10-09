@@ -16,7 +16,7 @@ _STATUSES = {"pending", "in_flight", "sent", "rejected", "uncertain", "blocked"}
 _TRANSITIONS = {
     "pending": {"in_flight", "blocked"},
     "rejected": {"in_flight", "blocked"},
-    "in_flight": {"sent", "rejected", "uncertain"},
+    "in_flight": {"sent", "rejected", "uncertain", "blocked"},
 }
 
 
@@ -178,6 +178,8 @@ def transition(
 ) -> dict[str, Any]:
     """Copy-on-write transition; persist its result under a run lock.
 
+    An in-flight intent may become blocked only after a proven local refusal
+    BEFORE any HTTP request. Never use blocked for a timeout or generic error.
     Sent, uncertain and blocked are terminal here. Operator resolution and
     force/new-generation APIs are deliberately outside this bounded contract.
     """

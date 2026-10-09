@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `1e908b2d55bae6ab2c71271321d2986a921ae9e4` (2026-10-09).
+Latest checked dev: `57b5612f28bc8d9621cf21670babe8a4195d536e` (2026-10-09).
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`. Owner chat/notification UI update `1e908b2` is preserved. On 2026-10-09 the owner reported
 that all tests pass. This is OWNER-REPORTED, not independently rerun: exact commands,
@@ -145,16 +145,17 @@ All four requested small tasks are merged, not deployment/acceptance evidence:
 NOT executed here. Full suite and real-driver/API acceptance for this new package
 remain pending. See [bootstrap/readiness handoff](design/bootstrap_readiness_handoff.md).
 
-## Dispatcher log privacy — prepared branch, owner handles PR
+## Dispatcher log privacy — merged in PR #20
 
-Branch `ai/dispatcher-log-privacy`, baseline `1e908b2`. No PR created or merge.
+PR #20 merged as `57b5612`; original branch `ai/dispatcher-log-privacy`,
+baseline `1e908b2`. Runtime/digest outcomes and parallel UI are preserved.
 
-- [ ] Replace dispatcher-owned raw result/exception/traceback logs with bounded
+- [x] Replace dispatcher-owned raw result/exception/traceback logs with bounded
   events, safe IDs and static categories; preserve severity and outcome decisions.
-- [ ] Fixed failure-notification template; no raw exception text in its message.
-- [ ] 13 actual-source privacy tests and 25 existing mocked-source outcome
+- [x] Fixed failure-notification template; no raw exception text in its message.
+- [x] 13 actual-source privacy tests and 25 existing mocked-source outcome
   regressions PASSED locally. 2 PostgreSQL cases prepared, NOT executed.
-- [ ] Handoff includes commands, compatibility/diagnostic trade-offs and limitations.
+- [x] Handoff includes commands, compatibility/diagnostic trade-offs and limitations.
 
 See [dispatcher-privacy handoff](design/dispatcher_log_privacy_handoff.md).
 Job.error/AgentTask.last_error and successful notification summaries are unchanged;
@@ -219,7 +220,10 @@ replaces acceptance criteria nor authorizes deployment.
 
 1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19 are merged. Preserve the owner
    runtime guard and check parallel changes before edits.
-2. Read this tracker and new job delivery handoff before changing retry/sending.
+2. Continue package 1 (identity/permissions) first; preserve digest integration.
+   General queue leases/heartbeat/Job-task consistency are package 2; attempt-cost
+   accounting and budget reservation design are package 3, with schema approval separate.
+   Read the job delivery handoff before any later retry/sending edits.
 3. Verify actual target migration state independently; 0087 merged is not deployed.
 4. Run the isolated tests and record actual results/commit, not historical counts.
 5. Keep force/legacy/uncertainty stops and frozen evidence intact. Do not restore

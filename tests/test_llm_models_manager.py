@@ -151,6 +151,55 @@ class TestLLMModelManager:
             m1_refreshed = await s.get(LLMModel, m1.id)
             assert m1_refreshed.is_default is False
 
+    async def test_set_default_clears_overlapping_capabilities(self):
+        """A "text,video" default and a "text" default cannot coexist.
+
+        Resolution filters candidates with can_handle(), so both answer a
+        "text" request — matching on the model_type string left both flagged
+        and forked the fleet into a provider-priority lottery.
+        """
+        provider = await _create_provider()
+        mgr = LLMModelManager()
+
+        text_only = await _create_model(provider.id, "test_text_only", model_type="text", is_default=True)
+        multimodal = await _create_model(provider.id, "test_multimodal", model_type="text,video", is_default=True)
+
+        result = await mgr.set_default(text_only.id)
+        assert result is not None and result.is_default is True
+
+        async with async_session_maker() as s:
+            assert (await s.get(LLMModel, text_only.id)).is_default is True
+            assert (await s.get(LLMModel, multimodal.id)).is_default is False
+
+    async def test_set_default_keeps_non_overlapping_defaults(self):
+        """A default of a disjoint capability is none of this call's business."""
+        provider = await _create_provider()
+        mgr = LLMModelManager()
+
+        text_model = await _create_model(provider.id, "test_text", model_type="text", is_default=True)
+        image_model = await _create_model(provider.id, "test_image", model_type="image", is_default=True)
+
+        await mgr.set_default(text_model.id)
+
+        async with async_session_maker() as s:
+            assert (await s.get(LLMModel, text_model.id)).is_default is True
+            assert (await s.get(LLMModel, image_model.id)).is_default is True
+
+    async def test_set_default_sets_flag_and_is_idempotent(self):
+        provider = await _create_provider()
+        mgr = LLMModelManager()
+
+        plain = await _create_model(provider.id, "test_plain", model_type="text", is_default=False)
+        result = await mgr.set_default(plain.id)
+        assert result is not None and result.is_default is True
+
+        again = await mgr.set_default(plain.id)
+        assert again is not None and again.is_default is True
+
+    async def test_set_default_missing_model_returns_none(self):
+        mgr = LLMModelManager()
+        assert await mgr.set_default(999999999) is None
+
     async def test_delete_with_default_reassignment_last_success_at(self):
         """Deleted default → candidate with most recent last_success_at becomes new default."""
         provider = await _create_provider()

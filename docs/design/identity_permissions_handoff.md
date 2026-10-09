@@ -1,44 +1,64 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — correct role wire value and explicit source escaping
+## Current continuation — explicit escape correction and real timezone isolation
 
-Owner tested exact88bfea6 unchanged/clean: short57-case group52 PASSED/5 FAILED
-in29s. Four failures were the new analytics fixture passing enum member to the
-name-stored role column; one was real source-name XSS. Owner locally tried
-VIEWER.name and reports analytics55 PASSED, then restored the file; this was a
-TEMPORARY LOCAL PATCH, not committed-head success. No owner commit/full rerun.
+Fresh dev87bf82a is included via GitHub merge5f211a7 (parentsbf2dbc0/87bf82a),
+without conflicts. Owner UI/CSS/macros/base and removal of unused task
+requires_approval are preserved; runtime confirmation/authorization guard is
+unchanged, no field consumers remain in app/tests/CLI. Owner dev adds migration
+0088 (schema-qualified column removal); code included only, NOT executed by
+agent. Owner must account for this new schema head in isolated test setup;
+no production migration/reset or automatic deployment here. Previous test
+results are not attributed to this merged head.
 
-New bounded correction writes UserRoleType.VIEWER.name and explicitly renders
-source.name|e in the task link. The custom web Environment has no autoescape;
-previous43585d2 assumption of autoescaped capture was incorrect. Keep current
-Environment, card/macro/layout/CSS/Alpine/runtime untouched. Existing hostile
-source-name regression retained; this correction NOT RUN by the agent. Other
-unescaped task-name/template paths remain an OPEN security audit, not covered
-by this one-field fix. Do not claim global XSS safety or enable global autoescape
-without separate template/JS/markup compatibility review.
+Owner exact88bfea6 clean/unchanged: short57-case group52 PASSED/5 FAILED in29s.
+Four failures were the new analytics fixture's enum member; one was source-name
+XSS. Owner temporary local VIEWER.name patch yielded analytics55 success, then
+restored: uncommitted patched-tree evidence, not committed-head acceptance.
+Correctionbf2dbc0 writes VIEWER.name and source.name|e. Custom Jinja Environment
+has no autoescape; earlier capture-autoescaping assumption was wrong. Explicit
+field correction NOT RUN by agent; existing hostile-name assertion retained.
 
-Owner next in retained clean PR22 review worktree, existing venv/private env /
-distinct DB_TEST_SCHEMA: fetch/ff-only branch, record exact HEAD, rerun only the
-same57-case web group for these corrections. Expected57 success, not observed.
-No concurrent pytest/reset/drop/stamp/migration/live calls. Agent AST/text/git
-only; tests/collection/app imports/DB/browser/live calls NOT RUN.
+Timezone old6900e4f report count6 rather than1 is consistent with its missing
+tenancy marker: conftest._platform_scope forces BaseManager.is_bypass=True even
+inside tenant_scope. It can see foreign due rows, not necessarily tasks inside
+its fresh workspace. New test-only package marks this file tenancy, removes all
+fixture bypass blocks, and grants exact source.create / agenttask.create/update
+only for arrange, per-row model.delete only for cleanup. Tick subject runs with
+permission_scope(None), no arrange authority. Original count1 and both timezone
+schedule comparisons retained; due-id assertion narrows to its own created task.
+Default-bootstrap test keeps real scoped service creation, not operator bypass.
+
+New deterministic regression creates one due prune task in each of two fresh
+workspaces. Tick must report due1/enqueued1/failed0, advance only own task in
+workspace timezone, write only own Job, leave foreign next/last/status and Job
+set unchanged. Both new workspaces/tasks cleaned through exact scoped grants;
+no shared-schema cleanup, mock jobs or production runner/bootstrap/core change.
+Three timezone cases PREPARED/NOT RUN; this is fixture isolation, not a claim to
+have identified/removed every producer of orphan data in the full suite.
+
+Owner short combined check in retained clean review worktree, existing venv/
+private env/distinct DB_TEST_SCHEMA; stop if dirty/diverged. Fetch/ff-only PR22,
+record HEAD; no concurrent pytest/reset/drop/stamp/migration/live calls:
 
 ```bash
-python -m pytest -q tests/test_web_analytics.py tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area
+python -m pytest -q tests/test_web_analytics.py tests/test_task_run_now.py::test_the_task_form_source_names_link_to_the_source_page tests/test_task_run_now.py::test_task_source_link_escapes_names_and_keeps_checkbox_hit_area tests/test_task_timezone.py
 ```
 
-Timezone reported count6 rather than1 at old6900e4f. Static diagnosis: its file
-lacks tenancy marker, so conftest._platform_scope replaces BaseManager.is_bypass
-with always-true even inside tenant_scope. Foreign due tasks can enter the
-selection; this is not proof they belong to this fresh workspace or a runner
-bug. Prepare separate tenancy-marked fixtures with exact arrange rights and a
-foreign due-task regression; do not delete shared-schema data or relax count1.
-Timezone not rerun on88bfea6 and not yet corrected in this package.
+Expected60 cases (analytics55 + task-link2 + timezone3), static prediction not
+observed success. Explicitly repeat the failed88bfea6 group for corrected code,
+not successful boundary/settings/Telegram/CLI/isolation packages. Return exact
+SHA/results and first full redacted error. Full suite remains deferred until
+this short group is clean; old full totals cannot certify this head. Agent
+AST/text/git only: no tests/collection/app imports/DB/browser/live calls.
 
-Keep owner boundary19/settings16 success at439c200, Telegram4 reported fixed
-at3b63c4b. Last complete full run6900e4f remains1549 passed/14 failed; no new
-full total claimed. PR22 Draft/unmerged; PR29 deferred/unchanged. Existing
-navigation/journal updated; no new docs/design file or live acceptance.
+Broader task-name/other-template escaping audit remains OPEN because global
+Environment still disables autoescape; this source-field fix is NOT global XSS
+safety. Do not enable global mode without HTML/JS/markup compatibility review.
+Card/macro/CSS/layout/Alpine/runtime protected; browser click acceptance separate.
+Keep owner boundary19/settings16 success439c200, Telegram4 report3b63c4b. Last
+complete full6900e4f remains1549 passed/14 failed. PR22 Draft/unmerged; PR29
+unchanged/deferred; no new docs/design files, deployment or live acceptance.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

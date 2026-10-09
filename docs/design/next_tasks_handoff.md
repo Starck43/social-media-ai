@@ -6,17 +6,19 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary` includes dev6f810a4; Draft/unmerged.
-Owner exact88bfea6 short group52 passed/5 failed; temporary uncommitted .name
-patch gave analytics55 success, then restored. Current correction writes role
-VIEWER.name and explicitly escapes source.name in the task link; NOT RUN.
-No global autoescape change or claim all templates safe. Timezone's missing
-tenancy marker enables legacy forced bypass; prepare a separate scoped-fixture
-and foreign due-task regression, not production runner changes/schema cleanup.
-Use [current handoff](identity_permissions_handoff.md) for commands/evidence.
-Keep prior boundary19/settings16 success439c200 and Telegram4 report3b63c4b;
-last full remains6900e4f:1549 passed/14 failed. No automatic ready/merge/deploy,
-concurrent pytest/reset/drop/migration/live calls or owner-local UI checkout edits.
+Branch `ai/identity-permissions-boundary` includes dev87bf82a via5f211a7; Draft/unmerged.
+Owner UI and migration0088 code preserved; no migration executed by the agent.
+Owner exact88bfea6 short group52 passed/5 failed; temporary .name patch gave
+analytics55 success, then restored. Correctionbf2dbc0 writes VIEWER.name and
+explicit source.name escaping; prepared timezone follow-up removes legacy
+forced bypass via tenancy marker/exact arrange grants and a foreign due-task
+regression. NOT RUN. Owner next60 combined cases (analytics55/link2/timezone3).
+Keep original count1/schedule assertions; no production runner change or shared
+schema cleanup. Broader unescaped-template audit OPEN, no global autoescape
+change or all-XSS-safe claim. See [current handoff](identity_permissions_handoff.md).
+Prior boundary19/settings16 success439c200 and Telegram4 report3b63c4b retained;
+last full6900e4f:1549 passed/14 failed. No automatic ready/merge/deploy, concurrent
+pytest/reset/drop/migration/live calls or owner-local UI checkout edits.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

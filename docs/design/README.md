@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `6f810a43ff43e37a504c1371ffd33755156d280a`, 2026-10-09. PR #22 includes it via `ef9c417`; this is not a merge of PR #22 into dev.
+Snapshot: dev `87bf82a9bc793dea9c715c94f330d1459d74463f`. PR #22 includes it via `5f211a7`, preserving owner UI and migration0088 code; this is not a merge of PR #22 into dev. No migration executed by agent.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); exact88bfea6 owner web52 passed/5 failed; analytics55 success only with temporary local .name patch | Fix role .name and explicit source.name\|e PREPARED/UNRUN; same57 owner cases next. Timezone test bypass localized, separate fixture correction next; broader unescaped-template audit OPEN. Boundary19/settings16 verified439c200. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22); exact88bfea6 owner web52 passed/5 failed; analytics55 only with temporary .name patch | Fresh dev87bf82a included via5f211a7; correctionbf2dbc0 (.name/explicit escaping) + real tenancy-marked timezone fixtures/foreign due-task regression PREPARED/UNRUN. Owner next60-case combined check. Broader template-escaping audit OPEN, no global XSS claim. Prior boundary19/settings16 verified439c200. [Handoff](identity_permissions_handoff.md); PR29 deferred. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |

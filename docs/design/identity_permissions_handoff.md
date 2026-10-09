@@ -1,5 +1,138 @@
 # Identity and permission boundary: owner handoff
 
+## Current prepared block — identity, confirmation and action preview
+
+2026-10-09: draft PR #22, branch `ai/identity-permissions-boundary`.
+Implementation is PREPARED/PUSHED, NOT MERGED, TESTED OR ACCEPTED. Fresh dev
+`0234c21` (merged documentation #26 and operator runbook #27) was integrated into
+this PR branch by `f28b70f`; this does not merge PR #22 into dev.
+Code stages: identity `b1e5d5`, confirmation `f4f3fd`, action preview `ccb8905`.
+Owner's parallel VIEWER-fixture revision `4b6e450` and merge history are retained;
+this follow-up restores its accidentally removed imports, without weakening tests.
+
+### Completed implementation substeps (acceptance remains open)
+
+1. **Bound runtime identity:** active tenant, exact channel/external-user membership,
+   active bound User, eager role/permissions/model-type references, active chat
+   binding for messenger, exact web subject/chat binding and matching session.
+   Invalid IDs, missing/inactive/detached identity or tenant bypass refuse admission.
+   Permission scope covers the entire admitted turn, not only identity lookup.
+   Runtime owner authority requires an explicit membership SUPERUSER role; legacy
+   NULL membership role never elevates the runtime actor. Platform rights still
+   come from User permissions, not workspace ownership. No auto-link or router.
+2. **Fresh authority + actor-bound consent:** identity reload after session load,
+   before LLM iterations/tool dispatch, when confirming and again after pending
+   clear before effects. Intents bind tenant/User/membership/channel/chat/external
+   actor, session, role IDs, registry contract and canonical arguments, expire
+   after one hour. Revoked identities/rights, changed roles/contracts/arguments,
+   expired or legacy unbound intents deny. Another group actor cannot confirm,
+   cancel, replace or `/stop` a bound pending intent. A staged/stopped batch does
+   not run later effects and still accounts for all tool call IDs in history.
+   Both registry dispatch APIs require a one-use in-process approval for
+   `confirm=True`; approval is consumed before the handler, including child-task
+   reuse prevention. Declared permission checks remain mandatory.
+3. **Safe action contract:** `action_send` now registers its real handler, not
+   the tier helper; action preview and logs require `botaction.view`. Only literal
+   `dry_run=True` is accepted; live/non-boolean requests deny before storage.
+   Preview validates positive ID, PENDING state, payload, tenant-owned references
+   and guards; it stays PENDING and writes no approval/result/attempt changes,
+   calls no transport/provider. Runtime preview requires confirmation; direct
+   handler calls still enforce the permission. Log limits are bounded.
+4. **Compatibility fixtures and documentation:** isolated ADMIN-bound Agent
+   fixture, isolated non-superuser VIEWER privacy arrange actor (User.role_id is
+   NOT NULL), owner scope only around the arrange insert, stronger PENDING/no
+   approval DB assertions. No broad anonymous/operator test workaround or
+   per-tenant reference-data reseeding. Board/ledger/runtime/tenancy docs updated.
+
+### Current authorization matrix and remaining bypasses
+
+Earlier core/API/CLI matrix below remains valid, with these runtime additions:
+
+| Runtime path | Current contract | Residual limit |
+| --- | --- | --- |
+| No active bound User/membership/chat/tenant | Refuse before session/tool loop | Existing messenger membership with no User now needs explicit admin reconciliation |
+| Workspace owner | Explicit membership SUPERUSER; only core source/task/scenario owner allowlist | Global rights require actual User permissions; legacy resolver/UI NULL-role inference still exists outside runtime |
+| Tool dispatch | Fresh bound identity + declared right; confirmed tools also require consumed approval | Tools with no declared right and raw/undecorated manager methods need a separate coverage audit |
+| Pending confirmation | Same actor/session/roles/args/contract + fresh right at effect boundary | No database CAS/transaction fence: simultaneous YES or revoke races are not exactly-once guarantees |
+| Action preview | botaction.view + validated local PENDING preview only | Other publication paths/private legacy helpers are not globally disabled or redesigned |
+| Trusted internal service/operator | Earlier explicit narrowly scoped grants retained | Never substitute these grants for interactive identity or wrap an entire handler/loop |
+
+The original `_check_prompt_injection` guard is preserved byte-for-byte at AST
+level. Dispatcher, runtime_process, parallel privacy handlers and digest delivery
+are unchanged from fresh dev. No personal router, queue/lease redesign, billing
+schema/migration, live sender activation or deployment.
+
+### Prepared checks, not executed
+
+**46 new standalone actual-source methods:** identity 18, confirmation 19,
+action tools 9. The earlier 13 policy and 10 dispatch methods remain prepared.
+Storage/providers are isolated/mocked in the standalone scripts; normal pytest
+still loads DB conftest. Updated DB regressions are also NOT RUN by the agent.
+Performed: static AST, changed-file whitespace, remote-content comparison and
+preserved-guard/source checks only. No pytest collection, application import,
+DB setup/reset/migration or live call. Syntax is not runtime acceptance.
+
+Owner previously reported bootstrap 24/24, focused readiness 33/33 and the narrow
+privacy rerun (two cases) passed. Exact tested SHA/logs were not supplied. These
+are NOT evidence for this new runtime block or subsequent VIEWER/import edits.
+The earlier full-suite run timed out at 120 seconds; no complete pass is claimed.
+
+### Owner / local agent verification
+
+Use project Python 3.12+ .venv with requirements/dev dependencies. Save local
+edits before switching/pulling; do not force/reset them. Common POSTGRES_URL is
+allowed, but use a DISTINCT DB_TEST_SCHEMA, never working DB_SCHEMA/public.
+Do not run concurrent pytest sessions on one schema. No blanket reset/drop is
+requested; inspect interrupted test state first. Standalone scripts need no DB,
+but pytest uses the existing isolated-schema initialization in conftest.
+
+```bash
+git fetch origin
+git switch ai/identity-permissions-boundary
+git pull --ff-only
+python tests/test_runtime_identity_authorization.py
+python tests/test_runtime_confirmation_authorization.py
+python tests/test_action_tool_authorization.py
+python tests/test_tool_dispatch_permissions.py
+python tests/test_identity_permissions_boundary.py
+python -m scripts.setup_test_db --check
+python -m pytest -q tests/test_runtime_identity_authorization.py tests/test_runtime_confirmation_authorization.py tests/test_action_tool_authorization.py tests/test_agent.py tests/test_web_chat.py tests/test_bot_actions.py tests/test_plan_tiers.py tests/test_dispatcher_log_privacy_db.py tests/test_permission_scope.py tests/test_manager_permissions.py tests/test_web_permissions.py tests/test_api_permissions.py tests/test_api_scope.py
+python -m pytest -q
+```
+
+Expected: all commands finish successfully; refused identity/consent/tool paths
+invoke no handler/provider, allowed paths retain contracts, preview stays
+PENDING without approval/sending, DB privacy remains tenant-isolated. Record
+exact tested SHA/commands/redacted output. Full suite must COMPLETE; a timeout
+or unchanged warning count is not acceptance.
+
+### Concrete continuation / gates
+
+This linked implementation block is complete as prepared code, not all PRD-02
+or stage-B security acceptance. Next in this lane: owner verifies the new block;
+review raw manager/unannotated-tool coverage and remaining legacy arrangement
+compatibility. Before merge, re-fetch dev and reconcile parallel edits. Do not
+restore anonymous allowances to make regressions pass.
+Legacy NULL-role reconciliation/automatic account linking, durable confirmation
+CAS/transaction-fenced revocation and broader shared-session policy need explicit
+contracts; no migration or exactly-once claim here. Revoke-then-restore does not
+have a role epoch; single-process approval is not a distributed receipt.
+Only then coordinate package 2 (general queue: stale workers, lease/heartbeat,
+Job/AgentTask/scheduler consistency); package 3 is attempt/reservation DESIGN,
+with separate schema approval. No automatic PR merge or sender activation.
+Use the [current-stage board](README.md) for allocation, not historical next lists.
+
+---
+
+## Historical checkpoints — superseded continuation, retained evidence
+
+The following records describe earlier revisions only. Their UNCHANGED/OPEN/next
+statements are historical, not the current runtime/preview contract. Current
+implementation and verification commands are above; retain historical evidence
+without attributing prior passes to new code.
+
+# Original boundary checkpoint
+
 Status: PREPARED IN `ai/identity-permissions-boundary`, NOT MERGED OR ACCEPTED.
 Baseline: dev `57b5612` after parallel PR #20. The first commit records merged
 PR #18/#19/#20 without overwriting the parallel work tracker. Digest integration,

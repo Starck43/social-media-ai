@@ -2,7 +2,7 @@
 
 ## Read this first
 
-Latest checked dev: `eb49d1d3b6bb249393f2719e056c77f1a0516d4a` (2026-10-09), after PR #25.
+Latest checked dev: `0234c21ed2c1f171d46732153d91e654e9b3cfdb` (2026-10-09), after PR #27.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -219,31 +219,43 @@ entries when syncing; no identity/queue work or sender activation bundled here.
 
 ## Identity/permissions boundary — draft PR #22, not merged
 
-Branch `ai/identity-permissions-boundary`, original baseline `57b5612`.
-Synced with fresh dev `eb49d1d` after parallel PR #23/#24/#25 by merge `5596797`.
-Resolved both shared-document conflicts; parallel handler privacy code preserved.
+Branch `ai/identity-permissions-boundary`; original baseline `57b5612`.
+Fresh dev `0234c21` integrated into PR branch by `f28b70f`; parallel documentation
+#26/#27, privacy #20/#23/#25 and owner fixture history are preserved.
+Implementation checkboxes below mean PREPARED code, NOT merged/accepted.
 
-- [ ] Prepared: anonymous denial; tenant/subject-bound source/task/scenario owner
-  override; API manager identity; explicit CLI/service authority. Not accepted.
-- [ ] 13 standalone boundary methods plus negative DB/web regressions written;
-  agent did NOT run tests. Only static syntax/whitespace/file checks performed.
-- [x] Owner push `963bf4f` verified in PR #22 (not dev).
-- [ ] Follow-up `4735859`: replace arbitrary existing account with an isolated
-  active role-less/non-superuser test User and cleanup; owner scope ONLY around
-  AgentTask arrangement, with no-identity assertions inside handler. Focused
-  rerun subsequently owner-confirmed passed; exact tested SHA not supplied.
-- [ ] Remaining legacy arrangement/identity compatibility and full-suite/security
-  acceptance remain open; the focused narrowed-fixture failure is owner-closed.
+- [x] Core anonymous denial, tenant/subject-bound source/task/scenario owner
+  allowlist, authenticated API manager scope and explicit CLI/service authority.
+- [x] Declared dispatch right checks in call_tool/execute; earlier 13 policy and
+  10 dispatch methods prepared, NOT RUN by agent.
+- [x] Runtime active resolved-tenant identity, eager bound User rights,
+  full-turn permission scope, exact session/chat binding (`b1e5d5`).
+- [x] Fresh per-dispatch authority, actor/session/role/contract/argument-bound
+  expiring consent, one-use registry approval, no later batch effects after
+  staging, protected other-actor cancel/stop (`f4f3fd`).
+- [x] Real action_send registration, explicit botaction.view, literal dry-run
+  only, PENDING preview with no approval/provider/transport effects (`ccb8905`).
+- [x] 46 new methods: identity18 / confirmation19 / action9; DB fixture and
+  PENDING assertions updated. All newly prepared checks remain NOT RUN.
+- [x] Owner push `963bf4f`, narrowed fixture `4735859` and owner-reported focused
+  rerun retained. User.role_id NOT NULL now satisfied with isolated VIEWER;
+  owner's `4b6e450` role change preserved, deleted imports restored separately.
+- [ ] Owner verification of this new block; full-suite completion; remaining raw
+  manager/unannotated tool and legacy arrangement coverage.
+- [ ] Legacy NULL-role reconciliation/automatic linking and durable confirmation
+  CAS/revocation fencing require separate contracts/approval. No exactly-once claim.
 
-- [ ] Prepared next linked unit: direct call_tool/execute enforce each declared
-  permission before handler effects; 10 actual-source dispatch methods WRITTEN,
-  NOT RUN. No runtime edit/confirmation approval/live sends introduced.
-- [ ] Next code unit: resolved-tenant runtime identity + eager active User rights;
-  then actor-bound confirmation/revocation and action-tool registration/rights.
+See [existing handoff](design/identity_permissions_handoff.md) for matrix,
+commands, evidence and limitations; [board](design/README.md) for allocation.
+Original injection guard, runtime_process, dispatcher/parallel handlers and
+merged digest integration preserved. No personal router, schema/migration,
+queue redesign, cost package, live sends or deployment. Draft remains unmerged.
 
-See [identity/permissions handoff](design/identity_permissions_handoff.md).
-Runtime guard, dispatcher, parallel handlers and digest integration preserved.
-No personal router, schema/migration, queue redesign, cost package or live sends.
+## Parallel documentation — merged, acceptance separate
+
+PR #26 navigation merged as `10212b5`; PR #27 conservative operator observation/
+recovery runbook merged as `0234c21`. Eight tabletop scenarios are prepared, NOT
+executed here; merge does not establish deployment/restore acceptance.
 
 ## Owner-reported local evidence — previous fixture, not the follow-up
 
@@ -327,8 +339,9 @@ replaces acceptance criteria nor authorizes deployment.
 1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20/#23 are merged.
    PR #22 remains a separate open identity/permissions branch with journal overlap. Preserve the owner
    runtime guard and check parallel changes before edits.
-2. Retest the narrowed PR #22 fixture and permission regressions, then finish
-   identity/compatibility review. Owner priority: package 1 rights, package 2
+2. Verify the new PR #22 identity/confirmation/preview block using its existing
+   handoff; do not attribute earlier focused fixture passes to this revision.
+   Continue remaining coverage/compatibility review. Owner priority: package 1 rights, package 2
    general queue/lease/heartbeat/Job-task consistency, package 3 attempt-accounting
    and budget-reservation DESIGN with separate schema approval. No personal router
    or digest reintegration. Preserve parallel privacy continuation independently.

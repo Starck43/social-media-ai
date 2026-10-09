@@ -15,7 +15,10 @@ client workspace. A chat is bound to exactly one tenant, and every data row
    Roles are defined by `Role.codename` (enum `user_role_type`): `VIEWER`,
    `AI_BOT`, `MANAGER`, `ANALYST`, `MODERATOR`, `ADMIN`, `SUPERUSER`.
    `SUPERUSER` is the canonical "owner" role; legacy rows with `role_id = NULL`
-   are treated as owners for backward compatibility.
+   are treated as owners by legacy resolver/UI helpers for backward compatibility.
+   Draft PR #22 runtime does NOT inherit that NULL-role elevation: an active
+   bound User and explicit membership SUPERUSER are required for runtime owner
+   authority. No migration or automatic identity linking is included.
 4. **Enforcement** lives in `BaseManager`/`QuerySet`, not in models:
    `TenantScopedMixin` just marks the model. Every SELECT is filtered to
    `current_tenant_id()`, every `create()` stamps `tenant_id`; `update_by_id`
@@ -93,8 +96,14 @@ message belongs to:
 3. Is the sender a platform owner (env allowlist)? → bootstrap them into the `owner` workspace.
 4. Otherwise → silently drop the message (the bot must not reveal its existence to strangers).
 
-The agent loop wraps the entire turn in `tenant_scope(tenant_id)`. Tools,
-managers, and the job dispatcher then see only one workspace's data.
+The agent loop wraps the entire turn in `tenant_scope(tenant_id)`. Tenant data
+isolation is NOT user authorization. Draft PR #22 additionally admits a bound
+active RuntimeIdentity, eager-loads User rights, wraps the whole turn in
+permission_scope and reloads authority before tool effects/confirmation. Missing
+User bindings refuse runtime access rather than inheriting resolver owner flags.
+Actor/session/role/argument-bound consent is in-process, not durable DB CAS.
+See [the prepared contract and owner checks](design/identity_permissions_handoff.md);
+PR #22 is not merged or accepted. No personal multi-workspace router is added.
 
 ## Bypass
 
@@ -236,7 +245,15 @@ Migration `0083_drop_analyze_type_from_agent_scenarios.py` drops the old
 (`group_by` + `time_breakdown`) are now query-time parameters, not scenario
 properties.
 
-## Validation status
+## Historical validation status
+
+The counts/migration revision and separate-test-database description below are
+historical evidence, not the current head or a safety guarantee for a new run.
+Current tests may use common POSTGRES_URL with DISTINCT DB_TEST_SCHEMA via
+conftest; never public/working schema or concurrent sessions on one test schema.
+Owner reported focused bootstrap/readiness/privacy passes separately; the full
+suite timed out. New PR #22 block checks are prepared, NOT RUN by the agent.
+
 
 - **Migration**: `0083` is applied; the database is on revision `0083` (head) and
   `alembic check` reports **no new upgrade operations** when run against the

@@ -11,9 +11,10 @@ messenger message
   -> app/agent/runtime.py            handle_inbound()
       1. resolve_inbound: chat -> tenant (bound chat / invite code / owner)
       2. tenant_scope(tenant_id): все менеджеры фильтруют по workspace
-      3. session = agent_sessions.get_or_create(channel, chat_id)
-      4. цикл: LLM.chat(history + tools) -> выполнить tool_calls -> повторить
-      5. ответ отправляется обратно в тот же чат
+      3. active membership + bound User + chat -> RuntimeIdentity (deny if invalid)
+      4. permission_scope(User): matching session -> LLM/tools; fresh rights per dispatch
+      5. actor-bound confirmation -> fresh identity/right -> one-use tool approval
+      6. ответ отправляется обратно в тот же чат
 ```
 
 ## Модули
@@ -24,7 +25,9 @@ messenger message
 | `app/agent/prompts.py` | Системный промпт + текст `/help`; `render_style_block` (tenants.agent_style) |
 | `app/agent/learning.py` | `run_learn` (факты из чата, watermark), `run_reflect` (гигиена памяти) |
 | `app/agent/session.py` | Загрузка/нормализация истории для LLM |
-| `app/agent/tools.py` | Реестр инструментов, OpenAI-схемы, диспетчеризация |
+| `app/agent/tools.py` | Реестр, схемы, проверка объявленного права и одноразового подтверждения |
+| `app/agent/identity.py` | Активная identity в разрешённом tenant; загрузка User/roles/permissions, повторная проверка |
+| `app/agent/confirmation.py` | Привязанные к actor/session intents и одноразовый in-process approval |
 | `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `tasks`, `reports`, `actions`, `scenarios` |
 | `app/models/agent_session.py` | Одна строка на (channel, chat_id); volatile `state` |
 | `app/models/agent_message.py` | Транскрипт диалога (user/assistant/tool) + токены/стоимость |
@@ -37,34 +40,43 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-### Permission gates
+### Permission gates (prepared in draft PR #22)
 
-Каждый инструмент имеет поле `required_permission` — точечный codename права
-в формате `model.action` (например, `"source.view"`, `"agenttask.create"`,
-`"digestrun.update"`). При вызове runtime проверяет права через
-`has_permission_by_codename(get_current_user(), required_permission)` в
-`permission_scope()`:
+Runtime допускает только активного участника с привязанным активным User и
+согласованными tenant/channel/chat. Роли и права загружаются явно; authority
+повторно читается перед инструментами. Весь turn находится в permission_scope.
+Owner в runtime — только явная membership-роль SUPERUSER, не NULL и не env-флаг.
+Owner override ограничен source/agenttask/agentscenario; глобальные права не даёт.
 
-- Если прав нет → инструмент возвращает ошибку «У вас нет прав...»
-- Если `required_permission` не задан → инструмент выполняется без проверки
-- `is_bypass()` (CLI/worker/admin) пропускает все проверки
-
-Write-инструменты (`confirm=True`) additionally требуют подтверждение владельца.
+Оба registry-пути `call_tool`/`execute` проверяют `required_permission` до handler.
+Отсутствующее объявление пока не означает полное покрытие: такие инструменты и
+raw manager writes требуют отдельного аудита. Trusted service/operator scopes
+не используются как замена интерактивной identity. `confirm=True` требует
+одноразовый approval даже при прямом registry-вызове с правами.
 
 ### Confirmation flow
 
-1. Tool call с `confirm=True` → staging в `session.state['pending_confirmation']`
-2. Runtime возвращает human-readable preview: «Требуется подтверждение: добавить источник...»
-3. Владелец отвечает «да»/«нет»
-4. При «да»:
-   - Permission re-check: `has_permission_by_codename(get_current_user(), required_permission)`
-   - Execution: `call_tool(name, args)`
-   - Result overwrites the staged confirmation row
-   - Model loop resumes (agent continues plan)
-5. При «нет» → clear pending, return «Отменено.»
+1. Fresh identity/right + `confirm=True` создают intent: actor/tenant/membership,
+   session, role IDs, текущий contract/schema инструмента, аргументы и expiry (1 час).
+2. Runtime возвращает preview и не исполняет следующие эффекты в том же batch.
+3. Тот же actor отвечает «да»/«нет»; другой actor не может потребить/заменить intent,
+   отменить его или удалить через `/stop`.
+4. При «да» identity/right/contract/args/session проверяются заново. Pending
+   очищается, затем перед эффектом выполняется ещё одна проверка и одноразовый
+   approval потребляется registry до handler. При отзыве/изменении/expiry отказ.
+5. Старые intents без binding не принимаются: запросить действие заново.
 
-Permission re-check at confirmation time ensures that if the user's role changed
-between tool call and confirmation, the action is still blocked.
+Это in-process защита, не DB CAS/transaction fence или гарантия exactly-once при
+одновременных «да». Revoke→restore не имеет epoch. Общая политика shared-session
+и durable confirmation требуют отдельного контракта.
+
+`actions_log` и `action_send` требуют `botaction.view`. Последний — только
+подтверждаемый локальный preview с literal `dry_run=True`: состояние PENDING,
+без approval/result/attempt writes и без отправки. Live request отклоняется.
+Другие publication paths этим пакетом глобально не перепроектированы.
+
+Контракт подготовлен, тесты не запускались агентом; команды и ограничения — в
+[handoff](design/identity_permissions_handoff.md). PR #22 ещё не слит в dev.
 
 ### LLM модели и провайдеры
 

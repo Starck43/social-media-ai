@@ -13,20 +13,20 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `10212b5e6a9f7808c103a0265b1a0aa8741f0bf3`, 2026-10-09, after owner merged PR #26.
+Snapshot: dev `0234c21ed2c1f171d46732153d91e654e9b3cfdb`, 2026-10-09, after merged PR #26/#27.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Let that lane finish. Its latest fixture/evidence/compatibility notes stay in the PR; do not implement another rights package. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Linked identity/fresh-confirmation/safe-preview block PREPARED; 46 new methods NOT RUN. Owner verification and remaining coverage/compatibility gates: [handoff](identity_permissions_handoff.md). Do not duplicate it. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
 | A/C / development documentation | **MERGED:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26) as `10212b5e`; no application change | Use the three-level entry point; do not redo this navigation cleanup. |
-| C / observation and recovery runbook, PRD-04/05 | **IN REVIEW:** [PR #27](https://github.com/Starck43/social-media-ai/pull/27), `docs/operator-observation-recovery`, guide `b1cf91f`; not merged | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
+| C / observation and recovery runbook, PRD-04/05 | **MERGED:** [PR #27](https://github.com/Starck43/social-media-ai/pull/27) as `0234c21`; guide `b1cf91f`, acceptance open | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
 | D–G / UX, pilot, expansion and scale | Gated, not current automatic implementation scope | Use stage exit evidence and an explicit selected user journey, not old research checklists. |
 
 The owner reports having run checks and pushed changes. Do not ask for or execute
@@ -102,9 +102,9 @@ two original reports were archived byte-identically with compatibility pointers.
 Its static link/anchor/fence checks are historical documentation evidence, not
 application/deployment acceptance. Do not repeat the cleanup.
 
-Current independent package: open [PR #27](https://github.com/Starck43/social-media-ai/pull/27),
+Integrated independent package: merged [PR #27](https://github.com/Starck43/social-media-ai/pull/27),
 `docs/operator-observation-recovery`, baseline `10212b5e`; runbook `b1cf91f`,
-navigation/status `24c91f8`, in existing DEPLOYMENT.md, NOT MERGED. Latest PR #22
+navigation/status `24c91f8`, in existing DEPLOYMENT.md, merged as `0234c21`. At that snapshot PR #22
 changed-file comparison confirms ZERO overlap with these three documentation files. Source-grounded
 process/HTTP observations, job/part outcome interpretation, evidence preservation
 and separately authorized change gates. Eight new tabletop cases are written,
@@ -118,8 +118,8 @@ Compose and auto-migration startup; job-manager defaults; digest static categori
 new source links, anchors/fences/added whitespace and observation-command scope.
 These are text/source checks, not full-repo crawling, rendering, staging fault
 injection or restore acceptance. PR #22's occupied source/status/identity files
-are unchanged. Next: operator reviews this package/PR and eight tabletop scenarios,
-then explicitly decides integration; select further unoccupied work from fresh
+are unchanged. Next: operator verifies the eight tabletop scenarios and deployment applicability;
+no acceptance is implied by merge. Select further unoccupied work from fresh
 dev/open PRs. Previously owner-run application checks are not repeated.
 
 ## Maintenance rule

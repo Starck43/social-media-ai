@@ -1,58 +1,60 @@
 # Implementation status and session handoff
 
-## Current continuation — fresh dev sync and queued task-detail compatibility
+## Current continuation — verified queued compatibility; source-name escaping
 
-Owner lifted pause on newer dev review. Fresh2b5b231 included via conflict-free
-GitHub merge9c6ed3b (parents7f792f3/2b5b231). Two Owner commits retained:
-507f9b3 queued-vs-running UI/polling and2b5b231 set_default per overlapping LLM
-capability. Owner admin/LLM manager/tests/task-detail template match dev exactly;
-merged task route/template match static preview, preserving task/source e filters.
-Runtime/confirmation/core/jobs/migrations unchanged by sync. No new migration
-in these dev changes; existing0088 test-schema evidence retained. Static merge/
-AST checks are not execution or concurrency proof for Owner default selection.
+OWNER exacta3549676a73bb55d044dca9bed6f21602b1a35ec clean/unchanged before and
+after, no local commits: task21 + LLMmanager21 group42 PASSED58s,exit0.
+All8 queued-detail actor/status/window cases passed; correction is indentation
+only (Owner ignore-all-space diff empty). Queued/running UI and per-capability
+LLM defaults from dev507f9b3/2b5b231 were exercised by this targeted group, not
+claimed as full-suite or concurrent-default-selection acceptance. No repeat42
+request. Fresh dev remains2b5b231, included via9c6ed3b; no new open competing
+package observed beyond deferredPR29. Runtime/core/jobs/migrations preserved.
 
-Compatibility regression found in Owner queued-detail change: running-job block
-was dedented outside original tenant/bypass context; source/scenario loading
-remained nested under no-active-job fallback. If active job is in recent10,
-linked_sources/scenario are unbound at render; fallback platform-superuser reads
-can lose existing scope. New minimal patch adds one indentation level only to
-running lookup block, restoring existing authorized context; sources/scenario
-now execute unconditionally inside it. Owner status/hint/polling UI logic and
-LLM default implementation are not rewritten. No rights/row bypass added.
+Next bounded XSS package PREPARED/NOT RUN: five source.name e filters across
+two templates only: sources.html list link, source_detail.html title/h1/delete
+paragraph/quoted name input. No Environment/macro/CSS/layout/router/model/
+permissions/runtime changes. Existing task/source-selector escaping retained.
+Stored values are not sanitized or mutated; encode only at HTML output sinks.
 
-Eight new tenancy-marked-by-file ASGI cases PREPARED/NOT RUN: owner/platform
-superuser (own active workspace, viewing another authorized workspace) x
-pending/running x recent/outside-recent10. Exact source.create/task.create/
-update grants only for arrange, inert task and deterministic job rows. Assert
-200, linked source, active job link and honest status, no new/changed jobs after
-render. Cleanup only created actors/workspaces; no worker/live execution.
-All prior13 task cases retained. Static counts predict task21 + LLMmanager21.
-Source-name list/detail XSS package stays PROPOSED/unimplemented; prioritize
-this newly included compatibility defect first, do not duplicate Owner UI work.
+Six new tenancy ASGI cases: owner/member x image+event text/title-close/quoted
+attribute payload. Parse actual source link/title/h1/dialog and input value,
+require exact readable/stored name with full quote/ampersand round-trip, no
+injected probe/event attributes. Owner delete form retained, member refused that
+affordance; source remains active/name unchanged and no Job queued by rendering.
+Exact source.create service scope only for arrange, no legacy operator bypass
+in new cases; only test-created actors/tenant cleaned. All9 prior test bodies
+retained. Static count predicts15 source-detail cases (9+6); NOT execution.
 
-Owner next in clean retained review worktree, existing venv/private environment/
-distinct DB_TEST_SCHEMA already verified0088, no concurrent pytest/reset/drop/
-stamp/migration/live calls. Fetch/ff-only PR22 and record exact HEAD, then:
+Owner next: clean retained review worktree, existing venv/private environment /
+distinct DB_TEST_SCHEMA already verified0088; stop if dirty/diverged. Fetch /
+ff-only PR22 and record exact HEAD, then:
 
 ```bash
-python -m pytest -q tests/test_task_run_now.py tests/test_llm_models_manager.py
+python -m pytest -q tests/test_web_source_detail.py
 ```
 
-Expected42 cases (21+21), static prediction not observed success. LLM file is
-included Owner change, not replay of previously verified new code. Return exact
-SHA/result and first full redacted error. Do not replay full suite by default
-before this group is clean; previous full cannot certify newly included dev.
-Agent ZERO tests/collection/app imports/DB/browser/provider/messenger calls;
-only source/AST/text/git preview checks. Check fresh dev again before merge.
+Expected15 success, not observed. No repeat42/task13/full/boundary/settings/
+Telegram/analytics/timezone by default. Return exactSHA/result/first complete
+redacted error. Agent only AST/text/git checks; ZERO tests/collection/app
+imports/DB/browser/provider/messenger calls. No reset/drop/stamp/migration/
+concurrent pytest/live setup or owner dirty-UI checkout changes.
 
-Keep OWNER evidence: exacta87b550 task13 PASSED36s exit0, clean/unchanged; last
-full exact2f7beca1577 PASSED/64subtests/0failures/errors/skips688.77s exit0,
-short60 PASSED151s, post-test-schema-DDL timezone3 PASSED19s. Owner manually
-removed only0088 column in test_schema, tables27 unchanged/task22->21; no
-Alembic/reset/production change. Full log remains Owner-local, not agent-read.
-Those are historical checkpoints, not success on synced/new head. Broader XSS
-and browser/live/deployment acceptance OPEN. PR22 Draft/unmerged; PR29 deferred/
-unchanged. Existing journals/pointer updated; no new docs/design file.
+After targeted group is clean: recheck fresh dev/parallel changes and bounded
+PR diff, then one final full suite at the resulting unchanged code/schema head
+before Owner decision on Ready/merge. Do not convert tests to merge approval
+or postpone compatibility forever; older green does not cover this new patch.
+Broader /app escaping audit remains a separate OPEN task with known workspace/
+base/settings/task-detail/shared macro/other-field contexts; no global XSS-safe
+claim. Owner final review must acknowledge remaining risks/release gates,
+not silently mark security/deployment accepted because tests pass.
+
+Prior checkpoints retained: a87b550 task13 PASSED36s; latest completed full
+2f7beca1577 PASSED/64subtests/0failures/errors/skips688.77s exit0, short60 and
+post-test-schema-DDL timezone3 passed. Owner applied only0088 effect in resolved
+test_schema (tables27 unchanged/task22->21), no Alembic/reset/production change.
+Owner-local full log not read by agent. PR22 Draft/unmerged; PR29 unchanged/
+deferred. Existing board/ledger/handoff/pointer updated; no new docs/design file.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
@@ -109,7 +111,7 @@ Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
 
 ## Read this first
 
-Latest included/reviewed dev: `2b5b2313b2b49c815bbb6ef714bc1aa370b38fa5` via `9c6ed3b`. Owner lifted pause; queued UI and LLM defaults retained. New queued-detail compatibility correction PREPARED/UNRUN; previous full2f7beca green does not certify this sync. PR #22 Draft/unmerged; no migration executed by agent.
+Latest included/reviewed dev: `2b5b2313b2b49c815bbb6ef714bc1aa370b38fa5` via `9c6ed3b`. Owner lifted pause; queued UI and LLM defaults retained. Owner a354967 task/LLM42 PASSED58s; next source-name escaping PREPARED/UNRUN. Previous full2f7beca green does not certify new code. PR #22 Draft/unmerged; no migration executed by agent.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported

@@ -197,7 +197,7 @@
                 {% if running_job_id %}
                 <a href="/app/tasks?job_id={{ running_job_id }}"
                    class="block w-full rounded-lg bg-amber-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-amber-500">
-                    ⏳ Job #{{ running_job_id }} выполняется…
+                    ⏳ Job #{{ running_job_id }} {% if running_job_status == 'pending' %}в очереди…{% else %}выполняется…{% endif %}
                 </a>
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400 text-center">Нажмите, чтобы открыть модалку с прогрессом</p>
                 {% else %}

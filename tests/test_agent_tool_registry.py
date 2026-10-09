@@ -26,6 +26,9 @@ from app.agent import runtime as agent_runtime
 from app.agent.tools import TOOL_REGISTRY, get_tool
 from app.agent.toolset import actions as actions_module
 
+# Exercise real tenant and permission guards, never the legacy test bypass.
+pytestmark = pytest.mark.tenancy
+
 
 def test_action_send_dispatches_to_the_real_handler():
     """The registry must map the tool to the function that sends the action."""
@@ -48,7 +51,7 @@ def test_action_send_declares_permission_and_confirmation():
     assert spec.confirm is True
 
 
-async def test_action_send_stays_preview_only():
+async def test_action_send_stays_preview_only(_bound_chats):
     """The handler refuses every attempt to publish: sending is not enabled.
 
     Live publication is a separate, unshipped contract — until it exists the
@@ -58,7 +61,10 @@ async def test_action_send_stays_preview_only():
     spec = get_tool("action_send")
     assert spec.parameters["properties"]["dry_run"]["enum"] == [True], "the tool may only advertise a preview"
 
-    result = await actions_module.action_send(action_id=1, dry_run=False)  # noqa: FBT003 - the forbidden call on purpose
+    from app.core.permissions import permission_scope
+
+    with permission_scope(_bound_chats["owner_user"], is_owner=True):
+        result = await actions_module.action_send(action_id=1, dry_run=False)
     assert result["success"] is False
     assert result["code"] == "live_action_disabled"
     assert result["dry_run"] is False
@@ -72,69 +78,119 @@ def test_action_send_schema_matches_the_handler_signature():
 
 
 @pytest.fixture
-async def _bound_chats():
-    """Two isolated chats in the owner workspace: a real VIEWER and an owner.
-
-    Both members are linked to a `users` row — without that link the runtime
-    resolves no identity at all (there is no legacy pass-through any more), and
-    the viewer carries the VIEWER role, which holds no botaction right, so the
-    gate test is not vacuous. Owner-ness comes from the membership role
-    (SUPERUSER), never from an env allowlist, and the two chats are separate
-    sessions: nothing one chat stages is visible to the other. The fixture
-    removes only the rows it created.
-    """
-    from app.core.config import settings
+async def _unrelated_session():
+    """A separate workspace session must survive bound-chat arrange/cleanup."""
     from app.core.tenant_context import tenant_scope
-    from app.models import AgentSession, Role, User
+    from app.models import AgentSession
+    from app.models.managers.tenant_manager import tenants
+
+    suffix = secrets.token_hex(6)
+    tenant = await tenants.create(name="Registry sentinel", slug=f"registry-sentinel-{suffix}", plan="business")
+    session = None
+    try:
+        with tenant_scope(tenant.id):
+            session = await AgentSession.objects.create(
+                channel="telegram", chat_id=f"registry-sentinel-{suffix}", kind="private",
+                is_active=True, state={"sentinel": suffix},
+            )
+        yield {"tenant_id": tenant.id, "session_id": session.id, "state": {"sentinel": suffix}}
+        with tenant_scope(tenant.id):
+            preserved = await AgentSession.objects.get(id=session.id)
+            assert preserved is not None, "registry cleanup deleted another workspace session"
+            assert preserved.state == {"sentinel": suffix}
+    finally:
+        with tenant_scope(tenant.id):
+            await tenants.delete_by_id(tenant.id)
+
+
+@pytest.fixture
+async def _bound_chats(_unrelated_session):
+    """Fresh tenant/chats/users and explicit roles: no-right member, view-only owner.
+
+    Ownership comes solely from the SUPERUSER membership. The owner's platform
+    User has only botaction.view, not a superuser role. Seeded roles are unchanged.
+    Teardown touches only this fixture's tenant, users and throwaway roles.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import Permission, Role, User
     from app.models.managers.tenant_manager import tenant_channels, tenant_users, tenants
+    from app.types import ActionType, UserRoleType
 
-    await AgentSession.objects.delete()
-    tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
+    suffix = secrets.token_hex(6)
+    tenant = None
+    users = []
+    roles = []
+    try:
+        permissions = await Permission.objects.prefetch_related("model_type").filter(action_type=ActionType.VIEW)
+        permission = next((row for row in permissions if row.model_type
+                           and row.model_type.model_name.lower() == "botaction"), None)
+        assert permission is not None, "botaction.view must be seeded"
+        owner_membership_role = await Role.objects.get(codename=UserRoleType.SUPERUSER.name)
+        assert owner_membership_role is not None
+        for label, permission_ids in (("member", []), ("owner", [permission.id])):
+            role = await Role.objects.create_role(
+                name=f"registry-{label}-{suffix}", codename=UserRoleType.VIEWER.name,
+            )
+            roles.append(role)
+            await Role.objects.set_permissions(role.id, permission_ids)
+            user = await User.objects.create_user(
+                username=f"registry-{label}-{suffix}", email=f"registry-{label}-{suffix}@example.com",
+                password="secret-password-1", role_id=role.id, is_superuser=False,
+            )
+            users.append(user)
+        viewer, owner = users
+        tenant = await tenants.create(name="Registry boundary", slug=f"registry-{suffix}", plan="business")
+        viewer_chat, owner_chat = f"registry-member-{suffix}", f"registry-owner-{suffix}"
+        with tenant_scope(tenant.id):
+            for user, chat, role_id in (
+                (viewer, viewer_chat, roles[0].id), (owner, owner_chat, owner_membership_role.id),
+            ):
+                member = await tenant_users.add_member(
+                    tenant_id=tenant.id, channel="telegram", external_user_id=chat, role_id=role_id,
+                )
+                assert member is not None
+                await tenant_users.update_by_id(member.id, user_id=user.id)
+                binding = await tenant_channels.bind(
+                    tenant_id=tenant.id, channel="telegram", chat_id=chat, kind="private",
+                )
+                assert binding is not None and binding.tenant_id == tenant.id
+            viewer_user = await User.objects.prefetch_related("role.permissions.model_type").get(id=viewer.id)
+            owner_user = await User.objects.prefetch_related("role.permissions.model_type").get(id=owner.id)
+            assert not viewer_user.has_perm_for("botaction", ActionType.VIEW)
+            assert owner_user.has_perm_for("botaction", ActionType.VIEW)
+            assert not owner_user.has_perm_for("botaction", ActionType.UPDATE)
+            assert not owner_user.is_superuser and not owner_user._is_superuser_role()
+            yield {
+                "tenant_id": tenant.id, "viewer_id": viewer.id, "owner_id": owner.id,
+                "viewer_chat": viewer_chat, "owner_chat": owner_chat, "owner_user": owner_user,
+                "unrelated": _unrelated_session,
+            }
+    finally:
+        if tenant is not None:
+            with tenant_scope(tenant.id):
+                await tenants.delete_by_id(tenant.id)
+        for user in reversed(users):
+            await User.objects.delete_user(user.id)
+        for role in reversed(roles):
+            await Role.objects.set_permissions(role.id, [])
+            await Role.objects.delete_by_id(role.id)
 
-    viewer_role = await Role.objects.get(codename="VIEWER")
-    owner_role = await Role.objects.get(codename="SUPERUSER")
-    suffix = secrets.token_hex(3)
-    viewer = await User.objects.create_user(
-        username=f"toolviewer{suffix}",
-        email=f"toolviewer{suffix}@example.com",
-        password="secret-password-1",
-        role_id=viewer_role.id,
-        is_superuser=False,
-    )
-    owner = await User.objects.create_user(
-        username=f"toolowner{suffix}",
-        email=f"toolowner{suffix}@example.com",
-        password="secret-password-1",
-        role_id=owner_role.id,
-        is_superuser=False,
-    )
-    with tenant_scope(bypass=True):
-        member = await tenant_users.add_member(
-            tenant_id=tenant.id, channel="telegram", external_user_id="8", role_id=viewer_role.id
-        )
-        await tenant_users.update_by_id(member.id, user_id=viewer.id)
-        owner_member = await tenant_users.add_member(
-            tenant_id=tenant.id, channel="telegram", external_user_id="9", role="owner"
-        )
-        await tenant_users.update_by_id(owner_member.id, user_id=owner.id)
-        chat_8 = await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id="8", kind="private")
-        chat_9 = await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id="9", kind="private")
 
-    assert member is not None and owner_member is not None
-    assert chat_8 is not None and chat_9 is not None
-    assert chat_8.tenant_id == chat_9.tenant_id == tenant.id
-    assert owner_member.role_id == owner_role.id, "owner-ness is the membership role, not an env allowlist"
+async def test_registry_fixture_keeps_other_workspace_session(_bound_chats):
+    """Arrange cannot delete other chats; sentinel teardown also checks cleanup."""
+    from app.core.permissions import get_current_user, has_permission
+    from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
+    from app.models import AgentSession
 
-    yield {"tenant_id": tenant.id, "viewer_id": viewer.id, "owner_id": owner.id}
-
-    await AgentSession.objects.delete()
-    await User.objects.delete_user(viewer.id)
-    await User.objects.delete_user(owner.id)
-    with tenant_scope(bypass=True):
-        await tenant_channels.delete_by_id(chat_8.id)
-        await tenant_channels.delete_by_id(chat_9.id)
-        await tenant_users.delete_by_id(owner_member.id)
-        await tenant_users.delete_by_id(member.id)
+    assert not is_bypass()
+    assert current_tenant_id() == _bound_chats["tenant_id"]
+    assert get_current_user() is None
+    assert not has_permission(None, "botaction", "view"), "no inherited operator grant"
+    foreign = _bound_chats["unrelated"]
+    assert await AgentSession.objects.get(id=foreign["session_id"]) is None
+    with tenant_scope(foreign["tenant_id"]):
+        preserved = await AgentSession.objects.get(id=foreign["session_id"])
+        assert preserved is not None and preserved.state == foreign["state"]
 
 
 def _inbound(text: str, chat_id: str, user_id: str):
@@ -186,10 +242,12 @@ async def test_viewer_cannot_execute_action_send(_bound_chats, monkeypatch):
     dispatched: list = []
     _stub_loop(monkeypatch, dispatched, repeat=False)
 
-    await agent_runtime.handle_inbound(_inbound("отправь действие 1", chat_id="8", user_id="8"))
+    await agent_runtime.handle_inbound(
+        _inbound("отправь действие 1", chat_id=_bound_chats["viewer_chat"], user_id=_bound_chats["viewer_chat"])
+    )
     assert dispatched == [], "the gated tool must never reach the handler"
 
-    session = await AgentSession.objects.filter(chat_id="8").first()
+    session = await AgentSession.objects.filter(chat_id=_bound_chats["viewer_chat"]).first()
     assert session is not None
     tool_msg = await AgentMessage.objects.filter(session_id=session.id, role="tool").first()
     assert tool_msg is not None and "нет прав" in (tool_msg.content or "")
@@ -208,17 +266,19 @@ async def test_owner_action_send_is_staged_for_confirmation(_bound_chats, monkey
     dispatched: list = []
     _stub_loop(monkeypatch, dispatched)
 
-    first = await agent_runtime.handle_inbound(_inbound("отправь действие 1", chat_id="9", user_id="9"))
+    first = await agent_runtime.handle_inbound(
+        _inbound("отправь действие 1", chat_id=_bound_chats["owner_chat"], user_id=_bound_chats["owner_chat"])
+    )
     assert "подтверждение" in first.lower()
     assert dispatched == [], "a confirmed write must not run on the first message"
 
-    session = await AgentSession.objects.filter(chat_id="9").first()
+    session = await AgentSession.objects.filter(chat_id=_bound_chats["owner_chat"]).first()
     assert session is not None
     pending = (session.state or {}).get("pending_confirmation")
     assert pending is not None and pending["name"] == "action_send"
     assert pending["required_permission"] == "botaction.view"
     # A staged intent is actor-bound: another chat cannot consume it.
-    assert pending["authorization"]["actor"]["chat_id"] == "9"
+    assert pending["authorization"]["actor"]["chat_id"] == _bound_chats["owner_chat"]
 
 
 async def test_expired_confirmation_is_refused(_bound_chats, monkeypatch):
@@ -231,7 +291,7 @@ async def test_expired_confirmation_is_refused(_bound_chats, monkeypatch):
     """
     from datetime import datetime, timedelta, timezone
 
-    from app.agent.confirmation import make_pending_intent
+    from app.agent.confirmation import make_pending_intent, pending_rejection
     from app.agent.identity import resolve_runtime_identity
     from app.core.tenant_context import tenant_scope
     from app.models import AgentSession
@@ -241,21 +301,30 @@ async def test_expired_confirmation_is_refused(_bound_chats, monkeypatch):
     dispatched: list = []
     _stub_loop(monkeypatch, dispatched, repeat=False)
 
-    session = await agent_sessions.get_or_create(channel="telegram", chat_id="9", kind="private", is_owner=True)
+    session = await agent_sessions.get_or_create(
+        channel="telegram", chat_id=_bound_chats["owner_chat"], kind="private", is_owner=True,
+    )
     with tenant_scope(session.tenant_id):
         identity = await resolve_runtime_identity(
-            Resolution(tenant_id=session.tenant_id, channel="telegram", chat_id="9", user_id="9")
+            Resolution(
+                tenant_id=session.tenant_id, channel="telegram", chat_id=_bound_chats["owner_chat"],
+                user_id=_bound_chats["owner_chat"],
+            )
         )
     assert identity is not None, "the owner chat must resolve a bound identity"
     spec = agent_runtime.TOOL_REGISTRY["action_send"]
     intent = make_pending_intent(identity, session, spec, {"action_id": 1}, "call-1")
     assert intent is not None, "a confirm tool must be stageable"
     assert intent["required_permission"] == "botaction.view"
+    assert pending_rejection(intent, identity, session, spec) is None
     intent["expires_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    assert pending_rejection(intent, identity, session, spec) == "expired_intent"
     await agent_runtime._set_pending(session, intent)
 
-    await agent_runtime.handle_inbound(_inbound("да", chat_id="9", user_id="9"))
+    await agent_runtime.handle_inbound(
+        _inbound("да", chat_id=_bound_chats["owner_chat"], user_id=_bound_chats["owner_chat"])
+    )
     assert dispatched == [], "an expired confirmation must not execute"
 
-    still = await AgentSession.objects.filter(chat_id="9").first()
+    still = await AgentSession.objects.filter(chat_id=_bound_chats["owner_chat"]).first()
     assert (still.state or {}).get("pending_confirmation") is None, "an expired intent must be dropped"

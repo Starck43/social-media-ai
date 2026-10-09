@@ -1,53 +1,58 @@
 # Implementation status and session handoff
 
-## Integration blocker — fresh dev changed during final review
+## Current continuation — owner merge verified; registry fixture isolated
 
-Owner source-detail check at exact2bbd3ce: **15 passed**,56s,exit0; clean unchanged
-checkout before/after, no local commits. Owner-local log not independently read.
-Earlier task/LLM42 at a354967 retained; no short-group replay requested.
+Owner merge-SHA `8af65bf2f1bad8351da805549a82856f2d70c0e7` includes devb4fd0f0
+via a genuine two-parent conflict-resolution merge. AST of runtime/actions
+matches preceding6413821: code protections unchanged, comments added only.
+OWNER-REPORTED: seven-file agent/registry/action/authorization group **105 passed**
+(`pytest -q --no-cov`); standalone identity boundary **19 tests OK**. These are
+not agent executions or current-head full acceptance; logs not independently read.
 
-Fresh dev is NOW `b4fd0f0bda4bd7d39df4b90d8dfcaafb7ba41d26`, not yet included.
-Static merge-tree preview found conflicts in app/agent/runtime.py and
-app/agent/toolset/actions.py. Do NOT run final full suite on the stale integrated
-baseline or mark Ready/merge. PR22 remains Draft; PR29 unchanged/deferred.
+Fresh dev `cb1a0a04f8b30f499f2f9b01f28a789c9bd753c5` adds run-outcome UI and
+job-status tests. Included conflict-free via `ad96aeb7aff9cb43c62beaefdda7547d88a1ef9c`
+(parents8af65bf/cb1a0a0). Owner outcome UI, LLM defaults, queued-detail indentation
+and all escaping retained. PR22 remains Draft/unmerged into dev. PR29 unchanged;
+new PR30 structural tenancy-model pilot is a separate occupied lane, not copied.
 
-The new dev whole-turn permission scope and real-handler registry binding are
-already implemented by PR22's stronger identity/confirmation boundary. Preserve
-PR22 runtime scope, fresh bound actor/session checks, exact one-use approval,
-preview-only action_send (`botaction.view`, literal dry_run=True, no sender or
-ledger mutation). Do not replace these with dev's legacy None-user admission or
-live-capable action_send (`botaction.update`). No sender activation authorized.
+Published8af65bf fixture still deleted all sessions before/after, used default
+workspace/fixed chat IDs, and lacked tenancy opt-out. Its105 success did NOT
+prove isolated cleanup. Bounded test correction PREPARED/NOT RUN: marker tenancy,
+fresh business workspace and unique chats/users, disposable VIEWER-coded roles
+(no rights vs exactly botaction.view), membership-only owner (User not superuser),
+scoped own-tenant cascade cleanup. Foreign sentinel session must survive both
+arrange and teardown; foreign reads fail closed. All eight registry tests retained
+plus one sentinel regression, nine predicted cases. Expiry asserted valid before
+aging and specifically expired_intent afterward. Runtime misleading anonymous-
+pass-through comment corrected; production AST unchanged. No new docs files.
 
-New dev test_agent_tool_registry.py has seven useful registry/scope/confirmation
-checks, but contracts/arrange need reconciliation, not deletion or skipping:
-write-vs-preview permission expectations; owner member lacks a bound User;
-fixture globally deletes sessions, reuses fixed chats/default tenant and has no
-tenancy marker. Prepare isolated bound actors, exact explicit preview rights,
-cleanup only owned records, no legacy bypass or broad shared-session deletion.
-Retain real registry identity/signature/helper-exclusion, negative no-right
-refusal, bound authorized confirmation and expired-intent no-dispatch assertions.
-Use a separate no-right actor rather than assume seeded VIEWER lacks view rights.
+Owner next: retained clean review worktree, existing venv/private env/distinct
+DB_TEST_SCHEMA already0088; fetch/ff-only PR22, record actual HEAD/status. Run:
 
-Next Owner/local-agent step: merge fresh dev INTO the retained PR22 review
-worktree/branch, resolve the two code conflicts preserving those protections,
-reconcile the seven new tests and docs, commit with English Owner handoff and
-push to origin/ai/identity-permissions-boundary. No force, dev push, PR merge,
-main UI checkout changes or mixed PR29 work. Return exact pushed SHA/diff.
-Agent tools cannot publish a two-parent conflict-resolution merge; no unsafe
-intermediate replacement of protected runtime is used to trick an auto-merge.
+```bash
+python -m pytest -q --no-cov tests/test_agent_tool_registry.py tests/test_job_status.py
+```
 
-Then inspect the returned merged SHA; first the new registry file plus existing
-runtime identity/confirmation/action authorization checks. Do NOT repeat old
-source15/task42 by default. After this compatibility group is clean, ONE full
-suite on unchanged integrated HEAD, then fresh-dev recheck and explicit
-Ready/merge decision. Counts must come from actual output, not guessed totals.
-No reset/drop/stamp/migration/live calls or concurrent pytest on one schema.
+Expected **27 passed** (registry9 + job-status18), static prediction only. This
+checks changed arrange and newly included outcomes, not a replay of all105/19.
+If green, immediately ONE full suite on the SAME unchanged HEAD/code/schema:
+
+```bash
+python -m pytest -vv --durations=20 -o faulthandler_timeout=120
+```
+
+Record SHA/status before/after and actual totals/duration/exit; no guessed full
+count. Return first complete redacted failure if any, not whole log. No additional
+checkout/merge during run; stop dirty/diverged or concurrent same-schema pytest.
+No reset/drop/stamp/migration/Alembic/live setup/new worktree/main UI edits.
 Agent ZERO tests/collection/app imports/DB/migrations/browser/live operations.
 
-Last completed full2f7beca1577/64subtests/exit0 is historical and does not cover
-current code/new dev. Owner0088 isolated test-schema evidence retained, not
-rerun. Broader /app XSS audit/release/security/browser/live/business gates OPEN.
-No new docs/design files; preserve new Owner UI/LLM/defaults and dev docs.
+Historical source2bbd3ce15 passed56s and task/LLMa35496742 passed58s retained;
+latest full2f7beca1577/64subtests/exit0 does not cover new integrated head.
+Full will cover retained queued/running/LLM regressions without standalone replay.
+After full result recheck fresh dev and require explicit Ready/merge decision.
+Broader /app XSS audit, durable approval/CAS, release/browser/live/business gates
+remain OPEN; action_send stays botaction.view preview-only, no send activation.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
@@ -104,7 +109,7 @@ Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
 
 ## Read this first
 
-Latest included baseline2b5b231 via9c6ed3b. Fresh dev NOWb4fd0f0 is NOT included; runtime/actions merge conflicts and new registry-test compatibility BLOCK final full run. Owner source15 passed56s at2bbd3ce, earlier42 at a354967. PR22 Draft/unmerged; no agent tests/migrations.
+Latest included devcb1a0a0 viaad96aeb; Owner8af65bf105 passed + boundary19 OK. New isolated registry fixture/source-preserving merge prepared; short27 then one full suite at unchanged HEAD pending. PR22 Draft/unmerged, PR29/30 separate; agent runs no tests/migrations.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -449,12 +454,11 @@ acceptance; prepared guarded code is not evidence of safe live deployment.
 ## Remaining production/local work
 
 - [ ] PRD-02 / UX-02: fail-closed interactive identity, tenant/global permissions,
-  action_send contract and confirmations; no new live posting. (UX-02 itself is
-  delivered — registry binding, `botaction.update` gate, Viewer refusal,
-  expired-confirmation drop and the ok/no_data/partial/skipped run outcomes;
-  see `tests/test_agent_tool_registry.py` and `tests/test_job_status.py`. The
-  remaining items are PRD-02's fail-closed identity work and durable approval
-  tracking.)
+  action_send contract and confirmations; no new live posting. (Draft PR22
+  binds the real handler to a confirmed `botaction.view` read-only preview;
+  `dry_run=False` is refused, no ledger transition/publication. Registry/expiry
+  checks Owner105 at8af65bf; isolated fixture and newly included run-outcome UI
+  verification pending. Durable approval/CAS and release acceptance remain open.)
 - [ ] PRD-03: complete spend accounting/reservations; approve billing-grade schema.
 - [ ] PRD-04: production profile, readiness, one migrator, private DB/restore drill.
 - [ ] PRD-05: general queue/scheduler correctness, leases and atomicity; investigate

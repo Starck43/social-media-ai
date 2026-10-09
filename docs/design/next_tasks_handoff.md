@@ -6,19 +6,19 @@ This path is retained for existing links; it is not a competing backlog.
 
 ## Current occupied lane: draft PR #22
 
-Branch `ai/identity-permissions-boundary` includes2b5b231 via9c6ed3b.
-OWNER source15 passed56s at exact2bbd3ce; earlier task/LLM42 at a354967 retained.
-Fresh dev NOWb4fd0f0 is NOT included: merge-tree conflicts runtime/actions,
-new registry tests require isolated bound identities/preview-contract alignment.
-Final full suite BLOCKED: local-agent conflict-resolution merge into PR22,
-preserve fail-closed runtime and preview-only action_send, adapt all seven tests
-without skips/weakened assertions, commit/push back same PR branch. Return SHA.
-Then compatibility checks and ONE full suite, fresh-dev check, explicit Ready/
-merge decision. See [handoff](identity_permissions_handoff.md).
-No unsafe intermediate runtime overwrite, live activation, dev push or PR29
-mixing. Existing0088 schema evidence/oldfull2f7beca retained, not new acceptance.
-Agent ZERO tests/imports/DB/migrations/live calls; broader XSS/release gates OPEN.
-No new docs files, new worktree or dirty main UI checkout edits.
+Branch `ai/identity-permissions-boundary`: Owner8af65bf genuine devb4 merge,
+production AST unchanged; agent/registry105 passed and boundary19 OK reported.
+New devcb1a0a0 outcome UI included viaad96aeb, no conflict. Registry fixture still
+had broad shared-session deletes/default IDs at8af: scoped unique tenant/chats,
+exact temporary rights, tenancy marker and foreign-session sentinel correction
+PREPARED/UNRUN. Eight old registry tests +one new retained; runtime comment only.
+Next short27 (registry9/job-status18), if green ONE full at same unchanged HEAD,
+then fresh-dev recheck/explicit Ready/merge decision. [Handoff](identity_permissions_handoff.md).
+No replay105/19/source15/task42 by default. Historical full2f7beca not current
+acceptance. No reset/drop/stamp/migration/new worktree/live setup/main UI edits.
+PR22 Draft; PR29 deferred; PR30 tenancy structural pilot separate/occupied.
+Agent ZERO tests/imports/DB/live calls; broader XSS/durable approval/release gates
+OPEN. Existing docs only; preview-only botaction.view, no publication enabled.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

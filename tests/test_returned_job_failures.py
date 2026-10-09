@@ -5,24 +5,20 @@ Actual dispatcher/manager source is loaded with infrastructure imports mocked.
 This is not PostgreSQL, lease/concurrency or full-suite acceptance.
 """
 
-import importlib.util
-import sys
 import types
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
+
+from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load_source(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+def load_source(name, path, imports=None):
+    return load_isolated_source(name, ROOT / path, imports=imports)
 
 
 OUTCOMES = load_source("_returned_outcomes_test", "app/jobs/result_outcomes.py")
@@ -93,10 +89,9 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
                 REFERENCE_KEY="digest_delivery", enabled=lambda: self.flag,
                 execute_digest_job=self.digest_execute, finalize_digest_job=self.finalize),
         }
-        self.import_patch = patch.dict(sys.modules, modules)
-        self.import_patch.start()
-        self.addCleanup(self.import_patch.stop)
-        self.dispatcher = load_source("_dispatcher_failure_test", "app/jobs/dispatcher.py")
+        # Late imports stay local to this actual-source module as well.
+        self.imports = modules
+        self.dispatcher = load_source("_dispatcher_failure_test", "app/jobs/dispatcher.py", imports=modules)
         self.notify = self.dispatcher._notify_job_result = AsyncMock()
         self.handler = AsyncMock(return_value={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.12})
 
@@ -214,10 +209,9 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             "app.models.managers.base_manager": module_with(BaseManager=BaseManager),
             "app.core.config": module_with(settings=SimpleNamespace(JOB_RETRY_BACKOFF_SECONDS=300)),
         }
-        self.import_patch = patch.dict(sys.modules, modules)
-        self.import_patch.start()
-        self.addCleanup(self.import_patch.stop)
-        module = load_source("app.models.managers._failure_manager_test", "app/models/managers/job_manager.py")
+        module = load_source(
+            "app.models.managers._failure_manager_test", "app/models/managers/job_manager.py", imports=modules,
+        )
         self.manager = module.JobManager.__new__(module.JobManager)
         self.job = SimpleNamespace(id=7, attempts=1, max_attempts=3)
         self.manager.get = AsyncMock(return_value=self.job)

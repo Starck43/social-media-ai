@@ -1,34 +1,34 @@
 # Implementation status and session handoff
 
-## Current continuation — isolation verified, CLI fixture package prepared
+## Current continuation — CLI verified, digest/DB arrangement prepared
 
-Owner/local agent tested exact `65d5b16`: standalone import-isolation8 /
-returned-outcomes25 / dispatcher-privacy13 PASSED; the ordered producer-consumer
-pytest group PASSED95/95 in29.34s. Clean retained worktree; full suite not rerun.
-This validates the new fixture isolation for that group. It does NOT prove a
-producer must be outside it: historical full suite used706bfea BEFORE isolation
-99c8294. Original68 failures are a historical checkpoint; current remaining
-count unknown. No unchanged check rerun or full-suite acceptance inferred.
+Owner/local agent tested exact `a9199fb`: CLI file10/10 PASSED in9.38s,
+clean retained worktree. Earlier exact65d5b16 standalone8/25/13 and ordered
+producer-consumer95/95 passed. Agent did not repeat these checks. Historical
+706bfea full-suite68 failures are NOT a current remaining count.
 
-Next bounded code `49f5fe3` changes ONLY tests/test_cli_task_run.py: _cli mirrors
-actual cli.main._run_platform with explicit operator_permission_scope; scoped
-arrange task/source inserts get exact model.create service grants around a
-single write. No autouse authority or full-test grant, no foreign-source check
-weakening. Nine existing test bodies are AST-identical; one new scope-narrowing/
-restoration regression added. Static AST/whitespace only; new CLI group NOT RUN.
-All owner source/UI/runtime corrections retained; application code unchanged.
+New test-only `394a342` prepares nine former arrange failures: returned-failure
+DB3, snapshot3, shared job lock1, manual destinations2. Four existing test files;
+exact service grants around individual source/task creation and source cleanup
+only. New negative assertions prove grants close before handler, aggregate,
+snapshot and spawned concurrent work. All prior cost/outcome/tenant/conflict/
+uncertainty assertions preserved. Application/UI/runtime/schema untouched.
+New package NOT RUN; static AST/whitespace/assertion preservation only.
 
-Owner next, in the clean retained worktree: git fetch origin; git merge --ff-only
-origin/ai/identity-permissions-boundary; git rev-parse HEAD; then
-`python -m pytest -q tests/test_cli_task_run.py` (expected10 cases). Use existing
-project venv and distinct DB_TEST_SCHEMA, no concurrent pytest/reset/drop/migration
-or live calls. Stop on dirty/diverged history. No reason to repeat the95-case
-isolation group merely because this separate CLI test file changed.
+Owner: clean retained review worktree, fetch/ff-only PR22, record HEAD. Run the
+nine-case group in the handoff; no need to rerun CLI10 or isolation95 separately.
+Existing venv and distinct DB_TEST_SCHEMA; no concurrent pytest/reset/drop,
+migration or live calls. After nine pass, a NEW full-suite checkpoint is now
+useful for the combined isolation + CLI + DB-fixture integration; retain original
+log and exact SHA, do not update checkout during the process. Success of these
+small groups does not certify all1554 tests or all production gates.
 
-Next agent task: remaining explicit-tenant digest/returned-failure DB arrangement
-compatibility, then owner targeted integration before a new full-suite checkpoint.
-No claim all historical68 failures fixed. PR22 remains Draft/unmerged; PR29
-separate/deferred. Older evidence below is historical, not current allocation.
+Next: review actual remaining errors from the new full run, especially ingest/
+MTProto and authority/context paths; do not patch historical mocks blindly.
+PR22 remains Draft/unmerged pending current evidence/review; PR29 deferred.
+No deployment/live activation or automatic merge. Older checkpoints below are
+historical evidence, not the current allocation.
+
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up
 

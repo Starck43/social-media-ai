@@ -31,9 +31,10 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         HELPERS.BoundaryTests.setUp(self)
         self.user.id = 12
         self.user.role_id = 2
+        self.user.role = SimpleNamespace(id=2, codename="VIEWER")
         self.membership = SimpleNamespace(
             id=41, tenant_id=31, channel="telegram", external_user_id="7", user_id=12,
-            role_id=3, role=SimpleNamespace(codename="SUPERUSER"), is_active=True,
+            role_id=3, role=SimpleNamespace(id=3, codename="SUPERUSER"), is_active=True,
         )
         self.tenant_row = SimpleNamespace(id=31, is_active=True)
         self.channel_row = SimpleNamespace(tenant_id=31, channel="telegram", chat_id="7", is_active=True)
@@ -150,6 +151,15 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.resolve())
         self.user.is_active = True
         self.user.id = 13
+        self.assertIsNone(await self.resolve())
+
+    async def test_missing_or_inconsistent_platform_role_is_denied(self):
+        self.user.role = None
+        self.assertIsNone(await self.resolve())
+        self.user.role = SimpleNamespace(id=99, codename="VIEWER")
+        self.assertIsNone(await self.resolve())
+        self.user.role = SimpleNamespace(id=2, codename="VIEWER")
+        self.user.role_id = None
         self.assertIsNone(await self.resolve())
 
     async def test_web_identity_requires_matching_user_membership_and_chat(self):

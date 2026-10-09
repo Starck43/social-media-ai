@@ -348,7 +348,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
             is_owner=identity.is_owner,
         )
-        if session:
+        if session_matches_identity(session, identity):
             await session.append("user", text)
             await session.append("assistant", injection_error)
             await session.touch()
@@ -381,7 +381,18 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
         return "Не удалось открыть сессию агента."
 
+    fresh = await refresh_runtime_identity(identity)
+    if fresh is None or not session_matches_identity(session, fresh):
+        return "Доступ к рабочему пространству изменился. Запрос остановлен."
+    identity = fresh
+
     if text.split()[0].split("@")[0].lower() == "/stop":
+        pending = _pending_confirmation(session)
+        if (
+            pending is not None and isinstance(pending.get("authorization"), dict)
+            and not pending_actor_matches(pending, identity)
+        ):
+            return "Это подтверждение относится к другому пользователю."
         from app.models.managers.agent_message_manager import agent_messages
 
         await agent_messages.clear(session.id)

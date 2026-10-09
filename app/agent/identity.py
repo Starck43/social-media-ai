@@ -102,9 +102,16 @@ async def resolve_runtime_identity(resolution: Any) -> RuntimeIdentity | None:
         user = await User.objects.prefetch_related("role.permissions.model_type").get(
             id=membership.user_id, is_active=True
         )
-        if user is None or user.id != membership.user_id or not user.is_active:
+        if (
+            user is None or user.id != membership.user_id or not user.is_active
+            or not _positive_id(user.role_id) or user.role is None or user.role.id != user.role_id
+        ):
             return None
         role = membership.role if membership.role_id is not None else None
+        if membership.role_id is not None and (
+            not _positive_id(membership.role_id) or role is None or role.id != membership.role_id
+        ):
+            return None
         codename = getattr(role, "codename", None)
         role_name = getattr(codename, "name", codename)
         owner = role is not None and role_name == "SUPERUSER"

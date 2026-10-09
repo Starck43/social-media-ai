@@ -162,9 +162,28 @@ Job.error/AgentTask.last_error and successful notification summaries are unchang
 handlers/provider/ORM/framework logs remain outside this bounded change. This does
 not close global privacy, queue or production gates.
 
-Next small work: review one remaining handler-log path or audit task-outcome UI
-with owner file coordination. Important separate packages: fail-closed identity,
+Parallel privacy continuation: review one remaining handler-log path or audit
+task-outcome UI with owner file coordination; this branch owns only identity/rights. Important separate packages: fail-closed identity,
 queue leases/atomicity, atomic memory batches and per-attempt budget reservations.
+
+## Identity/permissions boundary — prepared, not merged
+
+Branch `ai/identity-permissions-boundary`, baseline `57b5612` after parallel PR #20.
+
+- [ ] Anonymous permission/role checks fail closed; ownership is limited to
+  source/task/scenario in the captured tenant, not global LLM fleet/roles/queue.
+- [ ] API carries identity into manager gates; trusted CLI authorization and
+  exact service bookkeeping grants replace implicit anonymous allowances.
+- [ ] 13 standalone boundary methods plus negative DB/web regressions prepared.
+  Tests NOT RUN. Only static AST parsing and whitespace inspection completed.
+- [ ] Complete legacy tenancy arrange/identity compatibility and run the owner's
+  targeted/full-suite checks before marking ready; no security gate is closed.
+
+See [identity/permissions handoff](design/identity_permissions_handoff.md) for
+matrix, bypass map, exact commands, compatibility limits and continuation.
+Runtime guard is unchanged; no personal router, new schema, posting activation,
+queue package, cost package or digest reintegration. This is a draft boundary
+package, NOT merged/deployed/production-accepted.
 
 ## Test target — shared PostgreSQL, isolated schema
 

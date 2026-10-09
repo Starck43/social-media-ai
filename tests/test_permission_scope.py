@@ -4,7 +4,7 @@
 checks: same question ("may this caller do this to this model?"), same
 predicate (`User.has_perm_for()`), but the caller travels in a `ContextVar`
 instead of a request. These tests pin the contract Phase 4-7 will build on:
-decorator allow/deny, bypass pass-through, legacy None-user pass-through,
+decorator allow/deny, explicit bypass, anonymous denial,
 message format, scope nesting/restore, and string action resolution.
 """
 
@@ -26,6 +26,8 @@ from app.core.tenant_context import tenant_scope
 from app.models import Role, User
 from app.types import ActionType, UserRoleType
 
+
+pytestmark = pytest.mark.tenancy  # no implicit operator authority in rights tests
 
 async def _role(codename: str) -> Role:
     return await Role.objects.get(codename=UserRoleType[codename].name)
@@ -101,9 +103,10 @@ async def test_has_permission_never_raises():
     assert has_permission(_detached_like(viewer), "source", ActionType.VIEW) is False
 
 
-def test_has_permission_passes_legacy_none_user():
-    """Jobs run as `job.tenant_id` with no user context — never deny them."""
-    assert has_permission(None, "source", ActionType.DELETE) is True
+def test_has_permission_denies_none_user():
+    """No identity is not an operator or an implicit worker grant."""
+    with tenant_scope(1), permission_scope(None, is_owner=True):
+        assert has_permission(None, "source", ActionType.DELETE) is False
 
 
 def test_has_permission_passes_platform_bypass():
@@ -123,10 +126,10 @@ async def test_has_role_follows_platform_ladder_and_flag():
     assert has_role(developer, UserRoleType.ADMIN) is True
 
 
-def test_has_role_passes_bypass_and_none_user():
+def test_has_role_passes_explicit_bypass_but_denies_none_user():
     with tenant_scope(bypass=True):
         assert has_role(object(), UserRoleType.ADMIN) is True
-    assert has_role(None, UserRoleType.ADMIN) is True
+    assert has_role(None, UserRoleType.ADMIN) is False
 
 
 # --- decorators --------------------------------------------------------
@@ -204,9 +207,9 @@ async def test_has_permission_by_codename_never_raises():
     assert has_permission_by_codename(_detached_like(viewer), "source.view") is False
 
 
-def test_has_permission_by_codename_passes_none_user():
-    """Jobs run as `job.tenant_id` with no user context — never deny them."""
-    assert has_permission_by_codename(None, "source.delete") is True
+def test_has_permission_by_codename_denies_none_user():
+    with tenant_scope(1), permission_scope(None, is_owner=True):
+        assert has_permission_by_codename(None, "source.delete") is False
 
 
 def test_has_permission_by_codename_passes_bypass():

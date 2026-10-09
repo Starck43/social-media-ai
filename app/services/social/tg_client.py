@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.core.permissions import service_permission_scope
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
@@ -134,7 +135,8 @@ class TelegramClient(BaseClient):
 
 		new_watermark = max(int(item["id"]) for item in items)
 		if new_watermark > min_id:
-			await Source.objects.update_by_id(source.id, last_item_id=str(new_watermark))
+			with service_permission_scope("source", "update"):
+				await Source.objects.update_by_id(source.id, last_item_id=str(new_watermark))
 		logger.info(f"Telegram L2 source {source.id}: pulled {len(items)} messages (watermark {new_watermark})")
 		return items
 

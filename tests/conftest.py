@@ -59,7 +59,12 @@ def _platform_scope(request, monkeypatch):
         yield
         return
     monkeypatch.setattr(base_manager_module, "is_bypass", lambda: True)
-    yield
+    # Legacy tests already model the operator surface. Make its authorization
+    # explicit; security/tenancy tests opt out above and remain fail-closed.
+    from app.core.permissions import operator_permission_scope
+
+    with operator_permission_scope():
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)

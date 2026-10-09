@@ -131,6 +131,17 @@ across all surfaces (`/api`, `/app`, `/admin`, agent tools, CLI). The check
 uses structured columns (`model_type_id` + `action_type`), not codename strings,
 so changing a role's codename never breaks permission logic.
 
+### Prepared fail-closed permission follow-up
+
+`ai/identity-permissions-boundary` prepares anonymous denial and a tenant-bound
+owner override only for source/agenttask/agentscenario. Global fleet/role/queue
+rights require platform permissions. API identity reaches manager gates; exact
+service grants cover default task creation, one-shot disarming and collection
+watermarks. Trusted CLI authority is explicit. Not merged or accepted; see the
+[matrix, bypass map and compatibility gates](design/identity_permissions_handoff.md).
+The existing legacy membership-owner inference and runtime identity loading are
+not migrated by this bounded package. Do not treat confirmation as authorization.
+
 ## Roles and permissions
 
 Platform roles are stored in the `roles` table (`settings.DB_SCHEMA.roles`).

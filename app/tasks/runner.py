@@ -10,6 +10,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from app.core.permissions import service_permission_scope
 from app.core.config import settings
 from app.core.tenant_context import tenant_scope
 from app.models.managers.agent_task_manager import AgentTaskManager
@@ -57,7 +58,8 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None, tz: str | Non
         )
         await tasks.mark_triggered(task.id, nxt, status="ok")
         if is_once:
-            await tasks.update_by_id(task.id, is_active=False)
+            with service_permission_scope("agenttask", "update"):
+                await tasks.update_by_id(task.id, is_active=False)
         stats["enqueued"] += 1
         if is_once:
             logger.info(f"Enqueued one-shot {task.job_type} job for task {task.name!r}")

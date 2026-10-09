@@ -4,7 +4,8 @@ One question — "may this caller do this to this model?" — answered exactly t
 way the sqladmin console and the machine API answer it (`User.has_perm_for`,
 structured `permissions.model_type_id` + `action_type`, never the stored
 codename), with the one exception the product needs: whoever *owns* a workspace
-may always configure it, whatever their platform role is. Superusers always
+may configure source/task/scenario resources, whatever their platform role is.
+Ownership grants no global fleet/role/queue right. Superusers always
 pass.
 
 Built once per request by `TenantUIMiddleware` and handed to templates as
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
+from app.core.permissions import WORKSPACE_OWNER_MODELS
 from app.types import ActionType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -31,7 +33,9 @@ def _resolve_action(action: ActionType | str) -> ActionType | None:
     """Accept an `ActionType` or its db value / name (`"update"`, `"UPDATE"`)."""
     if isinstance(action, ActionType):
         return action
-    token = (action or "").strip().lower()
+    if not isinstance(action, str):
+        return None
+    token = action.strip().lower()
     if not token:
         return None
     return ActionType.get_by_value(token) or ActionType.get_by_name(action.strip().upper())
@@ -101,13 +105,16 @@ class WebPerms:
         same string the sqladmin console and `app/api/deps.py` use (`source`,
         `agenttask`, `agentscenario`, `digestrun`, ...).
         """
-        if self._user is None:
-            return False
-        if self._user.is_superuser or self.is_owner:
-            return True
         resolved = _resolve_action(action)
-        if resolved is None:
+        if resolved is None or not isinstance(model_name, str) or not model_name.strip():
             return False
+        model_name = model_name.strip().lower()
+        if self._user is None or not getattr(self._user, "is_active", True):
+            return False
+        if self._user.is_superuser:
+            return True
+        if self._tenant_id is not None and self.is_owner and model_name in WORKSPACE_OWNER_MODELS:
+            return True
         try:
             return bool(self._user.has_perm_for(model_name, resolved))
         except Exception:  # noqa: BLE001 - a rights check must never 500 a page

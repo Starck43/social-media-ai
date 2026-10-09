@@ -20,12 +20,12 @@ Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, inspected head `b7189d1` | Let that lane finish. Its latest fixture/evidence/compatibility notes stay in the PR; do not implement another rights package. |
+| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Let that lane finish. Its latest fixture/evidence/compatibility notes stay in the PR; do not implement another rights package. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
-| A/C / development documentation | **PREPARED IN THIS BRANCH:** `docs/development-plan-navigation`; no application change | Review the three-level reading path, catalog and compatibility archive. Not merged until expressly authorized. |
+| A/C / development documentation | **IN REVIEW:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26), `docs/development-plan-navigation`; no application change | Review the three-level reading path, catalog and compatibility archive. Not merged until expressly authorized. |
 | C / observation and recovery runbook, PRD-04/05 | No competing open PR observed; **next independent candidate, not started here** | Bounded read-only diagnostics/escalation, no reset/replay/receipt clearing; inspect source before drafting commands. |
 | D–G / UX, pilot, expansion and scale | Gated, not current automatic implementation scope | Use stage exit evidence and an explicit selected user journey, not old research checklists. |
 
@@ -95,8 +95,11 @@ reports. Other technical contract paths remain stable for active PR references.
 
 ## This cleanup: delivery and continuation
 
-Branch `docs/development-plan-navigation`, baseline `eb49d1d`; first navigation
-commit `185a500`. Prepared, not merged. Global plan/stages/current-stage entry
+Open [PR #26](https://github.com/Starck43/social-media-ai/pull/26), branch
+`docs/development-plan-navigation`, baseline `eb49d1d`; navigation `185a500`,
+archive/link cleanup `bd3d893`. IN REVIEW, not merged. PR #22 advanced to
+`783c345` during this task; latest changed-file comparison found no overlap
+with this documentation PR. Global plan/stages/current-stage entry
 point and complete 34-document design catalog are in place. Two old navigation/
 model authoring reports are archived verbatim; old paths remain short pointers.
 Known index/model/catalog links migrated. No separate cleanup handoff is added.

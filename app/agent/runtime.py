@@ -329,6 +329,10 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     identity = await resolve_runtime_identity(resolution)
     if identity is None:
         return "Чат не связан с активным пользователем рабочего пространства. Обратитесь к администратору."
+    # The scope wraps the whole turn, not just the preamble: the tool loop's gate
+    # reads `get_current_user()`, and a scope that closed early would leave it
+    # None — which every check treats as the legacy pass-through, silently
+    # ungating every write tool.
     with permission_scope(identity.user, is_owner=identity.is_owner):
         return await _handle_authorized_turn(inbound, resolution, identity)
 

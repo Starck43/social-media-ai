@@ -78,6 +78,15 @@ async def _auto_actions_forced_dry_run() -> Optional[str]:
         "required": ["action_id"],
     },
     confirm=True,
+    # Preview-only contract: the handler never publishes, so the right it needs
+    # is the read right (`botaction.view`). The decorator must sit on this
+    # handler — it used to decorate the `_auto_actions_forced_dry_run` helper
+    # above, which registered that no-argument helper under the tool's name and
+    # dispatched every «action_send» call to a function that only returns a
+    # reason string. `botaction.view` is the bare model name, the shape
+    # `has_permission_by_codename` splits — not the stored `social.`-prefixed
+    # permission codename. Live publishing stays disabled behind a separate
+    # contract; enabling it would need `botaction.update`, not this file.
     required_permission="botaction.view",
 )
 @require_permission("botaction", "view")

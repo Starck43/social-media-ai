@@ -1,9 +1,13 @@
 # Dispatcher log privacy: owner handoff
 
-Status: PREPARED IN BRANCH `ai/dispatcher-log-privacy`; NO PR CREATED OR MERGE.
+Status: MERGED IN PR #20 AS `57b5612`; DEPLOYMENT/ACCEPTANCE NOT CERTIFIED.
+Merged on explicit owner instruction; original branch `ai/dispatcher-log-privacy`.
 Baseline dev `1e908b2d55bae6ab2c71271321d2986a921ae9e4` (2026-10-09), including
 owner merge of PR #19 as `f0a4510` and the subsequent chat/notification UI changes.
-The owner will create/review the PR. No UI or owner runtime guard change.
+Fresh pre-merge dev `9d83c9a` had no overlapping package files; its chat asset
+fix is preserved. GitGuardian passed; Kilo review was still running at merge
+request, with no review threads yet. No new test run or owner acceptance for
+this package was supplied. No UI or owner runtime guard change.
 
 ## Bounded inventory and changes
 
@@ -12,7 +16,7 @@ success results, retry exception text, terminal exception tracebacks, notificati
 write tracebacks and worker-iteration tracebacks. Exceptions also entered the
 failure notification message.
 
-Prepared changes:
+Merged bounded changes:
 
 - Replace dispatcher-owned result/exception logs with fixed event names, positive
   integer job/tenant/task IDs and an allowlisted job type. Unexpected identifier
@@ -57,14 +61,14 @@ existing appropriately restricted task/job records, not by restoring raw logs.
 
 ## Verification
 
-Actually executed because of concrete leak/control-flow concerns:
+Historical authoring checks, before the current prepare-only test policy:
 
 - **13 actual-source privacy tests PASSED**: successful/private result, raw retry
   and terminal errors, declared failure/cost, persistence failure, skip, claim
   loss/checkpoint retry refusal, bounded categories and IDs, real notification
   function with mocked DB writer, and worker error/cancellation.
 - **25 existing actual-source/mocked outcome regressions PASSED** against the new
-  dispatcher. These are fresh runs, not new PostgreSQL/full-suite evidence.
+  dispatcher during authoring. No rerun at merge or PostgreSQL/full-suite evidence.
 - Compilation, AST and whitespace checks passed. No black/isort run is claimed.
 
 **2 PostgreSQL cases PREPARED, NOT EXECUTED** in
@@ -85,25 +89,28 @@ parallel pytest processes. No reset/drop/stamp or second database is required.
 python tests/test_dispatcher_log_privacy.py
 python tests/test_returned_job_failures.py
 python -m scripts.setup_test_db --check
-python -m pytest --no-cov -q tests/test_dispatcher_log_privacy.py tests/test_dispatcher_log_privacy_db.py tests/test_returned_job_failures.py tests/test_returned_job_failures_db.py tests/test_job_status.py
+python -m pytest --no-cov -q tests/test_dispatcher_log_privacy.py tests/test_dispatcher_log_privacy_db.py tests/test_returned_job_failures.py tests/test_returned_job_failures_db.py tests/test_job_notifications.py tests/test_job_status.py
 python -m pytest -q
 ```
 
 Expect safe dispatcher log events and fixed failure notifications, unchanged
 failure audit/known cost and retry decisions, no live messenger/provider call.
 Record tested revision/commands/results; do not attribute prior owner-reported
-passes to this new branch. Formatting should be checked locally before merge.
-No application CI runs are claimed for this branch (no PR was opened here).
+passes to this package. Formatting should be checked locally before deployment.
+GitGuardian success is not application-test evidence. No application CI or
+new local test pass is claimed for the merge. Future tests are prepared only;
+the owner/local agent runs them, without removing or weakening existing checks.
 
 ## Next session and overlaps
 
-Before creating the owner's PR or doing more work, compare fresh dev and this
-branch; dispatcher overlaps with future queue/identity work and must be coordinated.
+Before doing more work, compare fresh dev and the implementation journal.
+Dispatcher overlaps with future queue/identity work and must be coordinated.
 Keep owner chat/notification template changes intact. Update the tracker after
-actual merge, distinguishing merged from deployed/accepted.
+each package, distinguishing merged from deployed/accepted.
 
 Next bounded task: inventory remaining handler logging and select one path;
 alternatively audit task-result presentation after reserving UI files with the
 owner. Fail-closed identity, queue leases/atomicity, atomic memory writes, spend
 ledger, retention and deployment recovery remain separate important packages.
-No PR/merge or sender activation is authorized by this handoff.
+PR #20 is merged. Future merges and live sender activation need new approval.
+See [next-session task list](next_tasks_handoff.md).

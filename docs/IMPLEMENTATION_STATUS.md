@@ -1,5 +1,35 @@
 # Implementation status and session handoff
 
+## Latest raw-log diagnosis and prepared import-isolation follow-up
+
+Attached owner log for `706bfea` was selectively inspected: actual run directory
+is the retained PR22 worktree, Python3.12.6, collected1554; final1486 passed,
+68 failed,11 warnings,58 subtests,663.02s. Markdown renderer PASSED (line1413)
+and is not a failed node. Raw tier traceback includes plan_arrange_user and
+scoped inserts; earlier reconstructed traceback/list was inaccurate, not proof
+of an old checkout. Focused owner41/41 and139/139 remain separately reported.
+This is inspected owner evidence, NOT agent test execution.
+
+Later tracebacks import current_tenant_id/handle_collect from mock_infrastructure
+and JobManager() returns the fixture's SimpleNamespace without enqueue. These
+specific doubles are declared by returned-job-failure source fixtures, reused
+by dispatcher privacy. The dangerous global-import boundary is addressed in
+`99c8294`: load actual source with module-local declared from-import doubles,
+including late/relative imports; restore temporary private alias; notification
+mocks patch only that module's map. No application/rights/UI/schema change,
+no fake enqueue added or assertion weakened. Eight new regression methods
+PREPARED/NOT RUN; existing outcome25/privacy13 assertions retained. Other source
+fixtures are not globally rewritten; do not claim all68 failures fixed.
+
+Early CLI/digest arrange failures occur before this producer group and are a
+separate compatibility checkpoint, not dismissed as unrelated/pre-existing.
+Next: owner runs8/25/13 standalone scripts and the ordered producer-consumer
+pytest group in the handoff. Agent runs ZERO tests/imports/collections/DB/live
+calls; AST/whitespace/ref checks only. Full-suite rerun deferred until the short
+group is clean and remaining arrange failures are addressed. PR29 deferred;
+PR22 Draft/unmerged, no deployment/acceptance claim. Older sections below are
+historical checkpoints, not the current continuation.
+
 ## Latest PR22 verification and fixture continuation
 
 Owner/local-agent evidence at exact `70f58a1`: standalone dispatch16 /

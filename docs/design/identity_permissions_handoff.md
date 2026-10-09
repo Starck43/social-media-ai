@@ -1,5 +1,62 @@
 # Identity and permission boundary: owner handoff
 
+## Latest raw-log diagnosis and prepared import-isolation follow-up
+
+Attached owner log for `706bfea` was selectively inspected: actual run directory
+is the retained PR22 worktree, Python3.12.6, collected1554; final1486 passed,
+68 failed,11 warnings,58 subtests,663.02s. Markdown renderer PASSED (line1413)
+and is not a failed node. Raw tier traceback includes plan_arrange_user and
+scoped inserts; earlier reconstructed traceback/list was inaccurate, not proof
+of an old checkout. Focused owner41/41 and139/139 remain separately reported.
+This is inspected owner evidence, NOT agent test execution.
+
+Later tracebacks import current_tenant_id/handle_collect from mock_infrastructure
+and JobManager() returns the fixture's SimpleNamespace without enqueue. These
+specific doubles are declared by returned-job-failure source fixtures, reused
+by dispatcher privacy. The dangerous global-import boundary is addressed in
+`99c8294`: load actual source with module-local declared from-import doubles,
+including late/relative imports; restore temporary private alias; notification
+mocks patch only that module's map. No application/rights/UI/schema change,
+no fake enqueue added or assertion weakened. Eight new regression methods
+PREPARED/NOT RUN; existing outcome25/privacy13 assertions retained. Other source
+fixtures are not globally rewritten; do not claim all68 failures fixed.
+
+Early CLI/digest arrange failures occur before this producer group and are a
+separate compatibility checkpoint, not dismissed as unrelated/pre-existing.
+Next: owner runs8/25/13 standalone scripts and the ordered producer-consumer
+pytest group in the handoff. Agent runs ZERO tests/imports/collections/DB/live
+calls; AST/whitespace/ref checks only. Full-suite rerun deferred until the short
+group is clean and remaining arrange failures are addressed. PR29 deferred;
+PR22 Draft/unmerged, no deployment/acceptance claim. Older sections below are
+historical checkpoints, not the current continuation.
+
+### Owner verification — short ordered group, not another full suite yet
+
+In the clean retained worktree: git fetch origin; git merge --ff-only
+origin/ai/identity-permissions-boundary; git rev-parse HEAD. Stop if dirty or
+history diverged. Existing project venv/dependencies; no reset/drop/migration,
+concurrent pytest on one schema or live calls. Standalone scripts isolate all
+production effects:
+
+```bash
+python tests/test_source_import_isolation.py
+python tests/test_returned_job_failures.py
+python tests/test_dispatcher_log_privacy.py
+```
+
+Expected8/25/13 success. Then, with the existing distinct DB_TEST_SCHEMA:
+
+```bash
+python -m pytest -q tests/test_source_import_isolation.py tests/test_dispatcher_log_privacy.py tests/test_returned_job_failures.py tests/test_plan_tiers.py tests/test_handle_collect.py tests/test_learn_cost.py tests/test_task_run_now.py::test_saving_and_running_queues_the_job_instead_of_blocking tests/test_web_source_detail.py::test_collect_now_runs_inline_for_that_source_only
+```
+
+The explicit order places former producers before consumers in one process.
+Expected: no mock_infrastructure/current_tenant_id/handle_collect imports or
+SimpleNamespace.enqueue after these fixtures; tier quotas still enforced.
+Return exact testedSHA and first complete failure, not broad "pre-existing"
+categories. Other remaining arrangement/UI/digest failures need their own
+investigation; this patch cannot certify all68 or a full green suite.
+
 ## Latest checkpoint — owner results and five arrange fixes
 
 Current code checkpoint `31618a5`; includes dev `6f810a4` via `ef9c417`.

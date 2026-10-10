@@ -2,7 +2,7 @@
 
 ## Current continuation — queue cap and failure visibility integrated
 
-Source checkpoint: dev `844209b1d79c8aa0284868098a6aea42e3053a53` on 2026-10-10.
+Source checkpoint: dev `c8e58971443b254b0d447541e2aa21a362cc5e56` on 2026-10-10.
 The existing task board owns current allocation; older continuation notes below
 retain historical evidence and do not authorize new work.
 
@@ -17,6 +17,8 @@ retain historical evidence and do not authorize new work.
 | #66 active-user permission default | MERGED as `118829f249646f8d8a91bb79771dce217b746aed`; head `315e089b6c28881309638aeea74730ebb13cf1f8` | Parallel-agent-reported corrected exact-source/double checks 9/9 OK, original fail-open source rejected. Earlier owner `b923a48` 5/5 omitted `tfest_missing` from discovery and is not complete evidence. Production remains the owner-authored one-line False default; test-only correction added import isolation/boundary negatives. Source/diff review and GitGuardian passed; no full-suite/DB/app-startup/live acceptance. |
 | #67 secure session cookies | MERGED as `2e96dea928e73e6c8226dfbd15b537c22f0a8a6d`; head `817732883390b77642dd161940a2fa7bb115b439` | Parallel-agent-reported 9 isolated wiring checks, exit 0, on `9c2fa5b` + exact patch; baseline rejected. https_only=True except normalized explicit development; DEBUG does not weaken it. Source/diff review and GitGuardian passed. Health routes source-checked only; no network/app-startup/live TLS/deployment/full-suite acceptance. |
 | #68 analyze-error UI projection | MERGED as `844209b1d79c8aa0284868098a6aea42e3053a53`; head `1a46d7c19d3a8ab95930422eb97b97790759272d` | Parallel-agent-reported 14 new isolated UI checks OK/exit 0 on `2e96dea` + exact patch; baseline rejected. Valid integer error/staged_errors override green success as partial; separate tiles, no additive total, missing/malformed fields omitted rather than zero. Exactly _run_outcome/_job_summary + one test; input result, Job/task/status/retry unchanged. AST/diff readback, existing modal tone/stats/detail badge source review and GitGuardian passed. No #62 rerun, DB/pytest/bootstrap/browser/full-suite or submitted/merged-head execution. |
+| #69 monitored-user collection errors | MERGED as `1e58c3f38aa67cc69538b9ca2ecee6384c57daff`; head `aaaa0fd30f7225acca3c3ab1fb10dd86780584ef` | Author 25 new isolated actual-source/double checks, exit 0, on `2e96dea` + exact patch. Edited existing blobs were unchanged at integration base `844209b`; published five-file readback, scoped AST, conflict-free predicted/actual merge tree and GitGuardian verified. Successful child totals retained; failures continue, auth subset not additive, one parent-source marker. No submitted/merged-head execution, DB/network/full suite or live acceptance; original evidence below stays at its tested revision. |
+| #70 analyze exception-log privacy | MERGED as `c8e58971443b254b0d447541e2aa21a362cc5e56`; head `aef81d39889ea1e550342449b375214c3384fd01` | Parallel-agent-reported owner 7/7 on exact submitted head; accepted without rerun. Two handle_analyze exception logger calls + bounded ID/error-kind helpers and one test; #69 handle_collect preserved by composed-source/readback review, GitGuardian success at fresh base `1e58c3f`. Propagation test uses KeyboardInterrupt, not actual CancelledError. No DB/network/full suite, merged-head execution or global log/privacy acceptance. |
 
 UI projection reported SHA256 identities:
 patch `82c77f7cbf1779db1f0bfcb0dc6a86bf7b679a19ca6e00a5f50f4d77d2cb8a59`;
@@ -80,9 +82,9 @@ proof of separately measured freshness. Silent non-raising provider/analyzer
 failures, normal-source exception-log privacy and real-DB/provider acceptance
 remain OPEN. These are actual-source checks with local query/collection doubles,
 not DB/network/messenger, a submitted/merged-head run or full-suite evidence.
-At this source checkpoint the patch was prepared; consult its branch/PR for
-actual integration. This record remains original source/patch evidence after
-integration, rather than being re-attributed to a later dev or full suite.
+The prepared patch was subsequently integrated as #69 (see the merge row above).
+This record remains original source/patch evidence, not a submitted/merged-head
+execution or later full-suite result.
 
 Coordination: chat #1 integrated the separate analyze-error → green UI fix
 as #68; do not restart its delivered functions/test. Its retention proposal
@@ -90,6 +92,38 @@ remains deferred. The local agent owns only
 the two handle_analyze exception-log sites and its isolated test. Keep these
 function-level lanes separate even when editing the shared handlers file.
 No repeat of the completed #62 checks and no checkpoint-only PR is requested.
+
+### Staged analyzer diagnostics — prepared source-patch evidence
+
+Branch `fix/analyzer-reported-failures`, integration baseline `c8e5897`.
+Scope: analyzer.py diagnostics, handle_analyze staged invocation/idempotent
+record_error guard, tests/test_analyzer_reported_errors.py, and this existing
+board/ledger batch. No standalone checkpoint PR.
+
+Author checks: `python tests/test_analyzer_reported_errors.py ReportedErrorsTests`
+(19 checks on `1e58c3f` + analyzer patch, originally executed through the direct
+standalone entrypoint before wiring tests were added); analyzer bytes unchanged
+at `c8e5897`. `python tests/test_analyzer_reported_errors.py StagedSignalTests`
+(12 new checks on `c8e5897` + combined patch): both OK/exit 0. These are separate
+source-patch executions, NOT a 31-test combined/submitted/merged-head run.
+The unchanged c8e5897 handler baseline failed six of the twelve new wiring
+checks; the prior analyzer lacks the new diagnostic API (19 baseline errors).
+
+Instance-local cumulative reported_errors records explicit client error envelopes,
+legacy error stubs, and caught media/summary/base failures without exporting their
+payloads. A useful sibling cannot hide that diagnostic. A fresh staged analyzer
+instance projects only positive exact-int diagnostics to one source error and one
+staged_error; later staging/outer exceptions do not count the source twice.
+Normal empty/dedup/unconfigured-provider/no-media/relevance skips are not inferred
+as errors. List/None returns, saving/usage, retirement and attempt handling remain
+unchanged. #70 helpers and its two safe exception logs remain untouched.
+
+Limits: no DB/provider/network/bootstrap/full-suite/notification-write execution,
+Job/task terminal-status/retry/schema/live change or deployment acceptance. The
+existing partial storage/dedup behavior (including error sibling payloads) is not
+repaired here; inline collection does not yet project these diagnostics. Complete
+content/media coverage and other silently empty outcomes remain OPEN. Consult
+branch/PR for integration; prepared evidence is not re-attributed after merge.
 
 ## Historical queue/refactoring reconciliation
 

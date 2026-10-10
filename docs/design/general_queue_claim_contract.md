@@ -2,15 +2,30 @@
 
 ## Status and bounded scope
 
-Proposal for the current Foundation / PRD-05 queue lane. Source baseline:
-`0be47bbfb0d13e63cd0509dd072e17ad0047e9db`. This contract specifies a bounded
-refactoring boundary; it is not implementation, schema approval or acceptance.
+The source observations below were drafted at historical baseline
+`0be47bbfb0d13e63cd0509dd072e17ad0047e9db`. The bounded implementation is now
+prepared on branch `fix/ordinary-job-claim-fencing` from dev
+`2aa0b430ffb63fc900c8b54fcebee7646c2ec6f3`; owner execution/review is pending.
 
-The first implementation slice is **claim-fenced ordinary Job outcomes and
-honest caller acknowledgements**, not a general heartbeat rollout. It must wait
-for coordination of the occupied JobManager/dispatcher files, including PR34's
-stale-reap change. This design can be reviewed independently while those PRs
-remain unmerged. Do not copy an unmerged branch as if it were dev.
+Implemented boundary: immutable acquired identity, locked tenant/generation-bound
+ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
+acquisition. Ordinary callers consume their own receipt rather than reloading a
+newer generation. Claim loss raises a bounded error at caller entry points, so
+legacy non-failed-is-success adapters cannot turn it into a success response.
+Direct enqueue/acquire races raise NOT_ACQUIRED without running a handler;
+`run_job_now` retains its existing None-on-not-acquired interface.
+
+Job/task projection remains post-commit and non-atomic. A failed Task projection
+or unexpected notification callback is reported as degradation on the committed
+receipt, not a handler failure/retry. The ID-only manager methods are retained as
+legacy compatibility APIs; every ordinary dispatcher finalizer supplies a claim.
+They are not safe APIs for new worker paths. Checkpoint digest retains its
+separate dispatch/finalization and current observation protocol.
+
+Prepared source-isolated and existing-schema PostgreSQL tests cover ownership,
+loss, competing finalizers, direct races and commit/projection boundaries. They
+have NOT been executed by the author; existing green evidence is not transferred
+to this implementation. No deployment or acceptance is established.
 
 No migration, new job status, provider retry policy, sender activation, model
 layout, permissions grant or accounting ledger is authorized by this document.
@@ -223,13 +238,13 @@ providers, collector writes or handlers' intermediate storage. Do not invoke a
 live provider to test a concurrency design. These remaining limits keep PRD-05
 open; accounting/reservation design stays in its assigned subsequent lane.
 
-PR34 owns JobManager and the shared board/ledger; PR35 occupies the associated
-doc correction paths. PR30/31/32 and PR36 own separate model-layout lanes.
-This package changes only this durable contract. Its Draft PR is the temporary
-allocation record while shared navigation is occupied; no extra backlog or
-status file is introduced. Later coordinate one link/current-stage row, not a
-full board rewrite. Historical owner verification of PR34 applies to its exact
-81138d9, not to this design or future implementation.
+The earlier PR34/PR35/PR37 coordination was resolved through merged PR45.
+Parallel model-layout lanes and deferred PR29 remain separate; this slice does
+not modify their model or AgentTask manager files. Shared board/ledger edits are
+reserved for the docs reconciliation owner; the implementation PR is the
+allocation record until that reconciliation is coordinated. No new handoff or
+backlog document is introduced. Historical owner verification of PR34 applies
+to exact 81138d9, not to this implementation.
 
 ## Source references
 

@@ -50,17 +50,19 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def commit_done_then_fail(self, job_id, **kwargs):
         self.job.status = "done"
         self.job.result = kwargs["result"]
-        raise RuntimeError(PRIVATE)  # Simulate failure of later Task projection.
+        raise RuntimeError(PRIVATE)  # Commit may have succeeded, but no receipt was acknowledged.
 
     async def test_success_write_failure_does_not_attempt_mark_failed_or_notify(self):
         self.jobs.mark_done.side_effect = RuntimeError(PRIVATE)
         await self.assert_write_error()
-        self.jobs.mark_done.assert_awaited_once_with(7, result=self.handler.return_value, llm_cost=0.12)
+        self.jobs.mark_done.assert_awaited_once_with(
+            7, claim=self.fixture.claim, result=self.handler.return_value, llm_cost=0.12,
+        )
         self.jobs.mark_failed.assert_not_awaited()
         self.notify.assert_not_awaited()
         self.assertEqual(self.job.status, "running")  # No success/rollback inferred.
 
-    async def test_task_projection_failure_does_not_reclassify_committed_success(self):
+    async def test_post_commit_ack_loss_does_not_reclassify_committed_success(self):
         self.jobs.mark_done.side_effect = self.commit_done_then_fail
         await self.assert_write_error()
         self.assertEqual(self.job.status, "done")
@@ -78,7 +80,7 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_done.assert_not_awaited()
         self.notify.assert_not_awaited()
 
-    async def test_failed_task_projection_preserves_original_declared_failure(self):
+    async def test_failed_commit_ack_loss_preserves_original_declared_failure(self):
         self.handler.return_value = {"status": "failed", "error": "invalid_structured_output", "llm_cost": None}
 
         async def commit_failure(job_id, **kwargs):
@@ -113,10 +115,17 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         async def commit_done(job_id, **kwargs):
             self.job.status = "done"
             self.job.result = kwargs["result"]
+            return fixtures.CLAIMS.JobOutcomeReceipt(
+                kwargs["claim"], fixtures.CLAIMS.OutcomeAck.DONE, result=kwargs["result"],
+            )
 
         self.jobs.mark_done.side_effect = commit_done
         self.notify.side_effect = RuntimeError(PRIVATE)
-        await self.assert_write_error()
+        with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
+            receipt = await self.dispatcher.execute_job(self.job, self.handler)
+        self.assertEqual(receipt.acknowledgement, fixtures.CLAIMS.OutcomeAck.DONE)
+        self.assertTrue(receipt.notification_projection_failed)
+        self.assertNotIn(PRIVATE, str(logs.output))
         self.assertEqual(self.job.status, "done")
         self.notify.assert_awaited_once()
         self.jobs.mark_failed.assert_not_awaited()
@@ -125,7 +134,9 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.handler.side_effect = ValueError("original handler failure")
         self.jobs.mark_failed.side_effect = RuntimeError(PRIVATE)
         await self.assert_write_error()
-        self.jobs.mark_failed.assert_awaited_once_with(7, error="original handler failure", allow_retry=True)
+        self.jobs.mark_failed.assert_awaited_once_with(
+            7, claim=self.fixture.claim, error="original handler failure", allow_retry=True,
+        )
         self.jobs.mark_done.assert_not_awaited()
         self.notify.assert_not_awaited()
 

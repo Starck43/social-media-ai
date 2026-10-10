@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import with_db_session
@@ -12,6 +13,21 @@ from .base_manager import BaseManager
 
 if TYPE_CHECKING:
     from ..agent_session import AgentSession
+
+
+def _is_session_chat_conflict(error: IntegrityError) -> bool:
+    """Recognize only the named PostgreSQL uniqueness conflict, never its text."""
+    original = error.orig
+    code = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if code != "23505":
+        return False
+    constraint = getattr(original, "constraint_name", None)
+    if constraint is None:
+        constraint = getattr(getattr(original, "diag", None), "constraint_name", None)
+    if constraint is None:
+        # SQLAlchemy's asyncpg adapter keeps driver diagnostics on the cause.
+        constraint = getattr(getattr(original, "__cause__", None), "constraint_name", None)
+    return constraint == "uq_agent_session_chat"
 
 
 class AgentSessionManager(BaseManager["AgentSession"]):
@@ -36,19 +52,28 @@ class AgentSessionManager(BaseManager["AgentSession"]):
         allowlist later does not require touching existing rows.
         """
         session = await self.get(channel=channel, chat_id=chat_id)
-        if session is not None:
-            if is_owner and not session.is_owner:
-                return await self.update_by_id(session.id, is_owner=True)
-            return session
-
-        return await self.create(
-            channel=channel,
-            chat_id=chat_id,
-            kind=kind,
-            is_owner=is_owner,
-            is_active=True,
-            state={},
-        )
+        if session is None:
+            try:
+                return await self.create(
+                    channel=channel,
+                    chat_id=chat_id,
+                    kind=kind,
+                    is_owner=is_owner,
+                    is_active=True,
+                    state={},
+                )
+            except IntegrityError as error:
+                # create() owns its transaction and has already rolled it back.
+                # Recover only a committed winner visible in the current tenant.
+                if not _is_session_chat_conflict(error):
+                    raise
+                session = await self.get(channel=channel, chat_id=chat_id)
+                if session is None:
+                    # Foreign/deleted winners are not adopted; no bypass or retry.
+                    raise
+        if is_owner and not session.is_owner:
+            return await self.update_by_id(session.id, is_owner=True)
+        return session
 
     async def touch(self, session_id: int, when: Optional[datetime] = None) -> None:
         """Record activity timestamp (used for idle detection / retention)."""

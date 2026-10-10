@@ -271,17 +271,27 @@ class ContentCollector:
 			staged = await self._stage_items(content, source, run_id)
 
 			analytics = None
+			analysis_errors = None
 			if analyze and content:
+				# This collector reuses its analyzer across sources/users. Report only
+				# this call's measured delta, never old failures or coerced counters.
+				errors_before = getattr(self.analyzer, "reported_errors", None)
 				analytics = await self.analyzer.analyze_content(
 					content, source, force_reanalyze=force_reanalyze
 				)
+				errors_after = getattr(self.analyzer, "reported_errors", None)
+				if (
+					type(errors_before) is int and errors_before >= 0
+					and type(errors_after) is int and errors_after >= errors_before
+				):
+					analysis_errors = errors_after - errors_before
 				await self._retire_staged(source, analytics)
 			# No analysis this run: the staged rows are the deliverable, left for
 			# the separate `analyze` step to drain.
 
 			await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
-			return {
+			result = {
 				"source_id": source.id,
 				"content_count": len(content),
 				"new_items": new_count,
@@ -294,6 +304,9 @@ class ContentCollector:
 				# This run's "seen" ledger, carried in the job result.
 				"content_hashes": hashes,
 			}
+			if analysis_errors is not None:
+				result["analysis_errors"] = analysis_errors
+			return result
 
 		except Exception as e:
 			logger.error(f"Error collecting from source {source.id}: {e}", exc_info=True)
@@ -394,7 +407,8 @@ class ContentCollector:
 		a resolved USER follows collect_from_source's normal no-content path,
 		not a failure. Authentication failures are a subset of failed requests.
 		No raw exception or authorization hint is added to the returned counters.
-		This does not detect non-raising provider/analyzer failures or change retry.
+		Only positive reported inline diagnostics are aggregated; absence is not zero.
+		This does not measure complete coverage or change retry.
 		"""
 		from app.services.social.credentials import AuthorizationRequired
 
@@ -445,6 +459,11 @@ class ContentCollector:
 				results["total_items"] = total_items
 				results["total_new_items"] = total_new_items
 				results["successful"] += 1
+				# Reported analysis failures coexist with successful collection.
+				# Missing/legacy diagnostics never certify a measured zero total.
+				analysis_errors = result.get("analysis_errors")
+				if type(analysis_errors) is int and analysis_errors > 0:
+					results["analysis_errors"] = results.get("analysis_errors", 0) + analysis_errors
 			except Exception as error:
 				results["failed"] += 1
 				if isinstance(error, AuthorizationRequired):

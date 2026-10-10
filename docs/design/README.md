@@ -75,8 +75,8 @@ Queue continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
 `dbc054c7f37ed1071711afea750e044b7e50ffd6`, owner-reported 77 standalone + 15
 PostgreSQL checks exit 0, review published on that PR. Current queue
 allocation is Draft [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
-(`fix/job-task-outcome-atomicity`, submitted `f1e6c204d85eee50be52b687ab029b056ef5663b`
-from dev `f2f53b1`), pending owner review/checks — its boundary is new, so #51
+(`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
+from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged — its boundary is new, so #51
 results do not transfer. The unmerged-broader gates stay OPEN: general claim
 fencing, Job/task atomicity and recovery replay.
 

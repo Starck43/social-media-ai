@@ -57,8 +57,8 @@ standalone + 15 PostgreSQL, exit 0) and review. The ledger reconciliation
 package itself, [PR #50](https://github.com/Starck43/social-media-ai/pull/50),
 merged as `5aaa85f` (docs-only). Current queue allocation is Draft
 [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
-(`fix/job-task-outcome-atomicity`, submitted `f1e6c204d85eee50be52b687ab029b056ef5663b`
-from dev `f2f53b1`), pending owner review/checks; #51 green results do not
+(`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
+from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 green results do not
 transfer to that new transaction boundary. The broader gates stay OPEN: general
 claim fencing, Job/task atomicity and recovery replay.
 
@@ -103,8 +103,8 @@ tested at `dbc054c7f37ed1071711afea750e044b7e50ffd6` (claim fencing;
 owner-reported 77 standalone + 15 PostgreSQL checks exit 0, review published) —
 general claim fencing, Job/task atomicity and recovery replay remain OPEN. The
 current queue allocation is Draft [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
-(`fix/job-task-outcome-atomicity`, submitted `f1e6c204d85eee50be52b687ab029b056ef5663b`
-from dev `f2f53b1`), pending owner review/checks; #51 results do not certify its
+(`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
+from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 results do not certify its
 changed transaction boundary.
 Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
@@ -367,8 +367,8 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   owner-tested `dbc054c7f37ed1071711afea750e044b7e50ffd6` (77 standalone +
   15 PostgreSQL, exit 0); broader fencing/atomicity/recovery gates remain OPEN.
 - [ ] Job/task outcome atomicity — Draft PR #53
-  (`fix/job-task-outcome-atomicity`, submitted `f1e6c204d85eee50be52b687ab029b056ef5663b`
-  from dev `f2f53b1`), pending owner review/checks; #51 green results do not
+  (`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
+  from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 green results do not
   transfer to this boundary.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels

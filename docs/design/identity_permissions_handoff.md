@@ -1,65 +1,56 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — corrected log provenance; owner rules reconciled
+## Current continuation — completed full green; explicit integration decision pending
 
-Owner checked EXISTING local logs, no new runs/edits: PR22 review worktree clean
-at5573aa4; main dev checkout clean ata983a15 (including .agent/rules.md). There
-are no current dirty rule edits to preserve. PR22 current code is unchanged from
-5573aa4; subsequent synchronization affects rules/documentation only.
+OWNER-REPORTED completed full suite at exact
+`482eacbd84ce640bd25cfaf4c75bbe1695621495`, HEAD unchanged before/after:
+**1612 passed,11 warnings,64 subtests passed,738.25s (12:18)**.
+Saved `PYTEST_EXIT_CODE=0`, not inferred. Exact command:
+`python -m pytest -vv --durations=20 -o faulthandler_timeout=120`.
+Owner-local log `perr/pr22-full-482eacb-20261010-025202.txt`, not independently
+read by remote agent. Worktree had only untracked perr/ diagnostic logs, not
+tracked-code changes; logs retained/uncommitted. test_bot_actions20 passed,
+no former setup duplicate-name errors. No schema/code change during the run.
 
-Authoritative completed evidence:
-- Full2f7becafcdb40ade0633e8a24fd785234d2ea56f:1577 passed,11 warnings,
-  64subtests,688.77s. Only completed fully green log; exit code NOT recorded in
-  that log (previous0 statement was reported/inferred, not log-observed).
-- Full106b68388add9bc0dcb596234d222118bed2c89a:2 failed/1610 passed,
-  11warnings/64subtests,714.25s. The two onboarding direct-render Undefined
-  failures; NOT green. Exit not recorded in log (expected1, not observed there).
-- Full5573aa4385295a8283d63d328aa84954b99c934e:INTERRUPTED at15%, last
-  bot-actions count-test line; no summary or exit. No completed full acceptance.
-- Onboarding5573aa4:14 passed,6warnings,31.77s. Both former failures pass.
-  No default replay. Full command is inferred from headers/options, not saved
-  verbatim. Existing logs reviewed by Owner; not independently loaded by agent.
+Owner reports separately approved targeted TEST cleanup before this run:
+exact agent_tasks id1179/tenant1/name Test Task, four referencing FKs inspected,
+zero dependent rows; transaction required rowcount1, only one task removed
+(154->153). Public/other tables/reset/migrations untouched; no concurrent pytest.
+This is historical Owner-reported cleanup, NOT standing permission to delete,
+reset or migrate again. Initial482eacb full1602passed/10setupErrors/exit1 was red
+because the interrupted5573 run left that fixture row; superseded by completed
+same-code green after bounded cleanup, not waived as a product-code success.
 
-Withdrawn earlier report:106b6832 green/docs-only907 inserts, five-commit PR,
-512passed/test_apply_loss pre-existing flake — not supported by repo/logs.
-No test_apply_loss or test_scheduler_lease_triggers.py in this repo. Never
-classify a failure as unrelated/pre-existing/flaky from that withdrawn claim.
-5573aa4 adds running_jobs={} test context, so was NOT docs-only relative106b683.
+Fresh dev `a983a1568809c288f6bab135d2943ae67e3c0e3c` is included viaa787a74;
+no new dev delta observed. GitHub reports PR22 mergeable/clean, still OPEN/Draft.
+This evidence-only commit updates FOUR existing docs, no app/tests/rules/schema
+changes or new documentation files. Green code evidence remains exact482eacb;
+no unnecessary full or short rerun for this docs-only delta.
 
-Rules alignment d8b50a6 adopted exact Owner dev R6–R9 first; genuine conflict-
-free merge a787a7454b2fe4c23f1b0b36179fb1a2b6a98656 includes fresh a983a15.
-Retain concrete main-folder/one-PR-worktree/stale-path constraints and shared
-local test_schema/localhost:5432/social_manager. Follow-up clarifies R3/R4:
-interrupted run is potentially dirty/live, inspect read-only, no automatic reset;
-uncertain state stops. R8 explicit approval governs ALL schema operations;
-remote agent prepares checks only. R9 fresh compatibility + explicit dev-merge
-command; no direct/force push, Ready/deploy/live acceptance from green alone.
+Technical scope retained: fail-closed bound identity/session, fresh tool/confirmation
+rights, one-use exact actor/args/tool grant, narrow owner/service permissions,
+preview-only action_send botaction.view/literal dry_run=True; no publication or
+ledger transition. Owner queued/running/outcome UI and per-capability LLM defaults,
+source/task escaping, tenancy isolation and onboarding context preserved.
+Full green is regression evidence, NOT exhaustive security/deployment/business
+acceptance. Broad /app XSS audit, durable approval/CAS, browser/live acceptance
+and release gates remain OPEN. Eleven warnings retained as observed; no claim
+that they were independently triaged or GitHub CI passed.
 
-Next Owner/local agent: use existing PR22 worktree/venv, inspect previous pytest
-process and shared-schema state read-only. No schema cleanup/reset or new schema
-without separate explicit instruction; stop if uncertain. No pytest overlap
-with PR29/30/31, no main dev checkout edits. Fetch/ff-only PR22 and record actual
-HEAD/status. Onboarding14 transfers as UNCHANGED code evidence after this
-rules/docs-only update; no unnecessary short replay.
+Next: Owner explicit decision whether to remove Draft and merge PR22 into dev.
+Do NOT do either automatically. Immediately before authorized integration recheck
+fresh head/dev/required checks; if changed assess delta, not silently reuse old
+acceptance. Prefer history-preserving merge when approved; no direct/force push.
+No main Owner checkout edits/stash/clean/commits, no log deletion/commit or
+worktree removal. Existing R6–R9/R3–R4 policy and sequential shared test_schema
+remain binding. PR29 deferred, PR30/31 separate occupied model-layout lanes,
+no automatic integration/verification of those PRs. Owner sequence remains rights,
+then assigned general queue, then spend-reservation DESIGN with schema approval.
 
-Run ONE full from an ordinary persistent terminal, not a timeout-limited agent
-tool. Redirect stdout/stderr to a unique Owner-local log; save the process exit
-code immediately after pytest, plus SHA/status before/after. Exact command:
-
-```bash
-python -m pytest -vv --durations=20 -o faulthandler_timeout=120
-```
-
-Expected complete summary/exit0/no failures/errors; full count from actual output,
-not old1577 or1610. Keep checkout/code/schema unchanged; faulthandler is diagnostic,
-not proof a stalled test finished. If stuck, inspect bounded diagnostic log and
-first stack, no automatic reset/restart. Return SHA/command/summary/exit and
-first full redacted error if any. Latest full remains interrupted5573aa4 until
-new completed evidence. No Ready/merge now; after green recheck fresh dev first.
+Historical corrected checkpoints remain distinct:2f7beca1577 green but log exit
+not saved;106b6832failed/1610passed;5573aa4 interrupted15%, onboarding14 passed;
+unsupported test_apply_loss/scheduler-flake report withdrawn, never merge evidence.
 Agent ZERO tests/collection/app imports/DB/migrations/browser/live operations.
-PR22 Draft/unmerged; PR29 deferred; PR30/31 occupied separate/review-only.
-Broader /app XSS/durable approval/release/browser/live/business gates OPEN.
-Existing board/ledger/handoff/pointer updated, no new docs/design files.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

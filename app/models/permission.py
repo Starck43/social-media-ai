@@ -1,3 +1,5 @@
+"""Legacy Permission imports with unchanged runtime binding semantics."""
+
 import re
 from typing import TYPE_CHECKING, ClassVar
 
@@ -9,87 +11,12 @@ from .base import Base, TimestampMixin
 from ..core.config import settings
 
 if TYPE_CHECKING:
-	from . import ModelType
+    from . import ModelType
 
+# isort: split
+from .identity.permission import Permission
 
-class Permission(Base, TimestampMixin):
-	__tablename__ = "permissions"
-	__table_args__ = (
-		UniqueConstraint('codename', 'model_type_id', name='uq_permission_model_type'),
-		CheckConstraint("codename ~ '^[a-z_]+\\.[a-z_]+\\.[a-z]+$'", name="check_codename_format"),
-		{'schema': settings.DB_SCHEMA}
-	)
-
-	id: Mapped[int] = mapped_column(Integer, primary_key=True)
-	codename: Mapped[str] = mapped_column(String(100), nullable=False)
-	name: Mapped[str] = mapped_column(String(200), nullable=False)
-	action_type: Mapped[ActionType] = ActionType.sa_column(
-		type_name='action_type',
-		nullable=False,
-		store_as_name=True  # Хранить как имена (VIEW, CREATE, UPDATE, etc.)
-	)
-	# Relationships
-	model_type_id: Mapped[int] = mapped_column(ForeignKey(f"{settings.DB_SCHEMA}.model_types.id"))
-	# eager so `Permission.model_type.model_name` is safe on detached/async users
-	# (used by `User.has_perm_for` on the admin and API paths).
-	model_type: Mapped["ModelType"] = relationship("ModelType", back_populates="permissions", lazy="selectin")
-
-	def __str__(self) -> str:
-		return f"{self.codename}"
-
-	# Manager will be set after class definition to avoid circular imports
-	if TYPE_CHECKING:
-		from .managers.base_manager import BaseManager
-		from .managers.permission_manager import PermissionManager
-		objects: ClassVar[PermissionManager | BaseManager]
-	else:
-		objects: ClassVar = None
-
-	@property
-	def app_label(self) -> str:
-		return self.codename.split('.')[0]
-
-	@property
-	def model_name(self) -> str:
-		return self.codename.split('.')[1]
-
-	@property
-	def action(self) -> ActionType:
-		return self.action_from_token(self.codename.split('.')[2])
-
-	@classmethod
-	def action_from_token(cls, token: str) -> ActionType:
-		"""`ActionType` members are (db_value, display name, emoji) tuples, so the
-		stored lowercase token is looked up by `db_value`, not by enum value."""
-		for action in ActionType:
-			if action.db_value == token:
-				return action
-		raise ValueError(f"Invalid action type: {token}")
-
-	@classmethod
-	def validate_codename(cls, codename: str):
-		# app label: lowercase; model name: the table's class name, so CamelCase is
-		# normal (`dashboard.AIAnalytics.view`); action: the lowercase db token.
-		pattern = r'^[a-z][a-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[a-z][a-z0-9_]*$'
-		if not re.match(pattern, codename):
-			raise ValueError(f"Invalid codename format: {codename}")
-
-		try:
-			cls.action_from_token(codename.split('.')[2])
-		except ValueError:
-			raise ValueError(f"Invalid action type in codename: {codename.split('.')[2]}")
-
-	@classmethod
-	def split_codename(cls, codename: str) -> tuple[str, str]:
-		"""Split permission codename into (app_model, action) parts."""
-		cls.validate_codename(codename)
-
-		parts = codename.split('.')
-		if len(parts) < 3:  # Should be at least 'app.model.action'
-			return codename, ''
-		return '.'.join(parts[:2]), parts[2]
-
-
-# Attach the manager to the Permission model
+# isort: split
 from .managers.permission_manager import PermissionManager  # noqa: E402
+
 Permission.objects = PermissionManager()

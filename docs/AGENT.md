@@ -29,7 +29,7 @@ messenger message
 | `app/agent/identity.py` | Активная identity в разрешённом tenant; загрузка User/roles/permissions, повторная проверка |
 | `app/agent/confirmation.py` | Привязанные к actor/session intents и одноразовый in-process approval |
 | `app/agent/toolset/` | Реализации тулов: `system`, `collect`, `sources`, `tasks`, `reports`, `actions`, `scenarios` |
-| `app/models/agent_session.py` | Одна строка на (channel, chat_id); volatile `state` |
+| `app/models/agent_session.py` | Одна строка на (tenant, channel, chat_id); volatile `state` |
 | `app/models/agent_message.py` | Транскрипт диалога (user/assistant/tool) + токены/стоимость |
 | `app/models/agent_feedback.py` | Оценки `/good`,`/bad` (vote, note, сообщение-основание) |
 | `app/models/agent_memory.py` | Факты в постоянной памяти: (tenant, scope, key) -> value + provenance |
@@ -164,6 +164,9 @@ run). Автоматическая эволюция промптов **не пр
 Workspace разрешается `TenantUIMiddleware` из `tenant_users` web membership.
 Роль передаётся как `role_id` в `handle_web_message()`, permission checks
 работают через `permission_scope()` так же, как в messenger.
+
+Сессия агента — одна на (tenant, channel, chat_id): один и тот же web-пользователь
+в двух workspaces ведёт два разных диалога, а не общий транскрипт.
 
 ### Telegram/MAX users
 

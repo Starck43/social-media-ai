@@ -29,7 +29,7 @@ class IsolatedIntegrityError(Exception):
 
 def conflict(original=None):
     if original is None:
-        original = SimpleNamespace(sqlstate="23505", constraint_name="uq_agent_session_chat")
+        original = SimpleNamespace(sqlstate="23505", constraint_name="uq_agent_session_tenant_channel_chat")
     return IsolatedIntegrityError(original)
 
 
@@ -112,7 +112,7 @@ class FirstContactRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_named_conflict_recovers_visible_winner_and_upgrades_owner(self):
         winner = SimpleNamespace(id=7, is_owner=False)
-        error = conflict(SimpleNamespace(pgcode="23505", diag=SimpleNamespace(constraint_name="uq_agent_session_chat")))
+        error = conflict(SimpleNamespace(pgcode="23505", diag=SimpleNamespace(constraint_name="uq_agent_session_tenant_channel_chat")))
         store = Storage(error=error, winner=winner)
         result = await self.recovered(store, is_owner=True)
         self.assertEqual(result.id, 7)
@@ -121,7 +121,7 @@ class FirstContactRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.reads, [CHAT, CHAT])
 
     async def test_asyncpg_cause_diagnostics_recover_without_error_text(self):
-        original = SimpleNamespace(sqlstate="23505", __cause__=SimpleNamespace(constraint_name="uq_agent_session_chat"))
+        original = SimpleNamespace(sqlstate="23505", __cause__=SimpleNamespace(constraint_name="uq_agent_session_tenant_channel_chat"))
         store = Storage(error=conflict(original), winner=SimpleNamespace(id=7, is_owner=True))
         result = await self.recovered(store)
         self.assertTrue(result.is_owner)
@@ -131,9 +131,9 @@ class FirstContactRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_other_or_unidentified_integrity_errors_are_not_swallowed(self):
         cases = [
             SimpleNamespace(sqlstate="23505", constraint_name="different_constraint"),
-            SimpleNamespace(sqlstate="23502", constraint_name="uq_agent_session_chat"),
+            SimpleNamespace(sqlstate="23502", constraint_name="uq_agent_session_tenant_channel_chat"),
             SimpleNamespace(sqlstate="23505"),
-            SimpleNamespace(constraint_name="uq_agent_session_chat"),
+            SimpleNamespace(constraint_name="uq_agent_session_tenant_channel_chat"),
         ]
         for original in cases:
             with self.subTest(original=vars(original)):

@@ -165,7 +165,7 @@ All tables here inherit tenant_id/timestamps.
 
 ### `agent_sessions`
 
-[Source](../app/models/agent_session.py). Fields: `id`, `channel` String(20), `chat_id` String(100); `kind` String(20, default private); `is_owner` false, `is_active` true; nullable `state` JSON, `last_message_at` timezone-aware DateTime. Unique **(`channel`, `chat_id`)**, not (tenant_id, channel, chat_id). `update_offset`/`pending_confirmation` are properties derived from state. Session ownership is not a substitute for current user/operation authorization.
+[Source](../app/models/agent_session.py). Fields: `id`, `channel` String(20), `chat_id` String(100); `kind` String(20, default private); `is_owner` false, `is_active` true; nullable `state` JSON, `last_message_at` timezone-aware DateTime. Unique **(`tenant_id`, `channel`, `chat_id`)**: the same chat in two workspaces is two conversations, never a shared transcript (web `chat_id` is the user id, and a web membership exists per workspace). `update_offset`/`pending_confirmation` are properties derived from state. Session ownership is not a substitute for current user/operation authorization.
 
 ### `agent_messages`
 

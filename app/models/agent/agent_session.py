@@ -18,13 +18,20 @@ if TYPE_CHECKING:
 class AgentSession(Base, TenantScopedMixin, TimestampMixin):
     """One conversation with the agent (a private chat or a channel feed).
 
+    Ownership is per workspace: the same chat in two tenants is two
+    conversations, never a shared transcript (enforced by
+    `uq_agent_session_tenant_channel_chat`).
+
     `state` holds volatile per-chat bookkeeping — most importantly the Telegram
     `update_offset`, so a restart does not replay old messages.
     """
 
     __tablename__ = "agent_sessions"
     __table_args__ = (
-        UniqueConstraint("channel", "chat_id", name="uq_agent_session_chat"),
+        # Scoped by tenant: the same messenger/web identity may talk to the
+        # agent in several workspaces, and each conversation stays private to
+        # the workspace that owns it (see `uq_agent_memory_tenant_scope_key`).
+        UniqueConstraint("tenant_id", "channel", "chat_id", name="uq_agent_session_tenant_channel_chat"),
         Index("ix_agent_sessions_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )

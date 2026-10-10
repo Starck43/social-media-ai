@@ -33,7 +33,7 @@ CLASS_FINGERPRINTS = {
     "AgentFeedback": "4d8f1724a7a1015b618a814a66e89300169c728e96dc20adb2cb5dd5112cd590",
     "AgentMemory": "f7ecd5ce520890ed3f472bc5caaeb1b9c24cfb1495c31ed186556e776b44fed7",
     "AgentMessage": "79c18f9c188737a68e5727b6488529dd50e7fd2bba3b230794e7fac4de419493",
-    "AgentSession": "47d7171155f4220f7bff0829f66289d3ae64d4142595f9a32de5c68d04097cd3",
+    "AgentSession": "310cd3f44417f50a6e837438a99a6408afd098b112f8450d8dd79975d13ea560",
 }
 
 
@@ -102,7 +102,7 @@ def test_unique_foreign_key_and_cost_role_contracts_do_not_change():
         value = next(c for c in model.__table__.constraints if isinstance(c, UniqueConstraint) and c.name == name)
         return tuple(c.name for c in value.columns)
 
-    assert unique_columns(AgentSession, "uq_agent_session_chat") == ("channel", "chat_id")
+    assert unique_columns(AgentSession, "uq_agent_session_tenant_channel_chat") == ("tenant_id", "channel", "chat_id")
     assert unique_columns(AgentMemory, "uq_agent_memory_tenant_scope_key") == ("tenant_id", "scope", "key")
     assert isinstance(AgentMessage.__table__.c.role.type, String)
     assert isinstance(AgentMessage.__table__.c.cost.type, Float) and AgentMessage.__table__.c.cost.nullable

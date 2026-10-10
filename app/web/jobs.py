@@ -356,11 +356,10 @@ async def job_cancel(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Cancel a running job by marking it failed.
+    """Record cancellation only for the running generation observed here.
 
-    The worker loop checks the status before each step; once it sees `failed`
-    it stops. This is a soft cancel — the worker finishes the current LLM call
-    and then bails out, so no data is lost.
+    A committed cancellation fences later claimed outcomes, not an in-flight
+    provider call. It does not prove that the worker or external effects stopped.
     """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -389,13 +388,17 @@ async def job_cancel(
             add_flash(request, "error", f"Задание #{job.id} уже {job.status} — прервать нечего")
             return RedirectResponse("/app/jobs", status_code=302)
 
-        now = job.updated_at or job.created_at
-        await Job.objects.update_by_id(
-            job.id,
-            status="failed",
-            error="Cancelled by operator",
-            finished_at=now,
-        )
+        from app.jobs.claim_outcomes import JobClaim
 
-    add_flash(request, "success", f"Задание #{job_id} прервано оператором")
+        try:
+            observed = JobClaim.capture(job)
+        except ValueError:
+            add_flash(request, "error", "Отмена не подтверждена: данные запуска неполны. Проверьте состояние задания.")
+            return RedirectResponse("/app/jobs", status_code=302)
+        cancelled = await Job.objects.cancel_running(observed)
+        if not cancelled:
+            add_flash(request, "error", "Отмена не выполнена: состояние запуска изменилось. Проверьте задание.")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+    add_flash(request, "success", f"Отмена задания #{job_id} записана. Выполнение внешних действий могло продолжиться.")
     return RedirectResponse("/app/jobs", status_code=302)

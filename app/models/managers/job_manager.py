@@ -111,6 +111,49 @@ class JobManager(BaseManager["Job"]):
 
         return await cls._claim(JobModel.id == job_id, now=now)
 
+    async def cancel_running(self, claim: "JobClaim") -> bool:
+        """Cancel only the running generation observed by an authorized operator.
+
+        This fences the Job write, not external effects or Task summaries. False
+        means the snapshot no longer matches; database/commit errors propagate.
+        """
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.claim_outcomes import JobClaim
+
+        from ..job import Job as JobModel
+
+        if not isinstance(claim, JobClaim):
+            raise ValueError("A validated running snapshot is required")
+        if not is_bypass() and current_tenant_id() != claim.tenant_id:
+            raise TenantContextError("Cancellation snapshot does not match the current tenant")
+        async with async_session_maker() as session:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(
+                            JobModel.id == claim.job_id,
+                            JobModel.tenant_id == claim.tenant_id,
+                            JobModel.job_type == claim.job_type,
+                            JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+                            JobModel.status == "running",
+                            JobModel.attempts == claim.attempts,
+                            JobModel.started_at == claim.started_at,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    return False
+                row.status = "failed"
+                row.error = "Cancelled by operator"
+                row.finished_at = datetime.now(timezone.utc)
+            # Return success only after the cancellation commit is acknowledged.
+        return True
+
     async def _record_task_result(self, job: "Job", status: str, error: Optional[str] = None) -> None:
         """Mirror the job outcome onto its AgentTask (if any) so the task's
         `last_status`/`last_error`/`last_run_at` reflect the real run result."""

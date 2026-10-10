@@ -55,12 +55,33 @@ Queue continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
 `dbc054c7f37ed1071711afea750e044b7e50ffd6` with published owner evidence (77
 standalone + 15 PostgreSQL, exit 0) and review. The ledger reconciliation
 package itself, [PR #50](https://github.com/Starck43/social-media-ai/pull/50),
-merged as `5aaa85f` (docs-only). Current queue allocation is Draft
-[PR #53](https://github.com/Starck43/social-media-ai/pull/53)
-(`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
-from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 green results do not
-transfer to that new transaction boundary. The broader gates stay OPEN: general
-claim fencing, Job/task atomicity and recovery replay.
+merged as `5aaa85f` (docs-only). Queue atomicity [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
+is **MERGED** as `243866281f1bb2e3ed87827601e2705e82b6c3df`; owner-tested
+`e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`: 27 unit + 15 existing DB + 7 new DB,
+all exit 0. [PR #52](https://github.com/Starck43/social-media-ai/pull/52) is
+**MERGED** as `10d160901b7305a0ed22d15fd146b7573d6a399b`, final head
+`4f66478668a584ba9e23cb5fa7f40712286b3576`; code/tests equal owner-tested
+`f61383936cb3dfaec3c5ff09ab6442a106ee0159` (15 standalone, exit 0), final delta
+docs-only. No full suite or combined-head check is claimed. Current queue lane:
+**OCCUPIED / Draft [PR #54](https://github.com/Starck43/social-media-ai/pull/54)**,
+`fix/operator-job-cancel-fencing` from dev `10d16090`; owner-reviewed/tested at
+`4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 cancellation + 15 web outcome
+standalone, read-only config check and 10 PostgreSQL checks, sequential/all exit 0.
+[Owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068),
+logs `perr/pr54-*`; no code corrections. No full suite or combined-head evidence;
+no author-run tests. Recovery,
+task-summary ordering, per-attempt spend and broader fencing remain **OPEN**.
+PR29 stays **deferred**.
+
+### Latest verified merge checkpoint
+
+Fresh source checkpoint: dev `10d160901b7305a0ed22d15fd146b7573d6a399b`.
+Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity
+(`7d8c731`), #39 agent (`c1d3b9e`), #41 scheduling (`b4d48c6`); earlier
+#30/#31/#32 layout merges remain recorded above. Runtime whitespace #40 also
+merged as `bcff693`. Git ancestry establishes integration, not new test evidence.
+Their checks remain attached to original owner-tested revisions; no new full
+suite, deployment or acceptance is claimed by this reconciliation.
 
 ### Original stale-reaping package (closed via PR #45)
 
@@ -101,11 +122,10 @@ lease continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
 merged at the historical checkpoint `351f3b6` (dev has since advanced), owner-
 tested at `dbc054c7f37ed1071711afea750e044b7e50ffd6` (claim fencing;
 owner-reported 77 standalone + 15 PostgreSQL checks exit 0, review published) —
-general claim fencing, Job/task atomicity and recovery replay remain OPEN. The
-current queue allocation is Draft [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
-(`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
-from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 results do not certify its
-changed transaction boundary.
+the bounded Job/task atomicity follow-up #53 is now merged as `24386628`.
+Its own `e3e2226` checks apply, not #51 results. Current cancellation allocation
+and #52/#53 merge evidence are recorded in the continuation above. Recovery,
+ordering, spend and broader fencing remain OPEN; PR29 remains deferred.
 Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
 
@@ -156,8 +176,10 @@ This evidence-record commit changes ONLY board/ledger. Exact tested SHA stays
 81138d9; it is not retroactively replaced with this later docs-only head.
 No application/test change or repeated focused/full check is requested.
 PR34, PR35 and PR37 are closed/merged through the PR #45 integration as
-`f078f3a`. General leases, stale outcome fencing, task/job atomicity, recovery
-replay and the separate runtime whitespace IndexError (PR #40) remain OPEN.
+`f078f3a`. At that integration, general leases, stale outcome fencing, task/job
+atomicity, recovery replay and runtime whitespace IndexError were OPEN.
+Later bounded #51/#53 and #40 merges are recorded above; recovery, ordering,
+spend and broader fencing are still OPEN.
 
 ### Documentation reconciliation with PR35 — landed in the integration
 
@@ -351,7 +373,7 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   fencing; tested `b29e432` (49 + 11 standalone, 11 PostgreSQL, exit 0).
 - [x] Tenancy-model layout — PR #30, dev `50dc2a2b0bb9832c05b426ea16c6010616264b31`;
   compatibility exports/import facade preserved; tested `16df066` (61 focused,
-  exit 0). PR31/PR32 model lanes remain OPEN; PR29 deferred.
+  exit 0). PR31/PR32 model lanes are merged (`f333403` / `ef0de1c`); PR29 deferred.
 - [x] CLI username parsing — PR #44, dev `c765365`; tested `0c2b8f0`
   (10 standalone, exit 0).
 - [x] Direct CLI awaitables — PR #47 (stacked on #44), dev `3551f26`; tested
@@ -366,10 +388,21 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   `351f3b62065b6f1e68b2a5306010b2dc2749bd7a` (dev has since advanced);
   owner-tested `dbc054c7f37ed1071711afea750e044b7e50ffd6` (77 standalone +
   15 PostgreSQL, exit 0); broader fencing/atomicity/recovery gates remain OPEN.
-- [ ] Job/task outcome atomicity — Draft PR #53
-  (`fix/job-task-outcome-atomicity`, owner-tested `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`
-  from dev `f2f53b1`), owner-reported focused checks passed (27 unit + 15 existing DB + 7 new DB, all exit 0); remote review complete, Draft/unmerged; #51 green results do not
-  transfer to this boundary.
+- [x] Job/task outcome atomicity — PR #53, merge
+  `243866281f1bb2e3ed87827601e2705e82b6c3df`; owner-tested
+  `e3e222673bb39debe2b07cdf4fd7d95b71a8dac1` (27 unit + 15 existing DB + 7 new DB,
+  all exit 0). No full-suite/combined-head evidence; broader gates stay OPEN.
+- [x] Web claim-loss feedback — PR #52, merge
+  `10d160901b7305a0ed22d15fd146b7573d6a399b`; final `4f664786` has docs-only
+  delta after owner-tested `f613839` (15 standalone, exit 0).
+- [x] Remaining model-layout group — PR #36 (`f2f53b1`), #38 (`7d8c731`),
+  #39 (`c1d3b9e`), #41 (`b4d48c6`); no new runtime test evidence recorded here.
+- [x] Runtime whitespace guard — PR #40, merge `bcff693`; no new checks here.
+- [ ] Operator cancellation snapshot fencing — Draft PR #54, owner review complete;
+  tested `4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 + 15 standalone,
+  config check and 10 PostgreSQL, sequential/all exit 0; owner evidence above.
+  No corrections, author-run tests, full suite, Ready/merge, schema changes or live.
+  Recovery / ordering / spend remain OPEN.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

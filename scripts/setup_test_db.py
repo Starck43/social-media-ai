@@ -160,6 +160,94 @@ async def _missing_columns(conn, metadata, schema: str) -> list[str]:
     return missing
 
 
+def _model_uniques(metadata, schema: str) -> dict:
+    """UNIQUE constraints the models declare, keyed by name (or columns)."""
+    from sqlalchemy import UniqueConstraint
+
+    out: dict = {}
+    for table in metadata.sorted_tables:
+        if table.schema not in (None, schema):
+            continue
+        uniques: dict = {}
+        for constraint in table.constraints:
+            if not isinstance(constraint, UniqueConstraint):
+                continue
+            cols = tuple(sorted(column.name for column in constraint.columns))
+            uniques[constraint.name or f"cols:{','.join(cols)}"] = cols
+        if uniques:
+            out[table.name] = uniques
+    return out
+
+
+async def _db_uniques(conn, schema: str) -> dict:
+    """UNIQUE constraints the live schema has, with their column sets."""
+    result = await conn.execute(
+        text(
+            "select tc.table_name, tc.constraint_name, "
+            "string_agg(kcu.column_name, ',' order by kcu.column_name) "
+            "from information_schema.table_constraints tc "
+            "join information_schema.key_column_usage kcu "
+            "  on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema "
+            "where tc.table_schema = :schema and tc.constraint_type = 'UNIQUE' "
+            "group by tc.table_name, tc.constraint_name"
+        ),
+        {"schema": schema},
+    )
+    out: dict = {}
+    for table, name, columns in result:
+        out.setdefault(table, {})[name] = tuple(columns.split(","))
+    return out
+
+
+def unique_constraint_drift(model_uniques: dict, db_uniques: dict) -> tuple[list, list]:
+    """Diff model-declared UNIQUE constraints against the live ones.
+
+    Returns (stale, missing): `stale` are live constraints whose column set no
+    model declares, `missing` are model constraints the schema does not have.
+
+    `create_all` creates missing tables with their constraints, but a model
+    that narrows or widens an *existing* UNIQUE constraint keeps the stale one
+    — a regression can then pass or fail against a schema nobody chose (a
+    session constraint that was never widened to
+    (tenant_id, channel, chat_id) still rejects the second workspace's row).
+    The test schema is model-driven, so it must follow the models exactly.
+
+    Column sets, not names, decide staleness: `Column(unique=True)` declares no
+    name, and the database calls it `<table>_<column>_key`.
+    """
+    stale: list[tuple[str, str]] = []
+    missing: list[tuple[str, tuple, str]] = []
+    for table in sorted(set(model_uniques) | set(db_uniques)):
+        model = model_uniques.get(table, {})
+        db = db_uniques.get(table, {})
+        model_columns = {frozenset(cols) for cols in model.values()}
+        for name, columns in sorted(db.items()):
+            if frozenset(columns) not in model_columns:
+                stale.append((table, name))
+        for name, columns in sorted(model.items()):
+            if name in db:
+                continue
+            if any(frozenset(db[k]) == frozenset(columns) for k in db):
+                continue
+            missing.append((table, columns, name))
+    return stale, missing
+
+
+async def repair_unique_constraints(conn, metadata, schema: str) -> list[str]:
+    """Align live UNIQUE constraints with the models; returns what it did."""
+    stale, missing = unique_constraint_drift(_model_uniques(metadata, schema), await _db_uniques(conn, schema))
+
+    actions: list[str] = []
+    for table, name in stale:
+        await conn.execute(text(f'alter table "{schema}"."{table}" drop constraint "{name}"'))
+        actions.append(f"dropped {table} {name}")
+    for table, columns, name in missing:
+        columns_sql = ", ".join(f'"{column}"' for column in columns)
+        await conn.execute(text(f'alter table "{schema}"."{table}" add constraint "{name}" unique ({columns_sql})'))
+        actions.append(f"created {table} {name} ({columns_sql})")
+    return actions
+
+
 def _stamp_head(url: str) -> None:
     """Stamp an independently isolated database after metadata table creation."""
     from alembic import command
@@ -309,8 +397,15 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
     await _create_tables()
 
     from app.core.config import settings
-    from app.core.database import async_engine
     from app.models import Base
+
+    # create_all cannot change an existing table's constraints, so a model that
+    # rewrites a UNIQUE leaves the previous one in place for every later run.
+    # Align them with the models before anything reads the schema.
+    async with async_engine.begin() as conn:
+        repairs = await repair_unique_constraints(conn, Base.metadata, settings.DB_SCHEMA)
+    for action in repairs:
+        say(f"schema repaired: {action}")
 
     async with async_engine.connect() as conn:
         missing = await _missing_columns(conn, Base.metadata, settings.DB_SCHEMA)

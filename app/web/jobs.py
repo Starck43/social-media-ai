@@ -287,7 +287,9 @@ async def job_run(
     """Attempt the existing claim path and report only a confirmed outcome.
 
     This route does not re-arm failed rows or infer completion from a missing
-    claim. A dispatcher error propagates rather than becoming a success flash.
+    claim. A dispatcher error propagates rather than becoming a success flash;
+    a lost claim is the one reported case and renders an explicit error, never
+    completion and never a silent retry.
     """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -319,9 +321,17 @@ async def job_run(
             add_flash(request, "error", f"Задание уже {job.status} — перезапуск не требуется")
             return RedirectResponse("/app/jobs", status_code=302)
 
+    from app.jobs.claim_outcomes import JobClaimLostError
     from app.jobs.dispatcher import run_job_now
 
-    result = await run_job_now(job.id, allow_retry=False)
+    try:
+        result = await run_job_now(job.id, allow_retry=False)
+    except JobClaimLostError:
+        # The claim moved on: report uncertainty, never success, never a retry.
+        add_flash(
+            request, "error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."
+        )
+        return RedirectResponse("/app/jobs", status_code=302)
     if result is None:
         add_flash(request, "error", "Запуск не начат: задание не удалось захватить. Проверьте его статус.")
     elif not isinstance(result, dict):

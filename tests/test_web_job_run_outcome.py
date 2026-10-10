@@ -41,6 +41,14 @@ class Redirect:
         self.status_code = status_code
 
 
+class ClaimLostError(RuntimeError):
+    """Stand-in for app.jobs.claim_outcomes.JobClaimLostError."""
+
+
+class PersistenceError(RuntimeError):
+    """Stand-in for app.jobs.dispatcher.JobOutcomePersistenceError."""
+
+
 class JobRunOutcomeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.flashes = []
@@ -92,6 +100,7 @@ class JobRunOutcomeTests(unittest.IsolatedAsyncioTestCase):
                 "app.models.job": SimpleNamespace(Job=SimpleNamespace(objects=SimpleNamespace(get=self.get))),
                 "app.web.deps": deps,
                 "app.core.tenant_context": SimpleNamespace(tenant_scope=tenant_scope),
+                "app.jobs.claim_outcomes": SimpleNamespace(JobClaimLostError=ClaimLostError),
                 "app.jobs.dispatcher": SimpleNamespace(run_job_now=self.run),
             },
         )
@@ -194,6 +203,26 @@ class JobRunOutcomeTests(unittest.IsolatedAsyncioTestCase):
         self.run.side_effect = RuntimeError("safe outcome error")
         with self.assertRaisesRegex(RuntimeError, "safe outcome error"):
             await self.attempt()
+        self.assertEqual(self.flashes, [])
+
+    async def test_claim_loss_reports_error_without_success_or_retry(self):
+        self.run.side_effect = ClaimLostError("claim lost")
+        response = await self.source.job_run(self.request, 7, token="csrf", tenant_id=31)
+        self.assertEqual((response.url, response.status_code), ("/app/jobs", 302))
+        self.assertEqual(
+            self.flashes[-1],
+            ("error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."),
+        )
+        self.assert_not_success()
+        self.assertFalse(any(kind == "info" for kind, text in self.flashes))
+        self.assertIn("error", [kind for kind, text in self.flashes])
+        self.run.assert_awaited_once_with(7, allow_retry=False)
+        self.get.assert_awaited_once_with(id=7, tenant_id=31)
+
+    async def test_persistence_error_propagates_instead_of_error_flash(self):
+        self.run.side_effect = PersistenceError("write failed")
+        with self.assertRaises(PersistenceError):
+            await self.source.job_run(self.request, 7, token="csrf", tenant_id=31)
         self.assertEqual(self.flashes, [])
 
     def test_endpoint_and_retry_policy_remain_unchanged(self):

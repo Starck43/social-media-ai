@@ -13,14 +13,19 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged by explicit Owner approval, history preserved. Merge tree equals approved56d8105; executable code equals Owner-green482eacb1612 passed/11warnings/64subtests/saved exit0. Regression-verified/merged is not deployed, live activated or security/business accepted. General queue is next assigned lane; broader gates remain OPEN.
+Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged
+by explicit Owner approval, history preserved. Merge tree equals approved
+56d8105; executable code equals Owner-green 482eacb 1612 passed/11
+warnings/64 subtests/saved exit0. Merged/regression-verified does not establish
+deployment, live activation, or business/security acceptance. General queue is
+next assigned lane; broader gates remain OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as683c49e; Owner482eacb full1612 passed/11warnings/64subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
+| B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as 683c49e; Owner 482eacb full 1612 passed/11 warnings/64 subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
 | C / general queue, PRD-05 | **ASSIGNED NEXT, not started:** same Owner-assigned lane after merged PR22 | Recheck fresh dev/open PRs/ownership; select one bounded independent queue contract. Checkpoint fencing is not general queue correctness. No new queue implementation in this journal update. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,7 +37,12 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest Owner completed evidence: exact482eacb1612 passed/11warnings/64subtests/738.25s/saved exit0, unchanged HEAD. Approved merge683c49e has identical executable code; post-merge journal diff is docs-only, no retest by default. Separately approved one-row TEST cleanup (zero dependencies) is not future cleanup/reset permission. GitGuardian success; no invented independent tests/CI/warning triage.
+Latest Owner completed evidence: exact 482eacb 1612 passed/11 warnings/64
+subtests/738.25s/saved exit0, unchanged HEAD. Approved merge 683c49e has
+identical executable code; post-merge journal diff is docs-only, no retest by
+default. Separately approved one-row TEST cleanup (zero dependencies) is not
+future cleanup/reset permission. GitGuardian success; no invented independent
+tests/CI/warning triage.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

@@ -29,11 +29,11 @@ from cli.run import resolve_sources, run_handler
 
 
 def _sync(coro) -> object:
-    """Run an async command as the platform owner (bypass tenant scope)."""
+    """Run a coroutine or its factory inside the existing platform-owner scope."""
     from app.core.tenant_context import tenant_scope
 
     with tenant_scope(bypass=True):
-        return asyncio.run(coro())
+        return asyncio.run(coro() if callable(coro) else coro)
 
 
 def _report(title: str, stats: dict, colour: str = "green") -> None:
@@ -47,21 +47,18 @@ def _report(title: str, stats: dict, colour: str = "green") -> None:
     rprint(Panel.fit(table, title=f"[bold {colour}]📊 {title}[/bold {colour}]", border_style=colour))
 
 
-def _resolve(tenant: str | None, src: str | None, **extra):
-    """Build the handler payload for the resolved sources. Returns (tenant_id, payload)."""
+async def _resolve(tenant: str | None, src: str | None, **extra):
+    """Resolve sources and return (tenant_id, payload, sources) when awaited."""
     from cli._tenant import resolve_tenant_id
 
-    async def _main():
-        tenant_id = await resolve_tenant_id(tenant)
-        sources = await resolve_sources(src, tenant_id)
-        if not sources:
-            rprint("[red]Не найдено активных источников по заданным фильтрам[/red]")
-            raise typer.Exit(1)
-        payload = {"source_ids": [s.id for s in sources]}
-        payload.update({k: v for k, v in extra.items() if v is not None})
-        return tenant_id, payload, sources
-
-    return _main
+    tenant_id = await resolve_tenant_id(tenant)
+    sources = await resolve_sources(src, tenant_id)
+    if not sources:
+        rprint("[red]Не найдено активных источников по заданным фильтрам[/red]")
+        raise typer.Exit(1)
+    payload = {"source_ids": [s.id for s in sources]}
+    payload.update({k: v for k, v in extra.items() if v is not None})
+    return tenant_id, payload, sources
 
 
 # --- analyze ---------------------------------------------------------------

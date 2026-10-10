@@ -3,7 +3,7 @@
 ## Current continuation — PR22 merged; general queue is next assigned lane
 
 PR #22 **MERGED into dev**, history-preserving merge commit
-`683c49e85918503119af47338200d8f762a52403` (parents deva983a15 and PRhead
+`683c49e85918503119af47338200d8f762a52403` (parents dev a983a15 and PRhead
 56d810538aa15f9e391c43dfed75e77aada2d2a1), after explicit Owner Ready/merge
 approval. GitHub closed/merged verified; Draft removed. Merge tree equals
 approved PRhead tree exactly. app/tests/rules/migrations match tested482eacb;

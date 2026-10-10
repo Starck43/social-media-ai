@@ -277,9 +277,14 @@ async def job_delete(
             add_flash(request, "error", f"Задание #{job.id} выполняется — его нельзя удалить")
             return RedirectResponse("/app/jobs", status_code=302)
 
-        # The observed status is a delete condition, not a pre-check alone: if the
-        # row changed since the read, the conditional delete hits zero rows.
-        deleted = await Job.objects.delete(**filters, status__in=DELETABLE)
+        # The delete repeats the observed row's identity, tenant and a still-
+        # deletable status as conditions, not a pre-check alone: if the row
+        # changed since the read — reclaimed, rebound or gone — it hits zero rows.
+        deleted = await Job.objects.delete(
+            id=job.id,
+            tenant_id=job.tenant_id,
+            status__in=DELETABLE,
+        )
 
     if deleted == 1:
         add_flash(request, "success", f"Задание #{job_id} удалено")

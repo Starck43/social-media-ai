@@ -163,12 +163,19 @@ class JobDeleteRaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.delete.await_args.kwargs["tenant_id"], 31)
         self.assertIn(31, [scope[0] for scope in self.scopes])
 
-    async def test_superuser_bypass_keeps_id_and_status_condition_without_tenant(self):
+    async def test_superuser_bypass_keeps_id_observed_tenant_and_status_condition(self):
         self.build(action_tenant=None)
         await self.attempt_delete()
         self.assert_success()
-        self.delete.assert_awaited_once_with(id=7, status__in=DELETABLE)
+        self.delete.assert_awaited_once_with(id=7, tenant_id=31, status__in=DELETABLE)
         self.assertEqual(self.scopes, [(None, {"bypass": True})])
+
+    async def test_tenant_rebinding_after_lookup_is_not_deleted(self):
+        self.delete.return_value = 0  # The row was rebound to another workspace after the read.
+        await self.attempt_delete()
+        self.assert_error()
+        self.assertIn("состояние изменилось", self.flashes[-1][1])
+        self.delete.assert_awaited_once_with(id=7, tenant_id=31, status__in=DELETABLE)
 
     async def test_guards_precede_lookup_and_delete(self):
         cases = (

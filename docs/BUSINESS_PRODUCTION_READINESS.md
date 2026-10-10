@@ -134,6 +134,79 @@ Actions:
 
 Acceptance: time-bound fixtures for each class and tier; tenant deletion cannot affect others; vault/revocation and evidence FK behavior tested; privacy/support terms match deployed behavior. Legal/commercial policy is a decision gate, not something this code review certifies.
 
+#### Proposed data-class policy — decision record, not implementation
+
+Source inventory: dev `c8e58971443b254b0d447541e2aa21a362cc5e56` on
+2026-10-10. This bounded review covers the paths linked below, not every deletion
+entry point or the deployed environment. Numeric policy periods, offboarding
+completion deadlines and backup expiry are **UNDECIDED** until product/operator
+and applicable legal review. No cleanup, export, revocation, migration, backup or
+restore was executed. PRD-06 remains OPEN.
+
+**Observed implementation, not approved retention promises:**
+
+- [Tenant plan metadata](../app/models/tenancy/tenant.py) contains
+  `retention_days` 7/30/90 for Starter/Pro/Business. The reviewed deletion paths
+  below do not read it; these values do not establish a data-class policy.
+- [JobManager.cleanup_done](../app/models/managers/job_manager.py) deletes done
+  Jobs by `finished_at`, default 24 hours. [handle_prune](../app/jobs/handlers.py)
+  instead uses `created_at`, default 7 days, for done/failed Jobs and preserves
+  attempt-budget-stop errors. These different clocks/windows can remove outcome
+  evidence before the advertised tier window; this review changes neither path.
+- Staged raw items retire by saved hashes; exhausted attempts remain stored.
+  [delete_older_than](../app/models/managers/collected_item_manager.py) uses
+  `created_at` and deletes even unanalysed/exhausted items. Its raw SQL has **no
+  tenant_id predicate**; `handle_prune` passes only session/days. This is a static
+  tenant-boundary risk, not an executed cross-tenant deletion test. A future fix
+  must explicitly define tenant scope or separately authorized global maintenance.
+- Model deletion dependencies are not a complete lifecycle: deleting a chat
+  session cascades messages; memory evidence becomes NULL while the learned value
+  survives. Source deletion cascades analytics/actions; deleting analytics can
+  leave an action with a NULL analytics reference. These require an offboarding
+  dependency map, not a blanket delete/cascade assumption.
+
+Every row below proposes a purpose and eligibility rule. **Period = UNDECIDED
+for every class**; the origin clock is proposed, not installed behavior. No
+indefinite retention or automatic destructive cleanup is approved by this table.
+
+| Data class / source | Proposed purpose and retention clock | Proposed deletion or revocation rule | Evidence/exception to resolve before implementation |
+| --- | --- | --- | --- |
+| [Staged raw text, metadata and hashes](../app/models/collection/collected_item.py) | Temporary analysis input; age from ingestion `created_at`, not historical publication date | Retire only confirmed saved hashes; expire eligible backlog separately after scoped preview | Failed/exhausted items need visible coverage loss; no raw archive merely because a plan is paid |
+| [Analytics, prompts and rollups](../app/models/analysis/ai_analytics.py) | Customer results; choose whether clock follows creation or reporting window, and whether updates extend it | Delete/redact derived personal content and rebuild/invalidate dependent views under explicit scope | Prompts/response_payload may contain source text; mutable estimated_cost is not a durable every-call spend ledger |
+| [Chat messages/tool results](../app/models/agent/agent_message.py) and sessions | Conversation continuity; proposed message creation clock, separate session/state lifetime | Approved conversation/account deletion must include tool outputs and pending approval state | Session CASCADE removes messages; deleting cost-bearing messages may erase economics evidence; define minimal retained accounting separately |
+| [Memory and provenance](../app/models/agent/agent_memory.py) | Purpose-bound preferences/facts; review on purpose change/offboarding, not just last write | Explicitly remove/review learned values when their evidence or subject is deleted | evidence_message_id SET NULL does not erase the fact; decide required provenance and dependent feedback handling |
+| Jobs, [actions](../app/models/scheduling/bot_action.py), [digest content/receipts](../app/models/scheduling/digest_run.py) | Operational trace and reconciliation; proposed terminal-completion clock; approval/receipt lifetime separately | Separate eligible customer content deletion from minimal scoped outcome/cost/decision evidence | Preserve unresolved external effects, in_flight/uncertain receipts, reservations and approved incident/legal holds until an explicit resolution; minimal holds need owner/review/expiry decisions |
+| [Notifications](../app/models/notifications/notification.py) | User attention/history; proposed creation clock | Scoped expiry independent of read/unread state; remove sensitive report copies where required | is_read is not deletion eligibility or evidence of messenger delivery |
+| [Personal credentials](../app/models/identity/user_credential.py) and deployment keys | Authorized connector access while needed; expiry/revocation event, not tier period | Stop workspace access promptly on revocation/offboarding; purge an eligible personal secret only with its owner's scope | Personal vault is shared across the user's workspaces; tenant departure must not delete another workspace's usable secret. Provider-side revocation and cached/session invalidation need separate evidence |
+| Process logs, traces, support exports and third-party LLM copies | Minimized operational purpose; separate approved log/provider periods and data-location agreement | Bound collection/access and delete eligible copies; redact at source rather than relying on a grep filter | Bounded #70 logs do not sanitize all sinks; provider/subprocessor deletion and legal terms require verified capabilities, not a DB-delete promise |
+| [Backups, snapshots/WAL and protected keys](DEPLOYMENT.md#backup-strategy) | Recoverability; choose rolling generations, expiry, key custody, RPO/RTO and location together | Deleted primary data ages out on the approved backup lifecycle; restrict restores and replay approved deletion/revocation records before reopening | Backup presence is not restore acceptance; DB without CREDENTIALS_KEY is unusable. Do not promise immediate deletion from immutable/off-host/provider copies |
+
+**Offboarding and restore proposal (not available commands):** verify actor,
+workspace and data subject; stop future schedules/access and reconcile in-flight
+work; preview scoped export/deletion/dependencies and holds; record an approved,
+minimal deletion/revocation marker outside the expired restore generation;
+perform only the separately authorized operations; verify remaining references
+and report what remains/why and the approved backup expiry. For an isolated
+restore, apply newer deletion/revocation markers and recheck access before
+activation; never resume customer sends as a restore test by default. Marker
+storage, integrity, retention and access control need their own reviewed design;
+no tombstone table or legal-hold mechanism is claimed to exist.
+
+**Decisions required to approve policy:** product owner chooses each class's
+period, clock, tier coverage and downgrade/offboarding treatment; operator chooses
+backup/log generations, key recovery, restore/deletion replay and support access;
+legal/privacy review confirms required exceptions, disclosure, provider geography
+and subprocessors. Until those decisions and implementation evidence exist, do
+not advertise the plan metadata as enforced deletion or a commercial guarantee.
+
+**Future acceptance, not performed here:** UTC boundary/NULL timestamp and
+class/tier fixtures; two-tenant deletion and scope-change races; FK/provenance and
+uncertain-effect preservation; deletion of derived copies; credential revocation
+without collateral shared-vault loss; isolated restore with deletion replay and
+key recovery. Each implementation gets its own bounded checks, not a repeat of
+already completed UI/log tests. Publishing this proposal closes only the inventory
+and proposal-writing task, not PRD-06 or staging/business acceptance.
+
 ### PRD-07 — Structured, safe AI boundaries (blocker for write-enabled features)
 
 Retain existing strict analysis validation and text framing; do not repeat completed CA-01/02. PR #17 merged typed digest/learn/reflect contracts, bounded fields/operations, owned evidence validation and safe validation-failure paths. Atomic memory batches, watermark concurrency, poisoned-input/factual-quality acceptance and complete billing are still open. Validate supported scenario schemas at save time; an unsupported schema must not silently remove enforcement.

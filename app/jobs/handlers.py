@@ -494,7 +494,11 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
         async with session.begin():
             staged_deleted = await CollectedItem.objects.delete_older_than(session, staged_days)
     except Exception as e:  # noqa: BLE001 — a sweep failure must not fail the prune
-        logger.warning(f"Could not sweep stale collected_items: {e}")
+        logger.warning(
+            "staged_retention_failed job_id=%s error_code=%s",
+            _log_id(payload.get("job_id")),
+            _error_kind(e),
+        )
     finally:
         await session.close()
 

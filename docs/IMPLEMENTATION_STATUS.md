@@ -70,17 +70,28 @@ standalone, config check and 10 PostgreSQL checks, sequential/all exit 0;
 [owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
 Final delta was three docs only; executable files equal the owner-tested revision.
 No merged-head/full-suite run, deployment or acceptance is implied.
-Current queue lane: **OCCUPIED / PREPARED**, `fix/atomic-completed-job-cleanup`
-from dev `ee43592a`; owner checks prepared/not run. Remote scope: JobManager
-cleanup_done, separate cleanup tests and existing board/ledger/claim contract.
-Independent local helper assignment: `fix/web-job-delete-race`, only web jobs
-job_delete + tests/test_web_job_delete_race.py; awaiting owner-forwarded start.
-The parallel agent retains runtime/session/message helpers; none are changed here.
+Current queue lane: **OCCUPIED / Draft [PR #55](https://github.com/Starck43/social-media-ai/pull/55)**,
+`fix/atomic-completed-job-cleanup` from dev `ee43592a`; owner review complete,
+exact tested `1eb561fdebbcf2a556bdfca7089ae79d1625cda8`: six standalone,
+read-only config check and eight PostgreSQL checks, sequential/all exit 0;
+[owner evidence](https://github.com/Starck43/social-media-ai/pull/55#issuecomment-6097728246).
+No code corrections or author-run tests. Pre-commit failure rolls back;
+committed ACK loss can leave deletion committed and propagates without replay.
+Independent helper [PR #56](https://github.com/Starck43/social-media-ai/pull/56)
+is Draft, reviewed at owner-tested `0cac44fdf3d69cb5af03229a9f1817516c7315bf`
+(11 standalone, exit 0); observed-tenant bypass correction accepted. Tests prove
+route wiring/simulated count behavior, not an independently run PostgreSQL race.
+The parallel agent retains runtime/session/message helpers. Its bounded runtime
+privacy [PR #57](https://github.com/Starck43/social-media-ai/pull/57) merged as
+`21edba0745f394ff395568a73ee1258edc9b6269`, head `b910550a` (see privacy evidence
+below); none of those files are changed here. #55/#56 remain unmerged.
 Recovery / ordering / spend and broader fencing remain **OPEN**; PR29 **deferred**.
 
 ### Latest verified merge checkpoint
 
-Fresh source checkpoint: dev `ee43592a05d706168e7b80ece87ea17e2de34641`.
+Latest observed dev checkpoint: `21edba0745f394ff395568a73ee1258edc9b6269`.
+The cleanup branch remains based on `ee43592a`; #57 runtime code is not merged
+into it. This records observed integration, not combined-head test evidence.
 Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity
 (`7d8c731`), #39 agent (`c1d3b9e`), #41 scheduling (`b4d48c6`); earlier
 #30/#31/#32 layout merges remain recorded above. Runtime whitespace #40 also
@@ -407,12 +418,20 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   `ee43592a05d706168e7b80ece87ea17e2de34641`, final `7316a084` (docs-only final delta);
   owner-tested `4d65af4`: 14 + 15 standalone, config check and 10 PostgreSQL,
   sequential/all exit 0. No merged-head/full-suite or deployment evidence.
-- [ ] Atomic completed-job cleanup — `fix/atomic-completed-job-cleanup` from
-  dev `ee43592a`; one conditional DELETE and actual affected count. Six standalone
-  and eight PostgreSQL cases prepared, NOT run. Retention/replay policy unchanged.
-- [ ] Web delete write-time status guard — local helper assigned
-  `fix/web-job-delete-race`, web job_delete + separate test only; execution/evidence
-  not yet confirmed. Shared board/ledger remain owned by the cleanup package.
+- [ ] Atomic completed-job cleanup — Draft PR #55, owner-reviewed at
+  `1eb561fdebbcf2a556bdfca7089ae79d1625cda8`: 6 standalone + config + 8 PostgreSQL,
+  sequential/all exit 0, no corrections. Retention/replay policy unchanged;
+  no full suite, author-run tests, Ready/merge or live.
+- [ ] Web delete write-time status guard — Draft PR #56, observed-tenant bypass
+  correction accepted; owner-tested `0cac44fdf3d69cb5af03229a9f1817516c7315bf`:
+  11 standalone/exit 0, no PostgreSQL/full-suite claim. No Ready/merge here.
+- [x] Bounded runtime log privacy — PR #57 merged as
+  `21edba0745f394ff395568a73ee1258edc9b6269`, head `b910550a490059c35c363a4848f2bf0da8360d62`;
+  four log sinks. Owner-reported scratch source `ee43592a` + patch evidence:
+  baseline 4 failed/exit 1, patched 4 passed/exit 0. Peer reports published runtime
+  equals that patch and test body AST unchanged except command docstring;
+  this is NOT a submitted/merged-head run or independent/full-suite verification.
+  Global provider/ORM/transcript privacy remains OPEN.
   Recovery / ordering / spend remain OPEN; PR29 deferred.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels

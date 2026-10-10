@@ -20,7 +20,11 @@ owner-reviewed/tested at `4d65af4e55c6b3096db2278ce2589cfc17f1525e`:
 sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
 No code corrections or author-run tests; the final delta was docs-only.
 Merged does not establish deployment, acceptance or a combined-dev green suite.
-The cleanup_done follow-up is PREPARED from dev `ee43592a`, checks not run.
+The cleanup_done follow-up is Draft [PR #55](https://github.com/Starck43/social-media-ai/pull/55)
+from dev `ee43592a`, owner-reviewed/tested at exact
+`1eb561fdebbcf2a556bdfca7089ae79d1625cda8`: 6 standalone + read-only config check
+and 8 PostgreSQL, sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/55#issuecomment-6097728246).
+No code corrections, author-run tests or merged-head/full-suite claim.
 
 Implemented boundary: immutable acquired identity, locked tenant/generation-bound
 ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
@@ -289,9 +293,13 @@ retention approval, checkpoint retention guarantee or stronger recovery claim.
 
 Prepared checks: six source-isolated delegation cases, eight existing-schema
 PostgreSQL cases for tenant/status/age boundaries, bounded bypass, duplicate
-cleaners, lock races, rollback and committed ACK loss. They have NOT been run.
-The independent web job_delete write-time guard is assigned to the local helper;
-this package does not change that route or claim its tests passed.
+cleaners, lock races, rollback and committed ACK loss. The owner ran these at
+exact `1eb561fd` with results above; the author ran none. Injected pre-commit
+failure rolls back, whereas committed ACK loss leaves the row deleted, raises
+and does not issue another DELETE; it does not establish rollback.
+The independent web job_delete guard is Draft PR #56, owner-tested `0cac44fd`
+(11 standalone, exit 0), observed-tenant correction reviewed. This package does
+not change that route or claim independently observed PostgreSQL coverage.
 
 ## Prepared acceptance specification — not executed tests
 

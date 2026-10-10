@@ -49,10 +49,13 @@ branch carries them via merge `ef4fd13` of dev `50dc2a2`:
 Checks for those lanes are owner-reported targeted runs recorded in the
 parallel chat's task records; no full suite is attached to any of them.
 
-Queue continuation is OCCUPIED by Draft [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
-(ordinary claim fencing) at `dbc054c7f37ed1071711afea750e044b7e50ffd6`, with
-published owner evidence and review; unmerged, so general claim fencing,
-Job/task atomicity and recovery replay stay OPEN.
+Queue continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
+(ordinary claim fencing) is **MERGED** as `351f3b6` (current dev head); tested
+SHA retained: `dbc054c7f37ed1071711afea750e044b7e50ffd6` with published owner
+evidence (77 standalone + 15 PostgreSQL, exit 0) and review. The ledger
+reconciliation package itself, [PR #50](https://github.com/Starck43/social-media-ai/pull/50),
+merged as `5aaa85f` (docs-only). The broader gates stay OPEN: general claim
+fencing, Job/task atomicity and recovery replay.
 
 ### Original stale-reaping package (closed via PR #45)
 
@@ -89,10 +92,11 @@ Local Owner main dev remains off limits; one PR/worktree, sequential shared
 `test_schema`; no reset/drop/create/stamp/migration or merge permission.
 Owner/local commands and correction round-trip belong in the PR/commit, not a
 new status file; do not repeat completed focused checks. The ordinary-claim/
-lease continuation is now the bounded Draft [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
-at `dbc054c7f37ed1071711afea750e044b7e50ffd6` (claim fencing; owner-reported
-77 standalone + 15 PostgreSQL checks exit 0, review published, still unmerged) —
-general claim fencing, Job/task atomicity and recovery replay remain OPEN.
+lease continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
+merged as `351f3b6` at tested SHA `dbc054c7f37ed1071711afea750e044b7e50ffd6`
+(claim fencing; owner-reported 77 standalone + 15 PostgreSQL checks exit 0,
+review published) — general claim fencing, Job/task atomicity and recovery
+replay remain OPEN.
 Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
 
@@ -347,6 +351,12 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   (16 standalone, exit 0).
 - [x] Stored-analysis lookup — PR #48, dev `2aa0b43`; tested `7629ea6`
   (18 standalone, exit 0).
+- [x] Ledger reconciliation — PR #50, dev `5aaa85fe6bffd3da976da38a6eda62a1936e1f46`;
+  docs-only (README + this journal); no tests, no full suite.
+- [x] Ordinary claim fencing — PR #51, dev `351f3b62065b6f1e68b2a5306010b2dc2749bd7a`
+  (current dev head); tested `dbc054c7f37ed1071711afea750e044b7e50ffd6` (77
+  standalone + 15 PostgreSQL, exit 0); broader fencing/atomicity/recovery
+  gates remain OPEN.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

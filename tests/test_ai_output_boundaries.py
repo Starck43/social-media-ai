@@ -178,9 +178,13 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.rows = [SimpleNamespace(id=11, role="user", content="Short reports"),
                      SimpleNamespace(id=12, role="assistant", content="Understood")]
         self.facts = [SimpleNamespace(id=21, key="style", value="old", source="learn", confidence=0.8, updated_at=None)]
-        self.memory = SimpleNamespace(as_dict=AsyncMock(return_value={}), write=AsyncMock(),
-                                      apply_learn_batch=AsyncMock(return_value=True),
-                                      delete_by_id=AsyncMock(), update_by_id=AsyncMock())
+        self.memory = SimpleNamespace(
+            as_dict=AsyncMock(return_value={}),
+            write=AsyncMock(),
+            apply_learn_batch=AsyncMock(return_value=True),
+            delete_by_id=AsyncMock(),
+            update_by_id=AsyncMock(),
+        )
         self.model = SimpleNamespace(name="mock-model")
         self.resolve_model = AsyncMock(return_value=self.model)
         self.chat = AsyncMock(return_value={"content": json.dumps({"facts": [fact()]}), "usage": {"cost": 0.12}})
@@ -190,8 +194,9 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         modules = {
             "app.services.ai.output_contracts": CONTRACTS,
             "app.services.ai.prompt_sanitizer": SANITIZER,
-            "app.core.tenant_context": module_with(current_tenant_id=lambda: 7, is_bypass=lambda: False,
-                                                   TenantContextError=RuntimeError),
+            "app.core.tenant_context": module_with(
+                current_tenant_id=lambda: 7, is_bypass=lambda: False, TenantContextError=RuntimeError
+            ),
             "app.core.config": module_with(settings=SimpleNamespace()),
             "app.models": module_with(
                 AgentMessage=SimpleNamespace(id=Column(), objects=Query(self.rows)),

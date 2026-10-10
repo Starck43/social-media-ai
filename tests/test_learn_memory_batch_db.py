@@ -40,9 +40,7 @@ class MemoryDatabaseTests(unittest.IsolatedAsyncioTestCase):
             )
         self.own, self.other = self.tenants
         with tenant_scope(self.own.id):
-            session = await AgentSession.objects.create(
-                channel="telegram", chat_id=f"lb-{uuid4().hex}", kind="private"
-            )
+            session = await AgentSession.objects.create(channel="telegram", chat_id=f"lb-{uuid4().hex}", kind="private")
             self.message = await AgentMessage.objects.create(
                 session_id=session.id, role="user", content="Brief reports"
             )
@@ -120,9 +118,7 @@ class MemoryDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_foreign_evidence_rejected_without_facts_or_meta(self):
         with tenant_scope(self.other.id):
-            session = await AgentSession.objects.create(
-                channel="telegram", chat_id=f"lb-{uuid4().hex}", kind="private"
-            )
+            session = await AgentSession.objects.create(channel="telegram", chat_id=f"lb-{uuid4().hex}", kind="private")
             foreign = await AgentMessage.objects.create(session_id=session.id, role="user", content="Foreign")
         with self.assertRaisesRegex(ValueError, "owned user message"):
             await self.apply(self.batch(evidence_id=foreign.id))

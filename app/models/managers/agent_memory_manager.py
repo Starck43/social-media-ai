@@ -115,7 +115,9 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
                                     AgentMessage.id.in_(evidence_ids),
                                 )
                             )
-                        ).scalars().all()
+                        )
+                        .scalars()
+                        .all()
                     )
                     if owned_ids != evidence_ids:
                         raise ValueError("Learning evidence is no longer an owned user message")

@@ -309,7 +309,7 @@ class ContentCollector:
 			return result
 
 		except Exception as e:
-			logger.error(f"Error collecting from source {source.id}: {e}", exc_info=True)
+			logger.error("collection_source_failed error_code=collection_operation_failed")
 
 			# Send critical notification if available
 			if NOTIFICATIONS_AVAILABLE:
@@ -498,4 +498,4 @@ class ContentCollector:
 				parent_analysis_id=parent_analysis_id
 			)
 		except Exception as e:
-			logger.error(f"Error analyzing content: {e}", exc_info=True)
+			logger.error("collection_analysis_failed error_code=analysis_operation_failed")

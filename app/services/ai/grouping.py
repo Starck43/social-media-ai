@@ -13,7 +13,7 @@ from datetime import date
 from typing import Any
 
 from app.models import AIAnalytics, Source
-from app.services.ai.analysis_render import render_analysis
+from app.services.ai.analysis_render import first_analysis_value, render_analysis
 from app.services.ai.chain_resolver import human_chain_label
 from app.services.ai.reporting import MEDIA_FILTERS, SENTIMENT_FILTERS, sentiment_bucket
 from app.types.enums.bot_types import GroupingAxis
@@ -37,14 +37,7 @@ def _digest_value(summary_data: dict, keys: tuple[str, ...]):
         summary_data.get("ai_analysis"),
         summary_data,
     ]
-    for nest in nests:
-        if not isinstance(nest, dict):
-            continue
-        for key in keys:
-            value = nest.get(key)
-            if value is not None and value != "" and value != []:
-                return value
-    return None
+    return first_analysis_value(nests, keys)
 
 
 def _extract_topics(summary_data: dict) -> list[str]:

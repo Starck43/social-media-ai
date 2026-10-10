@@ -227,12 +227,16 @@ class JobManager(BaseManager["Job"]):
         return False
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
-        """Requeue jobs stuck in 'running' longer than timeout (crashed worker)."""
+        """Atomically requeue rows whose running lease is still stale.
+
+        Keep status and lease age in the UPDATE predicate: a previously read
+        snapshot must not overwrite a completion or a refreshed heartbeat.
+        The queryset retains the caller's tenant guard (or explicit bypass).
+        This preserves the existing timeout/replay policy; it does not prove
+        that an ordinary long-running handler has stopped its side effects.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
-        stale = await self.filter(status="running", locked_at__lt=cutoff)
-        for job in stale:
-            await self.update_by_id(job.id, status="pending", locked_at=None)
-        return len(stale)
+        return await self.filter(status="running", locked_at__lt=cutoff).update(status="pending", locked_at=None)
 
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:
         """Delete successfully finished jobs older than `older_than_hours`.

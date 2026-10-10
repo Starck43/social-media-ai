@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.agent import learning
 from app.agent.learning import run_learn
+from app.core.tenant_context import tenant_scope
 from app.jobs import dispatcher as dispatcher_module
 from app.models import AgentMessage, AgentSession, Job
 
@@ -37,7 +38,8 @@ async def test_run_learn_returns_priced_llm_cost(monkeypatch):
 
     monkeypatch.setattr("app.services.ai.llm_client.chat_with_fallback", fake_chat)
 
-    result = await run_learn(min_messages=8)
+    with tenant_scope(session.tenant_id):
+        result = await run_learn(min_messages=8)
     assert result["status"] == "ok"
     assert result["llm_cost"] == 0.007
 
@@ -50,7 +52,8 @@ async def test_run_learn_skipped_carries_zero_cost():
     await learning.set_watermark(max_id.id if max_id else 0)
     session = await _session_with_users(2)
 
-    result = await run_learn(min_messages=8)
+    with tenant_scope(session.tenant_id):
+        result = await run_learn(min_messages=8)
     assert result["status"] == "skipped"
     assert result["llm_cost"] == 0.0
 
@@ -102,7 +105,8 @@ async def test_run_learn_skipped_at_daily_cap(monkeypatch):
 
     await learning.set_watermark(0)
     session = await _session_with_users(8)
-    result = await run_learn(min_messages=1)
+    with tenant_scope(session.tenant_id):
+        result = await run_learn(min_messages=1)
     assert result["status"] == "skipped"
     assert result["reason"] == "cost_cap"
 

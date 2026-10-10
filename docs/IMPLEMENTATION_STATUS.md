@@ -49,6 +49,29 @@ new status file. Next: verify ONLY this package when local test lane is free;
 then review one separately bounded ordinary-claim/lease contract. Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
 
+### Documentation reconciliation with PR35 — prepared, not integrated
+
+PR #35 remains Draft at `8b76b1d768d0525e0501560460c458de81ed3181`.
+Its four-file readability/acceptance delta is now included in this queue
+candidate without copying its old board allocation over PR34's occupied row.
+The original text composition had two adjacent-hunk conflicts in README;
+resolve them by retaining PR34's source-baseline insertion and occupied queue
+row alongside PR35's corrected PR22 paragraph/identity row. The ledger's queue
+journal and Kilo audit are retained; two other documentation files match PR35.
+Source baseline remains dev `6b01493`; no dev/PR merge is performed. Historical
+Kilo observations below describe that baseline, not an assertion that the
+spacing remains uncorrected in this reconciled candidate. The whitespace
+runtime IndexError remains OPEN and unmodified.
+
+This reconciliation changes FOUR docs only. All app/tests/.agent/migrations
+and other executable files are byte-identical to submitted queue `654dcab`.
+Static diff/allowlist/acceptance-phrase checks establish content preservation
+only. The original common-base merge still needs README hunk resolution until
+PR35 ancestry is attached in the dedicated local PR34 worktree. ZERO tests/collection/app
+imports/DB/schema/migration/live calls; no previous checks repeated. Existing
+focused owner commands remain pending, unless the owner supplies results for
+an exact tested SHA. No full suite is requested for this docs-only delta.
+
 ### Kilo findings audited without dismissing successful-check comments
 
 [PR22 Kilo report](https://github.com/Starck43/social-media-ai/pull/22#issuecomment-6091570623)
@@ -80,28 +103,29 @@ an actual changed file. No application acceptance follows from that review.
 ## Current continuation — PR22 merged; general queue is next assigned lane
 
 PR #22 **MERGED into dev**, history-preserving merge commit
-`683c49e85918503119af47338200d8f762a52403` (parents deva983a15 and PRhead
+`683c49e85918503119af47338200d8f762a52403` (parents dev a983a15 and PRhead
 56d810538aa15f9e391c43dfed75e77aada2d2a1), after explicit Owner Ready/merge
 approval. GitHub closed/merged verified; Draft removed. Merge tree equals
-approved PRhead tree exactly. app/tests/rules/migrations match tested482eacb;
+approved PRhead tree exactly. app/tests/rules/migrations match tested 482eacb;
 no new executable delta or automatic post-merge retest requested.
 
-OWNER completed full at exact482eacbd84ce640bd25cfaf4c75bbe1695621495:
-1612 passed,11warnings,64subtests,738.25s,saved PYTEST_EXIT_CODE=0;
+OWNER completed full at exact 482eacbd84ce640bd25cfaf4c75bbe1695621495:
+1612 passed, 11 warnings, 64 subtests, 738.25s, saved PYTEST_EXIT_CODE=0;
 HEAD unchanged before/after, only untracked perr logs. Owner-local full log not
 independently read by agent. GitGuardian Security Checks completed SUCCESS on
-approved56d8105; zero legacy commit statuses. No invented test-CI pass or
+approved 56d8105; zero legacy commit statuses. No invented test-CI pass or
 independent warning triage. History of red/interrupted runs remains evidence,
 not current acceptance: bounded separately approved one-row TEST orphan cleanup
 with zero dependencies preceded final green; no future deletion/reset permission.
 
-Integrated bounded safeguards: bound active identity/session, fresh tool/right
+Integrated bounded safeguards: bound active identity/session, fresh tool/rights
 checks, actor/args/tool-bound one-use confirmation, narrow owner/service grants,
 preview-only action_send botaction.view/literal dry_run=True, no publication/
 PENDING transition. Owner queued/running/outcome UI, source/task escaping,
 LLM-default management, test isolation/onboarding correction preserved.
-Merged/regression-verified is NOT deployed, live activated or business/security
-accepted. Broad /app XSS audit, durable approval/CAS and release/browser/live
+Merged/regression-verified does not establish deployment, live activation, or
+business/security acceptance. Broad /app XSS audit, durable approval/CAS and
+release/browser/live
 acceptance remain OPEN. Do not restart merged dispatcher privacy or typed work.
 
 Next assigned sequence: general queue PRD-05 lane, THEN per-attempt accounting/

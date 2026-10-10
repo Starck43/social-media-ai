@@ -328,7 +328,9 @@ async def job_run(
         result = await run_job_now(job.id, allow_retry=False)
     except JobClaimLostError:
         # The claim moved on: report uncertainty, never success, never a retry.
-        add_flash(request, "error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние.")
+        add_flash(
+            request, "error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."
+        )
         return RedirectResponse("/app/jobs", status_code=302)
     if result is None:
         add_flash(request, "error", "Запуск не начат: задание не удалось захватить. Проверьте его статус.")

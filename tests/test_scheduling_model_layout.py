@@ -132,7 +132,11 @@ def test_existing_status_and_cost_types_and_checkpoint_unknown_state_preserved()
     for model in (Job, DigestRun):
         assert isinstance(model.__table__.c.status.type, String)
         assert isinstance(model.__table__.c.llm_cost.type, Float) and model.__table__.c.llm_cost.nullable
-    assert BotAction.__table__.c.status.type.enum_class is BotActionStatus
+    bot_status = BotAction.__table__.c.status
+    assert bot_status.type.enum_class is None
+    assert bot_status.type.impl.enums == [member.name for member in BotActionStatus]
+    assert bot_status.type.process_bind_param(BotActionStatus.PENDING, None) == BotActionStatus.PENDING.name
+    assert bot_status.type.process_result_value(BotActionStatus.PENDING.name, None) is BotActionStatus.PENDING
     checkpoint = DigestRun.__table__.c.delivery_state
     assert checkpoint.nullable
     assert checkpoint.default is None and checkpoint.server_default is None

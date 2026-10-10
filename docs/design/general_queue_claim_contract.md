@@ -13,7 +13,11 @@ checks, not a full suite or a combined-dev verification.
 Web claim-loss feedback merged through [PR #52](https://github.com/Starck43/social-media-ai/pull/52)
 as `10d160901b7305a0ed22d15fd146b7573d6a399b`, final head `4f664786`;
 its executable files equal owner-tested `f613839` (15 standalone, exit 0).
-The cancellation follow-up below is PREPARED from that dev; no author-run tests.
+The cancellation follow-up is Draft [PR #54](https://github.com/Starck43/social-media-ai/pull/54)
+from that dev, owner-reviewed/tested at `4d65af4e55c6b3096db2278ce2589cfc17f1525e`:
+14 cancellation + 15 web outcome standalone, config check and 10 PostgreSQL,
+sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
+No corrections or author-run tests; Ready/merge/deployment remain separate.
 
 Implemented boundary: immutable acquired identity, locked tenant/generation-bound
 ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
@@ -253,7 +257,9 @@ Prepared checks cover full snapshot identity, scope/bypass, heartbeat, stale
 reclaim/terminal rows, competing cancel/completion, audit preservation,
 pre-commit rollback and committed acknowledgement loss. Source-isolated route
 checks cover guards, malformed identity and truthful flashes. None were run by
-the author; owner execution uses only the existing reviewed test environment.
+the author; the focused owner results at exact `4d65af4` are recorded above.
+The owner used the existing reviewed test environment, without schema changes.
+A later docs-only evidence update does not change the tested executable files.
 
 ## Prepared acceptance specification — not executed tests
 

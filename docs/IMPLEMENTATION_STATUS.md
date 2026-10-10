@@ -63,8 +63,13 @@ all exit 0. [PR #52](https://github.com/Starck43/social-media-ai/pull/52) is
 `4f66478668a584ba9e23cb5fa7f40712286b3576`; code/tests equal owner-tested
 `f61383936cb3dfaec3c5ff09ab6442a106ee0159` (15 standalone, exit 0), final delta
 docs-only. No full suite or combined-head check is claimed. Current queue lane:
-**OCCUPIED / PREPARED**, `fix/operator-job-cancel-fencing` from dev `10d16090`;
-operator snapshot cancellation only, checks prepared/not run. Recovery,
+**OCCUPIED / Draft [PR #54](https://github.com/Starck43/social-media-ai/pull/54)**,
+`fix/operator-job-cancel-fencing` from dev `10d16090`; owner-reviewed/tested at
+`4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 cancellation + 15 web outcome
+standalone, read-only config check and 10 PostgreSQL checks, sequential/all exit 0.
+[Owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068),
+logs `perr/pr54-*`; no code corrections. No full suite or combined-head evidence;
+no author-run tests. Recovery,
 task-summary ordering, per-attempt spend and broader fencing remain **OPEN**.
 PR29 stays **deferred**.
 
@@ -393,9 +398,11 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
 - [x] Remaining model-layout group — PR #36 (`f2f53b1`), #38 (`7d8c731`),
   #39 (`c1d3b9e`), #41 (`b4d48c6`); no new runtime test evidence recorded here.
 - [x] Runtime whitespace guard — PR #40, merge `bcff693`; no new checks here.
-- [ ] Operator cancellation snapshot fencing — `fix/operator-job-cancel-fencing`,
-  prepared from dev `10d16090`; 14 source-isolated + 10 PostgreSQL cases prepared,
-  NOT run by the author. Recovery / ordering / spend remain OPEN.
+- [ ] Operator cancellation snapshot fencing — Draft PR #54, owner review complete;
+  tested `4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 + 15 standalone,
+  config check and 10 PostgreSQL, sequential/all exit 0; owner evidence above.
+  No corrections, author-run tests, full suite, Ready/merge, schema changes or live.
+  Recovery / ordering / spend remain OPEN.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

@@ -268,6 +268,8 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         stats["sources"] += 1
         _apply_params(source)
         try:
+            monitored_failures = 0
+            monitored_auth_required = 0
             if monitored_users:
                 result = await collector.collect_monitored_users(
                     source,
@@ -282,12 +284,20 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 items = (result or {}).get("total_items", 0)
                 new_items = (result or {}).get("total_new_items", 0)
+                failed = (result or {}).get("failed")
+                auth_required = (result or {}).get("auth_required")
+                # Do not coerce legacy/malformed counters. Auth failures overlap
+                # failed requests, so do not add the two counts together.
+                monitored_auth_required = auth_required if type(auth_required) is int and auth_required > 0 else 0
+                monitored_failures = max(failed if type(failed) is int and failed > 0 else 0, monitored_auth_required)
                 if result and result.get("total_items", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["total_items"]
                     stats["new_items"] += result.get("total_new_items", 0)
                     stats["collected_sources"].append(source.name)
                     outcome = "collected"
+                elif monitored_failures:
+                    outcome = "auth_required" if monitored_auth_required else "error"
                 else:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
@@ -311,6 +321,11 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
                     outcome = "empty"
+            if monitored_failures:
+                # The handler counts affected parent sources once, not child
+                # requests. Success and failure may coexist for a monitored group.
+                stats["error"] += 1
+                stats["error_sources"].append(source.name)
             # `analytics_count` is what the collect run *stored*, not what a later
             # `analyze` task will do — the loop already analyses inline.
             stats["per_source"].append(
@@ -329,6 +344,13 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     "content_hashes": list((result or {}).get("content_hashes") or []),
                 }
             )
+            if monitored_failures:
+                per = stats["per_source"][-1]
+                per["error"] = True
+                per["monitored_errors"] = monitored_failures
+                if monitored_auth_required:
+                    per["auth_required"] = True
+                    per["auth_hint"] = "Проверьте авторизацию отслеживаемых пользователей."
         except Exception as e:
             logger.error(f"collect failed for source {source.id}: {e}", exc_info=True)
             stats["error"] += 1

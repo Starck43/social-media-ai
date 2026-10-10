@@ -2,7 +2,7 @@
 
 ## Current continuation — queue cap and failure visibility integrated
 
-Source checkpoint: dev `d38ea3a5a929e0afa28bedfdcf8f04f822631b20` on 2026-10-10.
+Source checkpoint: dev `844209b1d79c8aa0284868098a6aea42e3053a53` on 2026-10-10.
 The existing task board owns current allocation; older continuation notes below
 retain historical evidence and do not authorize new work.
 
@@ -14,6 +14,20 @@ retain historical evidence and do not authorize new work.
 | #62 source-error notifications | MERGED as `c4b570ea22344168fc60351f02b25b30ac605cde`; head `ec9c1e2d584d5370df049980fbba034b3447af50` | Author 17 isolated checks on `acce792d` + exact patch; published two files byte-identical to that patch. [Owner source review](https://github.com/Starck43/social-media-ai/pull/62#issuecomment-6098831983) at submitted head, no owner test rerun. DB-only API_ERROR caveat for reported collect/analyze source errors; no terminal-status/retry/messenger change. |
 | #63 digest data completeness | MERGED as `18e33a84db74a199d881db619acb69b30302c695`; head `3fdd1e22847f3b802279292754ddf023ea3c9cf2` | Author 24 isolated checks on `c4b570ea` + source patch; final test-only formatting AST-identical. [Owner source review](https://github.com/Starck43/social-media-ai/pull/63#issuecomment-6099280849), no owner test rerun. Read-only bounded UTC completion history is not complete/atomic content coverage; filtered historical scope stays unknown when unprovable. Actual PostgreSQL reads/live delivery remain unverified; frozen replay unchanged. |
 | #64 first-contact safeguard | MERGED as `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`; head `1f92c3ae35b98c17c3fd0f84db051cffb241859c` | Parallel-agent-reported remote 8/8 and owner PostgreSQL 5/5, exit 0, at pinned `acce792d` + historical patch. Production bytes equal that patch; test methods/helpers AST unchanged, import-safe root entrypoint checked separately. Fresh head source/readback review, unchanged transaction/BaseManager dependencies and GitGuardian success reported. No submitted/merged-head full suite, DB rerun, deployment/live or broader recovery acceptance. |
+| #66 active-user permission default | MERGED as `118829f249646f8d8a91bb79771dce217b746aed`; head `315e089b6c28881309638aeea74730ebb13cf1f8` | Parallel-agent-reported corrected exact-source/double checks 9/9 OK, original fail-open source rejected. Earlier owner `b923a48` 5/5 omitted `tfest_missing` from discovery and is not complete evidence. Production remains the owner-authored one-line False default; test-only correction added import isolation/boundary negatives. Source/diff review and GitGuardian passed; no full-suite/DB/app-startup/live acceptance. |
+| #67 secure session cookies | MERGED as `2e96dea928e73e6c8226dfbd15b537c22f0a8a6d`; head `817732883390b77642dd161940a2fa7bb115b439` | Parallel-agent-reported 9 isolated wiring checks, exit 0, on `9c2fa5b` + exact patch; baseline rejected. https_only=True except normalized explicit development; DEBUG does not weaken it. Source/diff review and GitGuardian passed. Health routes source-checked only; no network/app-startup/live TLS/deployment/full-suite acceptance. |
+| #68 analyze-error UI projection | MERGED as `844209b1d79c8aa0284868098a6aea42e3053a53`; head `1a46d7c19d3a8ab95930422eb97b97790759272d` | Parallel-agent-reported 14 new isolated UI checks OK/exit 0 on `2e96dea` + exact patch; baseline rejected. Valid integer error/staged_errors override green success as partial; separate tiles, no additive total, missing/malformed fields omitted rather than zero. Exactly _run_outcome/_job_summary + one test; input result, Job/task/status/retry unchanged. AST/diff readback, existing modal tone/stats/detail badge source review and GitGuardian passed. No #62 rerun, DB/pytest/bootstrap/browser/full-suite or submitted/merged-head execution. |
+
+UI projection reported SHA256 identities:
+patch `82c77f7cbf1779db1f0bfcb0dc6a86bf7b679a19ca6e00a5f50f4d77d2cb8a59`;
+production `0443897f58c864ca7fd97e7873a57988abd3904cc26bb96bbc9b441dc702712a`;
+test `0ed32b65dfdfd48e939862eb5200d7760f0983541f341843e40215682e4e4acb`.
+
+Web safeguard reported SHA256 identities:
+#66 test `87d5698a9224d7df9325b824b4b0ba2d2eabd2e1dc08ca3606d6e3bb0c32ad67`;
+#67 main `2a4123118a6b8e5ede05083e90c77b44c26bc7d993c819c0dd117a9dc04ad7ba`;
+#67 test `358b0686ba2b27071e1a68c8385fbba3e2afac398ff504ac2a0f892a3b001b6b`.
+These are parallel-agent-reported original evidence, not new tests by this agent.
 
 First-contact historical patch SHA256:
 `87ee736e620b0055ab82d6552d7ff1b088e3fd45327d0f6bfc4a825d250cb412`;
@@ -45,6 +59,37 @@ heads, required checks and relevant review; exceptions need clarification.
 Schema/reset/migration/live/deploy, weakening checks and force-push are excluded
 (see `.agent/rules.md` R9). This three-file reconciliation changes no executable
 code and preserves #60's documentation instead of restoring an older snapshot.
+
+### Monitored collection source-patch evidence at this checkpoint
+
+Branch `fix/monitored-collection-errors`: only collect_monitored_users,
+handle_collect and one standalone test. Author executed
+`python tests/test_monitored_collection_errors.py`: **25 OK, exit 0** on dev
+`2e96dea928e73e6c8226dfbd15b537c22f0a8a6d` + the source patch. AST review found
+only those two methods changed; all other collector/handler definitions,
+including the local agent's reserved handle_analyze log sites, were unchanged.
+Missing sources/raised child failures are counted without discarding successful
+totals or aborting later users; None/zero from valid resolved users is empty.
+Auth failures overlap failed requests; typed counters are not coerced/added.
+Parent error accounting and a per_source marker preserve partial data for the
+existing notification/digest projections. New fields/logs exclude raw exceptions
+and authorization hints; no Job/task status, retry, tenant bypass or schema change.
+
+The legacy missing-new_items fallback remains deliberately compatible, NOT
+proof of separately measured freshness. Silent non-raising provider/analyzer
+failures, normal-source exception-log privacy and real-DB/provider acceptance
+remain OPEN. These are actual-source checks with local query/collection doubles,
+not DB/network/messenger, a submitted/merged-head run or full-suite evidence.
+At this source checkpoint the patch was prepared; consult its branch/PR for
+actual integration. This record remains original source/patch evidence after
+integration, rather than being re-attributed to a later dev or full suite.
+
+Coordination: chat #1 integrated the separate analyze-error → green UI fix
+as #68; do not restart its delivered functions/test. Its retention proposal
+remains deferred. The local agent owns only
+the two handle_analyze exception-log sites and its isolated test. Keep these
+function-level lanes separate even when editing the shared handlers file.
+No repeat of the completed #62 checks and no checkpoint-only PR is requested.
 
 ## Historical queue/refactoring reconciliation
 
@@ -147,11 +192,13 @@ Recovery / ordering / spend and broader fencing remain **OPEN**; PR29 is **MERGE
 
 ### Latest verified merge checkpoint
 
-Latest reconciled source checkpoint: `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`.
-This docs branch started at `871046fc`; concurrent #64 changes only its two
-runtime/test files, not these docs. Merge sequence after #58:
-#59 (`acce792d`) → #62 (`c4b570ea`) → #63 (`18e33a84`) → #60 (`975b0d43`)
-→ #61 (`871046fc`) → #64 (`d38ea3a5`). Refresh dev/open PRs before the next package.
+Latest reconciled source checkpoint and integration-branch base:
+`844209b1d79c8aa0284868098a6aea42e3053a53`. The monitored source patch was
+checked on `2e96dea` + patch; concurrent #68 changed only web UI and its test,
+not any edited existing collection/docs file. Earlier reconciliation #65 merged
+as `9c2fa5b`; #66 (`118829f2`), #67 (`2e96dea`) and #68 (`844209b1`) followed #64.
+Refresh dev/open PRs before the next package; the checkpoint is not permanent.
+This metadata update is batched with a real code package, not a separate PR.
 This records integration, not combined-head/full-suite execution, deployment
 or release acceptance. Recovery / ordering / spend remain OPEN.
 Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity

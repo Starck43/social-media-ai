@@ -388,69 +388,71 @@ class ContentCollector:
 		return results
 
 	async def collect_monitored_users(self, source: Source, analyze: bool = True, monitored_users: list = None, force_reanalyze: bool = False, run_id: Optional[int] = None) -> dict:
+		"""Collect each requested user without losing earlier successful totals.
+
+		A missing source or raised collection error is a failed request. None from
+		a resolved USER follows collect_from_source's normal no-content path,
+		not a failure. Authentication failures are a subset of failed requests.
+		No raw exception or authorization hint is added to the returned counters.
+		This does not detect non-raising provider/analyzer failures or change retry.
 		"""
-		Collect content from monitored users of a source.
+		from app.services.social.credentials import AuthorizationRequired
 
-		Monitored users are stored in source.params["monitored_users"] as a list
-		of username strings, or passed explicitly via `monitored_users` (e.g. a
-		task's payload override). Each username is resolved to a Source by
-		matching external_id on the same platform.
-
-		Args:
-			source: Source with monitored_users in params
-			analyze: Whether to run AI analysis
-			monitored_users: Optional explicit username list (overrides params)
-			force_reanalyze: Bypass dedup and re-analyze everything
-			run_id: The collect run these rows belong to, so a later analysis
-				can retire exactly this batch. Without it the raw copy is
-				anonymous and only the age sweep can reclaim it.
-
-		Returns:
-			Dict with collection statistics
-		"""
 		if monitored_users is None:
 			monitored_usernames = source.params.get("monitored_users", []) or []
 		else:
 			monitored_usernames = monitored_users
-		if not monitored_usernames:
-			logger.info(f"Source {source.id} has no monitored users")
-			return {"total_users": 0, "successful": 0, "failed": 0}
-
-		# Resolve usernames to Source objects
-		monitored_sources = []
-		for username in monitored_usernames:
-			clean = username.lstrip("@")
-			user_source = await Source.objects.filter(
-				platform_id=source.platform_id,
-				external_id=clean,
-				source_type=SourceType.USER.name,
-			).first()
-			if user_source:
-				monitored_sources.append(user_source)
-			else:
-				logger.warning(f"Monitored user '{username}' not found on platform {source.platform_id}")
-
-		logger.info(f"Collecting from {len(monitored_sources)} monitored users")
-
 		results = {
 			"total_users": len(monitored_usernames),
 			"successful": 0,
 			"failed": 0,
+			"empty": 0,
+			"auth_required": 0,
 			"total_items": 0,
 			"total_new_items": 0,
 		}
-
-		for user in monitored_sources:
-			result = await self.collect_from_source(
-				user, analyze=analyze, force_reanalyze=force_reanalyze, run_id=run_id
-			)
-			if result:
+		for username in monitored_usernames:
+			try:
+				user_source = await Source.objects.filter(
+					platform_id=source.platform_id,
+					external_id=username.lstrip("@"),
+					source_type=SourceType.USER.name,
+				).first()
+				if user_source is None:
+					results["failed"] += 1
+					continue
+				result = await self.collect_from_source(
+					user_source, analyze=analyze, force_reanalyze=force_reanalyze, run_id=run_id
+				)
+				if result is None:
+					results["empty"] += 1
+					continue
+				if not isinstance(result, dict):
+					raise ValueError("Invalid monitored collection result")
+				items = result.get("content_count")
+				# Preserve the existing legacy fallback; this does not certify that
+				# older clients measured new items separately.
+				new_items = result.get("new_items", items)
+				if any(type(value) is not int or value < 0 for value in (items, new_items)):
+					raise ValueError("Invalid monitored collection counters")
+				if items == 0:
+					results["empty"] += 1
+					continue
+				# Compute before accumulating, so malformed totals cannot partially
+				# update the counters for this request and then count it as failed.
+				total_items = results["total_items"] + items
+				total_new_items = results["total_new_items"] + new_items
+				results["total_items"] = total_items
+				results["total_new_items"] = total_new_items
 				results["successful"] += 1
-				results["total_items"] += result["content_count"]
-				results["total_new_items"] += result.get("new_items", result["content_count"])
-			else:
+			except Exception as error:
 				results["failed"] += 1
-
+				if isinstance(error, AuthorizationRequired):
+					results["auth_required"] += 1
+				logger.warning(
+					"monitored_collection_failed source_id=%s error_code=user_collection_failed",
+					source.id if type(source.id) is int and source.id > 0 else None,
+				)
 		return results
 
 	async def _analyze_content(

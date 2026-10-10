@@ -238,6 +238,12 @@ async def job_delete(
     a superuser, and no deleting a `running` row (the worker owns it until it
     reports back). A job of another workspace is not reachable at all — the
     lookup filters on `tenant_id` explicitly, not only through `tenant_scope`.
+
+    The read above can go stale in the window before the delete: the row may be
+    reclaimed (back to `running`) or disappear. The DELETE is therefore
+    conditional on the observed row — id, tenant and a still-deletable status —
+    and reports success only when exactly one row was actually removed. Database
+    errors propagate untouched; the delete is never repeated.
     """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -271,9 +277,19 @@ async def job_delete(
             add_flash(request, "error", f"Задание #{job.id} выполняется — его нельзя удалить")
             return RedirectResponse("/app/jobs", status_code=302)
 
-        await Job.objects.delete(**filters)
+        # The delete repeats the observed row's identity, tenant and a still-
+        # deletable status as conditions, not a pre-check alone: if the row
+        # changed since the read — reclaimed, rebound or gone — it hits zero rows.
+        deleted = await Job.objects.delete(
+            id=job.id,
+            tenant_id=job.tenant_id,
+            status__in=DELETABLE,
+        )
 
-    add_flash(request, "success", f"Задание #{job_id} удалено")
+    if deleted == 1:
+        add_flash(request, "success", f"Задание #{job_id} удалено")
+    else:
+        add_flash(request, "error", f"Задание #{job_id} не удалено: состояние изменилось. Проверьте его.")
     return RedirectResponse("/app/jobs", status_code=302)
 
 

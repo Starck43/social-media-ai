@@ -14,6 +14,7 @@ from typing import Any, Sequence
 from sqlalchemy import JSON, bindparam, text as sa_text
 
 from app.core.config import settings
+from app.utils.content_attachments import normalize_attachments
 
 from .base_manager import BaseManager
 
@@ -61,6 +62,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             "platform",
             "published_at",
             "media_type",
+            "attachments",
             "text",
             "metrics",
             "author",
@@ -68,7 +70,7 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         ]
         # JSONB columns must be passed as json, not as a Python dict literal:
         # asyncpg would send the repr as a string.
-        json_columns = {"metrics", "author"}
+        json_columns = {"metrics", "author", "attachments"}
         # CAST, not a trailing "::jsonb": next to a bind parameter that cast
         # syntax is parsed as part of the parameter's name and never bound.
         placeholders = ", ".join(f"CAST(:{c} AS jsonb)" if c in json_columns else f":{c}" for c in columns)
@@ -79,7 +81,10 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         stmt = stmt.bindparams(*(bindparam(column, type_=JSON(none_as_null=True)) for column in json_columns))
         # Same tenant stamping the ORM path does: refuses to write rather than
         # guessing a workspace for rows collected outside a tenant context.
-        params = [await self._apply_tenant(session, dict(row)) for row in rows]
+        params = [
+            await self._apply_tenant(session, {**row, "attachments": normalize_attachments(row.get("attachments"))})
+            for row in rows
+        ]
         result = await session.execute(stmt, params)
 
         count = int(result.rowcount or 0)

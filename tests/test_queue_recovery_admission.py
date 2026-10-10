@@ -462,6 +462,20 @@ class PreparedRunnerSafety(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             context['guard_write'](connection, None, 'UPDATE test_schema.agent_tasks SET last_status=$1 WHERE id=$2 OR true', {}, current, False)
 
+    def test_actual_guard_rejects_negated_owned_predicate_but_allows_parentheses(self):
+        context = self.runner_guard(); operators = context['operators']
+        table = SimpleNamespace(name='jobs', schema='test_schema')
+        predicate = SimpleNamespace(operator=operators.eq, left=SimpleNamespace(table=table, name='id'),
+                                    right=SimpleNamespace(key='pk', value=None))
+        command = SimpleNamespace(table=table, is_update=True,
+                                  whereclause=SimpleNamespace(element=predicate, __visit_name__='grouping'))
+        current = SimpleNamespace(compiled=SimpleNamespace(statement=command), compiled_parameters=[{'pk': 7}])
+        connection = SimpleNamespace(info={})
+        context['guard_write'](connection, None, 'UPDATE test_schema.jobs SET status=$1 WHERE (id=$2)', {}, current, False)
+        command.whereclause = SimpleNamespace(element=predicate, __visit_name__='unary', operator=object())
+        with self.assertRaises(RuntimeError):
+            context['guard_write'](connection, None, 'UPDATE test_schema.jobs SET status=$1 WHERE NOT(id=$2)', {}, current, False)
+
     def test_actual_commit_guard_never_counts_driver_ack_or_allows_update_only(self):
         context = self.runner_guard()
         for info in ({}, {'fixture_commit_phase': 'creation', 'fixture_inserts': set()},

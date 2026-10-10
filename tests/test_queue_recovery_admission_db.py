@@ -116,7 +116,8 @@ async def execute():
                 if operator is operators.or_:
                     return bool(clauses) and all(fenced_predicate(child) for child in clauses)
                 element = getattr(node, 'element', None)
-                if element is not None:
+                # Parentheses retain a positive fence; unary NOT does not.
+                if element is not None and getattr(node, '__visit_name__', None) == 'grouping':
                     return fenced_predicate(element)
                 if operator not in (operators.eq, operators.in_op):
                     return False

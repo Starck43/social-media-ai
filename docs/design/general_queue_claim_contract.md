@@ -118,18 +118,21 @@ all deliberate manual/scheduled double work.
 
 ### Evidence and one owner-local acceptance package
 
-Author command: `python tests/test_queue_recovery_admission.py`; 36 NEW
+Author command: `python tests/test_queue_recovery_admission.py`; 37 NEW
 stdlib actual-source/module-local-double and extracted-guard checks passed,
 exit 0, on the above base plus named production artifact SHA256
 `a448570855786886d8680296ff85409176350c2b245a2ad9eac04eed860a34f2`
 (sorted production paths + NUL + full bytes + NUL). This includes the actual
 session decorator, rollback/uncertainty, scope/UI/prune, compiled/raw SAVEPOINT
-controls, conjunctive fixture fences and strict root-commit guard cases. The
+controls, conjunctive/non-negated fixture fences and strict root-commit guard cases.
+The additional review rejects unary NOT of an owned predicate; only actual
+parenthesized Grouping wrappers retain a positive fence. Production bytes are
+unchanged by this runner-only safety correction. The
 initial doubles iteration had fixture failures; final evidence supersedes the
-29/32/33-check preparation, not historical #87/#89/#91 execution.
+29/32/33/36-check preparation, not historical #87/#89/#91 execution.
 
 The NEW standalone owner runner is `tests/test_queue_recovery_admission_db.py`,
-SHA256 `6e5aaaf4f056ed34e81db810bacb0a2e85b18c16f7d5438040edf70f89b90261`;
+SHA256 `30c2010e5a785b222e6050ba107dd917bfddffe4863369476425dd335b97e6e2`;
 12 planned cases, NOT executed by the author. It validates the existing local
 `localhost:5432/social_manager/test_schema` before application imports and
 requires `--allow-tagged-fixture-commits`. No bootstrap/DDL/reset/migration,

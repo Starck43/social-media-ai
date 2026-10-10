@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.jobs.claim_outcomes import JobClaim, JobOutcomeReceipt
 
     from ..job import Job
@@ -162,6 +164,37 @@ class JobManager(BaseManager["Job"]):
                 )
                 return bool(result.rowcount)
 
+    @staticmethod
+    async def _write_task_outcome(
+        session: "AsyncSession",
+        claim: "JobClaim",
+        *,
+        status: str,
+        error: Optional[str],
+        completed_at: datetime,
+    ) -> None:
+        """Write only the claim's owned Task using the caller-owned transaction.
+
+        No commit, new session or generic permission grant occurs here. A
+        missing target cannot be silently accepted as a successful projection.
+        """
+        from sqlalchemy import select
+
+        from ..agent_task import AgentTask
+
+        task = (
+            await session.execute(
+                select(AgentTask)
+                .where(AgentTask.id == claim.agent_task_id, AgentTask.tenant_id == claim.tenant_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if task is None:
+            raise RuntimeError("Job task outcome target unavailable; completion not committed.")
+        task.last_run_at = completed_at
+        task.last_status = status
+        task.last_error = error
+
     async def _finalize_claim(
         self,
         claim: "JobClaim",
@@ -171,13 +204,12 @@ class JobManager(BaseManager["Job"]):
         error: Optional[str] = None,
         allow_retry: bool = True,
     ) -> "JobOutcomeReceipt":
-        """Lock/check/write one generation; project Task only after acknowledged commit.
+        """Commit one claimed Job and its terminal Task summary in one transaction.
 
-        This is not Job/task atomicity, latest-run ordering or safe stale replay.
+        This is not latest-run ordering, an outbox or safe external-effect replay.
         DB exceptions propagate: no lost-claim or rollback inference is made.
         """
         from copy import deepcopy
-        from dataclasses import replace
 
         from sqlalchemy import select
 
@@ -234,21 +266,16 @@ class JobManager(BaseManager["Job"]):
                         ack = OutcomeAck.FAILED
                 if llm_cost is not None:
                     row.llm_cost = float(llm_cost)
-                receipt = JobOutcomeReceipt(claim, ack, result=deepcopy(row.result), error=row.error)
-            # Both context exits must acknowledge the write before projection.
-        if receipt.acknowledgement != OutcomeAck.RETRY:
-            from app.core.tenant_context import tenant_scope
-
-            try:
-                with tenant_scope(claim.tenant_id):
-                    await self._record_task_result(
+                if ack != OutcomeAck.RETRY and claim.agent_task_id is not None:
+                    await self._write_task_outcome(
+                        session,
                         claim,
-                        status="ok" if receipt.acknowledgement == OutcomeAck.DONE else "failed",
-                        error=receipt.error,
+                        status="ok" if ack == OutcomeAck.DONE else "failed",
+                        error=row.error,
+                        completed_at=now,
                     )
-            except Exception:
-                # Preserve the committed receipt; never reinterpret this as handler failure.
-                receipt = replace(receipt, task_projection_failed=True)
+                receipt = JobOutcomeReceipt(claim, ack, result=deepcopy(row.result), error=row.error)
+            # A receipt is returned only after BOTH rows' commit is acknowledged.
         return receipt
 
     async def mark_done(

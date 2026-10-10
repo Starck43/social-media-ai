@@ -3,9 +3,11 @@
 ## Status and bounded scope
 
 The source observations below were drafted at historical baseline
-`0be47bbfb0d13e63cd0509dd072e17ad0047e9db`. The bounded implementation is now
-prepared on branch `fix/ordinary-job-claim-fencing` from dev
-`2aa0b430ffb63fc900c8b54fcebee7646c2ec6f3`; owner execution/review is pending.
+`0be47bbfb0d13e63cd0509dd072e17ad0047e9db`. The claim-fencing implementation
+merged through PR #51 as `351f3b6`, with owner evidence on exact `dbc054c`.
+The Job/task atomicity follow-up is prepared on branch
+`fix/job-task-outcome-atomicity` from dev
+`f2f53b1d28f7dd5c626c6e4c5b440a8af8d49688`; owner execution/review is pending.
 
 Implemented boundary: immutable acquired identity, locked tenant/generation-bound
 ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
@@ -15,17 +17,22 @@ legacy non-failed-is-success adapters cannot turn it into a success response.
 Direct enqueue/acquire races raise NOT_ACQUIRED without running a handler;
 `run_job_now` retains its existing None-on-not-acquired interface.
 
-Job/task projection remains post-commit and non-atomic. A failed Task projection
-or unexpected notification callback is reported as degradation on the committed
-receipt, not a handler failure/retry. The ID-only manager methods are retained as
-legacy compatibility APIs; every ordinary dispatcher finalizer supplies a claim.
-They are not safe APIs for new worker paths. Checkpoint digest retains its
-separate dispatch/finalization and current observation protocol.
+The prior #51 boundary projected Task after Job commit. This follow-up moves
+terminal Task updates into the claim-locked Job transaction; a referenced
+Task that cannot be updated is a write failure, not a clean completion.
+Task-write failures now precede the commit receipt. Notifications remain
+post-commit and cannot cause handler retry or change an acknowledged outcome.
+The ID-only manager methods remain non-atomic legacy compatibility APIs;
+every ordinary dispatcher finalizer supplies a claim. Legacy receipt projection
+flags remain readable for compatibility, not a fallback for the atomic writer.
+Checkpoint digest retains its separate dispatch/finalization protocol.
 
-Prepared source-isolated and existing-schema PostgreSQL tests cover ownership,
-loss, competing finalizers, direct races and commit/projection boundaries. They
-have NOT been executed by the author; existing green evidence is not transferred
-to this implementation. No deployment or acceptance is established.
+Prepared source-isolated and existing-schema PostgreSQL tests retain ownership,
+loss, competing finalizers and direct-race checks, and strengthen commit/rollback
+cases for both rows. Post-commit Task-failure tests now specify pre-commit Task
+failure rollback; they are not simply dropped or made optional. The previous
+#51 results do NOT certify this changed boundary. These prepared checks have
+NOT been executed by the author; deployment/acceptance remain separate.
 
 No migration, new job status, provider retry policy, sender activation, model
 layout, permissions grant or accounting ledger is authorized by this document.
@@ -145,11 +152,13 @@ cost to zero or copying it into the current Job's cost.
 ## Commit boundary, task projection and notifications
 
 The dispatcher must distinguish handler execution, outcome persistence and
-post-commit projection. Once a matching Job outcome has committed, an AgentTask
-or notification failure must never schedule that handler again or rewrite the
-successful Job as a handler failure. A committed receipt remains authoritative.
-Report bookkeeping degradation separately; do not masquerade as a clean task
-projection or suppress the actual Job result.
+post-commit projection. Ordinary Job and referenced AgentTask terminal changes
+must share a commit; a Task-write error aborts that attempt's database write,
+not a handler retry. Once a matching outcome has committed, a notification
+failure must never schedule that handler again or rewrite the successful Job. A committed receipt remains authoritative.
+Report post-commit notification degradation separately; do not suppress the
+acknowledged Job result. Pre-commit Task failures and unknown commit ACKs return
+no success receipt; callers stop without an immediate finalizer/handler replay.
 
 CLAIM_LOST and NOT_ACQUIRED must be propagated to callers, not erased by an
 unqualified post-execution row reload. Reading the current Job for observation
@@ -160,11 +169,41 @@ not an excuse for changing unrelated UI.
 
 Two follow-up guarantees are deliberately separate:
 
-1. **Job/task atomicity.** A future shared-session transaction must retain the
-   claim lock through both writes. Do not call QuerySet.update to compose it:
-   that method commits even when the queryset has a supplied session. The
-   current record_result method also does not forward a caller-owned session.
-   Specify session ownership and rollback cases before changing those APIs.
+1. **Job/task atomicity — selected ordinary-outcome slice.** The JobManager
+   owns one new session and one `session.begin()` boundary. Hold the full-claim
+   Job row lock while selecting the referenced AgentTask by BOTH task ID and
+   claim tenant with FOR UPDATE. Terminal done/failed outcomes update
+   `last_status`, `last_error` and `last_run_at` in that same session before
+   returning an acknowledged receipt. Taskless Jobs need no Task write; retry
+   outcomes preserve the existing no-terminal-summary policy.
+
+   Use mapped ORM rows, not QuerySet.update, record_result or a nested manager
+   call that opens/commits another session. A missing/foreign referenced Task is
+   a write error, not successful zero-row projection and not CLAIM_LOST. No
+   fallback to a detached post-commit Task write is permitted. Existing legacy
+   ID-only manager paths retain their separate, non-atomic compatibility behavior.
+
+   A Task write/flush/cancellation error before commit rolls back both database
+   changes; the caller stops without handler replay or a second finalizer. A
+   lost commit acknowledgement establishes NEITHER rollback NOR claim loss:
+   both rows may have committed, and no completion notification is authorized
+   without an acknowledged receipt. Notifications remain outside the transaction.
+   Receipts remain authoritative if a later notification callback fails.
+
+   Lock order is Job then Task. FK deletion or other reverse-lock paths can
+   deadlock; database aborts are surfaced without automatic retry/replay. This
+   slice does not redesign deletion, introduce global locks or promise absence
+   of deadlocks. No external/provider effect participates in this transaction.
+   Job result/cost writes also roll back with the database transaction; an
+   already charged LLM call is NOT rolled back. Missing durable per-attempt
+   spend evidence remains an accounting/release limitation, not zero spend.
+   The known replay/recovery limitation stays open.
+
+   Prepared evidence must cover visibility before commit, failure after actual
+   Task flush, zero-row/foreign-Task rejection, coupled commit-ACK loss,
+   competing finalizers, retry/taskless paths and cancellation rollback. Earlier
+   #51 green evidence used a POST-COMMIT Task projection and does not certify
+   this changed commit boundary; the applicable tests must be owner-run again.
 2. **Latest-run task summary.** Two distinct Jobs for one AgentTask can complete
    out of order even when both claims are valid. Atomicity alone does not decide
    which completion should replace last_status. The current task has no
@@ -197,7 +236,7 @@ Future test files are proposed, not existing commands to execute now.
 | Direct acquisition false / future-dated row | No handler; explicit NOT_ACQUIRED, not success |
 | Direct acquisition then lease loss | No borrowed claim through unqualified reload |
 | Outcome commit error/unknown acknowledgement | No success notification or immediate new retry/finalizer write |
-| Job committed, task projection fails | No handler replay/Job reclassification; degradation distinct |
+| Task write/flush fails before shared commit | Job and Task database writes roll back; no success receipt or handler replay |
 | Job committed, notification fails | Committed receipt preserved; no outcome retry |
 | Two Jobs of one AgentTask finish out of order | Document limitation; no invented latest-run guarantee |
 | Checkpoint digest / persisted reference after flag rollback | Existing digest execution/finalizer remains selected |

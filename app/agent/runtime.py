@@ -302,9 +302,9 @@ async def handle_web_message(
     through an invite-code handshake it does not need.
 
     Everything after the resolution is the shared path: the same session row
-    (`channel='web'`, one per user), the same confirmation gate, the same
-    daily cost cap and the same tool loop as a messenger chat. Returns the
-    reply text, or None when `text` is empty.
+    (`channel='web'`, one per user in this workspace), the same confirmation
+    gate, the same daily cost cap and the same tool loop as a messenger chat.
+    Returns the reply text, or None when `text` is empty.
     """
     text = (text or "").strip()
     if not text:
@@ -335,7 +335,7 @@ async def handle_web_message(
 
 
 async def web_session_id(user_id: int) -> Optional[int]:
-    """The `channel='web'` agent session id for a user, if one exists yet.
+    """The `channel='web'` agent session id for a user in this workspace, if any.
 
     Read-only: the chat page renders the transcript without creating a session
     row for someone who has simply opened the page.

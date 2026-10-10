@@ -18,6 +18,18 @@ from app.core.config import settings
 from .base_manager import BaseManager
 
 
+def _staged_mutation_scope() -> tuple[str, dict[str, int]]:
+    """Scope raw staged writes; only explicit platform bypass is unfiltered."""
+    from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
+    if is_bypass():
+        return "", {}
+    tenant_id = current_tenant_id()
+    if type(tenant_id) is not int or tenant_id <= 0:
+        raise TenantContextError("Staged mutation requires a valid tenant or explicit bypass")
+    return " AND tenant_id = :tenant_id", {"tenant_id": tenant_id}
+
+
 class CollectedItemManager(BaseManager["CollectedItem"]):
     """Store, list and retire raw collected items."""
 
@@ -142,12 +154,13 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         wanted = [h for h in dict.fromkeys(hashes) if h]
         if not wanted:
             return 0
+        tenant_clause, tenant_params = _staged_mutation_scope()
         result = await session.execute(
             sa_text(
                 f"UPDATE {settings.DB_SCHEMA}.collected_items SET analyze_attempts = analyze_attempts + 1 "
-                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)"
+                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)" + tenant_clause
             ),
-            {"source_id": source_id, "hashes": list(wanted)},
+            {"source_id": source_id, "hashes": list(wanted), **tenant_params},
         )
         return int(result.rowcount or 0)
 
@@ -190,12 +203,13 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         wanted = [h for h in dict.fromkeys(hashes) if h]
         if not wanted:
             return 0
+        tenant_clause, tenant_params = _staged_mutation_scope()
         result = await session.execute(
             sa_text(
                 f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
-                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)"
+                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)" + tenant_clause
             ),
-            {"source_id": source_id, "hashes": list(wanted)},
+            {"source_id": source_id, "hashes": list(wanted), **tenant_params},
         )
         return int(result.rowcount or 0)
 
@@ -233,12 +247,13 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         model or raising `give_up_after_attempts`). Returns the number of rows
         affected.
         """
+        tenant_clause, tenant_params = _staged_mutation_scope()
         result = await session.execute(
             sa_text(
                 f"UPDATE {settings.DB_SCHEMA}.collected_items "
                 "SET analyze_attempts = 0 "
-                "WHERE source_id = :source_id AND analyze_attempts > 0"
+                "WHERE source_id = :source_id AND analyze_attempts > 0" + tenant_clause
             ),
-            {"source_id": source_id},
+            {"source_id": source_id, **tenant_params},
         )
         return int(result.rowcount or 0)

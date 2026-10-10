@@ -76,10 +76,13 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
     async def test_valid_sibling_cannot_hide_reported_failure(self):
         self.assertIs(await self.base(), self.saved)
         self.assertEqual(self.analyzer.reported_errors, 1)
-        # Storage/usage contract is deliberately untouched in this package.
+        # Failed semantic output is cleared without mutating the client envelope.
         results = self.analyzer._save_analysis.call_args.args[0]
         self.assertIs(results["text_analysis"], self.good)
-        self.assertIs(results["image_analysis"], self.failed)
+        self.assertEqual(results["image_analysis"]["parsed"], {})
+        self.assertIs(results["image_analysis"]["response"], self.failed["response"])
+        self.assertEqual(self.failed["parsed"]["analysis"], "Error: " + PRIVATE)
+        self.assertTrue(self.analyzer._save_analysis.call_args.kwargs["reported_partial"])
 
     async def test_all_stub_results_remain_unsaved(self):
         self.analyzer._analyze_text.return_value = self.failed

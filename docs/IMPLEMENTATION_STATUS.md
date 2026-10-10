@@ -2,7 +2,7 @@
 
 ## Current continuation — queue cap and failure visibility integrated
 
-Source checkpoint: dev `6811ccfb4934a6e08a7316582fb423fa4000b634` on 2026-10-10.
+Source checkpoint: dev `47a972d40d75cd53436fc54773fd4b5417b1d834` on 2026-10-10.
 The existing task board owns current allocation; older continuation notes below
 retain historical evidence and do not authorize new work.
 
@@ -21,6 +21,9 @@ retain historical evidence and do not authorize new work.
 | #70 analyze exception-log privacy | MERGED as `c8e58971443b254b0d447541e2aa21a362cc5e56`; head `aef81d39889ea1e550342449b375214c3384fd01` | Owner-reported 7/7 privacy + 9/9 staged-attempt privacy + 7/7 staged-retirement privacy on exact submitted `aef81d3`; standalone commands and diff --check exit 0, accepted without rerun. Two handle_analyze exception logger calls + bounded ID/error-kind helpers and one test; #69 handle_collect preserved by composed-source/readback review, GitGuardian success at fresh base `1e58c3f`. Propagation test uses KeyboardInterrupt, not actual CancelledError. No DB/network/full suite, merged-head execution or global log/privacy acceptance. |
 | #71 staged analyzer reported failures | MERGED as `7be57a675488edcf4ce1695af0dc49df774bd36d`; head `92ef6b76f827b76cf471afe27b7ab3b8ef9abe54` | Author 19 analyzer checks on `1e58c3f` + patch, 12 new wiring checks on `c8e5897` + combined patch, separately OK/exit 0. Published source/readback/AST, preserved #70 logs/#68 UI, GitGuardian success at exact head and predicted/actual merge tree equality verified. No combined/submitted/merged-head test execution or DB/full-suite/live acceptance; original evidence below remains attributed to its tested revisions. |
 | #72 retention inventory/proposal | MERGED as `6811ccfb4934a6e08a7316582fb423fa4000b634`; head `7c2464845b0cdb64f141b7a465d44c668dcee16b` | Parallel-agent-reported existing BUSINESS_PRODUCTION_READINESS PRD-06 +73 lines only; nine-class inventory, dependency/backup-expiry/deletion-replay approval gates. All periods UNDECIDED, PRD-06 OPEN, staged DELETE tenant-boundary gap unimplemented at this checkpoint. Source/table/links review and GitGuardian; reported readback blob `f17395d17336a3d226d57ee5fdc322e2aa2430fe`. No application checks/DB/purge/schema/live/implemented acceptance; chat #1 owns the separate tenant-boundary fix. |
+| #73 inline collection analysis diagnostics | MERGED as `8402cd4cbd3bf9ec5d910a7c0d3ca51160b6201a`; head `055c1833fc15ac8f43dc63cdc29bf84019d6a36e` | Author 22 isolated actual-source/double checks on `6811ccf` + exact patch OK/exit 0; old baseline 4 failures/7 errors. Source/AST/readback and predicted/actual merge-tree equality verified, GitGuardian success; #71 analyzer/#70 analyze logs/#68 UI preserved. Strict per-call diagnostic deltas and affected-source union retain successful collection. No submitted/merged-head execution, DB/network/full-suite/live acceptance. Original source-patch record below remains revision-scoped. |
+| #74 staged retention tenant boundary | MERGED as `47a972d40d75cd53436fc54773fd4b5417b1d834`; head `38cdde5d81afcc64a55f7603d865fb31ebf04d34` | Parallel-agent-reported 12 new actual-method/stdlib tenant-context/SQL-session-double checks on `6811ccf` + exact patch, OK; original baseline rejected. Normal DELETE binds tenant_id; missing/non-int/nonpositive scope fails before execute, explicit platform bypass preserved. Eligibility/rowcount/caller transaction unchanged. Published/merged manager blob `f9b5cf0b2865d5c33adf1655a4750671ea2ae3b6`, test blob `fe7364cbd87ba37d45c4b454c85f7c663ee0393d`; scoped readback/GitGuardian, #73 preserved. No submitted/merged-head or PostgreSQL two-tenant execution, purge/schema/network/live/full-suite acceptance. |
+| #75 prune exception-log privacy | DRAFT/source-verified at checkpoint `47a972d`; head `e20d6a44b034bdfb56e312bf7a751abac485564c` | Parallel-agent-reported 7 new source/SQL-session-double checks on `47a972d` + patch `886d03825dfcb1c3eb016e08c371e3cda95a4168d12c993059f5a7b75fce12b2` OK; baseline 10 subcase failures. One handle_prune warning + dedicated test; #70 helpers/nonprune methods unchanged. Static event/allowlisted category/bounded job ID, existing result/close/BaseException behavior preserved. KeyboardInterrupt, not asyncio cancellation, tested. Check branch/PR for later integration; no old-check rerun/DB/purge/schema/live/full-suite or submitted/merged-head execution claimed. |
 
 UI projection reported SHA256 identities:
 patch `82c77f7cbf1779db1f0bfcb0dc6a86bf7b679a19ca6e00a5f50f4d77d2cb8a59`;
@@ -147,7 +150,39 @@ not executed again. Saving/retirement/last_checked/status/retry behavior unchang
 
 No submitted/merged-head or full-suite execution, provider/notification/live/DB
 acceptance, schema/purge action or complete partial-storage/dedup guarantee.
-Actual integration belongs to the branch/PR; these checks stay on their source patch.
+Integrated as #73 (see merge row); these checks stay on their original source patch.
+
+### Partial analysis storage/coverage — prepared source-patch evidence
+
+Branch `fix/partial-analysis-coverage`, baseline `47a972d` + exact patch.
+Author `python tests/test_partial_analysis_coverage.py`: **19 OK/exit 0**;
+unchanged baseline rejected (11 failures, 2 errors). Actual analyzer base/save and
+actual dedup split/retirement-hash helpers use import/provider/manager doubles.
+Exactly one old assertion changed to pin the new sanitized semantic contract:
+`python tests/test_analyzer_reported_errors.py ReportedErrorsTests.test_valid_sibling_cannot_hide_reported_failure`
+**1 OK/exit 0**. Other old checks were not rerun or re-attributed to this contract.
+
+Only analyzer _record_result_error/base_analyze_content/_save_analysis changed.
+Failed parsed stubs/envelopes, including unified-summary failures, cannot become
+stored conclusions; request/response usage stays available to the existing new-row
+pricing/tracing path. A new useful partial row stores analysis_complete=False and
+no new content_hash/content_hashes; missing marker never proves full coverage.
+No read-side/dedup/retirement helper or retry/attempt/terminal-state change.
+
+The daily-row uniqueness contract cannot preserve independent A/B bodies. For ANY
+existing row A, partial B returns None without updating/creating or pricing/tracing/
+validation side work; A body, prior known/legacy hashes and analytics metrics stay
+intact and B stays staged/uncovered. B usage/history is deliberately NOT persisted
+in analytics on this collision; provider every-call accounting was not re-verified
+and is not closed. New-row useful partials and later full-success updates are covered;
+full-success overwrite/union behavior remains unchanged, not a broader history fix.
+
+No new retry mechanism, extra provider call, schema/DB/network/bootstrap/purge/live
+operation or submitted/merged-head/full-suite execution. A later ordinary staged run
+may revisit incomplete B within EXISTING attempt/retention policies; this is not a
+new billing/retry guarantee. Source tests do not prove actual concurrent PostgreSQL
+writes/unique-key races or live storage acceptance. Consult branch/PR for integration;
+prepared evidence is not re-attributed to merged heads.
 
 ## Historical queue/refactoring reconciliation
 

@@ -16,45 +16,52 @@ def _call_id(call: dict[str, Any], row_id: int, idx: int) -> str:
 
 
 async def load_history(session: AgentSession) -> list[dict[str, Any]]:
-    """Recent turns of the conversation as OpenAI-style messages, oldest first.
+    """Replay recent turns with tool results paired to their adjacent batch.
 
-    Truncating to the context window can break tool transcripts: an assistant
-    message with `tool_calls` whose `role=tool` results fell outside the window
-    (or a leading tool result whose assistant call was cut) is rejected by the
-    API. Therefore, both sides are filtered against the set of call ids present
-    on *both* sides — unmatched tool_calls are stripped from assistant
-    messages and unmatched tool results are dropped entirely.
+    Only the contiguous tool rows immediately following an assistant call batch
+    can answer that batch. Global ID membership cannot prove this relationship:
+    interrupted turns, duplicate results or reused IDs can form invalid history.
+    Unmatched calls/results are omitted without inventing results, expanding the
+    history window, changing stored rows or reordering ordinary conversation.
     """
     rows = await agent_messages.recent(session.id, settings.AGENT_HISTORY_LIMIT)
-
-    assistant_ids: set[str] = set()
-    tool_ids: set[str] = set()
-    for row in rows:
-        if row.role == "assistant" and row.tool_calls:
-            for i, call in enumerate(row.tool_calls):
-                assistant_ids.add(_call_id(call, row.id, i))
-        elif row.role == "tool" and row.tool_name:
-            tool_ids.add(row.tool_name)
-    valid_ids = assistant_ids & tool_ids
-
     messages: list[dict[str, Any]] = []
-    for row in rows:
+    index = 0
+    while index < len(rows):
+        row = rows[index]
+        index += 1
         if row.role == "tool":
-            if row.tool_name not in valid_ids:
-                continue
-            messages.append({"role": "tool", "tool_call_id": row.tool_name, "content": row.content or ""})
+            # A result without the immediately preceding batch is an orphan.
             continue
         msg: dict[str, Any] = {"role": row.role, "content": row.content or ""}
-        if row.role == "assistant" and row.tool_calls:
-            calls = []
-            for i, call in enumerate(row.tool_calls):
-                cid = _call_id(call, row.id, i)
-                if cid not in valid_ids:
-                    continue
-                calls.append(to_openai_call(call, cid))
-            if calls:
-                msg["tool_calls"] = calls
+        if row.role != "assistant" or not row.tool_calls:
+            messages.append(msg)
+            continue
+
+        calls_by_id: dict[str, dict[str, Any]] = {}
+        for i, call in enumerate(row.tool_calls):
+            cid = _call_id(call, row.id, i)
+            if cid not in calls_by_id:
+                calls_by_id[cid] = call
+        results: list[dict[str, Any]] = []
+        answered: set[str] = set()
+        while index < len(rows) and rows[index].role == "tool":
+            result = rows[index]
+            index += 1
+            cid = result.tool_name
+            if cid not in calls_by_id or cid in answered:
+                continue
+            answered.add(cid)
+            results.append({"role": "tool", "tool_call_id": cid, "content": result.content or ""})
+        calls = [
+            to_openai_call(call, cid)
+            for cid, call in calls_by_id.items()
+            if cid in answered
+        ]
+        if calls:
+            msg["tool_calls"] = calls
         messages.append(msg)
+        messages.extend(results)
     return messages
 
 

@@ -26,7 +26,7 @@ PRIVATE = "synthetic-private-marker"
 SELECTED = {
     "_runtime_error_code", "_log_runtime_failure", "_check_prompt_injection",
     "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
-    "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending",
+    "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
 }
 
 
@@ -41,6 +41,7 @@ class Capture(logging.Handler):
 
 class Session:
     def __init__(self):
+        self.id = 17
         self.messages = []
         self.touches = 0
         self.state = {}
@@ -139,7 +140,20 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         resume = AsyncMock(return_value=expected)
         self.ns["_run_tool_loop"] = resume
         manager = ModuleType("app.models.managers.agent_session_manager")
-        manager.agent_sessions = SimpleNamespace(get_or_create=AsyncMock(return_value=session))
+        async def patch_state(session_id, updates):
+            self.assertEqual(session_id, session.id)
+            state = dict(session.state)
+            for key, value in updates.items():
+                if value is None:
+                    state.pop(key, None)
+                else:
+                    state[key] = value
+            return state
+
+        manager.agent_sessions = SimpleNamespace(
+            get_or_create=AsyncMock(return_value=session),
+            patch_state=AsyncMock(side_effect=patch_state),
+        )
         inbound = SimpleNamespace(text="да", channel="telegram", chat_id="synthetic-chat")
         resolution = SimpleNamespace(onboarded=False, tenant_id=31)
         # Only this known method-local import is replaced; no application/DB import runs.
@@ -149,6 +163,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with("example_tool", {})
         write_result.assert_awaited_once_with(session, pending, PRIVATE)
         resume.assert_awaited_once_with(session, [], [], None, self.identity, seed_reply=expected)
+        manager.agent_sessions.patch_state.assert_awaited_once_with(17, {"pending_confirmation": None})
         self.assertNotIn("pending_confirmation", session.state)
         self.assertEqual(session.messages, [("user", "да", {}), ("assistant", expected, {})])
         self.assertEqual(session.touches, 1)

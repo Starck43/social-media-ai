@@ -76,16 +76,23 @@ def _pending_confirmation(session: Any) -> Optional[dict]:
     return pending if isinstance(pending, dict) else None
 
 
+async def _patch_session_state(session: Any, updates: dict[str, Any]) -> None:
+    """Patch specified keys from locked storage, not this turn's snapshot."""
+    from app.models.managers.agent_session_manager import agent_sessions
+
+    state = await agent_sessions.patch_state(session.id, updates)
+    if state is not None:
+        session.state = state
+
+
 async def _set_pending(session: Any, payload: dict) -> None:
-    state = dict(session.state) if isinstance(session.state, dict) else {}
-    state["pending_confirmation"] = payload
-    await session.save_state(state)
+    await _patch_session_state(session, {"pending_confirmation": payload})
 
 
 async def _clear_pending(session: Any) -> None:
-    state = dict(session.state) if isinstance(session.state, dict) else {}
-    if state.pop("pending_confirmation", None) is not None:
-        await session.save_state(state)
+    state = session.state if isinstance(session.state, dict) else {}
+    if state.get("pending_confirmation") is not None:
+        await _patch_session_state(session, {"pending_confirmation": None})
 
 
 def _format_tool_result(name: str, result: Any) -> str:

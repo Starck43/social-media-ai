@@ -52,6 +52,28 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.actor, self.session, self.spec, {"source_id": 9}, "c1", now=self.now,
         )
 
+        async def patch_state(session_id, updates):
+            self.assertEqual(session_id, self.session.id)
+            state = dict(self.session.state)
+            for key, value in updates.items():
+                if value is None:
+                    state.pop(key, None)
+                else:
+                    state[key] = value
+            return state
+
+        self.session_manager = SimpleNamespace(
+            get_or_create=AsyncMock(return_value=self.session),
+            patch_state=AsyncMock(side_effect=patch_state),
+        )
+        storage_patch = patch.dict(sys.modules, {
+            "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
+                agent_sessions=self.session_manager,
+            ),
+        })
+        storage_patch.start()
+        self.addCleanup(storage_patch.stop)
+
     def runtime(self):
         runtime = HELPERS.RuntimeIdentityTests.runtime(self)
         runtime.TOOL_REGISTRY = {"test_write": self.spec}
@@ -76,7 +98,7 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def authorized_turn(self, runtime, pending, text="да"):
         self.session.state = {"pending_confirmation": pending}
         self.inbound.text = text
-        manager = SimpleNamespace(get_or_create=AsyncMock(return_value=self.session))
+        manager = self.session_manager
         with patch.dict(sys.modules, {
             "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(agent_sessions=manager),
         }), self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
@@ -209,6 +231,7 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stop)
         runtime.call_tool.assert_not_awaited()
         self.session.save_state.assert_not_awaited()
+        self.session_manager.patch_state.assert_not_awaited()
 
     async def test_confirmation_stages_and_never_invokes_handler_on_first_turn(self):
         runtime = self.runtime()
@@ -277,6 +300,7 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("другому пользователю", result)
             self.assertIn("pending_confirmation", self.session.state)
             self.session.save_state.assert_not_awaited()
+            self.session_manager.patch_state.assert_not_awaited()
             runtime.call_tool.assert_not_awaited()
 
     async def test_memory_command_uses_fresh_membership_owner_not_resolution_flag(self):

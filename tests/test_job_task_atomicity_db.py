@@ -36,7 +36,10 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
     async def seed_summary(self):
         with tenant_scope(self.own.id), service_permission_scope("agenttask", "update"):
             await AgentTask.objects.update_by_id(
-                self.task.id, last_status="prior", last_error="prior", last_run_at=fixtures.NOW,
+                self.task.id,
+                last_status="prior",
+                last_error="prior",
+                last_run_at=fixtures.NOW,
             )
 
     async def task_state(self, tenant=None, task_id=None):
@@ -97,8 +100,13 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
     async def test_foreign_task_reference_rejects_zero_row_projection_and_rolls_back_job(self):
         with tenant_scope(self.other.id), service_permission_scope("agenttask", "create"):
             foreign = await AgentTask.objects.create(
-                name=f"foreign-atomic-task-{uuid4().hex}", job_type="learn", cron_expr="0 0 * * *",
-                payload={}, is_active=False, last_status="foreign-prior", last_error="foreign-private",
+                name=f"foreign-atomic-task-{uuid4().hex}",
+                job_type="learn",
+                cron_expr="0 0 * * *",
+                payload={},
+                is_active=False,
+                last_status="foreign-prior",
+                last_error="foreign-private",
             )
         # The FK exists, but points outside the Job's tenant: trusted corrupt-reference arrangement.
         job, claim = await self.acquired(task_id=foreign.id)
@@ -177,10 +185,13 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
         task_writer = AsyncMock(wraps=self.manager._write_task_outcome)
         with patch.object(database_module, "async_session_maker", factory):
             with patch.object(self.manager, "_write_task_outcome", task_writer):
-                receipts = await asyncio.wait_for(asyncio.gather(
-                    self.done(claim, result={"winner": "success"}),
-                    self.fail(claim, error="terminal handler failure", allow_retry=False),
-                ), timeout=20)
+                receipts = await asyncio.wait_for(
+                    asyncio.gather(
+                        self.done(claim, result={"winner": "success"}),
+                        self.fail(claim, error="terminal handler failure", allow_retry=False),
+                    ),
+                    timeout=20,
+                )
         winners = [receipt for receipt in receipts if receipt.acknowledgement != OutcomeAck.CLAIM_LOST]
         self.assertEqual(len(winners), 1)
         task_writer.assert_awaited_once()
@@ -188,11 +199,14 @@ class AtomicityDatabaseTests(unittest.IsolatedAsyncioTestCase):
         stored = await self.read(job.id)
         summary = await self.task_state()
         if winner.acknowledgement == OutcomeAck.DONE:
-            self.assertEqual((stored.status, stored.result, summary[0], summary[1]),
-                             ("done", {"winner": "success"}, "ok", None))
+            self.assertEqual(
+                (stored.status, stored.result, summary[0], summary[1]), ("done", {"winner": "success"}, "ok", None)
+            )
         else:
-            self.assertEqual((stored.status, stored.error, summary[0], summary[1]),
-                             ("failed", "terminal handler failure", "failed", "terminal handler failure"))
+            self.assertEqual(
+                (stored.status, stored.error, summary[0], summary[1]),
+                ("failed", "terminal handler failure", "failed", "terminal handler failure"),
+            )
         self.assertEqual(summary[2], stored.finished_at)
         loser = next(receipt for receipt in receipts if receipt.acknowledgement == OutcomeAck.CLAIM_LOST)
         self.assertIsNone(loser.result)

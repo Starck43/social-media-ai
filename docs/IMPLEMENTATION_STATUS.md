@@ -24,7 +24,7 @@ preview-only action_send botaction.view/literal dry_run=True, no publication/
 PENDING transition. Owner queued/running/outcome UI, source/task escaping,
 LLM-default management, test isolation/onboarding correction preserved.
 Merged/regression-verified is NOT deployed, live activated or business/security
-accepted. Broad /app XSS audit, durable approval/CAS and release/browser/live
+acceptance. Broad /app XSS audit, durable approval/CAS and release/browser/live
 acceptance remain OPEN. Do not restart merged dispatcher privacy or typed work.
 
 Next assigned sequence: general queue PRD-05 lane, THEN per-attempt accounting/

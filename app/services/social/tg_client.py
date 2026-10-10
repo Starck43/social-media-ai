@@ -201,6 +201,30 @@ class TelegramClient(BaseClient):
 			)
 			return None
 
+	@staticmethod
+	def _media_placeholders(media: Any) -> list[dict[str, Any]]:
+		"""Recognize direct MTProto photos/videos without resolving file references.
+
+		A caption is not proof that its media was analyzed. Missing references
+		must reach staging as placeholders, never as token-bearing Bot API URLs.
+		Unsupported documents/web previews remain outside this bounded contract.
+		"""
+		kind = media.get("_") if type(media) is dict else type(media).__name__
+		if kind == "MessageMediaPhoto":
+			return [{"type": "image", "url": None}]
+		if kind != "MessageMediaDocument":
+			return []
+		document = media.get("document") if type(media) is dict else getattr(media, "document", None)
+		mime = document.get("mime_type") if type(document) is dict else getattr(document, "mime_type", None)
+		attributes = document.get("attributes") if type(document) is dict else getattr(document, "attributes", None)
+		video_attribute = any(
+			(attribute.get("_") if type(attribute) is dict else type(attribute).__name__) == "DocumentAttributeVideo"
+			for attribute in attributes if attribute is not None
+		) if type(attributes) is list else False
+		if (type(mime) is str and mime.lower().startswith("video/")) or video_attribute:
+			return [{"type": "video", "url": None}]
+		return []
+
 	def _normalize_message(self, message: Any, source: Source) -> Optional[dict]:
 		"""Telethon Message -> the shared normalized content-item contract.
 
@@ -212,8 +236,10 @@ class TelegramClient(BaseClient):
 		never pays twice.
 		"""
 		text = getattr(message, "text", None) or getattr(message, "message", None)
-		if not text:
-			return None  # media-only or service message: nothing to analyze
+		attachments = self._media_placeholders(getattr(message, "media", None))
+		if not text and not attachments:
+			return None  # service/unsupported media: no eligible content
+		text = text or ""
 
 		peer = getattr(message, "peer_id", None)
 		chat_id = (
@@ -252,6 +278,8 @@ class TelegramClient(BaseClient):
 		if getattr(message, "media", None):
 			item["has_media"] = True
 			item["media_type"] = type(message.media).__name__
+		if attachments:
+			item["attachments"] = attachments
 		return item
 
 	def _extract_items_from_response(self, response: dict) -> list:
@@ -369,6 +397,9 @@ class TelegramClient(BaseClient):
 						normalized_item["media_type"] = media.__class__.__name__
 					elif isinstance(media, dict):
 						normalized_item["media_type"] = media.get("_", "unknown")
+					attachments = self._media_placeholders(media)
+					if attachments:
+						normalized_item["attachments"] = attachments
 
 				normalized.append(normalized_item)
 

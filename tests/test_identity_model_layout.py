@@ -135,8 +135,14 @@ def test_permission_model_type_relationship_and_existing_enums_remain():
     assert Permission.__mapper__.relationships["model_type"].mapper.class_ is ModelType
     assert Permission.__mapper__.relationships["model_type"].lazy == "selectin"
     assert ModelType.__mapper__.relationships["permissions"].mapper.class_ is Permission
-    assert Permission.__table__.c.action_type.type.enum_class is ActionType
-    assert Role.__table__.c.codename.type.enum_class is UserRoleType
+    action = Permission.__table__.c.action_type
+    assert action.type.enum_class is None
+    assert action.type.impl.enums == [member.name for member in ActionType]
+    assert action.type.process_bind_param(ActionType.VIEW, None) == ActionType.VIEW.name
+    assert action.type.process_result_value(ActionType.VIEW.name, None) is ActionType.VIEW
+    codename = Role.__table__.c.codename
+    assert codename.type.enum_class is None
+    assert codename.type.enums == [member.name for member in UserRoleType]
 
 
 @pytest.mark.parametrize(

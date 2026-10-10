@@ -70,7 +70,7 @@ class AgentSession(Base, TenantScopedMixin, TimestampMixin):
         await agent_sessions.update_by_id(self.id, state=state)
         self.state = state
 
-    async def append(
+    async def append_message(
         self,
         role: str,
         content: str | None = None,
@@ -91,6 +91,21 @@ class AgentSession(Base, TenantScopedMixin, TimestampMixin):
         )
         await agent_sessions.touch(self.id)
         return row
+
+    async def append(
+        self,
+        role: str,
+        content: str | None = None,
+        *,
+        tool_calls: list[dict[str, Any]] | None = None,
+        tool_call_id: str | None = None,
+    ) -> Any:
+        """Compatibility entry point; new callers should use append_message.
+
+        Keep the same signature and await the canonical implementation once.
+        No runtime warning or caller migration is introduced in this package.
+        """
+        return await self.append_message(role, content, tool_calls=tool_calls, tool_call_id=tool_call_id)
 
     async def touch(self) -> None:
         """Record activity (used for idle detection / retention)."""

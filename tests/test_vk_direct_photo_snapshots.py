@@ -44,7 +44,8 @@ class VKDirectPhotoSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.dedup = load_isolated_source('_vk_photo_hashes', ROOT/'app/services/ai/dedup.py')
         media_type = type('MediaType', (), {k: NS(db_value=v) for k,v in [('TEXT','text'),('IMAGE','image'),('VIDEO','video')]})
         self.classifier = load_isolated_source('_vk_photo_classifier', ROOT/'app/services/ai/content_classifier.py',
-            {'app.types.enums.llm_types': NS(MediaType=media_type)}).ContentClassifier
+            {'app.types.enums.llm_types': NS(MediaType=media_type),
+             'app.utils.content_attachments': self.util}).ContentClassifier
 
     def normalize(self, attachments=(), **kw):
         item = {**self.raw, **kw}

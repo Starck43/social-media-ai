@@ -32,9 +32,11 @@ class MediaSkipCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.module = f.module
         self.analyzer = f.analyzer
         self.dedup = f.dedup
+        utility = load_isolated_source("_media_attachment_vocabulary", ROOT / "app/utils/content_attachments.py")
         self.classifier = load_isolated_source("_media_classifier",
             ROOT / "app/services/ai/content_classifier.py",
-            {"app.types.enums.llm_types": SimpleNamespace(MediaType=self.module.MediaType)})
+            {"app.types.enums.llm_types": SimpleNamespace(MediaType=self.module.MediaType),
+             "app.utils.content_attachments": utility})
         self.module.ContentClassifier = self.classifier.ContentClassifier
         for method in ("_analyze_text", "_analyze_images", "_analyze_videos"):
             setattr(self.analyzer, method, getattr(self.module.AIAnalyzer, method).__get__(self.analyzer))

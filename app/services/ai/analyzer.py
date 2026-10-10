@@ -195,7 +195,7 @@ class AIAnalyzer:
             errors_before = self.reported_errors
             # Analyze each content type with appropriate LLM
             analysis_results = {}
-            media_coverage_gaps: set[str] = set()
+            media_coverage_gaps = self._uncovered_media_hashes(None, ContentClassifier.uncovered_attachment_items(content))
 
             # Text analysis
             if classified[MediaType.TEXT.db_value]:

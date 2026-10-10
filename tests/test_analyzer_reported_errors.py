@@ -21,6 +21,9 @@ def load_analyzer():
     media = type("MediaType", (), {
         "TEXT": ns(db_value="text"), "IMAGE": ns(db_value="image"), "VIDEO": ns(db_value="video")
     })
+    utility = load_isolated_source("_reported_attachment_vocabulary", ROOT / "app/utils/content_attachments.py")
+    classifier = load_isolated_source("_reported_attachment_classifier", ROOT / "app/services/ai/content_classifier.py",
+        {"app.types.enums.llm_types": ns(MediaType=media), "app.utils.content_attachments": utility})
     imports = {
         "app.core.analysis_constants": ns(DEFAULT_ANALYSIS_PARAMS={}),
         "app.core.config": ns(settings=ns(DEBUG=False)),
@@ -29,7 +32,8 @@ def load_analyzer():
         "app.services.ai.chain_resolver": ns(
             _normalize=Mock(), _token_set_ratio=Mock(), resolve_chain_async=AsyncMock()
         ),
-        "app.services.ai.content_classifier": ns(ContentClassifier=ns()),
+        "app.services.ai.content_classifier": ns(ContentClassifier=ns(
+            uncovered_attachment_items=classifier.ContentClassifier.uncovered_attachment_items)),
         "app.services.ai.dedup": ns(
             batch_hash=Mock(), filter_analyzed=AsyncMock(), hashes_hash=Mock(), item_hash=Mock()
         ),

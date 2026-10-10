@@ -2,6 +2,7 @@ import logging
 from typing import Dict, List, Any
 
 from app.types.enums.llm_types import MediaType
+from app.utils.content_attachments import attachment_coverage_reason, canonical_attachment_type
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,18 @@ class ContentClassifier:
 				classified[MediaType.TEXT.db_value].append(item)
 			
 			# Check for media attachments
-			attachments = item.get('attachments', [])
+			attachments = item.get('attachments') or []
 			
-			for attachment in attachments:
-				media_type = attachment.get('type', '').lower()
+			for attachment in attachments if type(attachments) is list else []:
+				media_type = canonical_attachment_type(attachment.get('type')) if type(attachment) is dict else 'unknown'
 				
-				if media_type in ['photo', 'image']:
+				if media_type == 'image':
 					classified[MediaType.IMAGE.db_value].append({
 						**item,
 						'media_url': attachment.get('url'),
 						'media_type': MediaType.IMAGE.db_value
 					})
-				elif media_type in ['video', 'video_file']:
+				elif media_type == 'video':
 					classified[MediaType.VIDEO.db_value].append({
 						**item,
 						'media_url': attachment.get('url'),
@@ -61,6 +62,23 @@ class ContentClassifier:
 		
 		return classified
 	
+	@staticmethod
+	def uncovered_attachment_items(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+		"""Parents with concrete unsupported/missing media cannot be retired.
+
+		Missing/NULL is legacy unknown, not repaired or reinterpreted here.
+		Explicit [] means no attachments. Malformed non-NULL collections are
+		concrete unknown evidence, not silently empty. Preserve each parent once.
+		"""
+		uncovered = []
+		for item in content:
+			attachments = item.get("attachments")
+			if attachments is None:
+				continue
+			if type(attachments) is not list or any(attachment_coverage_reason(entry) for entry in attachments):
+				uncovered.append(item)
+		return uncovered
+
 	@staticmethod
 	def get_media_urls(items: list[dict[str, Any]]) -> list[str]:
 		"""

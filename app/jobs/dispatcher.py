@@ -306,6 +306,86 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
     return receipt
 
 
+_ORDINARY_HEARTBEAT_SECONDS = 20
+
+
+class _OrdinaryHeartbeatStopped(Exception):
+    """Internal signal, distinct from errors raised by the handler itself."""
+
+    def __init__(self, error: Exception):
+        self.error = error
+        super().__init__("Ordinary heartbeat stopped execution.")
+
+
+class _OrdinaryHeartbeatState:
+    def __init__(self):
+        self.renewing = False
+        self.settled = asyncio.Event()
+
+
+async def _ordinary_heartbeat(claim: JobClaim, state: _OrdinaryHeartbeatState) -> None:
+    while True:
+        await asyncio.sleep(_ORDINARY_HEARTBEAT_SECONDS)
+        state.renewing = True
+        state.settled.clear()
+        try:
+            try:
+                renewed = await jobs.renew_claim(claim)
+            except Exception:
+                raise JobClaimRenewalError(claim) from None
+            if renewed is False:
+                raise JobClaimLostError(claim) from None
+            if renewed is not True:
+                raise JobClaimRenewalError(claim) from None
+        finally:
+            state.renewing = False
+            state.settled.set()
+
+
+async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, payload: dict) -> Any:
+    async def invoke():
+        if claim.job_type == "digest":
+            from app.services.digest.job_delivery import execute_digest_job
+
+            return await execute_digest_job(job, payload, handler)
+        return await handler(payload)
+
+    handler_task = asyncio.create_task(invoke())
+    state = _OrdinaryHeartbeatState()
+    heartbeat_task = asyncio.create_task(_ordinary_heartbeat(claim, state))
+    try:
+        await asyncio.wait({handler_task, heartbeat_task}, return_when=asyncio.FIRST_COMPLETED)
+        # Do not cancel an in-flight DB acknowledgement merely because the handler finished.
+        if handler_task.done() and state.renewing:
+            await state.settled.wait()
+        # Renewal uncertainty wins even if the handler completed in the same turn.
+        if heartbeat_task.done():
+            try:
+                heartbeat_task.result()
+            except (JobClaimLostError, JobClaimRenewalError) as error:
+                raise _OrdinaryHeartbeatStopped(error) from None
+            except asyncio.CancelledError:
+                raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
+            except Exception:
+                raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
+            raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
+        return handler_task.result()
+    finally:
+        # Do not return a receipt while a cancelled handler can still run locally.
+        for task in (handler_task, heartbeat_task):
+            if not task.done():
+                task.cancel()
+        drain = asyncio.gather(handler_task, heartbeat_task, return_exceptions=True)
+        interrupted = False
+        while not drain.done():
+            try:
+                await asyncio.shield(drain)
+            except asyncio.CancelledError:
+                interrupted = True
+        if interrupted:
+            raise asyncio.CancelledError
+
+
 async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow_retry: bool) -> JobOutcomeReceipt:
     claim = JobClaim.capture(job)  # Capture once, before any handler can mutate observed state.
     # Keep ownership uncertainty outside handler-failure/retry finalization.
@@ -318,12 +398,10 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
     if renewed is not True:
         raise JobClaimRenewalError(claim) from None
     try:
-        if claim.job_type == "digest":
-            from app.services.digest.job_delivery import execute_digest_job
-
-            result = await execute_digest_job(job, payload, handler)
-        else:
-            result = await handler(payload)
+        result = await _run_ordinary_handler(claim, job, handler, payload)
+    except _OrdinaryHeartbeatStopped as stopped:
+        # Never turn lease uncertainty into handler failure or automatic replay.
+        raise stopped.error from None
     except Exception as error:
         from app.services.digest.delivery_outcomes import DeliveryFailure
 

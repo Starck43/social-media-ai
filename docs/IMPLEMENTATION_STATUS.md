@@ -1,28 +1,40 @@
 # Implementation status and session handoff
 
-## Current continuation — bounded atomic stale reaping, focused owner checks passed
+## Current continuation — queue foundation merged; dispatcher/web/learn follow-ups merged
 
-Source baseline dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`: actual merge
-of [PR #33](https://github.com/Starck43/social-media-ai/pull/33), parents
-`683c49e` and `e645b9b`; merge tree equals submitted `e645b9b` tree. Final
-first-parent diff is exactly FOUR existing docs, +129/-137 lines; no app/tests/
-.agent/migrations delta. Those executable paths also match Owner-tested
-`482eacb`. Retained Owner evidence: 1612 passed, 11 warnings, 64 subtests,
-738.25s, saved exit 0. No repeated suite or independently observed owner log.
+Source baseline dev `073fcd008baa956d950db47cc5aa054e7529438c` (merge of PR #43).
+Dev advanced by four owner-approved merges on 2026-10-10:
 
-Selected package: **atomic stale reaping / Notion queue lane**, branch
-`fix/queue-stale-reap-cas`, Draft PR #34; focused owner checks passed,
-NOT integrated/accepted.
-Original five-file implementation scope (four-doc reconciliation makes seven total): `app/models/managers/job_manager.py`, new
-`tests/test_job_stale_reap.py`, new `tests/test_job_stale_reap_db.py`, existing
-board and this ledger. Replace read-list/unconditional-id updates with one
-conditional `QuerySet.update`: status=running AND locked_at<cutoff stay in the
-write predicate, with existing tenant guard/explicit bypass. PostgreSQL may
-re-evaluate that predicate after a competing update; completed rows and fresh
-heartbeats must not be overwritten. Return actual changed count, not snapshot
-length. Preserve timeout, NULL-lease exclusion, attempts/result/error/cost and
-run timestamps; ordinary updated_at behavior remains managed by SQLAlchemy.
-No new schema, heartbeat runner, handler/finalizer/notification/task logic.
+- [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation
+  integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (+689/-30, 8 files),
+  carrying and closing #34 (atomic stale reaping), #35 (docs wording) and #37
+  (claim-contract docs); integration head `6decbf9`.
+- [PR #46](https://github.com/Starck43/social-media-ai/pull/46) dispatcher
+  outcome-error boundary as `8f3c6127d835b615d624f5e461dc6697c930fa0a`
+  (+288/-9, 5 files).
+- [PR #49](https://github.com/Starck43/social-media-ai/pull/49) truthful web job
+  outcome as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f` (+223/-3, 2 files).
+- [PR #43](https://github.com/Starck43/social-media-ai/pull/43) atomic learn
+  memory batch as `073fcd008baa956d950db47cc5aa054e7529438c` (dev head,
+  +703/-29, 8 files).
+
+Merge order was #45 -> #46 -> #49 -> #43; pairwise file overlap was ZERO and all
+four branched from dev `1f66f34`. The package descriptions below are retained as
+the implementation record of what those merges contained. Previous baseline
+`6b01493` (PR #33 merge) and PR22 evidence below stay historical; no full suite
+is re-attributed to the new baseline.
+
+### Original stale-reaping package (closed via PR #45)
+
+The atomic stale reaping / Notion queue lane, branch `fix/queue-stale-reap-cas`,
+merged through [PR #45](https://github.com/Starck43/social-media-ai/pull/45) as
+`f078f3a`; original Draft PR #34 and routes #35/#37 are closed by that
+integration. Scope as implemented: `app/models/managers/job_manager.py` reap_stale
+now one conditional `QuerySet.update` (status=running AND locked_at<cutoff stay
+in the write predicate, tenant guard/bypass retained, actual changed count
+returned); new `tests/test_job_stale_reap.py`, `tests/test_job_stale_reap_db.py`,
+plus the four-doc reconciliation. No new schema, heartbeat runner,
+handler/finalizer/notification/task logic.
 
 Agent evidence is SOURCE ONLY: parse/compile without executing code; all other
 JobManager statements unchanged; existing QuerySet tenant predicate and single
@@ -76,6 +88,18 @@ not overwritten. This is bounded queue-contract evidence, not full-suite,
 queue-wide replay safety, deployment or security/business acceptance.
 Two warnings are recorded, not independently triaged or declared harmless.
 
+Same SHA, local re-run with captured exit codes: on 2026-10-10 the same three
+commands were executed again in the same worktree at the identical
+`81138d99dab987b3355e674d5bf2922df59e7d49` while preparing this ledger, results
+unchanged — `python tests/test_job_stale_reap.py` 5 tests OK (log
+`pr34-rerun-standalone-20261010-054125.txt`, exit 0), `python -m
+scripts.setup_test_db --check` exit 0 (log
+`pr34-rerun-schemacheck-20261010-054130.txt`), `python -m pytest
+tests/test_job_stale_reap_db.py` 12 passed, 2 warnings (log
+`pr34-rerun-dbtest-20261010-054136.txt`, exit 0; private project `.env` sourced
+into that process only, no schema operations). Sequential discipline kept,
+zero concurrent runners.
+
 Owner reports preparing ignored private env in this worktree; git status
 remained clean, main checkout/other worktrees untouched. Agent did not read
 or copy that env and no secrets are included here. This is not standing
@@ -85,32 +109,19 @@ stamp/migration, full suite, PR30-32 checks, Ready or merge was reported.
 This evidence-record commit changes ONLY board/ledger. Exact tested SHA stays
 81138d9; it is not retroactively replaced with this later docs-only head.
 No application/test change or repeated focused/full check is requested.
-Both PR34 and PR35 stay Draft; integration requires a fresh scoped review
-and an explicit owner command. General leases, stale outcome fencing, task/job
-atomicity and the separate runtime whitespace IndexError remain OPEN.
+PR34, PR35 and PR37 are closed/merged through the PR #45 integration as
+`f078f3a`. General leases, stale outcome fencing, task/job atomicity, recovery
+replay and the separate runtime whitespace IndexError (PR #40) remain OPEN.
 
-### Documentation reconciliation with PR35 — prepared, not integrated
+### Documentation reconciliation with PR35 — landed in the integration
 
-PR #35 remains Draft at `8b76b1d768d0525e0501560460c458de81ed3181`.
-Its four-file readability/acceptance delta is now included in this queue
-candidate without copying its old board allocation over PR34's occupied row.
-The original text composition had two adjacent-hunk conflicts in README;
-resolve them by retaining PR34's source-baseline insertion and occupied queue
-row alongside PR35's corrected PR22 paragraph/identity row. The ledger's queue
-journal and Kilo audit are retained; two other documentation files match PR35.
-Source baseline remains dev `6b01493`; no dev/PR merge is performed. Historical
-Kilo observations below describe that baseline, not an assertion that the
-spacing remains uncorrected in this reconciled candidate. The whitespace
-runtime IndexError remains OPEN and unmodified.
-
-This reconciliation changes FOUR docs only. All app/tests/.agent/migrations
-and other executable files are byte-identical to submitted queue `654dcab`.
-Static diff/allowlist/acceptance-phrase checks establish content preservation
-only. The original common-base merge still needs README hunk resolution until
-PR35 ancestry is attached in the dedicated local PR34 worktree. ZERO tests/collection/app
-imports/DB/schema/migration/live calls; no previous checks repeated. Existing
-focused owner commands were later completed on exact 81138d9, as recorded
-above. No focused/full rerun is requested for this docs-only evidence delta.
+PR #35 (`8b76b1d768d0525e0501560460c458de81ed3181`) is closed/merged: its
+readability/acceptance delta landed inside the PR #45 integration `f078f3a`
+without overwriting PR34's queue row. The composition had two adjacent-hunk
+conflicts in README; they were resolved by retaining PR34's source-baseline
+insertion and occupied queue row alongside PR35's corrected PR22 paragraph and
+identity row. The ledger's queue journal and Kilo audit were retained. The
+whitespace runtime IndexError remains OPEN and unmodified (PR #40).
 
 ### Kilo findings audited without dismissing successful-check comments
 
@@ -276,6 +287,22 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
 - [x] Cloud/hybrid planning — PR #8, preserved as planning, not deployed connectors.
 - [x] Project map/navigation and documentation organization — PR #13, dev `f560840`.
 - [x] Source-linked model-reference correction — PR #14, dev `081165a`.
+- [x] PR22 identity/permissions boundary — PR #22, dev `683c49e` (see the
+  identity row above; owner full suite at PR22 head `482eacb`, retained as
+  historical evidence only, not re-attributed to later baselines).
+- [x] Queue foundation integration — PR #45, dev `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e`,
+  closing #34 (atomic stale reaping, `reap_stale` single conditional UPDATE),
+  #35 (docs wording) and #37 (claim-contract docs); integration head `6decbf9`,
+  tested SHA `81138d9` (5 standalone + config check + 12 PostgreSQL, exit 0).
+- [x] Dispatcher outcome-error boundary — PR #46, dev `8f3c6127d835b615d624f5e461dc6697c930fa0a`;
+  `JobOutcomePersistenceError` after handler return, no second finalization;
+  tested `6979feb` (25 + 13 + 14 standalone, exit 0).
+- [x] Truthful web manual-job outcome — PR #49, dev `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`;
+  missing claim/malformed/nonterminal no longer reported as success; tested
+  `74af779` (13 standalone, exit 0).
+- [x] Atomic learn memory batch — PR #43, dev `073fcd008baa956d950db47cc5aa054e7529438c`
+  (current head); facts + watermark in one tenant transaction with cursor
+  fencing; tested `b29e432` (49 + 11 standalone, 11 PostgreSQL, exit 0).
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

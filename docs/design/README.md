@@ -13,14 +13,18 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Current source baseline: dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`, actual merge of docs-only PR #33. Its four-file diff changes no executable code; PR22 evidence below is retained without rerunning it.
+Current source baseline: dev `073fcd008baa956d950db47cc5aa054e7529438c`, merge of PR #43. Dev advanced by four owner-approved merges: [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (closed #34/#35/#37), [PR #46](https://github.com/Starck43/social-media-ai/pull/46) as `8f3c6127d835b615d624f5e461dc6697c930fa0a`, [PR #49](https://github.com/Starck43/social-media-ai/pull/49) as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`, and [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`. Each merge's checks stay attached to its own tested SHA below; no historical full suite is re-attributed to this baseline.
 
 Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged
 by explicit Owner approval, history preserved. Merge tree equals approved
 56d8105; executable code equals Owner-green 482eacb 1612 passed/11
-warnings/64 subtests/saved exit0. Merged/regression-verified does not establish
-deployment, live activation, or business/security acceptance. General queue is
-next assigned lane; broader gates remain OPEN.
+warnings/64 subtests/saved exit0. That full suite belongs to PR22 head 482eacb
+and merged 683c49e only; it is not carried onto dev 073fcd0, and no full-suite
+run exists for the #43/#45/#46/#49 merges — their evidence is the targeted
+checks recorded below at their own tested SHAs. Merged/regression-verified does
+not establish deployment, live activation, or business/security acceptance. The
+general-queue foundation is now merged (current baseline); remaining queue
+gates stay OPEN and broader gates remain OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
@@ -28,10 +32,10 @@ Do not restart merged digest integration or bounded logging work.
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
 | B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as 683c49e; Owner 482eacb full 1612 passed/11 warnings/64 subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
-| C / general queue, PRD-05 | **OCCUPIED / Draft; focused owner checks passed:** [PR #34](https://github.com/Starck43/social-media-ai/pull/34), atomic stale reaping / Notion queue lane; branch `fix/queue-stale-reap-cas` | Owner-tested exact `81138d9`: standalone 5 OK/exit 0; PostgreSQL 12 passed, 2 warnings/exit 0. Do not rerun by default. Fresh review and explicit integration command next; general leases, outcome fencing and Job/task atomicity remain OPEN. |
+| C / general queue, PRD-05 | **MERGED bounded foundation:** [PR #45](https://github.com/Starck43/social-media-ai/pull/45) as `f078f3a` carrying closed #34 (atomic stale reaping), #35 (docs wording) and #37 (outcome contract docs); [PR #46](https://github.com/Starck43/social-media-ai/pull/46) dispatcher outcome-error boundary as `8f3c612`; [PR #49](https://github.com/Starck43/social-media-ai/pull/49) truthful web job outcome as `7ad1d75` | Code evidence at tested SHA `81138d99dab987b3355e674d5bf2922df59e7d49`: standalone 5 OK/exit 0, config check exit 0, PostgreSQL 12 passed/exit 0 (logs `pr34-standalone-20261010-041559`, `pr34-schemacheck-20261010-041604`, `pr34-dbtest-20261010-041637`; re-run with captured exits `pr34-rerun-*-20261010-0541xx`); byte-identical at integration head `6decbf9` via docs-only `e9d25d3`. #46 at tested `6979feb` (25+13+14/exit 0); #49 at tested `74af779` (13/exit 0). Full suite NOT run at merged heads. General leases, ordinary claim fencing, Job/task atomicity and recovery replay remain OPEN. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
-| C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
+| C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; **atomic learn memory batch MERGED:** [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`, head/tested `b29e432` (49 boundary + 11 manager standalone + 11 PostgreSQL, exit 0) | Do not rebuild typed output contracts or the atomic batch. Acknowledgement-loss rollback proof, ordinary claim fencing, duplicate LLM spend, fact quality and task/billing atomicity remain OPEN. |
 | A/C / development documentation | **MERGED:** [PR #26](https://github.com/Starck43/social-media-ai/pull/26) as `10212b5e`; no application change | Use the three-level entry point; do not redo this navigation cleanup. |
 | C / observation and recovery runbook, PRD-04/05 | **MERGED:** [PR #27](https://github.com/Starck43/social-media-ai/pull/27) as `0234c21`; guide `b1cf91f` | [Existing DEPLOYMENT runbook](../DEPLOYMENT.md#observation-and-conservative-recovery): source-grounded observation/escalation, no automatic reset/replay/restart. Eight tabletop cases prepared, NOT run. |
 | D–G / UX, pilot, expansion and scale | Gated, not current automatic implementation scope | Use stage exit evidence and an explicit selected user journey, not old research checklists. |

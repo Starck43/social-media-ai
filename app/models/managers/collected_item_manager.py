@@ -200,19 +200,29 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         return int(result.rowcount or 0)
 
     async def delete_older_than(self, session: Any, days: int) -> int:
-        """Backstop for rows whose run never produced an analysis.
+        """Expire old staged rows in the current tenant or explicit bypass.
 
-        A collection whose analysis failed keeps its raw items on purpose; this
-        is the ceiling on that, so a permanently failing source cannot grow the
-        table without bound.
+        The caller owns the transaction. Missing/malformed tenant context fails
+        before SQL; only explicit platform bypass permits a schema-wide sweep.
+        Retention age and exhausted-item eligibility are unchanged.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
+        tenant_clause = ""
+        params: dict[str, Any] = {}
+        if not is_bypass():
+            tenant_id = current_tenant_id()
+            if type(tenant_id) is not int or tenant_id <= 0:
+                raise TenantContextError("Staged retention requires a valid tenant or explicit bypass")
+            tenant_clause = " AND tenant_id = :tenant_id"
+            params["tenant_id"] = tenant_id
+        params["cutoff"] = datetime.now(timezone.utc) - timedelta(days=days)
         result = await session.execute(
             sa_text(
                 f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
-                "WHERE created_at < :cutoff"
+                "WHERE created_at < :cutoff" + tenant_clause
             ),
-            {"cutoff": cutoff},
+            params,
         )
         return int(result.rowcount or 0)
 

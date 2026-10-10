@@ -44,7 +44,9 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         or two overlapping collections must not blow up on the unique key, and
         a duplicate is never worth failing a collection over.
 
-        Returns the number of rows actually inserted.
+        Returns the driver-reported insertion count when positive; otherwise
+        a bounded persisted run count (or the legacy no-run estimate). The
+        fallback does not prove how many rows were newly inserted on a replay.
         """
         if not rows:
             return 0
@@ -83,16 +85,30 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         count = int(result.rowcount or 0)
         if count > 0:
             return count
-        # An executemany over ON CONFLICT reports no rowcount (-1), so the real
-        # number of staged rows is read back rather than assumed from the input
-        # size: a re-run that collides on the unique key staged nothing new.
+        # An executemany over ON CONFLICT may report no rowcount (-1).
+        # Read back persisted rows for the chosen run; existing rows from a
+        # replay may be counted, so this is not a measured new-insertion count.
         probe = next((r.get("run_id") for r in params if r.get("run_id") is not None), None)
         if probe is None:
             # Nothing ties these rows to a run, so there is no handle to count by.
             return len(params)
+        # A run can contain several sources/workspaces. Count only the stamped
+        # tenant/source pairs in this batch for the selected run, not its neighbours.
+        scope_pairs = dict.fromkeys(
+            (row["tenant_id"], row["source_id"]) for row in params if row.get("run_id") == probe
+        )
+        count_params: dict[str, Any] = {"run_id": probe}
+        scope_clauses = []
+        for index, (tenant_id, source_id) in enumerate(scope_pairs):
+            scope_clauses.append(f"(tenant_id = :tenant_id_{index} AND source_id = :source_id_{index})")
+            count_params[f"tenant_id_{index}"] = tenant_id
+            count_params[f"source_id_{index}"] = source_id
         stored = await session.execute(
-            sa_text(f"SELECT count(*) FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id"),
-            {"run_id": probe},
+            sa_text(
+                f"SELECT count(*) FROM {table} WHERE run_id = :run_id "
+                f"AND ({' OR '.join(scope_clauses)})"
+            ),
+            count_params,
         )
         return int(stored.scalar() or 0)
 

@@ -1,56 +1,50 @@
 # Identity and permission boundary: owner handoff
 
-## Current continuation — completed full green; explicit integration decision pending
+## Current continuation — PR22 merged; general queue is next assigned lane
 
-OWNER-REPORTED completed full suite at exact
-`482eacbd84ce640bd25cfaf4c75bbe1695621495`, HEAD unchanged before/after:
-**1612 passed,11 warnings,64 subtests passed,738.25s (12:18)**.
-Saved `PYTEST_EXIT_CODE=0`, not inferred. Exact command:
-`python -m pytest -vv --durations=20 -o faulthandler_timeout=120`.
-Owner-local log `perr/pr22-full-482eacb-20261010-025202.txt`, not independently
-read by remote agent. Worktree had only untracked perr/ diagnostic logs, not
-tracked-code changes; logs retained/uncommitted. test_bot_actions20 passed,
-no former setup duplicate-name errors. No schema/code change during the run.
+PR #22 **MERGED into dev**, history-preserving merge commit
+`683c49e85918503119af47338200d8f762a52403` (parents deva983a15 and PRhead
+56d810538aa15f9e391c43dfed75e77aada2d2a1), after explicit Owner Ready/merge
+approval. GitHub closed/merged verified; Draft removed. Merge tree equals
+approved PRhead tree exactly. app/tests/rules/migrations match tested482eacb;
+no new executable delta or automatic post-merge retest requested.
 
-Owner reports separately approved targeted TEST cleanup before this run:
-exact agent_tasks id1179/tenant1/name Test Task, four referencing FKs inspected,
-zero dependent rows; transaction required rowcount1, only one task removed
-(154->153). Public/other tables/reset/migrations untouched; no concurrent pytest.
-This is historical Owner-reported cleanup, NOT standing permission to delete,
-reset or migrate again. Initial482eacb full1602passed/10setupErrors/exit1 was red
-because the interrupted5573 run left that fixture row; superseded by completed
-same-code green after bounded cleanup, not waived as a product-code success.
+OWNER completed full at exact482eacbd84ce640bd25cfaf4c75bbe1695621495:
+1612 passed,11warnings,64subtests,738.25s,saved PYTEST_EXIT_CODE=0;
+HEAD unchanged before/after, only untracked perr logs. Owner-local full log not
+independently read by agent. GitGuardian Security Checks completed SUCCESS on
+approved56d8105; zero legacy commit statuses. No invented test-CI pass or
+independent warning triage. History of red/interrupted runs remains evidence,
+not current acceptance: bounded separately approved one-row TEST orphan cleanup
+with zero dependencies preceded final green; no future deletion/reset permission.
 
-Fresh dev `a983a1568809c288f6bab135d2943ae67e3c0e3c` is included viaa787a74;
-no new dev delta observed. GitHub reports PR22 mergeable/clean, still OPEN/Draft.
-This evidence-only commit updates FOUR existing docs, no app/tests/rules/schema
-changes or new documentation files. Green code evidence remains exact482eacb;
-no unnecessary full or short rerun for this docs-only delta.
+Integrated bounded safeguards: bound active identity/session, fresh tool/right
+checks, actor/args/tool-bound one-use confirmation, narrow owner/service grants,
+preview-only action_send botaction.view/literal dry_run=True, no publication/
+PENDING transition. Owner queued/running/outcome UI, source/task escaping,
+LLM-default management, test isolation/onboarding correction preserved.
+Merged/regression-verified is NOT deployed, live activated or business/security
+accepted. Broad /app XSS audit, durable approval/CAS and release/browser/live
+acceptance remain OPEN. Do not restart merged dispatcher privacy or typed work.
 
-Technical scope retained: fail-closed bound identity/session, fresh tool/confirmation
-rights, one-use exact actor/args/tool grant, narrow owner/service permissions,
-preview-only action_send botaction.view/literal dry_run=True; no publication or
-ledger transition. Owner queued/running/outcome UI and per-capability LLM defaults,
-source/task escaping, tenancy isolation and onboarding context preserved.
-Full green is regression evidence, NOT exhaustive security/deployment/business
-acceptance. Broad /app XSS audit, durable approval/CAS, browser/live acceptance
-and release gates remain OPEN. Eleven warnings retained as observed; no claim
-that they were independently triaged or GitHub CI passed.
+Next assigned sequence: general queue PRD-05 lane, THEN per-attempt accounting/
+budget-reservation DESIGN (schema approval separate). Before implementation
+resolve fresh dev/open Drafts/board ownership; choose one bounded independent
+queue contract and preserve Owner parallel changes. No new queue code prepared
+in this integration-record task. PR29 deferred, PR30/31 occupied model-layout
+lanes separate/unmodified; do not run/merge them automatically.
 
-Next: Owner explicit decision whether to remove Draft and merge PR22 into dev.
-Do NOT do either automatically. Immediately before authorized integration recheck
-fresh head/dev/required checks; if changed assess delta, not silently reuse old
-acceptance. Prefer history-preserving merge when approved; no direct/force push.
-No main Owner checkout edits/stash/clean/commits, no log deletion/commit or
-worktree removal. Existing R6–R9/R3–R4 policy and sequential shared test_schema
-remain binding. PR29 deferred, PR30/31 separate occupied model-layout lanes,
-no automatic integration/verification of those PRs. Owner sequence remains rights,
-then assigned general queue, then spend-reservation DESIGN with schema approval.
+Existing .agent R3/R4 and R6–R9 remain binding: main dev checkout off limits,
+existing per-PR worktrees, sequential shared local test_schema, no schema create/
+reset/drop/stamp/migrate/Alembic without separate command. Agent prepares tests
+only; ZERO agent tests/collection/app imports/DB/migrations/browser/live calls.
+Owner main checkout was not changed; PR22 worktree/logs/branch retained, no
+cleanup or automatic branch deletion. Fetch-only inspection may observe dev;
+no instruction to switch/stash/commit Owner main or remove review worktree.
 
-Historical corrected checkpoints remain distinct:2f7beca1577 green but log exit
-not saved;106b6832failed/1610passed;5573aa4 interrupted15%, onboarding14 passed;
-unsupported test_apply_loss/scheduler-flake report withdrawn, never merge evidence.
-Agent ZERO tests/collection/app imports/DB/migrations/browser/live operations.
+This post-merge journal update is a separate docs-only branch/PR from fresh
+683c49e, FOUR existing files; it is not yet merged until separately approved.
+No new docs/design files, code/tests/rules/schema changes or replay requested.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

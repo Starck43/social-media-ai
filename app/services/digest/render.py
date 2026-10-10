@@ -65,12 +65,17 @@ def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
 
     data keys: title, period_start, period_end, stats (dict), sentiment (dict),
     topics (list[dict]), engagement (dict|None), content_mix (dict|None),
-    llm (dict|None), brief (str|None — the algorithmic Markdown body)
+    llm (dict|None), brief (str|None — the algorithmic Markdown body),
+    coverage_note (str|None — deterministic limitations, separate from the LLM)
     """
     parts: list[str] = [
         f"<b>{escape(data.get('title', 'Digest'))}</b>",
         f"<i>{escape(str(data['period_start']))} — {escape(str(data['period_end']))}</i>",
     ]
+
+    coverage_note = data.get("coverage_note")
+    if coverage_note:
+        parts.append(f"<b>Ограничения данных</b>\n{escape(coverage_note)}")
 
     stats = data.get("stats") or {}
     if stats:
@@ -112,6 +117,9 @@ def render_digest(data: dict[str, Any], summary: str | None = None) -> str:
 def render_plain(data: dict[str, Any]) -> str:
     """Fallback plain-text render (no HTML), used when channels reject HTML."""
     lines = [f"{data.get('title', 'Digest')}", f"{data.get('period_start')} — {data.get('period_end')}"]
+    coverage_note = data.get("coverage_note")
+    if coverage_note:
+        lines.append(f"Ограничения данных: {coverage_note}")
     for section in ("stats", "sentiment", "topics", "engagement", "content_mix", "llm"):
         value = data.get(section)
         if value:

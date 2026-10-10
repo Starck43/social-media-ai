@@ -1316,6 +1316,10 @@ def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
 		found = result.get("new_items", result.get("items", 0))
 		return "no_data" if not _as_int(found) else "ok"
 	if job_type == "analyze":
+		# Only recorded nonnegative integer counters are known; never coerce
+		# legacy/malformed values or add overlapping source/staged failures.
+		if any(type(count) is int and count > 0 for count in (result.get("error"), result.get("staged_errors"))):
+			return "partial"
 		if _as_int(result.get("analyzed")):
 			return "ok"
 		# Skipped sources are the ones without an active scenario — a different
@@ -1423,6 +1427,13 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			_stat(result.get("actions_created", 0), "действий создано"),
 			_stat(result.get("skipped", 0), "пропущено"),
 		]
+		for key, label in (
+			("error", "источников с ошибками"),
+			("staged_errors", "ошибок обработки накопленных данных"),
+		):
+			count = result.get(key)
+			if type(count) is int and count >= 0:
+				stats.append(_stat(count, label))
 	elif job_type == "digest":
 		stats = [_stat(result.get("period", "—"), "период")]
 	elif job_type == "prune":
@@ -1438,6 +1449,11 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 		"outcome_label": _OUTCOME_LABELS[outcome],
 	}
 	note = _OUTCOME_NOTES.get(job_type, {}).get(outcome)
+	if job_type == "analyze" and outcome == "partial":
+		note = (
+			"Обнаружены ошибки анализа. Полнота результата не подтверждена; "
+			"ошибки источников и обработки накопленных данных могут пересекаться."
+		)
 	if note:
 		summary["outcome_note"] = note
 	if headline is not None:

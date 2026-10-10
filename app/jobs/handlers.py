@@ -540,7 +540,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             stats["error"] += 1
             stats["error_sources"].append(per["name"])
         per["error"] = True
-        if staged:
+        if staged and not per.get("staged_error"):
             stats["staged_errors"] += 1
             per["staged_error"] = True
 
@@ -593,7 +593,8 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     from app.services.ai.analyzer import AIAnalyzer
 
                     items = [row.as_agent_item() for row in staged]
-                    fresh = await AIAnalyzer().analyze_content(
+                    analyzer = AIAnalyzer()
+                    fresh = await analyzer.analyze_content(
                         items,
                         source,
                         agent_scenario=scenario,
@@ -605,6 +606,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                         # These are injected into the prompt instruction, not the response schema.
                         task_payload=task_payload,
                     )
+                    # A client can report a failure without raising, including
+                    # a failed sibling alongside useful saved analysis. Keep
+                    # legacy/malformed diagnostics unknown, not coerced to zero.
+                    reported_errors = getattr(analyzer, "reported_errors", None)
+                    if type(reported_errors) is int and reported_errors > 0:
+                        record_error(per, staged=True)
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.

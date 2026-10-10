@@ -42,6 +42,21 @@ class AIAnalyzer:
         # Rows skipped by the scenario's relevance_filter since this instance was
         # created — the job handler reads it off to report in the job result.
         self.filtered_skipped = 0
+        # Cumulative diagnostics for this instance, independent of saved rows.
+        # Callers may inspect a delta; no raw provider result is exposed here.
+        self.reported_errors = 0
+
+    def _record_result_error(self, result: Any) -> None:
+        """Record explicit client failure envelopes, not unknown/empty results."""
+        if not isinstance(result, dict):
+            return
+        response = result.get("response")
+        parsed = result.get("parsed")
+        analysis = parsed.get("analysis") if isinstance(parsed, dict) else parsed
+        response_failed = isinstance(response, dict) and bool(response.get("error"))
+        error_stub = isinstance(analysis, str) and (analysis.startswith("Timeout") or analysis.startswith("Error"))
+        if response_failed or error_stub:
+            self.reported_errors += 1
 
     async def analyze_content(
         self,
@@ -174,6 +189,7 @@ class AIAnalyzer:
                     trigger_config,
                     task_payload,
                 )
+                self._record_result_error(text_result)
                 if text_result:
                     analysis_results["text_analysis"] = text_result
 
@@ -182,6 +198,7 @@ class AIAnalyzer:
                 image_result = await self._analyze_images(
                     classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
+                self._record_result_error(image_result)
                 if image_result:
                     analysis_results["image_analysis"] = image_result
 
@@ -190,6 +207,7 @@ class AIAnalyzer:
                 video_result = await self._analyze_videos(
                     classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
+                self._record_result_error(video_result)
                 if video_result:
                     analysis_results["video_analysis"] = video_result
 
@@ -219,6 +237,7 @@ class AIAnalyzer:
 
             # Create unified summary if multiple analyses
             unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
+            self._record_result_error(unified_summary)
 
             # Auto-generate topic_chain_id if not provided
             # Phase 1: use resolve_chain_async for proper lookup by topic_hint
@@ -267,6 +286,7 @@ class AIAnalyzer:
             return analysis
 
         except Exception as e:
+            self.reported_errors += 1
             logger.error(f"Error analyzing content for source {source.id}: {e}", exc_info=True)
             return None
 
@@ -427,6 +447,7 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            self.reported_errors += 1
             logger.error(f"Error in text analysis: {e}", exc_info=True)
             return None
 
@@ -478,6 +499,7 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            self.reported_errors += 1
             logger.error(f"Error in image analysis: {e}", exc_info=True)
             return None
 
@@ -529,6 +551,7 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            self.reported_errors += 1
             logger.error(f"Error in video analysis: {e}", exc_info=True)
             return None
 
@@ -573,6 +596,7 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            self.reported_errors += 1
             logger.error(f"Error creating unified summary: {e}", exc_info=True)
             return None
 

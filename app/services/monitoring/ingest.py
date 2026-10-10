@@ -135,7 +135,7 @@ async def ingest_channel_post(inbound: Any) -> bool:
 
     found = await _find_source(inbound.chat_id)
     if found is None:
-        logger.debug(f"No monitored Telegram source for chat {inbound.chat_id} - skipped")
+        logger.debug("ingest_source_missing")
         return False
     source_id, tenant_id, watermark = found
 
@@ -144,11 +144,11 @@ async def ingest_channel_post(inbound: Any) -> bool:
     # pay the LLM for our own text and pollute the analytics. The watermark is
     # intentionally not advanced, so ordinary posts of the channel still ingest.
     if await _is_digest_target(tenant_id, inbound.channel, inbound.chat_id):
-        logger.debug(f"Chat {inbound.chat_id} is a digest target - ingest skipped")
+        logger.debug("ingest_digest_target_skipped")
         return False
 
     if _is_watermark_passed(item, watermark):
-        logger.debug(f"Post {item['id']} of source {source_id} already ingested - skipped")
+        logger.debug("ingest_watermark_skipped")
         return False
 
     from app.core.tenant_context import tenant_scope
@@ -162,12 +162,12 @@ async def ingest_channel_post(inbound: Any) -> bool:
 
         analytics = await AIAnalyzer().base_analyze_content([item], source)
         if analytics is None:
-            logger.warning(f"Ingest analysis failed for Telegram source {source.id}, post {item['id']}")
+            logger.warning("ingest_analysis_failed error_code=analysis_result_missing")
             return False
 
         with service_permission_scope("source", "update"):
             await Source.objects.update_by_id(source.id, last_item_id=item["id"])
         await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
-    logger.info(f"Ingested Telegram post {item['id']} of source {source_id} (analysis {analytics.id})")
+    logger.info("ingest_stored")
     return True

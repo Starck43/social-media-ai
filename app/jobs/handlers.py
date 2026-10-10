@@ -341,7 +341,13 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
                     outcome = "empty"
-            if monitored_failures:
+            reported_analysis_errors = (result or {}).get("analysis_errors")
+            analysis_errors = (
+                reported_analysis_errors
+                if type(reported_analysis_errors) is int and reported_analysis_errors > 0
+                else 0
+            )
+            if monitored_failures or analysis_errors:
                 # The handler counts affected parent sources once, not child
                 # requests. Success and failure may coexist for a monitored group.
                 stats["error"] += 1
@@ -364,10 +370,13 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     "content_hashes": list((result or {}).get("content_hashes") or []),
                 }
             )
-            if monitored_failures:
+            if monitored_failures or analysis_errors:
                 per = stats["per_source"][-1]
                 per["error"] = True
-                per["monitored_errors"] = monitored_failures
+                if analysis_errors:
+                    per["analysis_errors"] = analysis_errors
+                if monitored_failures:
+                    per["monitored_errors"] = monitored_failures
                 if monitored_auth_required:
                     per["auth_required"] = True
                     per["auth_hint"] = "Проверьте авторизацию отслеживаемых пользователей."

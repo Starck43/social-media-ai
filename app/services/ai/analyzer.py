@@ -453,7 +453,7 @@ class AIAnalyzer:
                 try:
                     pydantic_model = build_pydantic_model(agent_scenario)
                 except Exception as exc:
-                    logger.warning("Failed to build Pydantic model for text analysis: %s", exc)
+                    logger.warning("analysis_schema_build_failed stage=text error_kind=%s", _analysis_error_kind(exc))
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Text analysis completed using {model.name}")
@@ -505,7 +505,7 @@ class AIAnalyzer:
                 try:
                     pydantic_model = build_pydantic_model(agent_scenario)
                 except Exception as exc:
-                    logger.warning("Failed to build Pydantic model for image analysis: %s", exc)
+                    logger.warning("analysis_schema_build_failed stage=image error_kind=%s", _analysis_error_kind(exc))
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
@@ -557,7 +557,7 @@ class AIAnalyzer:
                 try:
                     pydantic_model = build_pydantic_model(agent_scenario)
                 except Exception as exc:
-                    logger.warning("Failed to build Pydantic model for video analysis: %s", exc)
+                    logger.warning("analysis_schema_build_failed stage=video error_kind=%s", _analysis_error_kind(exc))
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
@@ -1328,7 +1328,7 @@ class AIAnalyzer:
             try:
                 pydantic_model = build_pydantic_model(agent_scenario)
             except Exception as exc:
-                logger.warning("Failed to build Pydantic model in _save_analysis: %s", exc)
+                logger.warning("analysis_schema_build_failed stage=save error_kind=%s", _analysis_error_kind(exc))
 
         if pydantic_model is not None:
             for result in (analysis_results or {}).values():

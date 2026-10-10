@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import urlsplit
 
 
@@ -41,10 +41,36 @@ def safe_original_url(value: Any) -> str | None:
     return value
 
 
+def merge_parsed_analysis(value: Any) -> dict[str, Any]:
+    """Overlay a stored container's parsed dict without mutating either input.
+
+    Parsed fields win even when None/empty; merge only one level, not recursively.
+    Malformed containers/parsed fields retain the existing conservative fallback.
+    """
+    container = _as_dict(value)
+    return {**container, **_as_dict(container.get("parsed"))}
+
+
+def first_analysis_value(containers: Iterable[Any], keys: tuple[str, ...]) -> Any:
+    """Read containers in caller order, then field aliases in caller order.
+
+    Ignore only None, empty string and empty list. Zero, False and empty dict
+    remain stored values. Do not merge parsed data, coerce values or choose a
+    universal precedence: rendering and aggregation deliberately differ.
+    """
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            value = container.get(key)
+            if value is not None and value != "" and value != []:
+                return value
+    return None
+
+
 def extract_text_analysis(summary_data: dict[str, Any]) -> dict[str, Any]:
     multi = _as_dict(summary_data.get("multi_llm_analysis"))
-    text = _as_dict(multi.get("text_analysis"))
-    return {**text, **_as_dict(text.get("parsed"))}
+    return merge_parsed_analysis(multi.get("text_analysis"))
 
 
 def extract_content_statistics(summary_data: dict[str, Any]) -> dict[str, Any]:
@@ -97,8 +123,7 @@ def _label_for_score(score: float) -> str:
 
 def sentiment_summary(summary_data: dict[str, Any]) -> dict[str, Any]:
     text = extract_text_analysis(summary_data)
-    unified = _as_dict(summary_data.get("unified_summary"))
-    unified = {**unified, **_as_dict(unified.get("parsed"))}
+    unified = merge_parsed_analysis(summary_data.get("unified_summary"))
     score = None
     for container in (text, unified, summary_data):
         candidate = metric_number(container.get("sentiment_score"))
@@ -164,19 +189,12 @@ def summary_display_heading(summary: Any, limit: int = 120) -> str | None:
 def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = None) -> dict[str, Any]:
     data = _as_dict(summary_data)
     text = extract_text_analysis(data)
-    unified = _as_dict(data.get("unified_summary"))
-    unified = {**unified, **_as_dict(unified.get("parsed"))}
-    legacy = _as_dict(data.get("ai_analysis"))
-    legacy = {**legacy, **_as_dict(legacy.get("parsed"))}
+    unified = merge_parsed_analysis(data.get("unified_summary"))
+    legacy = merge_parsed_analysis(data.get("ai_analysis"))
     containers = (data, text, unified, legacy)
 
     def first(*keys):
-        for container in containers:
-            for key in keys:
-                value = container.get(key)
-                if value is not None and value != "" and value != []:
-                    return value
-        return None
+        return first_analysis_value(containers, keys)
 
     raw_topics = _as_list(first("main_topics", "topics", "key_topics"))
     topics = []

@@ -27,11 +27,11 @@ def _is_session_chat_conflict(error: IntegrityError) -> bool:
     if constraint is None:
         # SQLAlchemy's asyncpg adapter keeps driver diagnostics on the cause.
         constraint = getattr(getattr(original, "__cause__", None), "constraint_name", None)
-    return constraint == "uq_agent_session_chat"
+    return constraint == "uq_agent_session_tenant_channel_chat"
 
 
 class AgentSessionManager(BaseManager["AgentSession"]):
-    """Sessions of the agent: one row per (channel, chat_id)."""
+    """Sessions of the agent: one row per (tenant, channel, chat_id)."""
 
     def __init__(self):
         from ..agent_session import AgentSession
@@ -47,6 +47,9 @@ class AgentSessionManager(BaseManager["AgentSession"]):
         is_owner: bool = False,
     ) -> AgentSession | None:
         """Fetch the conversation for this chat, creating it on first contact.
+
+        Scoped to the current tenant: the same chat in another workspace is a
+        different conversation and is neither visible nor adopted here.
 
         `is_owner` is upgraded (never downgraded) so adding an id to the
         allowlist later does not require touching existing rows.
@@ -64,12 +67,13 @@ class AgentSessionManager(BaseManager["AgentSession"]):
                 )
             except IntegrityError as error:
                 # create() owns its transaction and has already rolled it back.
-                # Recover only a committed winner visible in the current tenant.
+                # Recover only a committed winner visible in the current tenant
+                # (now always the concurrent same-tenant creator).
                 if not _is_session_chat_conflict(error):
                     raise
                 session = await self.get(channel=channel, chat_id=chat_id)
                 if session is None:
-                    # Foreign/deleted winners are not adopted; no bypass or retry.
+                    # Deleted winners are not adopted; no bypass or retry.
                     raise
         if is_owner and not session.is_owner:
             return await self.update_by_id(session.id, is_owner=True)

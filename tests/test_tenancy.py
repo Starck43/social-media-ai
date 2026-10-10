@@ -13,6 +13,8 @@ import pytest
 
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.models.agent_memory import AgentMemory
+from app.models.agent_session import AgentSession
+from app.models.managers.agent_session_manager import agent_sessions
 from app.models.tenant import Tenant, TenantChannel
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -164,7 +166,49 @@ async def test_cross_tenant_delete_by_id_noop() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. No-tenant access → TenantContextError
+# 4. Same chat in two tenants → two private sessions
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.tenancy
+@pytest.mark.asyncio
+async def test_isolated_agent_session_same_chat() -> None:
+    """A and B each get their own session for the same (channel, chat_id)."""
+    slug_a = _slug("ses-a")
+    slug_b = _slug("ses-b")
+    chat_id = f"web-session-{_slug('chat')}"
+
+    try:
+        ta = await Tenant.objects.create(slug=slug_a, name="SES A")
+        tb = await Tenant.objects.create(slug=slug_b, name="SES B")
+
+        with tenant_scope(ta.id):
+            sa = await agent_sessions.get_or_create(channel="web", chat_id=chat_id, is_owner=True)
+
+        with tenant_scope(tb.id):
+            sb = await agent_sessions.get_or_create(channel="web", chat_id=chat_id, is_owner=True)
+
+        assert sa.id != sb.id
+        assert (sa.tenant_id, sa.channel, sa.chat_id) == (ta.id, "web", chat_id)
+        assert (sb.tenant_id, sb.channel, sb.chat_id) == (tb.id, "web", chat_id)
+
+        # —— A sees only A ————————————————————————————————————————————
+        with tenant_scope(ta.id):
+            rows = await AgentSession.objects.filter(channel="web", chat_id=chat_id)
+            assert [row.id for row in rows] == [sa.id]
+
+        # —— B sees only B ————————————————————————————————————————————
+        with tenant_scope(tb.id):
+            rows = await AgentSession.objects.filter(channel="web", chat_id=chat_id)
+            assert [row.id for row in rows] == [sb.id]
+
+    finally:
+        await _delete_tenant(slug_a)
+        await _delete_tenant(slug_b)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. No-tenant access → TenantContextError
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -185,7 +229,7 @@ async def test_create_without_tenant_raises() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Cross-tenant create → TenantContextError
+# 6. Cross-tenant create → TenantContextError
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -210,7 +254,7 @@ async def test_create_cross_tenant_rejected() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. TenantChannel — cannot rebind to another tenant
+# 7. TenantChannel — cannot rebind to another tenant
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -242,7 +286,7 @@ async def test_channel_cannot_rebind_to_different_tenant() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 7. Cleanup safety — tenant deletion cascades to scoped rows only
+# 8. Cleanup safety — tenant deletion cascades to scoped rows only
 # ═══════════════════════════════════════════════════════════════════════════
 
 

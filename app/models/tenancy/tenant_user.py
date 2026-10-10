@@ -74,4 +74,3 @@ class TenantUser(Base, TimestampMixin):
         codename = self.role.codename
         name = codename.name if hasattr(codename, "name") else str(codename)
         return name == "SUPERUSER"
-

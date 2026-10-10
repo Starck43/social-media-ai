@@ -217,4 +217,3 @@ class Tenant(Base, TimestampMixin):
         """
         allowed = self.plan_limits().get("model_types")
         return True if allowed is None else model_type in allowed
-

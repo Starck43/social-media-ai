@@ -44,4 +44,3 @@ class TenantChannel(Base, TimestampMixin):
 
     def __str__(self) -> str:
         return f"TenantChannel#{self.id}[{self.channel}:{self.chat_id}]"
-

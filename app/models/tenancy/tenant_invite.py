@@ -46,4 +46,3 @@ class TenantInvite(Base, TimestampMixin):
         objects: ClassVar[TenantInviteManager | BaseManager]
     else:
         objects: ClassVar = None
-

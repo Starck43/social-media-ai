@@ -56,6 +56,180 @@ No migration, new job status, provider retry policy, sender activation, model
 layout, permissions grant or accounting ledger is authorized by this document.
 The checkpoint digest publisher/finalizer remains its own protected contract.
 
+## Current bounded recovery and admission contract
+
+Prepared on dev `359eace2db3addd7647c8a835ebf4007241602ef` (2026-10-11), branch
+`fix/queue-recovery-admission`. This section supersedes historical below-budget
+stale replay and split scheduler-trigger descriptions below, not their original
+test evidence. The bounded package now has owner-reported direct acceptance on the exact
+revision below; integration is through [PR #93](https://github.com/Starck43/social-media-ai/pull/93).
+This record becomes the integrated checkpoint when GitHub marks #93 merged.
+PRD-05 remains OPEN. No migration or new persisted status is added.
+
+### Fail closed when the ordinary outcome is unknown
+
+The owner approved stopping stale ordinary jobs and unconfirmed generic handler
+exceptions, rather than inferring that no external effect happened. A
+below-budget stale running row becomes `failed` with
+`Queue outcome unconfirmed; inspect before retry. ` prepended to its retained
+error and `finished_at` set. Its lease/start/generation, attempts, result and
+cost are retained; it is not made pending or reacquired. The prior attempt-budget
+stop predicate/prefix remains separate and unchanged. `reap_stale()` returns the
+number of below-budget quarantined rows, not requeued rows or all budget stops.
+
+An ordinary generic handler exception writes the same static uncertainty marker
+and stops without automatic retry. Only a structured `DeliveryFailure` whose
+`retryable` is exactly True, with caller retry allowed, keeps existing capped
+backoff. This is an explicit safe-retry signal, not detection of whether a
+provider already acted. Returned-failure, checkpoint digest, preflight,
+periodic renewal/cancellation/drain and rate/operator stops keep their existing
+contracts. Post-outcome notifications use a static unknown-result explanation;
+no exception text is sent as uncertain-result detail.
+
+Jobs UI labels unknown outcomes and hides its blind retry control. Existing
+permissions/routes/explicit manual controls are not expanded or made idempotent.
+Prune excludes the uncertainty prefix as well as the existing budget-stop
+prefix, preserving evidence. Other deletion APIs/retention policy are not
+redesigned. A stale reaper does NOT atomically project a Task unknown outcome:
+its Task may remain visibly `queued`, never inferred successful. Ordinary
+claim-bound exception finalization retains its existing atomic Job/Task writer.
+
+### Atomic scheduled and manual admission
+
+The shared private admission boundary requires a concrete positive normal tenant
+(no bypass), a persisted Task ID and aware timestamps. It locks/reloads the exact
+tenant Task and uses one session/transaction for Job insertion, queued/last-run
+bookkeeping, schedule advancement and one-shot disable. The optional Job enqueue
+session is passed only when present, preserving the real session decorator's
+ownership behavior. A receipt leaves the production boundary only after its
+transaction acknowledgement; a flush/commit error or cancellation is not a
+successful admission receipt.
+
+Scheduled contenders use SKIP LOCKED, active/due predicates and the exact
+observed `next_run_at`. After the lock they recheck effective source/scenario
+activity and compute cron from the fresh row. Only confirmed admissions affect
+scheduler enqueued statistics. Invalid cron keeps a failed Task summary with no
+Job. The current cron/no-catch-up behavior is retained.
+
+Manual calls keep existing caller permission checks, enter the Task tenant,
+wait for its lock and reload current job type/payload/cron. They deliberately
+create a new run and keep a recurring Task's fresh next-run timestamp; an old
+snapshot cannot rewind it. One-shot disable is in the same transaction. This is
+NOT click/request idempotency, a source/scenario update lock, or prevention of
+all deliberate manual/scheduled double work.
+
+### Evidence and one owner-local acceptance package
+
+Author command: `python tests/test_queue_recovery_admission.py`; 39 NEW
+stdlib actual-source/module-local-double and extracted-guard checks passed,
+exit 0, on the above base plus named production artifact SHA256
+`a448570855786886d8680296ff85409176350c2b245a2ad9eac04eed860a34f2`
+(sorted production paths + NUL + full bytes + NUL). This includes the actual
+session decorator, rollback/uncertainty, scope/UI/prune, compiled/raw SAVEPOINT
+controls, conjunctive/non-negated fixture fences and strict root-commit guard cases.
+The additional review rejects unary NOT of an owned predicate; only actual
+parenthesized Grouping wrappers retain a positive fence. Production bytes are
+unchanged by this runner-only safety correction. The
+initial doubles iteration had fixture failures; final evidence supersedes the
+29/32/33/36/37-check preparation, not historical #87/#89/#91 execution.
+
+The NEW standalone owner runner is `tests/test_queue_recovery_admission_db.py`,
+SHA256 `ea81763519f7881142ab3bbce56c09667f0791692df5c3c16508257e803028e8`;
+12 planned cases, NOT executed by the author. It validates the existing local
+`localhost:5432/social_manager/test_schema` before application imports and
+requires `--allow-tagged-fixture-commits`. No bootstrap/DDL/reset/migration,
+other data, provider/messenger, global bypass or full pytest is authorized.
+The owner explicitly approved COMMIT of marked synthetic creation (including a
+new Job plus its Task schedule) and verified scoped cleanup ONLY. UPDATE-only
+lease/outcome transactions roll back; this is not general root-commit permission.
+
+Owner-reported run: 12/12, EXIT=0, in the PR #93 worktree on original
+`1743a296935a1c17b896cad4a0b125ad83108a3c` with original runner SHA256
+`6e5aaaf4f056ed34e81db810bacb0a2e85b18c16f7d5438040edf70f89b90261`.
+The published runner could not run directly: INSERT was incorrectly added to
+`fixture_writes`, and schedule guards rejected the real TimestampMixin
+`updated_at=now()` onupdate. The owner used external `/tmp/kilo-pr93/fixed_run.py`
+with a fixup listener and in-memory removal of onupdate. Repository code/schema
+were reportedly untouched; execution was not observed by this coordinator.
+Reported COMMIT attempts/acknowledgements 12/12, rejected 0, all tagged creation
+or verified cleanup; 31 rollbacks; three fixture sequences advanced +2/+3/+9;
+no queue-accept leftovers and test_schema baseline restored. This is evidence
+for the pinned application behavior under that shim, NOT an unmodified published
+runner/current-head or real-onupdate acceptance. The historical shim/log have not been independently inspected; retain this
+original evidence separately. The later direct run below does not require
+relabeling or repeating the historical shim run.
+
+The current runner-only correction records `fixture_writes` only for actual
+UPDATE/DELETE, admits exact ORM `updated_at=now()` alongside real schedule fields,
+and still rejects bound timestamp overrides, timestamp-only updates and foreign
+writes. It does not suppress onupdate or mutate model metadata. Two NEW extracted
+actual-guard regressions both reject the pre-fix runner and pass after correction;
+39 total new isolated checks pass. Production bytes remain identical to the
+owner-tested application artifact. At that preparation checkpoint the corrected standalone runner had not run;
+the direct owner evidence below supersedes the pending acceptance. No repeat of
+historical suites or of completed scoped checks is assigned.
+
+#### Direct owner acceptance — no shim, exact corrected source
+
+Owner reports one as-is invocation on `cdd7130a60ac52a8fdba8e4cd94188b9350530e3`,
+clean `fix/queue-recovery-admission` worktree after fast-forward, exact runner
+SHA256 `ea81763519f7881142ab3bbce56c09667f0791692df5c3c16508257e803028e8`:
+
+```bash
+cd /Users/admin/Projects/social-media-ai-pr93 && DB_TEST_SCHEMA=test_schema /Users/admin/Projects/social-media-ai/.venv/bin/python tests/test_queue_recovery_admission_db.py --allow-tagged-fixture-commits
+```
+
+12/12 checks passed, EXIT=0. No shim, metadata override or additional run was
+used. COMMIT attempts=12, acknowledged=12, rejected=0; only authorized tagged
+synthetic creation/accompanying Task schedule and final verified scoped cleanup.
+UPDATE-only outcome/lease/finalization and driver-failure phases rolled back;
+31 rollback phases. Sequence readings: agent_tasks 7→10, jobs 15→24, tenants
+41→43. Reported final test_schema baseline tenants=1/jobs=0/agent_tasks=0,
+zero queue-accept fixtures, public counts 2/9/15 unchanged. Shared schema was
+reported idle before execution; worktree/main checkout and other worktrees were
+preserved. Synthetic failure/retry log events in checks 9–10 are expected cases,
+not a failing run. Execution/output remain owner-reported, not run or observed
+by the remote coordinator; source/runner bytes were independently matched.
+
+No DDL/bootstrap/reset/migration/provider/live/old-suite/full-pytest action,
+commit/push/Ready/merge was performed by the local agent. Real timer duration,
+OS worker death and provider idempotency remain untested. The final evidence
+closeout changes only this contract, board and ledger; every production and test
+file remains byte-identical to the exact owner-tested head. No post-closeout or
+merged-head rerun is claimed or required for this documentation-only delta.
+
+Two inactive nonce tenants plus marked Task/Job fixtures fence DML to approved
+tables and owned predicates. Compiled SAVEPOINT controls are allowed without
+allowing DDL. Creation permits INSERT plus accompanying schedule-only Task UPDATE
+(with exact ORM updated_at=now(), never a metadata override) and a newly inserted Job; cleanup permits verified tagged DELETE only. Actual
+engine commit-event attempts are reported separately from driver-acknowledged
+commits; root rollback phases, read-only fixture sequences and no-leftover
+verification are reported. Sequence advancement is permitted, not rolled back.
+Stop on an environment/guard/cleanup blocker; do not override it or repair schema.
+
+Separate PostgreSQL backend PID assertions cover scheduled recurring/one-shot
+lock contention, committed insertion/schedule and stale-observation rejection.
+Other cases cover actual division-by-zero flush rollback, stale manual snapshot,
+tenant rejection, evidence-preserving quarantine, fresh lease, a reaper waiting
+on a renewal lock, actual dispatcher synthetic generic/safe failures and scoped
+cleanup. Actor sessions use savepoints in distinct outer connections; creation
+is acknowledged at the outer COMMIT after its inner admission receipt. Renewal
+is deliberately rolled back before the waiting reaper proceeds: this is NOT
+committed renewal/reaper ordering proof. The simulated-effect case explicitly
+rolls back renewal and closes an owned connection; it is NOT OS worker death,
+provider action or production timer acceptance. Notifications/handlers are local
+doubles, never live sends. Driver lost-COMMIT-ack ambiguity is not tested.
+
+Three existing stale/heartbeat test files are semantically aligned to quarantine
+and no reacquisition, NOT run. Their old green results do not certify changed
+semantics. Run only the new pinned runner once, sequentially after the shared
+schema is idle; do not repeat #87/#91/#74/old tests/full pytest by default.
+Direct scoped acceptance is complete; ordinary Ready/merge follows fresh
+head/source compatibility and required checks under standing authorization.
+Record actual integration through #93; do not relabel the historical shim run
+as a direct pass or claim a merged-head execution. External-effect idempotency, production timing, noncooperative worker
+termination, complete accounting/limiter and remaining PRD-05 acceptance stay OPEN.
+
 ## Source-grounded observations
 
 Line ranges refer to the source baseline, not future refactored locations.

@@ -30,6 +30,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.models.job import Job
+from app.jobs.recovery_policy import outcome_unconfirmed
 
 from .deps import action_tenant_id, add_flash, ensure_csrf, guard_superuser, guard_web, plural, render, tenant_filter_context
 
@@ -159,6 +160,7 @@ async def jobs_list(request: Request):
         jobs=rows,
         sources_map=sources_map,
         job_outcomes=job_outcomes,
+        unconfirmed_jobs={job.id for job in rows if job.status == "failed" and outcome_unconfirmed(job.error)},
         stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
         retryable=RETRYABLE,
         deletable=DELETABLE,

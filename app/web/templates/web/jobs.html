@@ -122,6 +122,9 @@
                         {% else %}
                             <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">готово</span>
                         {% endif %}
+                    {% elif job.id in unconfirmed_jobs %}
+                        <span title="Автоматический повтор остановлен; сначала проверьте возможные внешние эффекты"
+                              class="rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">результат не подтверждён</span>
                     {% elif job.status == 'failed' %}
                         <span class="rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                     {% elif job.status == 'running' %}
@@ -145,7 +148,7 @@
                                 <span x-show="open" x-cloak>Скрыть</span>
                             </button>
                         {% endif %}
-                        {% if job.status in retryable and perms and perms.can('agenttask', 'update') %}
+                        {% if job.id not in unconfirmed_jobs and job.status in retryable and perms and perms.can('agenttask', 'update') %}
                             <form method="post" action="/app/jobs/{{ job.id }}/run">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}

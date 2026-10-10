@@ -10,18 +10,15 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from app.core.permissions import service_permission_scope
 from app.core.config import settings
 from app.core.tenant_context import tenant_scope
 from app.models.managers.agent_task_manager import AgentTaskManager
-from app.models.managers.job_manager import JobManager
 
-from .cron import next_run_at, resolve_tz
+from .cron import resolve_tz
 
 logger = logging.getLogger(__name__)
 
 tasks = AgentTaskManager()
-jobs = JobManager()
 
 
 async def tick_tenant(tenant_id: int, now: datetime | None = None, tz: str | None = None) -> dict:
@@ -38,33 +35,18 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None, tz: str | Non
     stats["due"] = len(due)
 
     for task in due:
-        is_once = task.cron_expr == "@once"
-        try:
-            if is_once:
-                nxt = None
-            else:
-                nxt = next_run_at(task.cron_expr, tz or settings.SCHEDULER_TIMEZONE, after=now)
-        except (ValueError, KeyError) as e:
-            logger.error(f"AgentTask {task.name}: invalid cron {task.cron_expr!r}: {e}")
-            await tasks.mark_triggered(task.id, now, status="failed", error=str(e))
+        receipt = await tasks._admit_task_run(
+            task.id, now=now, scheduled=True, expected_next_run_at=task.next_run_at,
+            timezone_name=tz or settings.SCHEDULER_TIMEZONE,
+        )
+        if receipt is None:
+            continue
+        if receipt["status"] == "invalid_schedule":
+            logger.error("scheduled_task_invalid_cron task_id=%s", task.id)
             stats["failed"] += 1
             continue
-
-        await jobs.enqueue(
-            job_type=task.job_type,
-            payload=task.payload or {},
-            agent_task_id=task.id,
-            run_at=now,
-        )
-        await tasks.mark_triggered(task.id, nxt, status="ok")
-        if is_once:
-            with service_permission_scope("agenttask", "update"):
-                await tasks.update_by_id(task.id, is_active=False)
         stats["enqueued"] += 1
-        if is_once:
-            logger.info(f"Enqueued one-shot {task.job_type} job for task {task.name!r}")
-        else:
-            logger.info(f"Enqueued {task.job_type} job for task {task.name!r}, next run {nxt.isoformat()}")
+        logger.info("scheduled_task_enqueued task_id=%s job_id=%s", task.id, receipt["job"].id)
 
     return stats
 
@@ -98,7 +80,7 @@ async def tick() -> dict:
 
 
 async def run_forever(poll_seconds: int | None = None) -> None:
-    """Continuously run ticks. Dedupe: tasks are marked immediately, so re-ticks skip them."""
+    """Continuously run ticks; each scheduled insertion/advance is atomically fenced."""
     poll = poll_seconds or settings.SCHEDULER_POLL_SECONDS
     logger.info(
         f"Task runner started (poll every {poll}s, default tz={settings.SCHEDULER_TIMEZONE}; "

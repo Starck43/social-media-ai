@@ -471,6 +471,7 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
 
     from app.core.database import new_session
     from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
+    from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
     from app.models import CollectedItem, Job
 
     days = int(payload.get("days", 7))
@@ -481,6 +482,7 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
         Job.objects.filter(status__in=["done", "failed"])
         .filter(Job.created_at < cutoff)
         .filter(or_(Job.error.is_(None), not_(Job.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX))))
+        .filter(or_(Job.error.is_(None), not_(Job.error.startswith(OUTCOME_UNCONFIRMED_PREFIX))))
         .delete()
     )
 

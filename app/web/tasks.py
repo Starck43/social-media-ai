@@ -17,6 +17,7 @@ from fastapi.responses import RedirectResponse, Response
 from app.models import AgentScenario, AgentTask, Job, Source
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.tasks.cron import cron_to_human
+from app.jobs.recovery_policy import outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
 
 from .deps import (
@@ -493,6 +494,7 @@ async def tasks_list(request: Request):
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
 		effective_active=effective_active,
+		unconfirmed_tasks={task.id for task in tasks if outcome_unconfirmed(task.last_error)},
 		running_jobs=running_jobs,
 		job_types=JobType.choices(),
 		trigger_types=BotTriggerType.choices(),

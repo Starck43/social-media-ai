@@ -27,31 +27,13 @@ async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = Non
     Returns the created `Job` so callers can track it (run it now, poll its
     status, show it in a modal).
     """
-    from app.core.permissions import service_permission_scope
     from app.core.tenant_context import tenant_scope
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.models.managers.job_manager import JobManager
 
     with tenant_scope(task.tenant_id):
-        payload = dict(task.payload or {})
-        if extra_payload:
-            payload.update({k: v for k, v in extra_payload.items() if v is not None})
-
-        job = await JobManager().enqueue(
-            job_type=task.job_type,
-            payload=payload,
-            agent_task_id=task.id,
-            run_at=datetime.now(timezone.utc),
+        receipt = await AgentTaskManager()._admit_task_run(
+            task.id, now=datetime.now(timezone.utc), extra_payload=extra_payload
         )
-        # Record the trigger (last_run_at) without disturbing the schedule of a
-        # recurring task; a one-shot task is completed in the process. The real
-        # outcome (last_status/last_error) is written by the worker via
-        # record_result().
-        tasks = AgentTaskManager()
-        if task.cron_expr == "@once":
-            await tasks.mark_triggered(task.id, None, status="ok")
-            with service_permission_scope("agenttask", "update"):
-                await tasks.update_by_id(task.id, is_active=False)
-        else:
-            await tasks.mark_triggered(task.id, task.next_run_at, status="ok")
-        return job
+        if receipt is None:
+            raise ValueError("Task run was not admitted for this workspace")
+        return receipt["job"]

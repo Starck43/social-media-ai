@@ -15,6 +15,7 @@ from sqlalchemy import event, update
 from app.core.database import async_session_maker
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.models import Job, Tenant
+from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
 from app.models.managers import job_manager as manager_module
 from app.models.managers.job_manager import JobManager
 
@@ -68,11 +69,11 @@ async def test_reap_is_tenant_scoped_and_preserves_attempt_evidence(workspaces):
     with tenant_scope(own.id):
         assert await JobManager().reap_stale() == 1
     row = await stored(own, stale)
-    assert row.status == "pending" and row.locked_at is None
+    assert row.status == "failed" and row.locked_at == STALE
     assert row.started_at == STALE and row.run_at == NOW
     assert row.attempts == 2 and row.max_attempts == 3
-    assert row.result == {"audit": "retained"} and row.error == "retained_error"
-    assert row.llm_cost is None and row.finished_at is None
+    assert row.result == {"audit": "retained"} and row.error == OUTCOME_UNCONFIRMED_PREFIX + "retained_error"
+    assert row.llm_cost is None and row.finished_at == NOW
     assert (await stored(other, foreign)).status == "running"
     with tenant_scope(own.id):
         assert await JobManager().reap_stale() == 0
@@ -108,7 +109,7 @@ async def test_custom_timeout_and_explicit_bypass(workspaces):
         changed = await manager.reap_stale(timeout_minutes=5)
     assert changed == 2
     for tenant, job in zip(workspaces, jobs):
-        assert (await stored(tenant, job)).status == "pending"
+        assert (await stored(tenant, job)).status == "failed"
 
 
 async def test_missing_scope_fails_closed(workspaces):
@@ -126,7 +127,7 @@ async def test_two_reapers_count_one_transition(workspaces):
     with tenant_scope(own.id):
         counts = await asyncio.gather(JobManager().reap_stale(), JobManager().reap_stale())
     assert sorted(counts) == [0, 1]
-    assert (await stored(own, job)).status == "pending"
+    assert (await stored(own, job)).status == "failed"
 
 
 @pytest.mark.parametrize("replacement", [

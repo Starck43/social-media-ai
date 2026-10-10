@@ -2,7 +2,7 @@
 
 SQLAlchemy expressions are constructed without an app/DB import or engine.
 These tests strengthen the previous requeue checks with a fail-closed budget
-stop before requeue. PostgreSQL behavior is covered in the separate DB file.
+stop and retained uncertainty instead of replay. PostgreSQL behavior is covered in the separate DB file.
 """
 
 import unittest
@@ -54,6 +54,7 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
                 "app.models.managers.base_manager": SimpleNamespace(BaseManager=DummyBase),
                 "app.models.job": SimpleNamespace(Job=MODEL),
                 "app.jobs.attempt_budget": self.budget,
+                "app.jobs.recovery_policy": SimpleNamespace(OUTCOME_UNCONFIRMED_PREFIX="Queue outcome unconfirmed; inspect before retry. "),
             },
         )
         module.datetime = FixedDatetime
@@ -80,7 +81,11 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("llm_cost", stopped.kwargs)
         self.assertNotIn("attempts", stopped.kwargs)
         self.assertNotIn("locked_at", stopped.kwargs)
-        self.assertEqual(requeued.kwargs, {"status": "pending", "locked_at": None})
+        self.assertEqual(requeued.kwargs["status"], "failed")
+        self.assertEqual(requeued.kwargs["finished_at"], NOW)
+        self.assertIn("Queue outcome unconfirmed", sql(requeued.kwargs["error"]))
+        for field in ("locked_at", "started_at", "attempts", "result", "llm_cost"):
+            self.assertNotIn(field, requeued.kwargs)
         self.manager.update_by_id.assert_not_awaited()
 
     async def test_custom_timeout_is_preserved_for_both_writes(self):
@@ -89,7 +94,7 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2026-10-09 23:55:00", sql(stop.args[0]))
         self.assertEqual(requeue.kwargs["locked_at__lt"], NOW - timedelta(minutes=5))
 
-    async def test_return_actual_requeued_count_not_stopped_or_candidate_count(self):
+    async def test_return_actual_quarantined_count_not_budget_stop_or_candidate_count(self):
         self.query.update.side_effect = [7, 0]
         self.assertEqual(await self.manager.reap_stale(), 0)
         self.assertEqual(self.query.update.await_count, 2)

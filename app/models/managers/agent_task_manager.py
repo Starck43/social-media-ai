@@ -238,6 +238,96 @@ class AgentTaskManager(BaseManager):
         active = await self.get_workspace_active_source_ids()
         return [t for t in due if self._task_effectively_active(t, active)]
 
+    async def _admit_task_run(
+        self,
+        task_id: int,
+        *,
+        now: datetime,
+        expected_next_run_at: Optional[datetime] = None,
+        scheduled: bool = False,
+        timezone_name: Optional[str] = None,
+        extra_payload: Optional[dict[str, Any]] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Internal trigger boundary: insert and schedule advancement commit together.
+
+        Scheduled contenders match their observed due timestamp and skip locked
+        tasks. Manual runs are deliberate new runs, but share the row lock so
+        a stale manual snapshot cannot roll the schedule backwards.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from app.core.config import settings
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.tasks.cron import next_run_at
+
+        from ..agent_task import AgentTask
+        from ..source import Source
+        from .job_manager import JobManager
+
+        tenant_id = current_tenant_id()
+        if type(tenant_id) is not int or tenant_id <= 0 or is_bypass():
+            raise TenantContextError("Task admission requires a concrete normal tenant scope")
+        if type(task_id) is not int or task_id <= 0:
+            raise ValueError("Task admission requires a persisted task ID")
+        if not isinstance(now, datetime) or now.utcoffset() is None:
+            raise ValueError("Task admission requires an aware timestamp")
+        if scheduled and (not isinstance(expected_next_run_at, datetime) or expected_next_run_at.utcoffset() is None):
+            raise ValueError("Scheduled admission requires an aware observed due timestamp")
+        async with async_session_maker() as session:
+            async with session.begin():
+                query = select(AgentTask).where(AgentTask.id == task_id, AgentTask.tenant_id == tenant_id)
+                if scheduled:
+                    query = query.where(
+                        AgentTask.is_active.is_(True),
+                        AgentTask.next_run_at == expected_next_run_at,
+                        AgentTask.next_run_at <= now,
+                    )
+                query = query.options(selectinload(AgentTask.sources), selectinload(AgentTask.agent_scenario))
+                row = (await session.execute(query.with_for_update(skip_locked=scheduled))).scalar_one_or_none()
+                if row is None:
+                    return None
+                if scheduled:
+                    active_source_ids = set()
+                    if self.requires_sources(row.job_type) and not row.sources:
+                        active_source_ids = set((await session.execute(
+                            select(Source.id).where(Source.tenant_id == tenant_id, Source.is_active.is_(True))
+                        )).scalars().all())
+                    if not self._task_effectively_active(row, active_source_ids):
+                        return None
+                once = row.cron_expr == "@once"
+                schedule_error = None
+                if scheduled and not once:
+                    try:
+                        next_fire = next_run_at(row.cron_expr, timezone_name or settings.SCHEDULER_TIMEZONE, after=now)
+                    except (ValueError, KeyError) as error:
+                        schedule_error = str(error)
+                        next_fire = now
+                else:
+                    next_fire = None if once else row.next_run_at
+                if schedule_error is not None:
+                    receipt = {"status": "invalid_schedule", "task_id": row.id}
+                    row.last_status = "failed"
+                    row.last_error = schedule_error
+                else:
+                    payload = dict(row.payload or {})
+                    if extra_payload:
+                        payload.update({key: value for key, value in extra_payload.items() if value is not None})
+                    job = await JobManager().enqueue(
+                        job_type=row.job_type, payload=payload, agent_task_id=row.id, run_at=now, session=session
+                    )
+                    row.last_status = "queued"
+                    row.last_error = None
+                    if once:
+                        row.is_active = False
+                    receipt = {"status": "enqueued", "task_id": row.id, "job": job, "once": once}
+                row.last_run_at = now
+                row.next_run_at = next_fire
+                await session.flush()
+            # Return only after the owning transaction's commit acknowledgement.
+        return receipt
+
     async def mark_triggered(
         self,
         task_id: int,

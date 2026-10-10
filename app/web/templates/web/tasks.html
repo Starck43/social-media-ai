@@ -80,7 +80,11 @@
                     {% else %}
                     <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">неактивна</span>
                     {% endif %}
-                    {% if task.last_status == 'failed' %}
+                    {% if task.id in unconfirmed_tasks %}
+                    <span class="ml-1 rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">результат не подтверждён</span>
+                    {% elif task.last_status == 'queued' %}
+                    <span class="ml-1 rounded-full bg-sky-950 px-2 py-0.5 text-xs text-sky-300">поставлена в очередь</span>
+                    {% elif task.last_status == 'failed' %}
                     <span title="{{ task.last_error or '' }}"
                           class="ml-1 rounded-full bg-rose-50 dark:bg-rose-950 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">ошибка</span>
                     {% elif task.last_status == 'ok' %}

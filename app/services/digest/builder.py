@@ -17,6 +17,7 @@ from app.services.ai.output_contracts import (
     response_is_incomplete,
 )
 from app.services.ai.prompt_sanitizer import frame_untrusted_text
+from app.services.digest.coverage import job_coverage_note
 from app.services.digest.render import render_digest
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ DIGEST_PROMPT_TEMPLATE = """Ты — персональный аналитик. 
 - Выдели 2-4 самых важных тренда или наблюдения
 - Не пересказывай бриф дословно, а обобщай
 - Если данных мало, просто скажи об этом
+- Учитывай оговорку о неполноте: отсутствие сохранённых записей не означает отсутствие публикаций; не обещай полный охват
 
 Бриф:
 {data}
@@ -67,6 +69,10 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
     try:
         client = LLMClientFactory.create(model)
         context = data.get("brief") or data
+        # Keep the deterministic caveat first so the context cap cannot omit it.
+        coverage_note = data.get("coverage_note")
+        if coverage_note:
+            context = f"{coverage_note}\n\n{context}"
         prompt = DIGEST_PROMPT_TEMPLATE.format(data=frame_untrusted_text(str(context)[:6000]))
         result = await client.analyze(prompt, max_tokens=500, temperature=0.3)
     except Exception:
@@ -145,6 +151,7 @@ async def aggregate(
         "period_start": start,
         "period_end": end,
         "brief": brief,
+        "coverage_note": await job_coverage_note(start, end, source_ids, scenario_id),
         "stats": {
             "analyses": total_analyses,
             "content_items": content_mix.get("total", None) if isinstance(content_mix, dict) else content_mix,

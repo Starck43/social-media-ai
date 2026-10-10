@@ -49,7 +49,6 @@ async def _make_job(tenant_id: int, task_id: int | None, *, max_attempts: int = 
         return claimed
 
 
-
 @pytest.fixture
 async def _tenant():
     with tenant_scope(bypass=True):

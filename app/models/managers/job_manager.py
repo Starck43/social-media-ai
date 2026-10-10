@@ -194,17 +194,21 @@ class JobManager(BaseManager["Job"]):
             raise TenantContextError("Outcome claim does not match the current tenant")
         async with async_session_maker() as session:
             async with session.begin():
-                row = (await session.execute(
-                    select(JobModel).where(
-                        JobModel.id == claim.job_id,
-                        JobModel.tenant_id == claim.tenant_id,
-                        JobModel.job_type == claim.job_type,
-                        JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
-                        JobModel.status == "running",
-                        JobModel.attempts == claim.attempts,
-                        JobModel.started_at == claim.started_at,
-                    ).with_for_update()
-                )).scalar_one_or_none()
+                row = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(
+                            JobModel.id == claim.job_id,
+                            JobModel.tenant_id == claim.tenant_id,
+                            JobModel.job_type == claim.job_type,
+                            JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+                            JobModel.status == "running",
+                            JobModel.attempts == claim.attempts,
+                            JobModel.started_at == claim.started_at,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
                 if row is None:
                     return JobOutcomeReceipt(claim, OutcomeAck.CLAIM_LOST, error="Job claim no longer owned")
                 now = datetime.now(timezone.utc)
@@ -238,7 +242,8 @@ class JobManager(BaseManager["Job"]):
             try:
                 with tenant_scope(claim.tenant_id):
                     await self._record_task_result(
-                        claim, status="ok" if receipt.acknowledgement == OutcomeAck.DONE else "failed",
+                        claim,
+                        status="ok" if receipt.acknowledgement == OutcomeAck.DONE else "failed",
                         error=receipt.error,
                     )
             except Exception:
@@ -247,8 +252,12 @@ class JobManager(BaseManager["Job"]):
         return receipt
 
     async def mark_done(
-        self, job_id: int, result: Optional[dict] = None, llm_cost: Optional[float] = None,
-        *, claim: Optional["JobClaim"] = None,
+        self,
+        job_id: int,
+        result: Optional[dict] = None,
+        llm_cost: Optional[float] = None,
+        *,
+        claim: Optional["JobClaim"] = None,
     ) -> Optional["JobOutcomeReceipt"]:
         """Ordinary workers supply claim; the ID-only form is a legacy API."""
         if claim is not None:
@@ -295,7 +304,11 @@ class JobManager(BaseManager["Job"]):
             if job_id != claim.job_id:
                 raise ValueError("Job ID does not match the acquired claim")
             return await self._finalize_claim(
-                claim, error=error, allow_retry=allow_retry, result=result, llm_cost=llm_cost,
+                claim,
+                error=error,
+                allow_retry=allow_retry,
+                result=result,
+                llm_cost=llm_cost,
             )
         from app.core.config import settings
 

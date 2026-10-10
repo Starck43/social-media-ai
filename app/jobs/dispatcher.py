@@ -232,7 +232,9 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
         return receipt
     try:
         await _notify_job_result(
-            claim, success=success, result=receipt.result if success else None,
+            claim,
+            success=success,
+            result=receipt.result if success else None,
             error=None if success else _FAILURE_MESSAGE,
         )
     except Exception:
@@ -260,15 +262,23 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
             receipt = _require_outcome_receipt(receipt, claim)
         except Exception as outcome_error:
             _outcome_write_failed(claim, outcome_error)
-        _log_job(logging.ERROR if receipt.acknowledgement == OutcomeAck.FAILED else logging.WARNING,
-                 "job_handler_failed", claim, error_code=_error_kind(error))
+        _log_job(
+            logging.ERROR if receipt.acknowledgement == OutcomeAck.FAILED else logging.WARNING,
+            "job_handler_failed",
+            claim,
+            error_code=_error_kind(error),
+        )
         return await _post_ordinary_outcome(receipt)
     failure = returned_failure(result)
     try:
         if failure is not None:
             receipt = await jobs.mark_failed(
-                claim.job_id, error=failure.code, allow_retry=False,
-                result=failure.audit_result(), llm_cost=failure.llm_cost, claim=claim,
+                claim.job_id,
+                error=failure.code,
+                allow_retry=False,
+                result=failure.audit_result(),
+                llm_cost=failure.llm_cost,
+                claim=claim,
             )
         else:
             receipt = await jobs.mark_done(claim.job_id, result=result, llm_cost=reported_llm_cost(result), claim=claim)
@@ -341,7 +351,10 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
         with tenant_scope(claim.tenant_id):
             try:
                 receipt = await jobs.mark_failed(
-                    claim.job_id, error=f"Unknown job type: {claim.job_type}", allow_retry=allow_retry, claim=claim,
+                    claim.job_id,
+                    error=f"Unknown job type: {claim.job_type}",
+                    allow_retry=allow_retry,
+                    claim=claim,
                 )
                 receipt = _require_outcome_receipt(receipt, claim)
             except Exception as outcome_error:

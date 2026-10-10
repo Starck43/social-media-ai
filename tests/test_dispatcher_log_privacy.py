@@ -53,7 +53,8 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_retry_exception_not_logged_and_retry_policy_unchanged(self):
         self.handler.side_effect = RuntimeError(SECRET)
         self.jobs.mark_failed.return_value = fixtures.CLAIMS.JobOutcomeReceipt(
-            self.fixture.claim, fixtures.CLAIMS.OutcomeAck.RETRY)
+            self.fixture.claim, fixtures.CLAIMS.OutcomeAck.RETRY
+        )
         with self.assertLogs(self.dispatcher.logger, level="WARNING") as logs:
             await self.dispatcher.execute_job(self.job, self.handler)
         self.assert_private_logs(logs, "job_retry_scheduled")

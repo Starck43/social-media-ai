@@ -56,7 +56,10 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_done.side_effect = RuntimeError(PRIVATE)
         await self.assert_write_error()
         self.jobs.mark_done.assert_awaited_once_with(
-            7, claim=self.fixture.claim, result=self.handler.return_value, llm_cost=0.12,
+            7,
+            claim=self.fixture.claim,
+            result=self.handler.return_value,
+            llm_cost=0.12,
         )
         self.jobs.mark_failed.assert_not_awaited()
         self.notify.assert_not_awaited()
@@ -116,7 +119,9 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
             self.job.status = "done"
             self.job.result = kwargs["result"]
             return fixtures.CLAIMS.JobOutcomeReceipt(
-                kwargs["claim"], fixtures.CLAIMS.OutcomeAck.DONE, result=kwargs["result"],
+                kwargs["claim"],
+                fixtures.CLAIMS.OutcomeAck.DONE,
+                result=kwargs["result"],
             )
 
         self.jobs.mark_done.side_effect = commit_done
@@ -135,7 +140,10 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_failed.side_effect = RuntimeError(PRIVATE)
         await self.assert_write_error()
         self.jobs.mark_failed.assert_awaited_once_with(
-            7, claim=self.fixture.claim, error="original handler failure", allow_retry=True,
+            7,
+            claim=self.fixture.claim,
+            error="original handler failure",
+            allow_retry=True,
         )
         self.jobs.mark_done.assert_not_awaited()
         self.notify.assert_not_awaited()

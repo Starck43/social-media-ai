@@ -32,6 +32,19 @@ def module_with(**values):
     return module
 
 
+class ManagerDouble:
+    """Class-shaped double: instantiation and classmethod access share one instance."""
+
+    def __init__(self, instance):
+        self._instance = instance
+
+    def __call__(self):
+        return self._instance
+
+    def __getattr__(self, name):
+        return getattr(self._instance, name)
+
+
 class PolicyTests(unittest.TestCase):
     def test_explicit_failure(self):
         failure = OUTCOMES.returned_failure({"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.2})
@@ -67,17 +80,31 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             self.scopes.append(tenant_id)
             yield
 
-        self.job = SimpleNamespace(id=7, tenant_id=31, agent_task_id=9, job_type="learn", payload={},
-                                   result=None, status="running", error=None, attempts=1,
-                                   started_at=datetime(2026, 10, 10, tzinfo=timezone.utc))
-        self.jobs = SimpleNamespace(mark_done=AsyncMock(), mark_failed=AsyncMock(return_value=False),
-                                    get=AsyncMock(return_value=self.job), claim_job=AsyncMock(return_value=self.job))
+        self.job = SimpleNamespace(
+            id=7,
+            tenant_id=31,
+            agent_task_id=9,
+            job_type="learn",
+            payload={},
+            result=None,
+            status="running",
+            error=None,
+            attempts=1,
+            started_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        )
+        self.jobs = SimpleNamespace(
+            mark_done=AsyncMock(),
+            mark_failed=AsyncMock(return_value=False),
+            get=AsyncMock(return_value=self.job),
+            claim_job=AsyncMock(return_value=self.job),
+        )
         self.claim = CLAIMS.JobClaim.capture(self.job)
         async def done(job_id, *, claim, result=None, **kwargs):
             return CLAIMS.JobOutcomeReceipt(claim, CLAIMS.OutcomeAck.DONE, result=result)
         async def failed(job_id, *, claim, error, result=None, **kwargs):
-            return CLAIMS.JobOutcomeReceipt(claim, self.jobs.mark_failed.return_value.acknowledgement,
-                                            result=result, error=error)
+            return CLAIMS.JobOutcomeReceipt(
+                claim, self.jobs.mark_failed.return_value.acknowledgement, result=result, error=error
+            )
         self.jobs.mark_done.side_effect = done
         self.jobs.mark_failed.side_effect = failed
         self.jobs.mark_done.return_value = CLAIMS.JobOutcomeReceipt(self.claim, CLAIMS.OutcomeAck.DONE)
@@ -94,10 +121,11 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.DeliveryFailure = DeliveryFailure
         modules = {
             "app.core.tenant_context": module_with(tenant_scope=scope),
+            "app.jobs.enqueue": module_with(enqueue_task_run=AsyncMock(return_value=self.job)),
             "app.jobs.handlers": module_with(HANDLERS={}),
             "app.jobs.result_outcomes": OUTCOMES,
             "app.jobs.claim_outcomes": CLAIMS,
-            "app.models.managers.job_manager": module_with(JobManager=lambda: self.jobs),
+            "app.models.managers.job_manager": module_with(JobManager=ManagerDouble(self.jobs)),
             "app.services.digest.delivery_outcomes": module_with(DeliveryFailure=DeliveryFailure),
             "app.services.digest.job_delivery": module_with(
                 REFERENCE_KEY="digest_delivery", enabled=lambda: self.flag,
@@ -113,8 +141,13 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         await self.dispatcher.execute_job(self.job, self.handler)
         self.jobs.mark_done.assert_not_awaited()
         self.jobs.mark_failed.assert_awaited_once_with(
-            7, claim=self.claim, error="invalid_structured_output", allow_retry=False,
-            result={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.12}, llm_cost=0.12)
+            7,
+            claim=self.claim,
+            error="invalid_structured_output",
+            allow_retry=False,
+            result={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.12},
+            llm_cost=0.12,
+        )
         self.assertFalse(self.notify.await_args.kwargs["success"])
 
     async def test_reflect_failure_uses_same_terminal_path(self):
@@ -166,7 +199,10 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.handler.return_value = {"collected": 1, "error": 1, "items": 3}
         await self.dispatcher.execute_job(self.job, self.handler)
         self.jobs.mark_done.assert_awaited_once_with(
-            7, claim=self.claim, result=self.handler.return_value, llm_cost=None,
+            7,
+            claim=self.claim,
+            result=self.handler.return_value,
+            llm_cost=None,
         )
         self.jobs.mark_failed.assert_not_awaited()
 
@@ -206,8 +242,9 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             self.job.status = "failed"
             self.job.error = kwargs["error"]
             self.job.result = kwargs["result"]
-            return CLAIMS.JobOutcomeReceipt(kwargs["claim"], CLAIMS.OutcomeAck.FAILED,
-                                            result=kwargs["result"], error=kwargs["error"])
+            return CLAIMS.JobOutcomeReceipt(
+                kwargs["claim"], CLAIMS.OutcomeAck.FAILED, result=kwargs["result"], error=kwargs["error"]
+            )
         self.jobs.mark_failed.side_effect = fail
         self.dispatcher.HANDLERS["learn"] = self.handler
         result = await self.dispatcher._run_claimed_inline(self.job)

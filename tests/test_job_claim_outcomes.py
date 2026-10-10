@@ -21,9 +21,23 @@ PRIVATE = "PRIVATE-CUSTOMER-AND-SQL"
 
 
 def row(**changes):
-    values = dict(id=7, tenant_id=31, job_type="learn", agent_task_id=9, status="running", attempts=2,
-                  started_at=NOW, locked_at=NOW, max_attempts=3, result=None, error=None, llm_cost=None,
-                  run_at=NOW, finished_at=None, payload={})
+    values = dict(
+        id=7,
+        tenant_id=31,
+        job_type="learn",
+        agent_task_id=9,
+        status="running",
+        attempts=2,
+        started_at=NOW,
+        locked_at=NOW,
+        max_attempts=3,
+        result=None,
+        error=None,
+        llm_cost=None,
+        run_at=NOW,
+        finished_at=None,
+        payload={},
+    )
     return SimpleNamespace(**(values | changes))
 
 
@@ -37,9 +51,17 @@ class ClaimTests(unittest.TestCase):
             claim.attempts = 99
 
     def test_invalid_or_legacy_identity_is_rejected(self):
-        for changes in ({"id": True}, {"tenant_id": None}, {"attempts": 0}, {"attempts": "1"},
-                        {"agent_task_id": False}, {"started_at": None}, {"started_at": NOW.replace(tzinfo=None)},
-                        {"job_type": ""}, {"status": "pending"}):
+        for changes in (
+            {"id": True},
+            {"tenant_id": None},
+            {"attempts": 0},
+            {"attempts": "1"},
+            {"agent_task_id": False},
+            {"started_at": None},
+            {"started_at": NOW.replace(tzinfo=None)},
+            {"job_type": ""},
+            {"status": "pending"},
+        ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 CLAIMS.JobClaim.capture(row(**changes))
 
@@ -50,8 +72,9 @@ class ClaimTests(unittest.TestCase):
         self.assertIsNone(receipt.as_outcome()["result"])
 
     def test_receipt_repr_excludes_result_and_error(self):
-        receipt = CLAIMS.JobOutcomeReceipt(CLAIMS.JobClaim.capture(row()), CLAIMS.OutcomeAck.FAILED,
-                                          result={"response": PRIVATE}, error=PRIVATE)
+        receipt = CLAIMS.JobOutcomeReceipt(
+            CLAIMS.JobClaim.capture(row()), CLAIMS.OutcomeAck.FAILED, result={"response": PRIVATE}, error=PRIVATE
+        )
         self.assertNotIn(PRIVATE, repr(receipt))
 
 
@@ -125,9 +148,20 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.queries = []
         self.committed = False
         self.commit_error = None
-        model = SimpleNamespace(**{name: Column(name) for name in (
-            "id", "tenant_id", "job_type", "agent_task_id", "status", "attempts", "started_at",
-        )})
+        model = SimpleNamespace(
+            **{
+                name: Column(name)
+                for name in (
+                    "id",
+                    "tenant_id",
+                    "job_type",
+                    "agent_task_id",
+                    "status",
+                    "attempts",
+                    "started_at",
+                )
+            }
+        )
 
         class Base:
             def __class_getitem__(cls, item):
@@ -157,13 +191,16 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
             "app.core.database": fixtures.module_with(async_session_maker=lambda: Session(self)),
             "app.core.config": fixtures.module_with(settings=SimpleNamespace(JOB_RETRY_BACKOFF_SECONDS=300)),
             "app.core.tenant_context": fixtures.module_with(
-                TenantContextError=TenantError, current_tenant_id=lambda: self.tenant_id,
-                is_bypass=lambda: self.bypass, tenant_scope=scope,
+                TenantContextError=TenantError,
+                current_tenant_id=lambda: self.tenant_id,
+                is_bypass=lambda: self.bypass,
+                tenant_scope=scope,
             ),
             "app.jobs.claim_outcomes": CLAIMS,
         }
-        module = fixtures.load_source("app.models.managers._claim_manager_test",
-                                      "app/models/managers/job_manager.py", modules)
+        module = fixtures.load_source(
+            "app.models.managers._claim_manager_test", "app/models/managers/job_manager.py", modules
+        )
         self.manager = module.JobManager()
         self.manager._record_task_result = AsyncMock(side_effect=self.project)
 
@@ -178,19 +215,28 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.stored.status, "done")
         self.assertEqual(self.stored.llm_cost, 0)
         self.assertTrue(self.queries[0].locked)
-        self.assertEqual(dict(self.queries[0].criteria), dict(id=7, tenant_id=31, job_type="learn",
-                         agent_task_id=9, status="running", attempts=2, started_at=NOW))
+        self.assertEqual(
+            dict(self.queries[0].criteria),
+            dict(id=7, tenant_id=31, job_type="learn", agent_task_id=9, status="running", attempts=2, started_at=NOW),
+        )
         self.manager._record_task_result.assert_awaited_once_with(self.claim, status="ok", error=None)
 
     async def test_each_identity_change_or_nonrunning_status_loses_without_mutation(self):
-        for changes in ({"status": "pending"}, {"status": "done"}, {"status": "failed"}, {"attempts": 3},
-                        {"started_at": NOW + timedelta(seconds=1)}, {"agent_task_id": None},
-                        {"tenant_id": 77}, {"job_type": "reflect"}, {"id": 8}):
+        for changes in (
+            {"status": "pending"},
+            {"status": "done"},
+            {"status": "failed"},
+            {"attempts": 3},
+            {"started_at": NOW + timedelta(seconds=1)},
+            {"agent_task_id": None},
+            {"tenant_id": 77},
+            {"job_type": "reflect"},
+            {"id": 8},
+        ):
             with self.subTest(changes=changes):
                 self.stored = row(**changes)
                 before = deepcopy(vars(self.stored))
-                receipt = await self.manager.mark_failed(7, "old", result={"old": True}, llm_cost=99,
-                                                        claim=self.claim)
+                receipt = await self.manager.mark_failed(7, "old", result={"old": True}, llm_cost=99, claim=self.claim)
                 self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.CLAIM_LOST)
                 self.assertEqual(vars(self.stored), before)
         self.manager._record_task_result.assert_not_awaited()
@@ -214,8 +260,9 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.manager._record_task_result.assert_not_awaited()
 
     async def test_inline_failure_is_terminal_and_unknown_cost_stays_unknown(self):
-        receipt = await self.manager.mark_failed(7, "failed", allow_retry=False,
-                                                result={"status": "failed"}, claim=self.claim)
+        receipt = await self.manager.mark_failed(
+            7, "failed", allow_retry=False, result={"status": "failed"}, claim=self.claim
+        )
         self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.FAILED)
         self.assertIsNone(self.stored.llm_cost)
         self.manager._record_task_result.assert_awaited_once_with(self.claim, status="failed", error="failed")
@@ -297,6 +344,7 @@ class DispatcherClaimTests(unittest.IsolatedAsyncioTestCase):
             self.job.attempts += 1
             self.job.started_at += timedelta(seconds=1)
             return {"status": "ok"}
+
         self.handler.side_effect = mutate
         await self.dispatcher.execute_job(self.job, self.handler)
         self.assertEqual(self.jobs.mark_done.await_args.kwargs["claim"], self.fixture.claim)
@@ -319,7 +367,7 @@ class DispatcherClaimTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.enqueue = AsyncMock(return_value=self.job)
         self.jobs.claim_job.return_value = None
         enqueue = AsyncMock(return_value=self.job)
-        self.fixture.imports["app.jobs.enqueue"] = fixtures.module_with(enqueue_task_run=enqueue)
+        self.fixture.imports["app.jobs.enqueue"].enqueue_task_run = enqueue
         with self.assertRaises(CLAIMS.JobNotAcquiredError):
             await self.dispatcher.run_job_inline("learn")
         with self.assertRaises(CLAIMS.JobNotAcquiredError):
@@ -350,7 +398,10 @@ class DispatcherClaimTests(unittest.IsolatedAsyncioTestCase):
     async def test_task_projection_degradation_is_visible_without_retry_or_false_clean_receipt(self):
         self.jobs.mark_done.side_effect = None
         self.jobs.mark_done.return_value = CLAIMS.JobOutcomeReceipt(
-            self.fixture.claim, CLAIMS.OutcomeAck.DONE, result={"status": "ok"}, task_projection_failed=True,
+            self.fixture.claim,
+            CLAIMS.OutcomeAck.DONE,
+            result={"status": "ok"},
+            task_projection_failed=True,
         )
         result = await self.dispatcher._execute_claimed(self.job)
         self.assertEqual(result["status"], "done")

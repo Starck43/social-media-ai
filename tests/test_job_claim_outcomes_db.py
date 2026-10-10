@@ -39,16 +39,23 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.tenants = []
         self.addAsyncCleanup(self.cleanup_rows)
         for _ in range(2):
-            self.tenants.append(await Tenant.objects.create(
-                name="Claim outcome test", slug=f"claim-outcome-{uuid4().hex}", plan="business",
-            ))
+            self.tenants.append(
+                await Tenant.objects.create(
+                    name="Claim outcome test",
+                    slug=f"claim-outcome-{uuid4().hex}",
+                    plan="business",
+                )
+            )
         self.own, self.other = self.tenants
         self.manager = JobManager()
         with tenant_scope(self.own.id):
             with service_permission_scope("agenttask", "create"):
                 self.task = await AgentTask.objects.create(
-                    name=f"claim-outcome-{uuid4().hex}", job_type="learn", cron_expr="0 0 * * *",
-                    payload={}, is_active=False,
+                    name=f"claim-outcome-{uuid4().hex}",
+                    job_type="learn",
+                    cron_expr="0 0 * * *",
+                    payload={},
+                    is_active=False,
                 )
 
     async def cleanup_rows(self):
@@ -74,9 +81,14 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
         # Trusted arrangement, restricted to this test's own tenant and Job.
         async with async_session_maker() as session:
             async with session.begin():
-                await session.execute(update(Job).where(
-                    Job.id == job_id, Job.tenant_id == self.own.id,
-                ).values(**values))
+                await session.execute(
+                    update(Job)
+                    .where(
+                        Job.id == job_id,
+                        Job.tenant_id == self.own.id,
+                    )
+                    .values(**values)
+                )
 
     async def done(self, claim, **kwargs):
         with tenant_scope(claim.tenant_id):
@@ -88,10 +100,24 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def evidence(job):
-        return {key: getattr(job, key) for key in (
-            "tenant_id", "job_type", "agent_task_id", "status", "attempts", "started_at", "locked_at",
-            "run_at", "finished_at", "result", "error", "llm_cost", "updated_at",
-        )}
+        return {
+            key: getattr(job, key)
+            for key in (
+                "tenant_id",
+                "job_type",
+                "agent_task_id",
+                "status",
+                "attempts",
+                "started_at",
+                "locked_at",
+                "run_at",
+                "finished_at",
+                "result",
+                "error",
+                "llm_cost",
+                "updated_at",
+            )
+        }
 
     async def test_owned_success_commits_zero_cost_and_projects_task(self):
         job, claim = await self.acquired(task_id=self.task.id)
@@ -127,8 +153,12 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.evidence(await self.read(job.id)), before)
 
     async def test_changed_type_task_start_time_and_cancelled_status_lose_without_projection(self):
-        cases = [{"job_type": "reflect"}, {"agent_task_id": self.task.id},
-                 {"started_at": NOW - timedelta(days=1)}, {"status": "failed", "error": "cancelled"}]
+        cases = [
+            {"job_type": "reflect"},
+            {"agent_task_id": self.task.id},
+            {"started_at": NOW - timedelta(days=1)},
+            {"status": "failed", "error": "cancelled"},
+        ]
         for values in cases:
             with self.subTest(values=values):
                 job, claim = await self.acquired()
@@ -173,8 +203,13 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_terminal_returned_failure_retains_known_cost_and_projects_failed_task(self):
         job, claim = await self.acquired(task_id=self.task.id)
-        receipt = await self.fail(claim, error="invalid_structured_output", allow_retry=False,
-                                  result={"status": "failed", "llm_cost": 0.12}, llm_cost=0.12)
+        receipt = await self.fail(
+            claim,
+            error="invalid_structured_output",
+            allow_retry=False,
+            result={"status": "failed", "llm_cost": 0.12},
+            llm_cost=0.12,
+        )
         self.assertEqual(receipt.acknowledgement, OutcomeAck.FAILED)
         row = await self.read(job.id)
         self.assertEqual(row.status, "failed")
@@ -227,11 +262,17 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
             return session
 
         with patch.object(database_module, "async_session_maker", factory):
-            outcomes = await asyncio.wait_for(asyncio.gather(
-                self.done(claim, result={"winner": "one"}), self.done(claim, result={"winner": "two"}),
-            ), timeout=20)
-        self.assertEqual(sorted(receipt.acknowledgement.value for receipt in outcomes),
-                         sorted([OutcomeAck.DONE.value, OutcomeAck.CLAIM_LOST.value]))
+            outcomes = await asyncio.wait_for(
+                asyncio.gather(
+                    self.done(claim, result={"winner": "one"}),
+                    self.done(claim, result={"winner": "two"}),
+                ),
+                timeout=20,
+            )
+        self.assertEqual(
+            sorted(receipt.acknowledgement.value for receipt in outcomes),
+            sorted([OutcomeAck.DONE.value, OutcomeAck.CLAIM_LOST.value]),
+        )
         winner = next(receipt for receipt in outcomes if receipt.acknowledgement == OutcomeAck.DONE)
         loser = next(receipt for receipt in outcomes if receipt.acknowledgement == OutcomeAck.CLAIM_LOST)
         self.assertEqual((await self.read(job.id)).result, winner.result)

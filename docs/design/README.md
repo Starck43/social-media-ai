@@ -13,7 +13,7 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged by explicit Owner approval, history preserved. Merge tree equals approved56d8105; executable code equals Owner-green482eacb1612 passed/11warnings/64subtests/saved exit0. Regression-verified/merged is not deployed, live activated or security/business accepted. General queue is next assigned lane; broader gates remain OPEN.
+Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged by explicit Owner approval, history preserved. Merge tree equals approved 56d8105; executable code equals Owner-green 482eacb 1612 passed/11 warnings/64 subtests/saved exit0. Regression-verified/merged is not deployed, live activated or security/business accepted. General queue is next assigned lane; broader gates remain OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.

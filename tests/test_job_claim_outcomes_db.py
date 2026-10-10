@@ -164,7 +164,7 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 job, claim = await self.acquired()
                 await self.mutate(job.id, **values)
                 before = self.evidence(await self.read(job.id))
-                with patch.object(self.manager, "_record_task_result", AsyncMock()) as project:
+                with patch.object(self.manager, "_write_task_outcome", AsyncMock()) as project:
                     receipt = await self.done(claim, result={"old": True})
                 self.assertEqual(receipt.acknowledgement, OutcomeAck.CLAIM_LOST)
                 self.assertEqual(self.evidence(await self.read(job.id)), before)
@@ -220,7 +220,7 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retry_uses_this_generation_and_does_not_project_terminal_task(self):
         job, claim = await self.acquired(task_id=self.task.id)
-        with patch.object(self.manager, "_record_task_result", AsyncMock()) as project:
+        with patch.object(self.manager, "_write_task_outcome", AsyncMock()) as project:
             receipt = await self.fail(claim, error="handler failed", allow_retry=True)
         self.assertEqual(receipt.acknowledgement, OutcomeAck.RETRY)
         row = await self.read(job.id)
@@ -292,20 +292,23 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
             return session
 
         with patch.object(database_module, "async_session_maker", factory):
-            with patch.object(self.manager, "_record_task_result", AsyncMock()) as project:
+            with patch.object(self.manager, "_write_task_outcome", AsyncMock()) as project:
                 with self.assertRaisesRegex(RuntimeError, "injected outcome flush failure"):
                     await self.done(claim, result={"not_committed": True})
         project.assert_not_awaited()
         self.assertEqual(self.evidence(await self.read(job.id)), before)
 
-    async def test_acknowledged_commit_then_task_failure_preserves_authoritative_receipt(self):
+    async def test_task_write_failure_rolls_back_job_and_returns_no_receipt(self):
         job, claim = await self.acquired(task_id=self.task.id)
-        with patch.object(self.manager, "_record_task_result", AsyncMock(side_effect=RuntimeError("private error"))):
-            receipt = await self.done(claim, result={"status": "ok"})
-        self.assertEqual(receipt.acknowledgement, OutcomeAck.DONE)
-        self.assertTrue(receipt.task_projection_failed)
-        self.assertEqual((await self.read(job.id)).status, "done")
-        self.assertNotIn("private error", repr(receipt))
+        before = self.evidence(await self.read(job.id))
+        with patch.object(self.manager, "_write_task_outcome", AsyncMock(side_effect=RuntimeError("private error"))):
+            with self.assertRaisesRegex(RuntimeError, "private error"):
+                await self.done(claim, result={"status": "ok"})
+        self.assertEqual(self.evidence(await self.read(job.id)), before)
+        with tenant_scope(self.own.id):
+            task = await AgentTask.objects.get(id=self.task.id)
+        self.assertIsNone(task.last_status)
+        self.assertIsNone(task.last_error)
 
     async def test_commit_ack_loss_is_an_exception_not_rollback_or_claim_loss(self):
         job, claim = await self.acquired()
@@ -330,7 +333,7 @@ class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):
             return session
 
         with patch.object(database_module, "async_session_maker", factory):
-            with patch.object(self.manager, "_record_task_result", AsyncMock()) as project:
+            with patch.object(self.manager, "_write_task_outcome", AsyncMock()) as project:
                 with self.assertRaisesRegex(ConnectionError, "injected lost commit acknowledgement"):
                     await self.done(claim, result={"committed": True})
         self.assertEqual((await self.read(job.id)).status, "done")

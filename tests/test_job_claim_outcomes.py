@@ -91,6 +91,7 @@ class Column:
 
 class Query:
     def __init__(self, model):
+        self.model = model
         self.criteria = []
         self.locked = False
 
@@ -108,12 +109,20 @@ class Transaction:
         self.fixture = fixture
 
     async def __aenter__(self):
+        self.job_before = deepcopy(vars(self.fixture.stored)) if self.fixture.stored is not None else None
+        self.task_before = deepcopy(vars(self.fixture.task)) if self.fixture.task is not None else None
         return self
 
     async def __aexit__(self, kind, error, traceback):
+        failed = kind is not None or self.fixture.commit_error is not None
+        self.fixture.committed = not failed
+        if failed:
+            for row, snapshot in ((self.fixture.stored, self.job_before), (self.fixture.task, self.task_before)):
+                if row is not None and snapshot is not None:
+                    vars(row).clear()
+                    vars(row).update(snapshot)
         if kind is None and self.fixture.commit_error is not None:
             raise self.fixture.commit_error
-        self.fixture.committed = kind is None
 
 
 class Session:
@@ -132,7 +141,7 @@ class Session:
 
     async def execute(self, query):
         self.fixture.queries.append(query)
-        matched = self.fixture.stored
+        matched = self.fixture.task if query.model is self.fixture.task_model else self.fixture.stored
         if matched is not None and not all(getattr(matched, name) == value for name, value in query.criteria):
             matched = None
         return SimpleNamespace(scalar_one_or_none=lambda: matched)
@@ -142,6 +151,8 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.stored = row()
         self.claim = CLAIMS.JobClaim.capture(self.stored)
+        self.task = SimpleNamespace(id=9, tenant_id=31, last_status="prior", last_error="prior", last_run_at=NOW)
+        self.task_model = SimpleNamespace(id=Column("id"), tenant_id=Column("tenant_id"))
         self.tenant_id = 31
         self.bypass = False
         self.sessions = 0
@@ -187,6 +198,7 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         modules = {
             "app.models.managers.base_manager": fixtures.module_with(BaseManager=Base),
             "app.models.job": fixtures.module_with(Job=model),
+            "app.models.agent_task": fixtures.module_with(AgentTask=self.task_model),
             "sqlalchemy": fixtures.module_with(select=Query),
             "app.core.database": fixtures.module_with(async_session_maker=lambda: Session(self)),
             "app.core.config": fixtures.module_with(settings=SimpleNamespace(JOB_RETRY_BACKOFF_SECONDS=300)),
@@ -209,7 +221,7 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(claim, self.claim)
         self.assertEqual(self.tenant_id, claim.tenant_id)
 
-    async def test_success_locks_full_identity_and_commits_before_projection(self):
+    async def test_success_locks_full_identity_and_commits_job_and_task_before_receipt(self):
         receipt = await self.manager.mark_done(7, result={"status": "ok"}, llm_cost=0, claim=self.claim)
         self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.DONE)
         self.assertEqual(self.stored.status, "done")
@@ -219,7 +231,13 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
             dict(self.queries[0].criteria),
             dict(id=7, tenant_id=31, job_type="learn", agent_task_id=9, status="running", attempts=2, started_at=NOW),
         )
-        self.manager._record_task_result.assert_awaited_once_with(self.claim, status="ok", error=None)
+        self.manager._record_task_result.assert_not_awaited()  # No detached legacy projection.
+        self.assertEqual((self.task.last_status, self.task.last_error), ("ok", None))
+        self.assertEqual(self.task.last_run_at, self.stored.finished_at)
+        self.assertTrue(self.committed)
+        self.assertEqual(dict(self.queries[1].criteria), {"id": 9, "tenant_id": 31})
+        self.assertTrue(self.queries[1].locked)
+        self.assertEqual(self.sessions, 1)
 
     async def test_each_identity_change_or_nonrunning_status_loses_without_mutation(self):
         for changes in (
@@ -265,7 +283,9 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.FAILED)
         self.assertIsNone(self.stored.llm_cost)
-        self.manager._record_task_result.assert_awaited_once_with(self.claim, status="failed", error="failed")
+        self.manager._record_task_result.assert_not_awaited()
+        self.assertEqual((self.task.last_status, self.task.last_error), ("failed", "failed"))
+        self.assertTrue(self.committed)
 
     async def test_receipt_result_is_a_detached_snapshot(self):
         result = {"facts": ["brief"]}
@@ -295,13 +315,35 @@ class ManagerBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sessions, 1)
         self.manager._record_task_result.assert_not_awaited()
 
-    async def test_task_projection_failure_retains_committed_receipt(self):
-        self.manager._record_task_result.side_effect = RuntimeError(PRIVATE)
-        receipt = await self.manager.mark_done(7, result={"status": "ok"}, claim=self.claim)
-        self.assertTrue(receipt.task_projection_failed)
-        self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.DONE)
-        self.assertEqual(self.stored.status, "done")
-        self.assertNotIn(PRIVATE, repr(receipt))
+    async def test_task_write_failure_rolls_back_job_and_returns_no_receipt(self):
+        before_job = deepcopy(vars(self.stored))
+        before_task = deepcopy(vars(self.task))
+        self.manager._write_task_outcome = AsyncMock(side_effect=RuntimeError(PRIVATE))
+        with self.assertRaisesRegex(RuntimeError, PRIVATE):
+            await self.manager.mark_done(7, result={"status": "ok"}, claim=self.claim)
+        self.assertEqual(vars(self.stored), before_job)
+        self.assertEqual(vars(self.task), before_task)
+        self.assertFalse(self.committed)
+        self.manager._record_task_result.assert_not_awaited()
+
+    async def test_missing_or_foreign_task_is_a_write_error_not_success_or_claim_loss(self):
+        foreign = SimpleNamespace(id=9, tenant_id=77, last_status="foreign", last_error=None, last_run_at=NOW)
+        for task in (None, foreign):
+            with self.subTest(task=task):
+                self.task = task
+                before = deepcopy(vars(self.stored))
+                with self.assertRaisesRegex(RuntimeError, "task outcome target unavailable"):
+                    await self.manager.mark_done(7, result={"status": "ok"}, claim=self.claim)
+                self.assertEqual(vars(self.stored), before)
+                self.assertFalse(self.committed)
+        self.manager._record_task_result.assert_not_awaited()
+
+    async def test_retry_does_not_write_task_summary(self):
+        before = deepcopy(vars(self.task))
+        await self.manager.mark_failed(7, "retry", claim=self.claim)
+        self.assertEqual(vars(self.task), before)
+        self.assertEqual(len(self.queries), 1)
+        self.assertTrue(self.committed)
 
 
 class DispatcherClaimTests(unittest.IsolatedAsyncioTestCase):

@@ -61,8 +61,10 @@ The checkpoint digest publisher/finalizer remains its own protected contract.
 Prepared on dev `359eace2db3addd7647c8a835ebf4007241602ef` (2026-10-11), branch
 `fix/queue-recovery-admission`. This section supersedes historical below-budget
 stale replay and split scheduler-trigger descriptions below, not their original
-test evidence. Implementation requires Draft publication; new owner evidence review is
-PENDING and PRD-05 remains OPEN. No migration or new persisted status is added.
+test evidence. The bounded package now has owner-reported direct acceptance on the exact
+revision below; integration is through [PR #93](https://github.com/Starck43/social-media-ai/pull/93).
+This record becomes the integrated checkpoint when GitHub marks #93 merged.
+PRD-05 remains OPEN. No migration or new persisted status is added.
 
 ### Fail closed when the ordinary outcome is unknown
 
@@ -153,8 +155,9 @@ Reported COMMIT attempts/acknowledgements 12/12, rejected 0, all tagged creation
 or verified cleanup; 31 rollbacks; three fixture sequences advanced +2/+3/+9;
 no queue-accept leftovers and test_schema baseline restored. This is evidence
 for the pinned application behavior under that shim, NOT an unmodified published
-runner/current-head or real-onupdate acceptance. The shim/log have not yet been
-independently inspected; retain the evidence instead of automatically rerunning.
+runner/current-head or real-onupdate acceptance. The historical shim/log have not been independently inspected; retain this
+original evidence separately. The later direct run below does not require
+relabeling or repeating the historical shim run.
 
 The current runner-only correction records `fixture_writes` only for actual
 UPDATE/DELETE, admits exact ORM `updated_at=now()` alongside real schedule fields,
@@ -162,10 +165,38 @@ and still rejects bound timestamp overrides, timestamp-only updates and foreign
 writes. It does not suppress onupdate or mutate model metadata. Two NEW extracted
 actual-guard regressions both reject the pre-fix runner and pass after correction;
 39 total new isolated checks pass. Production bytes remain identical to the
-owner-tested application artifact. The corrected standalone runner has NOT run.
-Review the exact external shim/redacted log before deciding whether any narrow
-additional validation is necessary; do not assign a shared-schema run while the
-owner's second task is active, or repeat the historical suites by default.
+owner-tested application artifact. At that preparation checkpoint the corrected standalone runner had not run;
+the direct owner evidence below supersedes the pending acceptance. No repeat of
+historical suites or of completed scoped checks is assigned.
+
+#### Direct owner acceptance — no shim, exact corrected source
+
+Owner reports one as-is invocation on `cdd7130a60ac52a8fdba8e4cd94188b9350530e3`,
+clean `fix/queue-recovery-admission` worktree after fast-forward, exact runner
+SHA256 `ea81763519f7881142ab3bbce56c09667f0791692df5c3c16508257e803028e8`:
+
+```bash
+cd /Users/admin/Projects/social-media-ai-pr93 && DB_TEST_SCHEMA=test_schema /Users/admin/Projects/social-media-ai/.venv/bin/python tests/test_queue_recovery_admission_db.py --allow-tagged-fixture-commits
+```
+
+12/12 checks passed, EXIT=0. No shim, metadata override or additional run was
+used. COMMIT attempts=12, acknowledged=12, rejected=0; only authorized tagged
+synthetic creation/accompanying Task schedule and final verified scoped cleanup.
+UPDATE-only outcome/lease/finalization and driver-failure phases rolled back;
+31 rollback phases. Sequence readings: agent_tasks 7→10, jobs 15→24, tenants
+41→43. Reported final test_schema baseline tenants=1/jobs=0/agent_tasks=0,
+zero queue-accept fixtures, public counts 2/9/15 unchanged. Shared schema was
+reported idle before execution; worktree/main checkout and other worktrees were
+preserved. Synthetic failure/retry log events in checks 9–10 are expected cases,
+not a failing run. Execution/output remain owner-reported, not run or observed
+by the remote coordinator; source/runner bytes were independently matched.
+
+No DDL/bootstrap/reset/migration/provider/live/old-suite/full-pytest action,
+commit/push/Ready/merge was performed by the local agent. Real timer duration,
+OS worker death and provider idempotency remain untested. The final evidence
+closeout changes only this contract, board and ledger; every production and test
+file remains byte-identical to the exact owner-tested head. No post-closeout or
+merged-head rerun is claimed or required for this documentation-only delta.
 
 Two inactive nonce tenants plus marked Task/Job fixtures fence DML to approved
 tables and owned predicates. Compiled SAVEPOINT controls are allowed without
@@ -193,8 +224,10 @@ Three existing stale/heartbeat test files are semantically aligned to quarantine
 and no reacquisition, NOT run. Their old green results do not certify changed
 semantics. Run only the new pinned runner once, sequentially after the shared
 schema is idle; do not repeat #87/#91/#74/old tests/full pytest by default.
-Keep Draft until the shim-backed owner evidence and fresh head/compatibility/checks
-are reviewed; do not silently relabel it as a raw runner pass. External-effect idempotency, production timing, noncooperative worker
+Direct scoped acceptance is complete; ordinary Ready/merge follows fresh
+head/source compatibility and required checks under standing authorization.
+Record actual integration through #93; do not relabel the historical shim run
+as a direct pass or claim a merged-head execution. External-effect idempotency, production timing, noncooperative worker
 termination, complete accounting/limiter and remaining PRD-05 acceptance stay OPEN.
 
 ## Source-grounded observations

@@ -46,6 +46,17 @@ class JobOutcomePersistenceError(RuntimeError):
         super().__init__("Job outcome persistence or bookkeeping failed; inspect before retry.")
 
 
+class JobClaimRenewalError(RuntimeError):
+    """Pre-dispatch ownership could not be confirmed; do not infer safe replay."""
+
+    error_code = "claim_renewal_unconfirmed"
+
+    def __init__(self, claim: JobClaim):
+        self.job_id = claim.job_id
+        self.tenant_id = claim.tenant_id
+        super().__init__("Job ownership renewal unconfirmed; no handler dispatched by this caller.")
+
+
 def _log_id(value: Any) -> int | None:
     """Only persisted integer IDs; never stringify payload-like values."""
     return value if type(value) is int and value > 0 else None
@@ -297,6 +308,15 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
 
 async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow_retry: bool) -> JobOutcomeReceipt:
     claim = JobClaim.capture(job)  # Capture once, before any handler can mutate observed state.
+    # Keep ownership uncertainty outside handler-failure/retry finalization.
+    try:
+        renewed = await jobs.renew_claim(claim)
+    except Exception:
+        raise JobClaimRenewalError(claim) from None
+    if renewed is False:
+        raise JobClaimLostError(claim) from None
+    if renewed is not True:
+        raise JobClaimRenewalError(claim) from None
     try:
         if claim.job_type == "digest":
             from app.services.digest.job_delivery import execute_digest_job

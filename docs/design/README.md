@@ -10,7 +10,7 @@
 
 ## Current checkpoint and counting rule
 
-Planning checkpoint: dev `c7a294e49745072a956b5c6816bc4f42a710a8d8`, 2026-10-10; #84 merged, no open PRs at inspection. Refresh before selecting code. Foundation remains OPEN; stages B/C are not fully accepted.
+Planning checkpoint: dev `79c4b2c8d669e0a99af16e8b118355f48b20a376`, 2026-10-10; #85 plan and #86 accounting-design revision merged, no open PRs before this queue package. Refresh before selecting code. Foundation remains OPEN; stages B/C are not fully accepted.
 
 **9 major readiness directions remain OPEN:** 7 technical blocker areas (PRD-01–07), 1 managed-pilot area (PRD-08), and 1 safe-publication/release area (PRD-09). Count each stable PRD area once, not its PRs, log sinks, tests, historical findings or evidence requests. This is NOT “nine commits left”, a full backlog-size estimate, or permission to implement every row. Research/Knowledge/Communication/Follow-up/Cases/Approval/Scale are gated product phases, not added to this Foundation count.
 
@@ -34,10 +34,12 @@ The numbers below are descending execution attention/impact, not historical PRD 
 
 | Work | Owner / branch | State | Next action |
 | --- | --- | --- | --- |
-| Numbered plan and evidence-preserving navigation cleanup | Planning coordinator, `docs/prioritized-foundation-plan` | Prepared documentation revision from the checkpoint above; no application changes | Review links/count/attribution, then routine docs integration. |
-| Priority 1 normal-job recovery contract review | Unassigned; no branch/PR | NEXT CANDIDATE, not started/reserved | Refresh dispatcher/manager/schedule source and ownership; choose one proven gap or acceptance contract before code. No automatic DB run. |
+| Numbered plan and evidence-preserving navigation cleanup | #85, merged as `e7fb385` | MERGED documentation-only; nine major gates still OPEN | Preserve count/links/evidence; do not reopen finished planning cleanup. |
+| Priority 1 claim-fenced heartbeat foundation | Queue coordinator, [#87](https://github.com/Starck43/social-media-ai/pull/87), `fix/job-claim-heartbeat` | READY for scoped integration; author 15 isolated checks on `e7fb385` + patch; owner-reported 9/9 PostgreSQL checks on `f478544e` | Fresh final-head/check/readback integration; no rerun for documentation-only evidence. No dispatcher timer or stale-replay change; healthy-job/external-effect recovery still OPEN. |
+| Priority 2 every-call accounting/admission contract | Accounting coordinator, [#86](https://github.com/Starck43/social-media-ai/pull/86), merged as `79c4b2c` | MERGED DESIGN ONLY; PRD-03 policy/schema approval OPEN | Owner chooses pricing/cap/uncertainty/ledger decisions before format/schema or runtime wiring; no local DB task. |
+| Priority 5 submitted-text sampling coverage | Content coordinator; content_classifier.py text selection + analyzer.py text/save coverage boundary + new isolated test | RESERVED; source-grounded contract narrowing, no execution evidence claimed | Do not cover/retire unsent texts; preserve prompt cap/media/cancellation/#76 partial-row collision guard. No schema/billing/queue or shared docs overlap. |
 
-All implementation reservations from #84 and earlier packages are released at this checkpoint. A future lane can be occupied without a PR; coordinate before editing shared code/docs. There is no pending local-agent task. Finished checks are not rerun without a specific changed risk.
+All implementation reservations from #84 and earlier packages are released at this checkpoint. A future lane can be occupied without a PR; coordinate before editing shared code/docs. The priority-1 owner-only PostgreSQL task returned 9/9 on the pinned source head; no pending local task, old tests or #74 reruns. Finished checks are not rerun without a specific changed risk.
 
 ## Delivered work is evidence, not the open queue
 

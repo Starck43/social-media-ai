@@ -2,8 +2,7 @@
 
 ## Current continuation — queue foundation merged; dispatcher/web/learn follow-ups merged
 
-Source baseline dev `073fcd008baa956d950db47cc5aa054e7529438c` (merge of PR #43).
-Dev advanced by four owner-approved merges on 2026-10-10:
+Source baseline dev `50dc2a2b0bb9832c05b426ea16c6010616264b31`. Dev advanced by four owner-approved merges on 2026-10-10:
 
 - [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation
   integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (+689/-30, 8 files),
@@ -23,6 +22,24 @@ four branched from dev `1f66f34`. The package descriptions below are retained as
 the implementation record of what those merges contained. Previous baseline
 `6b01493` (PR #33 merge) and PR22 evidence below stay historical; no full suite
 is re-attributed to the new baseline.
+
+Dev then advanced further through the parallel refactoring lanes; this ledger
+branch carries them via merge `ef4fd13` of dev `50dc2a2`:
+
+- [PR #44](https://github.com/Starck43/social-media-ai/pull/44) CLI username
+  parsing as `c765365`; tested `0c2b8f0`: 10 standalone, exit 0.
+- [PR #47](https://github.com/Starck43/social-media-ai/pull/47) direct CLI
+  awaitables (stacked on #44) as `3551f26`; tested `0b847de`: 15 standalone,
+  exit 0.
+- [PR #42](https://github.com/Starck43/social-media-ai/pull/42) date parsing
+  contract as `137dd1e`; tested `a5e6f8d`: 16 standalone, exit 0.
+- [PR #48](https://github.com/Starck43/social-media-ai/pull/48) stored-analysis
+  lookup as `2aa0b43`; tested `7629ea6`: 18 standalone, exit 0.
+- [PR #30](https://github.com/Starck43/social-media-ai/pull/30) tenancy-model
+  layout as `50dc2a2`; tested `16df066`: 61 focused, exit 0.
+
+Checks for those lanes are owner-reported targeted runs recorded in the
+parallel chat's task records; no full suite is attached to any of them.
 
 ### Original stale-reaping package (closed via PR #45)
 
@@ -301,8 +318,19 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
   missing claim/malformed/nonterminal no longer reported as success; tested
   `74af779` (13 standalone, exit 0).
 - [x] Atomic learn memory batch — PR #43, dev `073fcd008baa956d950db47cc5aa054e7529438c`
-  (current head); facts + watermark in one tenant transaction with cursor
+  (then dev head); facts + watermark in one tenant transaction with cursor
   fencing; tested `b29e432` (49 + 11 standalone, 11 PostgreSQL, exit 0).
+- [x] Tenancy-model layout — PR #30, dev `50dc2a2b0bb9832c05b426ea16c6010616264b31`;
+  compatibility exports/import facade preserved; tested `16df066` (61 focused,
+  exit 0). PR31/PR32 model lanes remain OPEN; PR29 deferred.
+- [x] CLI username parsing — PR #44, dev `c765365`; tested `0c2b8f0`
+  (10 standalone, exit 0).
+- [x] Direct CLI awaitables — PR #47 (stacked on #44), dev `3551f26`; tested
+  `0b847de` (15 standalone, exit 0).
+- [x] Date parsing contract — PR #42, dev `137dd1e`; tested `a5e6f8d`
+  (16 standalone, exit 0).
+- [x] Stored-analysis lookup — PR #48, dev `2aa0b43`; tested `7629ea6`
+  (18 standalone, exit 0).
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

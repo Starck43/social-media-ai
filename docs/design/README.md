@@ -13,7 +13,7 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Current source baseline: dev `073fcd008baa956d950db47cc5aa054e7529438c`, merge of PR #43. Dev advanced by four owner-approved merges: [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (closed #34/#35/#37), [PR #46](https://github.com/Starck43/social-media-ai/pull/46) as `8f3c6127d835b615d624f5e461dc6697c930fa0a`, [PR #49](https://github.com/Starck43/social-media-ai/pull/49) as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`, and [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`. Each merge's checks stay attached to its own tested SHA below; no historical full suite is re-attributed to this baseline.
+Current source baseline: dev `50dc2a2b0bb9832c05b426ea16c6010616264b31` (this ledger branch merges dev as `ef4fd13`). Dev advanced by four owner-approved merges: [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (closed #34/#35/#37), [PR #46](https://github.com/Starck43/social-media-ai/pull/46) as `8f3c6127d835b615d624f5e461dc6697c930fa0a`, [PR #49](https://github.com/Starck43/social-media-ai/pull/49) as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`, and [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`. The parallel refactoring lanes then merged: #30 tenancy-model layout as `50dc2a2`, #48 stored-analysis lookup as `2aa0b43`, #42 date parsing as `137dd1e`, #47 direct CLI awaitables as `3551f26` and #44 CLI username parsing as `c765365`. Each merge's checks stay attached to its own tested SHA below; no historical full suite is re-attributed to this baseline.
 
 Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged
 by explicit Owner approval, history preserved. Merge tree equals approved
@@ -54,14 +54,17 @@ accepted remain different states.
 
 ### Concurrent-work boundary
 
-PR30 owns the tenancy-model split, PR31 notification-model layout, and PR32
-collection-model layout. These lanes belong to the parallel refactoring chat;
-do not duplicate them or treat queue work as approval to merge those PRs.
-Their PR bodies are the current separate task records.
+PR30 (tenancy-model split) is **MERGED** as `50dc2a2b0bb9832c05b426ea16c6010616264b31`;
+PR31 notification-model layout and PR32 collection-model layout remain separate
+open lanes of the parallel refactoring chat; do not duplicate them. Their PR
+bodies are the current separate task records. The compatibility/date/cli
+lookup lanes #42 (`137dd1e`), #44 (`c765365`), #47 (`3551f26`, stacked on #44)
+and #48 (`2aa0b43`) are merged the same day; see the journal for their tested
+SHAs.
 
 PR22 is closed/merged; PR33 records its FOUR-file post-merge documentation
 status only, not identity/runtime implementation.
-PR30/31/32 retain their separate structural model lanes; PR29 remains deferred.
+PR31/32 retain their separate structural model lanes; PR29 remains deferred.
 Check fresh heads and file ownership before the next package; preserve parallel
 corrections. The compatibility pointer and detailed handoff explain evidence,
 not competing backlog. Owner separately approved integration of this docs-only

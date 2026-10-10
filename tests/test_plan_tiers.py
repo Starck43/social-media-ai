@@ -20,6 +20,7 @@ import contextlib
 
 import pytest
 
+from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.models.tenant import Tenant
 from app.services.tenancy import limits
 
@@ -54,6 +55,36 @@ async def plan_ws():
     finally:
         for tenant_id in created:
             await Tenant.objects.delete_by_id(tenant_id)
+
+
+@pytest.fixture
+async def plan_arrange_user():
+    """An isolated non-superuser actor; owner authority is arrange-only."""
+    import secrets
+
+    from app.models import Role, User
+    from app.types import UserRoleType
+
+    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    assert role is not None, "VIEWER reference role must be seeded"
+    name = f"plan-arrange-{secrets.token_hex(6)}"
+    user = await User.objects.create_user(
+        username=name,
+        email=f"{name}@example.com",
+        password="test-only-plan-password",
+        role_id=role.id,
+        is_active=True,
+        is_superuser=False,
+    )
+    try:
+        loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+        assert loaded is not None and loaded.is_active and not loaded.is_superuser
+        assert loaded.role_id == role.id
+        assert not has_permission(loaded, "source", "create")
+        assert not has_permission(loaded, "agenttask", "create")
+        yield loaded
+    finally:
+        await User.objects.delete_user(user.id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -211,23 +242,27 @@ async def _platform():
     return row
 
 
-async def _source(tenant_id: int, platform, suffix: str):
+async def _source(tenant_id: int, platform, suffix: str, *, arrange_user):
     """A source row in `tenant_id`, for filling a workspace up to its ceiling."""
     from app.core.tenant_context import tenant_scope
     from app.models.source import Source
     from app.types import SourceType
 
+    previous_user = get_current_user()
     with tenant_scope(tenant_id):
-        return await Source.objects.create(
-            name=f"s{suffix}",
-            platform_id=platform.id,
-            external_id=f"ext-{suffix}",
-            source_type=SourceType.USER,
-        )
+        with permission_scope(arrange_user, is_owner=True):
+            row = await Source.objects.create(
+                name=f"s{suffix}",
+                platform_id=platform.id,
+                external_id=f"ext-{suffix}",
+                source_type=SourceType.USER,
+            )
+    assert get_current_user() is previous_user
+    return row
 
 
 @pytest.mark.asyncio
-async def test_a_starter_workspace_cannot_exceed_its_source_ceiling(plan_ws) -> None:
+async def test_a_starter_workspace_cannot_exceed_its_source_ceiling(plan_ws, plan_arrange_user) -> None:
     """Three sources on Starter, and the fourth is refused — with a reason.
 
     Driven through the real creation path, because the point of the test is
@@ -239,7 +274,7 @@ async def test_a_starter_workspace_cannot_exceed_its_source_ceiling(plan_ws) -> 
 
     async with plan_ws("starter") as tenant:
         for i in range(3):
-            await _source(tenant.id, platform, str(i))
+            await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user)
         with tenant_scope(tenant.id):
             blocked = await limits.check_source_limit(tenant)
         assert blocked is not None, "a 4th source must be refused on Starter"
@@ -247,20 +282,20 @@ async def test_a_starter_workspace_cannot_exceed_its_source_ceiling(plan_ws) -> 
 
 
 @pytest.mark.asyncio
-async def test_a_business_workspace_is_never_blocked_by_a_count(plan_ws) -> None:
+async def test_a_business_workspace_is_never_blocked_by_a_count(plan_ws, plan_arrange_user) -> None:
     from app.core.tenant_context import tenant_scope
 
     platform = await _platform()
 
     async with plan_ws("business") as tenant:
         for i in range(25):
-            await _source(tenant.id, platform, str(i))
+            await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user)
         with tenant_scope(tenant.id):
             assert await limits.check_source_limit(tenant) is None
 
 
 @pytest.mark.asyncio
-async def test_a_deactivated_source_still_holds_its_slot(plan_ws) -> None:
+async def test_a_deactivated_source_still_holds_its_slot(plan_ws, plan_arrange_user) -> None:
     """Counting only active rows would let a workspace sit over its quota.
 
     Deactivate a source, then ask again: if the limit counted active rows only,
@@ -273,26 +308,34 @@ async def test_a_deactivated_source_still_holds_its_slot(plan_ws) -> None:
     platform = await _platform()
 
     async with plan_ws("starter") as tenant:
-        rows = [await _source(tenant.id, platform, str(i)) for i in range(3)]
+        rows = [
+            await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user) for i in range(3)
+        ]
         with tenant_scope(tenant.id):
-            await Source.objects.update_by_id(rows[0].id, is_active=False)
+            previous_user = get_current_user()
+            with permission_scope(plan_arrange_user, is_owner=True):
+                await Source.objects.update_by_id(rows[0].id, is_active=False)
+            assert get_current_user() is previous_user
             blocked = await limits.check_source_limit(tenant)
         assert blocked is not None
 
 
 @pytest.mark.asyncio
-async def test_the_task_ceiling_is_checked_at_creation(plan_ws) -> None:
+async def test_the_task_ceiling_is_checked_at_creation(plan_ws, plan_arrange_user) -> None:
     from app.core.tenant_context import tenant_scope
     from app.models.agent_task import AgentTask
 
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
-            for i in range(3):
-                await AgentTask.objects.create(
-                    name=f"t{i}",
-                    cron_expr="0 9 * * *",
-                    job_type="collect",
-                )
+            previous_user = get_current_user()
+            with permission_scope(plan_arrange_user, is_owner=True):
+                for i in range(3):
+                    await AgentTask.objects.create(
+                        name=f"t{i}",
+                        cron_expr="0 9 * * *",
+                        job_type="collect",
+                    )
+            assert get_current_user() is previous_user
             blocked = await limits.check_task_limit(tenant)
         assert blocked is not None
         assert "Starter" in blocked
@@ -525,7 +568,7 @@ async def test_the_daily_budget_follows_the_tier_not_the_column(plan_ws) -> None
 
 
 @pytest.mark.asyncio
-async def test_a_plan_downgrade_reports_what_must_be_deleted(plan_ws) -> None:
+async def test_a_plan_downgrade_reports_what_must_be_deleted(plan_ws, plan_arrange_user) -> None:
     """Downgrading is allowed; the workspace is told what it will have to shed.
 
     Refusing the downgrade would trap a customer who has to downgrade precisely
@@ -537,7 +580,7 @@ async def test_a_plan_downgrade_reports_what_must_be_deleted(plan_ws) -> None:
 
     async with plan_ws("pro") as tenant:
         for i in range(5):
-            await _source(tenant.id, platform, str(i))
+            await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user)
         with tenant_scope(tenant.id):
             over = await limits.plan_overage(tenant.id, "starter")
         assert over, "downgrading to Starter with 5 sources must be reported"

@@ -7,7 +7,7 @@ Bookkeeping writes (`mark_triggered`, `record_result`, `update_last_checked`)
 stay unchecked — the scheduler/collector/worker run without a user context.
 
 Reads stay open (tenant scoping already isolates data); bypass and
-legacy-None pass-through are verified per manager.
+anonymous denial are verified per manager.
 """
 
 import secrets
@@ -26,6 +26,8 @@ TASK_WRITE_METHODS = ("create", "update_by_id", "delete_by_id", "set_sources", "
 SCENARIO_WRITE_METHODS = ("create", "create_scenario", "update_by_id", "update_scenario_activity", "delete_by_id")
 SOURCE_WRITE_METHODS = ("create", "create_source", "update_by_id", "delete_by_id")
 
+
+pytestmark = pytest.mark.tenancy  # no implicit operator authority in rights tests
 
 async def _role(codename: str) -> Role:
     return await Role.objects.get(codename=UserRoleType[codename].name)
@@ -84,13 +86,15 @@ async def test_task_writes_deny_viewer_allow_admin_and_pass_bypass():
         assert await AgentTaskManager().add_sources(task.id, []) == 0
         assert await AgentTask.objects.delete_by_id(task.id) is True
 
-    # Bypass (CLI/scheduler) and legacy None-user (jobs) never deny.
+    # Explicit operator bypass remains; an anonymous tenant write is refused.
     with tenant_scope(bypass=True):
         task = await AgentTask.objects.create(name=f"sys-{secrets.token_hex(3)}", cron_expr="@once", job_type="digest")
         assert await AgentTask.objects.delete_by_id(task.id) is True
     with tenant_scope(await _workspace()), permission_scope(None):
-        task = await AgentTask.objects.create(name=f"job-{secrets.token_hex(3)}", cron_expr="@once", job_type="digest")
-        assert await AgentTask.objects.delete_by_id(task.id) is True
+        with pytest.raises(PermissionDeniedError):
+            await AgentTask.objects.create(name=f"job-{secrets.token_hex(3)}", cron_expr="@once", job_type="digest")
+        with pytest.raises(PermissionDeniedError):
+            await AgentTask.objects.delete_by_id(1)
 
 
 async def test_task_mark_triggered_and_record_result_skip_checks():
@@ -150,8 +154,10 @@ async def test_scenario_writes_deny_viewer_allow_admin_and_pass_bypass():
         row = await AgentScenario.objects.create(name=f"sys-{secrets.token_hex(3)}")
         assert await AgentScenario.objects.delete_by_id(row.id) is True
     with tenant_scope(await _workspace()), permission_scope(None):
-        row = await AgentScenario.objects.create(name=f"job-{secrets.token_hex(3)}")
-        assert await AgentScenario.objects.delete_by_id(row.id) is True
+        with pytest.raises(PermissionDeniedError):
+            await AgentScenario.objects.create(name=f"job-{secrets.token_hex(3)}")
+        with pytest.raises(PermissionDeniedError):
+            await AgentScenario.objects.delete_by_id(1)
 
 
 async def test_scenario_reads_stay_open():
@@ -273,3 +279,13 @@ def test_gated_method_inventory():
             fn = getattr(manager_cls, name)
             assert callable(fn), f"{manager_cls.__name__}.{name} is missing"
             assert _is_gated(fn), f"{manager_cls.__name__}.{name} is not gated"
+
+
+async def test_anonymous_source_writes_are_denied_before_lookup():
+    with tenant_scope(await _workspace()), permission_scope(None, is_owner=True):
+        with pytest.raises(PermissionDeniedError):
+            await SourceManager().create_source(platform_id=1, external_id="anonymous", source_type="channel")
+        with pytest.raises(PermissionDeniedError):
+            await SourceManager().update_by_id(1, is_active=False)
+        with pytest.raises(PermissionDeniedError):
+            await SourceManager().delete_by_id(1)

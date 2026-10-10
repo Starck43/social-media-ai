@@ -27,6 +27,7 @@ async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = Non
     Returns the created `Job` so callers can track it (run it now, poll its
     status, show it in a modal).
     """
+    from app.core.permissions import service_permission_scope
     from app.core.tenant_context import tenant_scope
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.models.managers.job_manager import JobManager
@@ -49,7 +50,8 @@ async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = Non
         tasks = AgentTaskManager()
         if task.cron_expr == "@once":
             await tasks.mark_triggered(task.id, None, status="ok")
-            await tasks.update_by_id(task.id, is_active=False)
+            with service_permission_scope("agenttask", "update"):
+                await tasks.update_by_id(task.id, is_active=False)
         else:
             await tasks.mark_triggered(task.id, task.next_run_at, status="ok")
         return job

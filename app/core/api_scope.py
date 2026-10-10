@@ -30,6 +30,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
+from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class ApiScopeMiddleware:
         request = Request(scope)
 
         user = await self._authenticate(request)
-        if user is None:
+        if user is None or not user.is_active:
             await self._unauthorized(scope, receive, send)
             return
 
@@ -87,7 +88,7 @@ class ApiScopeMiddleware:
 
         # Everything below — endpoints, managers, background tasks — sees exactly
         # one workspace through the queryset guard in BaseManager.
-        with tenant_scope(tenant_id):
+        with tenant_scope(tenant_id), permission_scope(user):
             await self.app(scope, receive, send)
 
     # ── authentication ──────────────────────────────────────────────────────

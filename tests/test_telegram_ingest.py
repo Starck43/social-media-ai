@@ -9,6 +9,7 @@ not the model.
 import pytest
 
 from app.channels.base import Inbound
+from app.core.permissions import get_current_user, has_permission, service_permission_scope
 from app.services.monitoring import ingest as ingest_module
 
 
@@ -154,14 +155,17 @@ async def test_ingest_resolves_workspace_itself(stub_analyzer):
     with tenant_scope(tenant.id):
         existing = await Source.objects.filter(platform_id=platform.id, external_id=chat_id).first()
         if existing is not None:
-            await Source.objects.delete_by_id(existing.id)
-        source = await Source.objects.create(
-            platform_id=platform.id,
-            source_type=SourceType.CHANNEL,
-            external_id=chat_id,
-            name="Tenant resolution test",
-            is_active=True,
-        )
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(existing.id)
+        with service_permission_scope("source", "create"):
+            source = await Source.objects.create(
+                platform_id=platform.id,
+                source_type=SourceType.CHANNEL,
+                external_id=chat_id,
+                name="Tenant resolution test",
+                is_active=True,
+            )
+        assert not has_permission(get_current_user(), "source", "create")
 
     try:
         assert await ingest_module.ingest_channel_post(_channel_post(message_id=201, chat_id=chat_id)) is True
@@ -172,7 +176,8 @@ async def test_ingest_resolves_workspace_itself(stub_analyzer):
         assert refreshed.last_item_id == "201"
     finally:
         with tenant_scope(tenant.id):
-            await Source.objects.delete_by_id(source.id)
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(source.id)
 
 
 async def test_digest_target_channel_is_not_ingested(telegram_source, stub_analyzer):

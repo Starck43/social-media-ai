@@ -5,12 +5,16 @@
   public/application schemas in migrations or maintenance commands.
 - **R2 — Enum refactors.** Run `pytest --co` after changing an enum or its imports
   before running tests, to catch stale members and import failures early.
-- **R3 — Full-suite-only failures.** First inspect test database state, fixtures,
-  and cleanup ordering; reproduce on a freshly reset isolated database before
-  changing application logic.
-- **R4 — Interrupted runs.** Treat an interrupted test run as a dirty database.
-  Use `python -m scripts.setup_test_db --reset` only against the resolved test
-  database/schema, never production, before another run.
+- **R3 — Full-suite-only failures.** First inspect logs, test database state,
+  fixtures and cleanup ordering without modifying data. Reproduce only after
+  verifying the shared review environment is safe and no other pytest is active.
+  A reset/new schema is NOT automatic: obtain explicit approval under R8 before
+  any schema operation. Do not change application logic from an unverified cause.
+- **R4 — Interrupted runs.** An interrupted run may leave dirty data or a live
+  child process; it is incomplete evidence, never a green result. Check both
+  read-only before another run. If state is uncertain, stop and ask; do not
+  automatically reset/drop/create/stamp/migrate. Any separately approved reset
+  must target the explicitly resolved TEST schema/database, never production.
 - **R5 — Documentation sync.** Finish each phase by syncing docs to the actual
   code, migrations, permissions and CLI/API contracts. Record test results and
   limitations; do not claim a green suite without a completed run.
@@ -27,6 +31,11 @@
   at a time; parallel PR checks are code-review-only until separate schemas are
   prepared. Never create, reset, drop, stamp or migrate schemas automatically —
   `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
-  column fix require an explicit owner instruction.
+  column fix require an explicit owner instruction. These restrictions override
+  any older automatic-reset advice. The remote agent prepares checks only;
+  the owner/local agent executes them. Preserve the private environment.
 - **R9 — No merge without a command.** Merging any PR into `dev` happens only
-  after compatibility is verified and the owner explicitly asks for it.
+  after fresh compatibility is verified and the owner explicitly asks for it.
+  A green test run is not Ready/deploy/live-sender approval. No direct dev push
+  or force-push; never restore anonymous access or enable publication as a merge
+  conflict workaround.

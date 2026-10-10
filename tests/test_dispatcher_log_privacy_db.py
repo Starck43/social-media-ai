@@ -11,10 +11,12 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.jobs import dispatcher
-from app.models import AgentTask, Job, Notification, Tenant
+from app.models import AgentTask, Job, Notification, Role, Tenant, User
 from app.services.notifications import service
+from app.types import UserRoleType
 
 pytestmark = pytest.mark.tenancy
 SECRET = "PRIVATE-CUSTOMER-AND-FAKE-TOKEN"
@@ -32,19 +34,54 @@ async def workspace(monkeypatch):
         await Tenant.objects.delete_by_id(tenant.id)
 
 
+@pytest.fixture
+async def arrange_user():
+    """Create an isolated actor; never depend on an existing DB account."""
+    # Get the VIEWER role that should exist due to seeding.
+    viewer_role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+    assert viewer_role is not None, "VIEWER role should exist due to seeding"
+    name = f"privacy-arrange-{uuid4().hex}"
+    user = await User.objects.create_user(
+        username=name,
+        email=f"{name}@example.com",
+        password="test-only-privacy-password",
+        is_active=True,
+        is_superuser=False,
+        role_id=viewer_role.id,
+    )
+    try:
+        loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+        assert loaded is not None and loaded.is_active
+        assert not loaded.is_superuser
+        assert loaded.role_id == viewer_role.id
+        yield loaded
+    finally:
+        await User.objects.delete_user(user.id)
+
+
 @pytest.mark.parametrize("retry", [False, True], ids=["terminal", "retry"])
-async def test_exception_logs_and_notification_safe_without_changing_audit(workspace, retry, caplog):
+async def test_exception_logs_and_notification_safe_without_changing_audit(workspace, retry, caplog, arrange_user):
     with tenant_scope(workspace.id):
-        task = await AgentTask.objects.create(
-            name=f"log-privacy-{uuid4().hex}", cron_expr="0 0 * * *", job_type="learn", payload={}, is_active=False
-        )
+        # Trusted arrangement only: the handler/dispatcher gets no owner scope.
+        with permission_scope(arrange_user, is_owner=True):
+            task = await AgentTask.objects.create(
+                name=f"log-privacy-{uuid4().hex}", cron_expr="0 0 * * *", job_type="learn", payload={}, is_active=False
+            )
+        assert get_current_user() is None
+        assert not has_permission(arrange_user, "agenttask", "create")
         job = await Job.objects.create(
             job_type="learn", agent_task_id=task.id, payload={}, status="running", attempts=1,
             max_attempts=3, started_at=datetime.now(timezone.utc), run_at=datetime.now(timezone.utc)
         )
-    handler = AsyncMock(side_effect=RuntimeError(SECRET))
+    async def fail_without_owner_authority(payload):
+        assert get_current_user() is None
+        assert not has_permission(None, "agenttask", "create")
+        raise RuntimeError(SECRET)
+
+    handler = AsyncMock(side_effect=fail_without_owner_authority)
     with caplog.at_level(logging.INFO, logger=dispatcher.logger.name):
         await dispatcher.execute_job(job, handler, allow_retry=retry)
+    assert get_current_user() is None
     owned_logs = [record for record in caplog.records if record.name == dispatcher.logger.name]
     assert owned_logs
     for record in owned_logs:

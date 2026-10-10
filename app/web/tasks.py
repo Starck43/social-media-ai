@@ -749,25 +749,25 @@ async def task_detail(request: Request, task_id: int):
 		# Recent jobs for this task.
 		recent_jobs = await Job.objects.filter(agent_task_id=task_id).order_by(Job.created_at.desc()).limit(10)
 
-	# Running/pending job for this task (UI guard against duplicate runs).
-	# The status rides along: a pending job has not been claimed by any worker
-	# yet, and the page says "queued", not "running".
-	running_job_id: int | None = None
-	running_job_status: str | None = None
-	for job in recent_jobs:
-		if job.status in ("pending", "running"):
-			running_job_id = job.id
-			running_job_status = job.status
-			break
-	if running_job_id is None:
-		# The running job may be outside the recent-10 window.
-		running_job = await Job.objects.filter(
-			agent_task_id=task_id,
-			status__in=["pending", "running"],
-		).first()
-		if running_job is not None:
-			running_job_id = running_job.id
-			running_job_status = running_job.status
+		# Running/pending job for this task (UI guard against duplicate runs).
+		# The status rides along: a pending job has not been claimed by any worker
+		# yet, and the page says "queued", not "running".
+		running_job_id: int | None = None
+		running_job_status: str | None = None
+		for job in recent_jobs:
+			if job.status in ("pending", "running"):
+				running_job_id = job.id
+				running_job_status = job.status
+				break
+		if running_job_id is None:
+			# The running job may be outside the recent-10 window.
+			running_job = await Job.objects.filter(
+				agent_task_id=task_id,
+				status__in=["pending", "running"],
+			).first()
+			if running_job is not None:
+				running_job_id = running_job.id
+				running_job_status = running_job.status
 
 		# Linked sources.
 		linked_sources = await Source.objects.filter(id__in=await _task_source_ids(task_id)).order_by(Source.name)

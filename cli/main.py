@@ -41,9 +41,10 @@ def _run_platform(coro):
     """
     import asyncio
 
+    from app.core.permissions import operator_permission_scope
     from app.core.tenant_context import tenant_scope
 
-    with tenant_scope(bypass=True):
+    with tenant_scope(bypass=True), operator_permission_scope():
         return asyncio.run(coro)
 
 

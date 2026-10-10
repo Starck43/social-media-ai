@@ -29,24 +29,24 @@
             <div>
                 <label for="ws-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
                 <input id="ws-name" name="name" value="{{ tenant.name if tenant else '' }}" required maxlength="100"
-                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
             </div>
             <div>
                 <label for="ws-tz" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Часовой пояс</label>
                 <input id="ws-tz" name="timezone" value="{{ tenant.timezone if tenant else 'Europe/Moscow' }}" required
-                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Расписания задач считаются в этой зоне.</p>
             </div>
             <div>
                 <label for="ws-cost" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Лимит LLM-расхода в сутки, $</label>
                 <input id="ws-cost" name="daily_cost_limit" value="{{ tenant.daily_cost_limit if tenant else '5.0' }}" required
-                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Достигнут — чат, дайджесты и обучение пропускают вызов модели.</p>
             </div>
-            {% if perms.can('tenant', 'update') %}
+            {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                 <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                     Сохранить
                 </button>
@@ -121,7 +121,7 @@
             <!-- Модель -->
             <div>
                 <label for="ag-model" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Модель LLM</label>
-                <select id="ag-model" name="agent_model" {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                <select id="ag-model" name="agent_model" {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                         class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
                     <option value="">Автовыбор (первая активная)</option>
                     {% for opt in agent_model_options %}
@@ -139,7 +139,7 @@
                 <input id="ag-max-tokens" name="agent_max_tokens" type="number" min="64" max="8192"
                        value="{{ tenant.agent_max_tokens if tenant else '' }}" 
                        placeholder="1024 (по умолчанию)"
-                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Глобальный: AGENT_MAX_TOKENS (1024). Увеличьте для длинных ответов.</p>
             </div>
@@ -150,7 +150,7 @@
                 <input id="ag-temp" name="agent_temperature" type="number" min="0" max="2" step="0.1"
                        value="{{ tenant.agent_temperature if tenant else '' }}" 
                        placeholder="0.3 (по умолчанию)"
-                       {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                       {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono outline-none focus:border-cyan-500 disabled:opacity-50">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Глобальный: AGENT_TEMPERATURE (0.3). 0 = детерминировано, 1 = креативно.</p>
             </div>
@@ -160,13 +160,13 @@
                 <label for="ag-prompt" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Дополнительный системный промпт</label>
                 <textarea id="ag-prompt" name="agent_system_prompt" rows="6"
                           placeholder="Дополнительные инструкции для агента..."
-                          {% if not perms.can('tenant', 'update') %}disabled{% endif %}
+                          {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
                           class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">{{ tenant.agent_system_prompt or '' }}</textarea>
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Добавляется после встроенного системного промпта. Оставьте пустым для использования стандартного промпта.</p>
             </div>
 
             <div class="pt-2">
-                {% if perms.can('tenant', 'update') %}
+                {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                     <button type="submit" class="rounded-xl bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                         Сохранить настройки агента
                     </button>
@@ -198,7 +198,7 @@
                     <tr class="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
                         <th class="px-5 py-3">Участник</th>
                         <th class="px-5 py-3">Роль</th>
-                        {% if perms.can('tenant', 'update') %}<th class="px-5 py-3 text-right">Действия</th>{% endif %}
+                        {% if perms.can_manage_workspace(tenant.id if tenant else none) %}<th class="px-5 py-3 text-right">Действия</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -211,7 +211,7 @@
                                 {% endif %}
                             </td>
                             <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m.role, m.role) }}</td>
-                            {% if perms.can('tenant', 'update') %}
+                            {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                                 <td class="px-5 py-3 text-right">
                                     <form method="post" action="/app/settings/members/{{ m.id }}/role"
                                           class="inline-flex items-center gap-2">
@@ -381,8 +381,8 @@
 <td class="px-5 py-3 text-right">
                                 <form method="post" action="/app/settings/channels/{{ ch.id }}" class="inline-flex items-center gap-2">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                    {{ switch_toggle("is_digest_target", "получать дайджесты", checked=ch.is_digest_target, disabled=not perms.can('tenant', 'update')) }}
-                                    {% if perms.can('tenant', 'update') %}
+                                    {{ switch_toggle("is_digest_target", "получать дайджесты", checked=ch.is_digest_target, disabled=not perms.can_manage_workspace(tenant.id if tenant else none)) }}
+                                    {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                                     <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
                                     {% endif %}
                                 </form>

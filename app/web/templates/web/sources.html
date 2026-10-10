@@ -86,7 +86,7 @@
             {% set monitored = source.params.get("monitored_users", []) if source.params else [] %}
             <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
-                    <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name
+                    <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name|e
                         }}</a>
                 </td>
                 <td class="px-4 py-3 text-slate-600 dark:text-slate-400">{{ source.platform.name }}</td>

@@ -25,6 +25,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.core.permissions import service_permission_scope
+
 logger = logging.getLogger(__name__)
 
 
@@ -163,7 +165,8 @@ async def ingest_channel_post(inbound: Any) -> bool:
             logger.warning(f"Ingest analysis failed for Telegram source {source.id}, post {item['id']}")
             return False
 
-        await Source.objects.update_by_id(source.id, last_item_id=item["id"])
+        with service_permission_scope("source", "update"):
+            await Source.objects.update_by_id(source.id, last_item_id=item["id"])
         await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
 
     logger.info(f"Ingested Telegram post {item['id']} of source {source_id} (analysis {analytics.id})")

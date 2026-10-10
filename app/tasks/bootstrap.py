@@ -7,6 +7,7 @@ tenant gets them at startup, and every newly onboarded tenant gets its own set
 
 import logging
 
+from app.core.permissions import service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask
 from app.models.managers.agent_task_manager import AgentTaskManager
@@ -48,14 +49,15 @@ async def ensure_default_tasks(tenant_id: int) -> int:
         if not tasks.validate_cron(cron_expr):
             logger.error(f"Default task {name!r}: invalid cron {cron_expr!r}")
             continue
-        await tasks.create(
-            name=name,
-            cron_expr=cron_expr,
-            job_type=job_type,
-            payload=payload,
-            is_active=True,
-            next_run_at=next_run_at(cron_expr, tz),
-        )
+        with service_permission_scope("agenttask", "create"):
+            await tasks.create(
+                name=name,
+                cron_expr=cron_expr,
+                job_type=job_type,
+                payload=payload,
+                is_active=True,
+                next_run_at=next_run_at(cron_expr, tz),
+            )
         created += 1
         logger.info(f"Created default task {name!r} ({cron_expr}, {job_type})")
     return created

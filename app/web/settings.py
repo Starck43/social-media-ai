@@ -30,7 +30,7 @@ from fastapi.responses import RedirectResponse
 from app.models.tenant import Tenant
 from app.types import ActionType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render
+from .deps import action_tenant_id, add_flash, ensure_csrf, render
 
 router = APIRouter(prefix="/settings")
 
@@ -101,6 +101,15 @@ def _plan_labels() -> dict[str, str]:
     from app.models.tenant import Tenant
 
     return {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS}
+
+
+def _guard_workspace_settings(request: Request, tenant_id: int | None) -> RedirectResponse | None:
+    """Authorize the resolved target without granting global tenant.update."""
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and perms.can_manage_workspace(tenant_id):
+        return None
+    add_flash(request, "error", "Недостаточно прав для этого действия")
+    return RedirectResponse(BACK, status_code=302)
 
 
 def _tab_of(request: Request) -> str:
@@ -255,7 +264,7 @@ async def workspace_update(
     """Rename the current workspace and set its schedule timezone and cost cap."""
     tenant_id = action_tenant_id(request, tenant_id)
 
-    denied = guard_web(request, "tenant", "update", back=BACK)
+    denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
         return denied
 
@@ -311,7 +320,7 @@ async def agent_settings_update(
     """Update agent chat settings for this workspace."""
     tenant_id = action_tenant_id(request, tenant_id)
 
-    denied = guard_web(request, "tenant", "update", back=BACK)
+    denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
         return denied
 
@@ -463,7 +472,7 @@ async def membership_role(
 
     tenant_id = request.state.tenant_id
 
-    denied = guard_web(request, "tenant", "update", back=BACK)
+    denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
         return denied
 
@@ -578,7 +587,7 @@ async def channel_update(
     """Toggle whether a bound channel receives the daily digest."""
     tenant_id = request.state.tenant_id
 
-    denied = guard_web(request, "tenant", "update", back=BACK)
+    denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
         return denied
 

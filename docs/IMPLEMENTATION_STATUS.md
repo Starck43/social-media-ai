@@ -1,8 +1,108 @@
 # Implementation status and session handoff
 
+## Current continuation — PR22 merged; general queue is next assigned lane
+
+PR #22 **MERGED into dev**, history-preserving merge commit
+`683c49e85918503119af47338200d8f762a52403` (parents deva983a15 and PRhead
+56d810538aa15f9e391c43dfed75e77aada2d2a1), after explicit Owner Ready/merge
+approval. GitHub closed/merged verified; Draft removed. Merge tree equals
+approved PRhead tree exactly. app/tests/rules/migrations match tested482eacb;
+no new executable delta or automatic post-merge retest requested.
+
+OWNER completed full at exact482eacbd84ce640bd25cfaf4c75bbe1695621495:
+1612 passed,11warnings,64subtests,738.25s,saved PYTEST_EXIT_CODE=0;
+HEAD unchanged before/after, only untracked perr logs. Owner-local full log not
+independently read by agent. GitGuardian Security Checks completed SUCCESS on
+approved56d8105; zero legacy commit statuses. No invented test-CI pass or
+independent warning triage. History of red/interrupted runs remains evidence,
+not current acceptance: bounded separately approved one-row TEST orphan cleanup
+with zero dependencies preceded final green; no future deletion/reset permission.
+
+Integrated bounded safeguards: bound active identity/session, fresh tool/right
+checks, actor/args/tool-bound one-use confirmation, narrow owner/service grants,
+preview-only action_send botaction.view/literal dry_run=True, no publication/
+PENDING transition. Owner queued/running/outcome UI, source/task escaping,
+LLM-default management, test isolation/onboarding correction preserved.
+Merged/regression-verified is NOT deployed, live activated or business/security
+accepted. Broad /app XSS audit, durable approval/CAS and release/browser/live
+acceptance remain OPEN. Do not restart merged dispatcher privacy or typed work.
+
+Next assigned sequence: general queue PRD-05 lane, THEN per-attempt accounting/
+budget-reservation DESIGN (schema approval separate). Before implementation
+resolve fresh dev/open Drafts/board ownership; choose one bounded independent
+queue contract and preserve Owner parallel changes. No new queue code prepared
+in this integration-record task. PR29 deferred, PR30/31/32 occupied model-layout
+lanes separate/unmodified; do not run/merge them automatically.
+
+Existing .agent R3/R4 and R6–R9 remain binding: main dev checkout off limits,
+existing per-PR worktrees, sequential shared local test_schema, no schema create/
+reset/drop/stamp/migrate/Alembic without separate command. Agent prepares tests
+only; ZERO agent tests/collection/app imports/DB/migrations/browser/live calls.
+Owner main checkout was not changed; PR22 worktree/logs/branch retained, no
+cleanup or automatic branch deletion. Fetch-only inspection may observe dev;
+no instruction to switch/stash/commit Owner main or remove review worktree.
+
+This FOUR-file post-merge documentation record is PR #33; Owner explicitly
+approved its integration separately from PR22. Its actual merge state/SHA are
+in GitHub PR33. No new docs/design files, code/tests/rules/schema changes or
+replay requested. Future continuation uses fresh dev, not frozen session heads.
+
+
+## Latest raw-log diagnosis and prepared import-isolation follow-up
+
+Attached owner log for `706bfea` was selectively inspected: actual run directory
+is the retained PR22 worktree, Python3.12.6, collected1554; final1486 passed,
+68 failed,11 warnings,58 subtests,663.02s. Markdown renderer PASSED (line1413)
+and is not a failed node. Raw tier traceback includes plan_arrange_user and
+scoped inserts; earlier reconstructed traceback/list was inaccurate, not proof
+of an old checkout. Focused owner41/41 and139/139 remain separately reported.
+This is inspected owner evidence, NOT agent test execution.
+
+Later tracebacks import current_tenant_id/handle_collect from mock_infrastructure
+and JobManager() returns the fixture's SimpleNamespace without enqueue. These
+specific doubles are declared by returned-job-failure source fixtures, reused
+by dispatcher privacy. The dangerous global-import boundary is addressed in
+`99c8294`: load actual source with module-local declared from-import doubles,
+including late/relative imports; restore temporary private alias; notification
+mocks patch only that module's map. No application/rights/UI/schema change,
+no fake enqueue added or assertion weakened. Eight new regression methods
+PREPARED/NOT RUN; existing outcome25/privacy13 assertions retained. Other source
+fixtures are not globally rewritten; do not claim all68 failures fixed.
+
+Early CLI/digest arrange failures occur before this producer group and are a
+separate compatibility checkpoint, not dismissed as unrelated/pre-existing.
+Next: owner runs8/25/13 standalone scripts and the ordered producer-consumer
+pytest group in the handoff. Agent runs ZERO tests/imports/collections/DB/live
+calls; AST/whitespace/ref checks only. Full-suite rerun deferred until the short
+group is clean and remaining arrange failures are addressed. PR29 deferred;
+PR22 Draft/unmerged, no deployment/acceptance claim. Older sections below are
+historical checkpoints, not the current continuation.
+
+## Latest PR22 verification and fixture continuation
+
+Owner/local-agent evidence at exact `70f58a1`: standalone dispatch16 /
+identity18 / confirmation19 / action9 PASSED; DB/API/web group 133 PASSED,
+6 FAILED. Owner attributes the six failures to earlier PR code, not the last
+two-file correction; they are still OPEN integration failures. Full suite
+reported 1554 tests and timed out after ten minutes: NOT a completed pass,
+not proof that only six failures exist. Agent has not rerun any tests.
+
+Fresh dev `6f810a4` is included via `ef9c417`, retaining owner UI changes and
+updated markdown asset test. Fixture-only `31618a5` prepares fixes for five
+plan-tier arrange errors: isolated VIEWER actor, role_id and eager rights;
+owner scope only around source/task writes, quota checks outside the scope.
+No application/UI guard weakened; new fixture NOT RUN. Recheck renderer case
+on this integrated code rather than replace owner UI/test files. PR29 deferred.
+
+Next: owner fast-forwards the retained review worktree, checks the interrupted
+test-process/schema state without automatic reset/drop, then reruns plan tiers
+and web chat. If clean, complete the10-file regression group and investigate
+full-suite progress/stalls with verbose output and a diagnostic thread dump.
+Record exact tested SHA; timeout is not acceptance. PR22 remains Draft/unmerged.
+
 ## Read this first
 
-Latest checked dev: `3373a1eaa14a24e9e199e87d6021d6311e05cc45` (2026-10-09), after PR #24.
+Latest integration: PR22 MERGED into dev as `683c49e85918503119af47338200d8f762a52403` after explicit Owner approval. Merge tree matches approvedhead56d8105; executable code equals Owner-green482eacb1612 passed/11warnings/64subtests/saved exit0. GitGuardian success, no invented test-CI pass. Not deployed/live/security/business accepted. Next assigned general-queue lane, then spend-reservation DESIGN; PR29/30/31/32 separate. Agent ran no tests/schema/live operations.
 PR #12 merged as `72a57cb`; PR #16 as `c1bbc49`; PR #17 as `be333fe`; PR #18 as `4f01edb`;
 PR #19 as `f0a4510`; PR #20 as `57b5612`. Owner chat/notification UI changes and
 chat asset fix `9d83c9a` are preserved. On 2026-10-09 the owner reported
@@ -196,26 +296,120 @@ See [retirement-warning handoff](design/staged_retirement_log_privacy_handoff.md
 Next: owner/local acceptance evidence; the separate `_count_failed_staged`
 warning package is now prepared below, not merged.
 
-## Staged attempt-count warning privacy — prepared, not merged
+## Staged attempt-count warning privacy — merged, acceptance open
 
-Open [PR #25](https://github.com/Starck43/social-media-ai/pull/25); fresh baseline
-`3373a1e`, branch `fix/staged-attempt-log-privacy`, code `9bb566a`,
-tests/handoff `78a86be`. NOT MERGED; deployment/acceptance pending.
+PR #25 merged as `eb49d1d`; original baseline `3373a1e`,
+branch `fix/staged-attempt-log-privacy`, code `9bb566a`, tests/handoff `78a86be`.
+Merged status verified; deployment/application-test acceptance remains pending.
 
-- [ ] Prepared: only `_count_failed_staged` failure warning uses fixed event,
+- [x] Merged: only `_count_failed_staged` failure warning uses fixed event,
   bounded source ID and static storage-operation category, without raw exceptions.
 - [ ] Nine actual-helper/mocked-storage cases WRITTEN, NOT RUN. Static AST and
   new-test whitespace/line-length checks completed; no formatter/test execution.
-- [ ] PR #25 review/local acceptance and a NEW explicit owner merge command pending.
+- [x] PR #25 merge verified; this does not certify local/full-suite acceptance.
 
 Hash filtering/order/duplicates, attempt-count arguments, fallback zero, cleanup,
 transaction and cancellation unchanged. No staged-row deletion, dispatcher/UI/
 runtime-guard/collector outcome change. Prior PR #23/#24 remain merged; remaining
 collect/analyze/prune/provider/ORM/stored-error privacy and production gates open.
 See [attempt-warning handoff](design/staged_attempt_log_privacy_handoff.md).
-Next: owner/local results and PR review, then authorized integration; afterwards
+Next: owner/local results and acceptance after the verified merge; afterwards
 one separate prune warning or coordinated collect path. Preserve PR #22 journal
 entries when syncing; no identity/queue work or sender activation bundled here.
+
+## Identity/permissions boundary — draft PR #22, not merged
+
+Branch `ai/identity-permissions-boundary`; original baseline `57b5612`.
+Fresh dev `274cb2c` integrated into PR branch by `8f09a83`, after the earlier
+`0234c21` integration `f28b70f`; documentation #26/#27/#28, privacy #20/#23/#25,
+owner LLM tests and VIEWER fixture history are preserved.
+Implementation checkboxes below mean PREPARED code, NOT merged/accepted.
+
+- [x] Core anonymous denial, tenant/subject-bound source/task/scenario owner
+  allowlist, authenticated API manager scope and explicit CLI/service authority.
+- [x] Declared dispatch right checks in call_tool/execute; earlier 13 policy and
+  10 dispatch methods prepared, NOT RUN by agent.
+- [x] Runtime active resolved-tenant identity, eager bound User rights,
+  full-turn permission scope, exact session/chat binding (`b1e5d5`).
+- [x] Fresh per-dispatch authority, actor/session/role/contract/argument-bound
+  expiring consent, one-use registry approval, no later batch effects after
+  staging, protected other-actor cancel/stop (`f4f3fd`).
+- [x] Real action_send registration, explicit botaction.view, literal dry-run
+  only, PENDING preview with no approval/provider/transport effects (`ccb8905`).
+- [x] 46 new methods: identity18 / confirmation19 / action9; DB fixture and
+  PENDING assertions updated. All newly prepared checks remain NOT RUN.
+- [x] Owner push `963bf4f`, narrowed fixture `4735859` and owner-reported focused
+  rerun retained. User.role_id NOT NULL now satisfied with isolated VIEWER;
+  owner's `4b6e450` role change preserved, deleted imports restored separately.
+- [x] Prepared collect_now `source.analyze` declaration (`ec69981`), matching the
+  existing web collection right. Six additional dispatch/declaration regressions
+  WRITTEN, NOT RUN; no live collection, role/schema or dispatcher change.
+- [ ] Owner verification of this new block; full-suite completion; remaining raw
+  manager/unannotated tool and legacy arrangement coverage.
+- [ ] Legacy NULL-role reconciliation/automatic linking and durable confirmation
+  CAS/revocation fencing require separate contracts/approval. No exactly-once claim.
+
+See [existing handoff](design/identity_permissions_handoff.md) for matrix,
+commands, evidence and limitations; [board](design/README.md) for allocation.
+Original injection guard, runtime_process, dispatcher/parallel handlers and
+merged digest integration preserved. No personal router, schema/migration,
+queue redesign, cost package, live sends or deployment. Draft remains unmerged.
+
+## Parallel documentation — merged, acceptance separate
+
+PR #26 navigation merged as `10212b5`; PR #27 conservative operator observation/
+recovery runbook merged as `0234c21`. Eight tabletop scenarios are prepared, NOT
+executed here; merge does not establish deployment/restore acceptance.
+
+## Owner-reported local evidence — previous fixture, not the follow-up
+
+- `python tests/test_bootstrap_readiness_unit.py`: 24/24 passed.
+- `python -m scripts.setup_test_db --check`: same PostgreSQL database, working
+  schema public and separate test_schema confirmed; no per-tenant role seeding.
+- `python -m pytest -q tests/test_bootstrap_readiness_unit.py tests/test_api_health.py tests/test_setup_test_db.py`: 33/33 passed.
+- `python -m pytest -q tests/test_dispatcher_log_privacy_db.py`: 2/2 passed with
+  owner's previous fixture. This is NOT evidence for new setup `4735859`.
+- `python -m pytest -q`: interrupted at 120 seconds, NOT a completed green suite.
+
+OWNER-REPORTED, not rerun by the agent. Exact tested SHA/full logs/dependency
+versions not supplied; count of unchanged warnings does not prove other tests
+unaffected. Historical authoring results above remain separately attributed.
+
+## Owner confirmation — narrowed privacy fixture rerun
+
+Owner confirmed the focused rerun of `tests/test_dispatcher_log_privacy_db.py`
+passed after the new isolated-actor/narrow-owner fixture was published. This
+confirmation refers to the two parameterized privacy cases requested in the
+latest handoff. Exact tested SHA/output was not supplied; do not claim a verified
+head or attribute it to the full suite. Agent did not run tests.
+
+Previous 24/24 bootstrap and 33/33 focused readiness reports remain separately
+recorded. Full suite previously timed out at 120 seconds; no completed full-suite
+result or acceptance of the remaining permission/identity gates was supplied.
+PR #22 stays draft/open; no merge or deployment authority was given.
+
+## Current owner round-trip — recorded without rerunning
+
+Owner reports local setup --check, dispatcher privacy, identity boundary and
+permission_scope checks passed; exact tested SHA/commands/counts/logs were not
+supplied for this group. These are owner-reported focused results, not acceptance
+of the newer runtime/confirmation/action block or `ec69981` collection gate.
+Separately, owner reports **61 passed** across test_llm_client_factory,
+test_ai_output_boundaries and test_learning after integration on dev `274cb2c`.
+No complete-suite claim or exact invocation/log is supplied; do not rerun those
+61 tests merely to repeat their evidence.
+
+The owner's local dev has uncommitted chat.css, chat.html and test_web_chat.py.
+These files were not modified by this continuation; local-only edits cannot be
+certified from GitHub. Use an isolated review worktree, not switch/stash/reset
+that dev. Merge `8f09a83` reconciled only the board conflict and retained all
+incoming dev changes. New code is bounded to collect_now permission metadata;
+new checks add six methods to the existing dispatch test file. AST/whitespace
+and preserved injection-guard comparison completed; agent ran ZERO tests.
+
+Next: owner validates the pushed PR head, sends SHA + command/result evidence;
+review compatibility/raw-manager limits before Ready for review. Draft, merge,
+deployment and acceptance remain separate. No extra handoff file was created.
 
 ## Test target — shared PostgreSQL, isolated schema
 
@@ -253,12 +447,11 @@ acceptance; prepared guarded code is not evidence of safe live deployment.
 ## Remaining production/local work
 
 - [ ] PRD-02 / UX-02: fail-closed interactive identity, tenant/global permissions,
-  action_send contract and confirmations; no new live posting. (UX-02 itself is
-  delivered — registry binding, `botaction.update` gate, Viewer refusal,
-  expired-confirmation drop and the ok/no_data/partial/skipped run outcomes;
-  see `tests/test_agent_tool_registry.py` and `tests/test_job_status.py`. The
-  remaining items are PRD-02's fail-closed identity work and durable approval
-  tracking.)
+  action_send contract and confirmations; no new live posting. (Merged PR22
+  binds the real handler to a confirmed `botaction.view` read-only preview;
+  `dry_run=False` is refused, no ledger transition/publication. Registry/expiry
+  checks plus isolated fixture/outcome UI covered by Owner full482eacb1612
+  passed; merged683c49e. Durable approval/CAS and release acceptance remain open.)
 - [ ] PRD-03: complete spend accounting/reservations; approve billing-grade schema.
 - [ ] PRD-04: production profile, readiness, one migrator, private DB/restore drill.
 - [ ] PRD-05: general queue/scheduler correctness, leases and atomicity; investigate
@@ -277,7 +470,12 @@ replaces acceptance criteria nor authorizes deployment.
 1. Fetch fresh dev and open PR heads; PR #12/#16/#17/#18/#19/#20/#23 are merged.
    PR #22 remains a separate open identity/permissions branch with journal overlap. Preserve the owner
    runtime guard and check parallel changes before edits.
-2. Read this tracker and new job delivery handoff before changing retry/sending.
+2. Verify the new PR #22 identity/confirmation/preview block using its existing
+   handoff; do not attribute earlier focused fixture passes to this revision.
+   Continue remaining coverage/compatibility review. Owner priority: package 1 rights, package 2
+   general queue/lease/heartbeat/Job-task consistency, package 3 attempt-accounting
+   and budget-reservation DESIGN with separate schema approval. No personal router
+   or digest reintegration. Preserve parallel privacy continuation independently.
 3. Verify actual target migration state independently; 0087 merged is not deployed.
 4. Run the isolated tests and record actual results/commit, not historical counts.
 5. Keep force/legacy/uncertainty stops and frozen evidence intact. Do not restore

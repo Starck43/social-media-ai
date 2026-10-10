@@ -13,15 +13,15 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `0234c21ed2c1f171d46732153d91e654e9b3cfdb`, 2026-10-09, after authorized PR #27 integration.
+Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged by explicit Owner approval, history preserved. Merge tree equals approved56d8105; executable code equals Owner-green482eacb1612 passed/11warnings/64subtests/saved exit0. Regression-verified/merged is not deployed, live activated or security/business accepted. General queue is next assigned lane; broader gates remain OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Let that lane finish. Its latest fixture/evidence/compatibility notes stay in the PR; do not implement another rights package. |
-| C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
+| B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as683c49e; Owner482eacb full1612 passed/11warnings/64subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
+| C / general queue, PRD-05 | **ASSIGNED NEXT, not started:** same Owner-assigned lane after merged PR22 | Recheck fresh dev/open PRs/ownership; select one bounded independent queue contract. Checkpoint fencing is not general queue correctness. No new queue implementation in this journal update. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |
@@ -32,20 +32,24 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-PR #22's newer fixture is distinct from its earlier owner-run baseline.
+Latest Owner completed evidence: exact482eacb1612 passed/11warnings/64subtests/738.25s/saved exit0, unchanged HEAD. Approved merge683c49e has identical executable code; post-merge journal diff is docs-only, no retest by default. Separately approved one-row TEST cleanup (zero dependencies) is not future cleanup/reset permission. GitGuardian success; no invented independent tests/CI/warning triage.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 
 ### Concurrent-work boundary
 
-PR #22 owns current edits to `../IMPLEMENTATION_STATUS.md`,
-`next_tasks_handoff.md`, TENANCY and its identity source/tests. This documentation
-branch does **not** rewrite those files or copy its implementation. GitHub heads
-must be rechecked before the next package/merge. The legacy
-[next-session notes](next_tasks_handoff.md) stay compatible while that PR is open;
-use this page for task selection, the active PR for its detailed continuation.
-After synchronization, fold transient notes into this board rather than create
-another session-wide handoff. Preserve both lanes when reconciling the ledger.
+PR30 owns the tenancy-model split, PR31 notification-model layout, and PR32
+collection-model layout. These lanes belong to the parallel refactoring chat;
+do not duplicate them or treat queue work as approval to merge those PRs.
+Their PR bodies are the current separate task records.
+
+PR22 is closed/merged; PR33 records its FOUR-file post-merge documentation
+status only, not identity/runtime implementation.
+PR30/31/32 retain their separate structural model lanes; PR29 remains deferred.
+Check fresh heads and file ownership before the next package; preserve parallel
+corrections. The compatibility pointer and detailed handoff explain evidence,
+not competing backlog. Owner separately approved integration of this docs-only
+record; that authorization does not cover PR29–32 or future code changes.
 
 ## Technical catalog — open only what the selected task needs
 

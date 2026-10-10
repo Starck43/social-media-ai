@@ -18,6 +18,12 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from app.agent.confirmation import (
+    confirmed_dispatch_scope, make_pending_intent, pending_actor_matches, pending_rejection,
+)
+from app.agent.identity import (
+    RuntimeIdentity, refresh_runtime_identity, resolve_runtime_identity, session_matches_identity,
+)
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
@@ -44,24 +50,20 @@ def is_owner(inbound: Any) -> bool:
 
 
 def _pending_confirmation(session: Any) -> Optional[dict]:
-    state = session.state or {}
+    state = session.state if isinstance(session.state, dict) else {}
     pending = state.get("pending_confirmation")
-    if isinstance(pending, dict) and pending.get("expires_at", "") > datetime.now(timezone.utc).isoformat():
-        return pending
-    if pending:
-        state.pop("pending_confirmation", None)
-        session.state = state
-    return None
+    # Expired/legacy intents must be explicitly refused on yes, never executed.
+    return pending if isinstance(pending, dict) else None
 
 
 async def _set_pending(session: Any, payload: dict) -> None:
-    state = dict(session.state or {})
+    state = dict(session.state) if isinstance(session.state, dict) else {}
     state["pending_confirmation"] = payload
     await session.save_state(state)
 
 
 async def _clear_pending(session: Any) -> None:
-    state = dict(session.state or {})
+    state = dict(session.state) if isinstance(session.state, dict) else {}
     if state.pop("pending_confirmation", None) is not None:
         await session.save_state(state)
 
@@ -317,146 +319,207 @@ async def web_session_id(user_id: int) -> Optional[int]:
 
 
 async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
-    """Agent turn inside an already resolved workspace."""
-    # Resolve the User so permission checks have a subject.
-    # For web: resolution.user_id is the users.id.
-    # For telegram/MAX: resolve via tenant_users → user_id (may be None).
-    user = None
-    if resolution.channel == WEB_CHANNEL:
-        from app.models import User
-        user = await User.objects.get(id=int(resolution.user_id))
-    else:
-        from app.models.managers.tenant_manager import tenant_users
-        tu = await tenant_users.get(
-            channel=resolution.channel,
-            external_user_id=resolution.user_id,
-        )
-        if tu and tu.user_id is not None:
-            from app.models import User
-            user = await User.objects.get(id=tu.user_id)
-    # user is None for unmessenger users without web binding → bypass (legacy).
+    """Admit a bound active identity and retain its scope for the WHOLE turn."""
+    if (
+        getattr(inbound, "channel", None) != getattr(resolution, "channel", None)
+        or str(getattr(inbound, "chat_id", "")) != getattr(resolution, "chat_id", None)
+        or str(getattr(inbound, "user_id", "")) != getattr(resolution, "user_id", None)
+    ):
+        return "Не удалось подтвердить пользователя этого рабочего пространства."
+    identity = await resolve_runtime_identity(resolution)
+    if identity is None:
+        return "Чат не связан с активным пользователем рабочего пространства. Обратитесь к администратору."
+    # The scope wraps the whole turn, not just the preamble: the tool loop's gate
+    # reads `get_current_user()`, and a scope that closed early would leave it
+    # None. Anonymous identities are fail-closed here; keep the admitted actor
+    # available for every tool gate and confirmation throughout the turn.
+    with permission_scope(identity.user, is_owner=identity.is_owner):
+        return await _handle_authorized_turn(inbound, resolution, identity)
 
-    # The scope must wrap the whole turn, not just the preamble: the tool
-    # loop's permission gate reads `get_current_user()`, and a scope that
-    # closes early leaves it None — which every check treats as the legacy
-    # pass-through, silently ungating every write tool.
-    with permission_scope(user, is_owner=resolution.is_owner):
-        text = inbound.text.strip()
 
-        # Check for prompt injection attempts
-        injection_error = _check_prompt_injection(text)
-        if injection_error:
-            # Create a session for logging the injection attempt
-            from app.models.managers.agent_session_manager import agent_sessions
-            session = await agent_sessions.get_or_create(
-                channel=inbound.channel,
-                chat_id=str(inbound.chat_id),
-                kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-                is_owner=resolution.is_owner,
-            )
-            if session:
-                await session.append("user", text)
-                await session.append("assistant", injection_error)
-                await session.touch()
-            return injection_error
+async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: RuntimeIdentity) -> Optional[str]:
+    """An admitted turn; routing and the existing injection guard are preserved."""
+    text = inbound.text.strip()
 
-        if resolution.onboarded:
-            from app.models.managers.tenant_manager import tenants
-
-            tenant = await tenants.get(id=resolution.tenant_id)
-            name = getattr(tenant, "name", "workspace")
-            role_label = "Суперпользователь" if resolution.is_owner else "Участник"
-            return (
-                f"Готово! Этот чат привязан к рабочему пространству «{name}». "
-                f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
-            )
-
-        limit = await tenant_daily_cost_limit(resolution.tenant_id)
-        if limit and await _cost_today() >= limit:
-            return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
-
+    # Check for prompt injection attempts
+    injection_error = _check_prompt_injection(text)
+    if injection_error:
+        # Create a session for logging the injection attempt
         from app.models.managers.agent_session_manager import agent_sessions
-
         session = await agent_sessions.get_or_create(
             channel=inbound.channel,
             chat_id=str(inbound.chat_id),
             kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
-            is_owner=resolution.is_owner,
+            is_owner=identity.is_owner,
         )
-        if session is None:
-            logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
-            return "Не удалось открыть сессию агента."
-
-        if text.split()[0].split("@")[0].lower() == "/stop":
-            from app.models.managers.agent_message_manager import agent_messages
-
-            await agent_messages.clear(session.id)
-            await _clear_pending(session)
-            return "История диалога очищена."
-
-        if text.split()[0].split("@")[0].lower() == "/help":
-            from app.agent.prompts import AGENT_HELP_TEXT
-
+        if session_matches_identity(session, identity):
             await session.append("user", text)
-            await session.append("assistant", AGENT_HELP_TEXT)
+            await session.append("assistant", injection_error)
             await session.touch()
-            return AGENT_HELP_TEXT
+        return injection_error
 
-        command = text.split()[0].split("@")[0].lower()
-        if command in ("/good", "/bad"):
-            return await _handle_feedback(session, inbound, command, text)
+    if resolution.onboarded:
+        from app.models.managers.tenant_manager import tenants
 
-        if command == "/memory":
-            return await _handle_memory_command(session, resolution, text)
+        tenant = await tenants.get(id=resolution.tenant_id)
+        name = getattr(tenant, "name", "workspace")
+        role_label = "Суперпользователь" if identity.is_owner else "Участник"
+        return (
+            f"Готово! Этот чат привязан к рабочему пространству «{name}». "
+            f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
+        )
 
-        # 1) Confirmation flow first (before touching the model)
+    limit = await tenant_daily_cost_limit(resolution.tenant_id)
+    if limit and await _cost_today() >= limit:
+        return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
+
+    from app.models.managers.agent_session_manager import agent_sessions
+
+    session = await agent_sessions.get_or_create(
+        channel=inbound.channel,
+        chat_id=str(inbound.chat_id),
+        kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
+        is_owner=identity.is_owner,
+    )
+    if not session_matches_identity(session, identity):
+        logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
+        return "Не удалось открыть сессию агента."
+
+    fresh = await refresh_runtime_identity(identity)
+    if fresh is None or not session_matches_identity(session, fresh):
+        return "Доступ к рабочему пространству изменился. Запрос остановлен."
+    identity = fresh
+
+    if text.split()[0].split("@")[0].lower() == "/stop":
         pending = _pending_confirmation(session)
-        if pending:
-            verdict = text.lower()
-            if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
-                # Re-check permission at confirmation time (user role may have changed)
-                perm = pending.get("required_permission")
-                if perm and not has_permission_by_codename(get_current_user(), perm):
+        if (
+            pending is not None and isinstance(pending.get("authorization"), dict)
+            and not pending_actor_matches(pending, identity)
+        ):
+            return "Это подтверждение относится к другому пользователю."
+        from app.models.managers.agent_message_manager import agent_messages
+
+        await agent_messages.clear(session.id)
+        await _clear_pending(session)
+        return "История диалога очищена."
+
+    if text.split()[0].split("@")[0].lower() == "/help":
+        from app.agent.prompts import AGENT_HELP_TEXT
+
+        await session.append("user", text)
+        await session.append("assistant", AGENT_HELP_TEXT)
+        await session.touch()
+        return AGENT_HELP_TEXT
+
+    command = text.split()[0].split("@")[0].lower()
+    if command in ("/good", "/bad"):
+        return await _handle_feedback(session, inbound, command, text)
+
+    if command == "/memory":
+        return await _handle_memory_command(session, identity, text)
+
+    # 1) Confirmation flow first (before touching the model)
+    pending = _pending_confirmation(session)
+    if pending:
+        verdict = text.lower()
+        if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
+            fresh = await refresh_runtime_identity(identity)
+            spec = TOOL_REGISTRY.get(pending.get("name"))
+            rejection = "identity_revoked" if fresh is None else pending_rejection(pending, fresh, session, spec)
+            if rejection is None:
+                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                        rejection = "permission_revoked"
+            if rejection is not None:
+                # Another group member cannot consume the rightful actor's intent.
+                if rejection != "actor_mismatch":
                     await _clear_pending(session)
-                    await session.append("user", text)
-                    reply = f"Подтверждение отклонено: у вас нет прав для этого действия."
-                    await session.append("assistant", reply)
-                    await session.touch()
-                    return reply
-                await _clear_pending(session)
                 await session.append("user", text)
-                try:
-                    result = await call_tool(pending["name"], pending["args"])
-                    body = _format_tool_result(pending["name"], result)
-                    seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
-                    body = str(e)
-                    seed = f"Ошибка выполнения {pending['name']}: {e}"
-                # Overwrite the staged «Требуется подтверждение» tool row so a
-                # resumed model loop sees the tool as executed, not still pending.
-                await _write_tool_result(session, pending, body)
-                await session.append("assistant", seed)
-                await session.touch()
-                # Resume the model loop: the owner's «да» completes one step of the
-                # plan, and the agent keeps going (create source -> create task)
-                # instead of waiting for the next message.
-                messages = await _build_messages(session)
-                return await _run_tool_loop(session, messages, tool_specs(), limit, seed_reply=seed)
-            if verdict in ("нет", "no", "n", "-", "отменяю"):
-                await _clear_pending(session)
-                await session.append("user", text)
-                reply = "Отменено."
+                reply = "Подтверждение отклонено. Попросите подготовить действие заново."
                 await session.append("assistant", reply)
                 await session.touch()
                 return reply
-            # Not a clear verdict - drop the pending action and fall through to the model
+            await _clear_pending(session)
+            await session.append("user", text)
+            try:
+                # Consumption awaits storage; reload AFTER it, immediately before effects.
+                fresh = await refresh_runtime_identity(identity)
+                if fresh is None or pending_rejection(pending, fresh, session, TOOL_REGISTRY.get(pending["name"])):
+                    return "Подтверждение отклонено. Попросите подготовить действие заново."
+                spec = TOOL_REGISTRY[pending["name"]]
+                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                        return "Подтверждение отклонено: права изменились."
+                    with confirmed_dispatch_scope(fresh, spec, pending["args"]):
+                        result = await call_tool(pending["name"], pending["args"])
+                body = _format_tool_result(pending["name"], result)
+                seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
+                body = str(e)
+                seed = f"Ошибка выполнения {pending['name']}: {e}"
+            # Overwrite the staged «Требуется подтверждение» tool row so a
+            # resumed model loop sees the tool as executed, not still pending.
+            await _write_tool_result(session, pending, body)
+            await session.append("assistant", seed)
+            await session.touch()
+            # Resume the model loop: the owner's «да» completes one step of the
+            # plan, and the agent keeps going (create source -> create task)
+            # instead of waiting for the next message.
+            messages = await _build_messages(session)
+            return await _run_tool_loop(session, messages, tool_specs(), limit, identity, seed_reply=seed)
+        if verdict in ("нет", "no", "n", "-", "отменяю"):
+            if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
+                return "Это подтверждение относится к другому пользователю."
+            await _clear_pending(session)
+            await session.append("user", text)
+            reply = "Отменено."
+            await session.append("assistant", reply)
+            await session.touch()
+            return reply
+        # An unrelated group member must not cancel/overwrite another actor's intent.
+        if not isinstance(pending.get("authorization"), dict) or pending_actor_matches(pending, identity):
             await _clear_pending(session)
 
-        # 2) Model loop with tool calling
-        await session.append("user", text)
-        messages = await _build_messages(session)
-        return await _run_tool_loop(session, messages, tool_specs(), limit)
+    # 2) Model loop with tool calling
+    await session.append("user", text)
+    messages = await _build_messages(session)
+    return await _run_tool_loop(session, messages, tool_specs(), limit, identity)
+
+
+async def _dispatch_or_stage(
+    session: Any, name: str, args: Any, call_id: Any, identity: RuntimeIdentity,
+) -> tuple[str, bool]:
+    """Fresh identity and declared rights for every tool, before any effect."""
+    spec = TOOL_REGISTRY.get(name)
+    if spec is None:
+        return f"Unknown tool: {name}", False
+    if not isinstance(args, dict) or any(not isinstance(key, str) for key in args):
+        return "Некорректные аргументы инструмента.", False
+    fresh = await refresh_runtime_identity(identity)
+    if fresh is None or not session_matches_identity(session, fresh):
+        return "Доступ изменился. Инструмент не выполнен.", True
+    with permission_scope(fresh.user, is_owner=fresh.is_owner):
+        if spec.required_permission is not None and not has_permission_by_codename(fresh.user, spec.required_permission):
+            return "У вас нет прав для вызова этого инструмента.", False
+        if spec.confirm:
+            existing = _pending_confirmation(session)
+            if (
+                existing is not None and isinstance(existing.get("authorization"), dict)
+                and not pending_actor_matches(existing, fresh)
+            ):
+                return "Ожидается подтверждение действия другого пользователя.", True
+            intent = make_pending_intent(fresh, session, spec, args, call_id)
+            if intent is None:
+                return "Не удалось безопасно подготовить подтверждение.", True
+            await _set_pending(session, intent)
+            return _human_confirmation(name, intent["args"]), True
+        try:
+            result = await call_tool(name, args)
+            return _format_tool_result(name, result), False
+        except Exception as e:  # existing handler-error semantics; global redaction is separate
+            logger.warning(f"Tool {name} failed: {e}")
+            return f"Tool error: {e}", False
 
 
 async def _run_tool_loop(
@@ -464,6 +527,7 @@ async def _run_tool_loop(
     messages: list[dict],
     specs: list[dict],
     limit: Optional[float],
+    identity: RuntimeIdentity,
     *,
     seed_reply: Optional[str] = None,
 ) -> str:
@@ -475,6 +539,11 @@ async def _run_tool_loop(
     """
     reply: Optional[str] = seed_reply
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
+        fresh = await refresh_runtime_identity(identity)
+        if fresh is None or not session_matches_identity(session, fresh):
+            denied = "Доступ к рабочему пространству изменился. Запрос остановлен."
+            await session.append("assistant", denied)
+            return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
             reply = _join_replies(reply, "Дневной лимит расходов исчерпан во время обработки запроса.")
             break
@@ -516,61 +585,24 @@ async def _run_tool_loop(
         )
 
         stop_loop = False
+        stop_output = None
         tool_output = ""
         for call in tool_calls:
             name = call.get("name") or ""
             args = call.get("arguments") or {}
-            spec = TOOL_REGISTRY.get(name)
-            if spec is None:
-                tool_output = f"Unknown tool: {name}"
-            elif spec.required_permission:
-                # Permission gate: check before dispatch
-                if not has_permission_by_codename(get_current_user(), spec.required_permission):
-                    tool_output = f"У вас нет прав для вызова инструмента «{name}». Обратитесь к владельцу workspace."
-                elif spec.confirm:
-                    await _set_pending(
-                        session,
-                        {
-                            "name": name,
-                            "args": args,
-                            "tool_call_id": call.get("id"),
-                            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                            "required_permission": spec.required_permission,
-                        },
-                    )
-                    tool_output = _human_confirmation(name, args)
-                    stop_loop = True
-                else:
-                    try:
-                        result = await call_tool(name, args)
-                        tool_output = _format_tool_result(name, result)
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning(f"Tool {name} failed: {e}")
-                        tool_output = f"Tool error: {e}"
-            elif spec.confirm:
-                await _set_pending(
-                    session,
-                    {
-                        "name": name,
-                        "args": args,
-                        "tool_call_id": call.get("id"),
-                        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    },
-                )
-                tool_output = _human_confirmation(name, args)
-                stop_loop = True
+            if stop_loop:
+                # Every provider tool_call needs a result, but no later call may run
+                # or replace the first staged intent in this assistant batch.
+                tool_output = "Не выполнено: обработка остановлена на предыдущем инструменте."
             else:
-                try:
-                    result = await call_tool(name, args)
-                    tool_output = _format_tool_result(name, result)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Tool {name} failed: {e}")
-                    tool_output = f"Tool error: {e}"
+                tool_output, stop_loop = await _dispatch_or_stage(session, name, args, call.get("id"), identity)
+                if stop_loop:
+                    stop_output = tool_output
             await session.append("tool", tool_output, tool_call_id=call.get("id"))
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": tool_output})
 
         if stop_loop:
-            reply = _join_replies(reply, tool_output)
+            reply = _join_replies(reply, stop_output)
             break
     else:
         reply = _join_replies(reply, "Достигнут лимит итераций агента.")

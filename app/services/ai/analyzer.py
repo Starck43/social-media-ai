@@ -46,10 +46,10 @@ class AIAnalyzer:
         # Callers may inspect a delta; no raw provider result is exposed here.
         self.reported_errors = 0
 
-    def _record_result_error(self, result: Any) -> None:
+    def _record_result_error(self, result: Any) -> bool:
         """Record explicit client failure envelopes, not unknown/empty results."""
         if not isinstance(result, dict):
-            return
+            return False
         response = result.get("response")
         parsed = result.get("parsed")
         analysis = parsed.get("analysis") if isinstance(parsed, dict) else parsed
@@ -57,6 +57,8 @@ class AIAnalyzer:
         error_stub = isinstance(analysis, str) and (analysis.startswith("Timeout") or analysis.startswith("Error"))
         if response_failed or error_stub:
             self.reported_errors += 1
+            return True
+        return False
 
     async def analyze_content(
         self,
@@ -175,6 +177,7 @@ class AIAnalyzer:
         classified = ContentClassifier.classify_content(content)
 
         try:
+            errors_before = self.reported_errors
             # Analyze each content type with appropriate LLM
             analysis_results = {}
 
@@ -189,7 +192,10 @@ class AIAnalyzer:
                     trigger_config,
                     task_payload,
                 )
-                self._record_result_error(text_result)
+                if self._record_result_error(text_result):
+                    # Preserve request/response usage for existing accounting;
+                    # provider failure text is not a semantic analysis result.
+                    text_result = {**text_result, "parsed": {}}
                 if text_result:
                     analysis_results["text_analysis"] = text_result
 
@@ -198,7 +204,10 @@ class AIAnalyzer:
                 image_result = await self._analyze_images(
                     classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
-                self._record_result_error(image_result)
+                if self._record_result_error(image_result):
+                    # Preserve request/response usage for existing accounting;
+                    # provider failure text is not a semantic analysis result.
+                    image_result = {**image_result, "parsed": {}}
                 if image_result:
                     analysis_results["image_analysis"] = image_result
 
@@ -207,29 +216,16 @@ class AIAnalyzer:
                 video_result = await self._analyze_videos(
                     classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload
                 )
-                self._record_result_error(video_result)
+                if self._record_result_error(video_result):
+                    # Preserve request/response usage for existing accounting;
+                    # provider failure text is not a semantic analysis result.
+                    video_result = {**video_result, "parsed": {}}
                 if video_result:
                     analysis_results["video_analysis"] = video_result
 
-            # Check if we have any meaningful analysis results.
-            #
-            # A timed-out or errored LLM call still returns a truthy `parsed`
-            # stub (`{"analysis": "Timeout"}` / `{"analysis": "Error: ..."}`),
-            # which would otherwise be saved as a real analysis and mark the
-            # batch as analyzed — silently blocking a retry and leaving the
-            # chain with a stats-only entry and no conclusion. Treat those
-            # stubs as "no result" so the batch stays unanalysed and is retried.
-            has_results = False
-            for result in analysis_results.values():
-                if not result or not result.get("parsed"):
-                    continue
-                parsed = result["parsed"]
-                text = parsed.get("analysis") if isinstance(parsed, dict) else parsed
-                if isinstance(text, str) and (text.startswith("Timeout") or text.startswith("Error")):
-                    logger.warning(f"LLM result is an error stub ('{text[:40]}'), not saving analysis")
-                    continue
-                has_results = True
-                break
+            # Failed envelopes retain tracing/usage above, but their parsed
+            # stubs must not become conclusions or influence theme matching.
+            has_results = any(result and result.get("parsed") for result in analysis_results.values())
 
             if not has_results:
                 logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
@@ -237,7 +233,8 @@ class AIAnalyzer:
 
             # Create unified summary if multiple analyses
             unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
-            self._record_result_error(unified_summary)
+            if self._record_result_error(unified_summary):
+                unified_summary = {**unified_summary, "parsed": {}}
 
             # Auto-generate topic_chain_id if not provided
             # Phase 1: use resolve_chain_async for proper lookup by topic_hint
@@ -279,6 +276,7 @@ class AIAnalyzer:
                 analysis_date=analysis_date,
                 content_hash=batch_hash(content),
                 content_hashes=[item_hash(i) for i in content],
+                reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
                 trigger_config=trigger_config,
             )
@@ -1146,10 +1144,18 @@ class AIAnalyzer:
         content_hashes: Optional[list[str]] = None,
         task_payload: Optional[dict[str, Any]] = None,
         trigger_config: Optional[dict[str, Any]] = None,
+        reported_partial: bool = False,
     ) -> Any | None:
-        """Save comprehensive analysis results to database."""
+        """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
         from datetime import datetime
+
+        # A useful sibling is not proof the entire new batch was analyzed.
+        # Existing successful hashes are still retained by the update union.
+        # This narrows coverage only; it does not schedule or enable retries.
+        if reported_partial is True:
+            content_hash = None
+            content_hashes = []
 
         # Use provided date or default to today
         if analysis_date is None:
@@ -1177,6 +1183,18 @@ class AIAnalyzer:
                     )
                     self.filtered_skipped += 1
                     return None
+
+        existing_analysis = None
+        if reported_partial is True:
+            existing_analysis = await AIAnalytics.objects.filter(
+                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
+            ).first()
+            if existing_analysis:
+                # Do not replace A's useful body while retaining its hashes.
+                # Guard before pricing/tracing/validation or related writes;
+                # partial B cannot be represented separately in this daily row.
+                logger.info("partial_analysis_update_skipped")
+                return None
 
         # Extract LLM tracing info from first available analysis
         llm_model = None
@@ -1322,6 +1340,10 @@ class AIAnalyzer:
             },
         }
 
+        if reported_partial is True:
+            comprehensive_data["analysis_metadata"]["analysis_complete"] = False
+        # Absence of this marker is not proof of complete media/content coverage.
+
         # Dedup ledger: hashes of the items this run analyzed (merged with the
         # previous set on the update branch below).
         if content_hashes is not None:
@@ -1356,9 +1378,10 @@ class AIAnalyzer:
         primary_provider = list(providers_used)[0] if providers_used else None
 
         # Check if analysis already exists for this date
-        existing_analysis = await AIAnalytics.objects.filter(
-            source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
-        ).first()
+        if reported_partial is not True:
+            existing_analysis = await AIAnalytics.objects.filter(
+                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
+            ).first()
 
         if existing_analysis:
             # Merge dedup sets: a partial re-run must not forget (and re-pay

@@ -32,7 +32,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest Owner completed evidence: exact482eacb1612 passed/11warnings/64subtests/738.25s/saved exit0, unchanged HEAD. Approved merge683c49e has identical executable code; post-merge journal diff is docs-only, no retest by default. Separately approved one-row TEST cleanup (zero dependencies) is not future cleanup/reset permission. GitGuardian success; no invented independent tests/CI/warning triage.
+Latest Owner completed evidence: exact 482eacb 1612 passed/11 warnings/64 subtests/738.25s/saved exit0, unchanged HEAD. Approved merge 683c49e has identical executable code; post-merge journal diff is docs-only, no retest by default. Separately approved one-row TEST cleanup (zero dependencies) is not future cleanup/reset permission. GitGuardian success; no invented independent tests/CI/warning triage.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 

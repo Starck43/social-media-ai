@@ -284,7 +284,11 @@ async def job_run(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Re-execute one job row now, synchronously (the dispatcher's claim path)."""
+    """Attempt the existing claim path and report only a confirmed outcome.
+
+    This route does not re-arm failed rows or infer completion from a missing
+    claim. A dispatcher error propagates rather than becoming a success flash.
+    """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
@@ -318,10 +322,20 @@ async def job_run(
     from app.jobs.dispatcher import run_job_now
 
     result = await run_job_now(job.id, allow_retry=False)
-    if result and result.get("status") == "failed":
+    if result is None:
+        add_flash(request, "error", "Запуск не начат: задание не удалось захватить. Проверьте его статус.")
+    elif not isinstance(result, dict):
+        add_flash(request, "error", "Результат запуска не подтверждён. Проверьте состояние задания.")
+    elif result.get("status") == "failed":
         add_flash(request, "error", f"Задание снова упало: {result.get('error', '?')}")
+    elif result.get("status") == "done":
+        details = result.get("result")
+        if isinstance(details, dict) and details.get("status") == "skipped":
+            add_flash(request, "info", "Задание завершено со статусом «пропущено».")
+        else:
+            add_flash(request, "success", "Задание выполнено")
     else:
-        add_flash(request, "success", "Задание выполнено")
+        add_flash(request, "error", "Выполнение задания не подтверждено. Проверьте его статус.")
     return RedirectResponse("/app/jobs", status_code=302)
 
 

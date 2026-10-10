@@ -36,8 +36,8 @@ def scenario(**kwargs):
     return SimpleNamespace(**(defaults | kwargs))
 
 
-def model(id_, *, provider_default=False, default=False, active=True, provider_active=True, caps=("text",), cost=0.1):
-    provider = SimpleNamespace(id=id_, is_active=provider_active, is_default=provider_default)
+def model(id_, *, default=False, active=True, provider_active=True, caps=("text",), cost=0.1):
+    provider = SimpleNamespace(id=id_, is_active=provider_active)
     return SimpleNamespace(
         id=id_,
         provider=provider,
@@ -67,7 +67,7 @@ async def test_strategy_cost_and_multimodal(monkeypatch):
 
 
 async def test_strategy_respects_explicit_defaults_and_active_provider(monkeypatch):
-    disabled = model(1, provider_active=False, default=True, provider_default=True)
+    disabled = model(1, provider_active=False, default=True)
     chosen = model(3, default=True, cost=1)
     cheap = model(2, cost=0.01)
     assert await resolve(monkeypatch, [disabled, cheap, chosen], "cost_efficient") is cheap

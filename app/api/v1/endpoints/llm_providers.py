@@ -18,7 +18,7 @@ def _provider_response(p: LLMProvider) -> LLMProviderResponse:
     return LLMProviderResponse(
         id=p.id, name=p.name, description=p.description,
         api_format=p.api_format, base_url=p.base_url, auth_header=p.auth_header,
-        is_active=p.is_active, is_default=p.is_default,
+        is_active=p.is_active,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
     )

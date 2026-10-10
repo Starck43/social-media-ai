@@ -12,7 +12,6 @@ class LLMProviderCreate(BaseModel):
     base_url: str = Field(..., description="Base API URL, e.g. https://api.openai.com/v1")
     auth_header: Optional[str] = Field(None, description='Custom auth header, e.g. "x-api-key: {key}"')
     is_active: bool = Field(default=True)
-    is_default: bool = Field(default=False)
 
 
 class LLMProviderUpdate(BaseModel):
@@ -22,7 +21,6 @@ class LLMProviderUpdate(BaseModel):
     base_url: Optional[str] = None
     auth_header: Optional[str] = None
     is_active: Optional[bool] = None
-    is_default: Optional[bool] = None
 
 
 class LLMProviderResponse(BaseModel):
@@ -33,7 +31,6 @@ class LLMProviderResponse(BaseModel):
     base_url: str
     auth_header: Optional[str]
     is_active: bool
-    is_default: bool
     created_at: str
     updated_at: str
 

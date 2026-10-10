@@ -25,7 +25,6 @@ class LLMProvider(Base, TimestampMixin):
     encrypted_api_key: Mapped[str | None] = Column(Text, nullable=True)
 
     is_active: Mapped[bool] = Column(Boolean, default=True)
-    is_default: Mapped[bool] = Column(Boolean, default=False)
 
     models = relationship(
         "LLMModel",

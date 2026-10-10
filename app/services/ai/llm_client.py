@@ -66,21 +66,17 @@ def _cap_text(m: LLMModel) -> bool:
     return m.model_type in ("text", "image")  # image-capable models also handle text
 
 
-def default_model_sort_key(m: LLMModel) -> tuple[bool, bool, int]:
+def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
     """Order key for default-model resolution.
 
     Shared by every place that picks "the" model (digest, agent fallback
-    chain, settings dropdown): default provider first, then the default
-    model, then lowest id. Same tuple as LLMModelManager's resolvers, so the
-    admin flags predict the runtime choice. A missing relation is treated as
-    non-default so the picker never crashes — it just deprioritises the row.
+    chain, settings dropdown): the model flagged `is_default` first, then the
+    lowest id. Only models carry the default flag — a provider-level flag
+    used to outrank it, which silently overrode the operator's own default
+    model and forked the fleet when two providers were flagged. A missing
+    attribute is treated as non-default so the picker never crashes.
     """
-    provider = getattr(m, "provider", None)
-    return (
-        not bool(getattr(provider, "is_default", False)),
-        not bool(getattr(m, "is_default", False)),
-        int(getattr(m, "id", 0) or 0),
-    )
+    return (not bool(getattr(m, "is_default", False)), int(getattr(m, "id", 0) or 0))
 
 
 async def _allowed_model_types() -> Optional[set[str]]:
@@ -620,7 +616,15 @@ async def chat_with_fallback(
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
     allowed_types = await _allowed_model_types()
-    text_models = [m for m in models if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types)]
+    # Capability-aware tier check: `model_type` is a comma-separated list
+    # ("text,image"), so comparing the raw string to the plan's set dropped
+    # every multimodal row even when the plan covers all its capabilities —
+    # including a fleet-default model like ("text,image") on a business plan.
+    # Subset semantics keep the tier promise (a text-only plan still never
+    # routes to a model that also bills image/video).
+    text_models = [
+        m for m in models if _cap_text(m) and (allowed_types is None or set(m.capabilities) <= allowed_types)
+    ]
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
     text_models = [m for m in text_models if m.provider and m.provider.is_active]

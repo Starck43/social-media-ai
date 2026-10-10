@@ -278,6 +278,7 @@ class LLMModelManager(BaseManager):
         3. Same type, active
         """
         from ..ai_analytics import AIAnalytics
+        from app.services.ai.llm_client import default_model_sort_key
 
         # Get all active models of this type with provider prefetched
         # Reassignment preserves the exact model type and active provider.
@@ -312,17 +313,18 @@ class LLMModelManager(BaseManager):
             except Exception:
                 pass  # Fall through to strategy 3
 
-        # Strategy 3: any active same type (priority: provider.is_default, model.is_default, id)
-        models.sort(key=lambda m: (not m.provider.is_default, not m.is_default, m.id))
+        # Strategy 3: any active same type (priority: model default flag, id)
+        models.sort(key=lambda m: default_model_sort_key(m))
         return models[0] if models else None
 
     async def resolve_default_model(self, model_type: str, strategy: str | None = None) -> Optional["LLMModel"]:
         """Resolve a capability to a model on an active provider.
 
-        Without a strategy and for quality, fleet defaults lead. Cost-efficient
-        routing minimizes the combined per-1K tariff, using defaults only to
-        break tariff ties. Multimodal prefers capabilities within equal default
-        ranks. Price is not a proxy for quality.
+        Without a strategy and for quality, the model flagged as default
+        leads. Cost-efficient routing minimizes the combined per-1K tariff,
+        using defaults only to break tariff ties. Multimodal prefers
+        capabilities within equal default ranks. Price is not a proxy for
+        quality.
         """
         from app.services.ai.llm_client import default_model_sort_key
         from app.utils.enum_helpers import get_enum_value
@@ -345,6 +347,6 @@ class LLMModelManager(BaseManager):
                 preference = 0
             if strategy_value == "cost_efficient":
                 return (preference, *defaults)
-            return (*defaults[:2], preference, defaults[2])
+            return (defaults[0], preference, defaults[1])
 
         return min(models, key=sort_key)

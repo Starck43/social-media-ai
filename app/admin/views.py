@@ -1237,9 +1237,9 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     # это часть настройки, а не чтение.
     action_permissions = {"test-connection": ActionType.CONFIGURE}
 
-    column_list = ["id", "name", "api_format", "base_url", "is_default", "is_active"]
+    column_list = ["id", "name", "api_format", "base_url", "is_active"]
     column_searchable_list = ["name", "base_url"]
-    column_sortable_list = ["name", "api_format", "is_default", "is_active"]
+    column_sortable_list = ["name", "api_format", "is_active"]
 
     def details_query(self, request: Request) -> Select:
         # `LLMModel.__str__` renders the provider name, so the related models must
@@ -1260,7 +1260,6 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
             "auth_header": "Заголовок авторизации",
             "encrypted_api_key": "API ключ (зашифрован)",
             "is_active": "Активен",
-            "is_default": "По умолчанию",
         },
         **BaseAdmin.column_labels,
     )
@@ -1300,10 +1299,6 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
             "label": "API ключ",
             "description": "Ключ будет зашифрован перед сохранением в БД",
         },
-        "is_default": {
-            "label": "По умолчанию",
-            "description": "Этот провайдер будет в приоритете при авто-выборе",
-        },
         "is_active": {
             "label": "Активен",
             "description": "Отключите, чтобы исключить провайдера из маршрутизации и авто-выбора моделей",
@@ -1339,19 +1334,6 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
             logger.error(f"Connection test for {provider.name} failed: {e}")
             request.session["admin_message"] = {"type": "error", "message": f"❌ {provider.name}: {e}"}
         return RedirectResponse(request.url_for("admin:list", identity=self.identity))
-
-    async def on_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
-        await super().on_model_change(data, model, is_created, request)
-
-        if getattr(model, "is_default", False):
-            # Single default provider fleet-wide: clear the flag on every
-            # other row *before* this one commits. Every default-model
-            # resolver ranks on provider.is_default first, so two defaults
-            # fork the fleet into an id-lottery.
-            qs = LLMProvider.objects.filter(is_default=True)
-            if getattr(model, "id", None) is not None:
-                qs = qs.exclude(id=model.id)
-            await qs.update(is_default=False)
 
     async def after_model_change(self, data: dict, model: LLMProvider, is_created: bool, request=None) -> None:
         if model.encrypted_api_key and not model.encrypted_api_key.startswith("gAAAAA"):

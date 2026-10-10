@@ -87,6 +87,7 @@ class ContentCollector:
 		from app.models import CollectedItem
 		from app.services.ai.dedup import item_hash
 		from app.utils.date_parsing import universal_date_parser
+		from app.utils.content_attachments import normalize_attachments
 
 		hashes = [item_hash(item) for item in content]
 		rows: list[dict] = []
@@ -111,6 +112,7 @@ class ContentCollector:
 					"platform": item.get("platform"),
 					"published_at": published,
 					"media_type": item.get("media_type") or item.get("type"),
+					"attachments": normalize_attachments(item.get("attachments")),
 					"text": item.get("text"),
 					"metrics": {
 						**(item.get("metrics") if isinstance(item.get("metrics"), dict) else {}),

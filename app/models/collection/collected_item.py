@@ -82,6 +82,9 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
 
     published_at: Mapped[Any] = Column(DateTime(timezone=True), nullable=True)
     media_type: Mapped[str | None] = Column(String(20), nullable=True)
+    # NULL = legacy/unknown, [] = explicitly no attachments. Only an allowlisted
+    # type/HTTPS-reference snapshot; raw credentials/provider bodies never belong here.
+    attachments: Mapped[list[dict[str, Any]] | None] = Column(JSON(none_as_null=True), nullable=True)
     # The body, verbatim. Long texts are truncated on render, not on store.
     text: Mapped[str | None] = Column(Text, nullable=True)
     metrics: Mapped[dict[str, Any] | None] = Column(JSON, nullable=True)
@@ -112,8 +115,11 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
         The keys mirror what the platform clients emit, so analysis of stored
         rows and analysis of a live batch take the same path.
         """
+        from app.utils.content_attachments import normalize_attachments
+
         metrics = dict(self.metrics or {})
-        return {
+        attachments = normalize_attachments(getattr(self, "attachments", None))
+        item = {
             **{
                 key: metrics[key] for key in ("reactions", "comments", "views", "metric_availability") if key in metrics
             },
@@ -128,3 +134,6 @@ class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
             "permalink": self.permalink,
             "content_hash": self.content_hash,
         }
+        if attachments is not None:
+            item["attachments"] = attachments
+        return item

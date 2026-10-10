@@ -13,7 +13,13 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Current source baseline: dev `50dc2a2b0bb9832c05b426ea16c6010616264b31` is the reconciliation snapshot for this branch (carried in by merge `ef4fd13`), not a claim of permanent currency; dev may have moved again and this docs branch does not chase every movement. At the time of the queue merges the THEN-dev head was `073fcd0` (PR #43). Dev advanced by four owner-approved merges: [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (closed #34/#35/#37), [PR #46](https://github.com/Starck43/social-media-ai/pull/46) as `8f3c6127d835b615d624f5e461dc6697c930fa0a`, [PR #49](https://github.com/Starck43/social-media-ai/pull/49) as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`, and [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`. The parallel refactoring lanes then merged: #30 tenancy-model layout as `50dc2a2`, #48 stored-analysis lookup as `2aa0b43`, #42 date parsing as `137dd1e`, #47 direct CLI awaitables as `3551f26`, #44 CLI username parsing as `c765365`, PR31 notification-model layout as `f333403`, PR32 collection-model layout as `ef0de1c`. Each merge's checks stay attached to its own tested SHA below; no historical full suite is re-attributed to this baseline.
+Latest source checkpoint: dev `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`.
+#59, #60, #61, #62, #63 and #64 are merged; their evidence retains its original
+revision/patch attribution in the ledger. The older navigation snapshots below
+are historical, not the current work allocation. No merged-head/full-suite,
+deployment or acceptance is implied.
+
+Historical navigation snapshot: dev `50dc2a2b0bb9832c05b426ea16c6010616264b31` is the reconciliation snapshot for this branch (carried in by merge `ef4fd13`), not a claim of permanent currency; dev may have moved again and this docs branch does not chase every movement. At the time of the queue merges the THEN-dev head was `073fcd0` (PR #43). Dev advanced by four owner-approved merges: [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (closed #34/#35/#37), [PR #46](https://github.com/Starck43/social-media-ai/pull/46) as `8f3c6127d835b615d624f5e461dc6697c930fa0a`, [PR #49](https://github.com/Starck43/social-media-ai/pull/49) as `7ad1d75b263df953ef8163d2ac990a9c6cc4589f`, and [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`. The parallel refactoring lanes then merged: #30 tenancy-model layout as `50dc2a2`, #48 stored-analysis lookup as `2aa0b43`, #42 date parsing as `137dd1e`, #47 direct CLI awaitables as `3551f26`, #44 CLI username parsing as `c765365`, PR31 notification-model layout as `f333403`, PR32 collection-model layout as `ef0de1c`. Each merge's checks stay attached to its own tested SHA below; no historical full suite is re-attributed to this baseline.
 
 Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged
 by explicit Owner approval, history preserved. Merge tree equals approved
@@ -32,7 +38,9 @@ Do not restart merged digest integration or bounded logging work.
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
 | B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as 683c49e; Owner 482eacb full 1612 passed/11 warnings/64 subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
-| C / general queue, PRD-05 | **MERGED bounded foundation:** [PR #45](https://github.com/Starck43/social-media-ai/pull/45) as `f078f3a` carrying closed #34 (atomic stale reaping), #35 (docs wording) and #37 (outcome contract docs); [PR #46](https://github.com/Starck43/social-media-ai/pull/46) dispatcher outcome-error boundary as `8f3c612`; [PR #49](https://github.com/Starck43/social-media-ai/pull/49) truthful web job outcome as `7ad1d75`; [PR #51](https://github.com/Starck43/social-media-ai/pull/51) ordinary claim fencing as `351f3b6` | Code evidence at tested SHA `81138d99dab987b3355e674d5bf2922df59e7d49`: standalone 5 OK/exit 0 (log `pr34-rerun-standalone-20261010-054125.txt`), config check exit 0 (log `pr34-rerun-schemacheck-20261010-054130.txt`), PostgreSQL 12 passed/exit 0 (log `pr34-rerun-dbtest-20261010-054136.txt`). Byte identity applies ONLY to `app/models/managers/job_manager.py`, `tests/test_job_stale_reap.py` and `tests/test_job_stale_reap_db.py` between the tested SHA and integration head `6decbf9` (docs-only delta `e9d25d3`, other files not claimed). #46 at tested `6979feb` (25+13+14/exit 0); #49 at tested `74af779` (13/exit 0); #51 at tested `dbc054c` (77 standalone + 15 PostgreSQL, exit 0). Full suite NOT run at merged heads. Bounded ordinary Job/task atomicity is merged in #53 (`24386628`; owner-tested `e3e2226`, 27+15+7/exit 0); #52 web feedback is merged (`10d16090`, final `4f664786`, owner-tested `f613839`, 15/exit 0). Operator cancellation #54 is MERGED (`ee43592a`, final `7316a084`, owner-tested `4d65af4`: 14+15 standalone, config check, 10 PostgreSQL; all exit 0). Cleanup_done #55 is MERGED (`9d63892c`, final `6e46edca`, owner-tested `1eb561fd`: 6 standalone + config + 8 PostgreSQL, all exit 0); web deletion #56 is MERGED (`c7b3693e`, owner-tested `0cac44fd`: 11 standalone/exit 0). Attempt-budget admission/stops are OCCUPIED/PREPARED on `fix/job-attempt-budget`; new checks not run. General leases, recovery, ordering, spend and broader fencing remain OPEN. |
+| C / general queue, PRD-05 | **MERGED bounded foundation:** [PR #45](https://github.com/Starck43/social-media-ai/pull/45) as `f078f3a` carrying closed #34 (atomic stale reaping), #35 (docs wording) and #37 (outcome contract docs); [PR #46](https://github.com/Starck43/social-media-ai/pull/46) dispatcher outcome-error boundary as `8f3c612`; [PR #49](https://github.com/Starck43/social-media-ai/pull/49) truthful web job outcome as `7ad1d75`; [PR #51](https://github.com/Starck43/social-media-ai/pull/51) ordinary claim fencing as `351f3b6` | Code evidence at tested SHA `81138d99dab987b3355e674d5bf2922df59e7d49`: standalone 5 OK/exit 0 (log `pr34-rerun-standalone-20261010-054125.txt`), config check exit 0 (log `pr34-rerun-schemacheck-20261010-054130.txt`), PostgreSQL 12 passed/exit 0 (log `pr34-rerun-dbtest-20261010-054136.txt`). Byte identity applies ONLY to `app/models/managers/job_manager.py`, `tests/test_job_stale_reap.py` and `tests/test_job_stale_reap_db.py` between the tested SHA and integration head `6decbf9` (docs-only delta `e9d25d3`, other files not claimed). #46 at tested `6979feb` (25+13+14/exit 0); #49 at tested `74af779` (13/exit 0); #51 at tested `dbc054c` (77 standalone + 15 PostgreSQL, exit 0). Full suite NOT run at merged heads. Bounded ordinary Job/task atomicity is merged in #53 (`24386628`; owner-tested `e3e2226`, 27+15+7/exit 0); #52 web feedback is merged (`10d16090`, final `4f664786`, owner-tested `f613839`, 15/exit 0). Operator cancellation #54 is MERGED (`ee43592a`, final `7316a084`, owner-tested `4d65af4`: 14+15 standalone, config check, 10 PostgreSQL; all exit 0). Cleanup_done #55 is MERGED (`9d63892c`, final `6e46edca`, owner-tested `1eb561fd`: 6 standalone + config + 8 PostgreSQL, all exit 0); web deletion #56 is MERGED (`c7b3693e`, owner-tested `0cac44fd`: 11 standalone/exit 0). Attempt-budget #60 is MERGED as `975b0d43`; owner-tested `0159392b`: 5 stale + 5 wiring units, config check + 14 PostgreSQL, all exit 0; no merged-head execution. General leases, recovery, ordering, spend and broader fencing remain OPEN. |
+| C / collect/analyze → user feedback and digest coverage | **MERGED:** #61 analyze error accounting (`871046fc`), #62 warning notifications (`c4b570ea`), #63 conservative digest caveat (`18e33a84`) | See ledger for source/patch evidence and owner review. Source/staging errors are not automatic retry or a new terminal Job status. Partial non-raising analyzer failures, real-DB digest-read verification and complete source/content coverage remain OPEN. |
+| C / first-contact recovery | **MERGED bounded safeguard [PR #64](https://github.com/Starck43/social-media-ai/pull/64)** as `d38ea3a5`, head `1f92c3ae`; runtime/session/history coordination remains with parallel chat #1. History-local pairing #59 is MERGED (`acce792d`). | Do not restart delivered first-contact/history work. Evidence is historical source+patch, not submitted/merged-head full suite or general recovery/live acceptance; see ledger. Recovery / ordering / spend remain OPEN. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25 (`eb49d1d`), bounded runtime #57 (`21edba07`, four log sinks); #57 owner scratch patch: 4 passed/exit 0, NOT a submitted-head run | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM/transcript logs are not globally sanitized. #57 source+patch evidence and limits are in the journal, not full runtime/privacy acceptance. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; **atomic learn memory batch MERGED:** [PR #43](https://github.com/Starck43/social-media-ai/pull/43) as `073fcd0`, head/tested `b29e432` (49 boundary + 11 manager standalone + 11 PostgreSQL, exit 0) | State-key patch #58 is merged (`59d775cc`, scratch evidence in current allocation); confirmation CAS and legacy replacement remain OPEN. Do not rebuild typed output contracts or the atomic batch. Acknowledgement-loss rollback proof, ordinary claim fencing, duplicate LLM spend, fact quality and task/billing atomicity remain OPEN. |
@@ -43,7 +51,7 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-Latest Owner completed evidence: exact 482eacb 1612 passed/11 warnings/64
+Historical PR22 Owner full-suite evidence: exact 482eacb 1612 passed/11 warnings/64
 subtests/738.25s/saved exit0, unchanged HEAD. Approved merge 683c49e has
 identical executable code; post-merge journal diff is docs-only, no retest by
 default. Separately approved one-row TEST cleanup (zero dependencies) is not
@@ -95,14 +103,19 @@ Web deletion [PR #56](https://github.com/Starck43/social-media-ai/pull/56) is
 **MERGED** as `c7b3693ee85769dbb91e7a53016669cfe1210173`, owner-tested/final
 `0cac44fd`: 11 standalone, exit 0. Its observed-tenant bypass correction was
 reviewed; source-isolated tests are not independent PostgreSQL race evidence.
-Current queue lane: **OCCUPIED / PREPARED**, `fix/job-attempt-budget` from dev
-`59d775cc52e7dd90605180cc381fa9f8d6c14c16`. Shared admission cap, budget stops,
-conditional stale recovery and conservative stop-evidence retention only;
-5 strengthened stale units + 5 predicate/wiring units + 14 DB cases prepared,
-NOT run by the author. No reset/re-arm of old attempts or cost/history.
-Local helper has an independent read-only collect/analyze failure/notification
-coverage audit; execution/evidence not yet confirmed, no edits/PR requested.
-The parallel agent retains runtime/session/history pairing. Its state-key
+Queue attempt-budget [PR #60](https://github.com/Starck43/social-media-ai/pull/60)
+is **MERGED** as `975b0d431cb3df2cd6c6fb0f8f16ea6a3d3589b2`; owner-tested head
+`0159392b12b22442e7b051d6873046ecf5ef7138`: 5 stale + 5 wiring units, read-only
+config check and 14 PostgreSQL cases, all exit 0. No reset/re-arm of attempts or
+cost/history; effect idempotency and stop-notification coverage remain OPEN.
+Collect/analyze feedback [PR #61](https://github.com/Starck43/social-media-ai/pull/61),
+[PR #62](https://github.com/Starck43/social-media-ai/pull/62) and conservative digest
+coverage [PR #63](https://github.com/Starck43/social-media-ai/pull/63) are **MERGED**;
+evidence and limits are in the ledger's latest checkpoint, not inferred from a
+green combined-head run. Runtime/session/history remain assigned to parallel
+chat #1, specifically first-contact recovery in `agent_session_manager.py`,
+even without an open PR. Local history pairing #59 is merged as `acce792d`;
+do not restart it or take the reserved recovery lane. Its state-key
 [PR #58](https://github.com/Starck43/social-media-ai/pull/58) is **MERGED** as
 `59d775cc`, head `3f7f8753`: owner-reported scratch source `21edba07` + exact patch,
 8 helper + 19 confirmation + 4 privacy + 7 PostgreSQL checks, all exit 0; NOT
@@ -114,8 +127,13 @@ Recovery / ordering / spend and broader fencing remain **OPEN**; PR29 is **MERGE
 
 ### Latest verified merge checkpoint
 
-Latest observed dev and this branch base: `59d775cc52e7dd90605180cc381fa9f8d6c14c16`.
-This records integration, not combined-head/full-suite test evidence.
+Latest reconciled source checkpoint: `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`.
+This docs branch started at `871046fc`; concurrent #64 changes only its two
+runtime/test files, not these docs. Merge sequence after #58:
+#59 (`acce792d`) → #62 (`c4b570ea`) → #63 (`18e33a84`) → #60 (`975b0d43`)
+→ #61 (`871046fc`) → #64 (`d38ea3a5`). Refresh dev/open PRs before the next package.
+This records integration, not combined-head/full-suite execution, deployment
+or release acceptance. Recovery / ordering / spend remain OPEN.
 Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity
 (`7d8c731`), #39 agent (`c1d3b9e`), #41 scheduling (`b4d48c6`); earlier
 #30/#31/#32 layout merges remain recorded above. Runtime whitespace #40 also

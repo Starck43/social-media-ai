@@ -1,0 +1,37 @@
+{
+  "agents": {
+    "opencode": {
+      "status": "blocked",
+      "task": "PR review #30/#31/#32 fresh heads: #30 stopped on failed diff --check diagnostic (pre-existing EOF whitespace)",
+      "branch": "dev",
+      "tests": [
+        "tests/test_tenancy_model_layout.py",
+        "tests/test_notification_model_layout.py",
+        "tests/test_collection_model_layout.py"
+      ],
+      "files_modified": [],
+      "pr_review": {
+        "queue": "#30 -> #31 -> #32 (strictly sequential, shared test schema)",
+        "fresh_heads": {
+          "30": {
+            "sha": "8ded166eb6db8a511518fdcfe8f33453f8551dd1",
+            "worktree": "/Users/admin/Projects/social-media-ai-pr30",
+            "diagnostics": "diff scope = 7 expected files; git diff --check FAILED exit 2 (blank line at EOF in app/models/tenancy/{tenant,tenant_channel,tenant_invite,tenant_user}.py); setup_test_db --check exit 0",
+            "verdict": "STOPPED before pytest per handoff; EOF whitespace byte-identical to old head a4d3237 - carried from previously tested sources, not introduced by sync; production-file fix out of scope without owner review",
+            "pytest": "not run"
+          },
+          "31": {
+            "sha": "2bfd3eee7d0b7e01466be52fb53f1cab7c56e9d7",
+            "worktree": "/Users/admin/Projects/social-media-ai-pr31",
+            "status": "ff-only updated to new head, checks not started (queue stopped at #30)"
+          },
+          "32": {
+            "sha": "68809d06a2b79222772c3197ba78b196567ee31b",
+            "worktree": "/Users/admin/Projects/social-media-ai-pr32",
+            "status": "ff-only updated to new head, checks not started (queue stopped at #30)"
+          }
+        },
+        "pending": [30, 31, 32],
+        "control_worktree": "/Users/admin/Projects/social-media-ai-ctrl30 (b4fd0f0, detached)"
+      }
+    },

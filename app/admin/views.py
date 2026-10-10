@@ -1275,7 +1275,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     form_widget_args = {
         "base_url": {"placeholder": "https://api.openai.com/v1"},
         "auth_header": {"placeholder": "Authorization: Bearer {key}"},
-        "encrypted_api_key": {"type": "password", "placeholder": "sk-..."},
+        "encrypted_api_key": {"type": "password", "placeholder": "Enter API key"},
     }
 
     form_args = {
@@ -1537,12 +1537,14 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         await super().after_model_change(data, model, is_created, request)
 
         if model.is_default:
-            # Single default per model_type fleet-wide (same rule as
-            # LLMModelManager.create_model/update_model): clear the siblings
-            # in one statement instead of loading and re-saving each one.
-            await LLMModel.objects.filter(model_type=model.model_type, is_default=True).exclude(id=model.id).update(
-                is_default=False
-            )
+            # One default per capability fleet-wide — the same rule
+            # LLMModelManager.create_model/update_model enforce, through the
+            # same helper. Resolution filters with `can_handle()`, so a
+            # "text,video" model and a "text" model both answer a "text"
+            # request; matching on the model_type *string* left both flagged
+            # and forked the fleet into a provider-priority lottery. Runs
+            # after the commit, where a freshly created row already has its id.
+            await LLMModel.objects.set_default(model.id)
 
     async def delete_model(self, request: Request, pk: Union[int, str]) -> None:
         """Override default delete to use manager's reassignment logic.
@@ -1934,7 +1936,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             "action_type": "Действие после анализа",
             "rate_limit_per_hour": "Лимит действий в час",
             "cooldown_seconds": "Пауза между действиями (сек)",
-            "requires_approval": "Требует подтверждения",
             "blacklist": "Чёрный список",
             "whitelist": "Белый список",
         },
@@ -1957,7 +1958,6 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         "action_type",
         "rate_limit_per_hour",
         "cooldown_seconds",
-        "requires_approval",
         "blacklist",
         "whitelist",
     ]

@@ -3,7 +3,8 @@
 The page is where `docs/TENANCY.md` stops being a document and becomes UI, so
 the tests below pin the three rules that decide who owns what:
 
-* **a workspace owns itself** — profile and team are gated by `tenant.update`.
+* **a workspace owns itself** — profile and team use a bound settings capability,
+  not a global `tenant.update` grant.
 * **a personal secret belongs to a person** — `user_credentials` is keyed by
   `users.id`, so the tab lists only the caller's rows and the disable endpoint
   matches on `id` *and* `user_id`. Both halves are asserted: a second member's
@@ -474,4 +475,121 @@ async def test_a_read_only_member_gets_no_workspace_form() -> None:
             assert row.name != "Hijacked"
     finally:
         await _cleanup(owner, viewer)
+        await _drop_workspaces(tenant_id)
+
+
+async def test_owner_settings_resolve_posted_tenant_to_own_workspace_and_reject_foreign_rows() -> None:
+    from app.models.managers.tenant_manager import TenantChannelManager, tenant_users, tenants
+
+    owner = other = None
+    tenant_id = other_tenant_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "SetBound")
+        async with await _client() as other_client:
+            other, other_tenant_id = await _register(other_client, "SetForeign")
+        foreign = await tenants.get(id=other_tenant_id)
+        foreign_member = (await TenantUserManager().web_memberships(other.id))[0]
+        foreign_channel = await TenantChannelManager().bind(
+            tenant_id=other_tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+        )
+        async with await _client() as client:
+            await _login(client, owner.username)
+            token = await _csrf(client, "/app/settings")
+            response = await client.post(
+                "/app/settings/workspace",
+                data={"_csrf": token, "tenant_id": str(other_tenant_id), "name": "Bound own settings",
+                      "timezone": "Europe/Kirov", "daily_cost_limit": "7"},
+            )
+            assert "Настройки воркспейса сохранены" in response.text
+            own = await tenants.get(id=tenant_id)
+            assert own.name == "Bound own settings"
+            assert own.timezone == "Europe/Kirov"
+            response = await client.post(
+                "/app/settings/agent",
+                data={"_csrf": token, "tenant_id": str(other_tenant_id), "agent_system_prompt": "Bound own prompt"},
+            )
+            assert "Настройки агента сохранены" in response.text
+            own = await tenants.get(id=tenant_id)
+            assert own.agent_system_prompt == "Bound own prompt"
+            response = await client.post(
+                f"/app/settings/members/{foreign_member.id}/role",
+                data={"_csrf": token, "role": "viewer"},
+            )
+            assert "Участник не найден" in response.text
+            response = await client.post(
+                f"/app/settings/channels/{foreign_channel.id}",
+                data={"_csrf": token, "is_digest_target": "on"},
+            )
+            assert "Канал не найден" in response.text
+        after = await tenants.get(id=other_tenant_id)
+        assert (after.name, after.timezone, after.daily_cost_limit, after.agent_system_prompt) == (
+            foreign.name, foreign.timezone, foreign.daily_cost_limit, foreign.agent_system_prompt,
+        )
+        assert (await tenant_users.get(id=foreign_member.id)).role_id == foreign_member.role_id
+        assert not (await TenantChannelManager().get(id=foreign_channel.id)).is_digest_target
+    finally:
+        await _cleanup(owner, other)
+        await _drop_workspaces(tenant_id, other_tenant_id)
+
+
+async def test_read_only_member_cannot_mutate_agent_team_or_channels() -> None:
+    from app.models.managers.tenant_manager import TenantChannelManager, tenant_users, tenants
+
+    owner = viewer = None
+    tenant_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "SetGate")
+            viewer = await _invitee("SetDenied", UserRoleType.VIEWER, tenant_id)
+        member = (await TenantUserManager().web_memberships(owner.id))[0]
+        channel = await TenantChannelManager().bind(
+            tenant_id=tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+        )
+        before = await tenants.get(id=tenant_id)
+        async with await _client() as client:
+            await _login(client, viewer.username)
+            token = await _csrf(client, "/app/settings")
+            for path, data in (
+                ("/app/settings/agent", {"agent_system_prompt": "Not allowed"}),
+                (f"/app/settings/members/{member.id}/role", {"role": "viewer"}),
+                (f"/app/settings/channels/{channel.id}", {"is_digest_target": "on"}),
+            ):
+                response = await client.post(path, data={"_csrf": token, **data})
+                assert DENIED in response.text, path
+        after = await tenants.get(id=tenant_id)
+        assert after.agent_system_prompt == before.agent_system_prompt
+        assert (await tenant_users.get(id=member.id)).role_id == member.role_id
+        assert not (await TenantChannelManager().get(id=channel.id)).is_digest_target
+    finally:
+        await _cleanup(owner, viewer)
+        await _drop_workspaces(tenant_id)
+
+
+async def test_owner_channel_settings_require_csrf_before_updating_digest_flag() -> None:
+    from app.models.managers.tenant_manager import TenantChannelManager
+
+    owner = None
+    tenant_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "SetChannel")
+            channel = await TenantChannelManager().bind(
+                tenant_id=tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+            )
+            response = await client.post(
+                f"/app/settings/channels/{channel.id}",
+                data={"_csrf": "invalid-token", "is_digest_target": "on"},
+            )
+            assert "Сессия истекла" in response.text
+            assert not (await TenantChannelManager().get(id=channel.id)).is_digest_target
+            token = await _csrf(client, "/app/settings?tab=channels")
+            response = await client.post(
+                f"/app/settings/channels/{channel.id}",
+                data={"_csrf": token, "is_digest_target": "on"},
+            )
+            assert "Настройка канала сохранена" in response.text
+            assert (await TenantChannelManager().get(id=channel.id)).is_digest_target
+    finally:
+        await _cleanup(owner)
         await _drop_workspaces(tenant_id)

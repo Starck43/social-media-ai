@@ -8,6 +8,7 @@ import pytest
 
 from app.channels import registry
 from app.core.config import settings
+from app.core.permissions import get_current_user, has_permission, service_permission_scope
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass, tenant_scope
 from app.models import Tenant, TenantChannel
 from app.models.managers.tenant_manager import tenant_channels
@@ -274,17 +275,20 @@ async def test_real_manual_run_keeps_analytics_run_and_delivery_in_one_workspace
     run_id = None
     for tenant in (owner, first, second):
         with tenant_scope(tenant.id):
-            source = await Source.objects.create(
-                platform_id=platform.id,
-                name="Digest scope fixture",
-                source_type=SourceType.GROUP,
-                external_id=uuid4().hex,
-            )
+            with service_permission_scope("source", "create"):
+                source = await Source.objects.create(
+                    platform_id=platform.id,
+                    name="Digest scope fixture",
+                    source_type=SourceType.GROUP,
+                    external_id=uuid4().hex,
+                )
+            assert not has_permission(get_current_user(), "source", "create")
             sources.append((tenant.id, source.id))
             await AIAnalytics.objects.create(source_id=source.id, summary_data={"marker": f"{marker}-{tenant.id}"})
 
     async def scoped_aggregate(*args):
         assert current_tenant_id() == selected.id and not is_bypass()
+        assert not has_permission(get_current_user(), "source", "create")
         rows = await AIAnalytics.objects.all()
         markers = [
             row.summary_data["marker"] for row in rows if (row.summary_data or {}).get("marker", "").startswith(marker)
@@ -323,4 +327,5 @@ async def test_real_manual_run_keeps_analytics_run_and_delivery_in_one_workspace
                 await DigestRun.objects.delete_by_id(run_id)
         for tenant_id, source_id in sources:
             with tenant_scope(tenant_id):
-                await Source.objects.delete_by_id(source_id)
+                with service_permission_scope("source", "delete"):
+                    await Source.objects.delete_by_id(source_id)

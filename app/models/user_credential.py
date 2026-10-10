@@ -36,42 +36,10 @@ if TYPE_CHECKING:
     from .managers.base_manager import BaseManager
     from .managers.user_credential_manager import UserCredentialManager
 
+# isort: split
+from .identity.user_credential import UserCredential
 
-@app_label("account")
-class UserCredential(Base, TimestampMixin):
-    """A personal platform credential (L2 user token / session) owned by a user."""
-
-    __tablename__ = "user_credentials"
-    __table_args__ = (
-        Index("ix_user_credentials_user_id", "user_id"),
-        Index("ix_user_credentials_user_platform", "user_id", "platform"),
-        {"schema": settings.DB_SCHEMA},
-    )
-
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    user_id: Mapped[int] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"), nullable=False
-    )
-    platform: Mapped[str] = Column(String(30), nullable=False)  # 'vk' | 'telegram' | ...
-    kind: Mapped[str] = Column(String(30), nullable=False)  # 'user_token' | 'session' | ...
-    label: Mapped[str | None] = Column(String(100), nullable=True)
-    secret_encrypted: Mapped[str] = Column(Text, nullable=False)
-    expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
-    meta: Mapped[dict[str, Any] | None] = Column(JSON, nullable=True)
-    is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
-
-    if TYPE_CHECKING:
-        objects: ClassVar[UserCredentialManager | BaseManager]
-    else:
-        objects: ClassVar = None
-
-    def reveal(self) -> str:
-        """Decrypt the secret (call sparingly; never log the result)."""
-        from app.utils.crypto import decrypt_secret
-
-        return decrypt_secret(self.secret_encrypted)
-
-
+# isort: split
 from .managers.user_credential_manager import UserCredentialManager  # noqa: E402
 
 UserCredential.objects = UserCredentialManager()

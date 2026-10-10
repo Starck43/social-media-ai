@@ -95,14 +95,15 @@ head, test output and migration head for handoff; redact credentials.
   not detected at that boundary; learn/reflect textual replies do reject them.
 - Well-shaped but malicious or factually incorrect memory can still be returned.
   Complete identity/permission and memory-in-prompt defense remain PRD-02/07.
-- Memory writes remain individual manager transactions, not an atomic batch.
-  A DB failure after some valid writes can leave partial persistence. Concurrent
-  learn/reflect jobs, snapshot drift and watermark serialization need another
-  reviewed transaction/lease unit. Validation failure itself performs no writes.
-- Invalid-output results retain reported cost, but a persistence failure can
-  still lose attempt cost. Shared clients may label unknown tariffs as zero and
-  upstream logs may include raw errors. This is not a complete spend ledger or
-  process-wide redaction audit; PRD-03/06/08 remain open.
+- Merged PR #17 by itself still uses individual memory transactions. The unmerged
+  `fix/learn-memory-batch-atomicity` follow-up prepares an atomic learn batch and
+  expected-watermark check; it is not deployed or owner-verified. Reflection,
+  manual writes/clear, snapshot drift and poisoned-memory acceptance remain open.
+- Invalid-output results retain reported cost. The unmerged learn-batch follow-up
+  also retains known/unknown cost on persistence failure or a stale watermark.
+  Shared clients may label unknown tariffs as zero and upstream logs may include
+  raw errors. This is not a complete spend ledger or process-wide redaction audit;
+  PRD-03/06/08 remain open.
 - PR #18 now maps explicit non-checkpoint returned `status=failed` to terminal
   Job/task failure. General leases/atomic outcomes/partial-status semantics still
   remain open under PRD-05; see the returned-job-failure handoff.
@@ -115,3 +116,56 @@ head, test output and migration head for handoff; redact credentials.
 PR #17 is merged; target migrations, full acceptance and activation remain
 different states. Commit messages include an owner handoff; further merge/activation require
 separate approval. No production data, secrets or live messenger were changed.
+
+## Prepared learn-batch transaction follow-up (unmerged)
+
+Code baseline: dev `1f66f348bf9b657dbe990915c52b57e4afc4138a`.
+Temporary allocation is the task PR body: the shared board/ledger is owned by
+queue integration work. The package touches learning persistence, targeted
+regressions and this existing contract, not schema, reflection or billing.
+
+- `run_learn` requires an explicit tenant scope without platform bypass, before
+  reading messages/memory or invoking the model. Legacy direct callers must
+  select their workspace; the job dispatcher already supplies that context.
+- Validate the entire typed batch and rendered user evidence as before. After
+  the model call, `AgentMemoryManager.apply_learn_batch` uses one new session.
+  Insert the meta cursor with the existing `(tenant_id, scope, key)` unique key
+  and `ON CONFLICT DO NOTHING`, then lock that tenant's cursor `FOR UPDATE`.
+  This also serializes first learners when no meta row exists.
+- Compare the stored cursor with the expected pre-model watermark. A mismatch
+  rolls back (including a new meta insert), returns `False`, and writes no facts.
+  The caller returns `skipped / watermark_changed` with any incurred model cost.
+- Recheck that evidence still belongs to that tenant and a user message. Upsert
+  all facts with learn provenance and advance the watermark in the same commit.
+  Empty validated batches and empty transcripts use the same transaction path;
+  unrendered message rows are not consumed by a successful nonempty transcript.
+- A statement failure rolls back the transaction. Cancellation propagates after
+  rollback. A database/commit acknowledgement error is not `watermark_changed`:
+  the caller returns redacted `failed / memory_commit_failed`, preserves known
+  cost (or `None` for unknown), and makes no automatic replay decision. Commit
+  acknowledgement loss can mean the transaction committed; inspect before retry.
+- No lock is held during the LLM call. Duplicate concurrent model spend is not
+  prevented. Existing malformed cursor text still reads as zero for compatibility;
+  cursors must advance from a nonnegative integer. Administrative cursor resets,
+  manual writes/clear and reflection are not fenced by this learn-only protocol.
+  Their races, ABA after an administrative reset, snapshot versioning, cross-table
+  job/billing atomicity and semantic fact quality remain separate work.
+
+Prepared regressions, NOT run by the author:
+
+- `tests/test_learn_memory_batch.py`: one session/commit, tenant SQL predicates,
+  UPSERT provenance, stale/invalid cursor, missing scope, evidence rejection,
+  empty batch, rollback, cancellation and lost acknowledgement propagation.
+- `tests/test_learn_memory_batch_db.py`: real PostgreSQL commit and rollback,
+  same-key update, foreign evidence, tenant separation, empty batch and two
+  concurrent learners with both absent and existing meta cursor rows.
+  Standalone runner redirects to an existing isolated test schema before app
+  imports. It does not load conftest, bootstrap/seed/create/reset/migrate schemas
+  or call a real model. It creates and removes only its fresh tenant-owned rows.
+- Existing boundary tests retain rejection/evidence/rendered-window checks and
+  assert the batch call instead of separate writes. Added stale/DB-error/cost,
+  empty-transcript and fail-closed-before-model cases. Existing learn/cost tests
+  now explicitly select their fixture session's tenant without removing assertions.
+
+Owner commands and exact submitted/tested SHA belong to the Draft PR. Use the
+shared test schema sequentially; no default full suite or old owner-check rerun.

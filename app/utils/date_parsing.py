@@ -1,112 +1,79 @@
+"""Compatible date parsing without application or database dependencies."""
+
 import logging
-from datetime import datetime, date, time, timezone
-from typing import Optional, Any
+from datetime import date, datetime, time, timezone
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-
-def universal_date_parser(date_input: Any, target_timezone: str = 'UTC+3') -> Optional[datetime]:
-	"""
-	Universal date parser that handles multiple input formats.
-
-	Supported formats:
-	- DD-MM-YYYY string (from CLI/forms)
-	- ISO string (from APIs/database)
-	- datetime objects
-	- date objects
-	- Unix timestamps (int/float)
-
-	Args:
-		date_input: Date in any supported format
-		target_timezone: Target timezone ('UTC+3', 'UTC')
-
-	Returns:
-		datetime object with proper timezone or None if parsing fails
-	"""
-	if not date_input:
-		return None
-
-	try:
-		# Handle None/empty
-		if date_input is None:
-			return None
-
-		# Already a datetime object
-		if isinstance(date_input, datetime):
-			result = date_input
-			# Ensure timezone
-			if result.tzinfo is None:
-				result = result.replace(tzinfo=timezone.utc)
-			return result
-
-		# Date object (no time)
-		elif isinstance(date_input, date):
-			result = datetime.combine(date_input, time(0, 0, 0))
-			return result.replace(tzinfo=timezone.utc)
-
-		# Unix timestamp
-		elif isinstance(date_input, (int, float)):
-			return datetime.fromtimestamp(date_input, tz=timezone.utc)
-
-		# String input
-		elif isinstance(date_input, str):
-			# Try day-first forms first (DD-MM-YYYY / DD.MM.YYYY — from CLI/forms)
-			for day_first_format in ('%d-%m-%Y', '%d.%m.%Y'):
-				try:
-					date_obj = datetime.strptime(date_input, day_first_format)
-					# Apply timezone adjustment for Russia
-					if target_timezone == 'UTC+3':
-						# Set to beginning of day in UTC+3 = 21:00 previous day UTC
-						result = datetime.combine(date_obj, time(0, 0, 0))
-						result = result.replace(tzinfo=timezone.utc)  # This is actually 21:00 UTC for 00:00 MSK
-						return result
-					else:
-						return datetime.combine(date_obj, time(0, 0, 0)).replace(tzinfo=timezone.utc)
-				except ValueError:
-					pass
-
-			# Try ISO format (from APIs/database)
-			try:
-				# Handle both 'Z' and timezone formats
-				iso_str = date_input.replace('Z', '+00:00')
-				result = datetime.fromisoformat(iso_str)
-				# Ensure timezone
-				if result.tzinfo is None:
-					result = result.replace(tzinfo=timezone.utc)
-				return result
-			except ValueError:
-				pass
-
-			logger.warning(f"Unsupported date string format: {date_input}")
-			return None
-
-		else:
-			logger.warning(f"Unsupported date input type: {type(date_input)}")
-			return None
-
-	except Exception as e:
-		logger.warning(f"Date parsing failed for {date_input}: {e}")
-		return None
+_DAY_FIRST_FORMATS = ("%d-%m-%Y", "%d.%m.%Y")
 
 
-def to_unix_timestamp(date_input: Any, target_timezone: str = 'UTC+3') -> Optional[int]:
-	"""
-	Convert any date input to Unix timestamp.
+def _with_utc_if_naive(value: datetime) -> datetime:
+    """Attach UTC to naive values; preserve aware values and their offsets."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
-	Args:
-		date_input: Date in any supported format
-		target_timezone: Target timezone for string parsing
 
-	Returns:
-		Unix timestamp or None if conversion fails
-	"""
-	date_obj = universal_date_parser(date_input, target_timezone)
-	if not date_obj:
-		return None
+def parse_datetime(
+    date_input: Any, target_timezone: str = "UTC+3"
+) -> Optional[datetime]:
+    """Parse a supported input, returning an aware datetime or None.
 
-	try:
-		return int(date_obj.timestamp())
-	except Exception as e:
-		logger.warning(f"Timestamp conversion failed: {e}")
-		return None
+    Accepts datetime/date objects, Unix timestamps, DD-MM-YYYY, DD.MM.YYYY
+    and ISO strings. Naive datetimes and dates use UTC; aware inputs retain
+    their timezone. Invalid or unsupported inputs return None with a warning.
 
+    ``target_timezone`` is retained for call compatibility, not conversion:
+    historically this parameter did not change the resulting timezone. Date
+    strings therefore remain midnight UTC even when its value is ``UTC+3``.
+    The legacy falsey-input guard is also preserved: numeric zero returns None.
+    Strings are not stripped or otherwise normalized beyond ISO Z handling.
+    """
+    if not date_input:
+        return None
+
+    try:
+        if isinstance(date_input, datetime):
+            return _with_utc_if_naive(date_input)
+        if isinstance(date_input, date):
+            return _with_utc_if_naive(datetime.combine(date_input, time(0, 0, 0)))
+        if isinstance(date_input, (int, float)):
+            return datetime.fromtimestamp(date_input, tz=timezone.utc)
+        if isinstance(date_input, str):
+            for day_first_format in _DAY_FIRST_FORMATS:
+                try:
+                    parsed = datetime.strptime(date_input, day_first_format)
+                    return _with_utc_if_naive(parsed)
+                except ValueError:
+                    pass
+            try:
+                return _with_utc_if_naive(
+                    datetime.fromisoformat(date_input.replace("Z", "+00:00"))
+                )
+            except ValueError:
+                pass
+            logger.warning(f"Unsupported date string format: {date_input}")
+            return None
+
+        logger.warning(f"Unsupported date input type: {type(date_input)}")
+        return None
+    except Exception as exc:
+        logger.warning(f"Date parsing failed for {date_input}: {exc}")
+        return None
+
+
+# Keep the established import path and signature without a second implementation.
+universal_date_parser = parse_datetime
+
+
+def to_unix_timestamp(date_input: Any, target_timezone: str = "UTC+3") -> Optional[int]:
+    """Parse an input into integer Unix seconds, preserving legacy truncation."""
+    # Resolve the legacy name at call time to preserve existing monkeypatch hooks.
+    parsed = universal_date_parser(date_input, target_timezone)
+    if not parsed:
+        return None
+    try:
+        return int(parsed.timestamp())
+    except Exception as exc:
+        logger.warning(f"Timestamp conversion failed: {exc}")
+        return None

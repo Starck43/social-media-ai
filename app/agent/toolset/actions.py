@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.agent.tools import tool
+from app.core.permissions import require_permission
 
 
 @tool(
     name="actions_log",
+    required_permission="botaction.view",
     description="Показать лог действий бота (bot_actions): последние N действий с их статусами.",
     parameters={
         "type": "object",
@@ -18,9 +20,12 @@ from app.agent.tools import tool
         "required": [],
     },
 )
+@require_permission("botaction", "view")
 async def actions_log(limit: int = 10) -> dict[str, Any]:
     from app.models import BotAction
 
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        return {"error": "Limit must be an integer from 1 to 100", "code": "invalid_arguments"}
     actions = await BotAction.objects.order_by(BotAction.created_at.desc()).limit(limit)
 
     return {
@@ -39,23 +44,6 @@ async def actions_log(limit: int = 10) -> dict[str, Any]:
     }
 
 
-@tool(
-    name="action_send",
-    description=(
-        "Отправить действие бота (bot_action) по ID. "
-        "Действие должно быть в статусе PENDING. "
-        "Если dry_run=True, действие не публикуется, а возвращается payload."
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "action_id": {"type": "integer", "description": "ID действия из actions_log"},
-            "dry_run": {"type": "boolean", "description": "Если True, не публиковать (по умолчанию True)"},
-        },
-        "required": ["action_id"],
-    },
-    confirm=True,
-)
 async def _auto_actions_forced_dry_run() -> Optional[str]:
     """Why the ambient workspace may not publish an action, or None.
 
@@ -78,70 +66,64 @@ async def _auto_actions_forced_dry_run() -> Optional[str]:
     )
 
 
+@tool(
+    name="action_send",
+    description="Показать локальное превью PENDING-действия по ID. Публикация отключена; статус не меняется.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "action_id": {"type": "integer", "minimum": 1, "description": "ID из actions_log"},
+            "dry_run": {"type": "boolean", "enum": [True], "description": "Только True: локальное превью"},
+        },
+        "required": ["action_id"],
+    },
+    confirm=True,
+    # Preview-only contract: the handler never publishes, so the right it needs
+    # is the read right (`botaction.view`). The decorator must sit on this
+    # handler — it used to decorate the `_auto_actions_forced_dry_run` helper
+    # above, which registered that no-argument helper under the tool's name and
+    # dispatched every «action_send» call to a function that only returns a
+    # reason string. `botaction.view` is the bare model name, the shape
+    # `has_permission_by_codename` splits — not the stored `social.`-prefixed
+    # permission codename. Live publishing stays disabled behind a separate
+    # contract; enabling it would need `botaction.update`, not this file.
+    required_permission="botaction.view",
+)
+@require_permission("botaction", "view")
 async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
-    from app.models import BotAction, AgentScenario, Platform, Source
-    from app.models.managers.bot_action_manager import BotActionManager
+    """Read-only preview. Approval/publication requires a separate contract."""
+    if dry_run is not True:
+        return {
+            "success": False, "error": "Live action sending is disabled", "code": "live_action_disabled",
+            "dry_run": False,
+        }
+    if isinstance(action_id, bool) or not isinstance(action_id, int) or not 0 < action_id <= 2**31 - 1:
+        return {"success": False, "error": "Invalid action ID", "code": "invalid_arguments", "dry_run": True}
+
+    from app.models import AgentScenario, BotAction, Source
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
 
-    manager = BotActionManager()
-
     action = await BotAction.objects.get(id=action_id)
-    if not action:
-        return {"success": False, "error": f"Action {action_id} not found"}
-
+    if action is None:
+        return {"success": False, "error": "Action not found", "dry_run": True}
     if action.status != BotActionStatus.PENDING:
-        return {"success": False, "error": f"Action is not pending: {action.status.name}"}
-
-    # A tier that does not include auto actions may still *preview* one (that is
-    # what dry_run is), but must not publish it. Enforced here rather than on the
-    # BotAction row because this is the only path that reaches a live platform —
-    # the row's own `dry_run` flag is a default the caller chooses.
-    if not dry_run:
-        forced = await _auto_actions_forced_dry_run()
-        if forced:
-            return {"success": False, "error": forced, "dry_run": True}
-
+        return {"success": False, "error": "Action is not pending", "dry_run": True}
+    if not isinstance(action.payload, dict):
+        return {"success": False, "error": "Invalid action payload", "dry_run": True}
     scenario = await AgentScenario.objects.get(id=action.agent_scenario_id)
-    if not scenario:
-        return {"success": False, "error": "Scenario not found"}
-
-    # Check guards (target user from payload feeds blacklist/whitelist). The
-    # guards live on the task the action was created under, so they are resolved
-    # from the row rather than taken from the scenario.
-    allowed, reason = await guards_checker.check_for_action(action, target_user=extract_target_user(action.payload))
-    if not allowed:
-        return {"success": False, "error": f"Guards blocked: {reason}"}
-
-    # Execute action based on platform
     source = await Source.objects.get(id=action.source_id)
-    if not source:
-        return {"success": False, "error": "Source not found"}
-
-    platform = await Platform.objects.get(id=source.platform_id)
-
-    result = await _execute_action(source, platform, action, dry_run)
-
-    if result.get("success"):
-        if dry_run:
-            # Dry run: approve with system user (agent)
-            await manager.approve_action(action_id=action_id, user_id=None)
-            new_status = BotActionStatus.APPROVED
-        else:
-            # Real execution: mark as executed
-            await manager.mark_executed(action_id=action_id, result=result)
-            new_status = BotActionStatus.EXECUTED
-    else:
-        await manager.mark_failed(action_id=action_id, error=result.get("error", "Unknown error"))
-        new_status = BotActionStatus.FAILED
-
+    if scenario is None or source is None:
+        return {"success": False, "error": "Action references are not available in this workspace", "dry_run": True}
+    allowed, _reason = await guards_checker.check_for_action(action, target_user=extract_target_user(action.payload))
+    if not allowed:
+        return {"success": False, "error": "Action preview blocked by guards", "code": "guards_blocked", "dry_run": True}
+    # Do not call providers, approve_action, mark_executed or mark_failed.
+    # A preview is not an approval and cannot enable later publication by accident.
     return {
-        "success": result.get("success", False),
-        "action_id": action.id,
-        "status": new_status.name,
-        "dry_run": dry_run,
-        "payload": action.payload,
-        "result": result,
+        "success": True, "action_id": action.id, "status": action.status.name,
+        "dry_run": True, "preview_only": True, "payload": dict(action.payload),
+        "result": {"success": True, "dry_run": True, "preview_only": True},
     }
 
 

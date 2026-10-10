@@ -20,6 +20,7 @@ from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
+from cli._inputs import parse_usernames
 from cli.run import resolve_sources
 
 
@@ -99,11 +100,9 @@ def collect_cmd(
 
         payload = {"source_ids": [s.id for s in sources]}
         if monitored:
-            payload["monitored_users"] = [
-                m.strip().lstrip("@") for m in monitored.replace(",", " ").split() if m.strip()
-            ]
+            payload["monitored_users"] = parse_usernames(monitored)
         if excluded:
-            payload["excluded_users"] = [e.strip().lstrip("@") for e in excluded.replace(",", " ").split() if e.strip()]
+            payload["excluded_users"] = parse_usernames(excluded)
         if force_refresh or start_date or end_date:
             payload["force_refresh"] = True
             cli_dates = {}

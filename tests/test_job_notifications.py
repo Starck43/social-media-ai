@@ -26,6 +26,7 @@ async def _make_task(tenant_id: int) -> AgentTask:
     with tenant_scope(bypass=True):
         return await AgentTask.objects.create(
             name=_name("jobnotify"),
+            tenant_id=tenant_id,
             job_type="collect",
             cron_expr="@once",
             payload={},
@@ -35,16 +36,17 @@ async def _make_task(tenant_id: int) -> AgentTask:
 
 async def _make_job(tenant_id: int, task_id: int | None, *, max_attempts: int = 1) -> Job:
     with tenant_scope(bypass=True):
-        # attempts=1 simulates a job already claimed by the worker (claim_next
-        # bumps attempts before execute_job runs).
-        return await Job.objects.create(
+        pending = await Job.objects.create(
             job_type="collect",
             payload={},
+            tenant_id=tenant_id,
             agent_task_id=task_id,
             run_at=datetime.now(timezone.utc),
-            attempts=1,
             max_attempts=max_attempts,
         )
+        claimed = await Job.objects.claim_job(pending.id)
+        assert claimed is not None and claimed.status == "running"
+        return claimed
 
 
 @pytest.fixture

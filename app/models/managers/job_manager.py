@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.jobs.claim_outcomes import JobClaim, JobOutcomeReceipt
+
     from ..job import Job
 
 # Remove jobs that finished more than this ago to keep the queue readable.
@@ -107,6 +111,49 @@ class JobManager(BaseManager["Job"]):
 
         return await cls._claim(JobModel.id == job_id, now=now)
 
+    async def cancel_running(self, claim: "JobClaim") -> bool:
+        """Cancel only the running generation observed by an authorized operator.
+
+        This fences the Job write, not external effects or Task summaries. False
+        means the snapshot no longer matches; database/commit errors propagate.
+        """
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.claim_outcomes import JobClaim
+
+        from ..job import Job as JobModel
+
+        if not isinstance(claim, JobClaim):
+            raise ValueError("A validated running snapshot is required")
+        if not is_bypass() and current_tenant_id() != claim.tenant_id:
+            raise TenantContextError("Cancellation snapshot does not match the current tenant")
+        async with async_session_maker() as session:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(
+                            JobModel.id == claim.job_id,
+                            JobModel.tenant_id == claim.tenant_id,
+                            JobModel.job_type == claim.job_type,
+                            JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+                            JobModel.status == "running",
+                            JobModel.attempts == claim.attempts,
+                            JobModel.started_at == claim.started_at,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    return False
+                row.status = "failed"
+                row.error = "Cancelled by operator"
+                row.finished_at = datetime.now(timezone.utc)
+            # Return success only after the cancellation commit is acknowledged.
+        return True
+
     async def _record_task_result(self, job: "Job", status: str, error: Optional[str] = None) -> None:
         """Mirror the job outcome onto its AgentTask (if any) so the task's
         `last_status`/`last_error`/`last_run_at` reflect the real run result."""
@@ -160,7 +207,133 @@ class JobManager(BaseManager["Job"]):
                 )
                 return bool(result.rowcount)
 
-    async def mark_done(self, job_id: int, result: Optional[dict] = None, llm_cost: Optional[float] = None) -> None:
+    @staticmethod
+    async def _write_task_outcome(
+        session: "AsyncSession",
+        claim: "JobClaim",
+        *,
+        status: str,
+        error: Optional[str],
+        completed_at: datetime,
+    ) -> None:
+        """Write only the claim's owned Task using the caller-owned transaction.
+
+        No commit, new session or generic permission grant occurs here. A
+        missing target cannot be silently accepted as a successful projection.
+        """
+        from sqlalchemy import select
+
+        from ..agent_task import AgentTask
+
+        task = (
+            await session.execute(
+                select(AgentTask)
+                .where(AgentTask.id == claim.agent_task_id, AgentTask.tenant_id == claim.tenant_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if task is None:
+            raise RuntimeError("Job task outcome target unavailable; completion not committed.")
+        task.last_run_at = completed_at
+        task.last_status = status
+        task.last_error = error
+
+    async def _finalize_claim(
+        self,
+        claim: "JobClaim",
+        *,
+        result: Optional[dict] = None,
+        llm_cost: Optional[float] = None,
+        error: Optional[str] = None,
+        allow_retry: bool = True,
+    ) -> "JobOutcomeReceipt":
+        """Commit one claimed Job and its terminal Task summary in one transaction.
+
+        This is not latest-run ordering, an outbox or safe external-effect replay.
+        DB exceptions propagate: no lost-claim or rollback inference is made.
+        """
+        from copy import deepcopy
+
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.claim_outcomes import JobClaim, JobOutcomeReceipt, OutcomeAck
+
+        from ..job import Job as JobModel
+
+        if not isinstance(claim, JobClaim):
+            raise ValueError("A validated acquired claim is required")
+        if not is_bypass() and current_tenant_id() != claim.tenant_id:
+            raise TenantContextError("Outcome claim does not match the current tenant")
+        async with async_session_maker() as session:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(
+                            JobModel.id == claim.job_id,
+                            JobModel.tenant_id == claim.tenant_id,
+                            JobModel.job_type == claim.job_type,
+                            JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+                            JobModel.status == "running",
+                            JobModel.attempts == claim.attempts,
+                            JobModel.started_at == claim.started_at,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    return JobOutcomeReceipt(claim, OutcomeAck.CLAIM_LOST, error="Job claim no longer owned")
+                now = datetime.now(timezone.utc)
+                if error is None:
+                    row.status = "done"
+                    row.result = result
+                    row.error = None
+                    row.finished_at = now
+                    ack = OutcomeAck.DONE
+                else:
+                    row.error = error[:2000]
+                    if result is not None:
+                        row.result = result
+                    if allow_retry and claim.attempts < row.max_attempts:
+                        row.status = "pending"
+                        row.run_at = now + timedelta(
+                            seconds=settings.JOB_RETRY_BACKOFF_SECONDS * (2 ** (claim.attempts - 1))
+                        )
+                        ack = OutcomeAck.RETRY
+                    else:
+                        row.status = "failed"
+                        row.finished_at = now
+                        ack = OutcomeAck.FAILED
+                if llm_cost is not None:
+                    row.llm_cost = float(llm_cost)
+                if ack != OutcomeAck.RETRY and claim.agent_task_id is not None:
+                    await self._write_task_outcome(
+                        session,
+                        claim,
+                        status="ok" if ack == OutcomeAck.DONE else "failed",
+                        error=row.error,
+                        completed_at=now,
+                    )
+                receipt = JobOutcomeReceipt(claim, ack, result=deepcopy(row.result), error=row.error)
+            # A receipt is returned only after BOTH rows' commit is acknowledged.
+        return receipt
+
+    async def mark_done(
+        self,
+        job_id: int,
+        result: Optional[dict] = None,
+        llm_cost: Optional[float] = None,
+        *,
+        claim: Optional["JobClaim"] = None,
+    ) -> Optional["JobOutcomeReceipt"]:
+        """Ordinary workers supply claim; the ID-only form is a legacy API."""
+        if claim is not None:
+            if job_id != claim.job_id:
+                raise ValueError("Job ID does not match the acquired claim")
+            return await self._finalize_claim(claim, result=result, llm_cost=llm_cost)
         job = await self.get(id=job_id)
         now = datetime.now(timezone.utc)
         updates: dict = {
@@ -183,10 +356,12 @@ class JobManager(BaseManager["Job"]):
         *,
         result: Optional[dict] = None,
         llm_cost: Optional[float] = None,
-    ) -> bool:
+        claim: Optional["JobClaim"] = None,
+    ) -> "bool | JobOutcomeReceipt":
         """
         Record failure. Re-schedule with backoff if attempts to remain, else mark failed.
-        Returns True if the job will be retried.
+        With a claim, returns a committed/lost receipt; the legacy ID-only form returns
+        True if the job will be retried.
 
         `allow_retry=False` marks it terminal instead. An inline run ("выполнить
         сейчас") must not leave a retry behind: the caller asked for the work to
@@ -195,6 +370,16 @@ class JobManager(BaseManager["Job"]):
         Optional result/cost are stored together with the failure update; they
         do not provide a billing ledger or atomic task/job transaction.
         """
+        if claim is not None:
+            if job_id != claim.job_id:
+                raise ValueError("Job ID does not match the acquired claim")
+            return await self._finalize_claim(
+                claim,
+                error=error,
+                allow_retry=allow_retry,
+                result=result,
+                llm_cost=llm_cost,
+            )
         from app.core.config import settings
 
         job = await self.get(id=job_id)
@@ -227,12 +412,16 @@ class JobManager(BaseManager["Job"]):
         return False
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
-        """Requeue jobs stuck in 'running' longer than timeout (crashed worker)."""
+        """Atomically requeue rows whose running lease is still stale.
+
+        Keep status and lease age in the UPDATE predicate: a previously read
+        snapshot must not overwrite a completion or a refreshed heartbeat.
+        The queryset retains the caller's tenant guard (or explicit bypass).
+        This preserves the existing timeout/replay policy; it does not prove
+        that an ordinary long-running handler has stopped its side effects.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
-        stale = await self.filter(status="running", locked_at__lt=cutoff)
-        for job in stale:
-            await self.update_by_id(job.id, status="pending", locked_at=None)
-        return len(stale)
+        return await self.filter(status="running", locked_at__lt=cutoff).update(status="pending", locked_at=None)
 
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:
         """Delete successfully finished jobs older than `older_than_hours`.

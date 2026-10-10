@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.permissions import get_current_user, has_permission, service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.jobs import dispatcher
 from app.models import AgentTask, Job, Tenant
@@ -29,9 +30,11 @@ async def workspace(monkeypatch):
 
 async def claimed_job(tenant, job_type="learn"):
     with tenant_scope(tenant.id):
-        task = await AgentTask.objects.create(
-            name=f"returned-failure-{uuid4().hex}", cron_expr="0 0 * * *", job_type=job_type, payload={}, is_active=False
-        )
+        with service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=f"returned-failure-{uuid4().hex}", cron_expr="0 0 * * *", job_type=job_type, payload={}, is_active=False
+            )
+        assert not has_permission(get_current_user(), "agenttask", "create")
         job = await Job.objects.create(
             job_type=job_type, agent_task_id=task.id, payload={}, status="running", attempts=1,
             max_attempts=3, started_at=datetime.now(timezone.utc), run_at=datetime.now(timezone.utc)
@@ -39,9 +42,19 @@ async def claimed_job(tenant, job_type="learn"):
     return task, job
 
 
+def failed_handler(result):
+    """Assert arrange authority does not reach dispatcher effects."""
+    async def fail(payload):
+        assert get_current_user() is None
+        assert not has_permission(None, "agenttask", "create")
+        return result
+
+    return AsyncMock(side_effect=fail)
+
+
 async def test_declared_failure_persists_job_and_task_failure_with_known_cost(workspace):
     task, job = await claimed_job(workspace)
-    handler = AsyncMock(return_value={"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.031})
+    handler = failed_handler({"status": "failed", "error": "invalid_structured_output", "llm_cost": 0.031})
     await dispatcher.execute_job(job, handler, allow_retry=True)
     with tenant_scope(workspace.id):
         stored = await Job.objects.get(id=job.id)
@@ -56,7 +69,7 @@ async def test_declared_failure_persists_job_and_task_failure_with_known_cost(wo
 
 async def test_unknown_provider_error_is_not_persisted_as_raw_text(workspace):
     _, job = await claimed_job(workspace, "reflect")
-    handler = AsyncMock(return_value={"status": "failed", "error": "PRIVATE-PROVIDER-TEXT", "llm_cost": None})
+    handler = failed_handler({"status": "failed", "error": "PRIVATE-PROVIDER-TEXT", "llm_cost": None})
     await dispatcher.execute_job(job, handler)
     with tenant_scope(workspace.id):
         stored = await Job.objects.get(id=job.id)
@@ -68,7 +81,7 @@ async def test_unknown_provider_error_is_not_persisted_as_raw_text(workspace):
 
 async def test_inline_path_returns_failed_instead_of_done(workspace, monkeypatch):
     _, job = await claimed_job(workspace)
-    handler = AsyncMock(return_value={"status": "failed", "error": "llm_call_failed", "llm_cost": None})
+    handler = failed_handler({"status": "failed", "error": "llm_call_failed", "llm_cost": None})
     monkeypatch.setitem(dispatcher.HANDLERS, "learn", handler)
     result = await dispatcher._run_claimed_inline(job)
     assert result["status"] == "failed" and result["error"] == "llm_call_failed"

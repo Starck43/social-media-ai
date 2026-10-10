@@ -113,6 +113,9 @@ async def test_the_page_ships_the_markdown_renderer() -> None:
     That is exactly what happened: `marked` stayed undefined, `renderMarkdown()`
     fell through to its `<br>` fallback, and the reply was visible but the
     Markdown was not converted.
+
+    Chat assets live in `extra_head` too — the stylesheet, the controller script
+    and the `msg-prose` hook class that bubble styling depends on.
     """
     async with await _client() as client:
         user, tenant_id = await _register(client, "ChatMd")
@@ -121,7 +124,9 @@ async def test_the_page_ships_the_markdown_renderer() -> None:
             assert page.status_code == 200
             assert "marked.min.js" in page.text, "marked.js never reaches the browser"
             assert "marked.setOptions" in page.text, "marked loads but is never configured"
-            assert ".msg-prose" in page.text, "the bubble styles ride in the same block"
+            assert "chat.css" in page.text, "chat stylesheet never reaches the browser"
+            assert "chat.js" in page.text, "chat controller script never reaches the browser"
+            assert "msg-prose" in page.text, "the bubble styles ride in the same block"
         finally:
             await _drop(user, tenant_id)
 

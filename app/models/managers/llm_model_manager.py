@@ -94,6 +94,40 @@ class LLMModelManager(BaseManager):
     # Phase 1 — Single source of truth for lifecycle
     # ──────────────────────────────────────────────────────────────
 
+    async def set_default(self, model_id: int) -> Optional["LLMModel"]:
+        """Make `model_id` the only default among the models it overlaps.
+
+        Uniqueness is per capability, not per `model_type` string: resolution
+        filters candidates with `can_handle()`, so a "text,video" model and a
+        "text" model both answer a "text" request — two defaults among them
+        fork the fleet into a provider-priority lottery. Every model sharing
+        at least one capability with this one loses the flag, which leaves
+        exactly one default per capability.
+
+        The single owner of the rule: `create_model`, `update_model`, the
+        default reassignment on delete and the sqladmin save hook all call it.
+        Returns the model, or None when it does not exist. Idempotent.
+        """
+        model = await self.get(id=model_id)
+        if not model:
+            return None
+
+        capabilities = set(model.capabilities)
+        if capabilities:
+            overlapping = [
+                other
+                for other in await self.filter(is_default=True).exclude(id=model_id).all()
+                if capabilities & set(other.capabilities)
+            ]
+            for other in overlapping:
+                await self.update_by_id(other.id, is_default=False)
+                logger.info(f"Cleared default on model {other.id} ({other.name}) — overlaps {model_id}")
+
+        if not model.is_default:
+            await self.update_by_id(model_id, is_default=True)
+            model = await self.get(id=model_id)
+        return model
+
     async def create_model(
         self,
         *,
@@ -113,7 +147,8 @@ class LLMModelManager(BaseManager):
         """
         Create a new LLM model.
 
-        If is_default=True, clears other defaults of the same model_type (global uniqueness).
+        If is_default=True, the new model becomes the only default among the
+        models it overlaps (see `set_default`).
         """
         from ..llm_provider import LLMProvider
 
@@ -122,11 +157,6 @@ class LLMModelManager(BaseManager):
             raise ValueError(f"Provider {provider_id} not found")
         if not provider.is_active:
             raise ValueError(f"Provider {provider_id} is not active")
-
-        if is_default:
-            # Clear other defaults of the same model_type (exact match)
-            # Note: This assumes that a model is a default for its *exact* set of capabilities.
-            await self.filter(model_type=model_type, is_default=True).update(is_default=False)
 
         model = await self.create(
             provider_id=provider_id,
@@ -142,24 +172,29 @@ class LLMModelManager(BaseManager):
             is_active=is_active,
             is_default=is_default,
         )
+        if is_default:
+            # After the insert, so a create that arrives while duplicates
+            # already exist still ends with exactly one default per capability.
+            await self.set_default(model.id)
         logger.info(f"Created LLM model {model.name} (ID: {model.id}, default={model.is_default})")
         return model
 
     async def update_model(self, model_id: int, **fields) -> Optional["LLMModel"]:
         """
-        Partially update a model. If is_default=True, enforces uniqueness per model_type.
+        Partially update a model.
+
+        A model that is (or stays) the default keeps exactly one default per
+        capability — see `set_default`, which also self-heals rows written
+        before the rule existed.
         """
         model = await self.get(id=model_id)
         if not model:
             return None
 
-        if fields.get("is_default", model.is_default) is True:
-            scope_type = fields.get("model_type", model.model_type)
-            # Clear other defaults of the same model_type (exact match)
-            await self.filter(model_type=scope_type, is_default=True).exclude(id=model_id).update(is_default=False)
-
         await self.update_by_id(model_id, **fields)
         updated = await self.get(id=model_id)
+        if updated.is_default:
+            await self.set_default(model_id)
         logger.info(f"Updated LLM model {updated.name} (ID: {updated.id}, default={updated.is_default})")
         return updated
 
@@ -213,8 +248,10 @@ class LLMModelManager(BaseManager):
             # Find candidate for new default
             candidate = await self._find_default_candidate(model_type, exclude_id=model_id)
             if candidate:
-                candidate.is_default = True
-                await self.update_by_id(candidate.id, is_default=True)
+                # Through set_default, not a bare flag write: the candidate may
+                # overlap a default of another model_type string, and the
+                # reassignment must not resurrect the duplicate it replaces.
+                await self.set_default(candidate.id)
                 new_default_id = candidate.id
                 new_default_name = candidate.name
                 logger.info(f"Reassigned default for type {model_type} to {candidate.name} (ID: {candidate.id})")

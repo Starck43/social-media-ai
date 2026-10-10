@@ -152,7 +152,7 @@ Acceptance: injected failures trigger actionable, deduplicated alerts to the rig
 
 ### PRD-09 — Safe publication and feature promises (release gate)
 
-Fix UX-02 tool binding/permissions first. Keep automatic external writes disabled for the initial pilot. Existing action path supports live sends in principle but registry invocation is broken at baseline; dry-run approval currently changes state, so preview/approve/send semantics need explicit tests/design.
+Draft PR22 reconciles UX-02 registry binding to the preview-only contract: `botaction.view`, actor-bound confirmation, `dry_run=False` refusal and no PENDING transition or publication. Owner105 checks at8af65bf passed; isolated fixture and newly included ok/no_data/partial/skipped UI verification are pending at the integrated head. Keep automatic external writes disabled. Live publication and durable approval/claim semantics require a separate contract and release evidence; preview is not approval to send.
 
 Before enabling live actions: validated non-empty payload/target, actor-bound approval, fresh guards/credential ownership, per-action claim/idempotency, retries, audit and immediate kill switch. Dry-run must not consume the only sendable state unless the product explicitly supports that transition. Tier “allow_auto_actions” is not proof of an unattended scheduler publisher.
 

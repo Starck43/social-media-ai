@@ -1,9 +1,10 @@
 """Learning-from-chat loop: typed fact extraction and memory hygiene.
 
 All functions must run inside tenant_scope. LLM output is untrusted data;
-validate the complete operation batch before the first memory write. Database
-writes are not a single transaction and billing-grade attempt accounting is
-separate work. Reflection advice is never applied to prompts automatically.
+validate the complete operation batch before the first memory write. Learning
+facts and watermark commit together; reflection and billing-grade attempt
+accounting remain separate work. Reflection advice is never applied to prompts
+automatically.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import re
 from typing import Any, Optional
 
 from app.services.ai.output_contracts import (
+    LearnedFacts,
     OutputContractError,
     known_cost_usd,
     learned_facts,
@@ -109,15 +111,36 @@ async def _plan_gate(feature: str, job: str) -> Optional[dict[str, Any]]:
     }
 
 
+async def _commit_learn_batch(
+    batch: LearnedFacts, *, expected_watermark: int, new_watermark: int, llm_cost: Optional[float]
+) -> Optional[dict[str, Any]]:
+    from app.models.managers.agent_memory_manager import agent_memory
+
+    try:
+        applied = await agent_memory.apply_learn_batch(
+            batch, expected_watermark=expected_watermark, new_watermark=new_watermark
+        )
+    except Exception:
+        # Includes uncertain commit acknowledgement: never claim no write or retry here.
+        logger.error("learn: memory commit failed or acknowledgement unavailable")
+        return {"status": "failed", "error": "memory_commit_failed", "llm_cost": llm_cost}
+    if not applied:
+        return {"status": "skipped", "reason": "watermark_changed", "llm_cost": llm_cost}
+    return None
+
+
 async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
     """Validate facts and actual rendered user evidence before writes/watermark.
 
     Invalid output preserves the watermark and returns any known incurred cost.
     Missing usage remains unknown (None), not a claim that the call was free.
     """
+    from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
     from app.models import AgentMessage
     from app.models.managers.agent_memory_manager import agent_memory
 
+    if current_tenant_id() is None or is_bypass():
+        raise TenantContextError("Learning requires a tenant scope without platform bypass")
     plan_gate = await _plan_gate("allow_learning", "learning")
     if plan_gate is not None:
         return plan_gate
@@ -131,8 +154,13 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
     entries = _transcript_entries(rows)
     transcript = "\n".join(line for _, _, line in entries)
     if not transcript:
-        await set_watermark(max(row.id for row in rows) if rows else watermark)
-        return {"status": "skipped", "reason": "empty transcript", "llm_cost": 0.0}
+        result = await _commit_learn_batch(
+            LearnedFacts(facts=[]),
+            expected_watermark=watermark,
+            new_watermark=max(row.id for row in rows),
+            llm_cost=0.0,
+        )
+        return result or {"status": "skipped", "reason": "empty transcript", "llm_cost": 0.0}
 
     from app.services.tenancy.resolver import current_daily_cost_limit, daily_cost_today
 
@@ -182,12 +210,15 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
         logger.warning("learn: output contract rejected")
         return {"status": "failed", "error": str(exc), "llm_cost": llm_cost}
 
-    for fact in parsed.facts:
-        await agent_memory.write(
-            fact.key, fact.value, source="learn", confidence=fact.confidence, evidence_message_id=fact.evidence_id
-        )
     # Do not consume rows omitted by the transcript character budget.
-    await set_watermark(max(message_id for message_id, _, _ in entries))
+    result = await _commit_learn_batch(
+        parsed,
+        expected_watermark=watermark,
+        new_watermark=max(message_id for message_id, _, _ in entries),
+        llm_cost=llm_cost,
+    )
+    if result is not None:
+        return result
     return {"status": "ok", "facts_stored": len(parsed.facts), "scanned_messages": len(entries), "llm_cost": llm_cost}
 
 

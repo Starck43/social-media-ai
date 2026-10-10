@@ -333,6 +333,44 @@ async def test_the_task_form_source_names_link_to_the_source_page(client):
 
 
 @pytest.mark.asyncio
+async def test_task_source_link_escapes_names_and_keeps_checkbox_hit_area(client):
+    from html import escape
+    from html.parser import HTMLParser
+
+    from app.core.permissions import service_permission_scope
+
+    class SourceLinkParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.links = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                self.links.append(dict(attrs))
+
+    user, tenant_id = await _register(client, "srcsafe")
+    try:
+        source = await _make_source(tenant_id)
+        hostile_name = "<script>alert(1)</script>"
+        with tenant_scope(tenant_id), service_permission_scope("source", "update"):
+            await Source.objects.update_by_id(source.id, name=hostile_name)
+        page = await client.get("/app/tasks")
+        assert page.status_code == 200
+        parser = SourceLinkParser()
+        parser.feed(page.text)
+        link = next(link for link in parser.links if link.get("href") == f"/app/sources/{source.id}")
+        assert {"pointer-events-auto", "relative", "z-10"} <= set(link["class"].split()), (
+            "the source link must be clickable above the card's checkbox label"
+        )
+        assert hostile_name not in page.text
+        assert escape(hostile_name) in page.text
+        assert f'id="add-src-{source.id}" name="source_ids" value="{source.id}"' in page.text
+        assert f'<label for="add-src-{source.id}" class="absolute inset-0 cursor-pointer"></label>' in page.text
+    finally:
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_checking_a_deactivated_source_activates_it_and_the_task(client):
     """A ticked-but-off source becomes active with the save.
 
@@ -382,3 +420,174 @@ async def test_toggling_a_task_with_only_deactivated_sources_names_them(client):
         assert source.name in resp.text, "the message must name the source that blocks activation"
     finally:
         await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("read_only", [False, True], ids=["owner-link", "member-text"])
+async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(client, read_only):
+    from html.parser import HTMLParser
+
+    from app.core.permissions import service_permission_scope
+    from app.models import Role
+    from app.types import UserRoleType
+
+    class TaskCellParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_name = False
+            self.parts = []
+            self.names = []
+            self.links = []
+            self.unsafe = []
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if tag == "td" and "font-medium" in attributes.get("class", "").split():
+                self.in_name = True
+                self.parts = []
+            if self.in_name:
+                if tag == "a":
+                    self.links.append(attributes.get("href"))
+                if tag in {"script", "img", "iframe", "svg"} or any(key.startswith("on") for key in attributes):
+                    self.unsafe.append((tag, attributes))
+
+        def handle_endtag(self, tag):
+            if tag == "td" and self.in_name:
+                self.names.append("".join(self.parts).strip())
+                self.in_name = False
+
+        def handle_data(self, data):
+            if self.in_name:
+                self.parts.append(data)
+
+    owner = member = None
+    tenant_id = None
+    hostile_name = 'Task <img src=x onerror=alert(1)> & "quoted"'
+    try:
+        owner, tenant_id = await _register(client, "taskname")
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=hostile_name,
+                job_type="prune",
+                cron_expr="@once",
+                payload={},
+                is_active=False,
+                tenant_id=tenant_id,
+            )
+        if read_only:
+            role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+            assert role is not None, "VIEWER reference role must be seeded"
+            username = _name("nameviewer")
+            member = await User.objects.create_user(
+                username=username,
+                email=f"{username}@example.com",
+                password="secret-password-1",
+                role_id=role.id,
+                is_superuser=False,
+            )
+            await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
+            async with AsyncClient(
+                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
+            ) as viewer_client:
+                token = await _csrf(viewer_client, "/app/login")
+                login = await viewer_client.post(
+                    "/app/login", data={"username": username, "password": "secret-password-1", "_csrf": token},
+                )
+                assert login.status_code == 200
+                page = await viewer_client.get("/app/tasks")
+        else:
+            page = await client.get("/app/tasks")
+        assert page.status_code == 200
+        parser = TaskCellParser()
+        parser.feed(page.text)
+        assert parser.names == [hostile_name], "escaping must preserve the exact stored name as readable text"
+        assert not parser.unsafe, "stored task names must not produce executable tags or event attributes"
+        assert hostile_name not in page.text
+        assert "&lt;img" in page.text and "&amp;" in page.text
+        if read_only:
+            assert f"/app/tasks/{task.id}/edit" not in parser.links
+        else:
+            assert f"/app/tasks/{task.id}/edit" in parser.links
+        with tenant_scope(tenant_id):
+            stored = await AgentTask.objects.get(id=task.id)
+            assert stored.name == hostile_name and not stored.is_active
+            assert not await Job.objects.filter(agent_task_id=task.id), "rendering must not run the inert task"
+    finally:
+        if member is not None:
+            await User.objects.delete_user(member.id)
+        await _drop(owner, tenant_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["pending", "running"])
+@pytest.mark.parametrize("fallback", [False, True], ids=["recent", "outside-recent-ten"])
+@pytest.mark.parametrize("actor", ["owner", "superuser"])
+async def test_task_detail_renders_active_job_and_sources_inside_authorized_scope(client, status, fallback, actor):
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.permissions import service_permission_scope
+
+    owner = operator = None
+    tenant_id = operator_tenant_id = None
+    try:
+        owner, tenant_id = await _register(client, "detailtarget")
+        platform = await Platform.objects.filter(is_active=True).first()
+        assert platform is not None
+        with tenant_scope(tenant_id), service_permission_scope("source", "create"):
+            source = await Source.objects.create(
+                name=_name("detail-source"), platform_id=platform.id, external_id=_name("detail-ext"),
+                source_type=SourceType.USER, is_active=True, params={}, tenant_id=tenant_id,
+            )
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=_name("detail-task"), job_type="collect", cron_expr="@once", payload={},
+                is_active=False, tenant_id=tenant_id,
+            )
+        with tenant_scope(tenant_id), service_permission_scope("agenttask", "update"):
+            await AgentTask.objects.set_sources(task.id, [source.id])
+        now = datetime.now(timezone.utc)
+        with tenant_scope(tenant_id):
+            active_job = await Job.objects.create(
+                agent_task_id=task.id, job_type=task.job_type, payload={}, status=status,
+                run_at=now - timedelta(minutes=10), created_at=now - timedelta(minutes=10),
+                started_at=now - timedelta(minutes=10) if status == "running" else None,
+            )
+            if fallback:
+                for offset in range(10):
+                    await Job.objects.create(
+                        agent_task_id=task.id, job_type=task.job_type, payload={}, status="done",
+                        run_at=now - timedelta(minutes=9),
+                        created_at=now - timedelta(minutes=9) + timedelta(seconds=offset),
+                    )
+            recent = await Job.objects.filter(agent_task_id=task.id).order_by(Job.created_at.desc()).limit(10)
+            assert (active_job.id not in {job.id for job in recent}) == fallback
+        if actor == "superuser":
+            async with AsyncClient(
+                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
+            ) as operator_client:
+                operator, operator_tenant_id = await _register(operator_client, "detailoperator")
+                assert operator_tenant_id != tenant_id
+                # Actual platform-superuser identity in its own active workspace,
+                # viewing the target task through the route's existing bypass.
+                await User.objects.update_by_id(operator.id, is_superuser=True)
+                page = await operator_client.get(f"/app/tasks/{task.id}", params={"tenant_id": tenant_id})
+        else:
+            page = await client.get(f"/app/tasks/{task.id}")
+        assert page.status_code == 200
+        assert task.name in page.text
+        assert f'href="/app/sources/{source.id}"' in page.text and source.name in page.text
+        match = re.search(
+            rf'<a href="/app/tasks\?job_id={active_job.id}"[^>]*>(.*?)</a>', page.text, re.S,
+        )
+        assert match is not None, "recent and fallback paths must identify the same active job"
+        expected = "в очереди" if status == "pending" else "выполняется"
+        assert expected in match.group(1)
+        opposite = "выполняется" if status == "pending" else "в очереди"
+        assert opposite not in match.group(1)
+        with tenant_scope(tenant_id):
+            unchanged = await Job.objects.get(id=active_job.id)
+            assert unchanged.status == status and unchanged.started_at == active_job.started_at
+            assert await Job.objects.filter(agent_task_id=task.id).count() == (11 if fallback else 1)
+    finally:
+        await _drop(operator, operator_tenant_id)
+        await _drop(owner, tenant_id)

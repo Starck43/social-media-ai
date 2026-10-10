@@ -20,7 +20,9 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         self.fixture = fixture
-        self.dispatcher = fixtures.load_source("_dispatcher_log_privacy_test", "app/jobs/dispatcher.py")
+        self.dispatcher = fixtures.load_source(
+            "_dispatcher_log_privacy_test", "app/jobs/dispatcher.py", imports=fixture.imports,
+        )
         self.original_notify = self.dispatcher._notify_job_result
         self.dispatcher._notify_job_result = fixture.notify
         self.job = fixture.job
@@ -45,17 +47,19 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             await self.dispatcher.execute_job(self.job, self.handler)
         self.assert_private_logs(logs, "job_done")
         self.assertIn("job_id=7 tenant_id=31 task_id=9 job_type=learn", logs.output[0])
-        self.jobs.mark_done.assert_awaited_once_with(7, result=result, llm_cost=0.12)
+        self.jobs.mark_done.assert_awaited_once_with(7, claim=self.fixture.claim, result=result, llm_cost=0.12)
         self.assertIs(self.notify.await_args.kwargs["result"], result)
 
     async def test_retry_exception_not_logged_and_retry_policy_unchanged(self):
         self.handler.side_effect = RuntimeError(SECRET)
-        self.jobs.mark_failed.return_value = True
+        self.jobs.mark_failed.return_value = fixtures.CLAIMS.JobOutcomeReceipt(
+            self.fixture.claim, fixtures.CLAIMS.OutcomeAck.RETRY
+        )
         with self.assertLogs(self.dispatcher.logger, level="WARNING") as logs:
             await self.dispatcher.execute_job(self.job, self.handler)
         self.assert_private_logs(logs, "job_retry_scheduled")
         self.assertIn("error_code=runtime_error", logs.output[0])
-        self.jobs.mark_failed.assert_awaited_once_with(7, error=SECRET, allow_retry=True)
+        self.jobs.mark_failed.assert_awaited_once_with(7, claim=self.fixture.claim, error=SECRET, allow_retry=True)
         self.notify.assert_not_awaited()
 
     async def test_terminal_exception_not_logged_or_passed_to_failure_notification(self):
@@ -64,7 +68,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             await self.dispatcher.execute_job(self.job, self.handler, allow_retry=False)
         self.assert_private_logs(logs, "job_failed_terminal")
         self.assertIn("error_code=timeout", logs.output[0])
-        self.jobs.mark_failed.assert_awaited_once_with(7, error=SECRET, allow_retry=False)
+        self.jobs.mark_failed.assert_awaited_once_with(7, claim=self.fixture.claim, error=SECRET, allow_retry=False)
         self.assertEqual(self.notify.await_args.kwargs["error"], self.dispatcher._FAILURE_MESSAGE)
 
     async def test_returned_failure_retains_safe_code_and_unknown_cost(self):
@@ -78,9 +82,13 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_persistence_exception_preserves_terminal_declared_failure(self):
         self.jobs.mark_failed.side_effect = [RuntimeError(SECRET), False]
         with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
-            await self.dispatcher.execute_job(self.job, self.handler)
-        self.assert_private_logs(logs, "job_failed_terminal")
-        self.assertTrue(all(call.kwargs["allow_retry"] is False for call in self.jobs.mark_failed.await_args_list))
+            with self.assertRaises(self.dispatcher.JobOutcomePersistenceError) as raised:
+                await self.dispatcher.execute_job(self.job, self.handler)
+        self.assert_private_logs(logs, "job_outcome_persistence_failed")
+        self.assertNotIn(SECRET, str(raised.exception))
+        self.jobs.mark_failed.assert_awaited_once()
+        self.assertFalse(self.jobs.mark_failed.await_args.kwargs["allow_retry"])
+        self.notify.assert_not_awaited()
         self.jobs.mark_done.assert_not_awaited()
 
     async def test_skipped_result_not_logged_or_notified(self):
@@ -138,7 +146,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         modules = {"app.services.notifications.service": fixtures.module_with(notify=notify),
                    "app.types": fixtures.module_with(NotificationType=SimpleNamespace(API_ERROR="error", REPORT_READY="ready"))}
         self.job.job_type = SECRET
-        with patch.dict(fixtures.sys.modules, modules):
+        with patch.dict(self.dispatcher.__isolated_imports__, modules):
             await self.original_notify(self.job, success=False, error=SECRET)
         self.assertNotIn(SECRET, str(notify.create.await_args))
         self.assertIn(self.dispatcher._FAILURE_MESSAGE, notify.create.await_args.kwargs["message"])
@@ -148,7 +156,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         notify = SimpleNamespace(create=AsyncMock(side_effect=RuntimeError(SECRET)))
         modules = {"app.services.notifications.service": fixtures.module_with(notify=notify),
                    "app.types": fixtures.module_with(NotificationType=SimpleNamespace(API_ERROR="error", REPORT_READY="ready"))}
-        with patch.dict(fixtures.sys.modules, modules):
+        with patch.dict(self.dispatcher.__isolated_imports__, modules):
             for success, event in ((False, "job_error_notification_failed"), (True, "job_success_notification_failed")):
                 with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
                     await self.original_notify(self.job, success=success, result={"text": SECRET})

@@ -313,3 +313,105 @@ async def test_a_workspace_may_not_touch_another_workspaces_source() -> None:
                 await Source.objects.delete(id=source_id)
         await _drop(other, other_tenant)
         await _drop(owner, owner_tenant)
+
+
+@pytest.mark.tenancy
+@pytest.mark.parametrize("read_only", [False, True], ids=["owner", "member"])
+@pytest.mark.parametrize(
+    "stored_name",
+    [
+        'Source <img data-xss-probe=p onerror=alert(1)> & "quotes"',
+        'Source </title><img data-xss-probe=p onerror=alert(1)>',
+        'Source" autofocus onfocus="alert(1)" data-xss-probe="p',
+    ],
+    ids=["text", "title-close", "quoted-value"],
+)
+async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_only, stored_name):
+    from html.parser import HTMLParser
+
+    from app.core.permissions import service_permission_scope
+    from app.models import Job, Role
+    from app.types import SourceType, UserRoleType
+
+    class SourceNameParser(HTMLParser):
+        def __init__(self, source_id):
+            super().__init__()
+            self.source_href = f"/app/sources/{source_id}"
+            self.active = {}
+            self.texts = {"title": [], "h1": [], "p": [], "source-link": []}
+            self.values = []
+            self.unsafe = []
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if any(key in attributes for key in ("data-xss-probe", "onerror", "onfocus")):
+                self.unsafe.append((tag, attributes))
+            if tag in {"title", "h1", "p"}:
+                self.active[tag] = []
+            if tag == "a" and attributes.get("href") == self.source_href:
+                self.active["source-link"] = []
+            if tag == "input" and attributes.get("name") == "name":
+                self.values.append(attributes.get("value"))
+
+        def handle_endtag(self, tag):
+            key = "source-link" if tag == "a" else tag
+            if key in self.active:
+                self.texts[key].append("".join(self.active.pop(key)).strip())
+
+        def handle_data(self, data):
+            for parts in self.active.values():
+                parts.append(data)
+
+    owner = member = None
+    tenant_id = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "SourceEscape")
+            platform = await Platform.objects.filter(is_active=True).first()
+            assert platform is not None
+            with tenant_scope(tenant_id), service_permission_scope("source", "create"):
+                source = await Source.objects.create(
+                    name=stored_name, platform_id=platform.id, external_id=_name("escape-ext"),
+                    source_type=SourceType.USER, is_active=True, params={}, tenant_id=tenant_id,
+                )
+            if read_only:
+                role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+                assert role is not None
+                username = _name("sourceviewer")
+                member = await User.objects.create_user(
+                    username=username, email=f"{username}@example.com", password="secret-password-1",
+                    role_id=role.id, is_superuser=False,
+                )
+                await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
+                async with await _client() as viewer_client:
+                    await _login(viewer_client, member.username)
+                    listing = await viewer_client.get("/app/sources")
+                    detail = await viewer_client.get(f"/app/sources/{source.id}")
+            else:
+                listing = await client.get("/app/sources")
+                detail = await client.get(f"/app/sources/{source.id}")
+        assert listing.status_code == detail.status_code == 200
+        list_parser = SourceNameParser(source.id)
+        list_parser.feed(listing.text)
+        detail_parser = SourceNameParser(source.id)
+        detail_parser.feed(detail.text)
+        assert list_parser.texts["source-link"] == [stored_name]
+        assert detail_parser.texts["title"] == [stored_name + " — AI Monitor"]
+        assert detail_parser.texts["h1"] == [stored_name]
+        assert detail_parser.values == [stored_name], "the quoted input must retain the entire original name"
+        assert not list_parser.unsafe and not detail_parser.unsafe
+        assert stored_name not in listing.text and stored_name not in detail.text
+        delete_action = f'action="/app/sources/{source.id}/delete"'
+        if read_only:
+            assert delete_action not in detail.text
+        else:
+            assert delete_action in detail.text
+            assert any(f"«{stored_name}»" in text for text in detail_parser.texts["p"])
+        with tenant_scope(tenant_id):
+            unchanged = await Source.objects.get(id=source.id)
+            assert unchanged.name == stored_name and unchanged.is_active
+            assert await Job.objects.filter().count() == 0, "rendering must not enqueue collection or analysis"
+    finally:
+        if member is not None:
+            await User.objects.delete_user(member.id)
+        await _drop(owner, tenant_id)

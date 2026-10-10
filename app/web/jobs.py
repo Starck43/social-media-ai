@@ -146,12 +146,19 @@ async def jobs_list(request: Request):
     else:
         sources_map = await _job_sources(rows)
 
+    # The same outcome classification the run-now modal and the task page use,
+    # so one run reads the same in all three places.
+    from app.web.tasks import _run_outcome
+
+    job_outcomes = {job.id: _run_outcome(job.job_type, job.result or {}) for job in rows if job.status == "done"}
+
     return render(
         request,
         "web/jobs.html",
         section="jobs",
         jobs=rows,
         sources_map=sources_map,
+        job_outcomes=job_outcomes,
         stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
         retryable=RETRYABLE,
         deletable=DELETABLE,
@@ -277,7 +284,13 @@ async def job_run(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Re-execute one job row now, synchronously (the dispatcher's claim path)."""
+    """Attempt the existing claim path and report only a confirmed outcome.
+
+    This route does not re-arm failed rows or infer completion from a missing
+    claim. A dispatcher error propagates rather than becoming a success flash;
+    a lost claim is the one reported case and renders an explicit error, never
+    completion and never a silent retry.
+    """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
@@ -308,13 +321,31 @@ async def job_run(
             add_flash(request, "error", f"Задание уже {job.status} — перезапуск не требуется")
             return RedirectResponse("/app/jobs", status_code=302)
 
+    from app.jobs.claim_outcomes import JobClaimLostError
     from app.jobs.dispatcher import run_job_now
 
-    result = await run_job_now(job.id, allow_retry=False)
-    if result and result.get("status") == "failed":
+    try:
+        result = await run_job_now(job.id, allow_retry=False)
+    except JobClaimLostError:
+        # The claim moved on: report uncertainty, never success, never a retry.
+        add_flash(
+            request, "error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."
+        )
+        return RedirectResponse("/app/jobs", status_code=302)
+    if result is None:
+        add_flash(request, "error", "Запуск не начат: задание не удалось захватить. Проверьте его статус.")
+    elif not isinstance(result, dict):
+        add_flash(request, "error", "Результат запуска не подтверждён. Проверьте состояние задания.")
+    elif result.get("status") == "failed":
         add_flash(request, "error", f"Задание снова упало: {result.get('error', '?')}")
+    elif result.get("status") == "done":
+        details = result.get("result")
+        if isinstance(details, dict) and details.get("status") == "skipped":
+            add_flash(request, "info", "Задание завершено со статусом «пропущено».")
+        else:
+            add_flash(request, "success", "Задание выполнено")
     else:
-        add_flash(request, "success", "Задание выполнено")
+        add_flash(request, "error", "Выполнение задания не подтверждено. Проверьте его статус.")
     return RedirectResponse("/app/jobs", status_code=302)
 
 
@@ -325,11 +356,10 @@ async def job_cancel(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Cancel a running job by marking it failed.
+    """Record cancellation only for the running generation observed here.
 
-    The worker loop checks the status before each step; once it sees `failed`
-    it stops. This is a soft cancel — the worker finishes the current LLM call
-    and then bails out, so no data is lost.
+    A committed cancellation fences later claimed outcomes, not an in-flight
+    provider call. It does not prove that the worker or external effects stopped.
     """
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -358,13 +388,17 @@ async def job_cancel(
             add_flash(request, "error", f"Задание #{job.id} уже {job.status} — прервать нечего")
             return RedirectResponse("/app/jobs", status_code=302)
 
-        now = job.updated_at or job.created_at
-        await Job.objects.update_by_id(
-            job.id,
-            status="failed",
-            error="Cancelled by operator",
-            finished_at=now,
-        )
+        from app.jobs.claim_outcomes import JobClaim
 
-    add_flash(request, "success", f"Задание #{job_id} прервано оператором")
+        try:
+            observed = JobClaim.capture(job)
+        except ValueError:
+            add_flash(request, "error", "Отмена не подтверждена: данные запуска неполны. Проверьте состояние задания.")
+            return RedirectResponse("/app/jobs", status_code=302)
+        cancelled = await Job.objects.cancel_running(observed)
+        if not cancelled:
+            add_flash(request, "error", "Отмена не выполнена: состояние запуска изменилось. Проверьте задание.")
+            return RedirectResponse("/app/jobs", status_code=302)
+
+    add_flash(request, "success", f"Отмена задания #{job_id} записана. Выполнение внешних действий могло продолжиться.")
     return RedirectResponse("/app/jobs", status_code=302)

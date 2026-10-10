@@ -177,7 +177,6 @@ def _trigger_and_action_fields(
 		whitelist: str,
 		rate_limit_per_hour: str,
 		cooldown_seconds: str,
-		requires_approval: str,
 ) -> dict:
 	"""The model columns (not payload) an analyze task carries.
 
@@ -215,7 +214,6 @@ def _trigger_and_action_fields(
 	except ValueError:
 		fields["rate_limit_per_hour"] = None
 		fields["cooldown_seconds"] = None
-	fields["requires_approval"] = requires_approval == "on"
 	return fields
 
 
@@ -265,7 +263,6 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"whitelist": ", ".join(task.whitelist or []),
 		"rate_limit_per_hour": task.rate_limit_per_hour or "",
 		"cooldown_seconds": task.cooldown_seconds or "",
-		"requires_approval": task.requires_approval if task.requires_approval is not None else True,
 	}
 	# The analysis targets live in payload under their own keys (brands, …) and
 	# are edited as comma separated strings, like monitored_users above.
@@ -460,17 +457,18 @@ async def tasks_list(request: Request):
 
 	# Collect running/pending jobs per task so the UI can disable the "run now"
 	# button and point the user to the existing modal instead of creating a
-	# duplicate job.
+	# duplicate job. The status rides along: a pending job has not been claimed
+	# by any worker yet, and the row says "queued", not "running".
 	from app.models.job import Job
 
 	task_ids = [t.id for t in tasks]
-	running_jobs: dict[int, int] = {}  # task_id -> job_id
+	running_jobs: dict[int, dict[str, Any]] = {}  # task_id -> {id, status}
 	if task_ids:
 		for job in await Job.objects.filter(
 			agent_task_id__in=task_ids,
 			status__in=["pending", "running"],
 		):
-			running_jobs[job.agent_task_id] = job.id
+			running_jobs[job.agent_task_id] = {"id": job.id, "status": job.status}
 
 	raw_job_id = request.query_params.get("job_id")
 	job_id = int(raw_job_id) if raw_job_id and raw_job_id.isdigit() else None
@@ -543,7 +541,6 @@ async def task_create(
 		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
-		requires_approval: str = Form("on"),
 		run_now: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
@@ -648,7 +645,6 @@ async def task_create(
 		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
-		requires_approval,
 	)
 
 	from app.core.tenant_context import tenant_scope
@@ -754,10 +750,14 @@ async def task_detail(request: Request, task_id: int):
 		recent_jobs = await Job.objects.filter(agent_task_id=task_id).order_by(Job.created_at.desc()).limit(10)
 
 		# Running/pending job for this task (UI guard against duplicate runs).
+		# The status rides along: a pending job has not been claimed by any worker
+		# yet, and the page says "queued", not "running".
 		running_job_id: int | None = None
+		running_job_status: str | None = None
 		for job in recent_jobs:
 			if job.status in ("pending", "running"):
 				running_job_id = job.id
+				running_job_status = job.status
 				break
 		if running_job_id is None:
 			# The running job may be outside the recent-10 window.
@@ -767,6 +767,7 @@ async def task_detail(request: Request, task_id: int):
 			).first()
 			if running_job is not None:
 				running_job_id = running_job.id
+				running_job_status = running_job.status
 
 		# Linked sources.
 		linked_sources = await Source.objects.filter(id__in=await _task_source_ids(task_id)).order_by(Source.name)
@@ -776,6 +777,13 @@ async def task_detail(request: Request, task_id: int):
 		if source.agent_scenario_id is not None:
 			scenario = await AgentScenario.objects.get(id=source.agent_scenario_id, tenant_id=source.tenant_id)
 
+	# The same outcome classification the run-now modal uses, so a run reads
+	# the same on this page and in the modal: a half-broken collect is not a
+	# green "готово" in one place and "частично" in the other.
+	job_outcomes = {
+		job.id: _run_outcome(job.job_type, job.result or {}) for job in recent_jobs if job.status == "done"
+	}
+
 	return render(
 		request,
 		"web/task_detail.html",
@@ -784,6 +792,8 @@ async def task_detail(request: Request, task_id: int):
 		filter_tenant_id=filter_tenant_id,
 		recent_jobs=recent_jobs,
 		running_job_id=running_job_id,
+		running_job_status=running_job_status,
+		job_outcomes=job_outcomes,
 		sources=linked_sources,
 		scenario=scenario,
 		cron_to_human=cron_to_human,
@@ -1032,7 +1042,6 @@ async def task_update(
 		whitelist: str = Form(""),
 		rate_limit_per_hour: str = Form(""),
 		cooldown_seconds: str = Form(""),
-		requires_approval: str = Form("on"),
 		run_now: str = Form(""),
 		token: str = Form("", alias="_csrf"),
 		tenant_id: int | None = Form(default=None),
@@ -1105,7 +1114,6 @@ async def task_update(
 		whitelist,
 		rate_limit_per_hour,
 		cooldown_seconds,
-		requires_approval,
 	)
 
 	# Merge into existing payload instead of replacing — keys like "period",
@@ -1282,6 +1290,64 @@ def _stat(value: Any, label: str) -> dict[str, Any]:
 	return {"value": number, "label": label}
 
 
+def _as_int(value: Any) -> int:
+	try:
+		return int(value)
+	except (TypeError, ValueError):
+		return 0
+
+
+def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
+	"""Classify a finished run: `ok` | `no_data` | `partial` | `skipped`.
+
+	A green box reading «Новых записей: 0» looks like a failure, and a run
+	where half the sources errored looks like a success — the numbers alone
+	tell both lies. The outcome is what the modal's tone and label are chosen
+	from, so "nothing new" and "partly broken" stop being things the reader
+	has to infer from a stat tile.
+	"""
+	if job_type == "collect":
+		# Per-source failures are caught by the handler, so the job is `done`
+		# even when every source failed — the outcome carries that instead.
+		if _as_int(result.get("error")):
+			return "partial"
+		# Jobs recorded before `new_items` existed have no such key; fall back
+		# to the total rather than calling a legacy run "no data".
+		found = result.get("new_items", result.get("items", 0))
+		return "no_data" if not _as_int(found) else "ok"
+	if job_type == "analyze":
+		if _as_int(result.get("analyzed")):
+			return "ok"
+		# Skipped sources are the ones without an active scenario — a different
+		# fact from "there was nothing to analyse", and a different fix.
+		return "skipped" if _as_int(result.get("skipped")) else "no_data"
+	if job_type == "prune":
+		return "no_data" if not _as_int(result.get("deleted")) else "ok"
+	return "ok"
+
+
+_OUTCOME_LABELS = {
+	"ok": "Готово",
+	"no_data": "Новых данных нет",
+	"partial": "Выполнено частично",
+	"skipped": "Пропущено",
+}
+
+_OUTCOME_NOTES = {
+	"collect": {
+		"no_data": "Все источники ответили, но новых записей не нашлось — всё уже собрано ранее.",
+		"partial": "Часть источников не ответила или требует авторизации — подробности ниже.",
+	},
+	"analyze": {
+		"no_data": "Нечего анализировать — новых данных нет.",
+		"skipped": "Источники пропущены: вероятно, нет активного сценария.",
+	},
+	"prune": {
+		"no_data": "Удалять нечего — старых записей нет.",
+	},
+}
+
+
 def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	"""Structured result summary for a finished job (run-now modal).
 
@@ -1295,7 +1361,24 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 
 	if status in ("pending", "running"):
 		label = f"Выполнение задачи «{task_name}»" if task_name else "Выполнение задачи"
-		return {"status": status, "label": label, "title": JOB_TYPE_TITLES.get(job_type, job_type)}
+		summary: dict[str, Any] = {
+			"status": status,
+			"label": label,
+			"title": JOB_TYPE_TITLES.get(job_type, job_type),
+			"created_at": job.created_at.isoformat() if job.created_at else None,
+			"started_at": job.started_at.isoformat() if job.started_at else None,
+		}
+		# A job nobody claimed is not "running" — it is waiting for a worker.
+		# Without this the modal dead-ends on its client timeout and the row
+		# keeps a spinner for a job that never started, which reads as a hang.
+		if status == "pending" and job.created_at:
+			queued_for = datetime.now(timezone.utc) - job.created_at
+			if queued_for > timedelta(minutes=2):
+				summary["hint"] = (
+					"Задача ждёт в очереди — похоже, worker не запущен "
+					"(python -m app.runtime или python -m app.worker)"
+				)
+		return summary
 	if status == "failed":
 		return {
 			"status": "failed",
@@ -1345,7 +1428,18 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	elif job_type == "prune":
 		stats = [_stat(result.get("deleted", 0), "записей удалено")]
 
-	summary: dict[str, Any] = {"status": "done", "label": "Готово", "title": title, "stats": stats}
+	outcome = _run_outcome(job_type, result)
+	summary: dict[str, Any] = {
+		"status": "done",
+		"label": _OUTCOME_LABELS[outcome],
+		"title": title,
+		"stats": stats,
+		"outcome": outcome,
+		"outcome_label": _OUTCOME_LABELS[outcome],
+	}
+	note = _OUTCOME_NOTES.get(job_type, {}).get(outcome)
+	if note:
+		summary["outcome_note"] = note
 	if headline is not None:
 		summary["headline"] = headline
 	if task_name:

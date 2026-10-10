@@ -54,9 +54,9 @@
                        is a link, not a button opening a modal. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                         <a href="/app/tasks/{{ task.id }}/edit"
-                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name }}</a>
+                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
                     {% else %}
-                        {{ task.name }}
+                        {{ task.name|e }}
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
@@ -117,10 +117,11 @@
                     <div class="flex items-center gap-1">
                         {# Show a running indicator if a job is already in progress #}
                          {% if task.id in running_jobs %}
-                         <a href="/app/tasks?job_id={{ running_jobs[task.id] }}"
-                            title="Job #{{ running_jobs[task.id] }} выполняется"
+                         {% set rj = running_jobs[task.id] %}
+                         <a href="/app/tasks?job_id={{ rj.id }}"
+                            title="Job #{{ rj.id }} {% if rj.status == 'pending' %}в очереди{% else %}выполняется{% endif %}"
                             class="flex items-center justify-center rounded-md border border-amber-700 p-1.5 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
-                            aria-label="Job выполняется">
+                            aria-label="Job {% if rj.status == 'pending' %}в очереди{% else %}выполняется{% endif %}">
                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                   stroke-width="1.5" stroke="currentColor" class="h-4 w-4 animate-spin">
                                <path stroke-linecap="round" stroke-linejoin="round"
@@ -197,7 +198,7 @@
                     <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Настройте название, источники и расписание.</p>
                 </div>
                 <button type="button" @click="openAdd = false" aria-label="Закрыть"
-                        class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
+                        class="flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -309,11 +310,13 @@
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
                     <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for source in sources %}
+                        {% set source_label %}<a href="/app/sources/{{ source.id }}"
+                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
                         {{ check_card(
                             cid="add-src-" ~ source.id,
                             name="source_ids",
                             value=source.id,
-                            content=source.name,
+                            content=source_label,
                             checked=false,
                             cls="content-cb",
                             attrs=':checked="task.source_ids.includes(' ~ source.id ~ ')"'
@@ -451,7 +454,7 @@
                     </template>
                 </div>
                 <button type="button" @click="runModal.close()" aria-label="Закрыть"
-                        class="rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
+                        class="flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -460,46 +463,69 @@
             </div>
 
             <template x-if="runModal.loading">
-                <div class="mt-5 flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
-                    <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
-                         viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Задача выполняется…</span>
+                <div class="mt-5">
+                    <div class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+                        <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                             viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {# "Queued" and "running" are different facts: a pending
+                           job has not been claimed by any worker yet. #}
+                        <span x-text="runModal.data.status === 'pending' ? 'Задача в очереди…' : 'Задача выполняется…'"></span>
+                        <span class="ml-auto shrink-0 text-xs text-slate-600 dark:text-slate-400"
+                              x-text="runModal.elapsedLabel"></span>
+                    </div>
+                    <template x-if="runModal.data.hint">
+                        <p class="mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2 text-xs text-amber-800 dark:text-amber-300"
+                           x-text="runModal.data.hint"></p>
+                    </template>
                 </div>
             </template>
 
             <template x-if="!runModal.loading">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
-                        <div class="rounded-lg border border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 p-4">
+                        {# The tone follows the outcome, not the status: a clean run,
+                           a run that found nothing new and a run where part of the
+                           sources failed are three different facts, and a single
+                           green box told all three as "Готово". #}
+                        <div class="rounded-lg border p-4"
+                             :class="runModal.outcomeTone.box">
                             <!-- Headline: the one number that answers "did it work?" -->
                             <template x-if="runModal.data.headline">
                                 <div>
                                     <div class="flex items-baseline gap-2">
-                                        <span class="text-3xl font-semibold text-emerald-700 dark:text-emerald-300"
+                                        <span class="text-3xl font-semibold" :class="runModal.outcomeTone.num"
                                               x-text="runModal.data.headline.value"></span>
-                                        <span class="text-sm text-emerald-200/70"
+                                        <span class="text-sm" :class="runModal.outcomeTone.sub"
                                               x-text="runModal.data.headline.noun"></span>
                                     </div>
-                                    <p class="mt-1 text-xs text-emerald-200/60"
+                                    <p class="mt-1 text-xs" :class="runModal.outcomeTone.faint"
                                        x-text="runModal.data.headline.label"></p>
                                 </div>
                             </template>
                             <template x-if="!runModal.data.headline">
-                                <p class="text-sm text-emerald-200">Готово</p>
+                                <p class="text-sm" :class="runModal.outcomeTone.sub"
+                                   x-text="runModal.data.outcome_label || 'Готово'"></p>
+                            </template>
+
+                            <!-- What the outcome means, when it is not a plain success -->
+                            <template x-if="runModal.data.outcome_note">
+                                <p class="mt-2 text-xs" :class="runModal.outcomeTone.faint"
+                                   x-text="runModal.data.outcome_note"></p>
                             </template>
 
                             <!-- Supporting stats: every number keeps its own noun -->
-                            <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-emerald-900/50 pt-3"
+                            <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-3"
+                                :class="runModal.outcomeTone.line"
                                 x-show="(runModal.data.stats || []).length > 0">
                                 <template x-for="s in (runModal.data.stats || [])" :key="s.label">
                                     <div>
-                                        <dt class="text-xs text-emerald-200/60" x-text="s.label"></dt>
-                                        <dd class="text-lg font-medium text-emerald-200" x-text="s.value"></dd>
+                                        <dt class="text-xs" :class="runModal.outcomeTone.faint" x-text="s.label"></dt>
+                                        <dd class="text-lg font-medium" :class="runModal.outcomeTone.sub" x-text="s.value"></dd>
                                     </div>
                                 </template>
                             </dl>
@@ -507,8 +533,8 @@
                             <!-- Jump straight to the data: collect → what was gathered,
                                  analyze → what the agent concluded for that source. -->
                             <template x-if="(runModal.data.sources || []).length > 0">
-                                <div class="mt-4 border-t border-emerald-900/50 pt-3">
-                                    <p class="text-xs text-emerald-200/60">Результат по источникам</p>
+                                <div class="mt-4 border-t pt-3" :class="runModal.outcomeTone.line">
+                                    <p class="text-xs" :class="runModal.outcomeTone.faint">Результат по источникам</p>
                                     <div class="mt-2 flex flex-wrap gap-2">
                                         <template x-for="src in runModal.data.sources" :key="src.source_id">
                                             <a :href="`/app/sources/${src.source_id}`"
@@ -552,6 +578,7 @@
 
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
+    const RUNNING_JOBS = {{ running_jobs|tojson }};
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
     const TARGET_FIELDS = [
         { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
@@ -596,7 +623,6 @@
                 whitelist: "",
                 rate_limit_per_hour: "",
                 cooldown_seconds: "",
-                requires_approval: true,
             },
             targetDefs: TARGET_FIELDS,
             activeTargetTypes() {
@@ -619,34 +645,84 @@
                 loading: RUN_JOB_ID !== null,
                 data: { label: "Запуск…" },
                 pollTimer: null,
+                watchTimer: null,
+                finished: false,
                 close() {
                     this.open = false
                     if (this.pollTimer) clearInterval(this.pollTimer)
+                    if (this.finished && RUN_JOB_ID !== null) {
+                        // A finished job must not re-open on the next reload:
+                        // drop ?job_id and re-render, so the row's run button
+                        // flips back from the spinner to the play triangle —
+                        // the button is server-rendered from the job status,
+                        // so only a fresh render can update it.
+                        const url = new URL(window.location.href)
+                        url.searchParams.delete("job_id")
+                        window.location.replace(url.toString())
+                    } else {
+                        // Still in flight: keep watching so the button does not
+                        // stay a spinner after the job ends behind the modal.
+                        this.watchRunningJobs()
+                    }
+                },
+                get elapsedLabel() {
+                    const since = this.data.started_at || this.data.created_at
+                    if (!since) return ""
+                    const secs = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000))
+                    if (secs < 60) return `${secs} с`
+                    const mins = Math.floor(secs / 60)
+                    if (mins < 60) return `${mins}:${String(secs % 60).padStart(2, "0")}`
+                    return `${Math.floor(mins / 60)} ч ${mins % 60} мин`
+                },
+                // Tone per outcome: green only for a clean run with results,
+                // amber when part of the run failed, neutral when there was
+                // simply nothing new — "0 новых записей" in green read as a
+                // failure, and a half-broken run in green read as a success.
+                get outcomeTone() {
+                    const tones = {
+                        ok: {
+                            box: "border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40",
+                            num: "text-emerald-700 dark:text-emerald-300",
+                            sub: "text-emerald-200/70",
+                            faint: "text-emerald-200/60",
+                            line: "border-emerald-900/50",
+                        },
+                        partial: {
+                            box: "border-amber-700 bg-amber-50 dark:bg-amber-950/40",
+                            num: "text-amber-700 dark:text-amber-300",
+                            sub: "text-amber-200/70",
+                            faint: "text-amber-200/60",
+                            line: "border-amber-900/50",
+                        },
+                        quiet: {
+                            box: "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900",
+                            num: "text-slate-800 dark:text-slate-200",
+                            sub: "text-slate-600 dark:text-slate-400",
+                            faint: "text-slate-500 dark:text-slate-400",
+                            line: "border-slate-200 dark:border-slate-800",
+                        },
+                    }
+                    if (this.data.outcome === "partial") return tones.partial
+                    if (this.data.outcome === "no_data" || this.data.outcome === "skipped") return tones.quiet
+                    return tones.ok
                 },
             },
             init() {
                 if (RUN_JOB_ID !== null) this.pollRun()
+                else this.watchRunningJobs()
             },
             pollRun() {
-                const start = Date.now()
-                const MAX_MS = 60000
+                // No client-side deadline: a long analyze run is legitimate, and
+                // a job stuck in the queue is reported by the server hint below
+                // instead of a bogus "timeout" that implies the work ended.
                 const poll = () => {
-                    if (Date.now() - start > MAX_MS) {
-                        this.runModal.loading = false
-                        this.runModal.data = {
-                            status: "timeout",
-                            label: "Время вышло",
-                            error: "Задача не завершилась за 60 секунд",
-                        }
-                        if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
-                        return
-                    }
                     fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { "Accept": "application/json" } })
                         .then(r => r.json())
                         .then((data) => {
                             this.runModal.data = data
                             if (data.status === "done" || data.status === "failed" || data.status === "not_found") {
                                 this.runModal.loading = false
+                                this.runModal.finished = true
                                 if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
                             }
                         })
@@ -655,6 +731,31 @@
                 }
                 poll()
                 this.runModal.pollTimer = setInterval(poll, 2000)
+            },
+            watchRunningJobs() {
+                // The run button is server-rendered from job status. A job that
+                // finishes while its modal is closed would otherwise leave the
+                // spinner stale until a manual reload; poll the in-flight jobs
+                // and re-render once every one of them has ended.
+                if (this.runModal.watchTimer) clearInterval(this.runModal.watchTimer)
+                const ids = Object.values(RUNNING_JOBS || {}).map((j) => j.id)
+                if (!ids.length) return
+                const check = () => {
+                    Promise.all(
+                        ids.map((id) =>
+                            fetch(`/app/tasks/job/${id}/status`, { headers: { "Accept": "application/json" } })
+                                .then((r) => r.json())
+                                .then((d) => d.status)
+                                .catch(() => "running")
+                        )
+                    ).then((statuses) => {
+                        const settled = statuses.every(
+                            (s) => s === "done" || s === "failed" || s === "not_found"
+                        )
+                        if (settled) window.location.reload()
+                    })
+                }
+                this.runModal.watchTimer = setInterval(check, 5000)
             },
         }
     }

@@ -19,6 +19,7 @@ from app.agent.tools import tool
         },
         "required": [],
     },
+    required_permission="source.analyze",
 )
 async def collect_now(source_ids: list[int] | None = None) -> dict:
     """Collect now and report what happened.

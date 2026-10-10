@@ -62,7 +62,6 @@ async def task(scenario, source):
         action_type=AgentActionType.COMMENT,
         rate_limit_per_hour=5,
         cooldown_seconds=60,
-        requires_approval=True,
         blacklist=["baduser"],
         whitelist=None,
         is_active=True,
@@ -294,7 +293,14 @@ class TestAgentTools:
         result = await action_send(action_id=action.id, dry_run=True)
         assert result["success"] is True
         assert result["dry_run"] is True
-        assert result["status"] == "APPROVED"
+        assert result["status"] == "PENDING"
+        assert result["preview_only"] is True
+        stored = await BotAction.objects.get(id=action.id)
+        assert stored.status == BotActionStatus.PENDING
+        assert stored.confirmed_at is None
+        assert stored.confirmed_by is None
+        assert stored.result is None
+        assert stored.attempts == 0
 
 
 class TestAnalyzeHandler:

@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from app.models import AIAnalytics
+from app.services.ai.analysis_render import first_analysis_value
 from app.services.ai.chain_resolver import human_chain_label
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
@@ -1536,14 +1537,7 @@ class ReportAggregator:
             summary_data.get("ai_analysis"),
             summary_data,
         ]
-        for nest in nests:
-            if not isinstance(nest, dict):
-                continue
-            for key in keys:
-                value = nest.get(key)
-                if value is not None and value != "" and value != []:
-                    return value
-        return None
+        return first_analysis_value(nests, keys)
 
     def _extract_hashtags(self, summary_data: dict) -> list[str]:
         """Explicit hashtags from the analysis, else `#`-prefixed keywords.

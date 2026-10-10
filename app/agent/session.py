@@ -53,11 +53,7 @@ async def load_history(session: AgentSession) -> list[dict[str, Any]]:
                 continue
             answered.add(cid)
             results.append({"role": "tool", "tool_call_id": cid, "content": result.content or ""})
-        calls = [
-            to_openai_call(call, cid)
-            for cid, call in calls_by_id.items()
-            if cid in answered
-        ]
+        calls = [to_openai_call(call, cid) for cid, call in calls_by_id.items() if cid in answered]
         if calls:
             msg["tool_calls"] = calls
         messages.append(msg)

@@ -209,6 +209,10 @@ class JobRunOutcomeTests(unittest.IsolatedAsyncioTestCase):
         self.run.side_effect = ClaimLostError("claim lost")
         response = await self.source.job_run(self.request, 7, token="csrf", tenant_id=31)
         self.assertEqual((response.url, response.status_code), ("/app/jobs", 302))
+        self.assertEqual(
+            self.flashes[-1],
+            ("error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."),
+        )
         self.assert_not_success()
         self.assertFalse(any(kind == "info" for kind, text in self.flashes))
         self.assertIn("error", [kind for kind, text in self.flashes])

@@ -70,10 +70,15 @@ corrections. The compatibility pointer and detailed handoff explain evidence,
 not competing backlog. Owner separately approved integration of this docs-only
 record; that authorization does not cover PR29 or future code changes.
 Queue continuation [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
-(ordinary claim fencing) is **MERGED** as `351f3b6`; tested SHA retained:
+(ordinary claim fencing) merged at the historical merge checkpoint `351f3b6`
+(dev has since advanced); the merge SHA is distinct from the owner-tested
 `dbc054c7f37ed1071711afea750e044b7e50ffd6`, owner-reported 77 standalone + 15
-PostgreSQL checks exit 0, review published on that PR. The unmerged-broader
-gates stay OPEN: general claim fencing, Job/task atomicity and recovery replay.
+PostgreSQL checks exit 0, review published on that PR. Current queue
+allocation is Draft [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
+(`fix/job-task-outcome-atomicity`, submitted `f1e6c204d85eee50be52b687ab029b056ef5663b`
+from dev `f2f53b1`), pending owner review/checks — its boundary is new, so #51
+results do not transfer. The unmerged-broader gates stay OPEN: general claim
+fencing, Job/task atomicity and recovery replay.
 
 ## Technical catalog — open only what the selected task needs
 

@@ -80,9 +80,13 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_persistence_exception_preserves_terminal_declared_failure(self):
         self.jobs.mark_failed.side_effect = [RuntimeError(SECRET), False]
         with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
-            await self.dispatcher.execute_job(self.job, self.handler)
-        self.assert_private_logs(logs, "job_failed_terminal")
-        self.assertTrue(all(call.kwargs["allow_retry"] is False for call in self.jobs.mark_failed.await_args_list))
+            with self.assertRaises(self.dispatcher.JobOutcomePersistenceError) as raised:
+                await self.dispatcher.execute_job(self.job, self.handler)
+        self.assert_private_logs(logs, "job_outcome_persistence_failed")
+        self.assertNotIn(SECRET, str(raised.exception))
+        self.jobs.mark_failed.assert_awaited_once()
+        self.assertFalse(self.jobs.mark_failed.await_args.kwargs["allow_retry"])
+        self.notify.assert_not_awaited()
         self.jobs.mark_done.assert_not_awaited()
 
     async def test_skipped_result_not_logged_or_notified(self):

@@ -127,8 +127,11 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_result_persistence_failure_does_not_enable_retry(self):
         self.jobs.mark_failed.side_effect = [RuntimeError("write_failed"), False]
-        await self.dispatcher.execute_job(self.job, self.handler)
-        self.assertTrue(all(call.kwargs["allow_retry"] is False for call in self.jobs.mark_failed.await_args_list))
+        with self.assertRaises(self.dispatcher.JobOutcomePersistenceError):
+            await self.dispatcher.execute_job(self.job, self.handler)
+        self.jobs.mark_failed.assert_awaited_once()
+        self.assertFalse(self.jobs.mark_failed.await_args.kwargs["allow_retry"])
+        self.notify.assert_not_awaited()
         self.jobs.mark_done.assert_not_awaited()
 
     async def test_normal_exception_backoff_is_preserved(self):

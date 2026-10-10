@@ -29,6 +29,7 @@ async def execute():
     from app.core.config import settings
     from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
     from app.jobs import claim_outcomes, result_outcomes
+    from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
     from app.models import Job, Tenant
     from app.models.managers import base_manager
     from app.models.managers.job_manager import JobManager
@@ -214,9 +215,10 @@ async def execute():
             run = await prepare(job)
             await change(job, locked_at=datetime.now(timezone.utc) - timedelta(minutes=40))
             assert await scoped_reap() == 1
+            stopped = await snapshot(job)
+            assert stopped['status'] == 'failed' and stopped['error'].startswith(OUTCOME_UNCONFIRMED_PREFIX)
             with tenant_scope(tenant_id):
-                newer = await manager.claim_job(job.id)
-            assert newer is not None and newer.attempts == 2
+                assert await manager.claim_job(job.id) is None  # No automatic replay after quarantine.
             before = await snapshot(job)
             assert await periodic(run) is False
             try:
@@ -227,7 +229,7 @@ async def execute():
             assert run.drained.is_set() and not run.probe.notifications
             assert await snapshot(job) == before
             assert await snapshot(foreign) == foreign_before
-            await passed('scoped reaper/reacquisition rejects old generation and drains without newer-row outcome')
+            await passed('scoped quarantine forbids reacquisition and drains old handler without rewriting stopped evidence')
 
             job = await make_job()
             run = await prepare(job)

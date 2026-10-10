@@ -35,6 +35,7 @@ class JobManager(BaseManager["Job"]):
         tenant_id: Optional[int] = None,
         run_at: Optional[datetime] = None,
         max_attempts: Optional[int] = None,
+        session: Optional["AsyncSession"] = None,
     ) -> "Job":
         """Create a pending job.
 
@@ -45,7 +46,9 @@ class JobManager(BaseManager["Job"]):
         """
         from app.core.config import settings
 
+        session_kwargs = {} if session is None else {"session": session}
         return await self.create(
+            **session_kwargs,
             job_type=job_type,
             payload=payload or {},
             agent_task_id=agent_task_id,
@@ -469,15 +472,16 @@ class JobManager(BaseManager["Job"]):
         return False
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
-        """Stop unavailable budgets, then requeue stale rows still below the cap.
+        """Stop unavailable budgets and quarantine stale owned executions.
 
-        Both writes keep eligibility/budget/tenant predicates in the UPDATE.
-        Stopped rows retain evidence and mean outcome unconfirmed, not no effect.
-        Return only the number requeued, preserving this method's existing API.
-        Below-budget replay policy is unchanged, not certified idempotent here.
+        Both writes retain eligibility/budget/tenant predicates and evidence.
+        A stale lease does not prove no external effect: never requeue it.
+        Return the actual number of below-budget stale rows quarantined.
+        Budget-stop count remains separate; running evidence is not cleared.
         """
         from sqlalchemy import and_, func, or_
 
+        from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
         from app.jobs.attempt_budget import (
             ATTEMPT_BUDGET_STOP_PREFIX,
             available_attempt_budget,
@@ -498,7 +502,9 @@ class JobManager(BaseManager["Job"]):
             error=func.concat(ATTEMPT_BUDGET_STOP_PREFIX, func.coalesce(JobModel.error, "")),
         )
         return await self.filter(available_attempt_budget(JobModel), status="running", locked_at__lt=cutoff).update(
-            status="pending", locked_at=None
+            status="failed",
+            finished_at=now,
+            error=func.concat(OUTCOME_UNCONFIRMED_PREFIX, func.coalesce(JobModel.error, "")),
         )
 
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:

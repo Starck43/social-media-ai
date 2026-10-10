@@ -20,6 +20,7 @@ from app.core.tenant_context import tenant_scope
 from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
 from app.jobs.result_outcomes import reported_llm_cost, returned_failure
+from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
 from app.models.managers.job_manager import JobManager
 
 logger = logging.getLogger(__name__)
@@ -297,7 +298,10 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
             claim,
             success=success,
             result=receipt.result if success else None,
-            error=None if success else _FAILURE_MESSAGE,
+            error=None if success else (
+                "Результат выполнения не подтверждён. Проверьте задание перед повторным запуском."
+                if outcome_unconfirmed(receipt.error) else _FAILURE_MESSAGE
+            ),
         )
     except Exception:
         # An unexpected projection failure cannot invalidate the acknowledged Job write.
@@ -405,9 +409,11 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
     except Exception as error:
         from app.services.digest.delivery_outcomes import DeliveryFailure
 
-        retry = allow_retry and (not isinstance(error, DeliveryFailure) or error.retryable)
+        known_delivery_failure = isinstance(error, DeliveryFailure)
+        retry = allow_retry and known_delivery_failure and error.retryable is True
+        stored_error = str(error) if known_delivery_failure else OUTCOME_UNCONFIRMED_PREFIX
         try:
-            receipt = await jobs.mark_failed(claim.job_id, error=str(error), allow_retry=retry, claim=claim)
+            receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)
         except Exception as outcome_error:
             _outcome_write_failed(claim, outcome_error)

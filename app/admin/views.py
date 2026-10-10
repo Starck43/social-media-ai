@@ -1275,7 +1275,7 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
     form_widget_args = {
         "base_url": {"placeholder": "https://api.openai.com/v1"},
         "auth_header": {"placeholder": "Authorization: Bearer {key}"},
-        "encrypted_api_key": {"type": "password", "placeholder": "sk-..."},
+        "encrypted_api_key": {"type": "password", "placeholder": "Enter API key"},
     }
 
     form_args = {

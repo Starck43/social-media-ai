@@ -2,7 +2,7 @@
 
 ## Current continuation — queue cap and failure visibility integrated
 
-Source checkpoint: dev `871046fc211284844fbc4bce2e1ceddc5b1e7491` on 2026-10-10.
+Source checkpoint: dev `d38ea3a5a929e0afa28bedfdcf8f04f822631b20` on 2026-10-10.
 The existing task board owns current allocation; older continuation notes below
 retain historical evidence and do not authorize new work.
 
@@ -13,8 +13,15 @@ retain historical evidence and do not authorize new work.
 | #61 analysis error accounting | MERGED as `871046fc211284844fbc4bce2e1ceddc5b1e7491`; head `ce7167dc1cacb3b926b936bfbff1581f4893da3e` | Author 8 isolated checks on dev `acce792d` + exact patch; owner 8 on submitted head, all exit 0, source review without blockers. Only handle_analyze + its test. Per-source error/staged accounting does not change terminal Job/task status or retry; non-raising partial analyzer failures remain OPEN. |
 | #62 source-error notifications | MERGED as `c4b570ea22344168fc60351f02b25b30ac605cde`; head `ec9c1e2d584d5370df049980fbba034b3447af50` | Author 17 isolated checks on `acce792d` + exact patch; published two files byte-identical to that patch. [Owner source review](https://github.com/Starck43/social-media-ai/pull/62#issuecomment-6098831983) at submitted head, no owner test rerun. DB-only API_ERROR caveat for reported collect/analyze source errors; no terminal-status/retry/messenger change. |
 | #63 digest data completeness | MERGED as `18e33a84db74a199d881db619acb69b30302c695`; head `3fdd1e22847f3b802279292754ddf023ea3c9cf2` | Author 24 isolated checks on `c4b570ea` + source patch; final test-only formatting AST-identical. [Owner source review](https://github.com/Starck43/social-media-ai/pull/63#issuecomment-6099280849), no owner test rerun. Read-only bounded UTC completion history is not complete/atomic content coverage; filtered historical scope stays unknown when unprovable. Actual PostgreSQL reads/live delivery remain unverified; frozen replay unchanged. |
+| #64 first-contact safeguard | MERGED as `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`; head `1f92c3ae35b98c17c3fd0f84db051cffb241859c` | Parallel-agent-reported remote 8/8 and owner PostgreSQL 5/5, exit 0, at pinned `acce792d` + historical patch. Production bytes equal that patch; test methods/helpers AST unchanged, import-safe root entrypoint checked separately. Fresh head source/readback review, unchanged transaction/BaseManager dependencies and GitGuardian success reported. No submitted/merged-head full suite, DB rerun, deployment/live or broader recovery acceptance. |
 
-Fresh merge order was #59 → #62 → #63 → #60 → #61. #63 was already merged by
+First-contact historical patch SHA256:
+`87ee736e620b0055ab82d6552d7ff1b088e3fd45327d0f6bfc4a825d250cb412`;
+owner DB-script SHA256:
+`dddbe8e722749851d15dd3e7aed015f4345abab829342f103dcbdc6668662298`.
+These are reported evidence identities, not new execution by this docs agent.
+
+Fresh merge order was #59 → #62 → #63 → #60 → #61 → #64. #63 was already merged by
 the owner when refreshed; the remote agent performed #60/#61 Ready/merge under
 the owner's newly granted standing authorization. GitGuardian passed at each
 submitted head. Before integration, merge-tree simulation of #60 then #61 was
@@ -26,12 +33,13 @@ that all dependencies are bug-free. No completed tests were repeated.
 
 No merged-head/full suite, new DB/schema operation, deployment, sender activation
 or release acceptance is claimed. Recovery / ordering / spend remain OPEN.
-Runtime/session/history and first-contact recovery remain owned by chat #1.
-Fresh GitHub metadata now shows Draft [PR #64](https://github.com/Starck43/social-media-ai/pull/64),
-head `1f92c3ae35b98c17c3fd0f84db051cffb241859c`; changed files do not overlap
-this documentation package. Its review/check evidence and recovery acceptance
-are not inferred here; do not take that lane or auto-promote pending evidence.
-No extra implementation is implied by this reconciliation. Routine
+Parallel chat #1 integrated [PR #64](https://github.com/Starck43/social-media-ai/pull/64)
+under the same standing authorization. Its exact manager/test file scope has
+no overlap with this documentation package; integration is verified by Git
+ancestry, and reported checks stay attributed to the original scratch patch.
+Runtime/session/history coordination remains with chat #1; do not restart the
+delivered bounded first-contact safeguard. No extra implementation or general
+recovery acceptance is implied by this reconciliation. Routine
 Ready/merge of agreed bounded packages is delegated after fresh compatibility,
 heads, required checks and relevant review; exceptions need clarification.
 Schema/reset/migration/live/deploy, weakening checks and force-push are excluded
@@ -139,10 +147,11 @@ Recovery / ordering / spend and broader fencing remain **OPEN**; PR29 is **MERGE
 
 ### Latest verified merge checkpoint
 
-Latest reconciled source checkpoint and this documentation branch base:
-`871046fc211284844fbc4bce2e1ceddc5b1e7491`. Merge sequence after #58:
+Latest reconciled source checkpoint: `d38ea3a5a929e0afa28bedfdcf8f04f822631b20`.
+This docs branch started at `871046fc`; concurrent #64 changes only its two
+runtime/test files, not these docs. Merge sequence after #58:
 #59 (`acce792d`) → #62 (`c4b570ea`) → #63 (`18e33a84`) → #60 (`975b0d43`)
-→ #61 (`871046fc`). Refresh dev/open PRs again before the next package.
+→ #61 (`871046fc`) → #64 (`d38ea3a5`). Refresh dev/open PRs before the next package.
 This records integration, not combined-head/full-suite execution, deployment
 or release acceptance. Recovery / ordering / spend remain OPEN.
 Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity

@@ -49,6 +49,26 @@ def is_owner(inbound: Any) -> bool:
     return is_platform_owner(getattr(inbound, "channel", ""), getattr(inbound, "user_id", ""))
 
 
+def _runtime_error_code(error: BaseException) -> str:
+    """Bounded runtime categories; never inspect message, args or traceback."""
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionError):
+        return "connection_error"
+    if isinstance(error, PermissionError):
+        return "permission_error"
+    if isinstance(error, ValueError):
+        return "value_error"
+    if isinstance(error, RuntimeError):
+        return "runtime_error"
+    return "unexpected_error"
+
+
+def _log_runtime_failure(level: int, event: str, error: BaseException) -> None:
+    """Log internal static event names and categories, without private data."""
+    logger.log(level, "%s error_code=%s", event, _runtime_error_code(error))
+
+
 def _pending_confirmation(session: Any) -> Optional[dict]:
     state = session.state if isinstance(session.state, dict) else {}
     pending = state.get("pending_confirmation")
@@ -204,7 +224,7 @@ def _check_prompt_injection(text: str) -> Optional[str]:
     
     for pattern in injection_patterns:
         if re.search(pattern, text_lower):
-            logger.warning(f"Prompt injection attempt detected: {text[:100]}...")
+            logger.warning("agent_prompt_injection_blocked")
             return (
                 "Ваш запрос содержит попытку обхода безопасности. "
                 "Пожалуйста, задайте нормальный вопрос."
@@ -458,7 +478,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
                 body = _format_tool_result(pending["name"], result)
                 seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"Confirmed tool {pending['name']} failed: {e}")
+                _log_runtime_failure(logging.WARNING, "agent_confirmed_tool_failed", e)
                 body = str(e)
                 seed = f"Ошибка выполнения {pending['name']}: {e}"
             # Overwrite the staged «Требуется подтверждение» tool row so a
@@ -521,7 +541,7 @@ async def _dispatch_or_stage(
             result = await call_tool(name, args)
             return _format_tool_result(name, result), False
         except Exception as e:  # existing handler-error semantics; global redaction is separate
-            logger.warning(f"Tool {name} failed: {e}")
+            _log_runtime_failure(logging.WARNING, "agent_tool_failed", e)
             return f"Tool error: {e}", False
 
 
@@ -554,11 +574,9 @@ async def _run_tool_loop(
         try:
             response = await _chat(messages, specs)
         except Exception as e:  # noqa: BLE001
-            # The chat is a channel for the person, not a log: a provider body
-            # ("400: {...json...}") is unreadable there and can be long. The full
-            # exception (type, status, response text) goes to the log; the reply
-            # carries only what the person can act on.
-            logger.error(f"Agent LLM call failed: {e}", exc_info=True)
+            # Keep provider bodies and traceback details out of runtime logs.
+            # The existing user-facing status classification is unchanged.
+            _log_runtime_failure(logging.ERROR, "agent_llm_call_failed", e)
             error_reply = _llm_error_reply(e)
             reply = _join_replies(reply, error_reply)
             await session.append("assistant", error_reply)

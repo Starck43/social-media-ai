@@ -4,8 +4,7 @@
 
 1. **[Global plan](./PRODUCT_PLAN.md)** — what the product is intended to achieve.
 2. **[Engineering stages](./ROADMAP_INTEGRATED.md)** — A–G order and exit gates.
-3. **[Current-stage tasks and design catalog](./design/README.md)** — occupied PRs,
-   merged bounded work, independent candidates and topic-specific evidence.
+3. **[Current-stage tasks and design catalog](./design/README.md)** — the sole descending-priority numbered open queue, current reservations and topic-specific contracts.
 
 Supporting references: [project map](./PROJECT_MAP.md),
 [integration/evidence ledger](./IMPLEMENTATION_STATUS.md),
@@ -13,7 +12,7 @@ Supporting references: [project map](./PROJECT_MAP.md),
 
 Navigation cleanup merged in PR #26 as `10212b5e`, 2026-10-09. A roadmap is not a shipped-feature
 list; owner reports, historical counts and current acceptance are distinct.
-Active PR #22 owns its shared status/next-session edits; do not overwrite it.
+PR #22 is merged; current ownership comes from the numbered board, fresh open/Draft PRs and explicit future reservations. Historical Draft/next-session labels are not current work.
 
 ## Reading paths
 

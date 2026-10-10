@@ -31,6 +31,11 @@ observations below are not statements of current implementation status.
 
 ## Critical gates and work packages
 
+**All 9 major PRD areas remain OPEN at the planning checkpoint `c7a294e49745072a956b5c6816bc4f42a710a8d8`.** Seven are technical blocker areas, PRD-08 is a pilot gate and PRD-09 a publication/release gate. Descending work priority and the single ownership queue live in [the numbered board](design/README.md#prioritized-open-work); the IDs here stay stable regardless of priority. This is not nine small commits, a deployment decision or permission for all actions below.
+
+The original Observed/baseline paragraphs are historical findings, not assertions that every defect still exists. Recheck fresh source before taking a bounded fix. Merged progress and exact evidence are in the ledger; completed safeguards are not restarted. Only explicit gate acceptance/sign-off closes an area.
+
+
 ### PRD-01 — Tenant-safe, retry-safe delivery (blocker)
 
 Status: **PARTIAL, OPEN**. Merged items and next-session continuation are in
@@ -96,7 +101,7 @@ Acceptance: concurrent chat/analysis/digest cannot bypass the agreed cap; repeat
 
 ### PRD-04 — Repeatable, hardened deployment and recovery (blocker)
 
-Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. baseline [HTTP health](../app/main.py) returned status ok/HTTP 200 on DB disconnection. Merged PR #19 registers /livez (no DB) and /readyz plus /health (200 ready, 503 failed/timed-out DB probe); deployment is unverified. Default session configuration does not explicitly require secure cookies.
+Observed: tracked [Compose](../docker/docker-compose.yml) starts db + API, not runtime. It publishes PostgreSQL 5432 and performs migration on each API startup. [Dockerfile](../docker/Dockerfile) is non-root, but defaults to API. baseline [HTTP health](../app/main.py) returned status ok/HTTP 200 on DB disconnection. Merged PR #19 registers /livez (no DB) and /readyz plus /health (200 ready, 503 failed/timed-out DB probe); deployment is unverified. Secure session-cookie default #67 is now merged; deployed HTTPS/profile acceptance remains unverified.
 
 Actions:
 - Provide a tested production profile with one migration job, API, exactly one scheduler/listener owner, and worker execution. Runtime already includes a worker: avoid unintentionally multiplying pollers/schedulers when adding dedicated workers.
@@ -110,7 +115,7 @@ Acceptance: clean deploy starts all required loops; DB is not public; process/DB
 
 ### PRD-05 — Honest outcomes and bounded task execution (blocker)
 
-Merged progress: PR #18 records explicit non-checkpoint returned status=failed as terminal Job/task failure, retaining known cost and suppressing success notifications/replay. Collection partial errors and unknown status shapes retain legacy behavior. General claim CAS, Job/task atomicity, scheduler correctness and ordinary-job leases remain open; checkpoint-specific fencing is not a queue-wide guarantee.
+Merged bounded progress includes returned-failure/outcome handling, ordinary claim fencing #51, Job/task atomicity #53, operator cancellation #54, attempt budgets #60 and collection/analysis/UI diagnostics through #73. Preserve these implementations. General long-job lease/recovery policy, concurrent scheduler acceptance, provider backoff and complete coverage remain OPEN; delivered checkpoints/CAS do not establish queue-wide external-effect idempotency.
 
 Actions:
 - Define success/partial/failed/skipped semantics per handler and mirror them in notifications/tasks/UI. Handler return status is not automatically success; all-source failure must be visible.
@@ -209,7 +214,7 @@ and proposal-writing task, not PRD-06 or staging/business acceptance.
 
 ### PRD-07 — Structured, safe AI boundaries (blocker for write-enabled features)
 
-Retain existing strict analysis validation and text framing; do not repeat completed CA-01/02. PR #17 merged typed digest/learn/reflect contracts, bounded fields/operations, owned evidence validation and safe validation-failure paths. Atomic memory batches, watermark concurrency, poisoned-input/factual-quality acceptance and complete billing are still open. Validate supported scenario schemas at save time; an unsupported schema must not silently remove enforcement.
+Retain existing strict analysis validation and text framing; do not repeat completed CA-01/02. PR #17 merged typed digest/learn/reflect contracts, bounded fields/operations, owned evidence validation and safe validation-failure paths. Atomic memory batches #43 and state-key safeguard #58 are merged with revision-scoped evidence. Remaining acknowledgement-loss/concurrency, poisoned-input/factual-quality/evidence coverage and complete billing acceptance are OPEN; do not rebuild the delivered batch. Validate supported scenario schemas at save time; an unsupported schema must not silently remove enforcement.
 
 Treat social content, derived summaries, learned facts and error advice as untrusted data, not authority. Test Russian/English injection, boundary escaping, malformed nested outputs and external metadata. Never promise regex blocks all injection. Safety comes from server-side permissions, tool argument validation, scoped data, confirmation and publication restrictions.
 
@@ -225,7 +230,7 @@ Acceptance: injected failures trigger actionable, deduplicated alerts to the rig
 
 ### PRD-09 — Safe publication and feature promises (release gate)
 
-Draft PR22 reconciles UX-02 registry binding to the preview-only contract: `botaction.view`, actor-bound confirmation, `dry_run=False` refusal and no PENDING transition or publication. Owner105 checks at8af65bf passed; isolated fixture and newly included ok/no_data/partial/skipped UI verification are pending at the integrated head. Keep automatic external writes disabled. Live publication and durable approval/claim semantics require a separate contract and release evidence; preview is not approval to send.
+Merged PR #22 reconciles UX-02 registry binding to the preview-only contract: `botaction.view`, actor-bound confirmation, `dry_run=False` refusal and no PENDING transition or publication. Its historical checks/owner acceptance are in the ledger; neither that evidence nor subsequent helpers authorize live publication. Keep automatic external writes disabled. Live publication and durable approval/claim semantics require a separate contract and release evidence; preview is not approval to send.
 
 Before enabling live actions: validated non-empty payload/target, actor-bound approval, fresh guards/credential ownership, per-action claim/idempotency, retries, audit and immediate kill switch. Dry-run must not consume the only sendable state unless the product explicitly supports that transition. Tier “allow_auto_actions” is not proof of an unattended scheduler publisher.
 

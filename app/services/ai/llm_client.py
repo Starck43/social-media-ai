@@ -63,7 +63,22 @@ def price_usage_usd(model: LLMModel, prompt_tokens: int, completion_tokens: int)
 
 
 def _cap_text(m: LLMModel) -> bool:
-    return m.model_type in ("text", "image")  # image-capable models also handle text
+    """Text-capable fleet rows, including legacy image-only text support."""
+    return bool({"text", "image"}.intersection(m.capabilities))
+
+
+def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool:
+    """One automatic routing gate for capabilities, tier and active provider.
+
+    None is unfiltered; an empty allowed set permits nothing. A model with
+    extra billed capabilities never bypasses the tier through its default or
+    preferred flag. Explicit AGENT_MODEL lookup keeps its separate contract.
+    """
+    return (
+        _cap_text(m)
+        and (allowed_types is None or set(m.capabilities) <= allowed_types)
+        and bool(m.provider and m.provider.is_active)
+    )
 
 
 def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
@@ -616,18 +631,11 @@ async def chat_with_fallback(
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
     allowed_types = await _allowed_model_types()
-    # Capability-aware tier check: `model_type` is a comma-separated list
-    # ("text,image"), so comparing the raw string to the plan's set dropped
-    # every multimodal row even when the plan covers all its capabilities —
-    # including a fleet-default model like ("text,image") on a business plan.
-    # Subset semantics keep the tier promise (a text-only plan still never
-    # routes to a model that also bills image/video).
-    text_models = [
-        m for m in models if _cap_text(m) and (allowed_types is None or set(m.capabilities) <= allowed_types)
-    ]
+    # The same eligibility gate as automatic resolution: capability lists,
+    # the full tier subset and an active provider all precede preference.
+    text_models = [m for m in models if _eligible_text_model(m, allowed_types)]
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    text_models = [m for m in text_models if m.provider and m.provider.is_active]
     # The tier filter always wins over the preferred global model. If the
     # cost-efficient preference fails/is disallowed, keep fallback economical.
     text_models.sort(key=lambda m: (
@@ -705,7 +713,7 @@ async def resolve_model() -> Optional[LLMModel]:
     allowed_types = await _allowed_model_types()
     models.sort(key=default_model_sort_key)
     for m in models:
-        if _cap_text(m) and (allowed_types is None or m.model_type in allowed_types):
+        if _eligible_text_model(m, allowed_types):
             return m
     if allowed_types is None:
         logger.error("No active text LLM model available")

@@ -40,9 +40,11 @@ class TextSamplingCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.module = f.module
         self.analyzer = f.analyzer
         self.dedup = f.dedup
+        utility = load_isolated_source("_sampling_attachment_vocabulary", ROOT / "app/utils/content_attachments.py")
         self.classifier = load_isolated_source("_coverage_classifier",
             ROOT / "app/services/ai/content_classifier.py",
-            {"app.types.enums.llm_types": SimpleNamespace(MediaType=self.module.MediaType)})
+            {"app.types.enums.llm_types": SimpleNamespace(MediaType=self.module.MediaType),
+             "app.utils.content_attachments": utility})
         self.module.ContentClassifier = self.classifier.ContentClassifier
         self.analyzer._analyze_text = self.module.AIAnalyzer._analyze_text.__get__(self.analyzer)
         self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(name="local-model"))

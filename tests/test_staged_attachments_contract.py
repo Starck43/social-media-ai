@@ -67,7 +67,8 @@ class StagedAttachmentsContractTests(unittest.IsolatedAsyncioTestCase):
         media = type('MediaType', (), {k: SimpleNamespace(db_value=v) for k,v in
             [('TEXT','text'), ('IMAGE','image'), ('VIDEO','video')]})
         self.classifier = load_isolated_source('_staged_attachments_classifier', ROOT/'app/services/ai/content_classifier.py',
-            {'app.types.enums.llm_types': SimpleNamespace(MediaType=media)}).ContentClassifier
+            {'app.types.enums.llm_types': SimpleNamespace(MediaType=media),
+             'app.utils.content_attachments': UTILITY}).ContentClassifier
         self.item = {'external_id':'post','platform':'vk','text':'A useful social post with attachments',
             'date':None,'permalink':'https://example.org/post','metrics':{'views':1},
             'author':{'id':2}, 'attachments':[{'type':'photo','url':SAFE_URL}, {'type':'video_file','url':'https://cdn.example.org/video.mp4'}]}

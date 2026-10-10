@@ -470,7 +470,27 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     # the task's configured period.
     window = _resolve_content_window(task_payload, payload, None)
 
-    stats: dict[str, Any] = {"sources": 0, "analyzed": 0, "actions_created": 0, "skipped": 0, "per_source": []}
+    stats: dict[str, Any] = {
+        "sources": 0,
+        "analyzed": 0,
+        "actions_created": 0,
+        "skipped": 0,
+        "error": 0,
+        "error_sources": [],
+        "staged_errors": 0,
+        "per_source": [],
+    }
+
+    def record_error(per: dict[str, Any], *, staged: bool = False) -> None:
+        # Count affected sources, not exceptions: staging and later processing
+        # can both fail for one source. Never persist raw exception text here.
+        if not per.get("error"):
+            stats["error"] += 1
+            stats["error_sources"].append(per["name"])
+        per["error"] = True
+        if staged:
+            stats["staged_errors"] += 1
+            per["staged_error"] = True
 
     sources = await _resolve_sources(task, payload)
 
@@ -557,6 +577,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                             "counting the attempt so they stop being retried eventually"
                         )
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
+                record_error(per, staged=True)
                 logger.warning(f"Could not process staged items for source {source.id}: {e}", exc_info=True)
 
             # Get recent analytics for this source
@@ -662,7 +683,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
         except Exception as e:
             logger.error(f"analyze failed for source {source.id}: {e}", exc_info=True)
-            stats["skipped"] += 1
+            record_error(per)
         finally:
             # `finally`, not a line at the end of the body: this loop `continue`s
             # out early in several places (no scenario, no analytics, nothing to

@@ -62,20 +62,25 @@ all exit 0. [PR #52](https://github.com/Starck43/social-media-ai/pull/52) is
 **MERGED** as `10d160901b7305a0ed22d15fd146b7573d6a399b`, final head
 `4f66478668a584ba9e23cb5fa7f40712286b3576`; code/tests equal owner-tested
 `f61383936cb3dfaec3c5ff09ab6442a106ee0159` (15 standalone, exit 0), final delta
-docs-only. No full suite or combined-head check is claimed. Current queue lane:
-**OCCUPIED / Draft [PR #54](https://github.com/Starck43/social-media-ai/pull/54)**,
-`fix/operator-job-cancel-fencing` from dev `10d16090`; owner-reviewed/tested at
+docs-only. No full suite or combined-head check is claimed. Operator cancellation [PR #54](https://github.com/Starck43/social-media-ai/pull/54)
+is **MERGED** as `ee43592a05d706168e7b80ece87ea17e2de34641`, final head
+`7316a084231591fbbcfbac207a4ddd7d7841e99e`. Owner-tested
 `4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 cancellation + 15 web outcome
-standalone, read-only config check and 10 PostgreSQL checks, sequential/all exit 0.
-[Owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068),
-logs `perr/pr54-*`; no code corrections. No full suite or combined-head evidence;
-no author-run tests. Recovery,
-task-summary ordering, per-attempt spend and broader fencing remain **OPEN**.
-PR29 stays **deferred**.
+standalone, config check and 10 PostgreSQL checks, sequential/all exit 0;
+[owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
+Final delta was three docs only; executable files equal the owner-tested revision.
+No merged-head/full-suite run, deployment or acceptance is implied.
+Current queue lane: **OCCUPIED / PREPARED**, `fix/atomic-completed-job-cleanup`
+from dev `ee43592a`; owner checks prepared/not run. Remote scope: JobManager
+cleanup_done, separate cleanup tests and existing board/ledger/claim contract.
+Independent local helper assignment: `fix/web-job-delete-race`, only web jobs
+job_delete + tests/test_web_job_delete_race.py; awaiting owner-forwarded start.
+The parallel agent retains runtime/session/message helpers; none are changed here.
+Recovery / ordering / spend and broader fencing remain **OPEN**; PR29 **deferred**.
 
 ### Latest verified merge checkpoint
 
-Fresh source checkpoint: dev `10d160901b7305a0ed22d15fd146b7573d6a399b`.
+Fresh source checkpoint: dev `ee43592a05d706168e7b80ece87ea17e2de34641`.
 Model-layout group is **MERGED**: #36 analysis (`f2f53b1`), #38 identity
 (`7d8c731`), #39 agent (`c1d3b9e`), #41 scheduling (`b4d48c6`); earlier
 #30/#31/#32 layout merges remain recorded above. Runtime whitespace #40 also
@@ -398,11 +403,17 @@ Checked boxes below mean merged bounded work, never automatic acceptance.
 - [x] Remaining model-layout group — PR #36 (`f2f53b1`), #38 (`7d8c731`),
   #39 (`c1d3b9e`), #41 (`b4d48c6`); no new runtime test evidence recorded here.
 - [x] Runtime whitespace guard — PR #40, merge `bcff693`; no new checks here.
-- [ ] Operator cancellation snapshot fencing — Draft PR #54, owner review complete;
-  tested `4d65af4e55c6b3096db2278ce2589cfc17f1525e`: 14 + 15 standalone,
-  config check and 10 PostgreSQL, sequential/all exit 0; owner evidence above.
-  No corrections, author-run tests, full suite, Ready/merge, schema changes or live.
-  Recovery / ordering / spend remain OPEN.
+- [x] Operator cancellation snapshot fencing — PR #54, merge
+  `ee43592a05d706168e7b80ece87ea17e2de34641`, final `7316a084` (docs-only final delta);
+  owner-tested `4d65af4`: 14 + 15 standalone, config check and 10 PostgreSQL,
+  sequential/all exit 0. No merged-head/full-suite or deployment evidence.
+- [ ] Atomic completed-job cleanup — `fix/atomic-completed-job-cleanup` from
+  dev `ee43592a`; one conditional DELETE and actual affected count. Six standalone
+  and eight PostgreSQL cases prepared, NOT run. Retention/replay policy unchanged.
+- [ ] Web delete write-time status guard — local helper assigned
+  `fix/web-job-delete-race`, web job_delete + separate test only; execution/evidence
+  not yet confirmed. Shared board/ledger remain owned by the cleanup package.
+  Recovery / ordering / spend remain OPEN; PR29 deferred.
 
 Parallel analysis navigation, summary-derived headings and mention-axis labels
 remain preserved. The universal-assistant direction, architecture and

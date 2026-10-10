@@ -13,11 +13,14 @@ checks, not a full suite or a combined-dev verification.
 Web claim-loss feedback merged through [PR #52](https://github.com/Starck43/social-media-ai/pull/52)
 as `10d160901b7305a0ed22d15fd146b7573d6a399b`, final head `4f664786`;
 its executable files equal owner-tested `f613839` (15 standalone, exit 0).
-The cancellation follow-up is Draft [PR #54](https://github.com/Starck43/social-media-ai/pull/54)
-from that dev, owner-reviewed/tested at `4d65af4e55c6b3096db2278ce2589cfc17f1525e`:
+Operator cancellation [PR #54](https://github.com/Starck43/social-media-ai/pull/54)
+is merged as `ee43592a05d706168e7b80ece87ea17e2de34641`, final `7316a084`;
+owner-reviewed/tested at `4d65af4e55c6b3096db2278ce2589cfc17f1525e`:
 14 cancellation + 15 web outcome standalone, config check and 10 PostgreSQL,
 sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
-No corrections or author-run tests; Ready/merge/deployment remain separate.
+No code corrections or author-run tests; the final delta was docs-only.
+Merged does not establish deployment, acceptance or a combined-dev green suite.
+The cleanup_done follow-up is PREPARED from dev `ee43592a`, checks not run.
 
 Implemented boundary: immutable acquired identity, locked tenant/generation-bound
 ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
@@ -223,12 +226,12 @@ Two follow-up guarantees are deliberately separate:
    contract and approval.
 
 A post-commit best-effort notification is not a durable exactly-once outbox.
-Cancellation authority is distinct from worker ownership. The prepared operator
+Cancellation authority is distinct from worker ownership. The merged operator
 writer below conditions its mutation on the observed generation; it does not
 acquire the worker's claim or establish authority merely by constructing a value.
 Web guards and manager tenant-context checks remain required.
 
-### Bounded operator cancellation follow-up
+### Bounded operator cancellation — merged
 
 `JobManager.cancel_running` accepts a validated immutable `JobClaim` snapshot
 from the route's observed running row. It locks the row matching concrete tenant,
@@ -260,6 +263,35 @@ checks cover guards, malformed identity and truthful flashes. None were run by
 the author; the focused owner results at exact `4d65af4` are recorded above.
 The owner used the existing reviewed test environment, without schema changes.
 A later docs-only evidence update does not change the tested executable files.
+
+### Bounded completed-job cleanup — prepared
+
+At dev `ee43592a`, cleanup_done first selected old done Jobs, then deleted each
+by id and returned the selected list length. A competing change after that read
+could escape the status/age predicate; partial progress also made the selected
+count different from actual deletions. It required a SELECT plus up to N DELETEs.
+
+The prepared follow-up delegates one `QuerySet.delete` with status=done and
+finished_at strictly before the computed UTC cutoff. Tenant scope or explicit
+worker bypass comes from the existing guarded queryset. The returned count is
+its actual affected-row count after that API completes, not a candidate count.
+No per-row fallback, preload or immediate retry is added. Under PostgreSQL's
+existing READ COMMITTED behavior, a concurrent row update that wins the lock is
+rechecked against the DELETE predicate; changed status/age can spare the row.
+
+This preserves the current 24-hour default and custom retention semantics,
+including the existing zero-as-default behavior. NULL completion timestamps,
+fresh/boundary done rows and pending/running/failed rows are not eligible.
+Database/commit failures propagate; lost acknowledgement can leave rows already
+deleted and is not proof of rollback or permission to replay a destructive call.
+Existing database FK/cascade behavior is not redesigned. No batching policy,
+retention approval, checkpoint retention guarantee or stronger recovery claim.
+
+Prepared checks: six source-isolated delegation cases, eight existing-schema
+PostgreSQL cases for tenant/status/age boundaries, bounded bypass, duplicate
+cleaners, lock races, rollback and committed ACK loss. They have NOT been run.
+The independent web job_delete write-time guard is assigned to the local helper;
+this package does not change that route or claim its tests passed.
 
 ## Prepared acceptance specification — not executed tests
 

@@ -426,14 +426,12 @@ class JobManager(BaseManager["Job"]):
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:
         """Delete successfully finished jobs older than `older_than_hours`.
 
-        Keeps the queue page readable — a few hundred "done" rows makes it
-        impossible to spot new failures. `running`/`pending`/`failed` rows
-        survive because they need human attention or are in flight.
+        Keep status and completion age in the DELETE predicate, so a competing
+        write cannot turn a previously selected candidate into an unqualified
+        deletion. The queryset preserves tenant scope or explicit worker bypass.
+        Return the actual deleted count; database/commit errors propagate.
+        This retains the existing retention policy, not a recovery/audit ledger.
         """
         hours = older_than_hours or JOB_CLEANUP_AFTER_HOURS
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-        done = await self.filter(status="done", finished_at__lt=cutoff)
-        count = len(done)
-        for job in done:
-            await self.delete(id=job.id)
-        return count
+        return await self.filter(status="done", finished_at__lt=cutoff).delete()

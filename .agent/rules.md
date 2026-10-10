@@ -34,8 +34,13 @@
   column fix require an explicit owner instruction. These restrictions override
   any older automatic-reset advice. The remote agent prepares checks only;
   the owner/local agent executes them. Preserve the private environment.
-- **R9 — No merge without a command.** Merging any PR into `dev` happens only
-  after fresh compatibility is verified and the owner explicitly asks for it.
-  A green test run is not Ready/deploy/live-sender approval. No direct dev push
-  or force-push; never restore anonymous access or enable publication as a merge
-  conflict workaround.
+- **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
+  standing authorization to perform routine Ready/merge of agreed bounded
+  packages after verifying fresh PR/dev heads, compatibility, required checks
+  and relevant review evidence. Keep Draft while necessary evidence is pending;
+  do not ask for confirmation at each routine step. Stop and clarify conflicts,
+  unexpected PR-head changes, failing checks, unclear dependencies/ownership or
+  elevated risk. Do not rerun completed checks without a specific changed risk.
+  This is NOT schema/reset/migration/live/deploy or required-check-change
+  permission. No direct dev push or force-push; never restore anonymous access
+  or enable publication as a merge conflict workaround.

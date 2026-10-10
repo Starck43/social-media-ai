@@ -11,6 +11,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _log_id(value: Any) -> int | None:
+    """Only persisted integer IDs; never stringify payload-like values."""
+    return value if type(value) is int and 0 < value <= 2**63 - 1 else None
+
+
+def _error_kind(error: BaseException) -> str:
+    """Bounded categories, not exception messages, repr, args or tracebacks."""
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionError):
+        return "connection_error"
+    if isinstance(error, OSError):
+        return "io_error"
+    if isinstance(error, ValueError):
+        return "value_error"
+    if isinstance(error, RuntimeError):
+        return "runtime_error"
+    return "unexpected_error"
+
+
 async def _load_task(task_id: int | None):
     """Load the AgentTask (with its m2m sources) that triggered this job, if any.
 
@@ -610,7 +630,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                         )
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
                 record_error(per, staged=True)
-                logger.warning(f"Could not process staged items for source {source.id}: {e}", exc_info=True)
+                logger.warning(
+                    "analyze_staged_processing_failed source_id=%s error_code=%s",
+                    _log_id(source.id),
+                    _error_kind(e),
+                )
 
             # Get recent analytics for this source
             analytics = (
@@ -714,7 +738,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 logger.info(f"Created BotAction#{action.id} for source {source.id}")
 
         except Exception as e:
-            logger.error(f"analyze failed for source {source.id}: {e}", exc_info=True)
+            logger.error(
+                "analyze_source_failed source_id=%s error_code=%s",
+                _log_id(source.id),
+                _error_kind(e),
+            )
             record_error(per)
         finally:
             # `finally`, not a line at the end of the body: this loop `continue`s

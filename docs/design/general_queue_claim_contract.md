@@ -5,9 +5,15 @@
 The source observations below were drafted at historical baseline
 `0be47bbfb0d13e63cd0509dd072e17ad0047e9db`. The claim-fencing implementation
 merged through PR #51 as `351f3b6`, with owner evidence on exact `dbc054c`.
-The Job/task atomicity follow-up is prepared on branch
-`fix/job-task-outcome-atomicity` from dev
-`f2f53b1d28f7dd5c626c6e4c5b440a8af8d49688`; owner execution/review is pending.
+Job/task atomicity merged through [PR #53](https://github.com/Starck43/social-media-ai/pull/53)
+as `243866281f1bb2e3ed87827601e2705e82b6c3df`; owner-tested head
+`e3e222673bb39debe2b07cdf4fd7d95b71a8dac1`: 27 unit, 15 existing PostgreSQL
+and 7 new PostgreSQL checks, all exit 0. These are owner-reported focused
+checks, not a full suite or a combined-dev verification.
+Web claim-loss feedback merged through [PR #52](https://github.com/Starck43/social-media-ai/pull/52)
+as `10d160901b7305a0ed22d15fd146b7573d6a399b`, final head `4f664786`;
+its executable files equal owner-tested `f613839` (15 standalone, exit 0).
+The cancellation follow-up below is PREPARED from that dev; no author-run tests.
 
 Implemented boundary: immutable acquired identity, locked tenant/generation-bound
 ordinary outcome writes, explicit committed/lost receipts, and exact-row direct
@@ -32,7 +38,8 @@ loss, competing finalizers and direct-race checks, and strengthen commit/rollbac
 cases for both rows. Post-commit Task-failure tests now specify pre-commit Task
 failure rollback; they are not simply dropped or made optional. The previous
 #51 results do NOT certify this changed boundary. These prepared checks have
-NOT been executed by the author; deployment/acceptance remain separate.
+NOT been executed by the author; the #53 owner results are recorded above.
+Deployment/acceptance remain separate.
 
 No migration, new job status, provider retry policy, sender activation, model
 layout, permissions grant or accounting ledger is authorized by this document.
@@ -212,10 +219,41 @@ Two follow-up guarantees are deliberately separate:
    contract and approval.
 
 A post-commit best-effort notification is not a durable exactly-once outbox.
-Cancellation authority is also distinct: operator cancel should eventually
-condition its mutation on the observed generation, rather than cancelling a
-new generation that appeared after its read. This slice must respect an already
-committed cancellation but does not certify the existing cancellation writer.
+Cancellation authority is distinct from worker ownership. The prepared operator
+writer below conditions its mutation on the observed generation; it does not
+acquire the worker's claim or establish authority merely by constructing a value.
+Web guards and manager tenant-context checks remain required.
+
+### Bounded operator cancellation follow-up
+
+`JobManager.cancel_running` accepts a validated immutable `JobClaim` snapshot
+from the route's observed running row. It locks the row matching concrete tenant,
+id, type, task (including NULL), running status, attempts and started_at before
+writing failed / static operator reason / current UTC finished_at. Heartbeat
+locked_at is not generation identity. Existing result, cost, attempts, timing
+and audit fields are preserved; ORM updated_at may advance.
+
+True is returned only after acknowledged commit; False means no matching running
+snapshot and no mutation. Database/flush/commit failures propagate without a
+success flash, inferred rollback, immediate retry or another cancellation write.
+The route keeps CSRF, platform-role and permission guards, explicit tenant lookup
+and superuser bypass behavior. Missing/malformed generation fails closed; stale
+snapshot is an error redirect, never a success. Success states only that
+cancellation was recorded, not that an in-flight external effect stopped.
+
+This intentionally retains the existing Job-only operator cancellation policy:
+no Task summary, digest checkpoint, spend-ledger or notification update is added.
+Task summaries can therefore remain at their prior result after operator cancel;
+this is not the ordinary worker terminal-outcome path delivered by #53.
+Cancellation is not a provider abort or proof of safe replay. Legacy malformed
+running rows need separately authorized investigation, not an ID-only fallback.
+Recovery, task-summary ordering and per-attempt spend remain OPEN.
+
+Prepared checks cover full snapshot identity, scope/bypass, heartbeat, stale
+reclaim/terminal rows, competing cancel/completion, audit preservation,
+pre-commit rollback and committed acknowledgement loss. Source-isolated route
+checks cover guards, malformed identity and truthful flashes. None were run by
+the author; owner execution uses only the existing reviewed test environment.
 
 ## Prepared acceptance specification — not executed tests
 

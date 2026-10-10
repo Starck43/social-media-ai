@@ -462,6 +462,36 @@ class PreparedRunnerSafety(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             context['guard_write'](connection, None, 'UPDATE test_schema.agent_tasks SET last_status=$1 WHERE id=$2 OR true', {}, current, False)
 
+    def test_actual_insert_guard_does_not_misclassify_creation_as_schedule_update(self):
+        context = self.runner_guard()
+        command = SimpleNamespace(table=SimpleNamespace(name='tenants', schema='test_schema'), is_insert=True)
+        current = SimpleNamespace(compiled=SimpleNamespace(statement=command),
+                                  compiled_parameters=[{'slug': 'synthetic-a', 'is_active': False}])
+        connection = SimpleNamespace(info={'fixture_commit_phase': 'creation'})
+        context['guard_write'](connection, None, 'INSERT INTO test_schema.tenants VALUES ($1)', {}, current, False)
+        self.assertEqual(connection.info['fixture_inserts'], {'tenants'})
+        self.assertFalse(connection.info.get('fixture_writes'))
+        context['guard_commit'](connection)
+        self.assertEqual(context['commit_attempts'], [('creation', ['tenants'])])
+
+    def test_actual_schedule_guard_preserves_orm_onupdate_without_timestamp_override(self):
+        context = self.runner_guard(); operators = context['operators']
+        table = SimpleNamespace(name='agent_tasks', schema='test_schema')
+        predicate = SimpleNamespace(operator=operators.eq, left=SimpleNamespace(table=table, name='id'),
+                                    right=SimpleNamespace(key='pk', value=None))
+        command = SimpleNamespace(table=table, is_update=True, whereclause=predicate, _values=None)
+        current = SimpleNamespace(compiled=SimpleNamespace(statement=command), compiled_parameters=[{'pk': 5}])
+        connection = SimpleNamespace(info={'fixture_commit_phase': 'creation', 'fixture_inserts': {'jobs'}})
+        context['guard_write'](connection, None,
+            'UPDATE test_schema.agent_tasks SET last_status=$1, updated_at=now() WHERE id=$2', {}, current, False)
+        self.assertEqual(connection.info['fixture_writes'], {'agent_tasks'})
+        context['guard_commit'](connection)
+        for sql in ('UPDATE test_schema.agent_tasks SET last_status=$1, updated_at=$2 WHERE id=$3',
+                    'UPDATE test_schema.agent_tasks SET updated_at=now() WHERE id=$1',
+                    'UPDATE test_schema.agent_tasks SET payload=$1, updated_at=now() WHERE id=$2'):
+            with self.assertRaises(RuntimeError):
+                context['guard_write'](connection, None, sql, {}, current, False)
+
     def test_actual_guard_rejects_negated_owned_predicate_but_allows_parentheses(self):
         context = self.runner_guard(); operators = context['operators']
         table = SimpleNamespace(name='jobs', schema='test_schema')

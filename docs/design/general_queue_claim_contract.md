@@ -61,7 +61,7 @@ The checkpoint digest publisher/finalizer remains its own protected contract.
 Prepared on dev `359eace2db3addd7647c8a835ebf4007241602ef` (2026-10-11), branch
 `fix/queue-recovery-admission`. This section supersedes historical below-budget
 stale replay and split scheduler-trigger descriptions below, not their original
-test evidence. Implementation requires Draft publication; new owner acceptance is
+test evidence. Implementation requires Draft publication; new owner evidence review is
 PENDING and PRD-05 remains OPEN. No migration or new persisted status is added.
 
 ### Fail closed when the ordinary outcome is unknown
@@ -118,7 +118,7 @@ all deliberate manual/scheduled double work.
 
 ### Evidence and one owner-local acceptance package
 
-Author command: `python tests/test_queue_recovery_admission.py`; 37 NEW
+Author command: `python tests/test_queue_recovery_admission.py`; 39 NEW
 stdlib actual-source/module-local-double and extracted-guard checks passed,
 exit 0, on the above base plus named production artifact SHA256
 `a448570855786886d8680296ff85409176350c2b245a2ad9eac04eed860a34f2`
@@ -129,10 +129,10 @@ The additional review rejects unary NOT of an owned predicate; only actual
 parenthesized Grouping wrappers retain a positive fence. Production bytes are
 unchanged by this runner-only safety correction. The
 initial doubles iteration had fixture failures; final evidence supersedes the
-29/32/33/36-check preparation, not historical #87/#89/#91 execution.
+29/32/33/36/37-check preparation, not historical #87/#89/#91 execution.
 
 The NEW standalone owner runner is `tests/test_queue_recovery_admission_db.py`,
-SHA256 `30c2010e5a785b222e6050ba107dd917bfddffe4863369476425dd335b97e6e2`;
+SHA256 `ea81763519f7881142ab3bbce56c09667f0791692df5c3c16508257e803028e8`;
 12 planned cases, NOT executed by the author. It validates the existing local
 `localhost:5432/social_manager/test_schema` before application imports and
 requires `--allow-tagged-fixture-commits`. No bootstrap/DDL/reset/migration,
@@ -141,10 +141,36 @@ The owner explicitly approved COMMIT of marked synthetic creation (including a
 new Job plus its Task schedule) and verified scoped cleanup ONLY. UPDATE-only
 lease/outcome transactions roll back; this is not general root-commit permission.
 
+Owner-reported run: 12/12, EXIT=0, in the PR #93 worktree on original
+`1743a296935a1c17b896cad4a0b125ad83108a3c` with original runner SHA256
+`6e5aaaf4f056ed34e81db810bacb0a2e85b18c16f7d5438040edf70f89b90261`.
+The published runner could not run directly: INSERT was incorrectly added to
+`fixture_writes`, and schedule guards rejected the real TimestampMixin
+`updated_at=now()` onupdate. The owner used external `/tmp/kilo-pr93/fixed_run.py`
+with a fixup listener and in-memory removal of onupdate. Repository code/schema
+were reportedly untouched; execution was not observed by this coordinator.
+Reported COMMIT attempts/acknowledgements 12/12, rejected 0, all tagged creation
+or verified cleanup; 31 rollbacks; three fixture sequences advanced +2/+3/+9;
+no queue-accept leftovers and test_schema baseline restored. This is evidence
+for the pinned application behavior under that shim, NOT an unmodified published
+runner/current-head or real-onupdate acceptance. The shim/log have not yet been
+independently inspected; retain the evidence instead of automatically rerunning.
+
+The current runner-only correction records `fixture_writes` only for actual
+UPDATE/DELETE, admits exact ORM `updated_at=now()` alongside real schedule fields,
+and still rejects bound timestamp overrides, timestamp-only updates and foreign
+writes. It does not suppress onupdate or mutate model metadata. Two NEW extracted
+actual-guard regressions both reject the pre-fix runner and pass after correction;
+39 total new isolated checks pass. Production bytes remain identical to the
+owner-tested application artifact. The corrected standalone runner has NOT run.
+Review the exact external shim/redacted log before deciding whether any narrow
+additional validation is necessary; do not assign a shared-schema run while the
+owner's second task is active, or repeat the historical suites by default.
+
 Two inactive nonce tenants plus marked Task/Job fixtures fence DML to approved
 tables and owned predicates. Compiled SAVEPOINT controls are allowed without
 allowing DDL. Creation permits INSERT plus accompanying schedule-only Task UPDATE
-with a newly inserted Job; cleanup permits verified tagged DELETE only. Actual
+(with exact ORM updated_at=now(), never a metadata override) and a newly inserted Job; cleanup permits verified tagged DELETE only. Actual
 engine commit-event attempts are reported separately from driver-acknowledged
 commits; root rollback phases, read-only fixture sequences and no-leftover
 verification are reported. Sequence advancement is permitted, not rolled back.
@@ -167,8 +193,8 @@ Three existing stale/heartbeat test files are semantically aligned to quarantine
 and no reacquisition, NOT run. Their old green results do not certify changed
 semantics. Run only the new pinned runner once, sequentially after the shared
 schema is idle; do not repeat #87/#91/#74/old tests/full pytest by default.
-Keep Draft until this new owner's report and fresh head/compatibility/checks are
-reviewed. External-effect idempotency, production timing, noncooperative worker
+Keep Draft until the shim-backed owner evidence and fresh head/compatibility/checks
+are reviewed; do not silently relabel it as a raw runner pass. External-effect idempotency, production timing, noncooperative worker
 termination, complete accounting/limiter and remaining PRD-05 acceptance stay OPEN.
 
 ## Source-grounded observations

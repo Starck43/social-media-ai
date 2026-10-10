@@ -82,7 +82,7 @@ async def execute():
         if phase == 'cleanup' and kind != 'delete':
             raise RuntimeError('Stop: cleanup permits verified fixture DELETE only')
         if phase == 'creation' and kind != 'insert':
-            schedule_fields = {'last_status', 'last_error', 'last_run_at', 'next_run_at', 'is_active'}
+            schedule_fields = {'last_status', 'last_error', 'last_run_at', 'next_run_at', 'is_active', 'updated_at'}
             # ORM flush may compile an UPDATE with _values=None; inspect the
             # generated SET targets, not its WHERE bind parameters. Fail closed.
             match = re.search(r'\bSET\s+(.+?)\s+WHERE\b', statement, re.I | re.S)
@@ -91,8 +91,13 @@ async def execute():
             changed = {target.group(1) for target in targets if target}
             if not assignments or not all(targets):
                 raise RuntimeError('Stop: unrecognized committed schedule SET shape')
-            if kind != 'update' or table.name != 'agent_tasks' or not changed or not changed <= schedule_fields:
+            if kind != 'update' or table.name != 'agent_tasks' or not changed - {'updated_at'} or not changed <= schedule_fields:
                 raise RuntimeError('Stop: creation permits INSERT and accompanying Task schedule UPDATE only')
+            # Preserve the real TimestampMixin onupdate, not a metadata shim or
+            # arbitrary timestamp overwrite. SQLAlchemy emits updated_at=now().
+            for target, assignment in zip(targets, assignments):
+                if target.group(1) == 'updated_at' and not re.fullmatch(r'now\s*\(\s*\)', assignment.split('=', 1)[1].strip(), re.I):
+                    raise RuntimeError('Stop: only ORM updated_at=now() is allowed with a committed schedule update')
         for values in context.compiled_parameters:
             if kind == 'insert':
                 if table.name == 'tenants':
@@ -132,7 +137,8 @@ async def execute():
             fenced = fenced_predicate(getattr(command, 'whereclause', None))
             if not fenced:
                 raise RuntimeError('Stop: UPDATE/DELETE lacks an owned fixture predicate')
-        connection.info.setdefault('fixture_writes', set()).add(table.name)
+        if kind in ('update', 'delete'):
+            connection.info.setdefault('fixture_writes', set()).add(table.name)
 
     def guard_commit(connection):
         phase = connection.info.get('fixture_commit_phase')

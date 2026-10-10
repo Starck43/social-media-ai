@@ -1,5 +1,145 @@
 # Implementation status and session handoff
 
+## Current continuation — bounded atomic stale reaping, focused owner checks passed
+
+Source baseline dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`: actual merge
+of [PR #33](https://github.com/Starck43/social-media-ai/pull/33), parents
+`683c49e` and `e645b9b`; merge tree equals submitted `e645b9b` tree. Final
+first-parent diff is exactly FOUR existing docs, +129/-137 lines; no app/tests/
+.agent/migrations delta. Those executable paths also match Owner-tested
+`482eacb`. Retained Owner evidence: 1612 passed, 11 warnings, 64 subtests,
+738.25s, saved exit 0. No repeated suite or independently observed owner log.
+
+Selected package: **atomic stale reaping / Notion queue lane**, branch
+`fix/queue-stale-reap-cas`, Draft PR #34; focused owner checks passed,
+NOT integrated/accepted.
+Original five-file implementation scope (four-doc reconciliation makes seven total): `app/models/managers/job_manager.py`, new
+`tests/test_job_stale_reap.py`, new `tests/test_job_stale_reap_db.py`, existing
+board and this ledger. Replace read-list/unconditional-id updates with one
+conditional `QuerySet.update`: status=running AND locked_at<cutoff stay in the
+write predicate, with existing tenant guard/explicit bypass. PostgreSQL may
+re-evaluate that predicate after a competing update; completed rows and fresh
+heartbeats must not be overwritten. Return actual changed count, not snapshot
+length. Preserve timeout, NULL-lease exclusion, attempts/result/error/cost and
+run timestamps; ordinary updated_at behavior remains managed by SQLAlchemy.
+No new schema, heartbeat runner, handler/finalizer/notification/task logic.
+
+Agent evidence is SOURCE ONLY: parse/compile without executing code; all other
+JobManager statements unchanged; existing QuerySet tenant predicate and single
+UPDATE/commit reviewed; changed-file ownership and whitespace inspected.
+Tests were prepared, NOT RUN by agent; completed owner results are recorded below: delegation/count/failure propagation, strict
+cutoff/custom timeout/NULL/status exclusion, scoped/bypass/missing-tenant cases,
+preserved evidence, two reapers, competing completion and heartbeat sessions.
+The bypass test narrows to its own fixture IDs so retained shared-schema rows
+are not recovered. No pytest/collection, standalone tests, app imports, DB,
+schema/migrations, provider/messenger/browser or sender calls by agent.
+
+Limit: this closes only the stale-read/write window. Ordinary long jobs still
+lack general heartbeats and stale outcome fencing; timeout cannot prove an
+external effect has stopped. Existing automatic replay policy is unchanged,
+not newly certified safe. No queue-wide CAS, exactly-once, billing-attempt,
+scheduler atomicity, Job/task transaction or durable outbox claim.
+
+Fresh ownership: PR30 `a4d3237`, PR31 `4e86af4`, PR32 `0f3e369` remain separate
+Draft model-layout lanes with ZERO changed-file overlap; PR29 `d7a52b1` remains
+Draft/deferred. Their checks/merges and future assigned domains are not copied.
+Local Owner main dev remains off limits; one PR/worktree, sequential shared
+`test_schema`; no reset/drop/create/stamp/migration or merge permission.
+Owner/local commands and correction round-trip belong in the PR/commit, not a
+new status file. Next: fresh review and separately authorized integration;
+do not repeat completed focused checks. A separately bounded ordinary-claim/
+lease contract remains later work. Reservation
+DESIGN remains sequenced after queue work; schema approval is separate.
+
+### Owner-reported focused verification — exact 81138d9, no rerun
+
+Owner/local agent completed checks at exact
+`81138d99dab987b3355e674d5bf2922df59e7d49`, Python 3.12.6, dedicated
+`/Users/admin/Projects/social-media-ai-pr34`, branch `fix/queue-stale-reap-cas`.
+Owner reports a clean tree and unchanged expected HEAD; no corrections and no
+empty commit. Evidence is OWNER-REPORTED from the returned report, not tests
+executed by this agent; local log files were not independently read.
+
+- `python tests/test_job_stale_reap.py`: 5 tests, OK, 0.033s, exit 0;
+  retained local log `pr34-standalone-20261010-041559.txt`.
+- `python -m scripts.setup_test_db --check`: exit 0; owner reports read-only,
+  no changes. No schema operation permission is inferred from this diagnostic.
+- `python -m pytest --no-cov -q tests/test_job_stale_reap_db.py`:
+  12 passed, 2 warnings, 1.66s, about 4s wall, exit 0;
+  retained local log `pr34-dbtest-20261010-041637.txt`.
+
+Owner reports zero other pytest/collection processes before each DB step.
+Covered focused contracts: tenant scope, retained attempts/evidence, strict
+fresh/NULL/non-running exclusion, custom timeout/bypass, missing scope denial,
+actual transition count under two reapers, concurrent completion/heartbeat
+not overwritten. This is bounded queue-contract evidence, not full-suite,
+queue-wide replay safety, deployment or security/business acceptance.
+Two warnings are recorded, not independently triaged or declared harmless.
+
+Owner reports preparing ignored private env in this worktree; git status
+remained clean, main checkout/other worktrees untouched. Agent did not read
+or copy that env and no secrets are included here. This is not standing
+permission for further env copies or schema changes. No reset/create/drop/
+stamp/migration, full suite, PR30-32 checks, Ready or merge was reported.
+
+This evidence-record commit changes ONLY board/ledger. Exact tested SHA stays
+81138d9; it is not retroactively replaced with this later docs-only head.
+No application/test change or repeated focused/full check is requested.
+Both PR34 and PR35 stay Draft; integration requires a fresh scoped review
+and an explicit owner command. General leases, stale outcome fencing, task/job
+atomicity and the separate runtime whitespace IndexError remain OPEN.
+
+### Documentation reconciliation with PR35 — prepared, not integrated
+
+PR #35 remains Draft at `8b76b1d768d0525e0501560460c458de81ed3181`.
+Its four-file readability/acceptance delta is now included in this queue
+candidate without copying its old board allocation over PR34's occupied row.
+The original text composition had two adjacent-hunk conflicts in README;
+resolve them by retaining PR34's source-baseline insertion and occupied queue
+row alongside PR35's corrected PR22 paragraph/identity row. The ledger's queue
+journal and Kilo audit are retained; two other documentation files match PR35.
+Source baseline remains dev `6b01493`; no dev/PR merge is performed. Historical
+Kilo observations below describe that baseline, not an assertion that the
+spacing remains uncorrected in this reconciled candidate. The whitespace
+runtime IndexError remains OPEN and unmodified.
+
+This reconciliation changes FOUR docs only. All app/tests/.agent/migrations
+and other executable files are byte-identical to submitted queue `654dcab`.
+Static diff/allowlist/acceptance-phrase checks establish content preservation
+only. The original common-base merge still needs README hunk resolution until
+PR35 ancestry is attached in the dedicated local PR34 worktree. ZERO tests/collection/app
+imports/DB/schema/migration/live calls; no previous checks repeated. Existing
+focused owner commands were later completed on exact 81138d9, as recorded
+above. No focused/full rerun is requested for this docs-only evidence delta.
+
+### Kilo findings audited without dismissing successful-check comments
+
+[PR22 Kilo report](https://github.com/Starck43/social-media-ai/pull/22#issuecomment-6091570623)
+contains three CRITICAL IndexError reports at `app/agent/runtime.py` lines
+393/406/414, NOT Python SyntaxError. Static parsing of runtime.py, web/perms.py
+and core/permissions.py succeeds on fresh dev; this is not runtime acceptance.
+The three reports share one root cause: whitespace survives handle_inbound's
+truthiness guard, becomes empty after strip in _handle_authorized_turn, then
+text.split()[0] can fail after identity/session admission. Messenger ingress
+remains exposed on this source; handle_web_message strips/rejects empty input.
+Record as **OPEN runtime defect**, not harmless or fixed by full-suite green.
+No runtime.py patch is bundled with the queue package.
+
+Other PR22 findings: memory handler's resolution parameter receives identity
+and currently uses only is_owner (naming mismatch); web can() has missing-field
+is_active default=True while can_manage_workspace uses False (OPEN hardening
+review, normal ORM User carries the field); owner scope with user=None is a
+suggested invariant check, not proof of anonymous authorization. No warning is
+silently waived or claimed fixed. Kilo check conclusion success is not absence
+of findings. Available PR22/33 comments/reviews contain no SyntaxError finding;
+a different historical syntax report is not verified from these reports.
+
+[PR33 Kilo report](https://github.com/Starck43/social-media-ai/pull/33#issuecomment-6091622101)
+contains documentation spacing/wording suggestions still visible in the merge,
+not executable syntax failures. Inline threads contain 21 suggestions while
+the summary says 20; its duplicated docs/design/design/README.md path is not
+an actual changed file. No application acceptance follows from that review.
+
 ## Current continuation — PR22 merged; general queue is next assigned lane
 
 PR #22 **MERGED into dev**, history-preserving merge commit

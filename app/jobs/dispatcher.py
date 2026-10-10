@@ -119,12 +119,27 @@ def _format_name_list(names: list[str], limit: int = 5) -> str:
     return ", ".join(head) + tail
 
 
+def _result_count(result: dict, key: str) -> int | None:
+    """Only measured nonnegative counters; missing/malformed is not zero."""
+    value = result.get(key)
+    return value if type(value) is int and value >= 0 else None
+
+
+def _source_error_count(result: dict) -> int:
+    """Reported source errors, not a terminal failure or replay permission.
+
+    Staged errors overlap the affected-source total; never add them together.
+    Legacy/malformed counters provide no evidence of an error or completeness.
+    """
+    return max(_result_count(result, "error") or 0, _result_count(result, "staged_errors") or 0)
+
+
 def _job_success_message(job: Any, result: dict | None) -> str:
     """User-facing completion message, readable by a non-technical person.
 
-    For the collect job the raw stats dict is replaced with a plain-language
-    summary: what was monitored, how many new items landed in the tables and
-    which sources failed. Every other job falls back to the old terse form.
+    Collect/analyze use explicit summaries, not raw errors or per-source data.
+    A completed execution with reported source errors is not complete success.
+    Other job types retain their existing message contract.
     """
     label = _job_label(job.job_type)
     if not isinstance(result, dict):
@@ -132,7 +147,7 @@ def _job_success_message(job: Any, result: dict | None) -> str:
 
     if job.job_type == "collect":
         collected = result.get("collected", 0)
-        error = result.get("error", 0)
+        error = _source_error_count(result)
         empty = result.get("empty", 0)
         excluded = result.get("excluded", 0)
         items = result.get("items", 0)
@@ -140,7 +155,11 @@ def _job_success_message(job: Any, result: dict | None) -> str:
         # never "0 new", which would be a claim about data we simply did not measure.
         new_items = result.get("new_items")
 
-        parts = [f"Задача «{label}» успешно завершена."]
+        parts = [
+            f"Задача «{label}» завершена с ошибками. Данные могут быть неполными."
+            if error
+            else f"Задача «{label}» успешно завершена."
+        ]
 
         if collected:
             names = _format_name_list(result.get("collected_sources") or [])
@@ -153,16 +172,43 @@ def _job_success_message(job: Any, result: dict | None) -> str:
             else:
                 parts.append("Новых нет — все эти записи уже были получены ранее.")
         else:
-            parts.append("Новых данных не получено.")
+            parts.append(
+                "Данные от успешно обработанных источников не получены." if error else "Новых данных не получено."
+            )
 
         if error:
             names = _format_name_list(result.get("error_sources") or [])
-            parts.append(f"Ошибки при сборе: {error} ({names}).")
+            names_detail = f" ({names})" if names else ""
+            parts.append(f"Ошибки при сборе: {error}{names_detail}.")
         if empty:
             parts.append(f"Без контента: {empty} (источники опрошены, но постов нет).")
         if excluded:
             parts.append(f"Пропущено (исключено из мониторинга): {excluded}.")
 
+        return " ".join(parts)
+
+    if job.job_type == "analyze":
+        error = _source_error_count(result)
+        if error:
+            parts = [f"Задача «{label}» завершена с ошибками. Результаты могут быть неполными."]
+            parts.append(f"Источников с ошибками: {error}.")
+        elif _result_count(result, "error") == 0 and _result_count(result, "staged_errors") == 0:
+            parts = [f"Задача «{label}» успешно завершена."]
+        else:
+            # Old results cannot distinguish an exception from a normal skip.
+            parts = [f"Задача «{label}» завершена. Сведения об ошибках источников не учтены в этом результате."]
+        for key, caption in (
+            ("sources", "Источников обработано"),
+            ("analyzed", "Записей прошло фильтр анализа"),
+            ("actions_created", "Действий подготовлено"),
+            ("skipped", "Пропущено"),
+        ):
+            count = _result_count(result, key)
+            if count is not None:
+                parts.append(f"{caption}: {count}.")
+        staged_errors = _result_count(result, "staged_errors")
+        if staged_errors:
+            parts.append(f"Ошибки обработки отложенных данных: {staged_errors}.")
         return " ".join(parts)
 
     detail = ", ".join(f"{k}: {v}" for k, v in list(result.items())[:6])
@@ -176,6 +222,8 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
     Notification row; failures use a fixed template, never raw exception text.
     The technical error stays on the Job (`error`) and on the
     AgentTask (`last_error`) for the admin UI. Runs inside `tenant_scope`.
+    Reported collect/analyze source errors use API_ERROR without reclassifying
+    the committed Job/task outcome or enabling retry. This is DB-only delivery.
     """
     from app.services.notifications.service import notify
     from app.types import NotificationType
@@ -194,11 +242,14 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
             _log_job(logging.ERROR, "job_error_notification_failed", job, error_code="notification_write_failed")
         return
 
+    source_errors = (
+        job.job_type in {"collect", "analyze"} and isinstance(result, dict) and _source_error_count(result) > 0
+    )
     try:
         await notify.create(
-            title=f"Задача «{label}» выполнена",
+            title=f"Задача «{label}» завершена с ошибками" if source_errors else f"Задача «{label}» выполнена",
             message=_job_success_message(job, result),
-            ntype=NotificationType.REPORT_READY,
+            ntype=NotificationType.API_ERROR if source_errors else NotificationType.REPORT_READY,
             entity_type="task",
             entity_id=job.agent_task_id,
         )

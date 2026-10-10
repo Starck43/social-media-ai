@@ -533,6 +533,43 @@ class VKClient(BaseClient):
 			logger.warning(f"Unknown source type {source_type}, using positive ID")
 			return str(abs(numeric_id))
 
+	@staticmethod
+	def _normalize_direct_attachments(attachments: Any) -> list[dict] | None:
+		"""Snapshot direct photos only; never use video previews as media URLs.
+
+		Choose the largest valid size by pixel area (first input wins ties).
+		Missing dimensions rank below positive integer dimensions. Rejected or
+		unavailable media remains a placeholder under the shared staging policy.
+		No downloads, repost traversal, token lookup or provider calls occur here.
+		"""
+		from app.utils.content_attachments import normalize_attachments
+
+		if type(attachments) is not list:
+			return None
+		snapshots = []
+		for attachment in attachments:
+			if type(attachment) is not dict:
+				snapshots.append({"type": "unknown", "url": None})
+				continue
+			media_type = attachment.get("type")
+			url = None
+			if media_type == "photo":
+				photo = attachment.get("photo")
+				sizes = photo.get("sizes") if type(photo) is dict else None
+				best_area = -1
+				for size in sizes if type(sizes) is list else []:
+					if type(size) is not dict:
+						continue
+					ref = normalize_attachments([{"type": "photo", "url": size.get("url")}])[0]["url"]
+					if ref is None:
+						continue
+					width, height = size.get("width"), size.get("height")
+					area = width * height if type(width) is int and type(height) is int and width > 0 and height > 0 else 0
+					if area > best_area:
+						url, best_area = ref, area
+			snapshots.append({"type": media_type, "url": url})
+		return normalize_attachments(snapshots)
+
 	def _normalize_response(self, raw_data: dict, source_type: SourceType) -> list[dict[str, Any]]:
 		"""
 		Normalize VK API response to unified format.
@@ -607,9 +644,13 @@ class VKClient(BaseClient):
 
 				# Include attachments info if present
 				if "attachments" in item:
-					attachment_types = [att.get("type") for att in item["attachments"]]
+					raw_attachments = item["attachments"]
+					attachment_types = [att.get("type") if type(att) is dict else None for att in raw_attachments] if type(raw_attachments) is list else []
 					normalized_item["has_attachments"] = True
 					normalized_item["attachment_types"] = attachment_types
+					snapshots = self._normalize_direct_attachments(raw_attachments)
+					if snapshots is not None:
+						normalized_item["attachments"] = snapshots
 
 				normalized.append(normalized_item)
 

@@ -8,7 +8,7 @@ This path is retained for existing links; it is not a competing backlog.
 
 PR22 MERGED into dev as 683c49e85918503119af47338200d8f762a52403 after explicit
 Owner Ready/merge approval; tree equals approved 56d8105. app/tests/rules/schema
-code match Owner-green482eacb1612 passed/11warnings/64subtests/738.25s/saved exit0.
+code match Owner-green 482eacb 1612 passed/11 warnings/64 subtests/738.25s/saved exit0.
 GitGuardian success; no invented test-CI pass. No short/full rerun by default.
 Retain PR22 review worktree/branch/untracked perr logs; no main checkout edits,
 cleanup, schema/live operations or deployment authorized by merge.

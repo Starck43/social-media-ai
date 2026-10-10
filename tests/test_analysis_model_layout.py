@@ -128,7 +128,11 @@ def test_cost_types_and_period_enum_are_not_unified_by_layout_change():
     assert isinstance(cost.type, Numeric)
     assert (cost.type.precision, cost.type.scale) == (14, 6)
     assert cost.nullable and "USD cents" in cost.comment
-    assert AIAnalytics.__table__.c.period_type.type.enum_class is PeriodType
+    period = AIAnalytics.__table__.c.period_type
+    assert period.type.enum_class is None
+    assert period.type.impl.enums == [member.name for member in PeriodType]
+    assert period.type.process_bind_param(PeriodType.DAY, None) == PeriodType.DAY.name
+    assert period.type.process_result_value(PeriodType.DAY.name, None) is PeriodType.DAY
     for field in ("input_cost_per_1k", "output_cost_per_1k", "last_request_cost"):
         assert isinstance(LLMModel.__table__.c[field].type, Float)
     assert LLMModel.__table__.c.last_request_cost.nullable

@@ -1,5 +1,82 @@
 # Implementation status and session handoff
 
+## Current continuation — bounded atomic stale reaping, verification pending
+
+Source baseline dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`: actual merge
+of [PR #33](https://github.com/Starck43/social-media-ai/pull/33), parents
+`683c49e` and `e645b9b`; merge tree equals submitted `e645b9b` tree. Final
+first-parent diff is exactly FOUR existing docs, +129/-137 lines; no app/tests/
+.agent/migrations delta. Those executable paths also match Owner-tested
+`482eacb`. Retained Owner evidence: 1612 passed, 11 warnings, 64 subtests,
+738.25s, saved exit 0. No repeated suite or independently observed owner log.
+
+Selected package: **atomic stale reaping / Notion queue lane**, branch
+`fix/queue-stale-reap-cas`, PREPARED for a Draft PR, NOT integrated/accepted.
+Five-file scope: `app/models/managers/job_manager.py`, new
+`tests/test_job_stale_reap.py`, new `tests/test_job_stale_reap_db.py`, existing
+board and this ledger. Replace read-list/unconditional-id updates with one
+conditional `QuerySet.update`: status=running AND locked_at<cutoff stay in the
+write predicate, with existing tenant guard/explicit bypass. PostgreSQL may
+re-evaluate that predicate after a competing update; completed rows and fresh
+heartbeats must not be overwritten. Return actual changed count, not snapshot
+length. Preserve timeout, NULL-lease exclusion, attempts/result/error/cost and
+run timestamps; ordinary updated_at behavior remains managed by SQLAlchemy.
+No new schema, heartbeat runner, handler/finalizer/notification/task logic.
+
+Agent evidence is SOURCE ONLY: parse/compile without executing code; all other
+JobManager statements unchanged; existing QuerySet tenant predicate and single
+UPDATE/commit reviewed; changed-file ownership and whitespace inspected.
+New tests are WRITTEN, NOT RUN: delegation/count/failure propagation, strict
+cutoff/custom timeout/NULL/status exclusion, scoped/bypass/missing-tenant cases,
+preserved evidence, two reapers, competing completion and heartbeat sessions.
+The bypass test narrows to its own fixture IDs so retained shared-schema rows
+are not recovered. No pytest/collection, standalone tests, app imports, DB,
+schema/migrations, provider/messenger/browser or sender calls by agent.
+
+Limit: this closes only the stale-read/write window. Ordinary long jobs still
+lack general heartbeats and stale outcome fencing; timeout cannot prove an
+external effect has stopped. Existing automatic replay policy is unchanged,
+not newly certified safe. No queue-wide CAS, exactly-once, billing-attempt,
+scheduler atomicity, Job/task transaction or durable outbox claim.
+
+Fresh ownership: PR30 `a4d3237`, PR31 `4e86af4`, PR32 `0f3e369` remain separate
+Draft model-layout lanes with ZERO changed-file overlap; PR29 `d7a52b1` remains
+Draft/deferred. Their checks/merges and future assigned domains are not copied.
+Local Owner main dev remains off limits; one PR/worktree, sequential shared
+`test_schema`; no reset/drop/create/stamp/migration or merge permission.
+Owner/local commands and correction round-trip belong in the PR/commit, not a
+new status file. Next: verify ONLY this package when local test lane is free;
+then review one separately bounded ordinary-claim/lease contract. Reservation
+DESIGN remains sequenced after queue work; schema approval is separate.
+
+### Kilo findings audited without dismissing successful-check comments
+
+[PR22 Kilo report](https://github.com/Starck43/social-media-ai/pull/22#issuecomment-6091570623)
+contains three CRITICAL IndexError reports at `app/agent/runtime.py` lines
+393/406/414, NOT Python SyntaxError. Static parsing of runtime.py, web/perms.py
+and core/permissions.py succeeds on fresh dev; this is not runtime acceptance.
+The three reports share one root cause: whitespace survives handle_inbound's
+truthiness guard, becomes empty after strip in _handle_authorized_turn, then
+text.split()[0] can fail after identity/session admission. Messenger ingress
+remains exposed on this source; handle_web_message strips/rejects empty input.
+Record as **OPEN runtime defect**, not harmless or fixed by full-suite green.
+No runtime.py patch is bundled with the queue package.
+
+Other PR22 findings: memory handler's resolution parameter receives identity
+and currently uses only is_owner (naming mismatch); web can() has missing-field
+is_active default=True while can_manage_workspace uses False (OPEN hardening
+review, normal ORM User carries the field); owner scope with user=None is a
+suggested invariant check, not proof of anonymous authorization. No warning is
+silently waived or claimed fixed. Kilo check conclusion success is not absence
+of findings. Available PR22/33 comments/reviews contain no SyntaxError finding;
+a different historical syntax report is not verified from these reports.
+
+[PR33 Kilo report](https://github.com/Starck43/social-media-ai/pull/33#issuecomment-6091622101)
+contains documentation spacing/wording suggestions still visible in the merge,
+not executable syntax failures. Inline threads contain 21 suggestions while
+the summary says 20; its duplicated docs/design/design/README.md path is not
+an actual changed file. No application acceptance follows from that review.
+
 ## Current continuation — PR22 merged; general queue is next assigned lane
 
 PR #22 **MERGED into dev**, history-preserving merge commit

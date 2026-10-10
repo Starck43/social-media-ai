@@ -13,6 +13,8 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
+Current source baseline: dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`, actual merge of docs-only PR #33. Its four-file diff changes no executable code; PR22 evidence below is retained without rerunning it.
+
 Integrated baseline dev `683c49e85918503119af47338200d8f762a52403`: PR22 merged by explicit Owner approval, history preserved. Merge tree equals approved56d8105; executable code equals Owner-green482eacb1612 passed/11warnings/64subtests/saved exit0. Regression-verified/merged is not deployed, live activated or security/business accepted. General queue is next assigned lane; broader gates remain OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
@@ -21,7 +23,7 @@ Do not restart merged digest integration or bounded logging work.
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
 | B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as683c49e; Owner482eacb full1612 passed/11warnings/64subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
-| C / general queue, PRD-05 | **ASSIGNED NEXT, not started:** same Owner-assigned lane after merged PR22 | Recheck fresh dev/open PRs/ownership; select one bounded independent queue contract. Checkpoint fencing is not general queue correctness. No new queue implementation in this journal update. |
+| C / general queue, PRD-05 | **OCCUPIED / PREPARED, tests pending:** atomic stale reaping / Notion queue lane; branch `fix/queue-stale-reap-cas` from dev `6b01493` | Scope: `app/models/managers/job_manager.py`, two new stale-reap tests, this board and integration ledger. Owner verifies conditional UPDATE, heartbeat/completion races and tenant scope. Keep Draft; general leases, outcome fencing and Job/task atomicity remain OPEN. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
 | C / typed boundaries and memory, PRD-07 | Typed boundaries #17 merged; memory transaction/watermark concurrency remains open | Separate package after allocation check; do not rebuild typed output contracts. |

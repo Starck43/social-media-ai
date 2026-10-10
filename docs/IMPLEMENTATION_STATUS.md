@@ -2,7 +2,11 @@
 
 ## Current continuation — queue foundation merged; dispatcher/web/learn follow-ups merged
 
-Source baseline dev `50dc2a2b0bb9832c05b426ea16c6010616264b31`. Dev advanced by four owner-approved merges on 2026-10-10:
+Source baseline is the reconciliation snapshot dev `50dc2a2b0bb9832c05b426ea16c6010616264b31`,
+carried into this branch by merge `ef4fd13` — it is not a claim of permanent
+currency, and dev movement after this snapshot is not chased into this docs
+branch. At the time of the queue merges the THEN-dev head was `073fcd0`
+(PR #43). Dev advanced by four owner-approved merges on 2026-10-10:
 
 - [PR #45](https://github.com/Starck43/social-media-ai/pull/45) queue foundation
   integration as `f078f3a1d5a57985d31e6a7a7380bf5bc98f9b3e` (+689/-30, 8 files),
@@ -37,9 +41,18 @@ branch carries them via merge `ef4fd13` of dev `50dc2a2`:
   lookup as `2aa0b43`; tested `7629ea6`: 18 standalone, exit 0.
 - [PR #30](https://github.com/Starck43/social-media-ai/pull/30) tenancy-model
   layout as `50dc2a2`; tested `16df066`: 61 focused, exit 0.
+- [PR #31](https://github.com/Starck43/social-media-ai/pull/31) notification-model
+  layout as `f333403`; ancestry verified on dev, no test evidence recorded here.
+- [PR #32](https://github.com/Starck43/social-media-ai/pull/32) collection-model
+  layout as `ef0de1c`; ancestry verified on dev, no test evidence recorded here.
 
 Checks for those lanes are owner-reported targeted runs recorded in the
 parallel chat's task records; no full suite is attached to any of them.
+
+Queue continuation is OCCUPIED by Draft [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
+(ordinary claim fencing) at `dbc054c7f37ed1071711afea750e044b7e50ffd6`, with
+published owner evidence and review; unmerged, so general claim fencing,
+Job/task atomicity and recovery replay stay OPEN.
 
 ### Original stale-reaping package (closed via PR #45)
 
@@ -69,15 +82,18 @@ external effect has stopped. Existing automatic replay policy is unchanged,
 not newly certified safe. No queue-wide CAS, exactly-once, billing-attempt,
 scheduler atomicity, Job/task transaction or durable outbox claim.
 
-Fresh ownership: PR30 `a4d3237`, PR31 `4e86af4`, PR32 `0f3e369` remain separate
-Draft model-layout lanes with ZERO changed-file overlap; PR29 `d7a52b1` remains
-Draft/deferred. Their checks/merges and future assigned domains are not copied.
+Model-layout lanes are now history: PR30 merged as `50dc2a2`, PR31 as
+`f333403`, PR32 as `ef0de1c` (git ancestry verified on dev); the PR30/31/32 heads
+above were their pre-merge lane heads. PR29 `d7a52b1` remains Draft/deferred.
 Local Owner main dev remains off limits; one PR/worktree, sequential shared
 `test_schema`; no reset/drop/create/stamp/migration or merge permission.
 Owner/local commands and correction round-trip belong in the PR/commit, not a
-new status file. Next: fresh review and separately authorized integration;
-do not repeat completed focused checks. A separately bounded ordinary-claim/
-lease contract remains later work. Reservation
+new status file; do not repeat completed focused checks. The ordinary-claim/
+lease continuation is now the bounded Draft [PR #51](https://github.com/Starck43/social-media-ai/pull/51)
+at `dbc054c7f37ed1071711afea750e044b7e50ffd6` (claim fencing; owner-reported
+77 standalone + 15 PostgreSQL checks exit 0, review published, still unmerged) —
+general claim fencing, Job/task atomicity and recovery replay remain OPEN.
+Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
 
 ### Owner-reported focused verification — exact 81138d9, no rerun
@@ -107,8 +123,8 @@ Two warnings are recorded, not independently triaged or declared harmless.
 
 Same SHA, local re-run with captured exit codes: on 2026-10-10 the same three
 commands were executed again in the same worktree at the identical
-`81138d99dab987b3355e674d5bf2922df59e7d49` while preparing this ledger, results
-unchanged — `python tests/test_job_stale_reap.py` 5 tests OK (log
+`81138d99dab987b3355e674d5bf2922df59e7d49` during the PR45 evidence correction,
+results unchanged — `python tests/test_job_stale_reap.py` 5 tests OK (log
 `pr34-rerun-standalone-20261010-054125.txt`, exit 0), `python -m
 scripts.setup_test_db --check` exit 0 (log
 `pr34-rerun-schemacheck-20261010-054130.txt`), `python -m pytest
@@ -406,10 +422,14 @@ No model/migration/owner runtime-guard changes; no live calls or activation.
 - [x] 44 contract/mocked-boundary tests actually passed locally; 5 additional
   PostgreSQL regressions prepared but NOT run. Existing/full suite still required.
 
-See [typed-boundary handoff](design/typed_output_boundaries_handoff.md). PRD-07,
-PRD-02 and PRD-03 remain OPEN: no atomic memory-write transaction, spend ledger,
-interactive identity replacement or full injection/permission acceptance.
-The research checkbox and merge do not turn this bounded work into a completed gate.
+See [typed-boundary handoff](design/typed_output_boundaries_handoff.md). At that
+PR17 stage PRD-07, PRD-02 and PRD-03 remained OPEN: no atomic memory-write
+transaction, spend ledger, interactive identity replacement or full
+injection/permission acceptance. The atomic learn facts/watermark transaction
+has since been delivered by [PR #43](https://github.com/Starck43/social-media-ai/pull/43)
+(`073fcd0`); the spend ledger/accounting, reflect/manual-write interactions and
+acceptance guarantees remain separate and OPEN. The research checkbox and merge
+do not turn this bounded work into a completed gate.
 
 ## Returned handler failure follow-up — merged
 

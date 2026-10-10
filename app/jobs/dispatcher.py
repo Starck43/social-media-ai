@@ -13,9 +13,11 @@ Two entry points, one execution path:
 
 import asyncio
 import logging
+from dataclasses import replace
 from typing import Any, Callable, NoReturn, Optional
 
 from app.core.tenant_context import tenant_scope
+from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
 from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.models.managers.job_manager import JobManager
@@ -204,16 +206,96 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
         _log_job(logging.ERROR, "job_success_notification_failed", job, error_code="notification_write_failed")
 
 
-async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) -> None:
-    """Run a claimed job and record the outcome (done / retry / failed).
+def _require_outcome_receipt(value: Any, claim: JobClaim) -> JobOutcomeReceipt:
+    if not isinstance(value, JobOutcomeReceipt) or value.claim != claim:
+        raise TypeError("Ordinary finalization requires this claim's outcome receipt")
+    return value
 
-    `allow_retry=False` makes a failure terminal. Used by the inline run path
-    ("выполнить сейчас"): there is no worker loop that will ever come back for a
-    retry, and re-scheduling would repeat the side effects unattended.
-    Ordinary outcome/projection errors raise JobOutcomePersistenceError without
-    reclassifying the handler, retrying the outcome write or implying rollback.
+
+async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceipt:
+    """Only this claim's acknowledged commit may drive post-commit projection."""
+    if not isinstance(receipt, JobOutcomeReceipt):
+        raise TypeError("Ordinary finalization requires an outcome receipt")
+    claim = receipt.claim
+    if receipt.acknowledgement == OutcomeAck.CLAIM_LOST:
+        _log_job(logging.WARNING, "job_outcome_claim_lost", claim, error_code="claim_lost")
+        return receipt
+    if receipt.task_projection_failed:
+        _log_job(logging.ERROR, "job_task_projection_failed", claim, error_code="task_projection_failed")
+        return receipt
+    if receipt.acknowledgement == OutcomeAck.RETRY:
+        _log_job(logging.WARNING, "job_retry_scheduled", claim)
+        return receipt
+    success = receipt.acknowledgement == OutcomeAck.DONE
+    _log_job(logging.INFO if success else logging.ERROR, "job_done" if success else "job_failed_terminal", claim)
+    if success and isinstance(receipt.result, dict) and receipt.result.get("status") == "skipped":
+        return receipt
+    try:
+        await _notify_job_result(
+            claim,
+            success=success,
+            result=receipt.result if success else None,
+            error=None if success else _FAILURE_MESSAGE,
+        )
+    except Exception:
+        # An unexpected projection failure cannot invalidate the acknowledged Job write.
+        _log_job(logging.ERROR, "job_notification_projection_failed", claim, error_code="notification_write_failed")
+        receipt = replace(receipt, notification_projection_failed=True)
+    return receipt
+
+
+async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow_retry: bool) -> JobOutcomeReceipt:
+    claim = JobClaim.capture(job)  # Capture once, before any handler can mutate observed state.
+    try:
+        if claim.job_type == "digest":
+            from app.services.digest.job_delivery import execute_digest_job
+
+            result = await execute_digest_job(job, payload, handler)
+        else:
+            result = await handler(payload)
+    except Exception as error:
+        from app.services.digest.delivery_outcomes import DeliveryFailure
+
+        retry = allow_retry and (not isinstance(error, DeliveryFailure) or error.retryable)
+        try:
+            receipt = await jobs.mark_failed(claim.job_id, error=str(error), allow_retry=retry, claim=claim)
+            receipt = _require_outcome_receipt(receipt, claim)
+        except Exception as outcome_error:
+            _outcome_write_failed(claim, outcome_error)
+        _log_job(
+            logging.ERROR if receipt.acknowledgement == OutcomeAck.FAILED else logging.WARNING,
+            "job_handler_failed",
+            claim,
+            error_code=_error_kind(error),
+        )
+        return await _post_ordinary_outcome(receipt)
+    failure = returned_failure(result)
+    try:
+        if failure is not None:
+            receipt = await jobs.mark_failed(
+                claim.job_id,
+                error=failure.code,
+                allow_retry=False,
+                result=failure.audit_result(),
+                llm_cost=failure.llm_cost,
+                claim=claim,
+            )
+        else:
+            receipt = await jobs.mark_done(claim.job_id, result=result, llm_cost=reported_llm_cost(result), claim=claim)
+        receipt = _require_outcome_receipt(receipt, claim)
+    except Exception as outcome_error:
+        _outcome_write_failed(claim, outcome_error)
+    if failure is not None:
+        _log_job(logging.ERROR, "job_returned_failure", claim, error_code=failure.code)
+    return await _post_ordinary_outcome(receipt)
+
+
+async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) -> JobOutcomeReceipt | None:
+    """Execute once; ordinary outcomes return a claim-bound committed receipt.
+
+    DB errors stop without a second write. Post-commit projection degradation
+    stays distinct from handler failure. Checkpoint digest retains its protocol.
     """
-    # Identity comes from columns, never from user-supplied payload overrides.
     payload = dict(job.payload or {})
     payload["agent_task_id"] = job.agent_task_id
     payload["job_id"] = job.id
@@ -223,89 +305,69 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             from app.services.digest.job_delivery import REFERENCE_KEY, enabled
 
             checkpoint_mode = enabled() or REFERENCE_KEY in (getattr(job, "result", None) or {})
-        terminal_result_failure = False
-        handler_returned = False
+        if not checkpoint_mode:
+            return await _execute_ordinary(job, handler, payload, allow_retry=allow_retry)
+        # Keep checkpoint dispatch/finalization, including persisted-reference routing.
         try:
-            if job.job_type == "digest":
-                from app.services.digest.job_delivery import execute_digest_job
+            from app.services.digest.job_delivery import execute_digest_job, finalize_digest_job
 
-                result = await execute_digest_job(job, payload, handler)
-            else:
-                result = await handler(payload)
-            handler_returned = True
-            llm_cost = reported_llm_cost(result)
-            failure = returned_failure(result) if not checkpoint_mode else None
-            if failure is not None:
-                # A result cannot establish replay safety. No unattended repeat.
-                terminal_result_failure = True
-                await jobs.mark_failed(
-                    job.id,
-                    error=failure.code,
-                    allow_retry=False,
-                    result=failure.audit_result(),
-                    llm_cost=failure.llm_cost,
-                )
-                _log_job(logging.ERROR, "job_returned_failure", job, error_code=failure.code)
-                await _notify_job_result(
-                    job,
-                    success=False,
-                    error=_FAILURE_MESSAGE,
-                )
-                return
-            if checkpoint_mode:
-                from app.services.digest.job_delivery import finalize_digest_job
-
-                if await finalize_digest_job(job, result=result) is None:
-                    _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
-                    return
-            else:
-                await jobs.mark_done(job.id, result=result, llm_cost=llm_cost)
+            result = await execute_digest_job(job, payload, handler)
+            if await finalize_digest_job(job, result=result) is None:
+                _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
+                return None
             _log_job(logging.INFO, "job_done", job)
             if not (isinstance(result, dict) and result.get("status") == "skipped"):
                 await _notify_job_result(job, success=True, result=result)
-        except Exception as e:
-            if handler_returned and not checkpoint_mode:
-                # A returned handler must not run again because bookkeeping failed.
-                _outcome_write_failed(job, e)
-            # Uncertain/blocked checkpoint outcomes are terminal, not hidden retries.
+        except Exception as error:
             from app.services.digest.delivery_outcomes import DeliveryFailure
+            from app.services.digest.job_delivery import finalize_digest_job
 
-            retry = allow_retry and not terminal_result_failure and (not isinstance(e, DeliveryFailure) or e.retryable)
-            if checkpoint_mode:
-                from app.services.digest.job_delivery import finalize_digest_job
-
-                will_retry = await finalize_digest_job(job, failure=e, allow_retry=retry)
-                if will_retry is None:
-                    _log_job(logging.WARNING, "job_outcome_claim_lost", job, error_code="claim_lost")
-                    return
-            else:
-                try:
-                    will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=retry)
-                except Exception as outcome_error:
-                    _outcome_write_failed(job, outcome_error)
+            retry = allow_retry and (not isinstance(error, DeliveryFailure) or error.retryable)
+            will_retry = await finalize_digest_job(job, failure=error, allow_retry=retry)
+            if will_retry is None:
+                _log_job(logging.WARNING, "job_outcome_claim_lost", job, error_code="claim_lost")
+                return None
             if will_retry:
-                _log_job(logging.WARNING, "job_retry_scheduled", job, error_code=_error_kind(e))
+                _log_job(logging.WARNING, "job_retry_scheduled", job, error_code=_error_kind(error))
             else:
-                _log_job(logging.ERROR, "job_failed_terminal", job, error_code=_error_kind(e))
+                _log_job(logging.ERROR, "job_failed_terminal", job, error_code=_error_kind(error))
                 await _notify_job_result(job, success=False, error=_FAILURE_MESSAGE)
+        return None
 
 
-async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> Optional[dict]:
-    """Run a claimed job through its handler and report the outcome.
+def _claimed_outcome(receipt: JobOutcomeReceipt) -> dict[str, Any]:
+    if receipt.acknowledgement == OutcomeAck.CLAIM_LOST:
+        # Several legacy adapters treat any truthy non-failed dictionary as success.
+        # Propagate loss as an explicit error, without touching those occupied surfaces.
+        raise JobClaimLostError(receipt.claim) from None
+    return receipt.as_outcome()
 
-    Returns None when the job type has no handler (it is marked failed), else
-    the job's final `{status, result, error}`.
-    """
+
+async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, Any]:
+    """Return ordinary committed receipts, never a newer attempt's current row."""
     handler = HANDLERS.get(job.job_type)
     if not handler:
-        with tenant_scope(job.tenant_id):
-            await jobs.mark_failed(job.id, error=f"Unknown job type: {job.job_type}", allow_retry=allow_retry)
-        return {"status": "failed", "error": f"Unknown job type: {job.job_type}", "job_id": job.id}
-
-    await execute_job(job, handler, allow_retry=allow_retry)
+        claim = JobClaim.capture(job)
+        with tenant_scope(claim.tenant_id):
+            try:
+                receipt = await jobs.mark_failed(
+                    claim.job_id,
+                    error=f"Unknown job type: {claim.job_type}",
+                    allow_retry=allow_retry,
+                    claim=claim,
+                )
+                receipt = _require_outcome_receipt(receipt, claim)
+            except Exception as outcome_error:
+                _outcome_write_failed(claim, outcome_error)
+        # Preserve the unknown-handler notification policy (no completion notification).
+        return _claimed_outcome(receipt)
+    receipt = await execute_job(job, handler, allow_retry=allow_retry)
+    if receipt is not None:
+        return _claimed_outcome(receipt)
+    # Only checkpoint digest uses the existing observation protocol in this slice.
     with tenant_scope(job.tenant_id):
         finished = await jobs.get(id=job.id)
-    if finished is None:  # pragma: no cover - the row cannot disappear mid-run
+    if finished is None:
         return {"status": "unknown", "error": "Job row not found after execution"}
     return {"status": finished.status, "result": finished.result, "error": finished.error}
 
@@ -328,27 +390,15 @@ async def run_job_now(job_id: int, *, allow_retry: bool = True) -> Optional[dict
 
 
 async def _run_claimed_inline(job: Any) -> dict[str, Any]:
-    """Execute an already-claimed job synchronously and return its outcome."""
-    from app.jobs.handlers import HANDLERS
-
-    handler = HANDLERS.get(job.job_type)
-    if not handler:
-        error = f"Unknown job type: {job.job_type}"
-        with tenant_scope(job.tenant_id):
-            await jobs.mark_failed(job.id, error=error, allow_retry=False)
-        return {"status": "failed", "error": error, "job_id": job.id}
-    await execute_job(job, handler, allow_retry=False)
-    with tenant_scope(job.tenant_id):
-        finished = await jobs.get(id=job.id)
-    if finished is None:  # pragma: no cover — the row was just written
-        return {"status": "unknown", "error": "Job row not found after execution", "job_id": job.id}
-    return {"status": finished.status, "result": finished.result, "error": finished.error, "job_id": finished.id}
+    """Execute a committed acquisition; ordinary receipt keeps its own generation."""
+    outcome = await _execute_claimed(job, allow_retry=False)
+    return {**outcome, "job_id": job.id}
 
 
 async def run_task_directly(task: Any) -> Optional[dict]:
     """Run a task's job immediately in the caller's process — no queue hop.
 
-    The job is created as running, so the background worker cannot claim it.
+    Enqueue then acquire the exact due row; a competing claim runs no handler here.
     The authoritative Job row remains the audit trail for inline execution.
     """
     from app.jobs.enqueue import enqueue_task_run
@@ -356,10 +406,9 @@ async def run_task_directly(task: Any) -> Optional[dict]:
 
     with tenant_scope(task.tenant_id):
         job = await enqueue_task_run(task)
-        await JobManager.start_running(job.id)
-        claimed = await JobManager().get(id=job.id)
-    if claimed is None:  # pragma: no cover — the row was just written
-        return None
+        claimed = await JobManager.claim_job(job.id)
+    if claimed is None:
+        raise JobNotAcquiredError(job.id, job.tenant_id) from None
     return await _run_claimed_inline(claimed)
 
 
@@ -368,10 +417,9 @@ async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_k
     from app.models.managers.job_manager import JobManager
 
     job = await JobManager().enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
-    await JobManager.start_running(job.id)
-    claimed = await JobManager().get(id=job.id)
-    if claimed is None:  # pragma: no cover — the row was just written
-        return None
+    claimed = await JobManager.claim_job(job.id)
+    if claimed is None:
+        raise JobNotAcquiredError(job.id, job.tenant_id) from None
     return await _run_claimed_inline(claimed)
 
 

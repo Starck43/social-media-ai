@@ -150,7 +150,9 @@ async def test_execute_job_persists_learn_llm_cost():
     handlers.HANDLERS["learn"] = lambda payload: fake_learn(payload)
     dispatcher_module.HANDLERS["learn"] = handlers.HANDLERS["learn"]
     try:
-        job = await _make_job()
+        pending = await _make_job()
+        job = await Job.objects.claim_job(pending.id)
+        assert job is not None and job.status == "running"
         await dispatcher_module.execute_job(job, dispatcher_module.HANDLERS["learn"])
         stored = await Job.objects.get(id=job.id)
         assert stored.status == "done"

@@ -47,17 +47,19 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             await self.dispatcher.execute_job(self.job, self.handler)
         self.assert_private_logs(logs, "job_done")
         self.assertIn("job_id=7 tenant_id=31 task_id=9 job_type=learn", logs.output[0])
-        self.jobs.mark_done.assert_awaited_once_with(7, result=result, llm_cost=0.12)
+        self.jobs.mark_done.assert_awaited_once_with(7, claim=self.fixture.claim, result=result, llm_cost=0.12)
         self.assertIs(self.notify.await_args.kwargs["result"], result)
 
     async def test_retry_exception_not_logged_and_retry_policy_unchanged(self):
         self.handler.side_effect = RuntimeError(SECRET)
-        self.jobs.mark_failed.return_value = True
+        self.jobs.mark_failed.return_value = fixtures.CLAIMS.JobOutcomeReceipt(
+            self.fixture.claim, fixtures.CLAIMS.OutcomeAck.RETRY
+        )
         with self.assertLogs(self.dispatcher.logger, level="WARNING") as logs:
             await self.dispatcher.execute_job(self.job, self.handler)
         self.assert_private_logs(logs, "job_retry_scheduled")
         self.assertIn("error_code=runtime_error", logs.output[0])
-        self.jobs.mark_failed.assert_awaited_once_with(7, error=SECRET, allow_retry=True)
+        self.jobs.mark_failed.assert_awaited_once_with(7, claim=self.fixture.claim, error=SECRET, allow_retry=True)
         self.notify.assert_not_awaited()
 
     async def test_terminal_exception_not_logged_or_passed_to_failure_notification(self):
@@ -66,7 +68,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             await self.dispatcher.execute_job(self.job, self.handler, allow_retry=False)
         self.assert_private_logs(logs, "job_failed_terminal")
         self.assertIn("error_code=timeout", logs.output[0])
-        self.jobs.mark_failed.assert_awaited_once_with(7, error=SECRET, allow_retry=False)
+        self.jobs.mark_failed.assert_awaited_once_with(7, claim=self.fixture.claim, error=SECRET, allow_retry=False)
         self.assertEqual(self.notify.await_args.kwargs["error"], self.dispatcher._FAILURE_MESSAGE)
 
     async def test_returned_failure_retains_safe_code_and_unknown_cost(self):

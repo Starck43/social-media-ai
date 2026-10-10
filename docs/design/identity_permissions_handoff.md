@@ -18,7 +18,7 @@ independent warning triage. History of red/interrupted runs remains evidence,
 not current acceptance: bounded separately approved one-row TEST orphan cleanup
 with zero dependencies preceded final green; no future deletion/reset permission.
 
-Integrated bounded safeguards: bound active identity/session, fresh tool/right
+Integrated bounded safeguards: bound active identity/session, fresh tool/rights
 checks, actor/args/tool-bound one-use confirmation, narrow owner/service grants,
 preview-only action_send botaction.view/literal dry_run=True, no publication/
 PENDING transition. Owner queued/running/outcome UI, source/task escaping,

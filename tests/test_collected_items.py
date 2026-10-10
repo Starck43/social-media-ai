@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.core.tenant_context import tenant_scope
 from app.models import AgentTask, CollectedItem, Platform, Source
 from app.types import SourceType
 
@@ -47,6 +48,13 @@ async def source():
     await CollectedItem.objects.filter(source_id=s.id).delete()
     await Source.objects.delete_by_id(s.id)
     await Platform.objects.delete_by_id(p.id)
+
+
+@pytest.fixture(autouse=True)
+def _source_tenant_scope(source):
+    """Give this file's raw-SQL paths the source tenant, without global bypass."""
+    with tenant_scope(source.tenant_id):
+        yield
 
 
 def _collector(items, analyzer=None):

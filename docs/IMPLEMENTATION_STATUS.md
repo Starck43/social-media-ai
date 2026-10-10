@@ -1,6 +1,6 @@
 # Implementation status and session handoff
 
-## Current continuation — bounded atomic stale reaping, verification pending
+## Current continuation — bounded atomic stale reaping, focused owner checks passed
 
 Source baseline dev `6b01493b6152cffe09fa50cdd488f24ac1098c85`: actual merge
 of [PR #33](https://github.com/Starck43/social-media-ai/pull/33), parents
@@ -11,8 +11,9 @@ first-parent diff is exactly FOUR existing docs, +129/-137 lines; no app/tests/
 738.25s, saved exit 0. No repeated suite or independently observed owner log.
 
 Selected package: **atomic stale reaping / Notion queue lane**, branch
-`fix/queue-stale-reap-cas`, PREPARED for a Draft PR, NOT integrated/accepted.
-Five-file scope: `app/models/managers/job_manager.py`, new
+`fix/queue-stale-reap-cas`, Draft PR #34; focused owner checks passed,
+NOT integrated/accepted.
+Original five-file implementation scope (four-doc reconciliation makes seven total): `app/models/managers/job_manager.py`, new
 `tests/test_job_stale_reap.py`, new `tests/test_job_stale_reap_db.py`, existing
 board and this ledger. Replace read-list/unconditional-id updates with one
 conditional `QuerySet.update`: status=running AND locked_at<cutoff stay in the
@@ -26,7 +27,7 @@ No new schema, heartbeat runner, handler/finalizer/notification/task logic.
 Agent evidence is SOURCE ONLY: parse/compile without executing code; all other
 JobManager statements unchanged; existing QuerySet tenant predicate and single
 UPDATE/commit reviewed; changed-file ownership and whitespace inspected.
-New tests are WRITTEN, NOT RUN: delegation/count/failure propagation, strict
+Tests were prepared, NOT RUN by agent; completed owner results are recorded below: delegation/count/failure propagation, strict
 cutoff/custom timeout/NULL/status exclusion, scoped/bypass/missing-tenant cases,
 preserved evidence, two reapers, competing completion and heartbeat sessions.
 The bypass test narrows to its own fixture IDs so retained shared-schema rows
@@ -45,9 +46,48 @@ Draft/deferred. Their checks/merges and future assigned domains are not copied.
 Local Owner main dev remains off limits; one PR/worktree, sequential shared
 `test_schema`; no reset/drop/create/stamp/migration or merge permission.
 Owner/local commands and correction round-trip belong in the PR/commit, not a
-new status file. Next: verify ONLY this package when local test lane is free;
-then review one separately bounded ordinary-claim/lease contract. Reservation
+new status file. Next: fresh review and separately authorized integration;
+do not repeat completed focused checks. A separately bounded ordinary-claim/
+lease contract remains later work. Reservation
 DESIGN remains sequenced after queue work; schema approval is separate.
+
+### Owner-reported focused verification — exact 81138d9, no rerun
+
+Owner/local agent completed checks at exact
+`81138d99dab987b3355e674d5bf2922df59e7d49`, Python 3.12.6, dedicated
+`/Users/admin/Projects/social-media-ai-pr34`, branch `fix/queue-stale-reap-cas`.
+Owner reports a clean tree and unchanged expected HEAD; no corrections and no
+empty commit. Evidence is OWNER-REPORTED from the returned report, not tests
+executed by this agent; local log files were not independently read.
+
+- `python tests/test_job_stale_reap.py`: 5 tests, OK, 0.033s, exit 0;
+  retained local log `pr34-standalone-20261010-041559.txt`.
+- `python -m scripts.setup_test_db --check`: exit 0; owner reports read-only,
+  no changes. No schema operation permission is inferred from this diagnostic.
+- `python -m pytest --no-cov -q tests/test_job_stale_reap_db.py`:
+  12 passed, 2 warnings, 1.66s, about 4s wall, exit 0;
+  retained local log `pr34-dbtest-20261010-041637.txt`.
+
+Owner reports zero other pytest/collection processes before each DB step.
+Covered focused contracts: tenant scope, retained attempts/evidence, strict
+fresh/NULL/non-running exclusion, custom timeout/bypass, missing scope denial,
+actual transition count under two reapers, concurrent completion/heartbeat
+not overwritten. This is bounded queue-contract evidence, not full-suite,
+queue-wide replay safety, deployment or security/business acceptance.
+Two warnings are recorded, not independently triaged or declared harmless.
+
+Owner reports preparing ignored private env in this worktree; git status
+remained clean, main checkout/other worktrees untouched. Agent did not read
+or copy that env and no secrets are included here. This is not standing
+permission for further env copies or schema changes. No reset/create/drop/
+stamp/migration, full suite, PR30-32 checks, Ready or merge was reported.
+
+This evidence-record commit changes ONLY board/ledger. Exact tested SHA stays
+81138d9; it is not retroactively replaced with this later docs-only head.
+No application/test change or repeated focused/full check is requested.
+Both PR34 and PR35 stay Draft; integration requires a fresh scoped review
+and an explicit owner command. General leases, stale outcome fencing, task/job
+atomicity and the separate runtime whitespace IndexError remain OPEN.
 
 ### Documentation reconciliation with PR35 — prepared, not integrated
 
@@ -69,8 +109,8 @@ Static diff/allowlist/acceptance-phrase checks establish content preservation
 only. The original common-base merge still needs README hunk resolution until
 PR35 ancestry is attached in the dedicated local PR34 worktree. ZERO tests/collection/app
 imports/DB/schema/migration/live calls; no previous checks repeated. Existing
-focused owner commands remain pending, unless the owner supplies results for
-an exact tested SHA. No full suite is requested for this docs-only delta.
+focused owner commands were later completed on exact 81138d9, as recorded
+above. No focused/full rerun is requested for this docs-only evidence delta.
 
 ### Kilo findings audited without dismissing successful-check comments
 

@@ -110,7 +110,7 @@ class WebPerms:
         if resolved is None or not isinstance(model_name, str) or not model_name.strip():
             return False
         model_name = model_name.strip().lower()
-        if self._user is None or not getattr(self._user, "is_active", True):
+        if self._user is None or not getattr(self._user, "is_active", False):
             return False
         if self._user.is_superuser:
             return True

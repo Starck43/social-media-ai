@@ -195,6 +195,7 @@ class AIAnalyzer:
             errors_before = self.reported_errors
             # Analyze each content type with appropriate LLM
             analysis_results = {}
+            media_coverage_gaps: set[str] = set()
 
             # Text analysis
             if classified[MediaType.TEXT.db_value]:
@@ -223,6 +224,9 @@ class AIAnalyzer:
                     # Preserve request/response usage for existing accounting;
                     # provider failure text is not a semantic analysis result.
                     image_result = {**image_result, "parsed": {}}
+                media_coverage_gaps.update(self._uncovered_media_hashes(
+                    image_result, classified[MediaType.IMAGE.db_value]
+                ))
                 if image_result:
                     analysis_results["image_analysis"] = image_result
 
@@ -235,6 +239,9 @@ class AIAnalyzer:
                     # Preserve request/response usage for existing accounting;
                     # provider failure text is not a semantic analysis result.
                     video_result = {**video_result, "parsed": {}}
+                media_coverage_gaps.update(self._uncovered_media_hashes(
+                    video_result, classified[MediaType.VIDEO.db_value]
+                ))
                 if video_result:
                     analysis_results["video_analysis"] = video_result
 
@@ -292,6 +299,12 @@ class AIAnalyzer:
                 content_hashes = [value for value in content_hashes if value not in omitted]
                 coverage_limited = bool(omitted)
 
+            if media_coverage_gaps:
+                # One missing attachment keeps its parent post unretired, even
+                # when another modality produced useful output for that post.
+                content_hashes = [value for value in content_hashes if value not in media_coverage_gaps]
+                coverage_limited = True
+
             # Save comprehensive analysis
             analysis = await self._save_analysis(
                 analysis_results,
@@ -309,6 +322,7 @@ class AIAnalyzer:
                 if coverage_limited else batch_hash(content),
                 content_hashes=content_hashes,
                 coverage_limited=coverage_limited,
+                media_coverage_limited=bool(media_coverage_gaps),
                 reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
                 trigger_config=trigger_config,
@@ -497,6 +511,21 @@ class AIAnalyzer:
             logger.error("analysis_failed stage=text error_kind=%s", _analysis_error_kind(e))
             return None
 
+    @staticmethod
+    def _uncovered_media_hashes(result: Any, media_items: list[dict]) -> set[str]:
+        """Coverage gaps are not inferred provider failures or retry commands."""
+        expected = {item_hash(item) for item in media_items}
+        if not isinstance(result, dict) or not isinstance(result.get("parsed"), dict) or not result["parsed"]:
+            return expected
+        # Actual media methods supply private local evidence; retain the legacy
+        # useful-envelope contract when older adapters have no such field.
+        if "_unsubmitted_media_hashes" not in result:
+            return set()
+        omitted = result["_unsubmitted_media_hashes"]
+        if type(omitted) is not list or any(type(value) is not str or value not in expected for value in omitted):
+            return expected
+        return set(omitted)
+
     async def _analyze_images(
         self,
         image_items: list[dict],
@@ -542,6 +571,13 @@ class AIAnalyzer:
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
+            if isinstance(result, dict):
+                # Only the local URL selection, never a provider-supplied field,
+                # can certify which attachments reached this media request.
+                return {
+                    **result,
+                    "_unsubmitted_media_hashes": [item_hash(item) for item in image_items if not item.get("media_url")],
+                }
             return result
 
         except Exception as e:
@@ -594,6 +630,13 @@ class AIAnalyzer:
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
+            if isinstance(result, dict):
+                # Only the local URL selection, never a provider-supplied field,
+                # can certify which attachments reached this media request.
+                return {
+                    **result,
+                    "_unsubmitted_media_hashes": [item_hash(item) for item in video_items if not item.get("media_url")],
+                }
             return result
 
         except Exception as e:
@@ -1194,6 +1237,7 @@ class AIAnalyzer:
         trigger_config: Optional[dict[str, Any]] = None,
         reported_partial: bool = False,
         coverage_limited: bool = False,
+        media_coverage_limited: bool = False,
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1234,7 +1278,7 @@ class AIAnalyzer:
                     return None
 
         existing_analysis = None
-        if reported_partial is True:
+        if reported_partial is True or media_coverage_limited is True:
             existing_analysis = await AIAnalytics.objects.filter(
                 source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
             ).first()
@@ -1242,6 +1286,8 @@ class AIAnalyzer:
                 # Do not replace A's useful body while retaining its hashes.
                 # Guard before pricing/tracing/validation or related writes;
                 # partial B cannot be represented separately in this daily row.
+                # Silent media gaps must not overwrite A either; bounded text
+                # sampling alone still follows its normal covered-subset path.
                 logger.info("partial_analysis_update_skipped")
                 return None
 
@@ -1427,7 +1473,7 @@ class AIAnalyzer:
         primary_provider = list(providers_used)[0] if providers_used else None
 
         # Check if analysis already exists for this date
-        if reported_partial is not True:
+        if reported_partial is not True and media_coverage_limited is not True:
             existing_analysis = await AIAnalytics.objects.filter(
                 source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
             ).first()

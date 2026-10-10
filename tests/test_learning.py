@@ -8,6 +8,7 @@ import pytest
 from app.agent import learning
 from app.agent.learning import extract_json, run_learn
 from app.agent.prompts import render_style_block
+from app.core.tenant_context import tenant_scope
 from app.models import AgentFeedback, AgentMessage, AgentSession, Tenant
 from app.models.managers.agent_feedback_manager import agent_feedback
 from app.models.managers.agent_memory_manager import agent_memory
@@ -55,7 +56,8 @@ async def test_learn_skips_below_min_messages():
     for _ in range(2):
         await AgentMessage.objects.create(session_id=session.id, role="user", content="короткий вопрос")
 
-    result = await run_learn(min_messages=5)
+    with tenant_scope(session.tenant_id):
+        result = await run_learn(min_messages=5)
     assert result["status"] == "skipped"
     assert result["new_user_messages"] == 2
 

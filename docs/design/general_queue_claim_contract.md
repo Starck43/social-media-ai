@@ -291,7 +291,7 @@ deleted and is not proof of rollback or permission to replay a destructive call.
 Existing database FK/cascade behavior is not redesigned. No batching policy,
 retention approval, checkpoint retention guarantee or stronger recovery claim.
 
-Prepared checks: six source-isolated delegation cases, eight existing-schema
+Prepared checks: six source-isolated delegation cases, nine existing-schema
 PostgreSQL cases for tenant/status/age boundaries, bounded bypass, duplicate
 cleaners, lock races, rollback and committed ACK loss. The owner ran these at
 exact `1eb561fd` with results above; the author ran none. Injected pre-commit
@@ -433,3 +433,13 @@ to exact 81138d9, not to this implementation.
 - [Web Job retry/cancel adapters](../../app/web/jobs.py)
 - [Release gates](../BUSINESS_PRODUCTION_READINESS.md#prd-05--honest-outcomes-and-bounded-task-execution-blocker)
 - [Existing checkpoint integration contract](digest_job_delivery_handoff.md)
+
+## Bounded heartbeat renewal foundation
+
+Source audit on `e7fb385` confirms ordinary dispatcher execution does not refresh locked_at; the 30-minute reaper can requeue a still-working ordinary handler. Checkpoint digest has its own heartbeat protocol, not a general queue guarantee. This package introduces only JobManager.renew_claim; it does not wire a periodic timer or change replay/retention policy.
+
+Contract: accept a validated immutable JobClaim and an aware timestamp (default UTC now). In normal scope the concrete integer tenant must match; explicit platform bypass still binds the claim tenant. One atomic UPDATE matches id, tenant, job_type, NULL-safe task, running status, attempts and started_at; it advances locked_at with GREATEST(existing, now) so delayed callbacks cannot shorten the lease, explicitly preserving updated_at and all result/cost/attempt/task evidence. RETURNING identifies a matching row; True is exposed only after the method's commit acknowledgement. False is claim mismatch, not proof of no handler effect; database/commit errors and BaseException cancellation propagate.
+
+Author 15 new actual-source/module-local-double checks on `e7fb385` + patch are OK. The owner-only `tests/test_job_claim_heartbeat_db.py` has nine prepared PostgreSQL predicate/storage/rollback checks, not executed by the author. It validates localhost:5432/social_manager/test_schema before app import, uses one outer transaction/savepoints, rejects actual engine COMMIT, rolls back all synthetic rows, and runs no bootstrap/global sweep/DELETE/DDL/provider/job. Sequence values may advance. Existing migration/table mismatch stops; no automatic setup/reset. This is NOT inter-connection concurrency or the full release suite.
+
+Next dispatcher slice must separately define: heartbeat interval/clock behavior, ownership preflight, what a false/failed renewal does to new dispatch, cancellation/handler draining, and recovery of unknown external effects. A timer or DB generation predicate alone does not stop a paused worker's provider/intermediate writes; a lost/uncertain claim is not refund authority or safe automatic replay. Scheduler enqueue/next-run atomicity and the PRD-03 independent paid-attempt ledger remain separate open contracts. No status/schema/live action is authorized here.

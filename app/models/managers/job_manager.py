@@ -117,6 +117,52 @@ class JobManager(BaseManager["Job"]):
 
         return await cls._claim(JobModel.id == job_id, now=now)
 
+    async def renew_claim(self, claim: "JobClaim", now: Optional[datetime] = None) -> bool:
+        """Acknowledge a heartbeat for exactly this running generation.
+
+        Only locked_at advances; late heartbeats cannot move it backwards.
+        updated_at and outcome/attempt evidence survive.
+        False means no matching claim, not proof that the handler had no effect.
+        DB/commit errors propagate. This primitive does not start a timer,
+        change stale replay policy or fence a provider/intermediate write.
+        """
+        from sqlalchemy import func, update
+
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.claim_outcomes import JobClaim
+
+        from ..job import Job as JobModel
+
+        if not isinstance(claim, JobClaim):
+            raise ValueError("A validated acquired claim is required")
+        tenant_id = current_tenant_id()
+        if not is_bypass() and (type(tenant_id) is not int or tenant_id != claim.tenant_id):
+            raise TenantContextError("Heartbeat claim does not match the current tenant")
+        if now is None:
+            now = datetime.now(timezone.utc)
+        if not isinstance(now, datetime) or now.utcoffset() is None:
+            raise ValueError("Heartbeat requires an aware timestamp")
+        async with async_session_maker() as session:
+            async with session.begin():
+                changed = (
+                    await session.execute(
+                        update(JobModel)
+                        .where(
+                            JobModel.id == claim.job_id,
+                            JobModel.tenant_id == claim.tenant_id,
+                            JobModel.job_type == claim.job_type,
+                            JobModel.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+                            JobModel.status == "running",
+                            JobModel.attempts == claim.attempts,
+                            JobModel.started_at == claim.started_at,
+                        )
+                        .values(locked_at=func.greatest(JobModel.locked_at, now), updated_at=JobModel.updated_at)
+                        .returning(JobModel.id)
+                    )
+                ).scalar_one_or_none()
+        return changed == claim.job_id
+
     async def cancel_running(self, claim: "JobClaim") -> bool:
         """Cancel only the running generation observed by an authorized operator.
 

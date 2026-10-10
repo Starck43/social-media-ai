@@ -81,26 +81,22 @@ class ContentClassifier:
 		return urls
 	
 	@staticmethod
-	def prepare_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> str:
-		"""
-		Prepare text content for LLM analysis with sampling.
-		
-		Args:
-			items: List of text content items
-			sample_size: Maximum number of items to include
-			
-		Returns:
-			Formatted text string
-		"""
-		texts: list[str] = []
+	def select_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> list[dict[str, Any]]:
+		"""The exact bounded text sample used by prompts and coverage evidence."""
+		selected = []
 		step = max(1, len(items) // sample_size)
-		
 		for i in range(0, len(items), step):
-			if len(texts) >= sample_size:
+			if len(selected) >= sample_size:
 				break
 			text = items[i].get("text", "")
 			if text and len(text.strip()) > 10:
-				date = items[i].get('date', '')
-				texts.append(f"[{date}] {text}")
-		
-		return "\n\n".join(texts[:sample_size])
+				selected.append(items[i])
+		return selected
+
+	@staticmethod
+	def prepare_text_content(items: list[dict[str, Any]], sample_size: int = 100) -> str:
+		"""Format the bounded sample without certifying omitted items as analyzed."""
+		return "\n\n".join(
+			f"[{item.get('date', '')}] {item['text']}"
+			for item in ContentClassifier.select_text_content(items, sample_size)
+		)

@@ -276,6 +276,22 @@ class AIAnalyzer:
                 chain_label = self._resolve_chain_label(main_topics, analysis_results)
                 normalized_label = _normalize(chain_label) if chain_label else None
 
+            # Text sampling is not full-batch coverage. This private envelope
+            # field is produced by _analyze_text, not by provider parsed output.
+            content_hashes = [item_hash(item) for item in content]
+            coverage_limited = False
+            text_result = analysis_results.get("text_analysis")
+            if isinstance(text_result, dict) and "_submitted_text_hashes" in text_result:
+                submitted = text_result["_submitted_text_hashes"]
+                text_hashes = {item_hash(item) for item in classified[MediaType.TEXT.db_value]}
+                valid = (
+                    type(submitted) is list
+                    and all(type(value) is str and value in text_hashes for value in submitted)
+                )
+                omitted = text_hashes - (set(submitted) if valid else set())
+                content_hashes = [value for value in content_hashes if value not in omitted]
+                coverage_limited = bool(omitted)
+
             # Save comprehensive analysis
             analysis = await self._save_analysis(
                 analysis_results,
@@ -289,8 +305,10 @@ class AIAnalyzer:
                 normalized_label=normalized_label,
                 parent_analysis_id=parent_analysis_id,
                 analysis_date=analysis_date,
-                content_hash=batch_hash(content),
-                content_hashes=[item_hash(i) for i in content],
+                content_hash=(hashes_hash(content_hashes) if content_hashes else None)
+                if coverage_limited else batch_hash(content),
+                content_hashes=content_hashes,
+                coverage_limited=coverage_limited,
                 reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
                 trigger_config=trigger_config,
@@ -425,6 +443,10 @@ class AIAnalyzer:
                 return None
 
             # Prepare text content
+            selected_text = ContentClassifier.select_text_content(text_items)
+            if not selected_text:
+                # No text can reach the prompt: do not pay for an empty sample.
+                return {"parsed": {}, "_submitted_text_hashes": []}
             text_content = ContentClassifier.prepare_text_content(text_items)
 
             # Build prompt using new unified system
@@ -457,6 +479,17 @@ class AIAnalyzer:
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
 
             logger.info(f"Text analysis completed using {model.name}")
+            if isinstance(result, dict):
+                # Keep this local coverage evidence outside parsed output, and
+                # never trust a provider-supplied field with the same name.
+                response = result.get("response")
+                useful = bool(result.get("parsed")) and not (
+                    isinstance(response, dict) and response.get("error")
+                )
+                return {
+                    **result,
+                    "_submitted_text_hashes": [item_hash(item) for item in selected_text] if useful else [],
+                }
             return result
 
         except Exception as e:
@@ -1160,6 +1193,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         trigger_config: Optional[dict[str, Any]] = None,
         reported_partial: bool = False,
+        coverage_limited: bool = False,
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1355,7 +1389,7 @@ class AIAnalyzer:
             },
         }
 
-        if reported_partial is True:
+        if reported_partial is True or coverage_limited is True:
             comprehensive_data["analysis_metadata"]["analysis_complete"] = False
         # Absence of this marker is not proof of complete media/content coverage.
 

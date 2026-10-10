@@ -243,7 +243,8 @@ async def handle_inbound(inbound: Any) -> Optional[str]:
     confirmation are staged in session.state['pending_confirmation'] and only
     executed after a positive confirmation reply.
     """
-    if not getattr(inbound, "text", None):
+    text = getattr(inbound, "text", None)
+    if not text or not text.strip():
         return None
 
     resolution = await resolve_inbound(inbound)
@@ -340,6 +341,8 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
 async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: RuntimeIdentity) -> Optional[str]:
     """An admitted turn; routing and the existing injection guard are preserved."""
     text = inbound.text.strip()
+    if not text:
+        return None
 
     # Check for prompt injection attempts
     injection_error = _check_prompt_injection(text)

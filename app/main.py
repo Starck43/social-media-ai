@@ -89,6 +89,8 @@ def create_application() -> FastAPI:
         SessionMiddleware,  # type: ignore[arg-type]
         secret_key=settings.SECRET_KEY,
         session_cookie="session",
+        # Only the explicit development profile permits local HTTP cookies.
+        https_only=settings.ENVIRONMENT.strip().lower() != "development",
         max_age=3600 * 24,
     )
 

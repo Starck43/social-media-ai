@@ -84,6 +84,8 @@ This table reflects documentation, not a fresh full-code audit. Detailed operati
 
 ## Delivery sequence and acceptance
 
+Foundation has **9 major open readiness directions**; the only descending-priority numbered queue is [priorities 1–9](design/README.md#prioritized-open-work). PRD IDs are acceptance domains, not individual PR counts. The product phases below are future expansion and are not counted as additional current Foundation tasks.
+
 Follow [ROADMAP_INTEGRATED.md](ROADMAP_INTEGRATED.md) and [BUSINESS_PRODUCTION_READINESS.md](BUSINESS_PRODUCTION_READINESS.md) for release safety before expanding capabilities. The phases below describe product expansion, not calendar promises.
 
 | Phase | Bounded outcome | Dependencies and exit evidence |
@@ -114,6 +116,6 @@ Human control includes pause, revoke connector, edit scope, cancel scheduled sen
 - Approve proposed schema/API changes, role matrix, spend and workload limits.
 - Specify acceptance fixtures, external failure behavior and recovery procedure.
 - For messages/marketing/signatures, establish recipient consent and applicable platform/legal rules.
-- Use a small branch from fresh dev, recheck overlapping user changes and test only isolated data. This documentation commit is explicitly requested on dev; it does not change the default implementation branch policy.
+- Use a small branch from fresh dev, recheck overlapping user changes and test only isolated data. Use the normal feature/docs branch and reviewed PR path; documentation work does not authorize a direct push to dev.
 
 See [ASSISTANT_ARCHITECTURE.md](ASSISTANT_ARCHITECTURE.md) for extension boundaries and [design/vision.md](design/vision.md) for the concise product vision.

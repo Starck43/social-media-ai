@@ -33,34 +33,21 @@ CA-01–04 are substantially present: strict local analysis validation, default/
 
 Some read-only UX work can run alongside safety work if files do not overlap, but the release gates cannot be skipped. No arbitrary calendar/effort promise is made before a fresh scope and workload baseline.
 
-## Current-stage work, not a duplicate checklist
+## Current-stage work: one numbered queue
 
-Foundation is still open. Identity/rights is occupied by draft
-[PR #22](https://github.com/Starck43/social-media-ai/pull/22); its owner-assigned
-sequence continues with general queue work, then attempt-accounting/reservation
-**design** with separate schema approval. Do not duplicate those packages.
+Foundation remains OPEN. The [board's priorities 1–9](design/README.md#prioritized-open-work) are the sole ordered current-work list; [PRD-01–09](BUSINESS_PRODUCTION_READINESS.md#critical-gates-and-work-packages) retain stable acceptance IDs. There are 9 major open readiness areas, not nine remaining PRs or an estimate of all future features. Product expansion phases remain gated.
 
-Digest integration PR #12 and bounded follow-ups #17/#18/#19/#20/#23/#25 are
-merged; PR #25 merge `eb49d1d` was verified during this navigation pass. These are
-bounded implementations, not proof of deployment/full release acceptance.
-The owner reports running checks and pushing changes; this documentation task
-does not rerun them or invent a full-suite result. Historical component counts
-remain only in their evidence records.
+PR #22 and the bounded general-queue, memory, digest, permissions and privacy follow-ups through #84 are merged; do not restart them or infer release acceptance from those merges. The current first candidate is the normal-job recovery contract/source review. Every-call accounting/reservation design follows the queue contract and requires separate schema/format approval. Ownership comes from the board plus fresh PRs and assigned future lanes, not historical Draft labels.
 
-Use [current-stage tasks](design/README.md) to choose one available package and
-[release gates](BUSINESS_PRODUCTION_READINESS.md) for exit evidence. Remaining
-permissions, budget, queue, memory atomicity, retention/recovery and pilot gates
-are not closed by merging a helper. Current tasks must not be copied into every
-handoff. The original snapshot/integration task is no longer a new assignment.
+The ledger retains all original owner/source/patch evidence. No new tests, DB operations, production changes or whole-backlog authorization follow from this planning revision.
 
 ## Branch and validation policy
 
-- Read dev; implement in a new branch from its latest committed SHA, never push directly to dev. This navigation cleanup is prepared in docs/development-plan-navigation.
-- Keep each task thematic; no repo-wide reformat or unrelated cleanup. The user does not need to enumerate all parallel edits.
-- Before handing off an implementation PR, fetch dev, inspect overlap, synchronize in the task branch when appropriate, resolve both textual and semantic conflicts. Prepare checks for the owner/local agent; do not run application tests here. Report the exact tested SHA only when evidence supplies it. If dev advances again, revalidate before merge.
-- Schema changes are separate, explicitly approved work with a single migration head, schema-qualified DDL and staging upgrade/rollback evidence. Absence of migrations does not guarantee absence of conflicts.
-- Use isolated test data only. State what ran and what did not; current full suite, not historical counts, gates a release.
-- Draft PRs are review proposals. Do not merge without the owner's explicit command.
+- Use one thematic branch from fresh dev; never push directly to dev or overwrite dirty worktrees.
+- Recheck ownership, heads, changed files, dependencies and semantics before publication/integration; preserve intervening owner corrections.
+- Run only new fast source/unit checks directly when they need no app bootstrap, DB, network/providers or live state. Batch real-DB/heavy/local checks for the owner; shared test_schema runs stay sequential. Do not repeat finished checks without a concrete changed risk.
+- Schema/reset/migration/live/deploy/check changes require separate explicit approval. Full-suite/staging evidence gates a release, not every small package.
+- Keep Draft while necessary evidence is pending. Routine bounded Ready/merge uses the standing authorization after fresh compatibility, relevant review and required checks; clarify conflicts, unexpected heads, red checks, unclear ownership/dependencies or elevated risk.
 
 ## Preserved constraints and revised assumptions
 

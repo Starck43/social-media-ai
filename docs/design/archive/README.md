@@ -18,3 +18,7 @@ Known index/model/catalog links now point directly here. No evidence is deleted
 or rewritten into a new passing-test claim. Active delivery/privacy/identity
 contracts retain their paths while open work depends on them; archive them only
 with coordinated link migration, not a blind bulk move.
+
+## Superseded task allocation
+
+[Pre-priority board and continuation snapshot](task_board_pre_priority_2026_10_10.md) preserves the old navigation/evidence verbatim except adjusted relative links. It is not an active task list; use [the current numbered queue](../README.md#prioritized-open-work).

@@ -1,7 +1,7 @@
-"""Four actual analyzer schema-warning sinks; stdlib/module-local doubles only.
+"""Actual analyzer fail-closed schema sinks; module-local doubles only.
 
 Run: python tests/test_analyzer_schema_warning_privacy.py
-No real schema/DB/provider/bootstrap; preserve existing unvalidated fallback.
+Prepared semantic alignment: no unvalidated fallback; execution deferred. No DB/provider/bootstrap.
 """
 
 import asyncio
@@ -44,11 +44,14 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.module.logger = logging.Logger("isolated_schema_warning", logging.DEBUG)
         self.module.logger.addHandler(self.sink)
         self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(name="model"))
+        self.module.ContentClassifier.select_text_content = Mock(side_effect=lambda items: items)
         self.module.ContentClassifier.prepare_text_content = Mock(return_value=PRIVATE)
         self.module.ContentClassifier.get_media_urls = Mock(return_value=[PRIVATE])
         self.client = SimpleNamespace(analyze=AsyncMock(return_value=self.fixture.good))
         self.module.LLMClientFactory.create.return_value = self.client
         self.module.validate_with_pydantic.side_effect = lambda parsed, model, strict: parsed
+        self.contract = SimpleNamespace(model=object(), schema={"type": "object"})
+        self.module.compile_scenario_output = Mock(return_value=self.contract)
 
     async def invoke(self, stage):
         f = self.fixture
@@ -65,55 +68,51 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def assert_safe_warning(self, stage, kind):
-        warnings = [r for r in self.sink.records if r.levelno >= logging.WARNING]
-        self.assertEqual(len(warnings), 1)
-        record = warnings[0]
-        self.assertEqual(record.levelno, logging.WARNING)
-        self.assertEqual(record.getMessage(), f"analysis_schema_build_failed stage={stage} error_kind={kind}")
+        records = [r for r in self.sink.records if r.levelno >= logging.WARNING]
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record.levelno, logging.ERROR)
+        self.assertEqual(record.getMessage(), f"analysis_failed stage={stage} error_kind={kind}")
         self.assertEqual(record.args, (kind,))
         self.assertIsNone(record.exc_info)
         self.assertIsNone(record.exc_text)
         self.assertIsNone(record.stack_info)
-        rendered = logging.Formatter("%(levelname)s %(message)s").format(record)
-        self.assertNotIn(PRIVATE, rendered)
-        self.assertNotIn("Traceback", rendered)
         self.assertNotIn(PRIVATE, str(vars(record)))
+        self.assertNotIn("Traceback", logging.Formatter().format(record))
 
     async def fallback(self, stage):
-        f = self.fixture
-        self.module.build_pydantic_model.side_effect = ValueError(PRIVATE)
-        result = await self.invoke(stage)
-        self.assert_safe_warning(stage, "value_error")
-        self.assertEqual(self.analyzer.reported_errors, 0)
-        self.module.validate_with_pydantic.assert_not_called()
+        # Historical name retained for callers; semantic guarantee is now rejection.
+        self.module.compile_scenario_output.side_effect = ValueError(PRIVATE)
         if stage == "save":
-            self.assertIs(result, f.existing)
-            self.assertEqual(result.summary_data["multi_llm_analysis"]["text_analysis"], f.good["parsed"])
-            self.assertEqual(result.content_hash, "batch")
-            self.assertEqual(result.summary_data["content_hashes"], ["item"])
-            self.assertEqual((result.request_tokens, result.response_tokens), (10, 4))
-            f.create.assert_awaited_once()
+            with self.assertRaises(ValueError):
+                await self.invoke(stage)
+            self.fixture.create.assert_not_awaited()
+            self.fixture.update.assert_not_awaited()
+            self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))
         else:
-            self.assertIs(result, f.good)
-            self.client.analyze.assert_awaited_once()
-            self.assertIsNone(self.client.analyze.call_args.kwargs["pydantic_model"])
-        self.module.build_pydantic_model.assert_called_once_with(f.scenario)
+            self.assertIsNone(await self.invoke(stage))
+            self.assert_safe_warning(stage, "value_error")
+            self.assertEqual(self.analyzer.reported_errors, 1)
+            self.analyzer._get_llm_model.assert_not_awaited()
+            self.client.analyze.assert_not_awaited()
+        self.module.validate_with_pydantic.assert_not_called()
+        self.module.compile_scenario_output.assert_called_once_with(self.fixture.scenario)
 
     async def success(self, stage):
-        model = object()
-        self.module.build_pydantic_model.return_value = model
         result = await self.invoke(stage)
         self.assertEqual(self.analyzer.reported_errors, 0)
         self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))
         if stage == "save":
             self.assertIs(result, self.fixture.existing)
-            self.module.validate_with_pydantic.assert_called_once_with(self.fixture.good["parsed"], model, strict=True)
+            self.module.validate_with_pydantic.assert_called_once_with(
+                self.fixture.good["parsed"], self.contract.model, strict=True)
         else:
-            self.assertIs(result, self.fixture.good)
-            self.assertIs(self.client.analyze.call_args.kwargs["pydantic_model"], model)
+            self.assertEqual(result["parsed"], self.fixture.good["parsed"])
+            self.assertIs(self.client.analyze.call_args.kwargs["pydantic_model"], self.contract.model)
+        self.module.compile_scenario_output.assert_called_once_with(self.fixture.scenario)
 
     async def cancellation(self, stage):
-        self.module.build_pydantic_model.side_effect = asyncio.CancelledError(PRIVATE)
+        self.module.compile_scenario_output.side_effect = asyncio.CancelledError(PRIVATE)
         with self.assertRaises(asyncio.CancelledError):
             await self.invoke(stage)
         self.assertEqual(self.analyzer.reported_errors, 0)
@@ -122,16 +121,16 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.fixture.update.assert_not_awaited()
         self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))
 
-    async def test_text_fallback(self):
+    async def test_text_rejection(self):
         await self.fallback("text")
 
-    async def test_image_fallback(self):
+    async def test_image_rejection(self):
         await self.fallback("image")
 
-    async def test_video_fallback(self):
+    async def test_video_rejection(self):
         await self.fallback("video")
 
-    async def test_save_fallback(self):
+    async def test_save_rejection(self):
         await self.fallback("save")
 
     async def test_text_schema_success(self):
@@ -162,10 +161,16 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         for stage in STAGES:
             with self.subTest(stage=stage):
                 self.setUp()
-                self.module.build_pydantic_model.side_effect = HostileSchemaError(PRIVATE)
-                self.assertIsNotNone(await self.invoke(stage))
-                self.assertEqual(self.analyzer.reported_errors, 0)
-                self.assert_safe_warning(stage, "value_error")
+                self.module.compile_scenario_output.side_effect = HostileSchemaError(PRIVATE)
+                if stage == "save":
+                    with self.assertRaises(HostileSchemaError):
+                        await self.invoke(stage)
+                    self.fixture.create.assert_not_awaited()
+                    self.fixture.update.assert_not_awaited()
+                else:
+                    self.assertIsNone(await self.invoke(stage))
+                    self.assertEqual(self.analyzer.reported_errors, 1)
+                    self.assert_safe_warning(stage, "value_error")
 
     async def test_categories_reuse_existing_allowlist(self):
         for error, kind in (
@@ -177,21 +182,21 @@ class AnalyzerSchemaWarningPrivacyTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(kind=kind):
                 self.setUp()
-                self.module.build_pydantic_model.side_effect = error
-                self.assertIs(await self.invoke("text"), self.fixture.good)
+                self.module.compile_scenario_output.side_effect = error
+                self.assertIsNone(await self.invoke("text"))
                 self.assert_safe_warning("text", kind)
 
-    async def test_absent_schema_does_not_build_or_warn(self):
+    async def test_absent_custom_schema_uses_derived_contract(self):
         for stage in STAGES:
             with self.subTest(stage=stage):
                 self.setUp()
                 self.fixture.scenario.output_schema = None
                 self.assertIsNotNone(await self.invoke(stage))
-                self.module.build_pydantic_model.assert_not_called()
+                self.module.compile_scenario_output.assert_called_once_with(self.fixture.scenario)
                 self.assertFalse(any(r.levelno >= logging.WARNING for r in self.sink.records))
 
     async def test_validation_rejection_is_not_a_schema_build_warning(self):
-        self.module.build_pydantic_model.return_value = object()
+        self.module.compile_scenario_output.return_value = self.contract
         error = ValueError(PRIVATE)
         self.module.validate_with_pydantic.side_effect = error
         with self.assertRaises(ValueError) as caught:

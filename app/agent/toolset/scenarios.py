@@ -11,6 +11,7 @@ a scenario created from a chat and one created from a wizard are the same row.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Optional
 
 from app.agent.tools import tool
@@ -326,6 +327,7 @@ async def scenario_create(
     media_overrides: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     from app.services.ai.scenario import PlanLimitError, scenario_service
+    from app.services.ai.scenario_schema import ScenarioSchemaError
 
     overrides: dict[str, Any] = {"name": name}
     for field, value in (
@@ -367,7 +369,7 @@ async def scenario_create(
             summary_prompt=draft.summary_prompt,
             max_tokens=draft.max_tokens,
         )
-    except PlanLimitError as e:
+    except (PlanLimitError, ScenarioSchemaError) as e:
         return {"error": str(e)}
 
     await _save_preferences(draft)
@@ -435,6 +437,13 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
 
     unknown_vars = _unknown_variables(draft)
 
+    from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
+    try:
+        validate_scenario_values({"output_schema": scenario.output_schema,
+                                  "analysis_types": draft.analysis_types, "scope": draft.scope})
+    except ScenarioSchemaError as error:
+        return {"error": str(error)}
+
     if draft.is_default:
         await AgentScenario.objects.filter(tenant_id=scenario.tenant_id, id__ne=scenario.id).update(is_default=False)
 
@@ -482,6 +491,7 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
 async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     from app.models import AgentScenario
     from app.services.ai.scenario import PlanLimitError, scenario_service
+    from app.services.ai.scenario_schema import ScenarioSchemaError
     from app.services.ai.scenario_builder import ScenarioBuilder
 
     source = await AgentScenario.objects.get(id=int(source_id))
@@ -519,8 +529,9 @@ async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[s
             media_overrides=draft.media_overrides,
             summary_prompt=draft.summary_prompt,
             max_tokens=draft.max_tokens,
+            output_schema=deepcopy(source.output_schema),
         )
-    except PlanLimitError as e:
+    except (PlanLimitError, ScenarioSchemaError) as e:
         return {"error": str(e)}
 
     return {

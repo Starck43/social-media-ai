@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func
 
 from app.models.agent_scenario import AgentScenario
+from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
 
 from .deps import add_flash, ensure_csrf, guard_web, render
 
@@ -544,7 +545,7 @@ async def scenario_create(
             image_llm_model_id=draft.image_llm_model_id,
             video_llm_model_id=draft.video_llm_model_id,
         )
-    except PlanLimitError as e:
+    except (PlanLimitError, ScenarioSchemaError) as e:
         add_flash(request, "error", str(e))
         return RedirectResponse(back, status_code=302)
 
@@ -595,6 +596,13 @@ async def scenario_save(
 
     for warning in _prompt_warnings(draft):
         add_flash(request, "warning", warning)
+
+    try:
+        validate_scenario_values({"output_schema": scenario.output_schema,
+                                  "analysis_types": draft.analysis_types, "scope": draft.scope})
+    except ScenarioSchemaError as error:
+        add_flash(request, "error", str(error))
+        return RedirectResponse(back, status_code=302)
 
     # When is_default is toggled on, clear it on every other scenario in this
     # workspace so there is always at most one default.

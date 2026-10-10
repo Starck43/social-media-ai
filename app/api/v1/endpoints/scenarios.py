@@ -17,6 +17,7 @@ from app.schemas.scenario import (
     ScenarioResponse,
 )
 from app.services.ai.scenario import PlanLimitError, scenario_service
+from app.services.ai.scenario_schema import ScenarioSchemaError
 from app.types import ActionType
 
 router = APIRouter(tags=["scenarios"])
@@ -44,6 +45,8 @@ async def create_scenario(
         )
     except PlanLimitError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
+    except ScenarioSchemaError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     return ScenarioResponse(
         id=scenario.id,
@@ -160,10 +163,14 @@ async def update_scenario(
         updates["is_active"] = request.is_active
     if request.max_tokens is not None:
         updates["max_tokens"] = request.max_tokens
-    if request.output_schema is not None:
+    if "output_schema" in request.model_fields_set:
+        # Explicit null clears the custom schema; omission leaves it unchanged.
         updates["output_schema"] = request.output_schema
 
-    scenario = await scenario_service.update_scenario(scenario_id, **updates)
+    try:
+        scenario = await scenario_service.update_scenario(scenario_id, **updates)
+    except ScenarioSchemaError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")

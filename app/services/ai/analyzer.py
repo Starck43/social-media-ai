@@ -12,9 +12,9 @@ from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve
 from app.services.ai.content_classifier import ContentClassifier
 from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
 from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
+from app.services.ai.scenario_schema import ScenarioOutputContract, ScenarioSchemaError, compile_scenario_output
 from app.services.ai.llm_client import LLMClientFactory
 from app.services.ai.prompts import PromptBuilder
-from app.services.ai.scenario import build_output_schema
 from app.services.ai.theme_matcher import ThemeMatcher
 from app.types import PeriodType
 from app.types.enums.llm_types import MediaType
@@ -74,6 +74,28 @@ class AIAnalyzer:
             self.reported_errors += 1
             return True
         return False
+
+    @staticmethod
+    def _validate_stage_result(result: Any, output_contract: ScenarioOutputContract | None) -> Any:
+        """Reject invalid semantic output while retaining its usage/audit envelope."""
+        if output_contract is None or not isinstance(result, dict):
+            return result
+        response = result.get("response")
+        if isinstance(response, dict) and response.get("error"):
+            return result  # Keep existing client error semantics and usage.
+        parsed = result.get("parsed")
+        try:
+            if not isinstance(parsed, dict) or not parsed:
+                raise ScenarioSchemaError("output_object_required")
+            validated = validate_with_pydantic(parsed, output_contract.model, strict=True)
+        except ValueError:
+            return {
+                **result,
+                "parsed": {},
+                "response": {**(response if isinstance(response, dict) else {}),
+                             "error": "analysis_output_validation_failed"},
+            }
+        return {**result, "parsed": validated}
 
     async def analyze_content(
         self,
@@ -179,10 +201,15 @@ class AIAnalyzer:
             except Exception:
                 pass
 
-        # Lazy structured-output schema: derive from analysis_types when the
-        # scenario has no explicit output_schema (in-memory, not persisted).
-        if agent_scenario is not None and not agent_scenario.output_schema:
-            agent_scenario.output_schema = build_output_schema(agent_scenario.analysis_types, agent_scenario.scope)
+        # One immutable output contract for every modality and the save boundary.
+        # Unsupported stored schemas stop before model selection/provider calls;
+        # deriving a schema does not mutate the shared ORM scenario object.
+        try:
+            output_contract = compile_scenario_output(agent_scenario)
+        except ScenarioSchemaError as error:
+            self.reported_errors += 1
+            logger.warning("analysis_schema_rejected error_code=%s", error.code)
+            return None
 
         # Prepare metadata
         content_stats = self._calculate_content_stats(content, analysis_date)
@@ -207,6 +234,7 @@ class AIAnalyzer:
                     source,
                     trigger_config,
                     task_payload,
+                    output_contract=output_contract,
                 )
                 if self._record_result_error(text_result):
                     # Preserve request/response usage for existing accounting;
@@ -218,7 +246,8 @@ class AIAnalyzer:
             # Image analysis
             if classified[MediaType.IMAGE.db_value]:
                 image_result = await self._analyze_images(
-                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload
+                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                    output_contract=output_contract,
                 )
                 if self._record_result_error(image_result):
                     # Preserve request/response usage for existing accounting;
@@ -233,7 +262,8 @@ class AIAnalyzer:
             # Video analysis
             if classified[MediaType.VIDEO.db_value]:
                 video_result = await self._analyze_videos(
-                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload
+                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                    output_contract=output_contract,
                 )
                 if self._record_result_error(video_result):
                     # Preserve request/response usage for existing accounting;
@@ -326,6 +356,7 @@ class AIAnalyzer:
                 reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
                 trigger_config=trigger_config,
+                output_contract=output_contract,
             )
 
             return analysis
@@ -447,9 +478,13 @@ class AIAnalyzer:
         source: Source,
         trigger_config: Optional[dict[str, Any]] = None,
         task_payload: Optional[dict[str, Any]] = None,
+        *,
+        output_contract: ScenarioOutputContract | None = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze text content using text LLM provider."""
         try:
+            if output_contract is None:
+                output_contract = compile_scenario_output(agent_scenario)
             # Get LLM provider for text
             model = await self._get_llm_model(agent_scenario, MediaType.TEXT)
             if not model:
@@ -483,14 +518,11 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
-            pydantic_model = None
-            if agent_scenario and agent_scenario.output_schema:
-                prompt = prompt + "\n\nОтвет должен соответствовать JSON Schema:\n" + str(agent_scenario.output_schema)
-                try:
-                    pydantic_model = build_pydantic_model(agent_scenario)
-                except Exception as exc:
-                    logger.warning("analysis_schema_build_failed stage=text error_kind=%s", _analysis_error_kind(exc))
+            pydantic_model = output_contract.model if output_contract is not None else None
+            if output_contract is not None:
+                prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(output_contract.schema, ensure_ascii=False)
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
+            result = self._validate_stage_result(result, output_contract)
 
             logger.info(f"Text analysis completed using {model.name}")
             if isinstance(result, dict):
@@ -533,9 +565,13 @@ class AIAnalyzer:
         platform_name: str,
         trigger_config: Optional[dict[str, Any]] = None,
         task_payload: Optional[dict[str, Any]] = None,
+        *,
+        output_contract: ScenarioOutputContract | None = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze images using image LLM provider."""
         try:
+            if output_contract is None:
+                output_contract = compile_scenario_output(agent_scenario)
             # Get LLM provider for images
             provider = await self._get_llm_model(agent_scenario, MediaType.IMAGE)
             if not provider:
@@ -562,13 +598,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
-            pydantic_model = None
-            if agent_scenario and agent_scenario.output_schema:
-                try:
-                    pydantic_model = build_pydantic_model(agent_scenario)
-                except Exception as exc:
-                    logger.warning("analysis_schema_build_failed stage=image error_kind=%s", _analysis_error_kind(exc))
+            pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
+            result = self._validate_stage_result(result, output_contract)
 
             logger.info(f"Image analysis completed using {provider.name}, analyzed {len(media_urls)} images")
             if isinstance(result, dict):
@@ -592,9 +624,13 @@ class AIAnalyzer:
         platform_name: str,
         trigger_config: Optional[dict[str, Any]] = None,
         task_payload: Optional[dict[str, Any]] = None,
+        *,
+        output_contract: ScenarioOutputContract | None = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze videos using video LLM provider."""
         try:
+            if output_contract is None:
+                output_contract = compile_scenario_output(agent_scenario)
             # Get LLM provider for videos
             provider = await self._get_llm_model(agent_scenario, MediaType.VIDEO)
             if not provider:
@@ -621,13 +657,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
-            pydantic_model = None
-            if agent_scenario and agent_scenario.output_schema:
-                try:
-                    pydantic_model = build_pydantic_model(agent_scenario)
-                except Exception as exc:
-                    logger.warning("analysis_schema_build_failed stage=video error_kind=%s", _analysis_error_kind(exc))
+            pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
+            result = self._validate_stage_result(result, output_contract)
 
             logger.info(f"Video analysis completed using {provider.name}, analyzed {len(media_urls)} videos")
             if isinstance(result, dict):
@@ -973,7 +1005,9 @@ class AIAnalyzer:
             }
         return trace
 
-    def _build_request_snapshot(self, analysis_results, source, scenario, task_payload=None, trigger_config=None):
+    def _build_request_snapshot(
+        self, analysis_results, source, scenario, task_payload=None, trigger_config=None, output_contract=None
+    ):
         """Non-secret, detached configuration snapshot for reproducible analysis.
 
         The top-level hash identifies methodology, not changing post text.
@@ -984,7 +1018,7 @@ class AIAnalyzer:
             "base_prompt": getattr(scenario, "base_prompt", None),
             "media_overrides": getattr(scenario, "media_overrides", None),
             "summary_prompt": getattr(scenario, "summary_prompt", None),
-            "output_schema": getattr(scenario, "output_schema", None),
+            "output_schema": output_contract.schema if output_contract is not None else getattr(scenario, "output_schema", None),
             "scope": getattr(scenario, "scope", None) or {},
             "analysis_types": getattr(scenario, "analysis_types", None) or [],
             "content_types": getattr(scenario, "content_types", None) or [],
@@ -1238,6 +1272,7 @@ class AIAnalyzer:
         reported_partial: bool = False,
         coverage_limited: bool = False,
         media_coverage_limited: bool = False,
+        output_contract: ScenarioOutputContract | None = None,
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1290,6 +1325,19 @@ class AIAnalyzer:
                 # sampling alone still follows its normal covered-subset path.
                 logger.info("partial_analysis_update_skipped")
                 return None
+
+        if output_contract is None:
+            output_contract = compile_scenario_output(agent_scenario)
+        if output_contract is not None:
+            validated_results = {}
+            for name, result in (analysis_results or {}).items():
+                if isinstance(result, dict) and result.get("parsed"):
+                    parsed = validate_with_pydantic(result["parsed"], output_contract.model, strict=True)
+                    result = {**result, "parsed": parsed}
+                validated_results[name] = result
+            if not any(isinstance(result, dict) and result.get("parsed") for result in validated_results.values()):
+                raise ScenarioSchemaError("no_validated_output")
+            analysis_results = validated_results  # Never mutate caller-owned parsed data.
 
         # Extract LLM tracing info from first available analysis
         llm_model = None
@@ -1399,22 +1447,6 @@ class AIAnalyzer:
                     analysis_title = f"{analysis_title} ({date_str})"
                 logger.info(f"Enhanced analysis_title with date: {analysis_title}")
 
-        # Pydantic validation safety-net: re-validate already-parsed dicts against
-        # the scenario's model. The LLM client already validated at parse time;
-        # this catches anything that slipped through or was added by a caller
-        # that bypassed the client.
-        pydantic_model = None
-        if agent_scenario and agent_scenario.output_schema:
-            try:
-                pydantic_model = build_pydantic_model(agent_scenario)
-            except Exception as exc:
-                logger.warning("analysis_schema_build_failed stage=save error_kind=%s", _analysis_error_kind(exc))
-
-        if pydantic_model is not None:
-            for result in (analysis_results or {}).values():
-                if isinstance(result, dict) and isinstance(result.get("parsed"), dict) and result["parsed"]:
-                    result["parsed"] = validate_with_pydantic(result["parsed"], pydantic_model, strict=True)
-
         # Build comprehensive data structure
         comprehensive_data = {
             "analysis_title": analysis_title,  # AI-generated title for dashboard display
@@ -1466,7 +1498,8 @@ class AIAnalyzer:
         if unified_summary:
             audit_results["unified_summary"] = unified_summary
         response_payload["request"] = self._build_request_snapshot(
-            audit_results, source, agent_scenario, task_payload, trigger_config
+            audit_results, source, agent_scenario, task_payload, trigger_config,
+            output_contract=output_contract,
         )
 
         # Primary provider (most used)

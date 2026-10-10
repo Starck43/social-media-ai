@@ -13,7 +13,7 @@ Two entry points, one execution path:
 
 import asyncio
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, NoReturn, Optional
 
 from app.core.tenant_context import tenant_scope
 from app.jobs.handlers import HANDLERS
@@ -27,6 +27,21 @@ jobs = JobManager()
 
 _FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
 _LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect"})
+
+
+class JobOutcomePersistenceError(RuntimeError):
+    """Outcome write/projection failed; the caller must inspect before replay.
+
+    This is not claim loss or proof of rollback. Public message/fields exclude
+    result and original error text; committed Job/task state may differ. Display
+    chaining is suppressed, not a guarantee that Python forgets exception context.
+    """
+
+    def __init__(self, job_id: int | None, tenant_id: int | None, error_code: str):
+        self.job_id = job_id
+        self.tenant_id = tenant_id
+        self.error_code = error_code
+        super().__init__("Job outcome persistence or bookkeeping failed; inspect before retry.")
 
 
 def _log_id(value: Any) -> int | None:
@@ -70,6 +85,15 @@ def _log_job(level: int, event: str, job: Any, *, error_code: str = "none") -> N
         _log_job_type(getattr(job, "job_type", None)),
         error_code,
     )
+
+
+def _outcome_write_failed(job: Any, error: Exception) -> NoReturn:
+    """Report bounded persistence uncertainty without attempting another write."""
+    code = _error_kind(error)
+    _log_job(logging.ERROR, "job_outcome_persistence_failed", job, error_code=code)
+    raise JobOutcomePersistenceError(
+        _log_id(getattr(job, "id", None)), _log_id(getattr(job, "tenant_id", None)), code
+    ) from None
 
 
 def _job_label(job_type: str) -> str:
@@ -186,6 +210,8 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     `allow_retry=False` makes a failure terminal. Used by the inline run path
     ("выполнить сейчас"): there is no worker loop that will ever come back for a
     retry, and re-scheduling would repeat the side effects unattended.
+    Ordinary outcome/projection errors raise JobOutcomePersistenceError without
+    reclassifying the handler, retrying the outcome write or implying rollback.
     """
     # Identity comes from columns, never from user-supplied payload overrides.
     payload = dict(job.payload or {})
@@ -198,6 +224,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
 
             checkpoint_mode = enabled() or REFERENCE_KEY in (getattr(job, "result", None) or {})
         terminal_result_failure = False
+        handler_returned = False
         try:
             if job.job_type == "digest":
                 from app.services.digest.job_delivery import execute_digest_job
@@ -205,6 +232,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
                 result = await execute_digest_job(job, payload, handler)
             else:
                 result = await handler(payload)
+            handler_returned = True
             llm_cost = reported_llm_cost(result)
             failure = returned_failure(result) if not checkpoint_mode else None
             if failure is not None:
@@ -236,6 +264,9 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             if not (isinstance(result, dict) and result.get("status") == "skipped"):
                 await _notify_job_result(job, success=True, result=result)
         except Exception as e:
+            if handler_returned and not checkpoint_mode:
+                # A returned handler must not run again because bookkeeping failed.
+                _outcome_write_failed(job, e)
             # Uncertain/blocked checkpoint outcomes are terminal, not hidden retries.
             from app.services.digest.delivery_outcomes import DeliveryFailure
 
@@ -248,7 +279,10 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
                     _log_job(logging.WARNING, "job_outcome_claim_lost", job, error_code="claim_lost")
                     return
             else:
-                will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=retry)
+                try:
+                    will_retry = await jobs.mark_failed(job.id, error=str(e), allow_retry=retry)
+                except Exception as outcome_error:
+                    _outcome_write_failed(job, outcome_error)
             if will_retry:
                 _log_job(logging.WARNING, "job_retry_scheduled", job, error_code=_error_kind(e))
             else:

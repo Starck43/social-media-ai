@@ -13,10 +13,13 @@ tenant scope.
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import app.services.social.tg_session as tg_session_module
+from app.core.permissions import get_current_user, has_permission, permission_scope, service_permission_scope
+from app.core.tenant_context import current_tenant_id, tenant_scope
 from app.services.social.credentials import AuthorizationRequired
 from app.services.social.tg_client import TelegramClient
 
@@ -150,11 +153,30 @@ async def test_api_mode_skips_pull():
     assert await client.collect_data(_source(params={"mode": "api"})) == []
 
 
-async def test_auto_mode_pulls_via_l2_when_session_exists(fake_client_factory):
+@pytest.mark.tenancy
+async def test_auto_mode_pulls_via_l2_when_session_exists(fake_client_factory, monkeypatch):
+    from app.models import Source
+
     fake_client_factory()
+    source = _source(params={"mode": "auto"}, tenant_id=31)
+    monkeypatch.setattr("app.services.social.owner.resolve_source_owner", AsyncMock(return_value=None))
+
+    async def record_watermark(source_id, **values):
+        assert current_tenant_id() == source.tenant_id
+        assert source_id == source.id and values == {"last_item_id": "12"}
+        assert get_current_user() is None
+        assert has_permission(None, "source", "update")
+        assert not has_permission(None, "source", "create")
+
+    update = AsyncMock(side_effect=record_watermark)
+    monkeypatch.setattr(Source.objects, "update_by_id", update)
     client = TelegramClient(_Platform())
-    items = await client.collect_data(_source(params={"mode": "auto"}))
+    with tenant_scope(source.tenant_id), permission_scope(None):
+        assert not has_permission(None, "source", "update")
+        items = await client.collect_data(source)
+        assert not has_permission(None, "source", "update")
     assert [int(i["id"]) for i in items] == [12, 11]
+    update.assert_awaited_once_with(source.id, last_item_id="12")
 
 
 async def test_unknown_mode_falls_back_to_push():
@@ -271,39 +293,52 @@ def test_normalize_skips_media_only_messages():
 
 @pytest.fixture
 async def telegram_user_source():
-    """A monitored Telegram channel source in `user` mode, removed afterwards."""
-    from app.models import Platform, Source
+    """A real caller-owned L2 source; grants exist only during arrangement."""
+    from app.core.config import settings
+    from app.models import Platform, Source, Tenant
     from app.types import SourceType
 
+    tenant = await Tenant.objects.get(slug=settings.DEFAULT_TENANT_SLUG)
+    assert tenant is not None
     chat_id = "-100701"
     platform = await Platform.objects.filter(platform_type="telegram").first()
-    assert platform is not None, "telegram platform row is missing — run `alembic upgrade head`"
-    existing = await Source.objects.filter(platform_id=platform.id, external_id=chat_id).first()
-    if existing is not None:
-        await Source.objects.delete_by_id(existing.id)
+    assert platform is not None, "telegram platform reference row must be seeded"
+    with tenant_scope(tenant.id):
+        existing = await Source.objects.filter(platform_id=platform.id, external_id=chat_id).first()
+        if existing is not None:
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(existing.id)
+        with service_permission_scope("source", "create"):
+            source = await Source.objects.create(
+                platform_id=platform.id,
+                source_type=SourceType.CHANNEL,
+                external_id=chat_id,
+                name="Test TG L2 source",
+                params={"mode": "user"},
+                last_item_id="10",
+                is_active=True,
+            )
+        assert not has_permission(get_current_user(), "source", "create")
+    try:
+        yield source
+    finally:
+        with tenant_scope(tenant.id):
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(source.id)
 
-    source = await Source.objects.create(
-        platform_id=platform.id,
-        source_type=SourceType.CHANNEL,
-        external_id=chat_id,
-        name="Test TG L2 source",
-        params={"mode": "user"},
-        last_item_id="10",
-        is_active=True,
-    )
-    yield source
-    await Source.objects.delete_by_id(source.id)
-
-
+@pytest.mark.tenancy
 async def test_l2_pull_fetches_new_messages_and_advances_watermark(telegram_user_source, fake_client_factory):
     holder = fake_client_factory()
     client = TelegramClient(_Platform())
 
-    items = await client._collect_mtproto(telegram_user_source)
+    with tenant_scope(telegram_user_source.tenant_id), permission_scope(None):
+        assert not has_permission(None, "source", "update")
+        items = await client._collect_mtproto(telegram_user_source)
+        assert not has_permission(None, "source", "update")
+        refreshed = await telegram_user_source.__class__.objects.get(id=telegram_user_source.id)
 
     assert [int(i["id"]) for i in items] == [12, 11]
     assert holder["client"].kwargs["min_id"] == 10  # watermark passed as cursor
-    refreshed = await telegram_user_source.__class__.objects.get(id=telegram_user_source.id)
     assert refreshed is not None
     assert refreshed.last_item_id == "12"  # watermark advanced past the newest
 
@@ -329,16 +364,19 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
     with tenant_scope(tenant.id):
         existing = await Source.objects.filter(platform_id=platform.id, external_id=chat_id).first()
         if existing is not None:
-            await Source.objects.delete_by_id(existing.id)
-        source = await Source.objects.create(
-            platform_id=platform.id,
-            source_type=SourceType.CHANNEL,
-            external_id=chat_id,
-            name="Tenant L2 test",
-            params={"mode": "user"},
-            last_item_id="5",
-            is_active=True,
-        )
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(existing.id)
+        with service_permission_scope("source", "create"):
+            source = await Source.objects.create(
+                platform_id=platform.id,
+                source_type=SourceType.CHANNEL,
+                external_id=chat_id,
+                name="Tenant L2 test",
+                params={"mode": "user"},
+                last_item_id="5",
+                is_active=True,
+            )
+        assert not has_permission(get_current_user(), "source", "create")
 
     async def fake_load(user_id=None):
         from app.core.tenant_context import current_tenant_id
@@ -364,4 +402,5 @@ async def test_l2_pull_is_tenant_fail_closed(monkeypatch):
             assert refreshed.last_item_id == "7"
     finally:
         with tenant_scope(tenant.id):
-            await Source.objects.delete_by_id(source.id)
+            with service_permission_scope("source", "delete"):
+                await Source.objects.delete_by_id(source.id)

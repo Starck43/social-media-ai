@@ -7,11 +7,13 @@ in its own workspace.
 """
 
 import secrets
+from contextlib import nullcontext
 
 import pytest
 import typer
 
-from app.core.tenant_context import tenant_scope
+from app.core.permissions import has_permission, operator_permission_scope, permission_scope, service_permission_scope
+from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.models import AgentTask, Job, Platform, Source
 from app.models.managers.job_manager import JobManager
 from app.models.managers.tenant_manager import tenants
@@ -19,7 +21,7 @@ from app.types.enums.platform_types import SourceType
 from cli.main import _add_task, _remove_task, _run_task
 
 # The CLI is developer mode: these tests drive the real guard, opening
-# `tenant_scope(bypass=True)` explicitly where the CLI would.
+# `tenant_scope(bypass=True)` and explicit operator authority where the CLI would.
 pytestmark = pytest.mark.tenancy
 
 RUN_ARGS = dict(
@@ -41,7 +43,7 @@ async def _all(read):
 
 async def _cli(coro_fn, **kwargs):
     """Call a CLI command the way `cli.main._run_platform` does."""
-    with tenant_scope(bypass=True):
+    with tenant_scope(bypass=True), operator_permission_scope():
         return await coro_fn(**kwargs)
 
 
@@ -53,18 +55,22 @@ async def _make_task(tenant_id: int | None, name: str, cron: str = "0 9 * * *") 
     """Create a task, in `tenant_id` or (None) in the bootstrap workspace."""
     scope = tenant_scope(bypass=True) if tenant_id is None else tenant_scope(tenant_id)
     with scope:
-        return await AgentTask.objects.create(name=name, cron_expr=cron, job_type="collect", payload={})
+        # Arrange only: no grant around command execution or foreign-source checks.
+        grant = service_permission_scope("agenttask", "create") if tenant_id is not None else nullcontext()
+        with grant:
+            return await AgentTask.objects.create(name=name, cron_expr=cron, job_type="collect", payload={})
 
 
 async def _make_source(tenant_id: int) -> Source:
     platforms = await Platform.objects.all()
     with tenant_scope(tenant_id):
-        return await Source.objects.create(
-            platform_id=platforms[0].id,
-            name=_uniq("src-"),
-            source_type=SourceType.PUBLIC,
-            external_id=_uniq("ext-"),
-        )
+        with service_permission_scope("source", "create"):
+            return await Source.objects.create(
+                platform_id=platforms[0].id,
+                name=_uniq("src-"),
+                source_type=SourceType.PUBLIC,
+                external_id=_uniq("ext-"),
+            )
 
 
 @pytest.fixture(autouse=True)
@@ -205,3 +211,19 @@ async def test_task_remove_covers_every_workspace_with_that_name():
     with tenant_scope(bypass=True):
         assert await _cli(_remove_task, name=name) == 2
         assert await AgentTask.objects.filter(name=name) == []
+
+
+async def test_cli_helper_preserves_operator_authority_under_narrowing_and_restores_scope():
+    """Mirror the real entrypoint without granting authority to the whole test."""
+    async def probe():
+        with tenant_scope(31):
+            assert current_tenant_id() == 31
+            assert not is_bypass()
+            assert has_permission(None, "agenttask", "create")
+
+    with tenant_scope(31), permission_scope(None):
+        assert not has_permission(None, "agenttask", "create")
+        await _cli(probe)
+        assert current_tenant_id() == 31
+        assert not is_bypass()
+        assert not has_permission(None, "agenttask", "create")

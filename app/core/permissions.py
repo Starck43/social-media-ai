@@ -9,9 +9,9 @@ HTTP layer — that is what this module provides.
 One predicate: everything here delegates to `User.has_perm_for()`
 (structured `permissions.model_type_id` + `action_type`, never the stored
 codename, which is not reliably parseable). The current user travels in a
-`ContextVar` set by `permission_scope()`; `tenant_scope(bypass=True)` and a
-`None` user (legacy rows, job execution without a user context) skip checks
-so the CLI, worker and admin console keep working.
+`ContextVar` set by `permission_scope()`. Only explicit
+`tenant_scope(bypass=True)` skips valid rights checks. A `None` user is denied. Trusted bookkeeping receives a narrow, tenant-bound
+service grant at the write site, not an implicit anonymous identity.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, Union
 
-from app.core.tenant_context import is_bypass
+from app.core.tenant_context import current_tenant_id, is_bypass
 from app.types import ActionType, UserRoleType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -38,14 +38,17 @@ __all__ = [
     "require_permission",
     "require_role",
     "permission_scope",
+    "service_permission_scope",
+    "operator_permission_scope",
+    "WORKSPACE_OWNER_MODELS",
 ]
 
+_operator_grant: ContextVar[bool] = ContextVar("operator_permission_grant", default=False)
 _current_user: ContextVar[Optional["User"]] = ContextVar("current_user", default=None)
-# The caller owns the active workspace: they may configure it whatever their
-# platform role grants (`WebPerms` already encodes this rule; managers and the
-# chat agent need the same answer). Set by the web middleware and the agent
-# runtime from `TenantUser.is_owner` / `Resolution.is_owner`.
-_workspace_owner: ContextVar[bool] = ContextVar("workspace_owner", default=False)
+# Ownership configures workspace resources, never the global fleet or queue.
+WORKSPACE_OWNER_MODELS = frozenset({"source", "agenttask", "agentscenario"})
+_workspace_owner: ContextVar[Optional[int]] = ContextVar("workspace_owner", default=None)
+_service_grant: ContextVar[Optional[tuple[int, str, ActionType]]] = ContextVar("service_grant", default=None)
 
 
 class PermissionDeniedError(PermissionError):
@@ -71,7 +74,9 @@ def _resolve_action(action: Union[ActionType, str]) -> Optional[ActionType]:
     """Accept an `ActionType` or its db value / name (`"update"`, `"UPDATE"`)."""
     if isinstance(action, ActionType):
         return action
-    token = (action or "").strip().lower()
+    if not isinstance(action, str):
+        return None
+    token = action.strip().lower()
     if not token:
         return None
     return ActionType.get_by_value(token) or ActionType.get_by_name(action.strip().upper())
@@ -81,7 +86,9 @@ def _resolve_role(role: Union[UserRoleType, str]) -> Optional[UserRoleType]:
     """Accept a `UserRoleType` or its name (`"admin"`, `"ADMIN"`)."""
     if isinstance(role, UserRoleType):
         return role
-    token = (role or "").strip().upper()
+    if not isinstance(role, str):
+        return None
+    token = role.strip().upper()
     if not token:
         return None
     return UserRoleType.get_by_name(token)
@@ -97,18 +104,26 @@ def has_permission(user: Optional["User"], model_name: str, action: Union[Action
 
     `model_name` is the `model_types.model_name` value (`source`,
     `agenttask`, ...); the check delegates to `User.has_perm_for()`.
-    Pass-through cases (never a denial): platform bypass is active, or the
-    user is None (legacy rows / job execution without a user context). The
-    caller who owns the active workspace (`workspace_owner_scope`) also
-    passes, matching the web surface's documented rule.
+    Only explicit operator bypass skips checks. Anonymous callers are denied;
+    workspace ownership is tenant-bound and limited to configuration models.
     """
-    if is_bypass() or user is None:
-        return True
-    if _workspace_owner.get() and user is get_current_user():
-        return True
     resolved = _resolve_action(action)
-    if resolved is None:
+    if resolved is None or not isinstance(model_name, str) or not model_name.strip():
         return False
+    model_name = model_name.strip().lower()
+    if is_bypass() or _operator_grant.get():
+        return True
+    if _service_grant.get() == (current_tenant_id(), model_name, resolved):
+        return True
+    if user is None or not getattr(user, "is_active", True):
+        return False
+    if (
+        _workspace_owner.get() is not None
+        and _workspace_owner.get() == current_tenant_id()
+        and user is get_current_user()
+        and model_name in WORKSPACE_OWNER_MODELS
+    ):
+        return True
     try:
         return bool(user.has_perm_for(model_name, resolved))
     except Exception:  # noqa: BLE001 - a rights check must never raise
@@ -120,16 +135,12 @@ def has_permission_by_codename(user: Optional["User"], codename: str) -> bool:
 
     The `tool(required_permission=...)` values and the confirmation flow store
     the codename shape (`"agenttask.create"`); `has_permission` needs model and
-    action split. A malformed codename is a denial, never an exception. Owner
-    bypass, platform bypass and legacy None-user pass-through all live in
-    `has_permission`, so they are inherited here.
+    action split. Malformed input is denied even for owners/operators.
     """
-    if is_bypass() or user is None:
-        return True
-    if _workspace_owner.get() and user is get_current_user():
-        return True
+    if not isinstance(codename, str):
+        return False
     model_name, _, action = (codename or "").rpartition(".")
-    if not model_name or not action:
+    if not model_name or not action or "." in model_name:
         return False
     return has_permission(user, model_name, action)
 
@@ -137,12 +148,15 @@ def has_permission_by_codename(user: Optional["User"], codename: str) -> bool:
 def has_role(user: Optional["User"], role: Union[UserRoleType, str]) -> bool:
     """True when `user` holds `role` on the platform ladder.
 
-    Same pass-through as `has_permission`; superusers pass every role check.
+    Only explicit operator bypass skips a valid role check; anonymous callers
+    and workspace ownership never grant a platform role.
     """
-    if is_bypass() or user is None:
-        return True
     resolved = _resolve_role(role)
     if resolved is None:
+        return False
+    if is_bypass() or _operator_grant.get():
+        return True
+    if user is None or not getattr(user, "is_active", True):
         return False
     try:
         if user._is_superuser_role():
@@ -232,14 +246,49 @@ def require_role(role: Union[UserRoleType, str]) -> Callable[[Callable[..., Any]
 def permission_scope(user: Optional["User"], *, is_owner: bool = False) -> Iterator[Optional["User"]]:
     """Run a block as `user`; restores the previous user on exit.
 
-    `is_owner=True` marks the caller as the owner of the active workspace so
-    `has_permission` passes regardless of their platform role — the same rule
-    `WebPerms.can()` applies on the web surface.
+    `is_owner=True` grants only workspace configuration rights in the tenant
+    active at entry. Nested interactive scopes clear inherited service grants.
     """
     token = set_current_user(user)
-    owner_token = _workspace_owner.set(is_owner)
+    owner_token = _workspace_owner.set(current_tenant_id() if is_owner else None)
+    service_token = _service_grant.set(None)
+    operator_token = _operator_grant.set(False)
     try:
         yield user
     finally:
         _current_user.reset(token)
         _workspace_owner.reset(owner_token)
+        _service_grant.reset(service_token)
+        _operator_grant.reset(operator_token)
+
+
+@contextmanager
+def service_permission_scope(model_name: str, action: Union[ActionType, str]) -> Iterator[None]:
+    """Delegate one trusted bookkeeping right in the current tenant.
+
+    Internal write sites only: never wrap tool dispatch or accept a model/action
+    from external input. Does not widen tenant data access or grant role rights.
+    """
+    tenant_id = current_tenant_id()
+    resolved = _resolve_action(action)
+    if tenant_id is None or model_name not in WORKSPACE_OWNER_MODELS or resolved is None:
+        raise ValueError("Service permission requires a tenant and a known workspace right")
+    token = _service_grant.set((tenant_id, model_name, resolved))
+    try:
+        yield
+    finally:
+        _service_grant.reset(token)
+
+
+@contextmanager
+def operator_permission_scope() -> Iterator[None]:
+    """Trusted CLI entrypoint authority, independent of tenant data narrowing.
+
+    Never wrap an HTTP/chat request with this scope. Interactive permission_scope
+    clears the grant; tenant_scope alone may safely narrow operator data access.
+    """
+    token = _operator_grant.set(True)
+    try:
+        yield
+    finally:
+        _operator_grant.reset(token)

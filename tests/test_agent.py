@@ -32,15 +32,31 @@ async def _clean_sessions():
     """
     from app.core.config import settings
     from app.core.tenant_context import tenant_scope
+    from app.models import Role, User
     from app.models.managers.tenant_manager import tenant_channels, tenant_users, tenants
+    from uuid import uuid4
 
     await AgentSession.objects.delete()
     tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
-    with tenant_scope(bypass=True):
-        await tenant_users.add_member(tenant_id=tenant.id, channel="telegram", external_user_id="7", role="owner")
-        await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id="7", kind="private")
-    yield
-    await AgentSession.objects.delete()
+    role = await Role.objects.get(codename="ADMIN")
+    assert role is not None
+    name = f"agent-test-{uuid4().hex}"
+    user = await User.objects.create_user(
+        username=name, email=f"{name}@example.com", password="test-only-agent-password",
+        role_id=role.id, is_active=True, is_superuser=False,
+    )
+    try:
+        with tenant_scope(bypass=True):
+            member = await tenant_users.add_member(
+                tenant_id=tenant.id, channel="telegram", external_user_id="7", role="owner"
+            )
+            assert member is not None
+            await tenant_users.update_by_id(member.id, user_id=user.id)
+            await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id="7", kind="private")
+        yield
+    finally:
+        await AgentSession.objects.delete()
+        await User.objects.delete_user(user.id)
 
 
 def _inbound(text: str = "hi", **overrides) -> Inbound:

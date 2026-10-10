@@ -15,6 +15,7 @@ from sqlalchemy import UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_session_maker
+from app.core.permissions import get_current_user, has_permission, service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import DigestRun, Job, Tenant, TenantChannel
 from app.models.managers.job_manager import JobManager
@@ -325,7 +326,9 @@ async def test_force_cannot_overwrite_or_create_a_new_generation(workspace, fake
 async def test_same_schedule_jobs_share_build_lock_before_any_llm(workspace, fake_build):
     from app.models import AgentTask
     with tenant_scope(workspace.id):
-        task = await AgentTask.objects.create(name="serialized", job_type="digest", cron_expr="0 9 * * *")
+        with service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(name="serialized", job_type="digest", cron_expr="0 9 * * *")
+        assert not has_permission(get_current_user(), "agenttask", "create")
         first, second = await claim(task_id=task.id), await claim(task_id=task.id)
         async with module._job_lock(first):
             with pytest.raises(DeliveryFailure, match="digest_job_busy"):

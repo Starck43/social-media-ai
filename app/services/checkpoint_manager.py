@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional, cast
 
+from app.core.permissions import service_permission_scope
 from app.models import Source
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,8 @@ class CheckpointManager:
 		if params and source:
 			current_params = source.params or {}
 			current_params.update(params)
-			await Source.objects.update_by_id(source_id, params=current_params)
+			with service_permission_scope("source", "update"):
+				await Source.objects.update_by_id(source_id, params=current_params)
 
 			logger.info(
 				f"Updated checkpoint for source {source_id}: "

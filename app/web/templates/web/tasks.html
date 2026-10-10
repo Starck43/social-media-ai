@@ -54,9 +54,9 @@
                        is a link, not a button opening a modal. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                         <a href="/app/tasks/{{ task.id }}/edit"
-                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name }}</a>
+                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
                     {% else %}
-                        {{ task.name }}
+                        {{ task.name|e }}
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
@@ -310,11 +310,13 @@
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
                     <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for source in sources %}
+                        {% set source_label %}<a href="/app/sources/{{ source.id }}"
+                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
                         {{ check_card(
                             cid="add-src-" ~ source.id,
                             name="source_ids",
                             value=source.id,
-                            content=source.name,
+                            content=source_label,
                             checked=false,
                             cls="content-cb",
                             attrs=':checked="task.source_ids.includes(' ~ source.id ~ ')"'
@@ -486,31 +488,44 @@
             <template x-if="!runModal.loading">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
-                        <div class="rounded-lg border border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 p-4">
+                        {# The tone follows the outcome, not the status: a clean run,
+                           a run that found nothing new and a run where part of the
+                           sources failed are three different facts, and a single
+                           green box told all three as "Готово". #}
+                        <div class="rounded-lg border p-4"
+                             :class="runModal.outcomeTone.box">
                             <!-- Headline: the one number that answers "did it work?" -->
                             <template x-if="runModal.data.headline">
                                 <div>
                                     <div class="flex items-baseline gap-2">
-                                        <span class="text-3xl font-semibold text-emerald-700 dark:text-emerald-300"
+                                        <span class="text-3xl font-semibold" :class="runModal.outcomeTone.num"
                                               x-text="runModal.data.headline.value"></span>
-                                        <span class="text-sm text-emerald-200/70"
+                                        <span class="text-sm" :class="runModal.outcomeTone.sub"
                                               x-text="runModal.data.headline.noun"></span>
                                     </div>
-                                    <p class="mt-1 text-xs text-emerald-200/60"
+                                    <p class="mt-1 text-xs" :class="runModal.outcomeTone.faint"
                                        x-text="runModal.data.headline.label"></p>
                                 </div>
                             </template>
                             <template x-if="!runModal.data.headline">
-                                <p class="text-sm text-emerald-200">Готово</p>
+                                <p class="text-sm" :class="runModal.outcomeTone.sub"
+                                   x-text="runModal.data.outcome_label || 'Готово'"></p>
+                            </template>
+
+                            <!-- What the outcome means, when it is not a plain success -->
+                            <template x-if="runModal.data.outcome_note">
+                                <p class="mt-2 text-xs" :class="runModal.outcomeTone.faint"
+                                   x-text="runModal.data.outcome_note"></p>
                             </template>
 
                             <!-- Supporting stats: every number keeps its own noun -->
-                            <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-emerald-900/50 pt-3"
+                            <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-3"
+                                :class="runModal.outcomeTone.line"
                                 x-show="(runModal.data.stats || []).length > 0">
                                 <template x-for="s in (runModal.data.stats || [])" :key="s.label">
                                     <div>
-                                        <dt class="text-xs text-emerald-200/60" x-text="s.label"></dt>
-                                        <dd class="text-lg font-medium text-emerald-200" x-text="s.value"></dd>
+                                        <dt class="text-xs" :class="runModal.outcomeTone.faint" x-text="s.label"></dt>
+                                        <dd class="text-lg font-medium" :class="runModal.outcomeTone.sub" x-text="s.value"></dd>
                                     </div>
                                 </template>
                             </dl>
@@ -518,8 +533,8 @@
                             <!-- Jump straight to the data: collect → what was gathered,
                                  analyze → what the agent concluded for that source. -->
                             <template x-if="(runModal.data.sources || []).length > 0">
-                                <div class="mt-4 border-t border-emerald-900/50 pt-3">
-                                    <p class="text-xs text-emerald-200/60">Результат по источникам</p>
+                                <div class="mt-4 border-t pt-3" :class="runModal.outcomeTone.line">
+                                    <p class="text-xs" :class="runModal.outcomeTone.faint">Результат по источникам</p>
                                     <div class="mt-2 flex flex-wrap gap-2">
                                         <template x-for="src in runModal.data.sources" :key="src.source_id">
                                             <a :href="`/app/sources/${src.source_id}`"
@@ -658,6 +673,38 @@
                     const mins = Math.floor(secs / 60)
                     if (mins < 60) return `${mins}:${String(secs % 60).padStart(2, "0")}`
                     return `${Math.floor(mins / 60)} ч ${mins % 60} мин`
+                },
+                // Tone per outcome: green only for a clean run with results,
+                // amber when part of the run failed, neutral when there was
+                // simply nothing new — "0 новых записей" in green read as a
+                // failure, and a half-broken run in green read as a success.
+                get outcomeTone() {
+                    const tones = {
+                        ok: {
+                            box: "border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40",
+                            num: "text-emerald-700 dark:text-emerald-300",
+                            sub: "text-emerald-200/70",
+                            faint: "text-emerald-200/60",
+                            line: "border-emerald-900/50",
+                        },
+                        partial: {
+                            box: "border-amber-700 bg-amber-50 dark:bg-amber-950/40",
+                            num: "text-amber-700 dark:text-amber-300",
+                            sub: "text-amber-200/70",
+                            faint: "text-amber-200/60",
+                            line: "border-amber-900/50",
+                        },
+                        quiet: {
+                            box: "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900",
+                            num: "text-slate-800 dark:text-slate-200",
+                            sub: "text-slate-600 dark:text-slate-400",
+                            faint: "text-slate-500 dark:text-slate-400",
+                            line: "border-slate-200 dark:border-slate-800",
+                        },
+                    }
+                    if (this.data.outcome === "partial") return tones.partial
+                    if (this.data.outcome === "no_data" || this.data.outcome === "skipped") return tones.quiet
+                    return tones.ok
                 },
             },
             init() {

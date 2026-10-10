@@ -25,6 +25,21 @@ from app.utils.translit import translit_slug
 logger = logging.getLogger(__name__)
 
 
+def _analysis_error_kind(error: Exception) -> str:
+    """Allowlisted categories only; never format provider messages or tracebacks."""
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionError):
+        return "connection_error"
+    if isinstance(error, OSError):
+        return "io_error"
+    if isinstance(error, ValueError):
+        return "value_error"
+    if isinstance(error, RuntimeError):
+        return "runtime_error"
+    return "unexpected_error"
+
+
 class AIAnalyzer:
     """
     AI Analyzer with multi-LLM support.
@@ -285,7 +300,7 @@ class AIAnalyzer:
 
         except Exception as e:
             self.reported_errors += 1
-            logger.error(f"Error analyzing content for source {source.id}: {e}", exc_info=True)
+            logger.error("analysis_failed stage=base error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _analyze_content_by_themes(
@@ -446,7 +461,7 @@ class AIAnalyzer:
 
         except Exception as e:
             self.reported_errors += 1
-            logger.error(f"Error in text analysis: {e}", exc_info=True)
+            logger.error("analysis_failed stage=text error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _analyze_images(
@@ -498,7 +513,7 @@ class AIAnalyzer:
 
         except Exception as e:
             self.reported_errors += 1
-            logger.error(f"Error in image analysis: {e}", exc_info=True)
+            logger.error("analysis_failed stage=image error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _analyze_videos(
@@ -550,7 +565,7 @@ class AIAnalyzer:
 
         except Exception as e:
             self.reported_errors += 1
-            logger.error(f"Error in video analysis: {e}", exc_info=True)
+            logger.error("analysis_failed stage=video error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _create_unified_summary(
@@ -595,7 +610,7 @@ class AIAnalyzer:
 
         except Exception as e:
             self.reported_errors += 1
-            logger.error(f"Error creating unified summary: {e}", exc_info=True)
+            logger.error("analysis_failed stage=summary error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _get_llm_model(

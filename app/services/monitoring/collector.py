@@ -144,7 +144,7 @@ class ContentCollector:
 			async with session.begin():
 				written = await CollectedItem.objects.store_items(session, rows)
 		except Exception as e:  # noqa: BLE001 — staging must not fail a collection
-			logger.warning(f"Could not stage items for source {source.id}: {e}")
+			logger.warning("collector_staging_failed error_code=storage_operation_failed")
 			return 0
 		finally:
 			await session.close()
@@ -175,7 +175,7 @@ class ContentCollector:
 			async with session.begin():
 				removed = await CollectedItem.objects.delete_hashes(session, source.id, hashes)
 		except Exception as e:  # noqa: BLE001 — leftovers are swept by retention
-			logger.warning(f"Could not retire staged rows for source {source.id}: {e}")
+			logger.warning("collector_retirement_failed error_code=storage_operation_failed")
 			return 0
 		finally:
 			await session.close()

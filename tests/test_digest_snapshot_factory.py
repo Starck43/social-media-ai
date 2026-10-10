@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.permissions import get_current_user, has_permission, service_permission_scope
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.models import AgentTask, DigestRun, Tenant, TenantChannel
 from app.services.digest import snapshot_factory as module
@@ -151,11 +152,15 @@ async def test_schedule_must_be_owned_and_digest_type(workspace):
     other = await Tenant.objects.create(slug=f"foreign-task-{uuid4().hex}", name="Other", plan="business")
     try:
         with tenant_scope(other.id):
-            foreign = await AgentTask.objects.create(name="snapshot-task", cron_expr="0 9 * * *", job_type="digest")
+            with service_permission_scope("agenttask", "create"):
+                foreign = await AgentTask.objects.create(name="snapshot-task", cron_expr="0 9 * * *", job_type="digest")
+            assert not has_permission(get_current_user(), "agenttask", "create")
         with tenant_scope(workspace.id):
-            wrong = await AgentTask.objects.create(
-                name="wrong-snapshot-task", cron_expr="0 9 * * *", job_type="collect"
-            )
+            with service_permission_scope("agenttask", "create"):
+                wrong = await AgentTask.objects.create(
+                    name="wrong-snapshot-task", cron_expr="0 9 * * *", job_type="collect"
+                )
+            assert not has_permission(get_current_user(), "agenttask", "create")
             for task_id in [foreign.id, wrong.id, 2**31 - 1]:
                 with pytest.raises(TenantContextError):
                     await create_snapshot(**args(agent_task_id=task_id))
@@ -167,7 +172,9 @@ async def test_schedule_must_be_owned_and_digest_type(workspace):
 async def test_existing_schedule_window_is_never_overwritten_or_guessed_unsent(workspace):
     await binding(workspace)
     with tenant_scope(workspace.id):
-        task = await AgentTask.objects.create(name="existing-snapshot", cron_expr="0 9 * * *", job_type="digest")
+        with service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(name="existing-snapshot", cron_expr="0 9 * * *", job_type="digest")
+        assert not has_permission(get_current_user(), "agenttask", "create")
         old = await DigestRun.objects.create(
             agent_task_id=task.id,
             period="day",
@@ -187,7 +194,9 @@ async def test_existing_schedule_window_is_never_overwritten_or_guessed_unsent(w
 async def test_competing_schedule_factories_create_one_complete_snapshot(workspace):
     await binding(workspace)
     with tenant_scope(workspace.id):
-        task = await AgentTask.objects.create(name="parallel-snapshot", cron_expr="0 9 * * *", job_type="digest")
+        with service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(name="parallel-snapshot", cron_expr="0 9 * * *", job_type="digest")
+        assert not has_permission(get_current_user(), "agenttask", "create")
         results = await asyncio.wait_for(
             asyncio.gather(
                 create_snapshot(**args(agent_task_id=task.id)),

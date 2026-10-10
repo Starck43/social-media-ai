@@ -391,3 +391,10 @@ async def test_pages_stay_browsable_for_a_read_only_member(path: str) -> None:
     finally:
         await _drop(member, tenant_id)
         await _drop(owner, tenant_id)
+
+
+def test_owner_cannot_administer_global_fleet_roles_or_queue_without_platform_rights() -> None:
+    perms = _perms(_StubUser(), role="owner", is_owner=True)
+    for model in ("llmmodel", "llmprovider", "user", "role", "permission", "job", "tenant", "unknown"):
+        assert not perms.can(model, ActionType.CREATE), model
+    assert not perms.can("source", "not-an-action")

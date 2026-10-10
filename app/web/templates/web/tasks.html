@@ -54,9 +54,9 @@
                        is a link, not a button opening a modal. #}
                     {% if perms and perms.can('agenttask', 'update') %}
                         <a href="/app/tasks/{{ task.id }}/edit"
-                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name }}</a>
+                           class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
                     {% else %}
-                        {{ task.name }}
+                        {{ task.name|e }}
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
@@ -310,11 +310,13 @@
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
                     <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for source in sources %}
+                        {% set source_label %}<a href="/app/sources/{{ source.id }}"
+                            class="pointer-events-auto relative z-10 hover:text-cyan-500 hover:underline">{{ source.name|e }}</a>{% endset %}
                         {{ check_card(
                             cid="add-src-" ~ source.id,
                             name="source_ids",
                             value=source.id,
-                            content=source.name,
+                            content=source_label,
                             checked=false,
                             cls="content-cb",
                             attrs=':checked="task.source_ids.includes(' ~ source.id ~ ')"'

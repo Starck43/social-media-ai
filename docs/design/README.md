@@ -13,14 +13,14 @@ handoffs explain technical decisions/evidence, not a second global backlog.
 
 ## Current stage: Foundation, safety and repeatable operation
 
-Snapshot: dev `0234c21ed2c1f171d46732153d91e654e9b3cfdb`, 2026-10-09, after authorized PR #27 integration.
+Included baseline dev `a983a1568809c288f6bab135d2943ae67e3c0e3c` viaa787a74. OWNER exact482eacb completed full **1612 passed/11warnings/64subtests/738.25s/saved exit0**, unchanged HEAD. PR22 still OPEN/Draft; GitHub mergeable/clean, explicit Ready/merge decision pending. Evidence-only docs delta, no code/tests/schema changes or rerun required; broader security/release acceptance remains OPEN.
 Product **Foundation** is still open; engineering stages **B/C** have unfinished
 gates. This is not a declaration that all earlier/later stage gates passed.
 Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **OCCUPIED:** draft [PR #22](https://github.com/Starck43/social-media-ai/pull/22), `ai/identity-permissions-boundary`, live head owned by that PR | Let that lane finish. Its latest fixture/evidence/compatibility notes stay in the PR; do not implement another rights package. |
+| B / identity and permissions, PRD-02 | **OCCUPIED / Draft; full regression verified:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22); OWNER exact482eacb1612 passed/11warnings/64subtests/saved exit0, fresh deva983a15 included | Explicit Owner Ready/merge decision, fresh-head/dev/required-check recheck before integration. No default rerun for evidence-only docs. [Handoff](identity_permissions_handoff.md); broad XSS/durable approval/release gates OPEN; PR29/30/31 separate. |
 | C / general queue, PRD-05 | Sequenced after identity in the same owner-assigned lane; no separate open PR observed | Coordinate allocation before starting. Checkpoint fencing is not general queue correctness. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -32,11 +32,15 @@ Do not restart merged digest integration or bounded logging work.
 The owner reports having run checks and pushed changes. Do not ask for or execute
 the same checks again by default. Detailed evidence belongs to the submitted
 revision/PR and owner logs: no full-suite count or tested SHA is invented here.
-PR #22's newer fixture is distinct from its earlier owner-run baseline.
+Latest Owner completed evidence: exact482eacb1612 passed/11warnings/64subtests/738.25s/saved exit0, unchanged HEAD. Prior same-code red1602/10setupErrors arose from one interrupted-run orphan task; separately approved cleanup removed exactly one row with zero dependencies. This authorizes no future deletion/reset. Earlier failed/interrupted/unsupported reports remain historical, not current green or automatic merge permission.
 Merged, owner-reported checks, independently observed checks, deployed and
 accepted remain different states.
 
 ### Concurrent-work boundary
+
+PR30 owns the structural tenancy-model split; PR31 owns notification-model
+layout. Do not duplicate either lane or mix them into PR22. Their PR bodies
+are the current separate task records; review only until separately authorized.
 
 PR #22 owns current edits to `../IMPLEMENTATION_STATUS.md`,
 `next_tasks_handoff.md`, TENANCY and its identity source/tests. This documentation

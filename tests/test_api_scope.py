@@ -13,6 +13,7 @@ import secrets
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.permissions import service_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Platform, Role, Source, User
@@ -52,7 +53,8 @@ async def _member() -> tuple[int, str]:
 async def _add_source(tenant_id: int, name: str) -> int:
     platforms = await Platform.objects.all()
     assert platforms, "no platform rows in the test database"
-    with tenant_scope(tenant_id):
+    # Test-local arrange grant only; requests still run under real JWT identity.
+    with tenant_scope(tenant_id), service_permission_scope("source", "create"):
         source = await Source.objects.create(
             platform_id=platforms[0].id,
             name=name,

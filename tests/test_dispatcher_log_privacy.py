@@ -20,7 +20,9 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         self.fixture = fixture
-        self.dispatcher = fixtures.load_source("_dispatcher_log_privacy_test", "app/jobs/dispatcher.py")
+        self.dispatcher = fixtures.load_source(
+            "_dispatcher_log_privacy_test", "app/jobs/dispatcher.py", imports=fixture.imports,
+        )
         self.original_notify = self.dispatcher._notify_job_result
         self.dispatcher._notify_job_result = fixture.notify
         self.job = fixture.job
@@ -138,7 +140,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         modules = {"app.services.notifications.service": fixtures.module_with(notify=notify),
                    "app.types": fixtures.module_with(NotificationType=SimpleNamespace(API_ERROR="error", REPORT_READY="ready"))}
         self.job.job_type = SECRET
-        with patch.dict(fixtures.sys.modules, modules):
+        with patch.dict(self.dispatcher.__isolated_imports__, modules):
             await self.original_notify(self.job, success=False, error=SECRET)
         self.assertNotIn(SECRET, str(notify.create.await_args))
         self.assertIn(self.dispatcher._FAILURE_MESSAGE, notify.create.await_args.kwargs["message"])
@@ -148,7 +150,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         notify = SimpleNamespace(create=AsyncMock(side_effect=RuntimeError(SECRET)))
         modules = {"app.services.notifications.service": fixtures.module_with(notify=notify),
                    "app.types": fixtures.module_with(NotificationType=SimpleNamespace(API_ERROR="error", REPORT_READY="ready"))}
-        with patch.dict(fixtures.sys.modules, modules):
+        with patch.dict(self.dispatcher.__isolated_imports__, modules):
             for success, event in ((False, "job_error_notification_failed"), (True, "job_success_notification_failed")):
                 with self.assertLogs(self.dispatcher.logger, level="ERROR") as logs:
                     await self.original_notify(self.job, success=success, result={"text": SECRET})

@@ -31,7 +31,7 @@ MODELS = {
 CLASS_FINGERPRINTS = {'AIAnalytics': '783bf3b00f832e2782671b11ea1b3d30e66f77e2b5e72c41c5512b5d66f7a1d7',
  'AgentScenario': 'ef147cce4370d511a3d120ec9da1ff1eed8646ecd9b0b31b5a75e386ccf19352',
  'LLMModel': '0bdd90b75c7687a3e1e74efaabd7fc47b72a48e25600d1e8c742cef5a6e68e28',
- 'LLMProvider': '5ede3fd75631590d2e2a88434cddf6ed299d92f58f355ac5b0d41c9a8184efbf'}
+ 'LLMProvider': '59a9d9ca46f2007fd5301b0f2729d16d4be37d539eafee325047c4e74af4fb3d'}
 
 
 def _canonical_ast(node):

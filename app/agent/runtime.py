@@ -776,7 +776,12 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
 
     from app.models import LLMModel
 
-    narrative_model = await LLMModel.objects.resolve_default_model("text", strategy="cost_efficient")
+    # Auto-select is the documented fleet default: the model flagged
+    # `is_default` (★ in the settings dropdown), then the lowest id. The
+    # cost-efficient strategy deliberately minimises tariffs first, so with
+    # 0.00 tariffs it outranked the flagged default model and sent the chat
+    # to free rows that are rate-limited.
+    narrative_model = await LLMModel.objects.resolve_default_model("text")
     return await chat_with_fallback(
         messages,
         preferred_model=narrative_model,

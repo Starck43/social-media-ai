@@ -64,7 +64,7 @@ supported; adding a new provider is a row in the DB, not a code change.
 
 | Table | Scope | Purpose |
 |-------|-------|---------|
-| `llm_providers` | global (optionally per-tenant override) | Connection: `name`, `api_format` (`openai` \| `anthropic`), `base_url`, `auth_header`, `encrypted_api_key`, `is_active`, `is_default` |
+| `llm_providers` | global (optionally per-tenant override) | Connection: `name`, `api_format` (`openai` \| `anthropic`), `base_url`, `auth_header`, `encrypted_api_key`, `is_active` |
 | `llm_models` | global | Model definition: `provider_id`, `name` (human), `model_id` (API model string), `model_type` (`text` \| `image` \| `embedding`), `input_cost_per_1k`, `output_cost_per_1k`, `max_tokens`, `default_temperature`, `is_active` |
 
 `LLMProvider` and `LLMModel` are **global** (see `TENANCY.md`) because the same
@@ -92,13 +92,14 @@ When the agent/analyzer asks for a model:
 1. Explicit model name passed by caller → find by `llm_models.name`.
 2. `AGENT_MODEL` env var set → use that model.
 3. Otherwise: first active `text`-capable model ordered by
-   `llm_providers.is_default DESC, llm_models.is_default DESC,
-   llm_models.id ASC` (`default_model_sort_key` in
+   `llm_models.is_default DESC, llm_models.id ASC` (`default_model_sort_key` in
    `app/services/ai/llm_client.py`; `LLMModelManager.resolve_default_model`
    filters one `model_type` with the same tuple). `is_default` is unique per
    `model_type` fleet-wide (enforced by `LLMModelManager.create_model` /
-   `update_model`; admin/API/tools are thin callers); a single default
-   provider is enforced by `LLMProviderAdmin`.
+   `update_model`; admin/API/tools are thin callers). Only models carry a
+   default flag — the provider-level one was dropped in migration 0091 because
+   it outranked the operator's own default model and forked the fleet when two
+   providers were flagged.
 
 ### Fallback
 

@@ -42,7 +42,6 @@ async def llm_providers_list(active_only: bool = True) -> list[dict[str, Any]]:
             "api_format": p.api_format,
             "base_url": p.base_url,
             "is_active": p.is_active,
-            "is_default": p.is_default,
         }
         for p in providers
     ]

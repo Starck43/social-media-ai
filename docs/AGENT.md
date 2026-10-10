@@ -85,7 +85,7 @@ raw manager writes требуют отдельного аудита. Trusted ser
 
 | Tool | Назначение | Confirm | Право |
 |---|---|---|---|
-| `llm_providers_list` | список провайдеров (id, name, api_format, base_url, is_active, is_default) | нет | `llmprovider.view` |
+| `llm_providers_list` | список провайдеров (id, name, api_format, base_url, is_active) | нет | `llmprovider.view` |
 | `llm_models_list` | список моделей с фильтрами provider_id, model_type, active_only | нет | `llmmodel.view` |
 | `llm_model_test` | тест модели (промпт → ответ, usage, нет секретов) | нет | `llmmodel.view` |
 | `llm_model_add` | создать модель (provider_id, name, api_model_id, model_type, costs, is_default) | да | `llmmodel.create` |

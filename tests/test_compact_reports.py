@@ -77,7 +77,13 @@ async def test_grouped_service_inclusive_window_and_chain_scope(monkeypatch):
     query.assert_awaited_once_with(days=7, source_id=9, tenant_id=4)
 
 
-async def test_agent_chat_requests_cost_efficient_model(monkeypatch):
+async def test_agent_chat_requests_default_model(monkeypatch):
+    """Auto-select resolves the fleet default, not the cheapest row.
+
+    The cost-efficient strategy minimizes tariffs first, so with 0.00 tariffs
+    it outranked the flagged default model and sent the chat to free rows that
+    are rate-limited.
+    """
     from app.agent import runtime
     from app.models.managers.llm_model_manager import LLMModelManager
 
@@ -87,7 +93,7 @@ async def test_agent_chat_requests_cost_efficient_model(monkeypatch):
     monkeypatch.setattr(LLMModelManager, "resolve_default_model", resolve)
     monkeypatch.setattr("app.services.ai.llm_client.chat_with_fallback", fallback)
     await runtime._chat([], [])
-    resolve.assert_awaited_once_with("text", strategy="cost_efficient")
+    resolve.assert_awaited_once_with("text")
     assert fallback.await_args.kwargs["preferred_model"] is selected
 
 
@@ -95,19 +101,23 @@ async def test_tier_filter_wins_over_global_preferred_model(monkeypatch):
     from app.models import LLMModel
     from app.services.ai import llm_client
 
-    def model(id_, kind, cost):
+    def model(id_, caps, cost):
+        # Mirror the real row: `model_type` is a capability list and the
+        # filters ask the model, never the raw string.
         return SimpleNamespace(
             id=id_,
-            model_type=kind,
+            model_type=",".join(caps),
+            capabilities=list(caps),
+            can_handle=lambda cap: cap in caps,
             input_cost_per_1k=cost,
             output_cost_per_1k=cost,
-            provider=SimpleNamespace(is_active=True, is_default=False),
+            provider=SimpleNamespace(is_active=True),
             is_default=False,
         )
 
-    banned = model(1, "image", 0.001)
-    pricey = model(2, "text", 10)
-    cheap = model(3, "text", 0.01)
+    banned = model(1, ("image",), 0.001)
+    pricey = model(2, ("text",), 10)
+    cheap = model(3, ("text",), 0.01)
     monkeypatch.setattr(llm_client, "_llm_models", AsyncMock(return_value=[banned, pricey, cheap]))
     monkeypatch.setattr(llm_client, "_allowed_model_types", AsyncMock(return_value={"text"}))
     invoked = []

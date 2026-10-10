@@ -416,12 +416,22 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     """
     from datetime import datetime, timedelta, timezone
 
+    from sqlalchemy import not_, or_
+
     from app.core.database import new_session
+    from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
     from app.models import CollectedItem, Job
 
     days = int(payload.get("days", 7))
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    deleted = await Job.objects.filter(status__in=["done", "failed"]).filter(Job.created_at < cutoff).delete()
+    # An operational budget stop can retain uncertain external effects/cost.
+    # Keep its evidence for explicit review; ordinary NULL errors stay eligible.
+    deleted = await (
+        Job.objects.filter(status__in=["done", "failed"])
+        .filter(Job.created_at < cutoff)
+        .filter(or_(Job.error.is_(None), not_(Job.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX))))
+        .delete()
+    )
 
     # Unanalysed raw content: same age budget as the job history. Raw text is
     # kept only while an analysis might still want it, so `staged_days` follows

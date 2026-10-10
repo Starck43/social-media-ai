@@ -65,6 +65,7 @@ class JobManager(BaseManager["Job"]):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
+        from app.jobs.attempt_budget import available_attempt_budget
 
         from ..job import Job as JobModel
 
@@ -73,7 +74,12 @@ class JobManager(BaseManager["Job"]):
             async with session.begin():
                 stmt = (
                     select(JobModel)
-                    .where(JobModel.status == "pending", JobModel.run_at <= now, where_clause)
+                    .where(
+                        JobModel.status == "pending",
+                        JobModel.run_at <= now,
+                        available_attempt_budget(JobModel),
+                        where_clause,
+                    )
                     .order_by(JobModel.run_at.asc())
                     .limit(1)
                     .with_for_update(skip_locked=True)
@@ -183,11 +189,12 @@ class JobManager(BaseManager["Job"]):
 
         One statement, so there is no window in which a worker could observe the
         row as claimable. Returns False if the job was not pending (already
-        claimed by a worker, or finished).
+        claimed by a worker, finished, or its attempt budget is unavailable).
         """
         from sqlalchemy import update
 
         from app.core.database import async_session_maker
+        from app.jobs.attempt_budget import available_attempt_budget
 
         from ..job import Job as JobModel
 
@@ -196,7 +203,11 @@ class JobManager(BaseManager["Job"]):
             async with session.begin():
                 result = await session.execute(
                     update(JobModel)
-                    .where(JobModel.id == job_id, JobModel.status == "pending")
+                    .where(
+                        JobModel.id == job_id,
+                        JobModel.status == "pending",
+                        available_attempt_budget(JobModel),
+                    )
                     .values(
                         status="running",
                         locked_at=now,
@@ -412,16 +423,37 @@ class JobManager(BaseManager["Job"]):
         return False
 
     async def reap_stale(self, timeout_minutes: int = 30) -> int:
-        """Atomically requeue rows whose running lease is still stale.
+        """Stop unavailable budgets, then requeue stale rows still below the cap.
 
-        Keep status and lease age in the UPDATE predicate: a previously read
-        snapshot must not overwrite a completion or a refreshed heartbeat.
-        The queryset retains the caller's tenant guard (or explicit bypass).
-        This preserves the existing timeout/replay policy; it does not prove
-        that an ordinary long-running handler has stopped its side effects.
+        Both writes keep eligibility/budget/tenant predicates in the UPDATE.
+        Stopped rows retain evidence and mean outcome unconfirmed, not no effect.
+        Return only the number requeued, preserving this method's existing API.
+        Below-budget replay policy is unchanged, not certified idempotent here.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
-        return await self.filter(status="running", locked_at__lt=cutoff).update(status="pending", locked_at=None)
+        from sqlalchemy import and_, func, or_
+
+        from app.jobs.attempt_budget import (
+            ATTEMPT_BUDGET_STOP_PREFIX,
+            available_attempt_budget,
+            unavailable_attempt_budget,
+        )
+
+        from ..job import Job as JobModel
+
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=timeout_minutes)
+        stop_eligible = or_(
+            and_(JobModel.status == "running", JobModel.locked_at < cutoff),
+            and_(JobModel.status == "pending", JobModel.run_at <= now),
+        )
+        await self.filter(stop_eligible, unavailable_attempt_budget(JobModel)).update(
+            status="failed",
+            finished_at=now,
+            error=func.concat(ATTEMPT_BUDGET_STOP_PREFIX, func.coalesce(JobModel.error, "")),
+        )
+        return await self.filter(available_attempt_budget(JobModel), status="running", locked_at__lt=cutoff).update(
+            status="pending", locked_at=None
+        )
 
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:
         """Delete successfully finished jobs older than `older_than_hours`.

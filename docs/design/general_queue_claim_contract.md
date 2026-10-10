@@ -20,7 +20,7 @@ owner-reviewed/tested at `4d65af4e55c6b3096db2278ce2589cfc17f1525e`:
 sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/54#issuecomment-6097327068).
 No code corrections or author-run tests; the final delta was docs-only.
 Merged does not establish deployment, acceptance or a combined-dev green suite.
-The cleanup_done follow-up is Draft [PR #55](https://github.com/Starck43/social-media-ai/pull/55)
+The cleanup_done follow-up merged as `9d63892c` through [PR #55](https://github.com/Starck43/social-media-ai/pull/55)
 from dev `ee43592a`, owner-reviewed/tested at exact
 `1eb561fdebbcf2a556bdfca7089ae79d1625cda8`: 6 standalone + read-only config check
 and 8 PostgreSQL, sequential/all exit 0; [owner evidence](https://github.com/Starck43/social-media-ai/pull/55#issuecomment-6097728246).
@@ -297,9 +297,60 @@ cleaners, lock races, rollback and committed ACK loss. The owner ran these at
 exact `1eb561fd` with results above; the author ran none. Injected pre-commit
 failure rolls back, whereas committed ACK loss leaves the row deleted, raises
 and does not issue another DELETE; it does not establish rollback.
-The independent web job_delete guard is Draft PR #56, owner-tested `0cac44fd`
+The independent web job_delete guard merged as `c7b3693e` through PR #56, owner-tested `0cac44fd`
 (11 standalone, exit 0), observed-tenant correction reviewed. This package does
 not change that route or claim independently observed PostgreSQL coverage.
+
+### Attempt-budget admission and operational stops — prepared
+
+Source/base dev `59d775cc`. `_claim` and legacy start_running share one SQL
+predicate: attempts >= 0, max_attempts > 0 and attempts < max_attempts. The
+predicate is part of the locked SELECT/conditional UPDATE, before an increment;
+first and last allowed acquisitions remain valid. An exhausted oldest pending
+row cannot monopolize worker selection ahead of another eligible row.
+
+reap_stale first conditionally stops stale running or due pending rows with an
+unavailable budget (exhausted, NULL, negative counter or nonpositive limit).
+It writes failed / actual stop time / a static "outcome unconfirmed" prefix plus
+previous error, without resetting attempts, locks, start/run time, payload,
+result/checkpoint reference or known/zero/unknown cost. This is queue operational
+failure, NOT proof a provider rejected work or no effects occurred. No automatic
+Task summary or Notification projection is added by this bulk stop.
+
+A separate conditional UPDATE retains the existing below-budget stale requeue
+policy; both writes repeat status/age/budget/tenant predicates. The method's int
+still counts only requeued rows, not budget stops. These are two acknowledged
+queryset operations, NOT an all-or-nothing combined transaction; failure after
+a committed stop may leave that stop persisted. An exception/ACK loss propagates
+without another write, inferred rollback, success receipt or handler invocation.
+A refreshed heartbeat/completion that wins the row lock is not overwritten.
+
+Automatic handle_prune excludes the conservative stop prefix, while ordinary
+NULL-error history keeps its prior retention behavior. cleanup_done already
+excludes failed rows. Explicit authorized operator deletion remains separate.
+The marker is not a security token, replay approval, authenticated provenance or
+billing ledger; false-positive matches conservatively retain evidence only.
+This is temporary evidence preservation, not global retention/legal acceptance.
+
+This slice caps attempts; it does NOT certify below-budget replay safe for every
+operation, add ordinary heartbeats, reserve all paid attempts, abort a provider,
+freeze a new scheduled Job, or alter checkpoint digest transport/part semantics.
+A normal last active attempt may complete while its heartbeat is still fresh.
+Stopped checkpoint Jobs retain references; exhaustion does not grant a new send.
+Typed transient/permanent/uncertain policies, per-input progress reuse, honest
+coverage/failure digest reporting and controlled manual retry remain follow-ups.
+Manual retry must preserve old history/cost and represent a new explicit intent;
+no ID-only re-arm/reset or silent retry of uncertain external effects is added.
+
+Five existing stale-source checks are strengthened for both conditional writes,
+not removed or made optional. Five new SQL/source-wiring cases and fourteen
+existing-schema PostgreSQL cases are prepared for admission, stop, scope,
+retention/NULL errors, competing reapers/heartbeats/completion, late claim loss
+pre-commit rollback and committed ACK loss. None have been run by the author; earlier reaper green
+results do not certify the new budget-stop semantics. Recovery/order/spend and
+broader release gates remain OPEN. Old workers can still bypass the acquisition
+cap, and old prune code can erase stop evidence; coherent worker/pruner rollout
+is a separate deployment gate, not a permission to restart services here.
 
 ## Prepared acceptance specification — not executed tests
 

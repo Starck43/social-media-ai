@@ -16,10 +16,12 @@ Next assigned general-queue lane: fresh dev/PR/ownership review and one bounded
 independent package; spend-reservation DESIGN follows, schema approval separate.
 [Handoff](identity_permissions_handoff.md). Broad XSS/durable approval/browser/
 live/release/business acceptance OPEN; merged is not deployed/accepted.
-PR29 deferred; PR30/31 separate occupied model-layout lanes, no automatic
+PR29 deferred; PR30/31/32 separate occupied model-layout lanes, no automatic
 checks/merge. Agent prepares checks only; ZERO tests/imports/DB/schema/live.
-Post-merge four-file journal update is a separate unmerged docs-only PR until
-explicit approval; no new docs/design files or code/test/rule changes.
+PR33 is the four-file integration record, separately approved by Owner; use
+its GitHub merge state/SHA and fresh dev for continuation. No new docs/design
+files or code/test/rule changes. Next code package belongs in a fresh chat;
+parallel PR30–32 stay with their assigned refactoring chat.
 
 Owner sequence remains rights first, general queue second, attempt-accounting
 and budget-reservation DESIGN third (schema approval separate). No personal

@@ -20,7 +20,7 @@ Do not restart merged digest integration or bounded logging work.
 
 | Stage / task | State and allocation | What to do next |
 | --- | --- | --- |
-| B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as683c49e; Owner482eacb full1612 passed/11warnings/64subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31 separate. |
+| B / identity and permissions, PRD-02 | **MERGED bounded safeguards:** [PR #22](https://github.com/Starck43/social-media-ai/pull/22) as683c49e; Owner482eacb full1612 passed/11warnings/64subtests/saved exit0 | Do not restart delivered boundary/tests. Broad XSS/durable approval/CAS/browser/live/release acceptance OPEN. [Handoff](identity_permissions_handoff.md); PR29/30/31/32 separate. |
 | C / general queue, PRD-05 | **ASSIGNED NEXT, not started:** same Owner-assigned lane after merged PR22 | Recheck fresh dev/open PRs/ownership; select one bounded independent queue contract. Checkpoint fencing is not general queue correctness. No new queue implementation in this journal update. |
 | B / per-attempt accounting and reservation design, PRD-03 | Owner sequence places design after queue; schema approval required | Do not duplicate that lane or implement a billing migration from this table. |
 | C / bounded log privacy, PRD-06 | **MERGED:** dispatcher #20, retirement #23, attempt-count #25; #25 merge `eb49d1d` verified | No repeat implementation or automatic test rerun. Remaining collect/analyze/prune/provider/ORM logs are not globally sanitized. |
@@ -38,17 +38,18 @@ accepted remain different states.
 
 ### Concurrent-work boundary
 
-PR30 owns the structural tenancy-model split; PR31 owns notification-model
-layout. Do not duplicate either lane or mix them into PR22. Their PR bodies
-are the current separate task records; review only until separately authorized.
+PR30 owns the tenancy-model split, PR31 notification-model layout, and PR32
+collection-model layout. These lanes belong to the parallel refactoring chat;
+do not duplicate them or treat queue work as approval to merge those PRs.
+Their PR bodies are the current separate task records.
 
-PR22 is closed/merged; this separate integration-record docs branch owns only
-its FOUR-file post-merge status update, not identity/runtime implementation.
-PR30/31 retain their separate structural model lanes; PR29 remains deferred.
+PR22 is closed/merged; PR33 records its FOUR-file post-merge documentation
+status only, not identity/runtime implementation.
+PR30/31/32 retain their separate structural model lanes; PR29 remains deferred.
 Check fresh heads and file ownership before the next package; preserve parallel
 corrections. The compatibility pointer and detailed handoff explain evidence,
-not competing backlog. This journal PR requires separate integration approval;
-do not assume authorization to merge PR22 covered unrelated PRs.
+not competing backlog. Owner separately approved integration of this docs-only
+record; that authorization does not cover PR29–32 or future code changes.
 
 ## Technical catalog — open only what the selected task needs
 

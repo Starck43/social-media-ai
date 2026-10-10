@@ -31,7 +31,7 @@ Next assigned sequence: general queue PRD-05 lane, THEN per-attempt accounting/
 budget-reservation DESIGN (schema approval separate). Before implementation
 resolve fresh dev/open Drafts/board ownership; choose one bounded independent
 queue contract and preserve Owner parallel changes. No new queue code prepared
-in this integration-record task. PR29 deferred, PR30/31 occupied model-layout
+in this integration-record task. PR29 deferred, PR30/31/32 occupied model-layout
 lanes separate/unmodified; do not run/merge them automatically.
 
 Existing .agent R3/R4 and R6–R9 remain binding: main dev checkout off limits,
@@ -42,9 +42,10 @@ Owner main checkout was not changed; PR22 worktree/logs/branch retained, no
 cleanup or automatic branch deletion. Fetch-only inspection may observe dev;
 no instruction to switch/stash/commit Owner main or remove review worktree.
 
-This post-merge journal update is a separate docs-only branch/PR from fresh
-683c49e, FOUR existing files; it is not yet merged until separately approved.
-No new docs/design files, code/tests/rules/schema changes or replay requested.
+This FOUR-file post-merge documentation record is PR #33; Owner explicitly
+approved its integration separately from PR22. Its actual merge state/SHA are
+in GitHub PR33. No new docs/design files, code/tests/rules/schema changes or
+replay requested. Future continuation uses fresh dev, not frozen session heads.
 
 
 ## Latest raw-log diagnosis and prepared import-isolation follow-up

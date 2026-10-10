@@ -14,8 +14,7 @@ Retain PR22 review worktree/branch/untracked perr logs; no main checkout edits,
 cleanup, schema/live operations or deployment authorized by merge.
 Next assigned general-queue lane: fresh dev/PR/ownership review and one bounded
 independent package; spend-reservation DESIGN follows, schema approval separate.
-[Handoff](identity_permissions_handoff.md). Broad XSS/durable approval/browser/
-live/release/business acceptance OPEN; merged is not deployed/accepted.
+[Handoff](identity_permissions_handoff.md). Broad XSS/durable approval/browser/live/release/business acceptance OPEN; merged is not deployed/accepted.
 PR29 deferred; PR30/31/32 separate occupied model-layout lanes, no automatic
 checks/merge. Agent prepares checks only; ZERO tests/imports/DB/schema/live.
 PR33 is the four-file integration record, separately approved by Owner; use

@@ -117,6 +117,83 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(stored.scalar() or 0)
 
+    async def admit_items(self, session: Any, rows: Sequence[dict[str, Any]]) -> int:
+        """Strict borrowed-transaction receipt, not the legacy rowcount estimate.
+
+        Caller holds the owning Source row lock. Existing staged identities are
+        locked against concurrent retirement; covered parent hashes do not stage
+        again. No bypass, attempt reset, payload replacement, commit or rollback.
+        """
+        from sqlalchemy import cast, select
+        from sqlalchemy.dialects.postgresql import JSONB, array, insert
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.models import AIAnalytics
+
+        tenant_id = current_tenant_id()
+        if is_bypass() or type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("content_tenant_invalid")
+        if not rows:
+            return 0
+        source_ids = {row.get("source_id") for row in rows}
+        if len(source_ids) != 1 or any(type(value) is not int or value <= 0 for value in source_ids):
+            raise ValueError("content_source_invalid")
+        source_id = next(iter(source_ids))
+        expected = {}
+        for row in rows:
+            if row.get("tenant_id", tenant_id) != tenant_id:
+                raise ValueError("content_tenant_invalid")
+            identity, digest = row.get("external_id"), row.get("content_hash")
+            if type(identity) is not str or not identity or type(digest) is not str or len(digest) != 64:
+                raise ValueError("content_identity_invalid")
+            if identity in expected and expected[identity]["content_hash"] != digest:
+                raise ValueError("content_identity_conflict")
+            expected[identity] = row
+        model = self.model
+        scope = (model.tenant_id == tenant_id, model.source_id == source_id)
+        existing = (await session.execute(select(model.external_id, model.content_hash).where(
+            *scope, model.external_id.in_(list(expected)),
+        ).with_for_update())).all()
+        present = dict(existing)
+        missing = []
+        for identity, row in expected.items():
+            if identity in present:
+                if present[identity] != row["content_hash"]:
+                    raise ValueError("content_identity_conflict")
+            else:
+                missing.append(row)
+        if not missing:
+            return 0
+        # One scoped coverage lookup for the whole batch, not one round trip per
+        # post. JSONB ?| is only a prefilter; malformed/non-array ledgers cannot
+        # become receipt evidence when decoding the returned summaries below.
+        summaries = (await session.execute(select(AIAnalytics.summary_data).where(
+            AIAnalytics.tenant_id == tenant_id, AIAnalytics.source_id == source_id,
+            cast(AIAnalytics.summary_data, JSONB)["content_hashes"].has_any(
+                array(list(dict.fromkeys(row["content_hash"] for row in missing)))
+            ),
+        ))).scalars().all()
+        covered = {
+            digest for summary in summaries if type(summary) is dict
+            and type(summary.get("content_hashes")) is list
+            for digest in summary["content_hashes"] if type(digest) is str
+        }
+        pending = [await self._apply_tenant(session, {
+            **row, "attachments": normalize_attachments(row.get("attachments")),
+        }) for row in missing if row["content_hash"] not in covered]
+        if not pending:
+            return 0
+        inserted = (await session.execute(insert(model).values(pending).on_conflict_do_nothing(
+            index_elements=[model.source_id, model.external_id],
+        ).returning(model.external_id))).scalars().all()
+        # A concurrent non-admission writer must not turn a conflicting identity
+        # into a successful receipt. Read every pending identity back exactly.
+        stored = dict((await session.execute(select(model.external_id, model.content_hash).where(
+            *scope, model.external_id.in_([row["external_id"] for row in pending]),
+        ).with_for_update())).all())
+        if any(stored.get(row["external_id"]) != row["content_hash"] for row in pending):
+            raise ValueError("content_receipt_missing")
+        return len(inserted)
+
     async def for_source(
         self,
         source_id: int,

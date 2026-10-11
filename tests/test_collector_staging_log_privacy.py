@@ -78,6 +78,10 @@ class CollectorStagingLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             "app.services.ai.dedup": ns(item_hash=Mock(return_value=PRIVATE), analysed_hashes=self.analysed_hashes),
             "app.utils.date_parsing": ns(universal_date_parser=Mock(return_value="parsed-date")),
         }
+        imports["app.utils.content_attachments"] = load_isolated_source(
+            "_collector_snapshot_fixture", ROOT / "app/utils/content_attachments.py")
+        imports["app.utils.collected_content"] = load_isolated_source(
+            "_collector_row_fixture", ROOT / "app/utils/collected_content.py", imports)
         self.module = load_isolated_source("_collector_staging_privacy", ROOT / "app/services/monitoring/collector.py", imports)
         self.sink = RecordSink()
         self.module.logger = logging.Logger("isolated_collector_staging", logging.DEBUG)

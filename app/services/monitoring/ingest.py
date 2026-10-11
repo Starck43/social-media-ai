@@ -1,22 +1,7 @@
-"""Push-based ingest: channel updates the bot sees become analyzed content.
+"""Bot API channel posts enter the existing durable staging/replay pipeline.
 
-Telegram's Bot API cannot read a channel's or a chat's history — a bot only
-receives what arrives through `getUpdates` while it is running. So Telegram
-cannot follow the VK path (`wall.get` on demand). Instead, the channel listener,
-which already consumes the bot's updates, fans channel posts out to this module.
-
-Two consequences worth remembering:
-
-- Only future posts are collected; there is no backfill. Historical depth needs
-  a user session (MTProto), which is a separate decision.
-- `getUpdates` acknowledges nothing until the offset advances, and the offset
-  lives in memory, so a restart replays up to 24h of updates. `Source.last_item_id`
-  is therefore the per-source watermark: ids at or below it are skipped, so a
-  replay never pays for the same post twice.
-
-Analysis reuses `AIAnalyzer.base_analyze_content`, the same entry point jobs use,
-so an ingested Telegram post lands in `ai_analytics` exactly like a collected VK
-post. The listener already runs inside the owning workspace's tenant scope.
+No history pull, downloads, inline LLM or sender activation. A source watermark
+is not an admission receipt: an unseen lower message must still stage.
 """
 
 from __future__ import annotations
@@ -25,7 +10,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from app.core.permissions import service_permission_scope
+from app.services.monitoring.staging import admit_telegram_items
+from app.utils.content_attachments import normalize_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +24,35 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
     """
     raw = getattr(inbound, "raw", None) or {}
     post = raw.get("channel_post") or raw.get("message") or {}
-    text = post.get("text")
-    if not text:
+    if type(post) is not dict:
         return None
-
+    identity = post.get("message_id")
+    if type(identity) is not int or identity <= 0:
+        raise ValueError("content_identity_invalid")
+    text = post.get("text") or post.get("caption") or ""
+    if type(text) is not str:
+        raise ValueError("content_text_invalid")
+    # File references remain placeholders, never bot-token/file URLs.
+    attachments = normalize_attachments([
+        {"type": kind, "url": None}
+        for key, kind in (("photo", "photo"), ("video", "video"),
+                          ("animation", "video"), ("video_note", "video"),
+                          ("document", "unknown"), ("audio", "unknown"),
+                          ("voice", "unknown"), ("sticker", "unknown"),
+                          ("paid_media", "unknown"), ("contact", "unknown"),
+                          ("location", "unknown"), ("venue", "unknown"), ("poll", "unknown"))
+        if key in post
+    ])
+    if not text and not attachments:
+        return None
     published = post.get("date")
-    published_ts = float(published) if isinstance(published, (int, float, str)) else None
+    published_ts = float(published) if type(published) in (int, float, str) else None
 
     return {
         "id": str(post.get("message_id", "")),
         "external_id": f"{inbound.chat_id}_{post.get('message_id', '')}",
         "text": text,
+        "attachments": attachments,
         "date": datetime.fromtimestamp(published_ts, tz=timezone.utc) if published_ts else datetime.now(timezone.utc),
         "views": post.get("views", 0) or 0,
         "forwards": post.get("forward_count", 0) or 0,
@@ -63,16 +67,6 @@ def normalize_channel_post(inbound: Any) -> Optional[dict[str, Any]]:
         "platform": "telegram",
         "message_type": "post",
     }
-
-
-def _is_watermark_passed(item: dict[str, Any], watermark: str | None) -> bool:
-    """True when the item is older than the source's high-water mark."""
-    if not watermark:
-        return False
-    try:
-        return int(item["id"]) <= int(watermark)
-    except (TypeError, ValueError):
-        return False
 
 
 async def _find_source(chat_id: str) -> Optional[tuple[int, int, Optional[str]]]:
@@ -92,9 +86,14 @@ async def _find_source(chat_id: str) -> Optional[tuple[int, int, Optional[str]]]
         platform = await Platform.objects.filter(platform_type="telegram").first()
         if platform is None:
             return None
-        source = await Source.objects.filter(platform_id=platform.id, external_id=str(chat_id), is_active=True).first()
-        if source is None:
+        sources = list(await Source.objects.filter(
+            platform_id=platform.id, external_id=str(chat_id), is_active=True,
+        ).limit(2))
+        if not sources:
             return None
+        if len(sources) != 1:
+            raise RuntimeError("content_source_ambiguous")
+        source = sources[0]
         return source.id, source.tenant_id, getattr(source, "last_item_id", None)
 
 
@@ -120,54 +119,32 @@ async def _is_digest_target(tenant_id: int, channel: str, chat_id: str) -> bool:
 
 
 async def ingest_channel_post(inbound: Any) -> bool:
-    """Analyze one channel post as its owning workspace. True when stored.
+    """Acknowledge committed admission/duplicate; False is an intentional skip.
 
-    A chat without a registered source is skipped silently: the bot may be an
-    admin of channels that nobody monitors. The listener calls this without a
-    workspace context, so both the lookup and the analysis set their own.
+    Errors propagate to the listener so getUpdates cannot acknowledge a failed
+    storage/queue commit. Analysis is deferred to existing handle_analyze.
     """
     if not getattr(inbound, "is_channel_post", False):
         return False
-
     item = normalize_channel_post(inbound)
     if item is None:
         return False
-
     found = await _find_source(inbound.chat_id)
     if found is None:
         logger.debug("ingest_source_missing")
         return False
-    source_id, tenant_id, watermark = found
-
-    # The workspace's own digest lands in its digest-target channel; when that
-    # channel is also monitored as a source, analyzing our own summary would
-    # pay the LLM for our own text and pollute the analytics. The watermark is
-    # intentionally not advanced, so ordinary posts of the channel still ingest.
+    source_id, tenant_id, _watermark = found
     if await _is_digest_target(tenant_id, inbound.channel, inbound.chat_id):
         logger.debug("ingest_digest_target_skipped")
         return False
 
-    if _is_watermark_passed(item, watermark):
-        logger.debug("ingest_watermark_skipped")
-        return False
-
     from app.core.tenant_context import tenant_scope
     from app.models import Source
-    from app.services.ai.analyzer import AIAnalyzer
 
     with tenant_scope(tenant_id):
         source = await Source.objects.select_related("platform").get(id=source_id)
         if source is None:
-            return False
-
-        analytics = await AIAnalyzer().base_analyze_content([item], source)
-        if analytics is None:
-            logger.warning("ingest_analysis_failed error_code=analysis_result_missing")
-            return False
-
-        with service_permission_scope("source", "update"):
-            await Source.objects.update_by_id(source.id, last_item_id=item["id"])
-        await Source.objects.update_last_checked(source.id)  # type: ignore[attr-defined]
-
-    logger.info("ingest_stored")
+            raise RuntimeError("content_source_unavailable")
+        await admit_telegram_items([item], source, wake_analysis=True)
+    logger.info("ingest_admitted")
     return True

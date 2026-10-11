@@ -308,7 +308,7 @@ A repeated item is never analyzed (and paid for) twice —
 Every collection writes its fetched batch here **before** anything is analysed,
 and the rows are deleted only once an analysis has actually stored the matching
 content. The table is therefore a write-ahead copy, not an archive — see
-`docs/design/vision.md` for why raw text is not kept forever.
+`docs/PRODUCT_PLAN.md` and the lifecycle gate in `docs/BUSINESS_PRODUCTION_READINESS.md` for why raw text is not kept forever.
 
 | Stage | Table state |
 | --- | --- |

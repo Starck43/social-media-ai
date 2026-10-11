@@ -9,7 +9,7 @@ The assistant helps people turn information distributed across public sources an
 ## Development navigation
 
 This is the **global product plan**, not a rolling session checklist. Follow the
-existing [engineering stages](ROADMAP_INTEGRATED.md), then the
+existing [engineering gates](BUSINESS_PRODUCTION_READINESS.md), then the
 [current-stage task board](design/README.md). The Foundation phase remains gated
 by release safety; product expansion is not permission to start every proposal.
 
@@ -80,13 +80,13 @@ Keep the current separation: `AgentScenario` = analysis methodology; `AgentTask`
 | Agent | Messenger/web chat, tools, KV memory and feedback | Unified customer inbox, verified identities and business cases are future work |
 | Configuration | Encrypted credentials, tenant scopes and DB-configured LLM fleet | Current identity/budget/lifecycle gaps still require the readiness gates |
 
-This table reflects documentation, not a fresh full-code audit. Detailed operational contracts live in the reference docs; the historical readiness review must not be interpreted as a current green release gate.
+This table reflects product intent, not a fresh full-code review. Detailed operational contracts live in the subsystem references; readiness requires explicit acceptance evidence.
 
 ## Delivery sequence and acceptance
 
 Foundation has **9 major open readiness directions**; the only descending-priority numbered queue is [priorities 1–9](design/README.md#prioritized-open-work). PRD IDs are acceptance domains, not individual PR counts. The product phases below are future expansion and are not counted as additional current Foundation tasks.
 
-Follow [ROADMAP_INTEGRATED.md](ROADMAP_INTEGRATED.md) and [BUSINESS_PRODUCTION_READINESS.md](BUSINESS_PRODUCTION_READINESS.md) for release safety before expanding capabilities. The phases below describe product expansion, not calendar promises.
+Follow [BUSINESS_PRODUCTION_READINESS.md](BUSINESS_PRODUCTION_READINESS.md) and the [current work board](design/README.md) for release safety before expanding capabilities. The phases below describe product expansion, not calendar promises.
 
 | Phase | Bounded outcome | Dependencies and exit evidence |
 | --- | --- | --- |
@@ -118,4 +118,4 @@ Human control includes pause, revoke connector, edit scope, cancel scheduled sen
 - For messages/marketing/signatures, establish recipient consent and applicable platform/legal rules.
 - Use a small branch from fresh dev, recheck overlapping user changes and test only isolated data. Use the normal feature/docs branch and reviewed PR path; documentation work does not authorize a direct push to dev.
 
-See [ASSISTANT_ARCHITECTURE.md](ASSISTANT_ARCHITECTURE.md) for extension boundaries and [design/vision.md](design/vision.md) for the concise product vision.
+See [ASSISTANT_ARCHITECTURE.md](ASSISTANT_ARCHITECTURE.md) for extension boundaries. Git history retains earlier product proposals.

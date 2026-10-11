@@ -19,10 +19,14 @@
   code, migrations, permissions and CLI/API contracts. Record test results and
   limitations; do not claim a green suite without a completed run.
 - **R6 — Preserve local owner work.** `/Users/admin/Projects/social-media-ai`
-  (branch `dev`) is the integration checkout and may hold unrelated work.
+  (branch `dev`) is the primary sequential development and integration checkout.
   Inspect status before changes; never discard, stash, or commit unrelated work.
-  Create or reuse an isolated worktree when needed. Respect filesystem permissions.
-- **R7 — One worktree per PR.** Never verify two PRs in one working tree:
+  Direct local commits in `dev` are allowed after the owner accepts the proposed
+  coherent commit split/messages. The closeout phrases defined in `AGENTS.md`
+  provide that authorization for completed, validated and task-scoped changes.
+  Use an isolated worktree only when parallel work, PR review, risky
+  experimentation or conflicting changes require it.
+- **R7 — Isolate PR review and parallel work.** Never verify two PRs in one working tree:
   PR #22 → `social-media-ai-pr22-review`, PR #30 (`refactor/tenancy-model-layout`)
   → its own worktree, PR #31 (`refactor/notification-model-layout`) → its own
   worktree. Check `git worktree list` before creating anything; reuse existing

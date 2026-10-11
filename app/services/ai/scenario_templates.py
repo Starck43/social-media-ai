@@ -12,7 +12,7 @@ Presets are keyed by a stable slug (`brand_monitoring`) because that is what
 the model puts into `scenario_create(template_key=...)`; the Russian `name` is
 what a person reads in the chat.
 
-See `docs/CHAT_BOT_SCENARIOS.md#scenario-templates-presets`.
+See `docs/AI_PIPELINE_AND_PROMPTS.md#scenario-creation`.
 """
 
 from __future__ import annotations

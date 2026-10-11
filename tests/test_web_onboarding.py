@@ -1,4 +1,4 @@
-"""Onboarding and navigation for a workspace that starts empty (docs/design/ui.md §4.1).
+"""Onboarding and navigation for a workspace that starts empty (docs/API.md).
 
 A fresh sign-up lands on an empty dashboard, which is where the product used to
 lose people: the only hint was a flash message. `/app/onboarding` turns that

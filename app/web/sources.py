@@ -1,4 +1,4 @@
-"""Sources CRUD for `/app/sources` (docs/design/ui.md §4.3).
+"""Sources CRUD for `/app/sources` (docs/API.md).
 
 List + add + edit + toggle + delete + a per-source detail page. Sources are
 scoped to the current workspace.

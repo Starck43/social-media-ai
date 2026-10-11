@@ -1,4 +1,4 @@
-"""Scenario wizard `/app/scenarios/new` and preview (docs/design/ui.md §4.5).
+"""Scenario wizard `/app/scenarios/new` and preview (docs/API.md).
 
 The wizard is the JSON-free way to create a scenario: the user ticks analysis
 and content types, the scope is generated for them, and the preview shows the

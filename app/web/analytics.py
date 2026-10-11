@@ -1,6 +1,6 @@
 """Analytics `/app/analytics` — the workspace's full analytical view.
 
-Read-only (docs/design/ui.md §4.4): sentiment trend, top topics, engagement,
+Read-only (docs/ANALYTICS_AGGREGATION_SYSTEM.md): sentiment trend, top topics, engagement,
 content mix, per-provider LLM cost and per-day user activity. Everything is
 aggregated from stored `ai_analytics` rows by `ReportAggregator` — no LLM calls,
 so this page is cheap even over a long window.

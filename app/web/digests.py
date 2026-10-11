@@ -1,4 +1,4 @@
-"""Digests `/app/digests` — what was sent, and a manual send (docs/design/ui.md §4.5).
+"""Digests `/app/digests` — what was sent, and a manual send (docs/DIGEST.md).
 
 Three things live here, and the distinction between them is the whole point:
 

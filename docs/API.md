@@ -898,10 +898,12 @@ Content-Type: application/json
   "api_format": "openai",
   "base_url": "https://api.openai.com/v1",
   "auth_header": "Bearer",
-  "is_active": true,
-  "is_default": true
+  "is_active": true
 }
 ```
+
+Providers do not have an `is_default` field. Default selection belongs to
+`LLMModel.is_default`; migration 0091 removed the obsolete provider flag.
 
 **Permissions:** `llmprovider.create`
 

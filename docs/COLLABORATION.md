@@ -6,10 +6,12 @@ is in `AGENTS.md`; shared database restrictions are in `.agent/rules.md`.
 
 ## Branches and pull requests
 
-Inspect `git status` and `git worktree list` first. Reuse a suitable clean worktree
-or create a task branch from local `dev` in a writable location. Preserve existing
-branches and unrelated edits. Substantial isolated changes should have a PR into
-`dev` when access permits. Do not automatically merge or deploy.
+Inspect `git status` and `git worktree list` first. For one sequential local task,
+work directly in `dev` and keep its diff coherent. Preserve unrelated edits.
+Create a branch/worktree for parallel work, PR review, risky experiments,
+conflicts, or an explicit owner request. At completion, show the proposed commit
+split/messages and offer to commit the validated task directly in `dev`. A PR is
+optional for ordinary local work. Never push `dev`, merge or deploy automatically.
 
 ## Testing delegation
 
@@ -52,6 +54,13 @@ and reports completed validation accurately. Infrastructure blockers are not a
 successful test. Do not run a broad suite simply to validate documentation edits.
 
 ## Closing a substantial task
+
+The phrases `закрываю чат`, `чат закрываем`, `закрываем чат`, `завершаем чат`,
+`задача завершена`, `задача с подзадачами завершена`, or
+`подготовь новый чат` request this closeout even when the task stops early. These
+phrases authorize local `dev` commits for completed, validated and task-scoped
+changes without another question. Exclude unrelated, incomplete or unvalidated
+changes, record them in the handoff, and do not convert an early stop into completion.
 
 Provide a concise result and offer a new chat with this handoff filled in:
 

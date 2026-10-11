@@ -16,7 +16,7 @@ client workspace. A chat is bound to exactly one tenant, and every data row
    `AI_BOT`, `MANAGER`, `ANALYST`, `MODERATOR`, `ADMIN`, `SUPERUSER`.
    `SUPERUSER` is the canonical "owner" role; legacy rows with `role_id = NULL`
    are treated as owners by legacy resolver/UI helpers for backward compatibility.
-   Draft PR #22 runtime does NOT inherit that NULL-role elevation: an active
+   The merged runtime boundary from PR #22 does NOT inherit that NULL-role elevation: an active
    bound User and explicit membership SUPERUSER are required for runtime owner
    authority. No migration or automatic identity linking is included.
 4. **Enforcement** lives in `BaseManager`/`QuerySet`, not in models:
@@ -97,13 +97,14 @@ message belongs to:
 4. Otherwise → silently drop the message (the bot must not reveal its existence to strangers).
 
 The agent loop wraps the entire turn in `tenant_scope(tenant_id)`. Tenant data
-isolation is NOT user authorization. Draft PR #22 additionally admits a bound
+isolation is NOT user authorization. The merged PR #22 boundary additionally admits a bound
 active RuntimeIdentity, eager-loads User rights, wraps the whole turn in
 permission_scope and reloads authority before tool effects/confirmation. Missing
 User bindings refuse runtime access rather than inheriting resolver owner flags.
 Actor/session/role/argument-bound consent is in-process, not durable DB CAS.
-See [the prepared contract and owner checks](design/identity_permissions_handoff.md);
-PR #22 is not merged or accepted. No personal multi-workspace router is added.
+See [business readiness](BUSINESS_PRODUCTION_READINESS.md) for the remaining authorization and approval acceptance gates.
+PR #22 is merged; its bounded safeguards do not close the wider identity and
+durable-approval gate. No personal multi-workspace router is added.
 
 ## Bypass
 
@@ -149,7 +150,7 @@ web-membership / concrete-target capability for the current workspace; this
 does not grant tenant.update in core/model checks. API identity reaches manager
 gates; exact service grants cover default task creation, one-shot disarming and collection
 watermarks. Trusted CLI authority is explicit. Not merged or accepted; see the
-[matrix, bypass map and compatibility gates](design/identity_permissions_handoff.md).
+[business readiness gates](BUSINESS_PRODUCTION_READINESS.md).
 The existing legacy membership-owner inference and runtime identity loading are
 not migrated by this bounded package. Do not treat confirmation as authorization.
 
@@ -247,42 +248,18 @@ Migration `0083_drop_analyze_type_from_agent_scenarios.py` drops the old
 (`group_by` + `time_breakdown`) are now query-time parameters, not scenario
 properties.
 
-## Historical validation status
+## Validation boundary
 
-The counts/migration revision and separate-test-database description below are
-historical evidence, not the current head or a safety guarantee for a new run.
-Current tests may use common POSTGRES_URL with DISTINCT DB_TEST_SCHEMA via
-conftest; never public/working schema or concurrent sessions on one test schema.
-Owner reported focused bootstrap/readiness/privacy passes separately; the full
-suite timed out. New PR #22 block checks are prepared, NOT RUN by the agent.
+The source-declared Alembic head is `0091`. A repository head does not establish
+the revision of any running database. Check a target explicitly before upgrade or
+rollback, and use the schema resolved from `settings.DB_SCHEMA`.
 
+Tests default to the shared `DB_TEST_SCHEMA=test_schema` on the configured test
+database. Follow `.agent/rules.md`: run at most one database test owner at a time
+and never create, reset, drop, stamp or migrate a schema without explicit owner
+authorization. A historical test count is not current evidence.
 
-- **Migration**: `0083` is applied; the database is on revision `0083` (head) and
-  `alembic check` reports **no new upgrade operations** when run against the
-  working (production) schema.
-- **`alembic check` and the test schema**: models read `settings.DB_SCHEMA`,
-  which the pytest suite sets to `DB_TEST_SCHEMA` (default `test_schema`). If you
-  run `alembic check` while the env has `DB_TEST_SCHEMA` set, the model metadata
-  points at `test_schema` while the live tables live in `public` — so alembic
-  reports spurious index/table drops. That diff is a schema mismatch, not real
-  schema drift. Run `alembic check`/`alembic revision --autogenerate` with
-  `DB_SCHEMA=<target schema>` (default `public`) explicitly set to avoid it.
-- **Historical migrations**: the older files in `migrations/versions/` hardcode
-  the `social_manager` schema name. They are intentionally left untouched: they only
-  apply during `alembic upgrade`, and the database is already on `.head`. New
-  migrations and the models read `settings.DB_SCHEMA`; only future migrations
-  need to keep using it. Rewriting the historical files would add regression risk
-  with no benefit.
-- **Isolation**: proven by both code review **and** integration tests
-  (`tests/test_tenancy.py`, 8 tests, real PostgreSQL, `@pytest.mark.tenancy`):
-  isolated rows across tenants, cross-tenant `update_by_id`/`delete_by_id` → noop,
-  missing tenant context → `TenantContextError`, cross-tenant `create` rejected,
-  channel rebind rejected, CASCADE cleanup isolated per tenant.
-- **Full pytest is a green gate**: 255 tests pass. `tests/test_vk_collection.py`
-  performs real network calls to VK and is the slow one (~40 s of the run).
-  The suite runs against its own database (`TEST_POSTGRES_URL`, created and
-  seeded by `scripts/setup_test_db.py`), never the working one, so a run cannot
-  write into real data.
-- **Formatting**: `app/models/source.py` is legacy tab-indented and is
-  intentionally **not** reformatted (black would rewrite a whole legacy file);
-  excluded as a documented baseline decision.
+For a tenancy change, verify at least unknown identity, missing membership,
+revoked/disabled membership, cross-workspace read/write, manager update/delete,
+channel rebind and transaction rollback behavior. Broaden to the relevant API,
+web, agent and job entry points when the shared authorization contract changes.

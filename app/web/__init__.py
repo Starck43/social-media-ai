@@ -1,4 +1,4 @@
-"""Client-facing web UI (docs/design/ui.md): routes under `/app`.
+"""Client-facing web UI (docs/API.md): routes under `/app`.
 
 FastAPI + Jinja2 + HTMX/Alpine/Tailwind via CDN. The UI is an alternative to
 the messenger chat: same tenants, same agent, same database — reached through

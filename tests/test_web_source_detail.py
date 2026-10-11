@@ -1,4 +1,4 @@
-"""Source detail `/app/sources/{id}` and its mutations (docs/design/ui.md §4.3).
+"""Source detail `/app/sources/{id}` and its mutations (docs/API.md).
 
 The list page shows *what* the workspace has. This covers the three things it
 never showed and the SQL console used to answer: which collection layer a source

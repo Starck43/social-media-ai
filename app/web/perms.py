@@ -1,4 +1,4 @@
-"""Rights of the current web user in the active workspace (docs/design/ui.md §7).
+"""Rights of the current web user in the active workspace (docs/TENANCY.md).
 
 One question — "may this caller do this to this model?" — answered exactly the
 way the sqladmin console and the machine API answer it (`User.has_perm_for`,

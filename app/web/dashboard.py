@@ -1,4 +1,4 @@
-"""Dashboard `/app/` — the operational overview (docs/design/ui.md §4.2).
+"""Dashboard `/app/` — the operational overview (docs/API.md).
 
 M2: real KPIs from SQL aggregation (no LLM calls). Sentiment is a placeholder
 until the analyzer pipeline writes it to `ai_analytics`.

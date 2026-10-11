@@ -76,7 +76,7 @@ raw manager writes требуют отдельного аудита. Trusted ser
 Другие publication paths этим пакетом глобально не перепроектированы.
 
 Контракт подготовлен, тесты не запускались агентом; команды и ограничения — в
-[handoff](design/identity_permissions_handoff.md). PR #22 ещё не слит в dev.
+[TENANCY](TENANCY.md) and [business readiness](BUSINESS_PRODUCTION_READINESS.md). PR #22 is integrated, while durable approval lifecycle work remains open.
 
 ### LLM модели и провайдеры
 
@@ -142,7 +142,7 @@ run). Автоматическая эволюция промптов **не пр
 
 ## Сценарии в чате
 
-Инструменты в `app/agent/toolset/scenarios.py` (см. `docs/CHAT_BOT_SCENARIOS.md`):
+Инструменты в `app/agent/toolset/scenarios.py` (см. `docs/AI_PIPELINE_AND_PROMPTS.md`):
 
 | Tool | Назначение | Confirm |
 |---|---|---|
@@ -202,8 +202,7 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 `build_system_prompt()` независимо от `AGENT_SYSTEM_PROMPT`): цель → шаблон →
 поля → промпт → валидация → превью → подтверждение.
 
-Подробности: `docs/CHAT_BOT_SCENARIOS.md` (архитектура, переменные, валидация).
-Исторический контекст: `docs/PROMPT_AND_SCOPE_EXPLAINED.md`.
+Подробности: `docs/AI_PIPELINE_AND_PROMPTS.md` (архитектура, переменные, валидация).
 
 ## Лимиты и стоимость
 

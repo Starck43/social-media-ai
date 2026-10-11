@@ -1,4 +1,4 @@
-"""Workspace settings `/app/settings` (docs/design/ui.md §4.8).
+"""Workspace settings `/app/settings` (docs/API.md).
 
 Four tabs, one page. What belongs here and what stays in `/admin` is not a
 preference — it follows `docs/TENANCY.md`:

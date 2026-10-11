@@ -1,5 +1,5 @@
 """
-Chat-agent scenario tools (Phase 2/3 of docs/CHAT_BOT_SCENARIOS.md).
+Chat-agent scenario tools for docs/AI_PIPELINE_AND_PROMPTS.md.
 
 What these pin is the behaviour a reader cannot see from the code:
 

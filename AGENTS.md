@@ -2,7 +2,7 @@
 
 ## Agent entry points and continuity
 - Read `.agent/rules.md` and `.agent/workflow.md` before work; they define local worktree/test restrictions and session handoff.
-- Primary strategy: `docs/SOCIAL_MEDIA_AI_AUDIT_AND_ROADMAP.md`; current tasks/ownership: `docs/design/README.md`; delivered evidence: `docs/IMPLEMENTATION_STATUS.md`.
+- Product direction: `docs/PRODUCT_PLAN.md`; engineering gates: `docs/BUSINESS_PRODUCTION_READINESS.md`; current tasks/ownership: `docs/design/README.md`; delivered foundations: `docs/IMPLEMENTATION_STATUS.md`.
 - Local IDE/CLI: use `$develop-social-media-ai-local`. Remote GitHub work: use `$develop-social-media-ai`. Both use the same task board and PR handoff.
 - Resume from the current PR handoff after verifying its SHA. Do not treat old `.agent/tasks.md` or `.agent/state.json` entries as fresh assignments.
 
@@ -10,10 +10,18 @@
 
 - The owner is the sole developer; development is local and `dev` is the integration branch.
 - Complete authorized tasks autonomously without repeated routine confirmations.
-  Create branches/worktrees when useful; inspect existing worktrees and preserve unrelated work.
-- For substantial isolated changes, create a PR targeting `dev` when GitHub access is available.
-  Commit and publish the task branch as needed for that PR. Do not merge, force-push,
-  deploy, or modify production data without an explicit instruction.
+  Work directly in the current `dev` checkout by default when one sequential task
+  owns its changes and no unrelated work would be mixed. Always inspect status and
+  preserve unrelated changes.
+- Use a separate branch/worktree for parallel tasks, PR review, risky experiments,
+  conflicting owner changes, or when the owner explicitly requests a PR. Do not
+  create one only as routine ceremony for each local task.
+- After a coherent task is complete and validated in `dev`, show the proposed
+  commit split/messages and offer to create those commits directly in `dev`.
+  A closeout phrase listed below is explicit authorization to create the appropriate
+  local commits without asking again. Do not require a PR for ordinary sequential
+  local work. Do not push `dev`, merge, force-push, deploy, or modify production
+  data without explicit authorization.
 - Run focused tests only when needed for new features or a concrete correctness concern.
   Do not routinely run the full suite. Delegate broad testing to local OpenCode or Kilo;
   this delegation is authorized. See `docs/COLLABORATION.md` for the handoff protocol.
@@ -23,10 +31,19 @@
 - After each completed substantial task, offer a new chat and provide a compact copyable
   handoff with directory, branch/commit/PR, completed work, validation, and next action.
   Do not claim to close or create a chat automatically.
+- Treat the user's phrases `закрываю чат`, `чат закрываем`, `закрываем чат`, `завершаем чат`,
+  `задача завершена`, `задача с подзадачами завершена`, and `подготовь новый чат`
+  as an explicit closeout request. Before the final response, record the actual
+  state in the existing board/ledger/PR when it changed. Commit each completed,
+  validated and clearly scoped part of the current task locally in `dev`; do not
+  include unrelated, incomplete or unvalidated changes. Then provide a copyable
+  new-chat prompt with the project path, branch/revision, completed and unfinished
+  work, checks, blockers, and the first next action. If work is unfinished, label
+  it accurately; a closeout request is not permission to mark the task complete.
 
 ## Project rules
 - The active product is an extensible assistant built on the existing modular monolith. Read `README.md` and `docs/DOCS_INDEX.md`, then the relevant `docs/*.md` before changing behavior.
-- Verify the current branch and code before acting on audit notes or task boards: some docs describe historical findings or planned work. Do not assume a planned feature is implemented.
+- Verify the current branch and code before acting on plans or task boards: documentation can describe proposed work. Do not assume a planned feature is implemented.
 - Active runtime: PostgreSQL-backed schedules/jobs, worker and Telegram/MAX long-poll listener. Do not add Celery/Redis dependencies to the active path or extend frozen legacy code (`app/celery/`, Streamlit) without an explicit task.
 - `python -m app.runtime` already runs the scheduler, worker and channel listener. Do not start duplicate scheduler/listener owners accidentally.
 

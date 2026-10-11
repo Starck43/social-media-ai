@@ -60,7 +60,7 @@ def create_application() -> FastAPI:
     application.include_router(entry.router, prefix="/api/v1")
     application.include_router(health_router)
 
-    # Client-facing UI (docs/design/ui.md): pages under /app, tenant-scoped.
+    # Client-facing UI (docs/API.md): pages under /app, tenant-scoped.
     # Kept out of OpenAPI docs — it is HTML, not a machine API.
     application.include_router(web_router, include_in_schema=False)
 

@@ -13,7 +13,7 @@ so a preference learned from a chat is visible to the model without another
 plumbing path. Values are stored as JSON text — `value` is a `Text` column, and
 a list must survive the round-trip as a list.
 
-See `docs/CHAT_BOT_SCENARIOS.md#agent-memory-for-preferences`.
+See `docs/AI_PIPELINE_AND_PROMPTS.md#scenario-creation`.
 """
 
 from __future__ import annotations

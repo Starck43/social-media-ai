@@ -35,7 +35,7 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| No active implementation lane | — | AVAILABLE | Select one bounded package from the priorities above and record its owner before editing shared code. |
+| PRD-05 independent renewal/reaper ordering | Local Codex, `dev`; PostgreSQL regression only | READY | Two distinct PostgreSQL backends prove both committed orderings; full `test_job_stale_reap_db.py` is 14 passed. Commit the validated test/docs patch if accepted. No schema/runtime change. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

@@ -44,6 +44,11 @@ async def _consume_channel(channel) -> None:
                     # collection at-least-once delivery (the source watermark then
                     # suppresses duplicate admission).
                     await _ingest_safely(inbound)
+                    # Newly supported caption/media channel updates are collection
+                    # inputs, not a new chat-agent/provider/reply activation path.
+                    if (inbound.channel == "telegram" and inbound.is_channel_post
+                            and not (inbound.raw.get("channel_post") or {}).get("text")):
+                        continue
                     reply = await _handle_safely(inbound)
                     if reply:
                         try:

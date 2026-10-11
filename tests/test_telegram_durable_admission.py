@@ -279,6 +279,22 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):await self.listener._consume_channel(self.channel)
         self.assertEqual(self.channel._offset,0);self.assertTrue(self.client_closed)
         self.assertNotIn('PRIVATE',repr(self.listener.logger.call_args_list))
+    async def test_new_caption_media_ingest_does_not_activate_agent_but_legacy_text_route_stays(self):
+        for legacy_text in (False, True):
+            with self.subTest(legacy_text=legacy_text):
+                fixture=self
+                raw={'channel_post':{'caption':'Useful'}}
+                if legacy_text:raw['channel_post']['text']='Existing text'
+                inbound=self.base.Inbound('telegram','-10077','1','Useful',True,raw)
+                class Channel:
+                    name='telegram'
+                    async def poll(self):
+                        yield inbound
+                        raise asyncio.CancelledError()
+                self.ingest.side_effect=None
+                self.listener._handle_safely=AsyncMock(return_value=None)
+                await self.listener._consume_channel(Channel())
+                self.assertEqual(self.listener._handle_safely.await_count, int(legacy_text))
     async def test_ingest_error_is_static_and_actual_cancel_propagates(self):
         inbound=self.base.Inbound('telegram','-10077','1','Useful',True)
         with self.assertRaisesRegex(RuntimeError,'ingest_admission_unconfirmed') as cm:await self.listener._ingest_safely(inbound)

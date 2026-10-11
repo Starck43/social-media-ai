@@ -32,7 +32,8 @@ eligible messages. Historical cursor holes and edits are not repaired here.
 
 Bot API poll advances its in-memory offset after the consumer resumes the yield.
 The listener closes a failed iterator and re-polls; ingest errors are static,
-not swallowed. Intentional unsupported/unmonitored/digest-target updates may be
+not swallowed. Newly supported caption/media channel posts do not activate the
+chat/reply route; existing text-channel routing remains unchanged. Intentional unsupported/unmonitored/digest-target updates may be
 acknowledged without collection. Ambiguous source ownership fails closed.
 
 ## Reuse and limits
@@ -68,3 +69,8 @@ inherited queue permission. It remains owner-local/fixture-scoped, not a general
 UPDATE-only COMMIT, bootstrap/schema/live authorization. No driver run has
 yet occurred; one sequential pinned handoff follows publication/readback. Source/unit doubles do not certify database durability or production
 transport/provider behavior.
+
+A final routing refinement has one NEW actual-listener check on published
+`bf0be4e1` + scoped patch (final source artifact `4f74b8bc09f7c60cea2d551d0ca5ced08fdee6de562dbad7f951d10ff35b3130`). It does not move
+the earlier 28+4 evidence to a new head. Total 33 NEW preparation checks across
+these explicit scopes; owner10 remains NOT RUN.

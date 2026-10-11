@@ -52,7 +52,7 @@ class MediaSkipCoverageTests(unittest.IsolatedAsyncioTestCase):
     def hashes(self, content):
         return {self.dedup.item_hash(item) for item in content}
 
-    def assert_coverage(self, content, row, covered):
+    def assert_coverage(self, content, row, covered, *, expected_errors=0):
         self.assertIsNotNone(row)
         self.assertEqual(set(row.summary_data["content_hashes"]), self.hashes(covered))
         pending = [item for item in content if item not in covered]
@@ -61,7 +61,7 @@ class MediaSkipCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.hashes(pending).isdisjoint(self.dedup.analysed_hashes([row])))
         if pending:
             self.assertFalse(row.summary_data["analysis_metadata"]["analysis_complete"])
-        self.assertEqual(self.analyzer.reported_errors, 0)
+        self.assertEqual(self.analyzer.reported_errors, expected_errors)
 
     async def test_missing_image_model_keeps_post_pending(self):
         content = [post("a", media="image")]
@@ -136,7 +136,13 @@ class MediaSkipCoverageTests(unittest.IsolatedAsyncioTestCase):
             return {"parsed": {}, "response": {}} if kwargs.get("media_urls") else copy.deepcopy(self.f.good)
         self.client.analyze.side_effect = result
         content = [post("a", media="image"), post("b", media="video")]
-        self.assert_coverage(content, await self.analyze(content), [])
+        # The typed #100 contract rejects each empty provider object. Keep
+        # useful text, no completion hashes, and two explicit validation errors.
+        row = await self.analyze(content)
+        self.assert_coverage(content, row, [], expected_errors=2)
+        self.assertEqual(row.summary_data["multi_llm_analysis"]["text_analysis"], self.f.good["parsed"])
+        self.assertEqual(row.summary_data["multi_llm_analysis"]["image_analysis"], {})
+        self.assertEqual(row.summary_data["multi_llm_analysis"]["video_analysis"], {})
 
     async def test_legacy_none_media_result_is_unknown_not_reported_error(self):
         self.analyzer._analyze_images = AsyncMock(return_value=None)

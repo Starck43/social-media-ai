@@ -18,9 +18,10 @@
 - **R5 — Documentation sync.** Finish each phase by syncing docs to the actual
   code, migrations, permissions and CLI/API contracts. Record test results and
   limitations; do not claim a green suite without a completed run.
-- **R6 — Main folder is off limits.** `/Users/admin/Projects/social-media-ai`
-  (branch `dev`) belongs to the owner and may hold dirty UI work. Never switch,
-  clean, stash or commit there. Verification happens in worktrees only.
+- **R6 — Preserve local owner work.** `/Users/admin/Projects/social-media-ai`
+  (branch `dev`) is the integration checkout and may hold unrelated work.
+  Inspect status before changes; never discard, stash, or commit unrelated work.
+  Create or reuse an isolated worktree when needed. Respect filesystem permissions.
 - **R7 — One worktree per PR.** Never verify two PRs in one working tree:
   PR #22 → `social-media-ai-pr22-review`, PR #30 (`refactor/tenancy-model-layout`)
   → its own worktree, PR #31 (`refactor/notification-model-layout`) → its own
@@ -32,8 +33,9 @@
   prepared. Never create, reset, drop, stamp or migrate schemas automatically —
   `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
   column fix require an explicit owner instruction. These restrictions override
-  any older automatic-reset advice. The remote agent prepares checks only;
-  the owner/local agent executes them. Preserve the private environment.
+  any older automatic-reset advice. Delegation to local OpenCode/Kilo is authorized:
+  they may execute requested tests sequentially with these same restrictions.
+  Preserve the private environment.
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
   packages after verifying fresh PR/dev heads, compatibility, required checks

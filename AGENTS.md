@@ -6,6 +6,24 @@
 - Local IDE/CLI: use `$develop-social-media-ai-local`. Remote GitHub work: use `$develop-social-media-ai`. Both use the same task board and PR handoff.
 - Resume from the current PR handoff after verifying its SHA. Do not treat old `.agent/tasks.md` or `.agent/state.json` entries as fresh assignments.
 
+## Collaboration workflow
+
+- The owner is the sole developer; development is local and `dev` is the integration branch.
+- Complete authorized tasks autonomously without repeated routine confirmations.
+  Create branches/worktrees when useful; inspect existing worktrees and preserve unrelated work.
+- For substantial isolated changes, create a PR targeting `dev` when GitHub access is available.
+  Commit and publish the task branch as needed for that PR. Do not merge, force-push,
+  deploy, or modify production data without an explicit instruction.
+- Run focused tests only when needed for new features or a concrete correctness concern.
+  Do not routinely run the full suite. Delegate broad testing to local OpenCode or Kilo;
+  this delegation is authorized. See `docs/COLLABORATION.md` for the handoff protocol.
+- Read `.agent/rules.md` for shared database and worktree constraints. New workflow
+  instructions here supersede older procedural rules where they conflict.
+- Report results briefly in Russian: outcome, checks actually completed, and remaining issues.
+- After each completed substantial task, offer a new chat and provide a compact copyable
+  handoff with directory, branch/commit/PR, completed work, validation, and next action.
+  Do not claim to close or create a chat automatically.
+
 ## Project rules
 - The active product is an extensible assistant built on the existing modular monolith. Read `README.md` and `docs/DOCS_INDEX.md`, then the relevant `docs/*.md` before changing behavior.
 - Verify the current branch and code before acting on audit notes or task boards: some docs describe historical findings or planned work. Do not assume a planned feature is implemented.

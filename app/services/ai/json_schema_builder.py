@@ -23,7 +23,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
-from pydantic import ValidationError, create_model
+from pydantic import ValidationError, create_model, model_validator
 
 # A field is (json_type, description). `json_type` is the type as it appears in
 # the rendered instruction and as it appears in `build_json_schema()`.
@@ -397,35 +397,49 @@ def build_pydantic_model(scenario: Any) -> Type[BaseModel]:
     schema from ``scenario.analysis_types`` + ``scenario.scope`` so a scenario
     that has not been persisted yet still gets a strict validator.
     """
-    from app.services.ai.scenario import build_output_schema
+    from app.services.ai.scenario_schema import compile_scenario_output
 
-    raw_schema = scenario.output_schema if scenario and scenario.output_schema else {}
-    if not raw_schema:
-        raw_schema = build_output_schema(
-            getattr(scenario, "analysis_types", None) or [],
-            getattr(scenario, "scope", None) or {},
-        )
-
-    model_name = f"ScenarioOutput_{getattr(scenario, 'id', 'dynamic')}"
-    return _model_from_schema(raw_schema, model_name)
+    if scenario is None:
+        from types import SimpleNamespace
+        scenario = SimpleNamespace(output_schema=None, analysis_types=[], scope={})
+    contract = compile_scenario_output(scenario)
+    assert contract is not None
+    return contract.model
 
 
 def _schema_type(field_schema: dict, model_name: str) -> Any:
     """Translate the supported JSON Schema subset, including nested values."""
+    json_type = field_schema.get("type")
+    if isinstance(json_type, list):
+        from app.services.ai.scenario_schema import _ARRAY, _NUMERIC, _OBJECT, _STRING, _matches_type
+        branches = []
+        for kind in json_type:
+            irrelevant = set()
+            if kind not in {"integer", "number"}: irrelevant.update(_NUMERIC)
+            if kind != "string": irrelevant.update(_STRING)
+            if kind != "array": irrelevant.update(_ARRAY)
+            if kind != "object": irrelevant.update(_OBJECT)
+            branch = {key: value for key, value in field_schema.items() if key not in irrelevant}
+            branch["type"] = kind
+            if "enum" in branch:
+                branch["enum"] = [value for value in branch["enum"] if _matches_type(value, kind)]
+                if not branch["enum"]:
+                    continue
+            branches.append(_schema_type(branch, model_name))
+        return Union[tuple(branches)]
     if "enum" in field_schema:
         py_type = Literal[tuple(field_schema["enum"])]
     else:
-        json_type = field_schema.get("type")
-        if isinstance(json_type, list):
-            return Union[tuple(_schema_type({**field_schema, "type": t}, model_name) for t in json_type)]
         if json_type == "null":
             return type(None)
-        if json_type == "object" and "properties" in field_schema:
+        if json_type == "object" and ("properties" in field_schema or field_schema.get("additionalProperties") is False):
             py_type = _model_from_schema(field_schema, model_name)
         elif json_type == "array":
             py_type = list[_schema_type(field_schema.get("items") or {}, model_name + "Item")]
+        elif json_type is None:
+            py_type = Any  # Explicit unconstrained schema, never an unknown type.
         else:
-            py_type = _TYPE_MAP.get(json_type, Any)
+            py_type = _TYPE_MAP[json_type]
     constraint_names = {
         "minimum": "ge",
         "maximum": "le",
@@ -444,10 +458,27 @@ def _schema_type(field_schema: dict, model_name: str) -> Any:
 def _model_from_schema(schema: dict, model_name: str) -> Type[BaseModel]:
     fields = {}
     required = schema.get("required") or []
-    for name, field_schema in (schema.get("properties") or {}).items():
-        fields[name] = (_schema_type(field_schema, model_name + "_" + name), ... if name in required else None)
+    used = set(schema.get("properties") or {})
+    for index, (name, field_schema) in enumerate((schema.get("properties") or {}).items()):
+        field_name = name
+        if name.startswith(("_", "model_")) or hasattr(BaseModel, name):
+            field_name = "schema_field_" + str(index)
+            while field_name in used:
+                field_name += "_"
+        used.add(field_name)
+        default = ... if name in required else None
+        fields[field_name] = (
+            _schema_type(field_schema, model_name + "_" + field_name),
+            PydanticField(default=default, alias=name),
+        )
     extra = "forbid" if schema.get("additionalProperties") is False else "allow"
-    return create_model(model_name, __config__=ConfigDict(extra=extra, strict=True), **fields)
+
+    def check_contract(cls, value):
+        from app.services.ai.scenario_schema import validate_output_instance
+        return validate_output_instance(value, schema)
+
+    validators = {"_validate_scenario_output": model_validator(mode="before")(check_contract)}
+    return create_model(model_name, __config__=ConfigDict(extra=extra, strict=True), __validators__=validators, **fields)
 
 
 def validate_with_pydantic(
@@ -459,10 +490,11 @@ def validate_with_pydantic(
     callers use ``strict=True`` to reject invalid output instead of persisting it.
     """
     try:
-        return model_cls.model_validate(parsed).model_dump(exclude_unset=True)
+        return model_cls.model_validate(parsed).model_dump(by_alias=True, exclude_unset=True)
     except ValidationError as exc:
         if strict:
-            raise
+            from app.services.ai.scenario_schema import ScenarioSchemaError
+            raise ScenarioSchemaError("output_validation_failed") from None
         logger = __import__("logging").getLogger(__name__)
         logger.warning("Pydantic validation failed: %s — keeping raw parsed dict", exc)
         return parsed

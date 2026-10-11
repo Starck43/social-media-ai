@@ -17,6 +17,9 @@ PRIVATE = "PRIVATE-PROVIDER-DETAIL"
 
 
 def load_analyzer():
+    # Actual pure compiler import binding; setup only, no test execution.
+    from test_scenario_output_contract import load_contract
+    schema, _ = load_contract()
     ns = SimpleNamespace
     media = type("MediaType", (), {
         "TEXT": ns(db_value="text"), "IMAGE": ns(db_value="image"), "VIDEO": ns(db_value="video")
@@ -37,6 +40,7 @@ def load_analyzer():
         "app.services.ai.dedup": ns(
             batch_hash=Mock(), filter_analyzed=AsyncMock(), hashes_hash=Mock(), item_hash=Mock()
         ),
+        "app.services.ai.scenario_schema": schema,
         "app.services.ai.json_schema_builder": ns(build_pydantic_model=Mock(), validate_with_pydantic=Mock()),
         "app.services.ai.llm_client": ns(LLMClientFactory=ns(create=Mock())),
         "app.services.ai.prompts": ns(PromptBuilder=ns(get_prompt=Mock(return_value="prompt"))),

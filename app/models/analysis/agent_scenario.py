@@ -129,3 +129,9 @@ class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
 
     def __str__(self) -> str:
         return f"{self.name} ({'active' if self.is_active else 'inactive'})"
+
+
+# Covers ORM/admin flushes and guarded session bulk configuration writes.
+from ..scenario_schema_guard import install_scenario_schema_guard
+
+install_scenario_schema_guard(AgentScenario)

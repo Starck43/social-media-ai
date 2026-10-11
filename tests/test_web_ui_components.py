@@ -157,6 +157,7 @@ def test_chat_head_has_real_assets_and_css_contains_no_script_fragments():
     html = env.get_template("web/chat.html").render(
         messages=[], csrf="fixture", is_owner=True,
         url_for=lambda name, **kwargs: "/static/" + kwargs["path"],
+        static_v=lambda path: "/static/" + path,
     )
     class AssetParser(HTMLParser):
         def __init__(self):

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json as json_mod
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import timezone
 
 from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Form, Request
@@ -32,10 +32,12 @@ router = APIRouter(prefix="/chat")
 TRANSCRIPT_LIMIT = 40
 
 
-def _format_message_time(dt_val, role: str) -> str:
-    """Format created_at for display: RU format, today = time only.
+def _format_message_time(dt_val) -> str:
+    """Format created_at for display: RU format, always with the full date.
 
     Accepts either a datetime object or an ISO-format string from the DB.
+    Both sides of the dialog show the same stamp, so a hovered assistant
+    reply reads exactly like the author's message next to it.
     """
     if dt_val is None:
         return ""
@@ -46,16 +48,6 @@ def _format_message_time(dt_val, role: str) -> str:
 
     # Use UTC (database stores UTC, Moscow is UTC+3)
     local = dt_val.astimezone(timezone.utc)
-    time_str = local.strftime("%H:%M")
-
-    if role == "user":
-        # Always show full date for user messages
-        return local.strftime("%d.%m.%Y, %H:%M")
-
-    # For assistant: today = time only, other days = full date
-    now_utc = datetime.now(timezone.utc)
-    if local.date() == now_utc.date():
-        return time_str
     return local.strftime("%d.%m.%Y, %H:%M")
 
 
@@ -113,7 +105,7 @@ def _enrich_message(msg) -> dict:
         "id": msg.id,
         "role": msg.role,
         "content": _render_assistant_content(msg.content) if msg.role != "user" else msg.content,
-        "created_at": _format_message_time(msg.created_at, msg.role),
+        "created_at": _format_message_time(msg.created_at),
     }
 
 

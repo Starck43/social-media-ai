@@ -8,6 +8,7 @@ so templates never call into session internals.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import Request
@@ -93,6 +94,25 @@ def human_datetime(value: Any, *, empty: str = "—", tz: str = "Europe/Moscow")
 templates.env.filters["human_dt"] = human_datetime
 templates.env.globals["plural"] = plural
 templates.env.filters["ui_label"] = human_choice_label
+
+
+def static_v(path: str) -> str:
+	"""Static URL carrying the file's mtime as a cache-buster.
+
+	StaticFiles sends no Cache-Control, so browsers heuristic-cache
+	stylesheets and scripts: an edited chat.css keeps painting the old
+	composer until a hard refresh. The mtime changes with the file, so a
+	normal reload picks the new one up.
+	"""
+	root = Path(__file__).resolve().parents[1] / "static"
+	try:
+		version = int((root / path).stat().st_mtime)
+	except OSError:
+		version = 0
+	return f"/static/{path}?v={version}"
+
+
+templates.env.globals["static_v"] = static_v
 
 
 def add_flash(request: Request, kind: str, text: str) -> None:

@@ -1,6 +1,8 @@
 function chatApp() {
         return {
             pending: false,
+            sending: false,
+            abortController: null,
             notice: '',
             confirmation: null,
             autoScroll: true,
@@ -39,8 +41,9 @@ function chatApp() {
                 if (action?.kind === 'clear') this.clearHistory();
                 else if (action) this.deleteMessage(action.id);
             },
-            suggest(text) { this.$refs.input.value = text; this.$refs.input.focus(); this.resizeInput(); },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
+            attachFile() { this.notice = 'Прикрепление файлов пока не поддерживается.'; },
+            stopGeneration() { if (this.abortController) this.abortController.abort(); },
             safeMarkdown(html) {
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 const allowed = new Set(['P','BR','STRONG','EM','DEL','UL','OL','LI','H1','H2','H3','H4','BLOCKQUOTE','PRE','CODE','A','TABLE','THEAD','TBODY','TR','TH','TD','HR','DIV','SPAN','BUTTON']);
@@ -117,20 +120,35 @@ function chatApp() {
                 return this.safeMarkdown(html)
             },
 
-            async sendMessage() {
+            async loadTranscript() {
+                const response = await fetch('/app/chat', {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json, text/plain, */*',
+                    },
+                })
+                const data = await response.json()
+                if (!response.ok) throw new Error(data.error || 'Не удалось обновить диалог')
+                this.messages = this.visibleMessages(data.messages || [])
+                this.$nextTick(() => this.scrollToBottom())
+            },
+
+            async sendMessage(preset = '') {
                 const textarea = this.$refs.input
-                const text = textarea.value.trim()
+                const text = (typeof preset === 'string' ? preset : textarea.value).trim()
                 if (!text || this.pending) return
                 this.notice = ''
 
                 this.pending = true
+                this.sending = true
+                this.abortController = new AbortController()
 
                 // Optimistic: show user message immediately
                 const userMsg = {
                     id: 'pending-' + Date.now(),
                     role: 'user',
                     content: text,
-                    created_at: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                    created_at: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
                 }
                 this.messages.push(userMsg)
                 textarea.value = ''
@@ -148,6 +166,7 @@ function chatApp() {
                             '_csrf': this.csrf,
                             'text': text,
                         }),
+                        signal: this.abortController.signal,
                     })
 
                     const data = await response.json()
@@ -162,6 +181,11 @@ function chatApp() {
                     else if (this.messages.at(-1)?.role !== 'assistant') this.notice = 'Ответ без текста. Проверьте результат действия или уточните запрос.'
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
+                    if (err.name === 'AbortError') {
+                        this.notice = 'Генерация остановлена.'
+                        this.loadTranscript().catch(() => { })
+                        return
+                    }
                     console.error('Chat send error:', err)
                     // Remove the optimistic user message and show error
                     this.messages = this.messages.filter(m => m !== userMsg)
@@ -170,6 +194,8 @@ function chatApp() {
                     this.$nextTick(() => this.scrollToBottom())
                 } finally {
                     this.pending = false
+                    this.sending = false
+                    this.abortController = null
                 }
             },
 
@@ -220,16 +246,7 @@ function chatApp() {
                     const data = await response.json()
                     if (!response.ok || data.error) throw new Error(data.error)
                     // Reload transcript
-                    const refresh = await fetch('/app/chat', {
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Accept': 'application/json, text/plain, */*',
-                        },
-                    })
-                    const refreshData = await refresh.json()
-                    if (!refresh.ok) throw new Error(refreshData.error || 'Не удалось обновить диалог')
-                    this.messages = this.visibleMessages(refreshData.messages || [])
-                    this.$nextTick(() => this.scrollToBottom())
+                    await this.loadTranscript()
                 } catch (err) {
                     console.error('Delete message error:', err)
                     this.notice = 'Не удалось удалить сообщение: ' + (err.message || '')

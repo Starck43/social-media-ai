@@ -5,14 +5,14 @@
 <script>
     // Pass initial server-rendered messages to Alpine
     window.__chatMessages = {{ (messages | default([])) | tojson }};
-
 </script>
+
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
 <script>
     marked.setOptions({ breaks: true, gfm: true })
 </script>
-<link rel="stylesheet" href="{{ url_for('static', path='css/chat.css') }}">
-<script src="{{ url_for('static', path='js/chat.js') }}"></script>
+<link rel="stylesheet" href="{{ static_v('css/chat.css') }}">
+<script src="{{ static_v('js/chat.js') }}"></script>
 
 {% endblock %}
 
@@ -90,6 +90,12 @@
                             <!-- User message: always show date+time, with delete button -->
                             <span
                                 x-show="message.role === 'user'"
+                                class="text-[10px] text-slate-600 dark:text-slate-400"
+                                x-text="message.created_at"
+                            ></span>
+                            <!-- Assistant message: date+time rides in with the hover actions -->
+                            <span
+                                x-show="message.role !== 'user'"
                                 class="text-[10px] text-slate-600 dark:text-slate-400"
                                 x-text="message.created_at"
                             ></span>
@@ -173,26 +179,54 @@
         <div x-show="pending" x-cloak class="chat-pending" role="status">Агент готовит ответ…</div>
         <!-- Composer -->
         <form @submit.prevent="sendMessage()" class="chat-composer" x-ref="form">
-            <div class="chat-suggestions">
-                <button type="button" @click="suggest('/help')" :disabled="pending">Возможности агента</button>
-                <button type="button" @click="suggest('Сводка за неделю')" :disabled="pending">Сводка за неделю</button>
-                <button type="button" @click="suggest('Покажи мои источники')" :disabled="pending">Мои источники
-                </button>
-            </div>
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <textarea
                 name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
                 x-ref="input"
                 @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
                 @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
-                class="chat-input"></textarea>
-            <button type="submit" class="chat-send" aria-label="Отправить сообщение" :disabled="pending">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                     stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                </svg>
-            </button>
+                class="chat-input"
+            ></textarea>
+            <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
+                <!-- Presets send immediately, they never fill the input -->
+                <div class="chat-suggestions">
+                    <button type="button" @click="sendMessage('/help')" :disabled="pending">
+                        Возможности агента
+                    </button>
+                    <button type="button" @click="sendMessage('Сводка за неделю')" :disabled="pending">
+                        Сводка за неделю
+                    </button>
+                    <button type="button" @click="sendMessage('Покажи мои источники')" :disabled="pending">
+                        Мои источники
+                    </button>
+                </div>
+                <!-- Attach a file (placeholder until uploads exist) -->
+                <button type="button" class="chat-attach ml-auto " @click="attachFile()" :disabled="pending"
+                        aria-label="Прикрепить файл" title="Прикрепить файл">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                         stroke-width="1.5" stroke="currentColor">
+                        <path
+                            stroke-linecap="round" stroke-linejoin="round"
+                            d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"
+                        />
+                    </svg>
+                </button>
+                <!-- Send, or stop the turn while the agent is answering -->
+                <button
+                    type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
+                    @click="sending ? stopGeneration() : sendMessage()"
+                    :disabled="pending && !sending"
+                    :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
+                    :title="sending ? 'Остановить' : 'Отправить'"
+                >
+                    <svg x-show="!sending" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                    </svg>
+                    <svg x-show="sending" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <rect x="7" y="7" width="10" height="10" rx="2.5" />
+                    </svg>
+                </button>
+            </div>
         </form>
         <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span class="">Enter — отправить · Shift+Enter — новая строка</span>

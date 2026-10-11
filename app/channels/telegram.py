@@ -153,18 +153,22 @@ class TelegramChannel:
                         await asyncio.sleep(3)
                         continue
                     for upd in data.get("result", []):
-                        self._offset = max(self._offset, upd["update_id"] + 1)
+                        next_offset = max(self._offset, upd["update_id"] + 1)
                         msg = upd.get("message") or upd.get("channel_post")
-                        if not msg or not msg.get("text"):
+                        if not msg or ("channel_post" not in upd and not msg.get("text")):
+                            self._offset = next_offset  # intentional non-content skip
                             continue
                         yield Inbound(
                             channel="telegram",
                             chat_id=str(msg["chat"]["id"]),
                             user_id=str(msg.get("from", {}).get("id", msg["chat"]["id"])),
-                            text=msg["text"],
+                            text=msg.get("text") or msg.get("caption") or "",
                             is_channel_post="channel_post" in upd,
                             raw=upd,
                         )
+                        # Resume means the consumer completed durable ingest.
+                        # Closing/cancelling at yield keeps this update unacked.
+                        self._offset = next_offset
                 except asyncio.CancelledError:
                     return
                 except httpx.HTTPError as e:

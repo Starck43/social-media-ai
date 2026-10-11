@@ -1,6 +1,7 @@
 """Load actual source with module-local import doubles, not global replacements.
 
-Only explicit from-imports of declared dependencies are redirected. Unmapped
+Only explicit declared dependencies are redirected; whole-module imports need
+separate module_imports opt-in (never global sys.modules replacements). Unmapped
 imports keep Python's normal behavior. The private source alias is registered
 only during execution (dataclasses need it), then its previous binding is restored.
 """
@@ -13,12 +14,13 @@ from pathlib import Path
 _MISSING = object()
 
 
-def load_isolated_source(name, path, imports=None):
+def load_isolated_source(name, path, imports=None, *, module_imports=None):
     spec = importlib.util.spec_from_file_location(name, Path(path))
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load isolated source: {path}")
     module = importlib.util.module_from_spec(spec)
     bindings = dict(imports or {})
+    module_bindings = dict(module_imports or {})
     module.__isolated_imports__ = bindings
     normal_import = builtins.__import__
 
@@ -27,6 +29,8 @@ def load_isolated_source(name, path, imports=None):
         if level:
             package = (globals or {}).get("__package__")
             absolute = importlib.util.resolve_name("." * level + import_name, package)
+        if not fromlist and absolute in module_bindings:
+            return module_bindings[absolute]
         if absolute in bindings:
             if not fromlist:
                 raise ImportError("Declared test doubles require an explicit from-import")

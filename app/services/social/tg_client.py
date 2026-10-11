@@ -14,7 +14,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from app.core.permissions import service_permission_scope
 from app.core.config import settings
 from app.models import Source
 from app.services.social.base import BaseClient
@@ -65,7 +64,7 @@ class TelegramClient(BaseClient):
 		return []
 
 	async def _collect_mtproto(self, source: Source) -> list[Any] | list[dict | None]:
-		"""L2 pull: fetch messages newer than the watermark, then advance it.
+		"""L2 pull: fetch messages newer than the last durably admitted watermark.
 
 		A missing session raises `AuthorizationRequired`: the job reports the
 		source as failed, the rest of the run continues, and the operator gets
@@ -112,7 +111,7 @@ class TelegramClient(BaseClient):
 			entity = await self._resolve_entity(client, source)
 			if entity is None:
 				return []
-			async for message in client.iter_messages(entity, limit=limit, min_id=min_id, min_date=min_date):
+			async for message in client.iter_messages(entity, limit=limit, min_id=min_id, offset_date=min_date, reverse=True):
 				messages.append(message)
 		except AuthorizationRequired:
 			# Raised above for an unauthorized session. It must survive the broad
@@ -133,17 +132,14 @@ class TelegramClient(BaseClient):
 			logger.info(f"Telegram L2 source {source.id}: no new messages")
 			return []
 
-		new_watermark = max(int(item["id"]) for item in items)
-		if new_watermark > min_id:
-			with service_permission_scope("source", "update"):
-				await Source.objects.update_by_id(source.id, last_item_id=str(new_watermark))
-		logger.info(f"Telegram L2 source {source.id}: pulled {len(items)} messages (watermark {new_watermark})")
+		# The collector advances the cursor only in its staging transaction.
+		logger.info(f"Telegram L2 source {source.id}: pulled {len(items)} messages")
 		return items
 
 	@staticmethod
 	def _watermark_id(source: Source) -> int:
 		try:
-			return int(getattr(source, "last_item_id", None) or 0)
+			return int((source.params or {}).get("telegram_l2_last_item_id", getattr(source, "last_item_id", None)) or 0)
 		except (TypeError, ValueError):
 			return 0
 

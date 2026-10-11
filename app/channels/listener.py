@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import aclosing
 
 from app.channels.base import Inbound
 from app.channels.registry import enabled_channels
@@ -32,24 +33,23 @@ logger = logging.getLogger(__name__)
 
 async def _consume_channel(channel) -> None:
     """Poll one channel forever, routing each message through the agent."""
-    from app.agent.runtime import handle_inbound
-
     name = getattr(channel, "name", type(channel).__name__)
     logger.info(f"Agent listener started for channel {name!r}")
     while True:
         try:
-            async for inbound in channel.poll():
-                # Ingest first and synchronously: the `getUpdates` offset is only
-                # confirmed once this iteration completes, which gives push-based
-                # collection at-least-once delivery (the source watermark then
-                # makes it effectively once).
-                await _ingest_safely(inbound)
-                reply = await _handle_safely(inbound)
-                if reply:
-                    try:
-                        await channel.send(inbound.chat_id, reply, parse_mode="HTML")
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"[{name}] reply to {inbound.chat_id} failed: {e}")
+            async with aclosing(channel.poll()) as updates:
+                async for inbound in updates:
+                    # Ingest first and synchronously: the `getUpdates` offset is only
+                    # confirmed once this iteration completes, which gives push-based
+                    # collection at-least-once delivery (the source watermark then
+                    # suppresses duplicate admission).
+                    await _ingest_safely(inbound)
+                    reply = await _handle_safely(inbound)
+                    if reply:
+                        try:
+                            await channel.send(inbound.chat_id, reply, parse_mode="HTML")
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"[{name}] reply to {inbound.chat_id} failed: {e}")
         except asyncio.CancelledError:
             logger.info(f"Agent listener stopped for channel {name!r}")
             return
@@ -71,17 +71,14 @@ async def _handle_safely(inbound: Inbound) -> str | None:
 
 
 async def _ingest_safely(inbound: Inbound) -> None:
-    """Feed a channel post into the analysis pipeline; never breaks polling.
-
-    Telegram's Bot API hands us channel posts as updates, so ingesting here is
-    the only way to collect them (see `app/services/monitoring/ingest.py`).
-    """
+    """Fail closed: uncertain admission aborts polling before transport ACK."""
     from app.services.monitoring.ingest import ingest_channel_post
 
     try:
         await ingest_channel_post(inbound)
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Ingest failed for {inbound.channel}:{inbound.chat_id}: {e}", exc_info=True)
+    except Exception:  # noqa: BLE001
+        logger.error("ingest_admission_failed error_code=admission_unconfirmed")
+        raise RuntimeError("ingest_admission_unconfirmed") from None
 
 
 async def listen_forever() -> None:

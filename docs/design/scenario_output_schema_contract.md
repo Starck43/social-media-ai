@@ -3,8 +3,9 @@
 ## Scope and status
 
 One bounded PRD-07 implementation: scenario configuration validation and shared
-structured-output validation. Implementation is PREPARED/Draft; execution of the
-new checks is explicitly deferred by the owner. Source review is not acceptance.
+structured-output validation. Implementation is ready for bounded code integration after the user explicitly
+lifted execution deferral. Scoped standalone verification below is not database/
+SQLAdmin/provider or full-gate acceptance. Source review alone is not acceptance.
 This does not close quality/evidence, every-call accounting or the full PRD-07 gate.
 No schema migration, database, provider, deployment or historical repair is included.
 
@@ -91,9 +92,32 @@ statement construction plus event/session doubles, no engine/connection).
 Existing schema-warning privacy checks (16) are aligned to fail-closed rejection,
 success, cancellation, safe categories and save rejection, NOT the former
 unvalidated fallback. Shared analyzer fixture imports are aligned only; prior
-green evidence does not transfer to changed semantics. No check was executed.
+green evidence does not transfer to changed semantics. Preparation executed no
+checks; the subsequent user-authorized verification is recorded below.
 
 Only Python AST parsing, targeted source review, whitespace and documentation
 link/anchor QA are performed during preparation. Do not run pytest/bootstrap,
 old suites or full-suite checks by default. Owner-controlled execution is a later
 phase; database fixture commits or schema operations require separate approval.
+
+## Completed standalone verification
+
+User lifted test deferral. Successor author observed on original `ebe576c3`:
+22 compiler cases passed; 11 analyzer cases failed during fixture setup, before
+assertions (MediaType namespace instance used in a type union). Persistence
+statement/event suite13/13 and aligned privacy suite16/16 passed. Only that
+NEW fixture type was corrected to a class; all33 test method/assertion ASTs
+remain unchanged. Then the 11 formerly blocked analyzer cases passed on
+`ebe576c3` + exact fixture patch. Total62 effective scoped passing checks, not
+a single final-head/full-suite/DB run. Commands were the three documented
+standalone Python entrypoints, followed only by
+`python tests/test_scenario_output_contract.py AnalyzerContractTests`.
+
+Pydantic2.13.5 and SQLAlchemy2.0.54 were used with local import doubles, no app
+bootstrap, connection, provider, schema action or historical-suite discovery.
+Final follow-up is one fixture plus three existing docs; eight production files
+retain the original artifact. #101 source/evidence is preserved by three-way
+integration with fresh dev. Real ORM/SQLAdmin transactions, production quality
+and broader PRD-07 acceptance remain OPEN. No local test task or repeat needed
+for this fixture/docs-only closeout; final heads/checks/source readback precede
+routine merge.

@@ -35,7 +35,8 @@ def object_schema(properties=None, **changes):
 
 
 def load_analyzer(schema, builder):
-    media = NS(TEXT=NS(db_value='text'), IMAGE=NS(db_value='image'), VIDEO=NS(db_value='video'))
+    media = type('MediaType', (), {'TEXT': NS(db_value='text'),
+                                   'IMAGE': NS(db_value='image'), 'VIDEO': NS(db_value='video')})
     classifier = NS(classify_content=Mock(return_value={'text': [], 'image': [], 'video': []}),
                     uncovered_attachment_items=Mock(return_value=[]),
                     select_text_content=Mock(side_effect=lambda items: items),

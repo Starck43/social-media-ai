@@ -74,3 +74,26 @@ A final routing refinement has one NEW actual-listener check on published
 `bf0be4e1` + scoped patch (final source artifact `4f74b8bc09f7c60cea2d551d0ca5ced08fdee6de562dbad7f951d10ff35b3130`). It does not move
 the earlier 28+4 evidence to a new head. Total 33 NEW preparation checks across
 these explicit scopes; owner10 remains NOT RUN.
+
+## Owner guard correction (same Draft #101)
+
+Owner reports original as-is head `f4c92edd`, runner `7aabd199…`, EXIT1 and
+0/10 at first admission; fixture creation/cleanup succeeded, no leftovers,
+external baseline intact, sequences advanced. No shim/rerun/local correction.
+The hidden original cause was not inspected directly. Offline actual compiler
+and callback reproduced a guard defect consistent with this failure: VALUES
+binds are `_mN`, not plain ownership names. Prefetched row-zero defaults use
+plain names; compiler string labels are also supported by strict normalization.
+
+Runner-only decoding verifies each complete row independently, with actual
+INSERT metadata/column/default checks; malformed/foreign/mixed-row fences still
+reject. Production privacy boundary `raise ... from None` remains unchanged:
+Python preserves `__context__`. Owner-only diagnostics traverse it and print
+only static guard reasons/allowlisted category, known SQLSTATE and repository
+line, not original error/SQL/params/locals. NEW 13 offline compiler/callback/
+privacy regressions passed on `f4c92edd` + runner/helper/test artifact `9f372086eb2d022c97bacccced535ee99616fd0b41026cc1889a8a916f6afecd`.
+
+Corrected runner `596b9dda5aae215ed1a1c9d87c58231a750de8e1a7f29bfa2383e2222fa9823a` and helper `826e474d46b29dc41f542ccd3b178fd19f623853751f75bbb2d7d7b7a0649e62` are NOT driver-tested.
+One pinned sequential rerun of these 10 new cases is authorized by the existing
+L1-specific fixture approval; no old tests, production changes, schema work or
+#100 activation. Driver acceptance remains pending.

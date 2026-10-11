@@ -20,6 +20,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from test_job_claim_heartbeat_db import validate_environment  # Environment guard ONLY.
+from telegram_admission_guard import FixtureGuardError, admission_diagnostic, insert_parameter_rows
 
 
 async def execute():
@@ -36,7 +37,7 @@ async def execute():
 
     models = {'tenants':Tenant,'sources':Source,'collected_items':CollectedItem,'jobs':Job,'ai_analytics':AIAnalytics}
     if settings.DB_SCHEMA != 'test_schema' or any(model.__table__.schema != 'test_schema' for model in models.values()):
-        raise RuntimeError('Stop: expected test_schema mappings')
+        raise FixtureGuardError('guard_06')
     prefix='tg-admission-'+uuid4().hex[:18]
     phase=ContextVar('tg_admission_fixture_phase',default=None)
     owned={name:set() for name in models}
@@ -56,46 +57,49 @@ async def execute():
                 return
             if statement.lstrip().upper().startswith(('SELECT ','SAVEPOINT ','RELEASE SAVEPOINT ','ROLLBACK TO SAVEPOINT ')):
                 return
-            raise RuntimeError('Stop: uncompiled write/control/DDL forbidden')
+            raise FixtureGuardError('guard_13')
         command=compiled.statement
         kind=next((kind for kind in ('insert','update','delete') if getattr(command,'is_'+kind,False)),None)
         if kind is None:
-            if not getattr(command,'is_select',False):raise RuntimeError('Stop: only fenced DML or SELECT')
+            if not getattr(command,'is_select',False):raise FixtureGuardError('guard_11')
             return
         table=command.table
         if table.schema!='test_schema' or table.name not in owned or phase.get() not in {'creation','admission','cleanup'}:
-            raise RuntimeError('Stop: fixture scope/phase violation')
-        if phase.get()=='cleanup' and kind!='delete':raise RuntimeError('Stop: cleanup DELETE only')
+            raise FixtureGuardError('guard_07')
+        if phase.get()=='cleanup' and kind!='delete':raise FixtureGuardError('guard_03')
         if phase.get()=='admission' and not ((kind=='insert' and table.name in {'collected_items','jobs'}) or (kind=='update' and table.name=='sources')):
-            raise RuntimeError('Stop: admission write outside raw/job/cursor contract')
+            raise FixtureGuardError('guard_02')
         if phase.get()=='creation' and not (kind=='insert' and table.name in {'tenants','sources','collected_items','ai_analytics'}):
-            raise RuntimeError('Stop: creation INSERT only')
+            raise FixtureGuardError('guard_04')
         if kind=='update':
             match=re.search(r'\bSET\s+(.+?)\s+WHERE\b',statement,re.I|re.S)
             targets=[re.fullmatch(r'\s*"?([a-z_]+)"?\s*=.+',part,re.S) for part in (match.group(1).split(',') if match else [])]
             allowed={'params','last_item_id','last_checked','updated_at'} if table.name=='sources' else {'analyze_attempts','updated_at'}
             if not targets or not all(targets) or not {target.group(1) for target in targets}<=allowed:
-                raise RuntimeError('Stop: unexpected fixture UPDATE fields')
-        for values in context.compiled_parameters:
+                raise FixtureGuardError('guard_14')
+        # Normal ORM binds and multi-VALUES _mN binds must be fenced per row.
+        parameter_rows = [row for values in context.compiled_parameters
+                          for row in (insert_parameter_rows(command, values, compiled=compiled) if kind == 'insert' else [values])]
+        for values in parameter_rows:
             if kind=='insert':
                 if table.name=='tenants':
                     if values.get('slug') not in {prefix+'-a',prefix+'-b'} or values.get('is_active') is not False:
-                        raise RuntimeError('Stop: unmarked/inactive tenant fixture required')
+                        raise FixtureGuardError('guard_18')
                 else:
-                    if values.get('tenant_id') not in owned['tenants']:raise RuntimeError('Stop: foreign tenant INSERT')
+                    if values.get('tenant_id') not in owned['tenants']:raise FixtureGuardError('guard_10')
                     if table.name=='sources':
                         if not str(values.get('name','')).startswith(prefix) or (values.get('params') or {}).get('synthetic')!=prefix or (values.get('params') or {}).get('mode')!='api':
-                            raise RuntimeError('Stop: unmarked/api source fixture required')
+                            raise FixtureGuardError('guard_17')
                     elif table.name=='jobs':
                         payload=values.get('payload') or {}
                         if payload.get('synthetic')!=prefix or payload.get('source_ids')!=[source.id] or values.get('agent_task_id') is not None or values.get('run_at') < datetime.now(timezone.utc)+timedelta(days=300):
-                            raise RuntimeError('Stop: unsafe/unmarked queued fixture')
+                            raise FixtureGuardError('guard_19')
                     else:
-                        if values.get('source_id') not in owned['sources']:raise RuntimeError('Stop: foreign source INSERT')
+                        if values.get('source_id') not in owned['sources']:raise FixtureGuardError('guard_09')
                         if table.name=='collected_items' and not str(values.get('external_id','')).startswith(source.external_id+'_'):
-                            raise RuntimeError('Stop: unmarked raw identity')
+                            raise FixtureGuardError('guard_16')
                         if table.name=='ai_analytics' and (values.get('summary_data') or {}).get('synthetic')!=prefix:
-                            raise RuntimeError('Stop: unmarked analytics fixture')
+                            raise FixtureGuardError('guard_15')
                 continue
             def positive_fence(node):
                 operator=getattr(node,'operator',None)
@@ -111,7 +115,7 @@ async def execute():
                 candidates=value if isinstance(value,(list,tuple,set)) else [value]
                 return bool(allowed and candidates and all(type(candidate) is int and candidate in allowed for candidate in candidates))
             if not positive_fence(getattr(command,'whereclause',None)):
-                raise RuntimeError('Stop: UPDATE/DELETE lacks positive owned fixture predicate')
+                raise FixtureGuardError('guard_01')
 
     def bounded_begin(conn):
         conn.exec_driver_sql("SET LOCAL statement_timeout = '10s'")
@@ -119,7 +123,7 @@ async def execute():
 
     def commit_guard(conn):
         if phase.get() not in {'creation','admission','cleanup'}:
-            blocked_commits.append(True);raise RuntimeError('Stop: unapproved COMMIT')
+            blocked_commits.append(True);raise FixtureGuardError('guard_12')
         commits.append(phase.get())
     def rollback_record(conn):rollbacks.append(True)
 
@@ -141,6 +145,9 @@ async def execute():
         try:
             with tenant_scope(own if actor is None else actor):
                 return await admit_telegram_items([item(identity)],source,wake_analysis=wake)
+        except ContentAdmissionError as error:
+            print('Admission diagnostic:', admission_diagnostic(error, root=ROOT))
+            raise
         finally:phase.reset(token)
     async def snapshot():
         async with factory() as session:
@@ -163,7 +170,7 @@ async def execute():
         sequences_before=await sequence_values()
         async with factory() as session:
             platform=(await session.execute(select(Platform).where(Platform.platform_type==PlatformType.TELEGRAM).limit(1))).scalar_one_or_none()
-            if platform is None:raise RuntimeError('Stop: existing Telegram platform missing; no bootstrap permitted')
+            if platform is None:raise FixtureGuardError('guard_05')
             platform_id=platform.id
         token=phase.set('creation')
         try:
@@ -263,7 +270,7 @@ async def execute():
             async with factory() as session:
                 tenants=list((await session.execute(select(Tenant).where(Tenant.id.in_(owned['tenants'])))).scalars())
                 if any(row.slug not in {prefix+'-a',prefix+'-b'} or row.is_active is not False for row in tenants):
-                    raise RuntimeError('Stop: fixture tenant marker changed; no cleanup')
+                    raise FixtureGuardError('guard_08')
                 for name in ('sources','jobs','collected_items','ai_analytics'):
                     model=models[name]
                     rows=list((await session.execute(select(model).where(model.tenant_id.in_(owned['tenants'])))).scalars())
@@ -272,7 +279,7 @@ async def execute():
                         elif name=='jobs':valid=row.payload.get('synthetic')==prefix and row.payload.get('source_ids')==[source.id]
                         elif name=='collected_items':valid=row.source_id in owned['sources'] and row.external_id.startswith(source.external_id+'_')
                         else:valid=row.source_id in owned['sources'] and row.summary_data.get('synthetic')==prefix
-                        if not valid:raise RuntimeError('Stop: unverified fixture marker; no cleanup')
+                        if not valid:raise FixtureGuardError('guard_20')
             token=phase.set('cleanup')
             try:
                 async with factory() as session:

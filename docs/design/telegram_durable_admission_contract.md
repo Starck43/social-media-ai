@@ -97,3 +97,30 @@ Corrected runner `596b9dda5aae215ed1a1c9d87c58231a750de8e1a7f29bfa2383e2222fa982
 One pinned sequential rerun of these 10 new cases is authorized by the existing
 L1-specific fixture approval; no old tests, production changes, schema work or
 #100 activation. Driver acceptance remains pending.
+
+## Owner driver acceptance — bounded slice only
+
+Owner approved one as-is retry on `bd8eb2b42564f45e603431886f537cb12b5cf89f`:
+[10/10 EXIT0 acceptance](https://github.com/Starck43/social-media-ai/pull/101#issuecomment-6103751755).
+Runner `596b9dda5aae215ed1a1c9d87c58231a750de8e1a7f29bfa2383e2222fa9823a`
+and helper `826e474d46b29dc41f542ccd3b178fd19f623853751f75bbb2d7d7b7a0649e62`
+independently match published bytes. Original as-is `f4c92edd` 0/10 remains
+separate failed evidence, not rewritten as acceptance.
+
+Owner reports 13 tagged creation/admission/cleanup commit acknowledgements,
+17 rollbacks and two distinct PostgreSQL backends including independent
+precommit visibility. Scoped cleanup/read-only post-check found zero tagged
+leftovers and restored external test_schema baseline (tenants4/sources0/raw0/
+jobs0/analytics0); public/schema unchanged. Sequences only advanced:
+tenants146→148, sources3→4, rawNULL→7, jobs32→36, analytics2→3.
+The two safe diagnostic lines belonged to intentionally negative queue and
+foreign-tenant cases; both passed. No shim, unit/old-suite rerun, DDL/bootstrap/
+migration/provider/dispatcher execution.
+
+Execution, environment and owner-local log remain owner-reported; the linked
+comment/source hashes were inspected, not the local log file or server itself.
+This accepts the ten scoped storage/admission/duplicate/concurrency checks,
+not production timing, provider fencing, historical repair, retention policy,
+or whole L1/L2/PRD gate closure. No further owner test task. Final closeout is
+three existing docs only; all app/test/runner/helper bytes retain the exact
+owner-tested revision. Fresh heads/compatibility/checks still precede merge.

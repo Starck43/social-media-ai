@@ -10,12 +10,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event, update
+from sqlalchemy import event, text, update
 
+from app.core import database as database_module
 from app.core.database import async_session_maker
 from app.core.tenant_context import TenantContextError, tenant_scope
-from app.models import Job, Tenant
+from app.jobs.claim_outcomes import JobClaim
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
+from app.models import Job, Tenant
 from app.models.managers import job_manager as manager_module
 from app.models.managers.job_manager import JobManager
 
@@ -128,6 +130,77 @@ async def test_two_reapers_count_one_transition(workspaces):
         counts = await asyncio.gather(JobManager().reap_stale(), JobManager().reap_stale())
     assert sorted(counts) == [0, 1]
     assert (await stored(own, job)).status == "failed"
+
+
+@pytest.mark.parametrize(
+    ("first", "expected_renewed", "expected_reaped", "expected_status"),
+    [
+        ("renew", True, 0, "running"),
+        ("reap", False, 1, "failed"),
+    ],
+)
+async def test_renewal_and_reaper_follow_committed_order_on_independent_connections(
+    workspaces, monkeypatch, first, expected_renewed, expected_reaped, expected_status
+):
+    """Committed manager writes make the later competing predicate fail.
+
+    The two real managers are pinned to distinct PostgreSQL backends. A committed
+    heartbeat makes the later stale predicate false, while committed quarantine
+    makes the immutable running claim ineligible for later renewal.
+    """
+    own = workspaces[0]
+    job = await make_job(own)
+    claim = JobClaim.capture(job)
+
+    class ExistingSessionContext:
+        def __init__(self, session):
+            self.session = session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    renewal_session = async_session_maker()
+    reap_session = async_session_maker()
+    renewal_pid = (await renewal_session.execute(text("select pg_backend_pid()"))).scalar_one()
+    reap_pid = (await reap_session.execute(text("select pg_backend_pid()"))).scalar_one()
+    assert renewal_pid != reap_pid
+    await renewal_session.rollback()
+    await reap_session.rollback()
+    monkeypatch.setattr(database_module, "async_session_maker", lambda: ExistingSessionContext(renewal_session))
+
+    async def renew():
+        with tenant_scope(own.id):
+            renewal_time = FixedDatetime.fromtimestamp(NOW.timestamp(), timezone.utc)
+            return await JobManager().renew_claim(claim, now=renewal_time)
+
+    async def reap():
+        with tenant_scope(own.id):
+            manager = JobManager()
+            manager.filter = manager.get_queryset(session=reap_session).filter(id=job.id).filter
+            return await manager.reap_stale()
+
+    calls = {"renew": renew, "reap": reap}
+    second = "reap" if first == "renew" else "renew"
+    try:
+        results = {first: await calls[first](), second: await calls[second]()}
+    finally:
+        await renewal_session.close()
+        await reap_session.close()
+
+    assert results == {"renew": expected_renewed, "reap": expected_reaped}
+    row = await stored(own, job)
+    assert row.status == expected_status
+    if expected_status == "running":
+        assert row.locked_at == NOW and row.finished_at is None
+        assert row.error == "retained_error"
+    else:
+        assert row.locked_at == STALE and row.finished_at == NOW
+        assert row.error == OUTCOME_UNCONFIRMED_PREFIX + "retained_error"
+    assert row.started_at == STALE and row.attempts == 2
+    assert row.result == {"audit": "retained"} and row.llm_cost is None
 
 
 @pytest.mark.parametrize("replacement", [

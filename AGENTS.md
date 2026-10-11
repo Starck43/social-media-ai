@@ -1,5 +1,11 @@
 # AGENTS.md — AI Assistant
 
+## Agent entry points and continuity
+- Read `.agent/rules.md` and `.agent/workflow.md` before work; they define local worktree/test restrictions and session handoff.
+- Primary strategy: `docs/SOCIAL_MEDIA_AI_AUDIT_AND_ROADMAP.md`; current tasks/ownership: `docs/design/README.md`; delivered evidence: `docs/IMPLEMENTATION_STATUS.md`.
+- Local IDE/CLI: use `$develop-social-media-ai-local`. Remote GitHub work: use `$develop-social-media-ai`. Both use the same task board and PR handoff.
+- Resume from the current PR handoff after verifying its SHA. Do not treat old `.agent/tasks.md` or `.agent/state.json` entries as fresh assignments.
+
 ## Project rules
 - The active product is an extensible assistant built on the existing modular monolith. Read `README.md` and `docs/DOCS_INDEX.md`, then the relevant `docs/*.md` before changing behavior.
 - Verify the current branch and code before acting on audit notes or task boards: some docs describe historical findings or planned work. Do not assume a planned feature is implemented.

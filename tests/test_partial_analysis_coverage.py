@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, Mock
 
 from source_import_isolation import load_isolated_source
 from test_analyzer_reported_errors import load_analyzer
+from test_scenario_output_contract import load_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = "PRIVATE-PROVIDER-FAILURE"
@@ -22,6 +23,10 @@ PRIVATE = "PRIVATE-PROVIDER-FAILURE"
 class PartialCoverageTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.module = load_analyzer()
+        # Coverage suites exercise real storage; the schema boundary must return
+        # validated dictionaries, not the legacy validator Mock placeholder.
+        _, builder = load_contract()
+        self.module.validate_with_pydantic = builder.validate_with_pydantic
         self.dedup = load_isolated_source("_partial_dedup", ROOT / "app/services/ai/dedup.py")
         self.module.item_hash = self.dedup.item_hash
         self.module.batch_hash = self.dedup.batch_hash
@@ -230,7 +235,10 @@ class PartialCoverageTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_model_none_stays_unknown_not_claimed_complete(self):
         self.analyzer._analyze_images.return_value = None
         row = await self.analyze()
-        self.assertNotIn("analysis_complete", row.summary_data["analysis_metadata"])
+        self.assertIs(row.summary_data["analysis_metadata"]["analysis_complete"], False)
+        self.assert_b_uncovered([row])
+        self.assertIsNone(row.content_hash)
+        self.assertEqual(row.summary_data["multi_llm_analysis"]["text_analysis"], self.good["parsed"])
         self.assertEqual(self.analyzer.reported_errors, 0)
 
     async def test_direct_storage_guard_rejects_partial_completion_hashes(self):

@@ -15,8 +15,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, Numeric, String, Table
 from source_import_isolation import load_isolated_source
+from sqlalchemy import Column, DateTime, Integer, MetaData, Numeric, String, Table
 
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL = load_isolated_source("_provider_pricing_journal", ROOT / "app/services/ai/attempt_journal.py")

@@ -142,13 +142,18 @@ per period. Two consequences worth knowing:
 - Retries reuse the existing row (`DigestRunManager.start_run()`) instead of
   inserting a duplicate — a re-attempt cannot violate the unique index.
 - A scheduled attempt must claim that row before it builds or sends: the reset
-  to `pending` is conditional on the status it observed, and a concurrent insert
-  loses on the unique index. A row that is already `pending` belongs to another
+  to `pending` is conditional on the status and `updated_at` version it
+  observed (every claim bumps `updated_at`), and a concurrent insert loses on
+  the unique index. A row that is already `pending` belongs to another
   attempt in flight — or one that stopped mid-flight with unknown delivery — so
   the attempt returns `{"status": "failed", "error":
   "digest_run_in_progress_requires_review"}` without summary cost or delivery,
   and the queue does not retry it. Only an explicit `force_refresh` run takes
-  such a row over; concurrent forced runs are not fenced against each other.
+  such a row over, and only once it has not been written for 30 minutes
+  (`FORCED_TAKEOVER_AFTER`, the job queue's stale-lease window); a forced run
+  against a younger `pending` row returns the same failure. Of two forced runs
+  at once, at most one builds and sends. A takeover is still an operator
+  decision: the stopped attempt's delivery stays unknown.
 - `agent_task_id IS NULL` rows (manual `digest send-now`) never collide, so
   manual runs are unlimited and each is kept as separate history.
 

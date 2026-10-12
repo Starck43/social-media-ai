@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional
 
 from .base_manager import BaseManager
@@ -16,6 +16,24 @@ PARTIAL_DELIVERY_REVIEW = "partial_delivery_requires_review"
 # Failure code of a scheduled attempt that found its (schedule, period) run row
 # already owned by another attempt — in flight, or stopped mid-flight.
 DIGEST_RUN_IN_PROGRESS = "digest_run_in_progress_requires_review"
+
+# A forced resend may take over a `pending` row only after it has not been
+# written for this long (mirrors the job queue's stale-lease reaping window);
+# a younger `pending` row is treated as an attempt still in flight.
+FORCED_TAKEOVER_AFTER = timedelta(minutes=30)
+
+
+def pending_is_stale(updated_at: Optional[datetime], now: Optional[datetime] = None) -> bool:
+    """True if a `pending` run row has not been written for `FORCED_TAKEOVER_AFTER`.
+
+    A missing timestamp is not evidence of staleness. Naive values are UTC.
+    """
+    if updated_at is None:
+        return False
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return now - updated_at >= FORCED_TAKEOVER_AFTER
 
 
 class DigestRunInProgress(RuntimeError):
@@ -36,8 +54,6 @@ class DigestRunManager(BaseManager["DigestRun"]):
 
     async def cost_today(self, now: Optional[datetime] = None) -> float:
         """Total USD spent on digest LLM summaries today (UTC day) — the daily cap check."""
-        from datetime import timezone
-
         now = now or datetime.now(timezone.utc)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = await self.filter(created_at__gte=day_start)
@@ -96,8 +112,11 @@ class DigestRunManager(BaseManager["DigestRun"]):
         loses on the unique constraint. A row that is already `pending` belongs to
         another attempt in flight — or one that stopped mid-flight, whose delivery
         is unknown. Both raise `DigestRunInProgress` before any build or send.
-        `force` (the operator's explicit resend) may take over a `pending` row;
-        two concurrent forced runs are not fenced against each other.
+        `force` (the operator's explicit resend) may take over a `pending` row
+        only once it is stale (`FORCED_TAKEOVER_AFTER` without a write), so a
+        resend never races an attempt still in flight.
+        Every reuse is conditional on the observed status *and* `updated_at`
+        version: of two simultaneous claims of the same row only one matches.
         """
         if agent_task_id is not None:
             existing = await self.get(
@@ -106,11 +125,11 @@ class DigestRunManager(BaseManager["DigestRun"]):
                 period_end=period_end,
             )
             if existing is not None:
-                if existing.status == "pending" and not force:
+                if existing.status == "pending" and not (force and pending_is_stale(existing.updated_at)):
                     raise DigestRunInProgress(existing.id)
-                taken = await self.filter(id=existing.id, status=existing.status).update(
-                    status="pending", channel=channel, message_id=None, error=None
-                )
+                taken = await self.filter(
+                    id=existing.id, status=existing.status, updated_at=existing.updated_at
+                ).update(status="pending", channel=channel, message_id=None, error=None)
                 if taken != 1:
                     raise DigestRunInProgress(existing.id)
                 return await self.get(id=existing.id)

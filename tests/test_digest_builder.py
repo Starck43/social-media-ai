@@ -2,11 +2,17 @@
 
 import asyncio
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.models import AgentTask, DigestRun
-from app.models.managers.digest_run_manager import DIGEST_RUN_IN_PROGRESS, PARTIAL_DELIVERY_REVIEW
+from app.models.managers.digest_run_manager import (
+    DIGEST_RUN_IN_PROGRESS,
+    FORCED_TAKEOVER_AFTER,
+    PARTIAL_DELIVERY_REVIEW,
+    DigestRunInProgress,
+)
 from app.services.digest import builder
 
 TASK_NAMES = [
@@ -17,6 +23,8 @@ TASK_NAMES = [
     "it-digest-chunks",
     "it-digest-busy",
     "it-digest-race",
+    "it-digest-force-race",
+    "it-digest-version",
 ]
 
 
@@ -251,7 +259,13 @@ async def test_scheduled_attempt_stops_when_run_row_is_in_flight(monkeypatch):
     row = await DigestRun.objects.get(id=in_flight.id)
     assert row.status == "pending" and row.error is None and row.llm_cost is None
 
-    # The operator's explicit force run takes the row over and delivers.
+    # A forced resend does not race a row that may still be in flight.
+    early = await builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True)
+    assert early == {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS} and calls == []
+
+    # Once the row is stale, the operator's explicit force run takes it over and delivers.
+    stale_at = datetime.now(timezone.utc) - FORCED_TAKEOVER_AFTER - timedelta(minutes=1)
+    assert await DigestRun.objects.filter(id=in_flight.id).update(updated_at=stale_at) == 1
     forced = await builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True)
     assert forced["status"] == "sent" and calls == ["summary", "broadcast"]
     rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
@@ -289,6 +303,72 @@ async def test_concurrent_scheduled_attempts_deliver_once(monkeypatch):
     assert len(summaries) == 1 and len(broadcasts) == 1
     rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
     assert len(rows) == 1 and rows[0].status == "sent" and rows[0].message_id == "11"
+
+
+async def test_concurrent_forced_resends_deliver_once(monkeypatch):
+    """A second forced resend while the first is still building stops before cost or send."""
+    broadcasts, summaries = [], []
+    first_summary_started = asyncio.Event()
+    release_summary = asyncio.Event()
+
+    async def fake_broadcast(text):
+        broadcasts.append(text)
+        return {"telegram": {"success": True, "message_id": 12}}
+
+    async def fake_summarize(data):
+        summaries.append(data)
+        if len(summaries) == 1:  # only the first build waits; a second build must fail the test, not hang it
+            first_summary_started.set()
+            await release_summary.wait()
+        return "ok", {"model": "test-model"}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+    schedule = await _schedule("it-digest-force-race")
+
+    first = asyncio.create_task(builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True))
+    await asyncio.wait_for(first_summary_started.wait(), timeout=10)
+    second = await builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True)
+    release_summary.set()
+    winner = await asyncio.wait_for(first, timeout=10)
+
+    assert second == {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS}
+    assert winner["status"] == "sent"
+    assert len(summaries) == 1 and len(broadcasts) == 1
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert len(rows) == 1 and rows[0].status == "sent" and rows[0].message_id == "12"
+
+
+async def test_simultaneous_claims_of_one_stale_row_have_one_winner():
+    """The claim bumps `updated_at`, so a claim built on the previous version matches nothing."""
+    from app.models.managers.digest_run_manager import digest_runs
+
+    schedule = await _schedule("it-digest-version")
+    start, end = builder.period_bounds("day")
+    stale_at = datetime.now(timezone.utc) - FORCED_TAKEOVER_AFTER - timedelta(minutes=1)
+    row = await DigestRun.objects.create(
+        agent_task_id=schedule.id, period="day", period_start=start, period_end=end, channel="auto", status="pending"
+    )
+    assert await DigestRun.objects.filter(id=row.id).update(updated_at=stale_at) == 1
+    observed = await DigestRun.objects.get(id=row.id)
+
+    outcomes = await asyncio.gather(
+        *(
+            digest_runs.start_run(
+                agent_task_id=schedule.id, period="day", period_start=start, period_end=end, force=True
+            )
+            for _ in range(2)
+        ),
+        return_exceptions=True,
+    )
+    winners = [o for o in outcomes if not isinstance(o, BaseException)]
+    losers = [o for o in outcomes if isinstance(o, DigestRunInProgress)]
+    assert len(winners) == 1 and len(losers) == 1 and winners[0].id == row.id
+    claimed = await DigestRun.objects.get(id=row.id)
+    assert claimed.status == "pending" and claimed.updated_at > observed.updated_at
+    # A claim still holding the pre-claim version cannot take the row.
+    stale_claim = DigestRun.objects.filter(id=row.id, status="pending", updated_at=observed.updated_at)
+    assert await stale_claim.update(status="pending") == 0
 
 
 def test_delivered_any_classification():

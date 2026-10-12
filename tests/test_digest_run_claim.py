@@ -8,7 +8,7 @@ real PostgreSQL race is covered by tests/test_digest_builder.py.
 
 import asyncio
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 ROOT = Path(__file__).resolve().parents[1]
 START, END = date(2026, 10, 11), date(2026, 10, 11)
+STALE = timedelta(minutes=31)
 
 
 class Filtered:
@@ -73,19 +74,19 @@ class StartRunClaimTests(unittest.TestCase):
     def setUp(self):
         self.manager = MODULE.DigestRunManager()
 
-    def existing(self, status):
-        row = SimpleNamespace(id=5, status=status)
+    def existing(self, status, age=timedelta(0)):
+        row = SimpleNamespace(id=5, status=status, updated_at=datetime.now(timezone.utc) - age)
         self.manager.rows[5] = row
         return row
 
-    def test_failed_row_is_claimed_conditionally_on_observed_status(self):
+    def test_failed_row_is_claimed_conditionally_on_observed_status_and_version(self):
         row = self.existing("failed")
         self.assertIs(start(self.manager), row)
         self.assertEqual(
             self.manager.updates,
             [
                 (
-                    {"id": 5, "status": "failed"},
+                    {"id": 5, "status": "failed", "updated_at": row.updated_at},
                     {"status": "pending", "channel": "auto", "message_id": None, "error": None},
                 )
             ],
@@ -105,10 +106,38 @@ class StartRunClaimTests(unittest.TestCase):
         with self.assertRaises(MODULE.DigestRunInProgress):
             start(self.manager)
 
-    def test_force_takes_over_a_pending_row(self):
-        row = self.existing("pending")
+    def test_force_takes_over_only_a_stale_pending_row(self):
+        row = self.existing("pending", age=STALE)
         self.assertIs(start(self.manager, force=True), row)
-        self.assertEqual(self.manager.updates[0][0], {"id": 5, "status": "pending"})
+        self.assertEqual(self.manager.updates[0][0], {"id": 5, "status": "pending", "updated_at": row.updated_at})
+
+    def test_force_on_a_fresh_pending_row_is_in_progress_without_any_write(self):
+        self.existing("pending", age=timedelta(minutes=5))
+        with self.assertRaises(MODULE.DigestRunInProgress) as raised:
+            start(self.manager, force=True)
+        self.assertEqual(raised.exception.run_id, 5)
+        self.assertEqual((self.manager.updates, self.manager.created), ([], []))
+
+    def test_forced_claim_lost_to_a_simultaneous_resend_is_in_progress(self):
+        self.existing("pending", age=STALE)
+        self.manager.update_count = 0  # the other resend moved the row's version first
+        with self.assertRaises(MODULE.DigestRunInProgress):
+            start(self.manager, force=True)
+
+    def test_pending_without_timestamp_is_never_taken_over(self):
+        row = self.existing("pending")
+        row.updated_at = None
+        with self.assertRaises(MODULE.DigestRunInProgress):
+            start(self.manager, force=True)
+        self.assertEqual(self.manager.updates, [])
+
+    def test_staleness_window_boundary_and_naive_utc(self):
+        now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+        window = MODULE.FORCED_TAKEOVER_AFTER
+        self.assertTrue(MODULE.pending_is_stale(now - window, now))
+        self.assertFalse(MODULE.pending_is_stale(now - window + timedelta(seconds=1), now))
+        self.assertTrue(MODULE.pending_is_stale((now - window).replace(tzinfo=None), now))
+        self.assertFalse(MODULE.pending_is_stale(None, now))
 
     def test_concurrent_insert_loses_on_unique_constraint(self):
         self.manager.create_error = IntegrityError("insert", {}, Exception("uq_digest_agent_task_period"))

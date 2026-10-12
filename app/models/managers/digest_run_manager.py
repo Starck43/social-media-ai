@@ -13,6 +13,18 @@ if TYPE_CHECKING:
 # Such a run must not be rebuilt and re-broadcast automatically.
 PARTIAL_DELIVERY_REVIEW = "partial_delivery_requires_review"
 
+# Failure code of a scheduled attempt that found its (schedule, period) run row
+# already owned by another attempt — in flight, or stopped mid-flight.
+DIGEST_RUN_IN_PROGRESS = "digest_run_in_progress_requires_review"
+
+
+class DigestRunInProgress(RuntimeError):
+    """Another attempt owns this schedule+period's run row; do not build or send."""
+
+    def __init__(self, run_id: Optional[int] = None):
+        super().__init__(DIGEST_RUN_IN_PROGRESS)
+        self.run_id = run_id
+
 
 class DigestRunManager(BaseManager["DigestRun"]):
     """Manager for digest runs: idempotency per (schedule, period)."""
@@ -69,14 +81,23 @@ class DigestRunManager(BaseManager["DigestRun"]):
         period_start: date,
         period_end: date,
         channel: str = "auto",
+        force: bool = False,
     ) -> Optional["DigestRun"]:
-        """Return the run row for (schedule, period), creating it when missing.
+        """Take the run row for (schedule, period), creating it when missing.
 
         Reusing the row instead of inserting a new one keeps the unique
         constraint on (agent_task_id, period_start, period_end) satisfiable when
         the same digest is re-attempted after a failure or a skip.
         Manual runs (agent_task_id=None) always get a fresh row — NULLs do not
         collide, and each manual send is separate history.
+
+        A scheduled attempt owns the row only if it moved it to `pending` itself:
+        the reset is conditional on the observed status, and a concurrent insert
+        loses on the unique constraint. A row that is already `pending` belongs to
+        another attempt in flight — or one that stopped mid-flight, whose delivery
+        is unknown. Both raise `DigestRunInProgress` before any build or send.
+        `force` (the operator's explicit resend) may take over a `pending` row;
+        two concurrent forced runs are not fenced against each other.
         """
         if agent_task_id is not None:
             existing = await self.get(
@@ -85,18 +106,31 @@ class DigestRunManager(BaseManager["DigestRun"]):
                 period_end=period_end,
             )
             if existing is not None:
-                return await self.update_by_id(
-                    existing.id, status="pending", channel=channel, message_id=None, error=None
+                if existing.status == "pending" and not force:
+                    raise DigestRunInProgress(existing.id)
+                taken = await self.filter(id=existing.id, status=existing.status).update(
+                    status="pending", channel=channel, message_id=None, error=None
                 )
+                if taken != 1:
+                    raise DigestRunInProgress(existing.id)
+                return await self.get(id=existing.id)
 
-        return await self.create(
-            agent_task_id=agent_task_id,
-            period=period,
-            period_start=period_start,
-            period_end=period_end,
-            channel=channel,
-            status="pending",
-        )
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            return await self.create(
+                agent_task_id=agent_task_id,
+                period=period,
+                period_start=period_start,
+                period_end=period_end,
+                channel=channel,
+                status="pending",
+            )
+        except IntegrityError:
+            if agent_task_id is None:
+                raise
+            # A concurrent attempt inserted the row for this schedule+period first.
+            raise DigestRunInProgress() from None
 
 
 digest_runs = DigestRunManager()

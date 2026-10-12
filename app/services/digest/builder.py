@@ -200,7 +200,12 @@ async def _build_and_publish_scoped(
     scenario_id: int | None,
 ) -> dict[str, Any]:
     from app.channels.registry import broadcast_digest
-    from app.models.managers.digest_run_manager import PARTIAL_DELIVERY_REVIEW, DigestRunManager
+    from app.models.managers.digest_run_manager import (
+        DIGEST_RUN_IN_PROGRESS,
+        PARTIAL_DELIVERY_REVIEW,
+        DigestRunInProgress,
+        DigestRunManager,
+    )
     from app.services.digest.delivery_outcomes import DeliveryFailure
     from app.services.digest.job_delivery import assert_legacy_allowed, enabled
 
@@ -222,9 +227,15 @@ async def _build_and_publish_scoped(
         logger.warning(f"Digest for task {agent_task_id} period {start}..{end} partially delivered; review required")
         return {"status": "failed", "error": PARTIAL_DELIVERY_REVIEW}
 
-    run = await runs.start_run(
-        agent_task_id=agent_task_id, period=period, period_start=start, period_end=end, channel=channel
-    )
+    try:
+        run = await runs.start_run(
+            agent_task_id=agent_task_id, period=period, period_start=start, period_end=end, channel=channel, force=force
+        )
+    except DigestRunInProgress:
+        # Another attempt owns this period (or stopped mid-flight with unknown delivery):
+        # building would pay for a summary and sending could duplicate the digest.
+        logger.warning(f"Digest for task {agent_task_id} period {start}..{end} already in progress; review required")
+        return {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS}
     if run is None:
         return {"status": "failed", "error": "Could not create digest run"}
 

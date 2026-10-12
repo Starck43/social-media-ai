@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.services.social.credentials import resolve_token
+from app.services.social.credential_diagnostics import credential_exception_status
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ async def check_session(session: TelegramSession) -> str:
         finally:
             await client.disconnect()
     except Exception as e:  # noqa: BLE001 - diagnostics must never crash
-        return f"error: {e}"
+        return credential_exception_status(e)
 
 
 async def save_session(user_id: int, *, api_id: int, api_hash: str, session: str) -> None:

@@ -123,6 +123,27 @@ for Telegram, `/me` for MAX) and reports `user-vault|env -> ok|error`. It also p
 an L2 line (`telegram L2 (MTProto): ok|error|not configured`), which pings the
 authorized user session.
 
+### Credential diagnostic error privacy
+
+The API `credentials/test` error statuses and the shared MTProto `check_session`
+error verdicts use a bounded vocabulary: `authorization_error`, `rate_limited`,
+`provider_unavailable`, `provider_error`, `timeout`, `connection_error`,
+`integration_unavailable`, `invalid_response` or `integration_error`, prefixed
+with `error: `. The existing explicit MTProto expired/revoked verdict is retained.
+Provider error descriptions, echoed request parameters, exception text and
+token-bearing request URLs are never included in these error verdicts.
+Only allowlisted numeric provider codes or exception types select a category.
+
+Success identity labels, `missing`, `no_token`, `skipped` and `not_configured`
+remain unchanged. MTProto disconnect cleanup remains in `finally`, and task
+cancellation propagates rather than becoming an error or successful result.
+These changes do not alter authorization, token/session storage, resolution or
+revocation. They do not certify all credential logging or other API/CLI errors;
+the independent CLI L1 diagnostic path and login/OAuth errors remain separate
+privacy review surfaces. The isolated regression script is
+`tests/test_credential_diagnostic_privacy.py`; use the PR handoff for its exact
+revision and execution evidence. No live credential test is part of verification.
+
 `login telegram` walks the Telegram authorization flow (phone, code, optional
 2FA) and stores `api_id`/`api_hash`/`session` in the owner user's personal vault
 — the session string is a full-access credential and is **never** printed.

@@ -231,7 +231,8 @@ Status: **Owner pricing decision recorded; admission implementation and evidence
 still pending — not activated**. This is the full-gate contract, not a new backlog
 or a release claim. Analyzer accounting certainty is integrated in PR #118;
 provider-reported analyzer pricing and the three-state monetary mapping are
-implemented in the current package but still await local verification. All-path
+integrated in PR #125 (accepted head `08c53e1`, merge `d2b687d`); owner-local
+checks were accepted, while PostgreSQL and full suite were NOT RUN. All-path
 receipts, immutable report provenance and atomic admission remain to implement.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass

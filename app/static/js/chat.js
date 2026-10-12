@@ -7,6 +7,14 @@ function chatApp() {
             confirmation: null,
             autoScroll: true,
             messages: [],
+            thinkingSeconds: 0,
+            thinkingTimer: null,
+            starters: [
+                { icon: '📊', title: 'Сводка за неделю', hint: 'Главные темы и активность', text: 'Сводка за неделю' },
+                { icon: '🗂️', title: 'Мои источники', hint: 'Что сейчас собирается', text: 'Покажи мои источники' },
+                { icon: '⏰', title: 'Новая задача', hint: 'Регулярный сбор и анализ', text: 'Хочу создать задачу' },
+                { icon: '✨', title: 'Возможности', hint: 'Команды и примеры', text: '/help' },
+            ],
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
@@ -40,6 +48,21 @@ function chatApp() {
                 const action = this.confirmation; this.confirmation = null;
                 if (action?.kind === 'clear') this.clearHistory();
                 else if (action) this.deleteMessage(action.id);
+            },
+            isLast(message) { return this.messages.at(-1)?.id === message.id },
+            thinkingLabel() {
+                if (this.thinkingSeconds >= 20) return 'Почти готово…'
+                if (this.thinkingSeconds >= 6) return 'Работаю с данными…'
+                return 'Думаю…'
+            },
+            startThinking() {
+                this.stopThinking()
+                this.thinkingSeconds = 0
+                this.thinkingTimer = setInterval(() => { this.thinkingSeconds++ }, 1000)
+            },
+            stopThinking() {
+                if (this.thinkingTimer) clearInterval(this.thinkingTimer)
+                this.thinkingTimer = null
             },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
             attachFile() { this.notice = 'Прикрепление файлов пока не поддерживается.'; },
@@ -142,6 +165,7 @@ function chatApp() {
                 this.pending = true
                 this.sending = true
                 this.abortController = new AbortController()
+                this.startThinking()
 
                 // Optimistic: show user message immediately
                 const userMsg = {
@@ -153,6 +177,7 @@ function chatApp() {
                 this.messages.push(userMsg)
                 textarea.value = ''
                 textarea.style.height = 'auto'
+                this.$nextTick(() => this.scrollToBottom())
 
                 try {
                     const response = await fetch('/app/chat', {
@@ -196,6 +221,7 @@ function chatApp() {
                     this.pending = false
                     this.sending = false
                     this.abortController = null
+                    this.stopThinking()
                 }
             },
 

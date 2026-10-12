@@ -6,15 +6,15 @@ are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
 
-Verified `origin/dev`: `e8fc7238d38ef1dca15ee84466741668660a8808` on
-2026-10-12. Merged PRs through #128 are integrated. This checkpoint does not
+Verified `origin/dev`: `d5e7a499403a7aa270ebf2d49d10e057dc45919b` on
+2026-10-12. Merged PRs through #138 are integrated. This checkpoint does not
 certify a deployment, database revision or full release gate.
 
 ## Delivered foundations
 
 | Area | Delivered behavior | Integration references | Remaining boundary |
 | --- | --- | --- | --- |
-| Identity and tenancy | Fail-closed active-user and permission checks, tenant-scoped model/manager boundaries, tenant-scoped agent-session uniqueness. Web (`/app`) and API (`/api`) workspace resolution ignores memberships of deactivated workspaces, matching chat identity and invite redemption. A non-owner member's rights on workspace-scoped models follow the membership role (existing Role matrix) in web, API and agent tools; owners, platform superusers and global models keep their previous rights. A workspace manager issues single-use invite links (with QR) carrying a chosen access level (viewer, analyst, manager, co-admin; the owner level is not invitable), and redemption binds that role. | PRs #22, #29–32, #38, #66, #95, #122 (merge `7b99f03`; owner-local 37 passed at `8e5fd3c`), #126 (merge `2329459`; owner-local at `deca354`: 79 passed / 5 pre-existing `test_web_permissions.py` failures identical to dev, 11 permission files 134 passed), #127 (merge `090878e`; owner-local 23 passed at `dcfe0b8`) | Durable approval lifecycle, complete global-admin/credential review, workspace reactivation flow, invite listing/revocation, role-aware navigation and agent-chat access by role. |
+| Identity and tenancy | Fail-closed active-user and permission checks, tenant-scoped model/manager boundaries, tenant-scoped agent-session uniqueness. Web (`/app`) and API (`/api`) workspace resolution ignores memberships of deactivated workspaces, matching chat identity and invite redemption. A non-owner member's rights on workspace-scoped models follow the membership role (existing Role matrix) in web, API and agent tools; owners, platform superusers and global models keep their previous rights. A workspace manager issues single-use invite links (with QR) carrying a chosen access level (viewer, analyst, manager, co-admin; the owner level is not invitable), and redemption binds that role. The web menu offers only sections the member's level may view; a direct visit to a hidden section answers 403 with the reason and level. | PRs #22, #29–32, #38, #66, #95, #122 (merge `7b99f03`; owner-local 37 passed at `8e5fd3c`), #126 (merge `2329459`; owner-local at `deca354`: 79 passed / 5 pre-existing `test_web_permissions.py` failures identical to dev, 11 permission files 134 passed), #127 (merge `090878e`; owner-local 23 passed at `dcfe0b8`), #142 (merge `8b28311`; owner-local focused tests and browser check at `65d1954`), #130 (merge `fd067ef`; test-only stub fix closing those 5 failures) | Durable approval lifecycle, complete global-admin/credential review, workspace reactivation flow, invite listing/revocation, agent-chat access by role, role-aware dashboard links. |
 | PostgreSQL jobs | Claim fencing, renewal, ownership preflight, periodic heartbeat, cancellation and bounded recovery/admission primitives. A claimed job with no registered handler records a terminal `failed` outcome without automatic retry. | PRs #51–57, #87, #89, #91, #93; direct `dev` commit `35350a8` | Non-cooperative work, production timing and unresolved external-effect recovery. |
 | Agent state | Atomic session state/history changes, typed memory/output boundaries and untrusted-data framing of modality results in unified-summary prompts. | PRs #58, #59, #100, #102, #108, #109 | Remaining hostile-input surfaces and every-write authorization coverage. |
 | Atomic confirmation consumption | Versioned actor-bound intent, tenant-scoped locked consume of the exact pending snapshot and post-commit single-use authorization; losers, replacements and uncertain commits cannot dispatch the approved write. | PR #105, merge `0179296`; owner-local acceptance at `a4d2673`, subsequent board-only reconciliation. | External-effect exactly-once delivery, crash recovery after consumption, every-write coverage and whole PRD-02 acceptance remain open; no runtime rollout or DB migration certification. |
@@ -49,9 +49,11 @@ certify a deployment, database revision or full release gate.
   checks passed. Full suite NOT RUN; faults were injected, not real network-loss
   proof. No schema setup/reset/migration was performed; synthetic test rows retained.
 - Next bounded package: preparation-receipt storage and frozen tariff basis
-  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `24042d1`),
-  not activated and validation pending. New definition 0093 needs separate
-  schema/retention/rollback review; no schema application or cutover is authorized.
+  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `e8d335e`),
+  not activated. Owner-local isolated verification accepted: 143 methods and
+  compiler/formatters PASS; real PostgreSQL/Alembic proof remains pending.
+  Definition 0093 is NOT applied; target/version-table, RESTRICT/offboarding and
+  evidence-preserving rollback need separate review/approval. No cutover authorized.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

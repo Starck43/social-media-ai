@@ -70,9 +70,9 @@ async def reset_password_page(request: Request):
 	admin.title = "Сброс пароля"
 
 	return templates.TemplateResponse(
+		request,
 		"sqladmin/user/reset_password.html",
 		{
-			"request": request,
 			"csrf_token": csrf_token,
 			"admin": admin,
 			"message": message,
@@ -181,8 +181,13 @@ async def change_password_form_path(
 
 	# Permission: an operator may always change *their own* password; changing
 	# someone else's is a change to that user record and needs the right for it.
-	if current_user.id != int(user_id):
+	is_admin_reset = current_user.id != int(user_id)
+	if is_admin_reset:
 		await require_admin_perm(request, "user", ActionType.UPDATE)
+
+	target_user = await User.objects.get(id=int(user_id))
+	if not target_user:
+		raise HTTPException(status_code=404, detail="Пользователь не найден")
 
 	# Store the referer URL for redirect back after password change
 	referer = request.headers.get('referer', '')
@@ -205,10 +210,12 @@ async def change_password_form_path(
 	messages = request.session.pop("_messages", None)
 
 	return templates.TemplateResponse(
+		request,
 		"sqladmin/user/change_password.html",
 		{
-			"request": request,
 			"user": current_user,
+			"target_user": target_user,
+			"is_admin_reset": is_admin_reset,
 			"csrf_token": csrf_token,
 			"admin": admin,
 			"messages": messages,
@@ -229,10 +236,10 @@ async def change_password_form_path(
 async def change_password_submit_path(
 		request: Request,
 		user_id: int,
-		current_password: str = Form(...),
 		new_password: str = Form(...),
 		confirm_password: str = Form(...),
 		csrf_token: str = Form(...),
+		current_password: str = Form(None),
 ):
 	logger.info("POST request received for password change")
 
@@ -259,20 +266,32 @@ async def change_password_submit_path(
 		request.session["_messages"].append("Отсутствующий или недействительный токен безопасности. Попробуйте ещё раз.")
 		return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
 
+	# An operator may always change their own password; changing someone
+	# else's requires the UPDATE right on users and skips the current-password
+	# check (the admin does not know it).
+	is_admin_reset = current_user.id != int(user_id)
+	target_id = int(user_id)
+	if is_admin_reset:
+		await require_admin_perm(request, "user", ActionType.UPDATE)
+		target_user = await User.objects.get(id=target_id)
+		if not target_user:
+			request.session["_messages"].append("Пользователь не найден")
+			return RedirectResponse(url=f"/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
+
 	# Basic validation
 	errors = []
 
-	if not all([current_password, new_password, confirm_password]):
+	if not is_admin_reset and not current_password:
+		errors.append("Заполните все поля пароля")
+
+	if not all([new_password, confirm_password]):
 		errors.append("Заполните все поля пароля")
 
 	if new_password != confirm_password:
 		errors.append("Пароли не совпадают")
 
-	if current_user.id != int(user_id):
-		errors.append("Пользователь не найден")
-
-	# Check if new password is different from current
-	if new_password == current_password:
+	# Check if new password is different from current (self-change only)
+	if not is_admin_reset and new_password == current_password:
 		errors.append("Новый пароль должен отличаться от текущего")
 
 	# Validate password complexity using the existing validator
@@ -281,8 +300,8 @@ async def change_password_submit_path(
 	if not is_valid:
 		errors.append(complexity_error)
 
-	# Verify current password
-	if not verify_password(current_password, current_user.hashed_password):
+	# Verify current password (self-change only)
+	if not is_admin_reset and not verify_password(current_password, current_user.hashed_password):
 		errors.append("Текущий пароль неверен")
 
 	if errors:
@@ -293,7 +312,7 @@ async def change_password_submit_path(
 	try:
 		# Update password
 		await User.objects.update_by_id(
-			current_user.id,
+			target_id,
 			hashed_password=get_password_hash(new_password),
 			updated_at=datetime.now(),
 		)
@@ -407,8 +426,9 @@ async def analytics_dashboard(request: Request):
 		logger.info(f"User {current_user.username} accessing analytics dashboard")
 		
 		return templates.TemplateResponse(
+			request,
 			"analytics_dashboard.html",
-			{"request": request, "user": current_user}
+			{"user": current_user}
 		)
 		
 	except Exception as e:
@@ -460,8 +480,9 @@ async def topic_chains_dashboard(request: Request):
 		logger.info(f"User {current_user.username} accessing topic chains dashboard")
 		
 		return templates.TemplateResponse(
+			request,
 			"topic_chains_dashboard.html",
-			{"request": request, "user": current_user}
+			{"user": current_user}
 		)
 		
 	except Exception as e:

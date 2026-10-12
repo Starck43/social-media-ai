@@ -301,8 +301,10 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
         async with await _client() as m:
             await _login(m, member.username, password)
 
+            # VIEWER has no `agenttask.view`: the section is not offered and
+            # answers 403 with a reason (tests/test_workspace_nav_access.py).
             page = await m.get("/app/tasks")
-            assert page.status_code == 200
+            assert page.status_code == 403
             assert CREATE_BUTTON not in page.text, "a read-only member must not see the create button"
 
             token = CSRF_RE.search(page.text).group(1)
@@ -310,7 +312,7 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
                 "/app/tasks",
                 data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
             )
-            assert resp.status_code == 200
+            assert resp.status_code == 403  # the redirect back lands on the refused section
             assert DENIED in resp.text
 
             with tenant_scope(bypass=True):
@@ -384,9 +386,13 @@ async def test_member_role_decides_for_a_non_owner() -> None:
         await _drop(owner, tenant_id)
 
 
-@pytest.mark.parametrize("path", ["/app/sources", "/app/tasks"])
+@pytest.mark.parametrize("path", ["/app/sources", "/app/analytics", "/app/digests"])
 async def test_pages_stay_browsable_for_a_read_only_member(path: str) -> None:
-    """Denying a write never hides the page itself — the UI stays readable."""
+    """Denying a write never hides a page the role may view — the UI stays readable.
+
+    Sections the role cannot view at all (tasks, scenarios for VIEWER) are hidden
+    and explained instead: tests/test_workspace_nav_access.py.
+    """
     owner: User | None = None
     member: User | None = None
     tenant_id = None

@@ -7,9 +7,9 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `e8fc7238d38ef1dca15ee84466741668660a8808` on
-2026-10-12. Merged packages through PR #128 are integrated; PRs #127, #129 and
-#130 remain open. Active lanes are listed
+Verified `origin/dev`: `d5e7a499403a7aa270ebf2d49d10e057dc45919b` on
+2026-10-12. Merged packages through PR #138 are integrated; PR #137 remains
+open as a draft. Active lanes are listed
 under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
@@ -36,10 +36,10 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| PRD-03 immutable preparation receipts | Remote Notion agent; `feat/llm-dispatch-receipts`, [Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137) to `dev` | BLOCKED — local checks and explicit schema/rollback review required | Implementation `24042d1`: payer-bound raw UUID/time/day and frozen representable tariff basis; owned commit/exact replay, immutable-guard readiness check; definition 0093 only. 35 new methods prepared, NOT RUN (cloud project .venv absent). No LLM client/cap activation. Payer deletion restricted and ordinary downgrade refused: require separate migration/retention/rollback review before schema application. Commands in PR; no DDL/bootstrap/runtime/live actions authorized. |
+| PRD-03 immutable preparation receipts | Remote Notion agent; `feat/llm-dispatch-receipts`, [Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137) to `dev` | BLOCKED — real PostgreSQL evidence and schema/rollback approval required | Accepted owner-local head `e8d335e`: 143 methods, compiler/formatters and fresh registry check PASS; test double corrected to mirror project Base. Definition 0093 NOT applied; no real PG/Alembic check/full suite. Next: read-only target/version-table preflight, then separately approve isolated 0093 application, RESTRICT/offboarding and evidence-preserving rollback. Existing migrator does not bind version_table_schema and registers model/permission rows. No clients/caps/runtime/live activation; exact plan in PR. |
 | PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |
-| PRD-02 workspace member roles | Remote Notion agent; next branch from `dev` per step | IN_PROGRESS — step 3 awaiting owner go | Steps 1/4 (#126, `2329459`) and 2/4 (#127, `090878e`) MERGED; ledger updated. Test-only #130 MERGED (`fd067ef`): `test_web_permissions.py` green. Next: step 3 — hide unavailable nav and warn on direct access; then step 4 — agent-chat access by role. |
-| PRD-06 configurable data retention | Remote Notion agent; `feat/data-retention-months`, Draft PR to `dev` | IN_PROGRESS | Owner decision (2026-10-12): `DATA_RETENTION_MONTHS` in `app/core/config.py` and `.env.example`, default 1 calendar month, minimum 1. The daily prune removes the workspace's analysis results whose last write is older than the cutoff (ingestion time, not publication date) and caps unanalysed raw content at the same age; analyses referenced by bot actions, the LLM attempt journal and job/outcome evidence are kept. No schema, export, offboarding or credential changes. |
+| PRD-02 workspace member roles | Remote Notion agent; next branch from `dev` per step | IN_PROGRESS | Steps 1/4 (#126), 2/4 (#127) and 3/4 (#142, merge `8b28311`) MERGED; #130 MERGED; ledger updated. Next: step 4 — agent-chat access by role (`agentsession` rights in nav, page and runtime). |
+| PRD-06 configurable data retention | Remote Notion agent; `feat/data-retention-months`, Draft PR [#139](https://github.com/Starck43/social-media-ai/pull/139) to `dev` | BLOCKED — owner-local verification of `1a43b3f` required (DB tests, R8) | Owner decision (2026-10-12): `DATA_RETENTION_MONTHS` in `app/core/config.py` and `.env.example`, default 1 calendar month, minimum 1. The daily prune removes the workspace's analysis results whose last write is older than the cutoff (ingestion time, not publication date) and caps unanalysed raw content at the same age; analyses referenced by bot actions, the LLM attempt journal and job/outcome evidence are kept. No schema, export, offboarding or credential changes. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

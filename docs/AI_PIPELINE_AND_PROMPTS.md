@@ -155,9 +155,11 @@ numeric column range likewise remain NULL/unknown, not silently clamped.
 Structured-output rejection stays `failed_output` even when usage is unknown.
 
 The existing USD/USD-cent projections and chat adapters remain compatible; this
-does not repair their missing-usage zeros or historical rows. The current legacy
-zero-rate/free classification also remains unchanged: operator confirmation of
-known-free tariffs versus unconfigured zero defaults is still an acceptance gap.
+does not repair their missing-usage zeros or historical rows. The paragraphs above
+describe the integrated legacy certainty labels, not full implementation of the
+owner pricing policy below. That policy supersedes the previous proof-of-free
+proposal: an explicit table zero qualifies as FREE. Provider-reported actual
+cost and three-state runtime mapping remain pending.
 Source/job/task execution references are plain integers, not foreign keys, so
 source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters

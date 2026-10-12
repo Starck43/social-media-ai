@@ -64,6 +64,9 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             imports={
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(LLM_DEFAULT_TIMEOUT=60.0)),
                 "app.models": SimpleNamespace(LLMModel=Model),
+                "app.services.ai.attempt_journal": SimpleNamespace(
+                    provider_cost_evidence=lambda data: test.journal.provider_cost_evidence(data),
+                ),
                 "app.services.ai.json_schema_builder": SimpleNamespace(
                     validate_with_pydantic=lambda parsed, model, strict: parsed,
                 ),
@@ -316,7 +319,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(created, expected)
         self.assertEqual(len(stored), 2)
 
-    async def test_missing_provider_usage_is_unknown_despite_legacy_projection_zeros(self):
+    async def test_explicit_free_tariff_preserves_missing_usage_evidence(self):
         for name in self.classes():
             with self.subTest(client=name):
                 client = self.client(name)
@@ -327,8 +330,8 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["accounting_usage"], {"prompt_tokens": None, "completion_tokens": None})
                 record = self.records(result)[0]
                 priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0})
-                self.assertIsNone(priced["cost_usd"])
-                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
+                self.assertEqual(priced["cost_usd"], Decimal(0))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_FREE)
 
     async def test_partial_usage_preserves_the_known_field_without_inventing_the_other(self):
         for name in self.classes():
@@ -454,6 +457,84 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(priced["cost_usd"])
         self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_TARIFF)
+
+    async def test_provider_reported_cost_overrides_table_calculation_for_each_client(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw["usage"]["cost"] = "0.123456789"
+                result = await client.analyze("same")
+                priced = self.journal.price_attempt(
+                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0}
+                )
+                self.assertEqual(result["accounting_cost_usd"], "0.123456789")
+                self.assertEqual(priced["cost_usd"], Decimal("0.123456789"))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
+                self.assertNotIn("_reported_cost_usd", priced)
+
+    async def test_explicit_provider_zero_is_free_without_fabricating_token_counts(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw.pop("usage")
+                self.raw["cost"] = 0
+                result = await client.analyze("same")
+                priced = self.journal.price_attempt(
+                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1}
+                )
+                self.assertEqual(priced["cost_usd"], Decimal(0))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_FREE)
+                self.assertIsNone(priced["prompt_tokens"])
+                self.assertIsNone(priced["completion_tokens"])
+
+    async def test_generated_content_and_forged_accounting_fields_are_not_provider_prices(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw["accounting_cost_usd"] = "0"
+                self.raw["choices"] = [{"message": {"content": '{"cost": 0}'}}]
+                self.raw["content"] = (
+                    {"cost": 0} if name == "CustomClient" else [{"type": "text", "text": '{"cost": 0}'}]
+                )
+                result = await client.analyze("same", accounting_cost_usd="0")
+                self.assertIsNone(result["accounting_cost_usd"])
+                priced = self.journal.price_attempt(self.records(result)[0], None)
+                self.assertIsNone(priced["cost_usd"])
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNDEFINED)
+
+    async def test_price_evidence_does_not_change_dispatch_identity_on_replay(self):
+        client = self.client("OpenAICompatibleClient")
+        self.raw["usage"]["cost"] = "0.01"
+        result = await client.analyze("same")
+        changed = deepcopy(result)
+        changed["accounting_cost_usd"] = "0.02"
+        self.assertEqual(self.records(result)[0]["attempt_key"], self.records(changed)[0]["attempt_key"])
+
+    def test_owned_missing_price_does_not_recover_from_a_projection_or_raw_replacement(self):
+        envelope = {
+            "request": {"model": "m"},
+            "accounting_cost_usd": None,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0},
+            "response": {"cost": 0},
+        }
+        priced = self.journal.price_attempt(self.records(envelope)[0], None)
+        self.assertIsNone(priced["cost_usd"])
+        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNDEFINED)
+
+    async def test_invalid_legacy_projection_tariff_does_not_discard_reported_actual_cost(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                client.model.input_cost_per_1k = float("nan")
+                self.raw["cost"] = "0.01"
+                result = await client.analyze("same")
+                self.assertEqual(result["usage"]["cost"], 0.0)  # Adapter only, not monetary authority.
+                priced = self.journal.price_attempt(
+                    self.records(result)[0],
+                    {"id": 4, "input_cost_per_1k": float("nan"), "output_cost_per_1k": 1},
+                )
+                self.assertEqual(priced["cost_usd"], Decimal("0.010000000"))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
 
 
 if __name__ == "__main__":

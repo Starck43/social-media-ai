@@ -1,14 +1,23 @@
 """Integration tests for digest builder against real DB (mocked channels/LLM)."""
 
+import asyncio
 import uuid
 
 import pytest
 
 from app.models import AgentTask, DigestRun
-from app.models.managers.digest_run_manager import PARTIAL_DELIVERY_REVIEW
+from app.models.managers.digest_run_manager import DIGEST_RUN_IN_PROGRESS, PARTIAL_DELIVERY_REVIEW
 from app.services.digest import builder
 
-TASK_NAMES = ["it-digest", "it-digest-2", "it-digest-cost", "it-digest-partial", "it-digest-chunks"]
+TASK_NAMES = [
+    "it-digest",
+    "it-digest-2",
+    "it-digest-cost",
+    "it-digest-partial",
+    "it-digest-chunks",
+    "it-digest-busy",
+    "it-digest-race",
+]
 
 
 @pytest.fixture(autouse=True)
@@ -214,6 +223,72 @@ async def test_manual_partial_delivery_does_not_block_next_manual_run(monkeypatc
     assert (await builder.build_and_publish(period="day"))["error"] == PARTIAL_DELIVERY_REVIEW
     assert (await builder.build_and_publish(period="day"))["error"] == PARTIAL_DELIVERY_REVIEW
     assert len(calls) == 2
+
+
+async def test_scheduled_attempt_stops_when_run_row_is_in_flight(monkeypatch):
+    """A `pending` run row belongs to another attempt: no summary cost, no send, row untouched."""
+    calls = []
+
+    async def fake_broadcast(text):
+        calls.append("broadcast")
+        return {"telegram": {"success": True, "message_id": 9}}
+
+    async def fake_summarize(data):
+        calls.append("summary")
+        return "ok", {"model": "test-model", "cost": 0.2}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+    schedule = await _schedule("it-digest-busy")
+    start, end = builder.period_bounds("day")
+    in_flight = await DigestRun.objects.create(
+        agent_task_id=schedule.id, period="day", period_start=start, period_end=end, channel="auto", status="pending"
+    )
+
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    assert result == {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS}
+    assert calls == []
+    row = await DigestRun.objects.get(id=in_flight.id)
+    assert row.status == "pending" and row.error is None and row.llm_cost is None
+
+    # The operator's explicit force run takes the row over and delivers.
+    forced = await builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True)
+    assert forced["status"] == "sent" and calls == ["summary", "broadcast"]
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert len(rows) == 1 and rows[0].id == in_flight.id and rows[0].status == "sent"
+
+
+async def test_concurrent_scheduled_attempts_deliver_once(monkeypatch):
+    """Two attempts for the same schedule+period at once: one builds and sends, the other stops."""
+    broadcasts, summaries = [], []
+    first_summary_started = asyncio.Event()
+    release_summary = asyncio.Event()
+
+    async def fake_broadcast(text):
+        broadcasts.append(text)
+        return {"telegram": {"success": True, "message_id": 11}}
+
+    async def fake_summarize(data):
+        summaries.append(data)
+        first_summary_started.set()
+        await release_summary.wait()
+        return "ok", {"model": "test-model"}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+    schedule = await _schedule("it-digest-race")
+
+    first = asyncio.create_task(builder.build_and_publish(period="day", agent_task_id=schedule.id))
+    await asyncio.wait_for(first_summary_started.wait(), timeout=10)
+    second = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    release_summary.set()
+    winner = await asyncio.wait_for(first, timeout=10)
+
+    assert second == {"status": "failed", "error": DIGEST_RUN_IN_PROGRESS}
+    assert winner["status"] == "sent"
+    assert len(summaries) == 1 and len(broadcasts) == 1
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert len(rows) == 1 and rows[0].status == "sent" and rows[0].message_id == "11"
 
 
 def test_delivered_any_classification():

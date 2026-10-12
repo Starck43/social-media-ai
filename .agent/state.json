@@ -85,7 +85,8 @@
             "tests/test_session_state_key_patch.py"
           ]
         },
-        "verdict": "BLOCKED: one regression in an existing test; PR remains Draft"
+        "verdict": "BLOCKED: one regression in an existing test; PR remains Draft; findings posted as a PR comment",
+        "review_comment": "https://github.com/Starck43/social-media-ai/pull/105#issuecomment-6116866338"
       }
     }
   }

@@ -27,20 +27,24 @@ database revision or full release gate.
 
 ## Current handoff
 
-- Task: canonical documentation consolidation is complete and validated in the local `dev` working tree.
-- Base revision: `84ee16d284a6355006dd71c7157a0744ab203ddd`; the documentation checkpoint is the commit containing this handoff. It remains local until explicitly pushed.
-- Result: 23 canonical files under `docs`; `docs/design/README.md` is the only
-  design document; root README is a 138-line project entry point; explicit
-  Russian closeout phrases authorize local commits for completed validated work
-  and require a truthful checkpoint plus copyable new-chat prompt;
-  application/schema behavior is unchanged.
-- Validation: 27 Markdown entry files checked with zero broken relative links and
-  zero unbalanced fences; all 27 ORM tables match the 27 `MODELS.md` table
-  sections; key 0088–0091 field changes match metadata; Alembic reports one head,
-  `0091`; changed Python comments/docstrings compile; `git diff --check` passes.
-- Database tests, `alembic current/check` and the full suite were not run because
-  this change does not alter runtime behavior and no target database was selected.
-- Next action: select the next bounded PRD-05 package from
+- Task: PRD-05 unknown-handler terminal outcome — a claimed job with no
+  registered handler now records a terminal `failed` outcome instead of
+  spending its remaining attempts on automatic retries.
+- Base revision: `faedff8` on local `dev`; implementation is uncommitted in the
+  primary checkout and awaits the owner's commit authorization.
+- Result: `app/jobs/dispatcher.py` passes `allow_retry=False` for the
+  unknown-handler branch; `docs/AGENT_TASKS.md` documents the terminal outcome,
+  the operator-inspection requirement and the preserved claim-loss and
+  outcome-write-uncertainty errors; `tests/test_job_claim_outcomes.py` replaces
+  the retry-status test with terminal-outcome, claim-loss, write-uncertainty and
+  wrong-generation coverage.
+- Validation: `pytest -o addopts='' tests/test_job_claim_outcomes.py -q` →
+  30 passed, 22 subtests passed. Two failures in
+  `tests/test_job_attempt_budget.py` and
+  `tests/test_job_dispatch_claim_preflight.py` reproduce without this patch and
+  come from unrelated uncommitted analyzer work in the same tree.
+- Next action: commit this bounded slice in `dev`, then select the next PRD-05
+  recovery or admission gap from
   [the prioritized queue](design/README.md#prioritized-open-work).
 
 ## Recording future delivery

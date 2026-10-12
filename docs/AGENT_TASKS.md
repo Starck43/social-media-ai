@@ -103,6 +103,13 @@ Job columns are merged into the handler payload by `execute_job()`, so handlers
 receive `agent_task_id` and `job_id` alongside their own `payload` keys. Digest
 idempotency depends on this.
 
+If a claimed job has no registered handler, the dispatcher records a terminal
+`failed` outcome for that claim even when the caller allows retries. No handler
+runs and no automatic retry is scheduled: an operator must inspect the job type
+and worker configuration before deciding on a new run. Claim loss and outcome
+write uncertainty remain explicit errors, not proof of a committed failure.
+This does not reject enqueue requests or prevent later cron occurrences.
+
 ## Cron expressions
 
 `app/tasks/cron.py` validates expressions with `croniter` and computes the

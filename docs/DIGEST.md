@@ -33,14 +33,14 @@ same payload for every channel; channels differ only in transport rules.
    breaks the digest — the summary is simply omitted. The daily cost cap is
    checked *before* the call: past `AGENT_DAILY_COST_LIMIT` (or
    `tenant.daily_cost_limit`) the summary is skipped with the digest still
-    rendered. A successful call prices its usage from `llm_models` tariffs and
-    stores it on `digest_runs.llm_cost`, which is part of the cap's spend metric
-    (`tenancy.resolver.daily_cost_today()`). Pricing itself follows the
-    owner-decided three-state contract (2026-10-12): FREE only on an explicit
-    zero (the model returned zero cost, or the table explicitly holds 0);
-    otherwise the model's own answer arbitrates the cost, with a non-zero table
-    price as the known-price basis; no model price with an empty table is
-    UNDEFINED — never free, never zero, tracked in statistics.
+   rendered. A successful call prices its usage from `llm_models` tariffs and
+   stores it on `digest_runs.llm_cost`, which is part of the cap's spend metric
+   (`tenancy.resolver.daily_cost_today()`).
+   The owner-decided target pricing is three-state: provider-reported cost takes
+   precedence; an explicit zero from the provider or tariff table is FREE; a
+   known non-zero table rate is the reservation basis; no report and no tariff
+   is UNDEFINED (NULL, never free/zero, tracked separately). This policy does
+   not claim the current projection adapter or atomic admission is implemented.
 
 5. `render.py` renders HTML-safe text (the brief's Markdown is converted to the
    HTML subset the channels accept) with a length budget per channel.
@@ -191,6 +191,22 @@ acknowledgement when no recipient succeeded, so the next scheduled run or an
 operator re-attempt can repeat an external delivery. Per-part receipts and
 uncertain-send review are provided by the disabled-by-default checkpoint
 delivery path.
+
+### Lease loss mid-run
+
+If the worker loses its job lease while a legacy digest is being built or sent
+(heartbeat renewal fails, or the stale-lease reaper takes the row), the handler is
+cancelled and the job is stored as terminal `failed` with the unconfirmed-outcome
+marker; nothing is requeued. The run row stays `pending` with no `message_id`,
+because delivery is unknown. Scheduled re-attempts for that `(agent_task_id,
+period)` then stop with `digest_run_in_progress_requires_review` before summary
+cost or delivery, and so does a forced resend within `FORCED_TAKEOVER_AFTER`
+(30 minutes); after that an explicit `force_refresh` run may take the row over.
+
+The review codes `digest_run_in_progress_requires_review` and
+`partial_delivery_requires_review` are kept verbatim as the job error, so the
+operator sees why a digest job stopped on `/app/jobs`; other returned failure
+text is still stored as `handler_returned_failure`.
 
 ## Channel rules
 

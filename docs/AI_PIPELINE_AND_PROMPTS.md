@@ -126,9 +126,7 @@ Journal `05bf353`, analyzer wiring `5953efb` and contract `9ebe945` are in dev.
 - [x] Capture returned analyzer-stage envelopes before the partial-result skip,
   relevance filter and no-meaningful-results return, independently of the daily row.
 - [x] Snapshot the resolved model tariff and calculate Decimal USD at 1e-9 precision;
-  distinguish `priced`, `free` and `undefined` under the owner-decided contract
-  (2026-10-12; the earlier `unknown_tariff`/`unknown_usage` split maps onto
-  `undefined`).
+  distinguish `priced`, `free`, `unknown_tariff` and `unknown_usage`.
 - [x] Add isolated regression coverage for identity/pricing/orchestration, preserved
   partial-save decisions, failed envelopes and redacted journal-write warnings.
 
@@ -137,13 +135,29 @@ exact commands, counts or a tested SHA; none is inferred here. Remote completion
 review was static and did not rerun Python/DB/provider tests or apply migrations.
 
 The journal records captured analyzer stage envelopes through
-`app/services/ai/attempt_journal.py`. Pricing truth is owner-decided (2026-10-12)
-and three-state: a cost is FREE only on an explicit zero — the model itself
-returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
-own answer arbitrates: a model-reported price is the cost, and a non-zero price in
-the table is the known-price basis. With no model price and an empty table the
-state is UNDEFINED: cost stays NULL, never zero and never free, and the undefined
-state is registered in statistics and other related accounting actions.
+`app/services/ai/attempt_journal.py`. Missing usage or an unresolved model tariff
+keeps cost unknown (NULL), rather than treating it as zero. A configured zero
+tariff is classified as free only with known prompt and completion token counts.
+New analyzer envelopes carry a client-owned `accounting_usage` block separately
+from legacy numeric `usage` projections. Missing, non-integer, negative or
+out-of-column-range token counts remain NULL evidence. The journal treats this
+block as authoritative, even when malformed; it never recovers certainty from
+projection zeros or provider-supplied replacement fields. OpenAI-compatible and
+custom adapters read `prompt_tokens`/`completion_tokens`; Anthropic reads
+`input_tokens`/`output_tokens`. Totals and response text do not imply missing
+token fields. Legacy envelopes without this block retain their old usage fallback.
+
+Missing, malformed, negative, non-finite or unrepresentable tariff rates produce
+`unknown_tariff` and NULL cost rather than defaulting to zero or losing the
+record through a Decimal exception. Valid snapshot fields and model identity
+remain available when the other rate is unknown. Costs beyond the existing
+numeric column range likewise remain NULL/unknown, not silently clamped.
+Structured-output rejection stays `failed_output` even when usage is unknown.
+
+The existing USD/USD-cent projections and chat adapters remain compatible; this
+does not repair their missing-usage zeros or historical rows. The current legacy
+zero-rate/free classification also remains unchanged: operator confirmation of
+known-free tariffs versus unconfigured zero defaults is still an acceptance gap.
 Source/job/task execution references are plain integers, not foreign keys, so
 source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters
@@ -181,9 +195,10 @@ No whole-gate, target-database or production acceptance is claimed.
 
 ### Proposed all-path accounting and admission contract
 
-Status: **PROPOSED — owner policy review required; not implemented or activated**.
-This defines the remaining gate, not a new backlog or a release claim. The
-analyzer certainty patch in PR #118 is independently awaiting local verification.
+Status: **Owner pricing decision recorded; admission implementation and evidence
+still pending — not activated**. This is the full-gate contract, not a new backlog
+or a release claim. Analyzer accounting certainty is integrated in PR #118;
+provider-reported pricing and the three-state runtime mapping remain to implement.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass
 one accounting/admission boundary, whether reached by analysis, digest, agent
@@ -207,7 +222,7 @@ insert-only journal or re-price old attempts from current model tariffs. The
 raw dispatch identity/time must be durable, not only an irreversible key hash.
 References to jobs, messages and results must not cascade-delete evidence.
 
-**Pricing and admission policy proposed for approval.**
+**Recorded pricing policy and admission contract.**
 
 - Keep the existing UTC day and resolved workspace/global cap semantics; do not
   silently redefine plan ceilings or the existing unlimited sentinel.
@@ -273,8 +288,8 @@ start a second scheduler/listener/migration owner.
   explicitly approved isolated test target; focused unit plus affected integration
   suites, exact SHAs and redacted transcripts. No automatic schema operations.
 
-Owner approval of the policy above permits preparing implementation and migration
-files, not applying them or enabling live dispatch. Whole-gate acceptance requires
+The recorded owner pricing decision and development task permit preparing code
+and migration definitions, not applying them or enabling live dispatch. Gate acceptance requires
 this evidence, not merely merging the proposal or the analyzer patches.
 
 ## Key implementation files

@@ -2,14 +2,12 @@
   "agents": {
     "opencode": {
       "status": "in_progress",
-      "task": "PR #107 review (PRD-06 credential diagnostic privacy): 14/14 prepared tests pass, 57 existing tests pass; 3 formatting defects introduced by the head",
+      "task": "PR #108 review (PRD-07 unified-summary hostile input): 70 tests pass locally; one whitespace defect from git diff --check",
       "branch": "dev",
       "tests": [
-        "tests/test_credential_diagnostic_privacy.py",
-        "tests/test_credentials.py",
-        "tests/test_telegram_mtproto.py",
-        "tests/test_telegram_durable_admission.py",
-        "tests/test_api_permissions.py"
+        "tests/test_scenario_prompt_system.py",
+        "tests/test_analyzer_modes.py",
+        "tests/test_ai_output_boundaries.py"
       ],
       "files_modified": [],
       "pr_review": {
@@ -110,6 +108,25 @@
         ],
         "verdict": "NOT READY: functional evidence complete, three formatting defects introduced by this head; fix requested from the author via PR comment",
         "review_comment": "https://github.com/Starck43/social-media-ai/pull/107#issuecomment-6116928766"
+      },
+      "pr_review_108": {
+        "pr": 108,
+        "title": "Frame modality outputs as untrusted data in unified summary prompts",
+        "branch": "fix/unified-summary-untrusted-input",
+        "head_sha": "e06139e69788f92295e154e9dd2c19fb08b04cc4",
+        "base_sha": "ac41fd6",
+        "worktree": "/Users/admin/Projects/social-media-ai-pr108",
+        "diff_check": "git diff ac41fd6..e06139e --check exit 2 (trailing whitespace added by this PR)",
+        "tests": {
+          "tests/test_scenario_prompt_system.py": "17 passed",
+          "tests/test_analyzer_modes.py + tests/test_ai_output_boundaries.py": "53 passed, 28 subtests passed"
+        },
+        "formatting": {
+          "pre_existing": "app/services/ai/prompt_variables.py and app/services/ai/prompts.py fail Black and isort on base ac41fd6 too (TAB indentation, not excluded in pyproject.toml)",
+          "pr_impact": "after Black normalization the only differences are this PR's own lines; the new tests/test_scenario_prompt_system.py additions are Black-clean",
+          "defect": "git diff --check exit 2: a whitespace-only line added inside the substitute docstring"
+        },
+        "verdict": "NOT READY: functional evidence complete, one whitespace defect from git diff --check"
       }
     }
   }

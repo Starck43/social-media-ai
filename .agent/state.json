@@ -2,15 +2,14 @@
   "agents": {
     "opencode": {
       "status": "in_progress",
-      "task": "PR #105 review (PRD-02 atomic confirmation consumption): 58 prepared tests pass locally, one regression found in existing runtime log-privacy test",
+      "task": "PR #107 review (PRD-06 credential diagnostic privacy): 14/14 prepared tests pass, 57 existing tests pass; 3 formatting defects introduced by the head",
       "branch": "dev",
       "tests": [
-        "tests/test_confirmation_consumption.py",
-        "tests/test_runtime_confirmation_authorization.py",
-        "tests/test_session_state_key_patch.py",
-        "tests/test_confirmation_consumption_db.py",
-        "tests/test_session_state_key_patch_db.py",
-        "tests/test_agent_runtime_log_privacy.py"
+        "tests/test_credential_diagnostic_privacy.py",
+        "tests/test_credentials.py",
+        "tests/test_telegram_mtproto.py",
+        "tests/test_telegram_durable_admission.py",
+        "tests/test_api_permissions.py"
       ],
       "files_modified": [],
       "pr_review": {
@@ -87,6 +86,29 @@
         },
         "verdict": "BLOCKED: one regression in an existing test; PR remains Draft; findings posted as a PR comment",
         "review_comment": "https://github.com/Starck43/social-media-ai/pull/105#issuecomment-6116866338"
+      },
+      "pr_review_107": {
+        "pr": 107,
+        "title": "Redact API and MTProto credential diagnostic errors",
+        "branch": "fix/credential-diagnostics-privacy",
+        "head_sha": "38916d5ed27d767938f9888e3b383cbd8422040b",
+        "base_sha": "8096a42b11f3b6e794738b6ba92e7dbc71127e8e",
+        "worktree": "/Users/admin/Projects/social-media-ai-pr107",
+        "diff_check": "git diff 8096a42..38916d5 --check exit 0; 5 files, 453 insertions, 7 deletions",
+        "prepared_script": "tests/test_credential_diagnostic_privacy.py -> 14 passed, exit 0",
+        "existing_tests": "tests/test_credentials.py + test_telegram_mtproto.py + test_telegram_durable_admission.py + test_api_permissions.py -> 57 passed, 3 failed",
+        "pre_existing_failures": [
+          "tests/test_telegram_mtproto.py::test_auto_mode_pulls_via_l2_when_session_exists",
+          "tests/test_telegram_mtproto.py::test_l2_pull_fetches_new_messages_and_advances_watermark",
+          "tests/test_telegram_mtproto.py::test_l2_pull_is_tenant_fail_closed"
+        ],
+        "compile": "py_compile OK for all four changed Python files",
+        "formatting_defects": [
+          "tests/test_credential_diagnostic_privacy.py (new file) fails Black",
+          "app/api/v1/endpoints/credentials.py new multi-import fails Black",
+          "app/services/social/tg_session.py import order fails isort (clean on base)"
+        ],
+        "verdict": "NOT READY: functional evidence complete, three formatting defects introduced by this head"
       }
     }
   }

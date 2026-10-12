@@ -38,7 +38,16 @@ class PolicyTests(unittest.TestCase):
         class Text(str):
             pass
 
-        errors = (None, False, 1, {}, "", "known_failure", "Cancelled by operator suffix", Text("Cancelled by operator"))
+        errors = (
+            None,
+            False,
+            1,
+            {},
+            "",
+            "known_failure",
+            "Cancelled by operator suffix",
+            Text("Cancelled by operator"),
+        )
         for error in errors:
             with self.subTest(error=error):
                 self.assertFalse(POLICY.outcome_unconfirmed(error))

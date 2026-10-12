@@ -10,6 +10,5 @@ OPERATOR_CANCELLED_ERROR = "Cancelled by operator"
 def outcome_unconfirmed(error) -> bool:
     """Operational stops, including cancellation, do not confirm external failure."""
     return type(error) is str and (
-        error == OPERATOR_CANCELLED_ERROR
-        or error.startswith((OUTCOME_UNCONFIRMED_PREFIX, ATTEMPT_BUDGET_STOP_PREFIX))
+        error == OPERATOR_CANCELLED_ERROR or error.startswith((OUTCOME_UNCONFIRMED_PREFIX, ATTEMPT_BUDGET_STOP_PREFIX))
     )

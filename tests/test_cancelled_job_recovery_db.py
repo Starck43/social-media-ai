@@ -24,38 +24,42 @@ from test_job_claim_heartbeat_db import validate_environment  # noqa: E402
 async def execute():
     # All application/engine imports follow validate_environment() in main.
     from sqlalchemy import DateTime, Integer, String, Text, column, event, not_, or_, select, values
+    from test_cancelled_job_recovery import BUDGET, POLICY, load_prune
 
     from app.core.config import settings
     from app.core.database import async_engine
-    from test_cancelled_job_recovery import BUDGET, POLICY, load_prune
 
     if settings.DB_SCHEMA != "test_schema":
         raise RuntimeError("Stop: app schema differs from approved test_schema")
     now = datetime.now(timezone.utc)
     old = now - timedelta(days=90)
-    fixture = values(
-        column("id", Integer),
-        column("tenant_id", Integer),
-        column("status", String),
-        column("error", Text),
-        column("created_at", DateTime(timezone=True)),
-        name="cancelled_recovery_fixture",
-    ).data(
-        [
-            (0, 31, "failed", POLICY.OPERATOR_CANCELLED_ERROR, old),
-            (1, 31, "failed", POLICY.OPERATOR_CANCELLED_ERROR, old),
-            (2, 31, "failed", POLICY.OUTCOME_UNCONFIRMED_PREFIX + "old", old),
-            (3, 31, "failed", BUDGET.ATTEMPT_BUDGET_STOP_PREFIX + "old", old),
-            (4, 31, "failed", None, old),
-            (5, 31, "failed", "", old),
-            (6, 31, "failed", "known_failure", old),
-            (7, 31, "done", None, old),
-            (8, 31, "running", None, old),
-            (9, 31, "failed", None, now),
-            (10, 32, "failed", None, old),
-            (11, 31, "failed", "Cancelled by operator suffix", old),
-        ]
-    ).alias("candidate")
+    fixture = (
+        values(
+            column("id", Integer),
+            column("tenant_id", Integer),
+            column("status", String),
+            column("error", Text),
+            column("created_at", DateTime(timezone=True)),
+            name="cancelled_recovery_fixture",
+        )
+        .data(
+            [
+                (0, 31, "failed", POLICY.OPERATOR_CANCELLED_ERROR, old),
+                (1, 31, "failed", POLICY.OPERATOR_CANCELLED_ERROR, old),
+                (2, 31, "failed", POLICY.OUTCOME_UNCONFIRMED_PREFIX + "old", old),
+                (3, 31, "failed", BUDGET.ATTEMPT_BUDGET_STOP_PREFIX + "old", old),
+                (4, 31, "failed", None, old),
+                (5, 31, "failed", "", old),
+                (6, 31, "failed", "known_failure", old),
+                (7, 31, "done", None, old),
+                (8, 31, "running", None, old),
+                (9, 31, "failed", None, now),
+                (10, 32, "failed", None, old),
+                (11, 31, "failed", "Cancelled by operator suffix", old),
+            ]
+        )
+        .alias("candidate")
+    )
     selected = []
     commit_attempts = []
     statements = []

@@ -22,7 +22,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
-    "_confirmation_owned_db_fixture", ROOT / "tests/test_session_state_key_patch_db.py",
+    "_confirmation_owned_db_fixture",
+    ROOT / "tests/test_session_state_key_patch_db.py",
 )
 FIXTURE = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = FIXTURE
@@ -62,10 +63,12 @@ class ConfirmationConsumptionDatabaseTests(unittest.IsolatedAsyncioTestCase):
         async with FIXTURE.async_session_maker() as locker:
             try:
                 await locker.execute(
-                    FIXTURE.AgentSession.__table__.select().where(
+                    FIXTURE.AgentSession.__table__.select()
+                    .where(
                         FIXTURE.AgentSession.id == self.row.id,
                         FIXTURE.AgentSession.tenant_id == self.own.id,
-                    ).with_for_update()
+                    )
+                    .with_for_update()
                 )
                 with patch.object(manager, "_get_owned_session", tracked):
                     tasks = [asyncio.create_task(consume()) for _ in range(2)]
@@ -76,9 +79,12 @@ class ConfirmationConsumptionDatabaseTests(unittest.IsolatedAsyncioTestCase):
                         while True:
                             waiting = []
                             for pid in backend_pids:
-                                blockers = (await observer.execute(
-                                    FIXTURE.text("SELECT pg_blocking_pids(:pid)"), {"pid": pid},
-                                )).scalar_one()
+                                blockers = (
+                                    await observer.execute(
+                                        FIXTURE.text("SELECT pg_blocking_pids(:pid)"),
+                                        {"pid": pid},
+                                    )
+                                ).scalar_one()
                                 waiting.append(bool(blockers))
                             if all(waiting):
                                 break
@@ -107,7 +113,8 @@ class ConfirmationConsumptionDatabaseTests(unittest.IsolatedAsyncioTestCase):
             await manager.set_state(self.row.id, pending_confirmation=replacement, keep="newer")
             self.assertIsNone(await manager.consume_pending_confirmation(self.row.id, self.pending))
         self.assertEqual(
-            await self.stored(), {"keep": "newer", "update_offset": 0, "pending_confirmation": replacement},
+            await self.stored(),
+            {"keep": "newer", "update_offset": 0, "pending_confirmation": replacement},
         )
 
     async def test_foreign_missing_scope_missing_and_inactive_rows_refuse(self):

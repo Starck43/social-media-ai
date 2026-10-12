@@ -140,9 +140,13 @@ class ConfirmationConsumptionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_consumers_have_one_winner_and_preserve_unrelated_keys(self):
         store = Store({"pending_confirmation": self.pending, "keep": "fresh", "update_offset": 0})
-        results = await asyncio.wait_for(asyncio.gather(
-            store.consume(deepcopy(self.pending)), store.consume(deepcopy(self.pending)),
-        ), 2)
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                store.consume(deepcopy(self.pending)),
+                store.consume(deepcopy(self.pending)),
+            ),
+            2,
+        )
         self.assertEqual(sum(result is not None for result in results), 1)
         self.assertEqual(store.state, {"keep": "fresh", "update_offset": 0})
         self.assertEqual([statement.kind for statement in store.statements].count("update"), 1)
@@ -202,7 +206,9 @@ class ConfirmationConsumptionTests(unittest.IsolatedAsyncioTestCase):
         for state, options in (
             ({"pending_confirmation": self.pending}, {"missing": True}),
             ({"pending_confirmation": self.pending}, {"active": False}),
-            (None, {}), ({}, {}), ({"pending_confirmation": "malformed"}, {}),
+            (None, {}),
+            ({}, {}),
+            ({"pending_confirmation": "malformed"}, {}),
         ):
             with self.subTest(state=state, options=options):
                 store = Store(state, **options)

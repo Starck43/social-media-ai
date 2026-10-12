@@ -132,6 +132,11 @@ async def test_credentials(
     current_user: User = Depends(require_model_perm("credential", ActionType.VIEW)),
 ):
     """Test all platform credentials and report status."""
+    from app.services.social.credential_diagnostics import (
+        credential_exception_status,
+        credential_http_error,
+        credential_provider_error,
+    )
     from app.services.social.credentials import credential_status, resolve_token
     from app.services.social.tg_session import check_session, load_session
     import httpx
@@ -155,19 +160,35 @@ async def test_credentials(
                         f"{settings.VK_API_BASE_URL.rstrip('/')}/account.getProfileInfo",
                         params={"access_token": token, "v": settings.VK_API_VERSION},
                     )
-                    data = resp.json()
-                    status = "ok" if "response" in data else f"error: {data.get('error', {}).get('error_msg', resp.status_code)}"
+                    if not 200 <= resp.status_code < 300:
+                        status = credential_http_error(resp.status_code)
+                    else:
+                        data = resp.json()
+                        if not isinstance(data, dict):
+                            status = "error: invalid_response"
+                        elif "response" in data:
+                            status = "ok"
+                        else:
+                            status = credential_provider_error("vk", data)
                 elif platform == "telegram":
                     resp = await client.get(f"{settings.TELEGRAM_API_BASE_URL.rstrip('/')}/bot{token}/getMe")
-                    data = resp.json()
-                    status = f"ok (bot @{data['result'].get('username', '?')})" if data.get("ok") else f"error: {data.get('description', resp.status_code)}"
+                    if not 200 <= resp.status_code < 300:
+                        status = credential_http_error(resp.status_code)
+                    else:
+                        data = resp.json()
+                        if not isinstance(data, dict):
+                            status = "error: invalid_response"
+                        elif data.get("ok") is True:
+                            status = f"ok (bot @{data['result'].get('username', '?')})"
+                        else:
+                            status = credential_provider_error("telegram", data)
                 elif platform == "max":
                     resp = await client.get(f"{settings.MAX_API_URL}/me", headers={"Authorization": token})
-                    status = "ok" if resp.status_code == 200 else f"error: HTTP {resp.status_code}"
+                    status = "ok" if resp.status_code == 200 else credential_http_error(resp.status_code)
                 else:
                     status = "skipped"
         except Exception as e:
-            status = f"error: {e}"
+            status = credential_exception_status(e)
 
         results.append({"platform": platform, "source": source, "status": status})
 

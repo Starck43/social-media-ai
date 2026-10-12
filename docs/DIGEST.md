@@ -147,9 +147,26 @@ per period. Two consequences worth knowing:
 ## Delivery failures are retryable
 
 `build_and_publish` raises `DigestDeliveryError` when the digest was built but
-at least one channel refused it. The job queue then retries with backoff. A
+no recipient received any part of it. The job queue then retries with backoff. A
 config problem (no channel configured) returns `status="skipped"` instead:
 retrying cannot fix missing credentials.
+
+Partial delivery is terminal instead. When at least one recipient received the
+digest (or at least one chunk of a split message) and another recipient failed,
+the run is stored as `failed` with an error starting with
+`partial_delivery_requires_review` and the handler returns
+`{"status": "failed", "error": "partial_delivery_requires_review"}`. The queue
+does not retry it, because a retry rebuilds the digest and resends it to every
+recipient. Later scheduled attempts for the same `(agent_task_id, period)` stop
+before aggregation, summary cost and delivery with the same failure. Only an
+explicit `force_refresh` run resends; that is an operator decision and can
+duplicate the digest for recipients that already received it. Manual runs keep
+separate history and are not blocked.
+
+This legacy path still cannot tell a definitive rejection from a lost
+acknowledgement when no recipient succeeded, so such a retry can repeat an
+external delivery. Per-part receipts and uncertain-send review are provided by
+the disabled-by-default checkpoint delivery path.
 
 ## Channel rules
 
@@ -199,9 +216,10 @@ Identifiers are trimmed and `@usernames` compared case-insensitively; a numeric
 chat ID and a username alias are not resolved as equivalent without platform
 identity verification. Prefer one stable identifier per destination.
 
-This fixes routing and within-call duplicate recipients, not partial-delivery
-retry/concurrent-send idempotency. Those remain separate work; an ambiguous
-transport timeout can still cause a repeated external delivery.
+This fixes routing and within-call duplicate recipients. Partial delivery stops
+for review as described above; concurrent-send idempotency remains separate work,
+and an ambiguous transport timeout with no successful recipient can still cause a
+repeated external delivery.
 
 ## Manual runs
 ```bash

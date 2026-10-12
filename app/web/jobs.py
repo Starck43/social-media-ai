@@ -26,6 +26,8 @@ CSRF check; the sidebar drops the item for everyone else — which is not the ch
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
@@ -52,6 +54,55 @@ DELETABLE = frozenset({"pending", "done", "failed"})
 # Statuses a cancel may touch. Only `running` — anything else is already
 # terminal or not yet in flight.
 CANCELLABLE = frozenset({"running"})
+
+# Queue-health thresholds, shown as counts and ages only (no payload/error text).
+# A due job still `pending` this long after `run_at` was not claimed: the worker
+# loop is stopped or busy with one long job.
+OVERDUE_PENDING_MINUTES = 15
+# Mirrors the default cutoff of `JobManager.reap_stale`, which the worker loop
+# runs before every claim and which quarantines older `running` rows. A row
+# still `running` past it therefore means that loop (and its reaper) is not running.
+STALE_RUNNING_MINUTES = 30
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Treat a naive timestamp as UTC so comparisons never raise."""
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def queue_signals(rows: list[Job], now: datetime) -> dict[str, int | None]:
+    """Aggregated, redacted queue-health signals over the given rows.
+
+    `overdue_pending` / `oldest_overdue_minutes`: due rows nobody claimed.
+    `stale_running`: claims older than the reaper cutoff that are still open.
+    `unconfirmed_failed`: failures whose external outcome is unknown, counted
+    across all rows rather than only the visible history page.
+    Only counts and whole minutes are returned; no row content is exposed.
+    """
+    overdue_cutoff = now - timedelta(minutes=OVERDUE_PENDING_MINUTES)
+    stale_cutoff = now - timedelta(minutes=STALE_RUNNING_MINUTES)
+    overdue_ages: list[timedelta] = []
+    stale_running = 0
+    unconfirmed_failed = 0
+    for job in rows:
+        if job.status == "pending":
+            run_at = _as_utc(job.run_at)
+            if run_at is not None and run_at <= overdue_cutoff:
+                overdue_ages.append(now - run_at)
+        elif job.status == "running":
+            locked_at = _as_utc(job.locked_at)
+            if locked_at is not None and locked_at < stale_cutoff:
+                stale_running += 1
+        elif job.status == "failed" and outcome_unconfirmed(job.error):
+            unconfirmed_failed += 1
+    return {
+        "overdue_pending": len(overdue_ages),
+        "oldest_overdue_minutes": int(max(overdue_ages).total_seconds() // 60) if overdue_ages else None,
+        "stale_running": stale_running,
+        "unconfirmed_failed": unconfirmed_failed,
+    }
 
 
 async def _jobs_for(tenant_id: int | None) -> list[Job]:
@@ -103,18 +154,22 @@ async def _job_sources(jobs: list[Job]) -> dict[int, list[dict[str, Any]]]:
     return by_job
 
 
-async def _all_stats(tenant_id: int | None) -> dict[str, int]:
-    """Queue health across the *entire* history, not just the last HISTORY_LIMIT rows."""
+async def _queue_overview(tenant_id: int | None) -> tuple[dict[str, int], dict[str, int | None]]:
+    """Queue health across the *entire* history, not just the last HISTORY_LIMIT rows.
+
+    Status totals plus `queue_signals` over the same rows and scope.
+    """
     query = Job.objects
     if tenant_id is not None:
         query = query.filter(tenant_id=tenant_id)
     rows = list(await query)
-    return {
+    stats = {
         "pending": sum(1 for j in rows if j.status == "pending"),
         "running": sum(1 for j in rows if j.status == "running"),
         "done": sum(1 for j in rows if j.status == "done"),
         "failed": sum(1 for j in rows if j.status == "failed"),
     }
+    return stats, queue_signals(rows, datetime.now(timezone.utc))
 
 
 @router.get("")
@@ -152,6 +207,7 @@ async def jobs_list(request: Request):
     from app.web.tasks import _run_outcome
 
     job_outcomes = {job.id: _run_outcome(job.job_type, job.result or {}) for job in rows if job.status == "done"}
+    stats, signals = await _queue_overview(filter_tenant_id if is_superuser else tenant_id)
 
     return render(
         request,
@@ -161,7 +217,10 @@ async def jobs_list(request: Request):
         sources_map=sources_map,
         job_outcomes=job_outcomes,
         unconfirmed_jobs={job.id for job in rows if job.status == "failed" and outcome_unconfirmed(job.error)},
-        stats=await _all_stats(filter_tenant_id if is_superuser else tenant_id),
+        stats=stats,
+        signals=signals,
+        overdue_pending_minutes=OVERDUE_PENDING_MINUTES,
+        stale_running_minutes=STALE_RUNNING_MINUTES,
         retryable=RETRYABLE,
         deletable=DELETABLE,
         cancellable=CANCELLABLE,

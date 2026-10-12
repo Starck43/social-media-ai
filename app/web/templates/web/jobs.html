@@ -61,6 +61,22 @@
     </div>
 </div>
 
+{% if signals.overdue_pending or signals.stale_running or signals.unconfirmed_failed %}
+    <div class="mt-4 space-y-1 rounded-xl border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+        {% if signals.overdue_pending %}
+            <p>Ждут запуска дольше {{ overdue_pending_minutes }} мин: {{ signals.overdue_pending }} (самое старое — {{ signals.oldest_overdue_minutes }} мин).
+            Воркер остановлен или занят долгим заданием.</p>
+        {% endif %}
+        {% if signals.stale_running %}
+            <p>«Выполняется» без продления блокировки дольше {{ stale_running_minutes }} мин: {{ signals.stale_running }}.
+            Цикл воркера не работает — проверьте процесс воркера.</p>
+        {% endif %}
+        {% if signals.unconfirmed_failed %}
+            <p>Ошибок с неподтверждённым результатом: {{ signals.unconfirmed_failed }}. Проверьте внешний эффект вручную, прежде чем повторять.</p>
+        {% endif %}
+    </div>
+{% endif %}
+
 {% if stats.failed %}
     <div class="mt-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
         Есть задания, которые завершились с ошибкой. Откройте их — в поле «Ошибка» причина,

@@ -116,22 +116,48 @@ must not silently execute or grant access.
 
 ## Usage and cost boundary
 
-The `llm_attempts` journal (`app/models/analysis/llm_attempt.py`, written through
-`app/services/ai/attempt_journal.py`) is the per-attempt accounting surface: one
-immutable row per provider attempt with its usage, tariff snapshot, cost certainty
-(`priced`, `free`, `unknown_tariff`, `unknown_usage`, `not_dispatched`) and outcome
-(`succeeded`, `failed_output`, `failed_transport`, `unknown`). Attempt records are
-written before any projection decision, so a partial run whose daily row is
-skipped, a relevance-filtered day and a failed batch still leave evidence.
-Missing usage or a configured zero tariff is never treated as proof of free:
-unknown stays unknown (NULL cost), and execution references are plain integers
-so queue and transcript cleanup cannot destroy spend evidence.
+### Completed analyzer journal foundation
 
-Daily `ai_analytics` rows, `jobs.llm_cost`, `digest_runs.llm_cost` and the model
-counters remain mutable projections. The current wiring covers analyzer attempts;
-fallback, learning and agent-chat attempts, per-dispatch identity and concurrent
-budget admission remain an open PRD-03 gate in
-[business readiness](BUSINESS_PRODUCTION_READINESS.md).
+Status: **DONE — integrated foundation, not acceptance of the whole PRD-03 gate**.
+Journal `05bf353`, analyzer wiring `5953efb` and contract `9ebe945` are in dev.
+
+- [x] Tenant-scoped `llm_attempts` model and recording manager, with migration
+  definition 0092. This completion does not assert that a target database was migrated.
+- [x] Capture returned analyzer-stage envelopes before the partial-result skip,
+  relevance filter and no-meaningful-results return, independently of the daily row.
+- [x] Snapshot the resolved model tariff and calculate Decimal USD at 1e-9 precision;
+  distinguish `priced`, `free`, `unknown_tariff` and `unknown_usage`.
+- [x] Add isolated regression coverage for identity/pricing/orchestration, preserved
+  partial-save decisions, failed envelopes and redacted journal-write warnings.
+
+The owner reports that local tests passed. The closeout report did not include
+exact commands, counts or a tested SHA; none is inferred here. Remote completion
+review was static and did not rerun Python/DB/provider tests or apply migrations.
+
+The journal records captured analyzer stage envelopes through
+`app/services/ai/attempt_journal.py`. Missing usage or an unresolved model tariff
+keeps cost unknown (NULL), rather than treating it as zero. A configured zero
+tariff is classified as free only with known prompt and completion token counts.
+Source/job/task execution references are plain integers, not foreign keys, so
+source, queue or transcript cleanup does not cascade through those references.
+Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters
+remain mutable projections, not the ledger.
+
+### Remaining acceptance boundary
+
+The current identity is content-derived from scope, stage, model and usage, not a
+unique ID allocated before dispatch. Separate calls with identical identity
+fields can collapse into one record; persistence deduplication is not proof of
+complete every-call accounting. Tariffs are resolved when journaling, not captured
+at dispatch time. Capture occurs after returned stage envelopes, and a journal
+write failure emits a bounded warning while analysis continues; durable recovery
+from that failure is not implemented by this slice.
+
+Fallback/retry/internal-tool, learning and agent-chat attempts, per-dispatch
+identity and timestamp, durable failure handling, and atomic budget admission with
+reservation settlement remain OPEN under
+[business readiness](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
+No whole-gate, target-database or production acceptance is claimed.
 
 ## Key implementation files
 

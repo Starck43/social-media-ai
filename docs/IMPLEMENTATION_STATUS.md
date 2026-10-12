@@ -17,35 +17,33 @@ database revision or full release gate.
 | --- | --- | --- | --- |
 | Identity and tenancy | Fail-closed active-user and permission checks, tenant-scoped model/manager boundaries, tenant-scoped agent-session uniqueness. | PRs #22, #29–32, #38, #66, #95 | Durable approval lifecycle and complete global-admin/credential review. |
 | PostgreSQL jobs | Claim fencing, renewal, ownership preflight, periodic heartbeat, cancellation and bounded recovery/admission primitives. | PRs #51–57, #87, #89, #91, #93 | Non-cooperative work, production timing and unresolved external-effect recovery. |
-| Agent state | Atomic session state/history changes and typed memory/output boundaries. | PRs #58, #59, #100, #102 | Full hostile-input and every-write authorization coverage. |
+| Agent state | Atomic session state/history changes, typed memory/output boundaries and untrusted-data framing of modality results in unified-summary prompts. | PRs #58, #59, #100, #102, #108, #109 | Remaining hostile-input surfaces and every-write authorization coverage. |
 | Collection and analysis | Partial-result diagnostics, tenant-scoped staging, bounded retirement, attachment snapshots and conservative text/media coverage. | PRs #69–80, #88, #90, #92, #94, #97, #98 | Historical repair, remaining source fidelity and end-to-end evidence acceptance. |
 | Telegram admission | Durable L1/L2 admission with cursor/receipt coordination and media placeholders. | PRs #97, #101 | Long-term receipt policy and whole-channel recovery acceptance. |
-| Digest delivery | Per-target/per-part state, snapshot/checkpoint foundations and tenant-safe routing safeguards. | PR #12 and follow-up delivery packages | Staging acceptance for partial failures, lost acknowledgements and operator recovery. |
+| Digest delivery | Per-target/per-part state, snapshot/checkpoint foundations and tenant-safe routing safeguards; legacy-path partial delivery is terminal `partial_delivery_requires_review` and blocks automatic rescheduled resends (explicit force only). | PR #12, follow-up delivery packages, PR #106 | Zero-success lost acknowledgement, concurrent publishers, lease loss and staging operator-recovery acceptance. |
 | LLM routing | DB-managed providers/models, model-level defaults and capability-aware selection/fallback. | PR #96 and migrations through 0091 | Complete per-attempt cost ledger and concurrent budget admission. |
-| Web and operations | Truthful job outcomes, secure cookies outside development, runtime readiness and conservative recovery guidance. | PRs #27, #40, #67, #68 | Repeatable staging install/restore and release evidence packet. |
+| LLM analyzer journal foundation — DONE | Tenant-scoped records for captured analyzer stage envelopes before result-projection decisions; tariff snapshot, Decimal USD and explicit unknown cost; execution IDs independent of source/job/task foreign keys. | Journal `05bf353`, analyzer wiring `5953efb`, contract `9ebe945`; migration definition 0092; integrated in `dev`. | Unique per-dispatch identity, fallback/learning/agent-chat capture, durable write-failure handling and concurrent budget admission; whole PRD-03 remains OPEN. |
+| Web and operations | Truthful job outcomes, secure cookies outside development, runtime readiness, conservative recovery guidance and redacted `/app/jobs` backlog/stale-worker signals. | PRs #27, #40, #67, #68, #110 | External alerting, repeatable staging install/restore and release evidence packet. |
 | Development workflow | Canonical local/remote skills, collaboration rules and compact handoff format. | PRs #103, #104; commits `7833ac6`, `84ee16d` | Keep instructions aligned with the canonical document set. |
 
 ## Current handoff
 
-- Task: PRD-05 unknown-handler terminal outcome — a claimed job with no
-  registered handler now records a terminal `failed` outcome instead of
-  spending its remaining attempts on automatic retries.
-- Base revision: `faedff8` on local `dev`; implementation is uncommitted in the
-  primary checkout and awaits the owner's commit authorization.
-- Result: `app/jobs/dispatcher.py` passes `allow_retry=False` for the
-  unknown-handler branch; `docs/AGENT_TASKS.md` documents the terminal outcome,
-  the operator-inspection requirement and the preserved claim-loss and
-  outcome-write-uncertainty errors; `tests/test_job_claim_outcomes.py` replaces
-  the retry-status test with terminal-outcome, claim-loss, write-uncertainty and
-  wrong-generation coverage.
-- Validation: `pytest -o addopts='' tests/test_job_claim_outcomes.py -q` →
-  30 passed, 22 subtests passed. Two failures in
-  `tests/test_job_attempt_budget.py` and
-  `tests/test_job_dispatch_claim_preflight.py` reproduce without this patch and
-  come from unrelated uncommitted analyzer work in the same tree.
-- Next action: commit this bounded slice in `dev`, then select the next PRD-05
-  recovery or admission gap from
-  [the prioritized queue](design/README.md#prioritized-open-work).
+- Completed package: PRD-03 analyzer journal foundation — **DONE, integrated**.
+  The three package commits are `05bf353`, `5953efb` and `9ebe945`.
+- Code/contract review verified the package in dev `3823177af378b08b77c108be58a4e970aba640c4`.
+  Capture precedes the partial-result skip, relevance filter and the
+  no-meaningful-results return; the existing analysis decisions are preserved.
+- Validation: the owner reports local tests passed. Exact commands, counts and
+  tested SHA were not included in the closeout report and are not inferred.
+  Remote review was static; no Python/DB/provider tests or migrations were run.
+- Whole PRD-03 is **OPEN**, not accepted by this foundation. Content-derived keys
+  can deduplicate separate dispatches with identical scope/model/usage; capture
+  is from returned analyzer envelopes and journal write failures remain warnings.
+  See the [usage/cost boundary](AI_PIPELINE_AND_PROMPTS.md#usage-and-cost-boundary)
+  and [readiness gate](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
+- The completed package is released from active ownership. Select any subsequent
+  bounded PRD-03 work from the [canonical queue](design/README.md#prioritized-open-work);
+  no remaining gate or runtime activation is marked complete here.
 
 ## Recording future delivery
 

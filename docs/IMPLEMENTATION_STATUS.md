@@ -6,9 +6,11 @@ are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
 
-Verified `origin/dev`: `79a5cd1` on 2026-10-12. Merged PRs through #148 are
-integrated; PR #137 remains open as a draft. This checkpoint does not
-certify a deployment, database revision or full release gate.
+Verified `origin/dev`: `8894b22` on 2026-10-12. Receipt storage/verifier
+(PRs #137/#154), non-analyzer journal capture (#163) and registration privilege
+protection (#165) are integrated. Outcome storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
+is NOT merged or activated. This checkpoint does not certify a deployment,
+database revision or full release gate.
 
 ## Delivered foundations
 
@@ -79,6 +81,14 @@ certify a deployment, database revision or full release gate.
   head `28036a8`: command 4 (`tests/test_telegram_durable_admission.py`) passed
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
+- Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
+  is **IN_PROGRESS, NOT merged/activated** at `5511a69`. Remotely executed
+  43 focused no-DB tests, compileall and scoped Black/isort exit 0; exact
+  publication and fresh-dev merge compatibility verified. Larger local registry
+  regression and read-only PG preflight are next. 0094 is a definition only;
+  application and PG evidence need separate approval. No reservation/settlement,
+  runtime cutover or whole-gate acceptance is supplied. Detailed commands and
+  current handoff are in the PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

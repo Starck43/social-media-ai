@@ -12,7 +12,7 @@ nothing. Landing the page is one flag flip — no template surgery.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 class NavItem(NamedTuple):
@@ -27,11 +27,11 @@ class NavItem(NamedTuple):
 # shows only `ready` items, so it never dead-ends on a placeholder.
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("dashboard", "/app/", "Дашборд"),
-    NavItem("sources", "/app/sources", "Источники"),
-    NavItem("scenarios", "/app/scenarios", "Сценарии"),
-    NavItem("tasks", "/app/tasks", "Задачи"),
-    NavItem("analytics", "/app/analytics", "Аналитика"),
-    NavItem("digests", "/app/digests", "Дайджесты"),
+    NavItem("sources", "/app/sources", "Источники", required_permission="source.view"),
+    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view"),
+    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view"),
+    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view"),
+    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view"),
     NavItem("jobs", "/app/jobs", "Очередь задач"),
     NavItem("chat", "/app/chat", "Чат с агентом"),
     NavItem("settings", "/app/settings", "Настройки"),
@@ -43,3 +43,19 @@ NAV_ITEMS: tuple[NavItem, ...] = (
 # returns above `md`.
 MOBILE_NAV_KEYS: frozenset[str] = frozenset({"dashboard", "sources", "tasks", "jobs"})
 MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item.key in MOBILE_NAV_KEYS)
+
+
+def allows(item: NavItem, perms: Any) -> bool:
+    """True when the caller may open the section (no requirement = everyone signed in)."""
+    if item.required_permission is None:
+        return True
+    model_name, _, action = item.required_permission.rpartition(".")
+    return perms is not None and perms.can(model_name, action)
+
+
+def section_of(path: str) -> NavItem | None:
+    """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
+    for item in NAV_ITEMS:
+        if item.required_permission is not None and (path == item.href or path.startswith(item.href + "/")):
+            return item
+    return None

@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from app.models import Tenant
 from app.types import ActionType
 
-from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS
+from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS, allows
 
 _j2_env = Environment(
     loader=FileSystemLoader("app/web/templates", encoding="UTF-8"),
@@ -239,6 +239,30 @@ def perms_can(request: Request, model_name: str, action: ActionType | str) -> bo
 	return perms is not None and perms.can(model_name, action)
 
 
+def _visible_nav(items: tuple, perms: Any, admin_plus: bool) -> tuple:
+	return tuple(item for item in items if (admin_plus or item.key != "jobs") and allows(item, perms))
+
+
+def render_section_denied(request: Request, item: Any):
+	"""403 page for a section the caller's workspace role does not open."""
+	from app.services.tenancy import member_roles
+
+	tenant_id = getattr(request.state, "tenant_id", None)
+	membership = next(
+		(m for m in getattr(request.state, "memberships", []) or [] if m.tenant_id == tenant_id), None
+	)
+	key = member_roles.key_of(membership) if membership is not None else None
+	level = member_roles.BY_KEY.get(key) if key else None
+	return render(
+		request,
+		"web/section_denied.html",
+		status_code=403,
+		section=item.key,
+		denied_section=item.label,
+		member_level=level.label if level is not None else None,
+	)
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
 	perms = getattr(request.state, "web_perms", None)
 	admin_plus = perms is not None and perms.is_superuser_role
@@ -261,8 +285,10 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
 		# «Очередь задач» is operator-only (a platform role above ADMIN); the
 		# sidebar never offers it to anyone else — and `/app/jobs` refuses them
 		# anyway (`guard_superuser`), because hiding a link is not a check.
-		"nav": NAV_ITEMS if admin_plus else tuple(item for item in NAV_ITEMS if item.key != "jobs"),
-		"mobile_nav": MOBILE_NAV_ITEMS if admin_plus else tuple(item for item in MOBILE_NAV_ITEMS if item.key != "jobs"),
+		# A section the caller's role cannot open is not offered either; a direct
+		# visit gets the explanation page (`TenantUIMiddleware`).
+		"nav": _visible_nav(NAV_ITEMS, perms, admin_plus),
+		"mobile_nav": _visible_nav(MOBILE_NAV_ITEMS, perms, admin_plus),
 		"csrf": csrf_token(request),
 		"flashes": pop_flashes(request),
 		"path": request.url.path,

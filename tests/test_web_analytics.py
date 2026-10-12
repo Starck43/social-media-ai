@@ -947,7 +947,8 @@ async def test_drilldown_denied_before_rows_are_loaded(client, drill_records, mo
     monkeypatch.setattr(WebPerms, "can", lambda *args: False)
     monkeypatch.setattr("app.web.analytics._scoped_analytics_rows", read)
     response = await client.get("/app/analytics/group?axis=themes&value=x", follow_redirects=False)
-    assert response.status_code == 302 and response.headers["location"] == "/app"
+    # The section gate answers before the handler runs, so no row is read.
+    assert response.status_code == 403 and "data-section-denied" in response.text
     read.assert_not_awaited()
 
 

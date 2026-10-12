@@ -243,23 +243,27 @@ def _visible_nav(items: tuple, perms: Any, admin_plus: bool) -> tuple:
 	return tuple(item for item in items if (admin_plus or item.key != "jobs") and allows(item, perms))
 
 
-def render_section_denied(request: Request, item: Any):
-	"""403 page for a section the caller's workspace role does not open."""
+def member_level(request: Request) -> Any:
+	"""The caller's access level in the active workspace (`member_roles.MemberRole`), or None."""
 	from app.services.tenancy import member_roles
 
 	tenant_id = getattr(request.state, "tenant_id", None)
-	membership = next(
-		(m for m in getattr(request.state, "memberships", []) or [] if m.tenant_id == tenant_id), None
-	)
-	key = member_roles.key_of(membership) if membership is not None else None
-	level = member_roles.BY_KEY.get(key) if key else None
+	memberships = getattr(request.state, "memberships", []) or []
+	membership = next((m for m in memberships if m.tenant_id == tenant_id), None)
+	if membership is None:
+		return None
+	key = member_roles.key_of(membership)
+	return member_roles.BY_KEY.get(key) if key else None
+
+
+def render_section_denied(request: Request, item: Any):
+	"""403 page for a section the caller's workspace role does not open."""
 	return render(
 		request,
 		"web/section_denied.html",
 		status_code=403,
 		section=item.key,
 		denied_section=item.label,
-		member_level=level.label if level is not None else None,
 	)
 
 
@@ -282,6 +286,8 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
 		# Personal connections this person must act on; empty in a healthy setup.
 		"connection_alerts": getattr(request.state, "connection_alerts", []) or [],
 		"perms": perms,
+		# Access level in the active workspace: pages explain what it allows.
+		"member_level": member_level(request),
 		# «Очередь задач» is operator-only (a platform role above ADMIN); the
 		# sidebar never offers it to anyone else — and `/app/jobs` refuses them
 		# anyway (`guard_superuser`), because hiding a link is not a check.

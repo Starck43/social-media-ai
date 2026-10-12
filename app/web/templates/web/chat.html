@@ -25,6 +25,9 @@
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if is_owner %}
                 Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
+                {% elif member_level %}
+                Ваш уровень — «{{ member_level.label }}». Агент отвечает по данным этого workspace
+                и выполняет только действия, разрешённые этому уровню.
                 {% else %}
                 Агент отвечает по данным этого workspace и может читать их без подтверждения.
                 {% endif %}
@@ -61,8 +64,12 @@
                 </div>
                 <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Спросите агента о ваших данных</p>
                 <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
+                    {% if is_owner or not member_level %}
                     Он видит источники, задачи и аналитику этого workspace и умеет их менять (с подтверждением). Начать
                     можно с «/help».
+                    {% else %}
+                    Он работает с тем, что открывает ваш уровень: {{ member_level.hint | lower }}. Начать можно с «/help».
+                    {% endif %}
                 </p>
             </div>
 

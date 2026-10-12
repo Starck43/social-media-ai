@@ -1,19 +1,18 @@
 {
   "agents": {
     "opencode": {
-      "status": "completed",
-      "task": "PRD-05 unknown-handler terminal outcome: dispatcher records terminal failed for unregistered job types; docs and regression tests updated",
+      "status": "in_progress",
+      "task": "PR #105 review (PRD-02 atomic confirmation consumption): 58 prepared tests pass locally, one regression found in existing runtime log-privacy test",
       "branch": "dev",
       "tests": [
-        "tests/test_job_claim_outcomes.py"
+        "tests/test_confirmation_consumption.py",
+        "tests/test_runtime_confirmation_authorization.py",
+        "tests/test_session_state_key_patch.py",
+        "tests/test_confirmation_consumption_db.py",
+        "tests/test_session_state_key_patch_db.py",
+        "tests/test_agent_runtime_log_privacy.py"
       ],
-      "files_modified": [
-        "app/jobs/dispatcher.py",
-        "docs/AGENT_TASKS.md",
-        "docs/design/README.md",
-        "docs/IMPLEMENTATION_STATUS.md",
-        "tests/test_job_claim_outcomes.py"
-      ],
+      "files_modified": [],
       "pr_review": {
         "queue": "#30 -> #31 -> #32 (strictly sequential, shared test schema)",
         "fresh_heads": {
@@ -35,7 +34,11 @@
             "status": "ff-only updated to new head, checks not started (queue stopped at #30)"
           }
         },
-        "pending": [30, 31, 32],
+        "pending": [
+          30,
+          31,
+          32
+        ],
         "control_worktree": "/Users/admin/Projects/social-media-ai-ctrl30 (b4fd0f0, detached)"
       },
       "prd05_unknown_handler": {
@@ -46,6 +49,43 @@
           "tests/test_job_dispatch_claim_preflight.py::PreflightTests::test_normal_handler_exception_retains_retry_policy"
         ],
         "note": "Both failures reproduce with this patch stashed; caused by unrelated uncommitted analyzer/llm_attempt work in the same tree."
+      },
+      "pr_review_105": {
+        "pr": 105,
+        "title": "Fence concurrent confirmation dispatch with committed intent consumption",
+        "branch": "fix/atomic-confirmation-consumption",
+        "head_sha": "bceefdaba6b386720c9146d2f3c3ece29d57f54c",
+        "base_sha": "9ebe9451abafdbae97b3cc82993e8b2bdc004937",
+        "worktree": "/Users/admin/Projects/social-media-ai-pr105",
+        "control_worktree": "/Users/admin/Projects/social-media-ai-ctrl105",
+        "diff_check": "git diff 9ebe945..bceefda --check exit 0; 9 files, 653 insertions, 30 deletions",
+        "isolated_scripts": {
+          "test_confirmation_consumption.py": "12 passed, exit 0",
+          "test_runtime_confirmation_authorization.py": "26 passed, exit 0",
+          "test_session_state_key_patch.py": "8 passed, exit 0"
+        },
+        "db_scripts": {
+          "test_confirmation_consumption_db.py": "5 passed, exit 0",
+          "test_session_state_key_patch_db.py": "7 passed, exit 0"
+        },
+        "regression": {
+          "test": "tests/test_agent_runtime_log_privacy.py::RuntimeLogPrivacyTests::test_confirmed_tool_failure_keeps_flow_without_logging_private_error",
+          "control": "passes on base 9ebe945",
+          "pr_head": "fails on bceefda",
+          "cause": "existing test mocks agent_sessions with patch_state only; PR _clear_pending now calls agent_sessions.consume_pending_confirmation, which the mock lacks, so the yes-path returns the unconfirmed-storage reply instead of the tool error",
+          "fix": "add consume_pending_confirmation to the test's agent_sessions mock"
+        },
+        "pre_existing_failures": [
+          "tests/test_agent_history_pairing.py (6 tests) - fail on base 9ebe945 and on PR head"
+        ],
+        "formatting": {
+          "new_file_not_black": "tests/test_runtime_confirmation_authorization.py",
+          "pre_existing_not_black": [
+            "app/agent/runtime.py",
+            "tests/test_session_state_key_patch.py"
+          ]
+        },
+        "verdict": "BLOCKED: one regression in an existing test; PR remains Draft"
       }
     }
   }

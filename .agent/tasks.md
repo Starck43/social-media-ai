@@ -1,6 +1,7 @@
 # Task Registry
 
 ## Open
+- [ ] PR #105 (PRD-02 atomic confirmation consumption, head bceefda): BLOCKED — one regression in `tests/test_agent_runtime_log_privacy.py::test_confirmed_tool_failure_keeps_flow_without_logging_private_error` (existing test mocks `agent_sessions` without `consume_pending_confirmation`); 58 prepared tests pass locally; new file `tests/test_runtime_confirmation_authorization.py` not Black-formatted (owner: opencode)
 - [ ] PR #30 fresh head 8ded166: owner decision needed — waive cosmetic `git diff --check` (blank line at EOF, 4 tenancy files, pre-existing since a4d3237) or approve scoped production-file whitespace fix; then resume #30 pytest and #31/#32 queue (owner: opencode)
 - [ ] Pre-existing full-suite failures on base b4fd0f0 (47 tests: handle_collect mock_infrastructure ImportError, JobManager SimpleNamespace AttributeError, web layout/wizard assertions) — fixed by later dev commits, 482eacb full suite is clean (owner: opencode)
 

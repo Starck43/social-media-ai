@@ -110,11 +110,21 @@ must not silently execute or grant access.
 
 ## Usage and cost boundary
 
-Current provider responses project tokens and estimated cost into caller-specific
-records and analytics. These projections do not form a complete billing ledger:
-fallbacks, failed calls, missing usage and unknown tariffs can be incomplete.
-Unknown cost must not be treated as free. The durable every-attempt ledger and
-concurrent budget admission remain an open PRD-03 gate in
+The `llm_attempts` journal (`app/models/analysis/llm_attempt.py`, written through
+`app/services/ai/attempt_journal.py`) is the per-attempt accounting surface: one
+immutable row per provider attempt with its usage, tariff snapshot, cost certainty
+(`priced`, `free`, `unknown_tariff`, `unknown_usage`, `not_dispatched`) and outcome
+(`succeeded`, `failed_output`, `failed_transport`, `unknown`). Attempt records are
+written before any projection decision, so a partial run whose daily row is
+skipped, a relevance-filtered day and a failed batch still leave evidence.
+Missing usage or a configured zero tariff is never treated as proof of free:
+unknown stays unknown (NULL cost), and execution references are plain integers
+so queue and transcript cleanup cannot destroy spend evidence.
+
+Daily `ai_analytics` rows, `jobs.llm_cost`, `digest_runs.llm_cost` and the model
+counters remain mutable projections. The current wiring covers analyzer attempts;
+fallback, learning and agent-chat attempts, per-dispatch identity and concurrent
+budget admission remain an open PRD-03 gate in
 [business readiness](BUSINESS_PRODUCTION_READINESS.md).
 
 ## Key implementation files
@@ -124,4 +134,5 @@ concurrent budget admission remain an open PRD-03 gate in
 - `app/services/ai/json_schema_builder.py` — output schema/instruction compiler.
 - `app/services/ai/scenario.py` and `scenario_templates.py` — scenario construction.
 - `app/services/ai/llm_client.py` and `llm_provider_resolver.py` — clients and model selection.
+- `app/services/ai/attempt_journal.py` — per-attempt journal builder, pricing and recording.
 - `app/services/ai/param_registry.py` — methodology versus run-target parameters.

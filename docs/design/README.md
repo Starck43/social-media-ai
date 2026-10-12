@@ -7,8 +7,9 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified local `dev`: `84ee16d284a6355006dd71c7157a0744ab203ddd` on
-2026-10-12. Packages through PR #104 are integrated. Active lanes are listed
+Verified `origin/dev`: `e8fc7238d38ef1dca15ee84466741668660a8808` on
+2026-10-12. Merged packages through PR #128 are integrated; PRs #127, #129 and
+#130 remain open. Active lanes are listed
 under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
@@ -36,8 +37,7 @@ starts only when the applicable foundation gates are accepted.
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
 | PRD-03 strict attempt-journal replay | Remote Notion agent; `fix/strict-attempt-journal-replay`, [Draft PR #129](https://github.com/Starck43/social-media-ai/pull/129) to `dev` | BLOCKED — owner-local verification and PostgreSQL evidence required | PR #125 MERGED (`d2b687d`, accepted head `08c53e1`, 83 owner-local tests); ledger updated. New implementation `e71b4e6`: only exact tenant-bound evidence replay is acknowledged; only the named key constraint is suppressed; other write/read/commit failures remain visible. 17 new methods prepared, NOT RUN (project .venv unavailable); commands and PG evidence gate in PR. No schemas/runtime/live actions; full PRD-03 remains OPEN. |
-| PRD-04 loopback-only database binding | Remote Notion agent; `fix/compose-db-loopback`, Draft PR to `dev` | IN_PROGRESS | Restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`; preserve container `db:5432` and local-owner tools. Prepare configuration/negative regression checks; actual network isolation needs local/staging evidence. Do not start/restart Compose: API startup runs Alembic. No DDL/deploy/firewall/runtime-owner changes. |
-| PRD-05 unknown-handler terminal outcome | Local session, `dev`; dispatcher + focused tests | VALIDATED | A claimed job with no registered handler records a terminal `failed` outcome even when the caller allows retries; no handler runs and no automatic retry is scheduled. Claim loss and outcome-write uncertainty stay explicit errors. 30 focused tests + 22 subtests passed. Remove this row after verified integration. |
+| PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |
 | PRD-02 workspace member roles | Remote Notion agent; `feat/workspace-invite-links`, [Draft PR #127](https://github.com/Starck43/social-media-ai/pull/127); `fix/web-perms-stub-active`, [Draft PR #130](https://github.com/Starck43/social-media-ai/pull/130); both to `dev` | BLOCKED — owner-local verification required | Step 1/4 MERGED (#126, merge `2329459`; ledger updated). Step 2/4 (#127, `c115e4b`): single-use invite link + QR with a chosen access level (viewer/analyst/manager/co-admin; owner not invitable); adds `segno`. Agent sandbox (not owner `.venv`): new tests pass; related files show only pre-existing dev failures. Test-only #130 (`233d8e6`): the `test_web_permissions.py` stub user is active, so its 5 pre-existing failures pass (16 passed here). Next: hide unavailable nav and warn on direct access; agent-chat access by role. |
 
 For a new implementation lane, replace or add one row with its exact bounded

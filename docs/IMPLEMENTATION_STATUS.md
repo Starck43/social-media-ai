@@ -6,17 +6,16 @@ are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
 
-Verified local `dev`: `84ee16d284a6355006dd71c7157a0744ab203ddd` on
-2026-10-12, matching `origin/dev` when documentation consolidation began. PRs
-through #104 are integrated. This checkpoint does not certify a deployment,
-database revision or full release gate.
+Verified `origin/dev`: `e8fc7238d38ef1dca15ee84466741668660a8808` on
+2026-10-12. Merged PRs through #128 are integrated. This checkpoint does not
+certify a deployment, database revision or full release gate.
 
 ## Delivered foundations
 
 | Area | Delivered behavior | Integration references | Remaining boundary |
 | --- | --- | --- | --- |
 | Identity and tenancy | Fail-closed active-user and permission checks, tenant-scoped model/manager boundaries, tenant-scoped agent-session uniqueness. Web (`/app`) and API (`/api`) workspace resolution ignores memberships of deactivated workspaces, matching chat identity and invite redemption. A non-owner member's rights on workspace-scoped models follow the membership role (existing Role matrix) in web, API and agent tools; owners, platform superusers and global models keep their previous rights. | PRs #22, #29–32, #38, #66, #95, #122 (merge `7b99f03`; owner-local 37 passed at `8e5fd3c`), #126 (merge `2329459`; owner-local at `deca354`: 79 passed / 5 pre-existing `test_web_permissions.py` failures identical to dev, 11 permission files 134 passed) | Durable approval lifecycle, complete global-admin/credential review, workspace reactivation flow, invite-time role choice, role-aware navigation and agent-chat access by role. |
-| PostgreSQL jobs | Claim fencing, renewal, ownership preflight, periodic heartbeat, cancellation and bounded recovery/admission primitives. | PRs #51–57, #87, #89, #91, #93 | Non-cooperative work, production timing and unresolved external-effect recovery. |
+| PostgreSQL jobs | Claim fencing, renewal, ownership preflight, periodic heartbeat, cancellation and bounded recovery/admission primitives. A claimed job with no registered handler records a terminal `failed` outcome without automatic retry. | PRs #51–57, #87, #89, #91, #93; direct `dev` commit `35350a8` | Non-cooperative work, production timing and unresolved external-effect recovery. |
 | Agent state | Atomic session state/history changes, typed memory/output boundaries and untrusted-data framing of modality results in unified-summary prompts. | PRs #58, #59, #100, #102, #108, #109 | Remaining hostile-input surfaces and every-write authorization coverage. |
 | Atomic confirmation consumption | Versioned actor-bound intent, tenant-scoped locked consume of the exact pending snapshot and post-commit single-use authorization; losers, replacements and uncertain commits cannot dispatch the approved write. | PR #105, merge `0179296`; owner-local acceptance at `a4d2673`, subsequent board-only reconciliation. | External-effect exactly-once delivery, crash recovery after consumption, every-write coverage and whole PRD-02 acceptance remain open; no runtime rollout or DB migration certification. |
 | Collection and analysis | Partial-result diagnostics, tenant-scoped staging, bounded retirement, attachment snapshots and conservative text/media coverage. | PRs #69–80, #88, #90, #92, #94, #97, #98 | Historical repair, remaining source fidelity and end-to-end evidence acceptance. |

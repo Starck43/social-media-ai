@@ -211,6 +211,28 @@ class TenantUserManager(BaseManager["TenantUser"]):
         )
         return sorted(rows, key=lambda m: m.id)
 
+    async def member_grants(self, membership: "TenantUser | None") -> frozenset | None:
+        """Workspace rights `(model_name, ActionType)` of a non-owner member.
+
+        None for an owner (owner rules apply). A member without a resolvable
+        role gets no workspace rights. The role is the existing `Role` row the
+        owner assigned to this membership, so the matrix is not duplicated.
+        """
+        if membership is None:
+            return frozenset()
+        if membership.is_owner:
+            return None
+        from ..role import Role
+
+        role = await Role.objects.prefetch_related("permissions.model_type").get(id=membership.role_id)
+        if role is None:
+            return frozenset()
+        return frozenset(
+            (permission.model_type.model_name.lower(), permission.action_type)
+            for permission in role.permissions
+            if permission.model_type is not None
+        )
+
     async def web_memberships_for_tenant(self, tenant_id: int) -> list["TenantUser"]:
         """Active web members of a workspace (with a `user_id` bound)."""
         rows = await self.filter(tenant_id=tenant_id, channel=WEB_CHANNEL, is_active=True)

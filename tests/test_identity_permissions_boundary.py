@@ -205,7 +205,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
 
         middleware = api.ApiScopeMiddleware(downstream)
         middleware._authenticate = AsyncMock(return_value=self.user)
-        middleware._resolve_tenant = AsyncMock(return_value=(31, None))
+        middleware._resolve_tenant = AsyncMock(return_value=(31, None, None))
         await middleware({"type": "http", "path": "/api/v1/sources"}, None, None)
         self.assertEqual(observations, [(self.user, 31)])
         self.assertIsNone(self.perms.get_current_user())

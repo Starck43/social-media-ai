@@ -68,7 +68,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.capture = Capture()
         logger = logging.Logger("isolated-runtime-review", level=logging.DEBUG)
         logger.addHandler(self.capture)
-        self.identity = SimpleNamespace(user=object(), is_owner=False)
+        self.identity = SimpleNamespace(user=object(), is_owner=False, member_grants=None)
         self.ns = {
             "Any": Any, "Optional": Optional, "RuntimeIdentity": Any,
             "logger": logger, "logging": logging, "json": json, "re": re,

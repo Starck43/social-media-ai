@@ -33,6 +33,7 @@
             </div>
 
             <ol class="mt-4 grid gap-2 sm:grid-cols-2">
+                {% if offer.add_source %}
                 <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
                     <span class="shrink-0 {{ 'text-emerald-500' if kpis.active_sources else 'text-slate-600 dark:text-slate-400' }}">✓</span>
                     <div class="min-w-0">
@@ -40,6 +41,8 @@
                         {% if not kpis.active_sources %}<span class="ml-2 text-slate-500 dark:text-slate-400">с него начнётся сбор</span>{% endif %}
                     </div>
                 </li>
+                {% endif %}
+                {% if offer.add_scenario %}
                 <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
                     <span class="shrink-0 {{ 'text-emerald-500' if scenarios_count else 'text-slate-600 dark:text-slate-400' }}">✓</span>
                     <div class="min-w-0">
@@ -47,6 +50,8 @@
                         {% if not scenarios_count %}<span class="ml-2 text-slate-500 dark:text-slate-400">как агент анализирует контент</span>{% endif %}
                     </div>
                 </li>
+                {% endif %}
+                {% if offer.add_task %}
                 <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
                     <span class="shrink-0 {{ 'text-emerald-500' if kpis.active_tasks else 'text-slate-600 dark:text-slate-400' }}">✓</span>
                     <div class="min-w-0">
@@ -54,6 +59,8 @@
                         {% if not kpis.active_tasks %}<span class="ml-2 text-slate-500 dark:text-slate-400">сбор и анализ по cron</span>{% endif %}
                     </div>
                 </li>
+                {% endif %}
+                {% if offer.digests %}
                 <li class="flex items-center gap-3 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950/50 px-3 py-2 text-sm">
                     <span class="shrink-0 text-slate-600 dark:text-slate-400">✓</span>
                     <div class="min-w-0">
@@ -61,6 +68,7 @@
                         <span class="ml-2 text-slate-500 dark:text-slate-400">ежедневные сводки в канале</span>
                     </div>
                 </li>
+                {% endif %}
             </ol>
         </div>
     {% endif %}
@@ -109,7 +117,9 @@
         </div>
     </div>
 
+    {% if offer.tasks or offer.add_task or offer.sources %}
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
+        {% if offer.tasks %}
         <div class="ui-card lg:col-span-2">
             <div class="flex items-center justify-between">
                 <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Задачи</h2>
@@ -202,23 +212,33 @@
                 </div>
             {% else %}
                 {{ empty_state("Пока нет задач.", height="h-24", radius="rounded-xl") }}
+                {% if offer.add_task %}
                 <div class="mt-2 text-center">
                     <a href="/app/tasks" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Создайте первую</a>
                 </div>
+                {% endif %}
             {% endif %}
         </div>
+        {% endif %}
+        {% if offer.add_task or offer.sources %}
         <div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Быстрые действия</h2>
             <div class="mt-4 space-y-2">
+                {% if offer.add_task %}
                 <a href="/app/tasks" class="block w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-center text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                     Создать задачу
                 </a>
+                {% endif %}
+                {% if offer.sources %}
                 <a href="/app/sources" class="block w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-center text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                     Источники
                 </a>
+                {% endif %}
             </div>
         </div>
+        {% endif %}
     </div>
+    {% endif %}
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
         <div class="ui-card lg:col-span-2">
@@ -226,7 +246,8 @@
             {% if analytics.recent %}
                 <div class="mt-4 space-y-3">
                     {% for a in analytics.recent %}
-                        <a href="/app/analytics/{{ a.id }}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}" class="block rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
+                        {% set card_tag = 'a' if offer.analytics else 'div' %}
+                        <{{ card_tag }} {% if offer.analytics %}href="/app/analytics/{{ a.id }}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}" {% endif %}class="block rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
                             <div class="flex items-center justify-between gap-3">
                                 <p class="font-medium text-slate-900 dark:text-slate-100">{{ a.title|e }}</p>
                                 <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
@@ -247,7 +268,7 @@
                             {% if a.cost_usd > 0 %}
                                 <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">LLM-расход: ${{ "%.4f"|format(a.cost_usd) }}</p>
                             {% endif %}
-                        </a>
+                        </{{ card_tag }}>
                     {% endfor %}
                 </div>
             {% else %}

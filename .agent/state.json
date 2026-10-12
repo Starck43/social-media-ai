@@ -2,7 +2,7 @@
   "agents": {
     "opencode": {
       "status": "in_progress",
-      "task": "PR #108 review (PRD-07 unified-summary hostile input): 70 tests pass locally; one whitespace defect from git diff --check",
+      "task": "PR #105/#107/#108 re-verification after author revisions: regressions fixed, remaining formatting fixes requested",
       "branch": "dev",
       "tests": [
         "tests/test_scenario_prompt_system.py",
@@ -51,7 +51,7 @@
         "pr": 105,
         "title": "Fence concurrent confirmation dispatch with committed intent consumption",
         "branch": "fix/atomic-confirmation-consumption",
-        "head_sha": "bceefdaba6b386720c9146d2f3c3ece29d57f54c",
+        "head_sha": "534609901f9d57457d46863854f9ad590f3165e3",
         "base_sha": "9ebe9451abafdbae97b3cc82993e8b2bdc004937",
         "worktree": "/Users/admin/Projects/social-media-ai-pr105",
         "control_worktree": "/Users/admin/Projects/social-media-ai-ctrl105",
@@ -82,14 +82,20 @@
             "tests/test_session_state_key_patch.py"
           ]
         },
-        "verdict": "BLOCKED: one regression in an existing test; PR remains Draft; findings posted as a PR comment",
-        "review_comment": "https://github.com/Starck43/social-media-ai/pull/105#issuecomment-6116866338"
+        "verdict": "NOT READY: regression resolved and all 58 prepared tests pass; two new files still need Black",
+        "review_comment": "https://github.com/Starck43/social-media-ai/pull/105#issuecomment-6117010244",
+        "revision_commit": "5346099 test: adapt privacy fixture to atomic confirmation consumption",
+        "regression_resolved": "tests/test_agent_runtime_log_privacy.py 4 passed; test_runtime_confirmation_authorization.py now Black/isort clean",
+        "remaining": [
+          "tests/test_confirmation_consumption.py fails Black (new file)",
+          "tests/test_confirmation_consumption_db.py fails Black (new file)"
+        ]
       },
       "pr_review_107": {
         "pr": 107,
         "title": "Redact API and MTProto credential diagnostic errors",
         "branch": "fix/credential-diagnostics-privacy",
-        "head_sha": "38916d5ed27d767938f9888e3b383cbd8422040b",
+        "head_sha": "07394fe991de4e7a0f0515ad3754988863eaab93",
         "base_sha": "8096a42b11f3b6e794738b6ba92e7dbc71127e8e",
         "worktree": "/Users/admin/Projects/social-media-ai-pr107",
         "diff_check": "git diff 8096a42..38916d5 --check exit 0; 5 files, 453 insertions, 7 deletions",
@@ -106,8 +112,14 @@
           "app/api/v1/endpoints/credentials.py new multi-import fails Black",
           "app/services/social/tg_session.py import order fails isort (clean on base)"
         ],
-        "verdict": "NOT READY: functional evidence complete, three formatting defects introduced by this head; fix requested from the author via PR comment",
-        "review_comment": "https://github.com/Starck43/social-media-ai/pull/107#issuecomment-6116928766"
+        "verdict": "NOT READY: 14 prepared tests and 57 existing tests pass; two new files miss a trailing newline",
+        "review_comment": "https://github.com/Starck43/social-media-ai/pull/107#issuecomment-6117011371",
+        "revision_commit": "07394fe style: reflow credential privacy tests and order diagnostic imports",
+        "resolved": "tg_session.py isort clean; credentials.py multi-import Black clean",
+        "remaining": [
+          "app/services/social/credential_diagnostics.py missing newline at EOF (new file)",
+          "tests/test_credential_diagnostic_privacy.py missing newline at EOF (new file)"
+        ]
       },
       "pr_review_108": {
         "pr": 108,
@@ -126,7 +138,8 @@
           "pr_impact": "after Black normalization the only differences are this PR's own lines; the new tests/test_scenario_prompt_system.py additions are Black-clean",
           "defect": "git diff --check exit 2: a whitespace-only line added inside the substitute docstring"
         },
-        "verdict": "NOT READY: functional evidence complete, one whitespace defect from git diff --check"
+        "verdict": "NOT READY: 70 tests pass; git diff --check exits 2 on a whitespace-only docstring line",
+        "review_comment": "https://github.com/Starck43/social-media-ai/pull/108#issuecomment-6116978931"
       }
     }
   }

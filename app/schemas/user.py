@@ -22,21 +22,22 @@ class UserLogin(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Schema for creating a new user."""
+    """Self-service registration payload.
+
+    Only identity fields are accepted. Account state and platform rights
+    (`is_active`, `is_superuser`, `role_id`) are server-decided, so any such key
+    in the request body is ignored rather than written to the new account.
+    """
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    is_active: bool = True
-    is_superuser: bool = False
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "username": "johndoe",
                 "email": "johndoe@example.com",
-                "password": "strongpassword123",
-                "is_active": True,
-                "is_superuser": False
+                "password": "strongpassword123"
             }
         }
     )

@@ -6,9 +6,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from app.core.logger import logger
 from app.services.user.auth import get_authenticated_user, oauth2_scheme, authenticate
 from app.utils.token import create_access_token, create_tokens_pair
-from app.models import User
+from app.models import Role, User
 from app.schemas.token import Token, TokenWithRefresh
 from app.schemas.user import UserCreate
+from app.types import UserRoleType
 
 router = APIRouter(tags=["auth"])
 
@@ -104,8 +105,7 @@ async def create_user(new_user: UserCreate) -> dict[str, Any]:
 			— username: The user's username
 			— email: The user's email
 			— password: The user's password
-			— first_name: (Optional) The user's first name
-			— last_name: (Optional) The user's last name
+			Account state and platform rights are never taken from the payload.
 
 	Returns:
 		dict: A dictionary containing:
@@ -131,10 +131,25 @@ async def create_user(new_user: UserCreate) -> dict[str, Any]:
 			detail="Email already registered",
 		)
 
+	# Self-registration never grants platform rights: the account gets the
+	# lowest platform role, like the web registration, and only the identity
+	# fields of the payload are written.
+	viewer = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+	if viewer is None:
+		raise HTTPException(
+			status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+			detail="Roles are not configured",
+		)
+
 	try:
-		# Convert Pydantic model to dict and remove None values
-		user_data = new_user.model_dump(exclude_unset=True)
-		user = await User.objects.create_user(**user_data)
+		user = await User.objects.create_user(
+			username=new_user.username,
+			email=new_user.email,
+			password=new_user.password,
+			role_id=viewer.id,
+			is_active=True,
+			is_superuser=False,
+		)
 
 		# Generate tokens for the new user
 		tokens = create_tokens_pair(subject=str(user.id))

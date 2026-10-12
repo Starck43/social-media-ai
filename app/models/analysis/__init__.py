@@ -12,13 +12,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
     from .ai_analytics import AIAnalytics
+    from .llm_attempt import LLMAttempt
     from .llm_model import LLMModel
     from .llm_provider import LLMProvider
 
-__all__ = ["AgentScenario", "AIAnalytics", "LLMModel", "LLMProvider"]
+__all__ = ["AgentScenario", "AIAnalytics", "LLMAttempt", "LLMModel", "LLMProvider"]
 _MODULES = {
     "AgentScenario": "agent_scenario",
     "AIAnalytics": "ai_analytics",
+    "LLMAttempt": "llm_attempt",
     "LLMModel": "llm_model",
     "LLMProvider": "llm_provider",
 }

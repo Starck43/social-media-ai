@@ -18,6 +18,7 @@ from .agent_session import AgentSession
 
 # Analytics models
 from .ai_analytics import AIAnalytics
+from .llm_attempt import LLMAttempt
 
 # Core models
 from .base import Base, TenantScopedMixin, TimestampMixin
@@ -84,6 +85,7 @@ __all__ = [
     "LLMModel",
     # Analytics models
     "AIAnalytics",
+    "LLMAttempt",
     # Task runner / jobs
     "AgentTask",
     "Job",

@@ -9,7 +9,11 @@ import re
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from app.types import MediaType
-from app.services.ai.prompt_variables import PromptSubstitution
+from app.services.ai.prompt_variables import (
+	UNTRUSTED_UNIFIED_VARIABLES,
+	PromptSubstitution,
+	render_untrusted_value,
+)
 from app.services.ai.prompt_sanitizer import frame_untrusted_text, sanitize_untrusted_text
 
 if TYPE_CHECKING:
@@ -115,7 +119,10 @@ class PromptBuilder:
 			variables = PromptSubstitution.prepare_unified_variables(
 				text_analysis, image_analysis, video_analysis
 			)
-			prompt = PromptSubstitution.substitute(scenario.summary_prompt, variables)
+			# Modality results are model output derived from collected content.
+			prompt = PromptSubstitution.substitute(
+				scenario.summary_prompt, variables, untrusted=UNTRUSTED_UNIFIED_VARIABLES
+			)
 
 			# Auto-append JSON instruction if not present
 			prompt = PromptBuilder._ensure_unified_json_instruction(prompt)
@@ -669,6 +676,10 @@ class PromptBuilder:
 		Returns:
 			Prompt for creating unified summary
 		"""
+		# Modality results are model output derived from collected content.
+		text_analysis = render_untrusted_value(text_analysis)
+		image_analysis = render_untrusted_value(image_analysis)
+		video_analysis = render_untrusted_value(video_analysis)
 		return f"""
 У тебя есть результаты анализа контента из разных источников. Создай единое общее резюме (summary).
 

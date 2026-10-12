@@ -6,9 +6,21 @@ Provides utilities for:
 - Available variable documentation
 - Type-safe variable handling
 """
+import json
 import re
-from typing import Any, Dict
+from typing import Any, Collection, Dict
+from app.services.ai.prompt_sanitizer import frame_untrusted_text
 from app.types import MediaType
+
+# Model output derived from collected content: framed as untrusted data, never instructions.
+UNTRUSTED_UNIFIED_VARIABLES = frozenset({'text_analysis', 'image_analysis', 'video_analysis'})
+
+
+def render_untrusted_value(value: Any) -> str:
+	"""Frame a value as untrusted data; structures are serialized as JSON, not Python repr."""
+	if isinstance(value, (dict, list, tuple)):
+		value = json.dumps(value, ensure_ascii=False, default=str)
+	return frame_untrusted_text(str(value))
 
 
 class PromptVariables:
@@ -159,7 +171,9 @@ class PromptSubstitution:
 	"""Utilities for variable substitution in prompt templates."""
 	
 	@staticmethod
-	def substitute(template: str, variables: dict[str, Any]) -> str:
+	def substitute(
+		template: str, variables: dict[str, Any], untrusted: Collection[str] = frozenset()
+	) -> str:
 		"""
 		Substitute variables in prompt template.
 		
@@ -168,9 +182,14 @@ class PromptSubstitution:
 		- Nested dict access: {stats.total_posts}
 		- Safe handling of missing variables
 		
+		Placeholders are resolved in one pass over the template, so text inserted
+		for one variable is never re-scanned for further placeholders. Values whose
+		top-level name is in `untrusted` are framed as untrusted data.
+		
 		Args:
 			template: Prompt template with {variable} placeholders
 			variables: Dictionary of variable values
+			untrusted: Top-level variable names whose values are untrusted data
 		
 		Returns:
 			Prompt with substituted values
@@ -181,25 +200,17 @@ class PromptSubstitution:
 			>>> substitute(template, variables)
 			'Platform: VK, Posts: 10'
 		"""
-		result = template
-		
-		# Find all {variable} patterns
-		pattern = r'\{([^}]+)\}'
-		matches = re.findall(pattern, template)
-		
-		for match in matches:
-			placeholder = f"{{{match}}}"
-			value = PromptSubstitution._get_nested_value(variables, match)
-			
-			if value is not None:
-				# Convert to string safely
-				if isinstance(value, dict):
-					# For dict values, convert to formatted string
-					value = str(value)
-				result = result.replace(placeholder, str(value))
-			# If value is None, leave placeholder as is (or could remove it)
-		
-		return result
+		def replace(match: re.Match) -> str:
+			path = match.group(1)
+			value = PromptSubstitution._get_nested_value(variables, path)
+			if value is None:
+				# Leave the placeholder as is
+				return match.group(0)
+			if path.split('.')[0] in untrusted:
+				return render_untrusted_value(value)
+			return str(value)
+
+		return re.sub(r'\{([^}]+)\}', replace, template)
 	
 	@staticmethod
 	def _get_nested_value(data: dict[str, Any], path: str) -> Any:

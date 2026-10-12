@@ -137,16 +137,18 @@ async def test_schedule_to_channel_end_to_end(monkeypatch):
     run = await DigestRun.objects.get(agent_task_id=schedule.id)
     assert run.status == "sent" and run.message_id == "1234"
 
-    job = (await Job.objects.filter(job_type="digest"))[0]
+    # Rows come back without an ORDER BY, so pick jobs by id, never by position.
+    (job,) = await Job.objects.filter(job_type="digest")
     assert job.status == "done"
 
     # Re-running the same period is a no-op (idempotent), and a fresh job
     # for it does not deliver a second message.
-    await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, agent_task_id=schedule.id)
+    again = await dispatcher.jobs.enqueue(job_type="digest", payload={"period": "day"}, agent_task_id=schedule.id)
+    assert again.id != job.id
     assert await dispatcher.drain() == 1
     assert len(sent) == 1
 
-    skipped = (await Job.objects.filter(job_type="digest"))[-1]
+    skipped = await Job.objects.get(id=again.id)
     assert skipped.status == "done" and skipped.result["reason"] == "already_sent"
 
 
@@ -195,7 +197,7 @@ async def test_failed_delivery_stops_for_review_and_reattempt_reuses_run_row(mon
     assert await dispatcher.drain() == 1
     assert len(attempts) == 1
 
-    failed = (await Job.objects.filter(job_type="digest"))[0]
+    (failed,) = await Job.objects.filter(job_type="digest")
     assert failed.status == "failed" and outcome_unconfirmed(failed.error)
     assert failed.attempts == 1
     assert (await AgentTask.objects.get(id=schedule.id)).last_status == "failed"

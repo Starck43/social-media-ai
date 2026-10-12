@@ -35,6 +35,7 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
+| PRD-02 exact intent consumption | Remote Notion agent, `fix/atomic-confirmation-consumption`; PR to `dev` | IN_PROGRESS | Only one concurrent confirmation may dispatch the same stored intent; stale cleanup preserves replacements. Draft pending project-venv unit/runtime checks and local PostgreSQL commit/serialization evidence. No schema or live-action changes. |
 | PRD-03 attempt journal (analyzer attempts) | Local session, `dev`; `llm_attempts` ledger + analyzer wiring | VALIDATED | One journal row per analyzer provider attempt: usage, tariff snapshot, cost certainty and outcome survive a skipped daily row, a filtered day and a failed batch. Remaining: fallback, learning and agent-chat attempts; per-dispatch identity; concurrent budget admission. |
 | PRD-05 unknown-handler terminal outcome | Local session, `dev`; dispatcher + focused tests | VALIDATED | A claimed job with no registered handler records a terminal `failed` outcome even when the caller allows retries; no handler runs and no automatic retry is scheduled. Claim loss and outcome-write uncertainty stay explicit errors. 30 focused tests + 22 subtests passed. Remove this row after verified integration. |
 

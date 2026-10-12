@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 import asyncio
 from copy import deepcopy
+from contextlib import asynccontextmanager
+import json
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -36,6 +38,7 @@ def load(path, name, cls=None, scope=None):
 class Field:
     def __init__(self, name): self.name = name
     def __eq__(self, value): return (self.name, value)
+    def is_(self, value): return (self.name, value)
 
 
 class Statement:
@@ -52,7 +55,7 @@ class Transaction:
     async def execute(self, stmt):
         self.store.statements.append(stmt)
         expected = (('id', 1), ('tenant_id', 7))
-        if stmt.criteria != expected:
+        if stmt.criteria not in (expected, (*expected, ('is_active', True))):
             raise AssertionError('tenant/id predicate not preserved')
         if stmt.kind == 'select':
             if not stmt.locked: raise AssertionError('read must acquire row lock')
@@ -73,7 +76,7 @@ class Store:
     def __init__(self, state=None, *, missing=False):
         self.state, self.missing = deepcopy(state), missing
         self.lock, self.statements = asyncio.Lock(), []
-        self.model = SimpleNamespace(id=Field('id'), state=Field('state'))
+        self.model = SimpleNamespace(id=Field('id'), state=Field('state'), is_active=Field('is_active'))
         self.fail_scope = False
         self.implementation = load(MANAGER, 'patch_state', 'AgentSessionManager', {
             'select': lambda *args: Statement('select'), 'update': lambda *args: Statement('update')})
@@ -84,6 +87,22 @@ class Store:
         transaction = Transaction(self)
         try: return await self.implementation(self, session_id, updates, session=transaction)
         finally: transaction.close()  # Simulates transaction end, not real DB evidence.
+
+    @asynccontextmanager
+    async def _get_owned_session(self):
+        transaction = Transaction(self)
+        try:
+            yield transaction
+        finally:
+            transaction.close()
+
+    async def consume_pending_confirmation(self, session_id, expected):
+        snapshot = load(MANAGER, '_confirmation_snapshot', scope={'json': json})
+        consume = load(MANAGER, 'consume_pending_confirmation', 'AgentSessionManager', {
+            'select': lambda *args: Statement('select'), 'update': lambda *args: Statement('update'),
+            '_confirmation_snapshot': snapshot,
+        })
+        return await consume(self, session_id, expected)
 
 
 class KeyPatchProbes(unittest.IsolatedAsyncioTestCase):

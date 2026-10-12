@@ -62,9 +62,18 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
                     state[key] = value
             return state
 
+        async def consume_pending_confirmation(session_id, expected):
+            self.assertEqual(session_id, self.session.id)
+            if self.session.state.get("pending_confirmation") != expected:
+                return None
+            state = dict(self.session.state)
+            state.pop("pending_confirmation")
+            return state
+
         self.session_manager = SimpleNamespace(
             get_or_create=AsyncMock(return_value=self.session),
             patch_state=AsyncMock(side_effect=patch_state),
+            consume_pending_confirmation=AsyncMock(side_effect=consume_pending_confirmation),
         )
         storage_patch = patch.dict(sys.modules, {
             "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
@@ -110,6 +119,20 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         intent = self.confirmation.make_pending_intent(self.actor, self.session, self.spec, args, "c1")
         args["nested"]["value"] = "changed"
         self.assertEqual(intent["args"]["nested"]["value"], "initial")
+
+    async def test_identical_stage_requests_have_distinct_intent_ids(self):
+        replacement = self.confirmation.make_pending_intent(
+            self.actor, self.session, self.spec, {"source_id": 9}, "c1", now=self.now,
+        )
+        self.assertNotEqual(self.pending["intent_id"], replacement["intent_id"])
+
+    async def test_legacy_missing_or_malformed_intent_id_is_denied(self):
+        for value in (None, "", "not-an-id", 1, "z" * 32):
+            pending = {**self.pending, "intent_id": value}
+            self.assertEqual(
+                self.confirmation.pending_rejection(pending, self.actor, self.session, self.spec),
+                "unbound_intent",
+            )
 
     async def test_legacy_actorless_intent_is_denied(self):
         legacy = {k: v for k, v in self.pending.items() if k != "authorization"}
@@ -320,6 +343,86 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         result = await self.authorized_turn(runtime, self.pending)
         self.assertIn("отклонено", result)
         self.assertNotIn("pending_confirmation", self.session.state)
+        runtime.call_tool.assert_not_awaited()
+
+    async def test_two_stale_session_snapshots_authorize_only_one_handler(self):
+        runtime = self.runtime()
+        tools = self.tools()
+        runtime.call_tool = tools.call_tool
+        runtime.confirmed_dispatch_scope = self.confirmation.confirmed_dispatch_scope
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock(return_value="continued")
+        snapshots = [
+            SimpleNamespace(**{**vars(self.session), "state": {"pending_confirmation": copy.deepcopy(self.pending)}})
+            for _ in range(2)
+        ]
+        stored = {"pending_confirmation": copy.deepcopy(self.pending), "keep": "fresh"}
+        lock, both_arrived = asyncio.Lock(), asyncio.Event()
+        arrivals = 0
+
+        async def consume(session_id, expected):
+            nonlocal arrivals
+            self.assertEqual(session_id, self.session.id)
+            arrivals += 1
+            if arrivals == 2:
+                both_arrived.set()
+            await both_arrived.wait()
+            async with lock:
+                if stored.get("pending_confirmation") != expected:
+                    return None
+                stored.pop("pending_confirmation")
+                return dict(stored)
+
+        self.session_manager.get_or_create.side_effect = snapshots
+        self.session_manager.consume_pending_confirmation.side_effect = consume
+        self.inbound.text = "да"
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+            replies = await asyncio.wait_for(asyncio.gather(*[
+                runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor) for _ in range(2)
+            ]), 2)
+        self.handler.assert_awaited_once_with(source_id=9)
+        self.assertEqual(replies.count("continued"), 1)
+        self.assertTrue(any("уже использовано" in reply for reply in replies))
+        self.assertEqual(stored, {"keep": "fresh"})
+        runtime._run_tool_loop.assert_awaited_once()
+
+    async def test_lost_compare_and_consume_never_calls_handler_or_model(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock()
+        self.session_manager.consume_pending_confirmation.return_value = None
+        self.session_manager.consume_pending_confirmation.side_effect = None
+        result = await self.authorized_turn(runtime, self.pending)
+        self.assertIn("уже использовано", result)
+        runtime.call_tool.assert_not_awaited()
+        runtime._run_tool_loop.assert_not_awaited()
+        runtime._write_tool_result.assert_not_awaited()
+
+    async def test_consume_commit_uncertainty_is_redacted_and_never_dispatches(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock()
+        self.session_manager.consume_pending_confirmation.side_effect = RuntimeError("PRIVATE provider token")
+        with self.assertLogs(runtime.logger, level="WARNING") as logs:
+            result = await self.authorized_turn(runtime, self.pending)
+        self.assertIn("сохранение не подтверждено", result)
+        self.assertNotIn("PRIVATE", result + "\n".join(logs.output))
+        runtime.call_tool.assert_not_awaited()
+        runtime._run_tool_loop.assert_not_awaited()
+
+    async def test_rejected_stale_intent_cleanup_compares_exact_snapshot(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        expired = {**self.pending, "expires_at": (self.now - timedelta(seconds=1)).isoformat()}
+        self.session_manager.consume_pending_confirmation.side_effect = None
+        self.session_manager.consume_pending_confirmation.return_value = None
+        result = await self.authorized_turn(runtime, expired)
+        self.assertIn("отклонено", result)
+        self.session_manager.consume_pending_confirmation.assert_awaited_once_with(self.session.id, expired)
+        self.session_manager.patch_state.assert_not_awaited()
         runtime.call_tool.assert_not_awaited()
 
     async def test_batch_stops_effects_after_first_stage_but_records_every_tool_result(self):

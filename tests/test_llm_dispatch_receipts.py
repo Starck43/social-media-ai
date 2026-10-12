@@ -201,6 +201,7 @@ class PreparationTests(unittest.IsolatedAsyncioTestCase):
 
 class TestBase(DeclarativeBase):
     metadata = MetaData(schema="receipts_review")
+    __allow_unmapped__ = True
 
 
 Table("tenants", TestBase.metadata, Column("id", Integer, primary_key=True))

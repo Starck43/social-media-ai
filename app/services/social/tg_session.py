@@ -23,8 +23,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from app.services.social.credentials import resolve_token
 from app.services.social.credential_diagnostics import credential_exception_status
+from app.services.social.credentials import resolve_token
 
 logger = logging.getLogger(__name__)
 

@@ -109,11 +109,15 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
             return Client()
 
         self.httpx = module(
-            "httpx", TransportError=TransportError, TimeoutException=TimeoutException,
-            HTTPStatusError=real_httpx.HTTPStatusError, AsyncClient=client_factory,
+            "httpx",
+            TransportError=TransportError,
+            TimeoutException=TimeoutException,
+            HTTPStatusError=real_httpx.HTTPStatusError,
+            AsyncClient=client_factory,
         )
         spec = importlib.util.spec_from_file_location(
-            "_credential_diagnostics_actual", ROOT / "app/services/social/credential_diagnostics.py",
+            "_credential_diagnostics_actual",
+            ROOT / "app/services/social/credential_diagnostics.py",
         )
         self.diagnostics = importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules, {"httpx": self.httpx}):
@@ -126,7 +130,8 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.check_session = AsyncMock(return_value="error: authorization_error")
         self.endpoint = load_function("app/api/v1/endpoints/credentials.py", "test_credentials")
         self.settings = SimpleNamespace(
-            VK_API_BASE_URL="https://vk.example.invalid", VK_API_VERSION="5.199",
+            VK_API_BASE_URL="https://vk.example.invalid",
+            VK_API_VERSION="5.199",
             TELEGRAM_API_BASE_URL="https://tg.example.invalid",
             MAX_API_URL="https://max.example.invalid",
         )
@@ -136,11 +141,15 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
             "app.services": module("app.services"),
             "app.services.social": module("app.services.social"),
             "app.services.social.credentials": module(
-                "app.services.social.credentials", credential_status=self.status, resolve_token=self.token,
+                "app.services.social.credentials",
+                credential_status=self.status,
+                resolve_token=self.token,
             ),
             "app.services.social.credential_diagnostics": self.diagnostics,
             "app.services.social.tg_session": module(
-                "app.services.social.tg_session", load_session=self.load_session, check_session=self.check_session,
+                "app.services.social.tg_session",
+                load_session=self.load_session,
+                check_session=self.check_session,
             ),
             "app.core": module("app.core"),
             "app.core.config": module("app.core.config", settings=self.settings),
@@ -187,8 +196,13 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await self.endpoint_result(), f"error: {category}")
 
     async def test_http_status_errors_use_only_numeric_category(self):
-        for code, category in ((401, "authorization_error"), (403, "authorization_error"),
-                               (429, "rate_limited"), (503, "provider_unavailable"), (404, "provider_error")):
+        for code, category in (
+            (401, "authorization_error"),
+            (403, "authorization_error"),
+            (429, "rate_limited"),
+            (503, "provider_unavailable"),
+            (404, "provider_error"),
+        ):
             with self.subTest(code=code):
                 self.request_error = HTTPStatusError(code)
                 self.assertEqual(await self.endpoint_result(), f"error: {category}")
@@ -196,11 +210,16 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_vk_raw_provider_error_and_request_parameters_never_echo(self):
         for code, category in ((5, "authorization_error"), (6, "rate_limited"), (100, "provider_error")):
             with self.subTest(code=code):
-                self.response = Response({
-                    "error": {"error_code": code, "error_msg": PRIVATE_URL,
-                              "request_params": [{"key": "access_token", "value": SECRET}]},
-                    "raw": "provider-raw-body",
-                })
+                self.response = Response(
+                    {
+                        "error": {
+                            "error_code": code,
+                            "error_msg": PRIVATE_URL,
+                            "request_params": [{"key": "access_token", "value": SECRET}],
+                        },
+                        "raw": "provider-raw-body",
+                    }
+                )
                 self.assertEqual(await self.endpoint_result(), f"error: {category}")
         self.assertEqual(self.requests[-1][1]["params"]["access_token"], SECRET)
 
@@ -220,10 +239,12 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_malformed_json_and_error_codes_fail_without_echo(self):
         for platform, payload in (
-            ("vk", [SECRET]), ("vk", {"error": PRIVATE_URL}),
+            ("vk", [SECRET]),
+            ("vk", {"error": PRIVATE_URL}),
             ("vk", {"error": {"error_code": SECRET, "error_msg": PRIVATE_URL}}),
             ("vk", {"error": {"error_code": True}}),
-            ("telegram", [SECRET]), ("telegram", {"ok": False, "description": PRIVATE_URL}),
+            ("telegram", [SECRET]),
+            ("telegram", {"ok": False, "description": PRIVATE_URL}),
             ("telegram", {"ok": SECRET, "error_code": PRIVATE_SESSION}),
         ):
             with self.subTest(platform=platform, payload_type=type(payload).__name__):
@@ -260,9 +281,14 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.load_session.return_value = SimpleNamespace(session=PRIVATE_SESSION)
         with patch.dict(sys.modules, self.modules):
             result = await self.endpoint(self.user)
-        self.assertEqual(result[-1], {
-            "platform": "telegram", "source": "mtproto", "status": "error: authorization_error",
-        })
+        self.assertEqual(
+            result[-1],
+            {
+                "platform": "telegram",
+                "source": "mtproto",
+                "status": "error: authorization_error",
+            },
+        )
         self.assert_private(result)
 
     async def test_http_cancellation_propagates_without_diagnostic_success(self):
@@ -278,8 +304,11 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.diagnostics.credential_exception_status(error), "error: invalid_response")
 
     async def test_optional_telethon_categories_do_not_require_telethon(self):
-        for name, category in (("AuthKeyUnregisteredError", "authorization_error"),
-                               ("SessionRevokedError", "authorization_error"), ("FloodWaitError", "rate_limited")):
+        for name, category in (
+            ("AuthKeyUnregisteredError", "authorization_error"),
+            ("SessionRevokedError", "authorization_error"),
+            ("FloodWaitError", "rate_limited"),
+        ):
             error_type = type(name, (Exception,), {})
             status = self.diagnostics.credential_exception_status(error_type(PRIVATE_SESSION))
             self.assertEqual(status, f"error: {category}")
@@ -289,26 +318,36 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
         for stage in ("build", "connect", "authorize", "profile", "disconnect"):
             with self.subTest(stage=stage):
                 client = SimpleNamespace(
-                    connect=AsyncMock(), is_user_authorized=AsyncMock(return_value=True),
+                    connect=AsyncMock(),
+                    is_user_authorized=AsyncMock(return_value=True),
                     get_me=AsyncMock(return_value=SimpleNamespace(username="test_user", id=12)),
                     disconnect=AsyncMock(),
                 )
                 error = UnformattableError(PRIVATE_SESSION)
                 if stage != "build":
-                    getattr(client, {
-                        "connect": "connect", "authorize": "is_user_authorized",
-                        "profile": "get_me", "disconnect": "disconnect",
-                    }[stage]).side_effect = error
+                    getattr(
+                        client,
+                        {
+                            "connect": "connect",
+                            "authorize": "is_user_authorized",
+                            "profile": "get_me",
+                            "disconnect": "disconnect",
+                        }[stage],
+                    ).side_effect = error
 
                 def build(credentials):
                     if stage == "build":
                         raise error
                     return client
 
-                check = load_function("app/services/social/tg_session.py", "check_session", {
-                    "build_client": build,
-                    "credential_exception_status": self.diagnostics.credential_exception_status,
-                })
+                check = load_function(
+                    "app/services/social/tg_session.py",
+                    "check_session",
+                    {
+                        "build_client": build,
+                        "credential_exception_status": self.diagnostics.credential_exception_status,
+                    },
+                )
                 status = await check(SimpleNamespace(session=PRIVATE_SESSION))
                 self.assertEqual(status, "error: integration_error")
                 self.assert_private(status)
@@ -319,14 +358,19 @@ class CredentialDiagnosticPrivacyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mtproto_success_expiry_and_cancellation_keep_cleanup(self):
         client = SimpleNamespace(
-            connect=AsyncMock(), is_user_authorized=AsyncMock(return_value=True),
+            connect=AsyncMock(),
+            is_user_authorized=AsyncMock(return_value=True),
             get_me=AsyncMock(return_value=SimpleNamespace(username="test_user", id=12)),
             disconnect=AsyncMock(),
         )
-        check = load_function("app/services/social/tg_session.py", "check_session", {
-            "build_client": lambda credentials: client,
-            "credential_exception_status": self.diagnostics.credential_exception_status,
-        })
+        check = load_function(
+            "app/services/social/tg_session.py",
+            "check_session",
+            {
+                "build_client": lambda credentials: client,
+                "credential_exception_status": self.diagnostics.credential_exception_status,
+            },
+        )
         self.assertEqual(await check(SimpleNamespace()), "ok (user @test_user)")
         client.get_me.return_value.username = None
         self.assertEqual(await check(SimpleNamespace()), "ok (user @12)")

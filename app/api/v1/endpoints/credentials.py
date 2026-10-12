@@ -132,10 +132,12 @@ async def test_credentials(
     current_user: User = Depends(require_model_perm("credential", ActionType.VIEW)),
 ):
     """Test all platform credentials and report status."""
-    from app.services.social.credentials import credential_status, resolve_token
     from app.services.social.credential_diagnostics import (
-        credential_exception_status, credential_http_error, credential_provider_error,
+        credential_exception_status,
+        credential_http_error,
+        credential_provider_error,
     )
+    from app.services.social.credentials import credential_status, resolve_token
     from app.services.social.tg_session import check_session, load_session
     import httpx
     from app.core.config import settings

@@ -105,14 +105,28 @@ def attempt_key(
     model_id: Optional[str],
     prompt_tokens: Optional[int],
     completion_tokens: Optional[int],
+    dispatch_id: Optional[str] = None,
 ) -> str:
-    """Content-derived identity: repeat writes of the same attempt are no-ops.
+    """Dispatch identity when present; content identity for legacy envelopes.
 
-    The key deliberately excludes any dispatch timestamp, so a retried
-    persistence of one execution records once; a later execution with
-    different usage, model or scope is a distinct attempt. Per-dispatch
-    identity (run nonce) arrives with the client-level capture slice.
+    Fresh analyze clients allocate the UUID before HTTP dispatch. For those
+    envelopes, usage, tariff and projection/execution fields do not alter the
+    identity of a persistence retry. Missing IDs retain the legacy key exactly;
+    legacy-only calls with identical content can still collapse.
     """
+    if dispatch_id is not None:
+        if (
+            type(dispatch_id) is not str
+            or len(dispatch_id) != 32
+            or any(char not in "0123456789abcdef" for char in dispatch_id)
+        ):
+            raise ValueError("Invalid analysis dispatch identity")
+        identity = json.dumps(
+            ["analysis_dispatch_v1", tenant_id, purpose, stage, dispatch_id],
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
     identity = json.dumps(
         [
             tenant_id,
@@ -172,6 +186,8 @@ def build_attempt_records(
         else:
             outcome = OUTCOME_SUCCEEDED
         model_id = _request_field(envelope, "model")
+        request = envelope.get("request")
+        dispatch_id = request.get("dispatch_id") if isinstance(request, dict) else None
         records.append(
             {
                 "attempt_key": attempt_key(
@@ -185,6 +201,7 @@ def build_attempt_records(
                     model_id=model_id,
                     prompt_tokens=prompt,
                     completion_tokens=completion,
+                    dispatch_id=dispatch_id,
                 ),
                 "purpose": purpose,
                 "stage": stage,

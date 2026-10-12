@@ -145,17 +145,31 @@ remain mutable projections, not the ledger.
 
 ### Remaining acceptance boundary
 
-The current identity is content-derived from scope, stage, model and usage, not a
-unique ID allocated before dispatch. Separate calls with identical identity
-fields can collapse into one record; persistence deduplication is not proof of
-complete every-call accounting. Tariffs are resolved when journaling, not captured
+Fresh OpenAI-compatible, Anthropic and custom `analyze()` invocations allocate a
+local UUID before their HTTP attempt. The same `request.dispatch_id` (32 lowercase
+hex characters) is retained in returned success, timeout, HTTP-error and validation-
+failure envelopes. It is metadata, not a generated provider payload field or an
+idempotency header. Caller keywords and provider response fields cannot replace it.
+
+For these envelopes, the journal hashes a versioned identity bound to the tenant,
+purpose, stage and dispatch UUID. Separate invocations with identical model/usage
+remain distinct; persistence retries of one envelope retain its key even if usage,
+tariffs or projection/execution references change. No new schema fields are added:
+the UUID contributes to the existing `attempt_key`, rather than being a new column.
+Malformed non-null IDs are rejected, not replaced with a freshly minted identity.
+
+Envelopes missing an ID (including legacy workers) retain the original content-
+derived key exactly. Their identical calls can still collapse; no historical
+backfill or complete mixed-version accounting is claimed. The UUID is not durable
+before the HTTP call and does not turn cancellation/process loss into a journal
+receipt. Tariffs are resolved when journaling, not captured
 at dispatch time. Capture occurs after returned stage envelopes, and a journal
 write failure emits a bounded warning while analysis continues; durable recovery
 from that failure is not implemented by this slice.
 
-Fallback/retry/internal-tool, learning and agent-chat attempts, per-dispatch
-identity and timestamp, durable failure handling, and atomic budget admission with
-reservation settlement remain OPEN under
+Chat/fallback/retry/internal-tool, learning and agent-chat capture, durable
+dispatch receipts and timestamps, failure recovery, and atomic budget admission
+with reservation settlement remain OPEN under
 [business readiness](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
 No whole-gate, target-database or production acceptance is claimed.
 

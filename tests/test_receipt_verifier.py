@@ -105,6 +105,106 @@ class HelpersTests(unittest.TestCase):
         self.assertEqual(len(MODULE.CHECKS), 5)
 
 
+class ReflectedKeyTests(unittest.TestCase):
+    def setUp(self):
+        from sqlalchemy import Column, Index, Integer, MetaData, String, Table, UniqueConstraint
+
+        self.table = Table(
+            "llm_dispatch_receipts",
+            MetaData(),
+            Column("dispatch_id", String(32)),
+            Column("tenant_id", Integer),
+            Column("utc_day", String(10)),
+            UniqueConstraint("dispatch_id", name="uq_llm_dispatch_receipts_identity"),
+            Index("ix_llm_dispatch_receipts_tenant_day", "tenant_id", "utc_day"),
+            schema="test_schema",
+        )
+        self.uniques = [{"name": "uq_llm_dispatch_receipts_identity", "column_names": ["dispatch_id"]}]
+        self.indexes = [
+            {
+                "name": "ix_llm_dispatch_receipts_tenant_day",
+                "column_names": ["tenant_id", "utc_day"],
+                "unique": False,
+            }
+        ]
+
+    def verify(self):
+        inspector = SimpleNamespace(
+            get_unique_constraints=lambda name, schema: self.uniques,
+            get_indexes=lambda name, schema: self.indexes,
+        )
+        return MODULE.reflected_keys(inspector, self.table)
+
+    def test_unique_reported_only_as_constraint_passes(self):
+        result = self.verify()
+        self.assertEqual(result["unique_constraints"], self.uniques)
+        self.assertEqual(result["indexes"], self.indexes)
+
+    def test_explicit_matching_backing_index_also_passes(self):
+        self.indexes.append(
+            {
+                "name": "uq_llm_dispatch_receipts_identity",
+                "column_names": ["dispatch_id"],
+                "unique": True,
+                "duplicates_constraint": "uq_llm_dispatch_receipts_identity",
+            }
+        )
+        self.assertEqual(len(self.verify()["indexes"]), 2)
+
+    def test_missing_unique_constraint_fails(self):
+        self.uniques.clear()
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Unique constraint parity"):
+            self.verify()
+
+    def test_wrong_unique_columns_fail(self):
+        self.uniques[0]["column_names"] = ["tenant_id", "dispatch_id"]
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Unique constraint parity"):
+            self.verify()
+
+    def test_duplicate_unique_constraint_entries_fail(self):
+        self.uniques.append(dict(self.uniques[0]))
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Unique constraint parity"):
+            self.verify()
+
+    def test_standalone_unique_index_cannot_replace_constraint(self):
+        self.uniques.clear()
+        self.indexes.append(
+            {"name": "uq_llm_dispatch_receipts_identity", "column_names": ["dispatch_id"], "unique": True}
+        )
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Unique constraint parity"):
+            self.verify()
+
+    def test_unexpected_standalone_index_fails(self):
+        self.indexes.append({"name": "extra", "column_names": ["dispatch_id"], "unique": True})
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Index parity"):
+            self.verify()
+
+    def test_bogus_duplicate_marker_fails(self):
+        self.indexes[0]["duplicates_constraint"] = "missing"
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Constraint backing index parity"):
+            self.verify()
+
+    def test_wrong_index_column_order_fails(self):
+        self.indexes[0]["column_names"].reverse()
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Index parity"):
+            self.verify()
+
+    def test_partial_index_fails(self):
+        self.indexes[0]["dialect_options"] = {"postgresql_where": "tenant_id = 1"}
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Partial index"):
+            self.verify()
+
+    def test_covering_index_fails(self):
+        self.indexes[0]["include_columns"] = ["dispatch_id"]
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Unexpected covering index"):
+            self.verify()
+
+    def test_wrong_index_method_fails(self):
+        self.indexes[0]["dialect_options"] = {"postgresql_using": "hash"}
+        with self.assertRaisesRegex(MODULE.VerificationFailure, "Index method"):
+            self.verify()
+
+
 class BoundaryTests(unittest.IsolatedAsyncioTestCase):
     def owned(self, events, fail_commit=False):
         @asynccontextmanager

@@ -242,6 +242,53 @@ async def catalog(session, schema, role):
     }
 
 
+def reflected_keys(inspector, model):
+    """Compare logical constraints separately from physical indexes.
+
+    PostgreSQL/SQLAlchemy versions can omit a UNIQUE's backing index or report
+    it with duplicates_constraint. Only a proven matching duplicate is skipped;
+    a standalone extra unique index must still fail parity.
+    """
+    from sqlalchemy import UniqueConstraint
+
+    unique_constraints = inspector.get_unique_constraints(model.name, schema=model.schema)
+    expected_unique = {
+        c.name: tuple(column.name for column in c.columns)
+        for c in model.constraints
+        if isinstance(c, UniqueConstraint)
+    }
+    reflected_unique = {c["name"]: tuple(c["column_names"]) for c in unique_constraints}
+    require(
+        reflected_unique == expected_unique and len(unique_constraints) == len(expected_unique),
+        "Unique constraint parity",
+    )
+    indexes = inspector.get_indexes(model.name, schema=model.schema)
+    logical_indexes = []
+    for index in indexes:
+        duplicate = index.get("duplicates_constraint")
+        if duplicate:
+            require(
+                duplicate in reflected_unique
+                and index["name"] == duplicate
+                and index["unique"]
+                and tuple(index["column_names"]) == reflected_unique[duplicate],
+                "Constraint backing index parity",
+            )
+        else:
+            logical_indexes.append(index)
+    require(
+        sorted((i["name"], tuple(i["column_names"]), i["unique"]) for i in logical_indexes)
+        == sorted((i.name, tuple(c.name for c in i.columns), i.unique) for i in model.indexes),
+        "Index parity",
+    )
+    require(all(not i.get("dialect_options", {}).get("postgresql_where") for i in indexes), "Partial index")
+    require(all(not i.get("include_columns") for i in indexes), "Unexpected covering index")
+    require(
+        all(i.get("dialect_options", {}).get("postgresql_using", "btree") == "btree" for i in indexes), "Index method"
+    )
+    return {"indexes": indexes, "unique_constraints": unique_constraints}
+
+
 def reflected_parity(connection, model, definition):
     from sqlalchemy import inspect
 
@@ -263,21 +310,8 @@ def reflected_parity(connection, model, definition):
             )
         else:
             require(found == wanted, "Column type/length/default/nullability")
-    indexes = inspector.get_indexes(model.name, schema=model.schema)
-    require(
-        sorted((i["name"], tuple(i["column_names"]), i["unique"]) for i in indexes)
-        == [
-            ("ix_llm_dispatch_receipts_tenant_day", ("tenant_id", "utc_day"), False),
-            ("uq_llm_dispatch_receipts_identity", ("dispatch_id",), True),
-        ],
-        "Index parity",
-    )
-    require(all(not i.get("dialect_options", {}).get("postgresql_where") for i in indexes), "Partial index")
-    require(all(not i.get("include_columns") for i in indexes), "Unexpected covering index")
-    require(
-        all(i.get("dialect_options", {}).get("postgresql_using", "btree") == "btree" for i in indexes), "Index method"
-    )
-    return {"column_count": len(columns), "columns": actual, "indexes": indexes}
+    keys = reflected_keys(inspector, model)
+    return {"column_count": len(columns), "columns": actual, **keys}
 
 
 async def snapshot(session, schema):

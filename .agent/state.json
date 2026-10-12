@@ -108,7 +108,8 @@
           "app/api/v1/endpoints/credentials.py new multi-import fails Black",
           "app/services/social/tg_session.py import order fails isort (clean on base)"
         ],
-        "verdict": "NOT READY: functional evidence complete, three formatting defects introduced by this head"
+        "verdict": "NOT READY: functional evidence complete, three formatting defects introduced by this head; fix requested from the author via PR comment",
+        "review_comment": "https://github.com/Starck43/social-media-ai/pull/107#issuecomment-6116928766"
       }
     }
   }

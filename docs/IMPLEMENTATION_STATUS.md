@@ -82,13 +82,16 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **IN_PROGRESS, NOT merged/activated** at `5511a69`. Remotely executed
-  43 focused no-DB tests, compileall and scoped Black/isort exit 0; exact
-  publication and fresh-dev merge compatibility verified. Larger local registry
-  regression and read-only PG preflight are next. 0094 is a definition only;
-  application and PG evidence need separate approval. No reservation/settlement,
-  runtime cutover or whole-gate acceptance is supplied. Detailed commands and
-  current handoff are in the PR.
+  is **IN_PROGRESS, NOT merged/activated** at `5511a69`. Remote 43 focused
+  tests, compileall and scoped Black/isort passed; owner-local larger standalone
+  bundle **116 tests** and fresh actual ORM registry integration passed at the
+  same SHA. No-DB evidence is accepted and need not be repeated without a changed
+  risk. Read-only PG preflight is **BLOCKED by a competing shared-schema runner**;
+  version/guard/retained-data state has not been reverified. Resume only after
+  fresh idle/intake checks, without interfering with that runner. 0094 remains
+  a definition only; application and write-based PG proof need separate approval.
+  No runtime/admission/settlement or full-gate acceptance is supplied. Commands,
+  report attribution and current handoff are in the PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

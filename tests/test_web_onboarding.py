@@ -513,6 +513,8 @@ def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
         scenarios_count=scenarios_count,
         # `plan_badge` reads this; the route gets it from `render()`.
         plan_labels={"free": "Free"},
+        # An owner: every section the dashboard points at is open.
+        offer=dict.fromkeys(("sources", "add_source", "add_scenario", "tasks", "add_task", "digests", "analytics"), True),
     )
 
 

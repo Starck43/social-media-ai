@@ -14,7 +14,9 @@ import types
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
+
+from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -211,11 +213,10 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             "app.services.ai.reporting": module_with(ReportAggregator=object, normalize_digest_axis=lambda value: value),
             "app.services.digest.render": module_with(render_digest=lambda *args, **kwargs: ""),
         }
-        self.import_patch = patch.dict(sys.modules, modules)
-        self.import_patch.start()
-        self.addCleanup(self.import_patch.stop)
-        self.learning = load_source("_learning_boundary_test", "app/agent/learning.py")
-        self.builder = load_source("_digest_boundary_test", "app/services/digest/builder.py")
+        self.tenant_context = modules["app.core.tenant_context"]
+        # Module-local doubles: global sys.modules stays untouched for later test files.
+        self.learning = load_isolated_source("_learning_boundary_test", ROOT / "app/agent/learning.py", modules)
+        self.builder = load_isolated_source("_digest_boundary_test", ROOT / "app/services/digest/builder.py", modules)
         self.learning._plan_gate = AsyncMock(return_value=None)
         self.learning.get_watermark = AsyncMock(return_value=10)
         self.learning.set_watermark = AsyncMock()
@@ -295,7 +296,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["llm_cost"])
 
     async def test_learn_requires_tenant_without_platform_bypass_before_model(self):
-        context = sys.modules["app.core.tenant_context"]
+        context = self.tenant_context
         for tenant_id, bypass in ((None, False), (None, True), (7, True)):
             with self.subTest(tenant_id=tenant_id, bypass=bypass):
                 context.current_tenant_id = lambda: tenant_id

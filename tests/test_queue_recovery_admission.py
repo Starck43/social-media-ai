@@ -304,26 +304,9 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen,[owned,caller]);owned.commit.assert_awaited_once()
 
 
-class ReaperPolicyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_stale_write_is_stop_not_requeue_and_preserves_evidence(self):
-        f=Fixture();query=SimpleNamespace(update=AsyncMock(side_effect=[0,2]));calls=[]
-        def filtered(*args,**kwargs):calls.append((args,kwargs));return query
-        f.job_manager.filter=filtered
-        self.assertEqual(await f.job_manager.reap_stale(),2)
-        changed=query.update.await_args_list[1].kwargs
-        self.assertEqual(changed['status'],'failed');self.assertIn(POLICY.OUTCOME_UNCONFIRMED_PREFIX,changed['error'])
-        self.assertEqual(calls[1][1]['status'],'running')
-        for field in ('locked_at','started_at','attempts','result','llm_cost'):self.assertNotIn(field,changed)
-    async def test_budget_stop_and_unknown_stop_remain_distinct(self):
-        f=Fixture();query=SimpleNamespace(update=AsyncMock(side_effect=[7,1]));f.job_manager.filter=lambda *a,**k:query
-        self.assertEqual(await f.job_manager.reap_stale(),1)
-        self.assertIn(BUDGET.ATTEMPT_BUDGET_STOP_PREFIX,query.update.await_args_list[0].kwargs['error'])
-        self.assertIn(POLICY.OUTCOME_UNCONFIRMED_PREFIX,query.update.await_args_list[1].kwargs['error'])
-    async def test_reaper_storage_error_has_no_second_write(self):
-        f=Fixture();query=SimpleNamespace(update=AsyncMock(side_effect=ConnectionError('store unavailable')))
-        f.job_manager.filter=lambda *a,**k:query
-        with self.assertRaises(ConnectionError):await f.job_manager.reap_stale()
-        query.update.assert_awaited_once()
+# Reaper stop/quarantine policy (no requeue, distinct markers, retained evidence,
+# single failing write, same-transaction Task summary) lives in
+# tests/test_job_stale_reap.py and tests/test_job_stale_reap_db.py.
 
 
 class DeliveryFailure(RuntimeError):

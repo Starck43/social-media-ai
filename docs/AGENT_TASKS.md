@@ -116,6 +116,11 @@ platform; the guards (`app/services/social/guards.py`) are checked against the
 5. `reap_stale()` quarantines stale `running` jobs as failed with an unconfirmed-
    outcome marker; it never replays them automatically. The worker emits one
    redacted warning with the quarantined count so operators can investigate.
+   In the same transaction, each quarantined or attempt-budget-stopped job
+   writes its task's `last_status=failed` and `last_error` (the marker), so the
+   task list, task page and `/api/v1/tasks` stop showing `queued` or an older
+   result for a run that died with its worker. A task whose last trigger or
+   outcome is later than that attempt's start keeps the newer evidence.
 
 Job columns are merged into the handler payload by `execute_job()`, so handlers
 receive `agent_task_id` and `job_id` alongside their own `payload` keys. Digest

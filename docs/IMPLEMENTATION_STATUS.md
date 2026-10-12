@@ -53,14 +53,13 @@ certify a deployment, database revision or full release gate.
 - Next bounded package: preparation-receipt storage and frozen tariff basis
   ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `e8d335e`),
   not activated. Owner-local isolated verification accepted: 143 methods and
-  compiler/formatters PASS. Owner-relayed read-only preflight confirms shared DB,
-  public version 0092 and metadata-bootstrapped test_schema without version history;
-  receipt objects absent. Option (b) definition-only application in test_schema,
-  preserving public version, is explicitly owner-approved together with synthetic
-  receipt writes and rollback-only mutation/trigger-disable tests, retention and
-  RESTRICT. Owner-local execution/evidence is pending. Real PostgreSQL proof NOT RUN.
-  Existing target alembic check is not drift proof; scoped catalog parity is planned.
-  Definition 0093 is NOT applied. No runtime/cutover authorized.
+  compiler/formatters PASS. Owner reports approved option (b) applied in test_schema
+  with PostgreSQL PASS: public version 0092, journal 79, guards enabled and 44
+  synthetic receipts retained; FK RESTRICT accepted. Detailed PG evidence review
+  is PENDING: the verdict comment contains a local @file path, not report contents;
+  runner/log/report are not accessible remotely. Keep Draft; publish existing
+  redacted evidence, do not reapply or clean up. Stock Alembic check, production
+  migrator and full suite are not certified. No runtime/cutover authorized.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing
@@ -70,7 +69,8 @@ certify a deployment, database revision or full release gate.
   head `28036a8`: command 4 (`tests/test_telegram_durable_admission.py`) passed
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
-- No target migration, schema reset, live activation or deployment was performed.
+- Owner reports test-only 0093 definition application; no working-schema migration,
+  schema reset, live activation or deployment is claimed.
 
 ## Recording future delivery
 

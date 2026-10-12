@@ -13,14 +13,16 @@ if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
     from .ai_analytics import AIAnalytics
     from .llm_attempt import LLMAttempt
+    from .llm_dispatch_receipt import LLMDispatchReceipt
     from .llm_model import LLMModel
     from .llm_provider import LLMProvider
 
-__all__ = ["AgentScenario", "AIAnalytics", "LLMAttempt", "LLMModel", "LLMProvider"]
+__all__ = ["AgentScenario", "AIAnalytics", "LLMAttempt", "LLMDispatchReceipt", "LLMModel", "LLMProvider"]
 _MODULES = {
     "AgentScenario": "agent_scenario",
     "AIAnalytics": "ai_analytics",
     "LLMAttempt": "llm_attempt",
+    "LLMDispatchReceipt": "llm_dispatch_receipt",
     "LLMModel": "llm_model",
     "LLMProvider": "llm_provider",
 }

@@ -119,6 +119,28 @@ Methodology belongs here; schedule, source selection, triggers and approval guar
 
 Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`); indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
 
+### `llm_dispatch_receipts` — definition only, not activated
+
+[Source](../app/models/analysis/llm_dispatch_receipt.py); migration
+definition 0093 follows 0092. This is preparation evidence, not a paid attempt,
+provider outcome, budget reservation or HTTP authorization. No client uses it.
+
+Fields: `id`; explicit `tenant_id` FK **RESTRICT**; unique raw `dispatch_id`
+String(32); `purpose`/`stage` String(32); timezone-aware `prepared_at` and its UTC
+`utc_day`; model/provider row IDs plus historical names; nullable Decimal USD
+input/output rates Numeric(18,8); `tariff_state` (`known`, `free`, `undefined`)
+and `pricing_policy_version`; nullable plain `source_id`, `job_id`,
+`agent_task_id`, `agent_session_id`; server-created timezone-aware `created_at`.
+Execution/model references have no foreign keys. No prompt, secrets, cost,
+reservation or outcome columns exist. Invalid rates remain NULL, not zero.
+
+The definition contains UPDATE/DELETE/TRUNCATE rejection triggers and a
+tenant/day index. Model metadata alone does not install those triggers. Payer
+deletion may be blocked; ordinary downgrade refuses evidence deletion, even
+when empty. Schema application, offboarding and evidence-preserving rollback
+need separate review/approval. See the
+[storage boundary](AI_PIPELINE_AND_PROMPTS.md#preparation-receipt-storage-foundation-not-activated).
+
 ## Tenant-scoped scheduling and delivery
 
 Every table below inherits tenant_id and timestamps, except agent_task_sources.

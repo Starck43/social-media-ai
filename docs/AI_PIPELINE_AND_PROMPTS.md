@@ -238,6 +238,48 @@ with reservation settlement remain OPEN under
 [business readiness](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
 No whole-gate, target-database or production acceptance is claimed.
 
+### Preparation-receipt storage foundation (not activated)
+
+The new `LLMDispatchReceipt` model and migration **definition** 0093 describe an
+immutable preparation receipt. No client or caller is connected to this storage
+boundary; the definition is not permission to apply a migration or activate it.
+The existing analyzer journal and legacy projections remain unchanged.
+
+`dispatch_receipts.prepare_dispatch_receipt()` takes its payer from explicit
+trusted tenant scope, never caller/provider payload or implicit operator
+bootstrap. It allocates a fresh raw UUID and freezes the selected DB model and
+provider identities, purpose/stage, plain execution references, aware UTC
+preparation time/day, pricing-policy version and representable Decimal tariff
+rates. Missing/invalid rates stay NULL. `known`, `free` and `undefined` describe
+the **tariff basis**, not actual provider price; a later structured provider
+report remains the arbiter. Invalid raw tariff values are not preserved here.
+No prompt, credentials, raw response, token estimate, actual cost or reservation
+ceiling is stored by this foundation.
+
+The manager acknowledges insertion or exact payer-bound persistence replay only
+after owned commit. Other integrity/read/commit errors and evidence conflicts
+propagate. A fresh preparation cannot treat a duplicate identity as permission
+for another HTTP request. This API does **not** grant dispatch: future admission
+must insert the receipt and reserve budget in the same owned transaction, then
+acknowledge that transaction before any network call. No lock may span HTTP.
+
+Schema-qualified migration definitions reject UPDATE, DELETE and TRUNCATE and
+restrict payer deletion; execution/model deletion has no cascading foreign keys.
+The manager refuses to store receipts without both enabled, schema-bound trigger
+guards of the expected types/function, so metadata-only bootstrap fails closed.
+These controls are not a privileged-DDL threat model. Metadata `create_all` is
+not a substitute for the reviewed migration: it does not install the immutable
+triggers. Automatic bootstrap/pytest schema fixtures remain prohibited without
+separate approval. New receipts may block tenant deletion/offboarding; retaining
+evidence and the offboarding policy require review before rollout.
+
+Ordinary downgrade of 0093 is deliberately refused, even for an empty table,
+instead of deleting preparation evidence. An evidence-preserving rollback/
+retention plan must be reviewed before schema application or release. No old
+worker fence, old-day baseline, admission, terminal events, reconciliation,
+UTC-rollover liability handling, all-path cutover or migration/rollback proof
+is supplied by this storage-only package.
+
 ### Proposed all-path accounting and admission contract
 
 Status: **Owner pricing decision recorded; admission implementation and evidence

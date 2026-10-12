@@ -134,6 +134,14 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
                 "unbound_intent",
             )
 
+    async def test_legacy_binding_version_is_denied_even_with_an_intent_id(self):
+        pending = copy.deepcopy(self.pending)
+        pending["authorization"]["version"] = 1
+        self.assertEqual(
+            self.confirmation.pending_rejection(pending, self.actor, self.session, self.spec),
+            "unbound_intent",
+        )
+
     async def test_legacy_actorless_intent_is_denied(self):
         legacy = {k: v for k, v in self.pending.items() if k != "authorization"}
         self.assertEqual(

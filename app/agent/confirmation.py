@@ -65,7 +65,8 @@ def make_pending_intent(
         "required_permission": spec.required_permission,
         "arguments_digest": _digest(args), "tool_contract": tool_contract(spec),
         "authorization": {
-            "version": 1, "actor": identity.actor_binding(), "session_id": session.id,
+            # Older runtimes reject this binding instead of bypassing consumption.
+            "version": 2, "actor": identity.actor_binding(), "session_id": session.id,
             "membership_role_id": identity.membership_role_id, "user_role_id": identity.user_role_id,
         },
     }
@@ -89,7 +90,7 @@ def pending_rejection(
     ):
         return "unbound_intent"
     auth = pending["authorization"]
-    if type(auth.get("version")) is not int or auth["version"] != 1:
+    if type(auth.get("version")) is not int or auth["version"] != 2:
         return "unbound_intent"
     if _canonical(auth.get("actor")) != _canonical(identity.actor_binding()):
         return "actor_mismatch"

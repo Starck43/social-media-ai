@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
+from uuid import uuid4
 
 import httpx
 
@@ -150,6 +151,20 @@ class LLMClient(ABC):
             "cost": price_usage_usd(self.model, prompt_tokens, completion_tokens),
         }
 
+    def _analysis_request_meta(self, prompt: str) -> dict[str, Any]:
+        """Allocate a fresh local identity once, before an analyze HTTP attempt.
+
+        This metadata is not a provider payload or an idempotency header.
+        Returning it on success and failure lets persistence retry the same
+        envelope without conflating another invocation with identical usage.
+        """
+        return {
+            "model": self.model_name,
+            "prompt": prompt,
+            "provider": self.provider.name.lower(),
+            "dispatch_id": uuid4().hex,
+        }
+
     @abstractmethod
     async def analyze(
         self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
@@ -186,6 +201,7 @@ class OpenAICompatibleClient(LLMClient):
 
         payload = self._prepare_analyze(prompt, media_urls, **kwargs)
         timeout = min(self.timeout, 60.0)
+        request_meta = self._analysis_request_meta(prompt)
 
         try:
             async with httpx.AsyncClient() as c:
@@ -201,11 +217,19 @@ class OpenAICompatibleClient(LLMClient):
         except httpx.TimeoutException:
             logger.error(f"Timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {"request": payload, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
+            return {
+                "request": {**payload, **request_meta},
+                "response": {"error": "timeout"},
+                "parsed": {"analysis": "Timeout"},
+            }
         except Exception as e:
             logger.error(f"Unexpected error for {self.provider.name}: {e}")
             await _record_llm_usage(self.model, success=False)
-            return {"request": payload, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+            return {
+                "request": {**payload, **request_meta},
+                "response": {"error": str(e)},
+                "parsed": {"analysis": f"Error: {e}"},
+            }
 
         parsed = self._parse_response(data)
         if pydantic_model is not None:
@@ -217,7 +241,7 @@ class OpenAICompatibleClient(LLMClient):
                 parsed = {}
 
         response = {
-            "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
+            "request": request_meta,
             "response": data,
             "parsed": parsed,
             "usage": self._usage_block(
@@ -366,7 +390,7 @@ class AnthropicClient(LLMClient):
             "messages": [{"role": "user", "content": content}],
         }
         timeout = min(self.timeout, 60.0)
-        request_meta = {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()}
+        request_meta = self._analysis_request_meta(prompt)
         try:
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
@@ -394,7 +418,7 @@ class AnthropicClient(LLMClient):
 
         usage = data.get("usage") or {}
         response = {
-            "request": {"model": self.model_name, "prompt": prompt, "provider": self.provider.name.lower()},
+            "request": request_meta,
             "response": data,
             "parsed": parsed,
             "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
@@ -487,12 +511,7 @@ class CustomClient(LLMClient):
         payload.update(kwargs)
 
         timeout = min(self.timeout, 60.0)
-        request_meta = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "provider": self.provider.name.lower(),
-            "endpoint": endpoint,
-        }
+        request_meta = {**self._analysis_request_meta(prompt), "endpoint": endpoint}
 
         try:
             async with httpx.AsyncClient() as c:

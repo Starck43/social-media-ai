@@ -64,13 +64,13 @@ certify a deployment, database revision or full release gate.
   row counts do not prove historical content integrity. Do not rerun this runner
   or clean up evidence. Stock Alembic check/production migrator/full suite and
   runtime/cutover are not certified. Detailed evidence and follow-ups are in the PR.
-  Corrected evidence verifier remains [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154),
-  head `69f95c9`. Owner-local 28/compiler/formatters PASS at `25f01bd`; PG
-  stopped read-only in catalog (asyncpg 42P18), before probes or receipt writes.
-  Both catalog relation binds now CAST schema to text; actual-query compilation
-  regression brings prepared count to 29. New-head local Python/style/PG pending;
-  baseline 44/79, guards O and public 0092 unchanged per report. No runtime/schema
-  changes, reapplication or cleanup. Exact re-intake/rerun handoff is in the PR.
+  Corrected verifier remains [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154),
+  head `69f95c9`. Owner-relayed 29 tests/compileall and all six PG checks PASS;
+  five receipts retained (44 -> 49). Verdict/manifest copied into PR with source
+  review and historical limitations retained. Targeted current-head Black/isort
+  confirmation remains pending; repository-wide formatting drift is not proof.
+  No PG repeat requested; existing successful log should be published, not rerun.
+  Earlier Index parity/42P18 failures occurred before writes; no runtime/schema change.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

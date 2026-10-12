@@ -458,6 +458,10 @@ async def handle_digest(payload: dict[str, Any]) -> dict[str, Any]:
 async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     """Retention: trim old finished jobs (default: older than 7 days).
 
+    Analysis results older than `DATA_RETENTION_MONTHS` calendar months (by
+    last write) are deleted in the current workspace, except rows a bot action
+    still references; unanalysed raw content never outlives that same cutoff.
+
     Also sweeps raw content nobody ever analysed. `collected_items` is a
     write-ahead copy, so a collection whose analysis keeps failing (or a run
     with no job behind it, whose `run_id` is NULL) would keep its rows for
@@ -469,13 +473,18 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
 
     from sqlalchemy import not_, or_
 
+    from app.core.config import settings
     from app.core.database import new_session
     from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
     from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
-    from app.models import CollectedItem, Job
+    from app.models import AIAnalytics, CollectedItem, Job
+    from app.utils.retention import months_before
 
     days = int(payload.get("days", 7))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    retention_months = settings.DATA_RETENTION_MONTHS
+    retention_cutoff = months_before(now, retention_months)
     # An operational budget stop can retain uncertain external effects/cost.
     # Keep its evidence for explicit review; ordinary NULL errors stay eligible.
     deleted = await (
@@ -489,7 +498,7 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     # Unanalysed raw content: same age budget as the job history. Raw text is
     # kept only while an analysis might still want it, so `staged_days` follows
     # `days` unless the task says otherwise.
-    staged_days = int(payload.get("staged_days", days))
+    staged_days = min(int(payload.get("staged_days", days)), (now - retention_cutoff).days)
     staged_deleted = 0
     session = new_session()
     try:
@@ -504,7 +513,29 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     finally:
         await session.close()
 
-    return {"deleted": deleted, "staged_deleted": staged_deleted, "staged_days": staged_days}
+    # Analysis results: the configured data retention, not the job-history age.
+    analytics_deleted = 0
+    analytics_retention_failed = False
+    try:
+        analytics_deleted = await AIAnalytics.objects.delete_expired(retention_cutoff)
+    except Exception as e:  # noqa: BLE001 — reported in the result, never silently "0 deleted"
+        analytics_retention_failed = True
+        logger.warning(
+            "analytics_retention_failed job_id=%s error_code=%s",
+            _log_id(payload.get("job_id")),
+            _error_kind(e),
+        )
+
+    result = {
+        "deleted": deleted,
+        "staged_deleted": staged_deleted,
+        "staged_days": staged_days,
+        "analytics_deleted": analytics_deleted,
+        "retention_months": retention_months,
+    }
+    if analytics_retention_failed:
+        result["analytics_retention_failed"] = True
+    return result
 
 
 async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:

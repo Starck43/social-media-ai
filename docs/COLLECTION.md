@@ -349,7 +349,8 @@ Consequences worth knowing before changing this code:
   staged by an API/CLI collection that has no job at all.
 - **Retention is `handle_prune`.** It sweeps rows older than `staged_days`
   (defaults to the job-history `days`), which is the ceiling on a permanently
-  failing source.
+  failing source. `staged_days` is also capped by `DATA_RETENTION_MONTHS`, which
+  separately expires analysis results (see `docs/CONFIGURATION.md`).
 
 `analyze_inline` defaults to **false** for a `collect` job — the raw batch stays
 staged for the separate `analyze` task, which is the workspace's shipped shape

@@ -99,6 +99,7 @@ class PrunePredicateTests(unittest.IsolatedAsyncioTestCase):
                 "app.models": SimpleNamespace(
                     Job=SimpleNamespace(objects=query, created_at=columns.created_at, error=columns.error),
                     CollectedItem=collected,
+                    AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))),
                 ),
             },
         )

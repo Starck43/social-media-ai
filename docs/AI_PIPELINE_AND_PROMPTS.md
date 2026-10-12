@@ -49,7 +49,11 @@ Variable precedence is system-owned values, then task payload, then scenario sco
 Lower-trust values cannot replace system-owned instructions. Unknown placeholders
 must fail validation instead of leaking unresolved template text to a provider.
 Collected content, documents, messages and provider output are untrusted data, not
-instructions that can grant tools or permissions.
+instructions that can grant tools or permissions. The unified-summary prompt frames
+the text, image and video analysis results it receives as untrusted data, in both
+the default template and a custom `summary_prompt` (including nested paths such as
+`{image_analysis.mood}`). Substitution resolves placeholders in one pass, so text
+inserted for one variable is never re-scanned for further placeholders.
 
 Typical calls:
 

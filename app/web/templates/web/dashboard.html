@@ -2,13 +2,24 @@
 {% from "web/_macros.html" import incomplete_analysis_badge, plan_badge, empty_state with context %}
 {% block title %}Дашборд — AI Monitor{% endblock %}
 {% block content %}
-    <div class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">{{ tenant.name }}</h1>
-        <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-            <span class="font-mono">{{ tenant.slug }}</span>
-            {{ plan_badge(tenant.plan) }}
-            <span>роль: {% for w in workspaces %}{% if w.active %}{{ w.role }}{% endif %}{% endfor %}</span>
-        </p>
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-semibold tracking-tight">{{ tenant.name }}</h1>
+            <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                <span class="font-mono">{{ tenant.slug }}</span>
+                {{ plan_badge(tenant.plan) }}
+                {# The level in this workspace, as the team tab names it; the platform
+                   role code only for an operator who is not a member. #}
+                <span data-member-level>роль: {% if member_level %}{{ member_level.label }}{% else %}{% for w in workspaces %}{% if w.active %}{{ w.role }}{% endif %}{% endfor %}{% endif %}</span>
+            </p>
+        </div>
+        {% if offer.sources and not offer.tasks %}
+            {# Without the tasks card the quick actions would be a lone card with one button. #}
+            <a href="/app/sources" data-header-sources
+               class="shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                Источники
+            </a>
+        {% endif %}
     </div>
 
     {% if show_welcome %}
@@ -117,9 +128,8 @@
         </div>
     </div>
 
-    {% if offer.tasks or offer.add_task or offer.sources %}
+    {% if offer.tasks %}
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
-        {% if offer.tasks %}
         <div class="ui-card lg:col-span-2">
             <div class="flex items-center justify-between">
                 <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Задачи</h2>
@@ -219,8 +229,6 @@
                 {% endif %}
             {% endif %}
         </div>
-        {% endif %}
-        {% if offer.add_task or offer.sources %}
         <div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Быстрые действия</h2>
             <div class="mt-4 space-y-2">
@@ -236,7 +244,6 @@
                 {% endif %}
             </div>
         </div>
-        {% endif %}
     </div>
     {% endif %}
 

@@ -65,6 +65,8 @@ async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_ope
             assert ">Задачи</h2>" in page.text
             assert _quick_action("/app/tasks") in page.text
             assert _quick_action("/app/sources") in page.text
+            assert "data-header-sources" not in page.text
+            assert "роль: Владелец" in page.text
             viewer = await _invitee("DashViewer", UserRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
@@ -76,7 +78,12 @@ async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_ope
                 assert f'href="{href}' not in page.text, f"viewer is offered {href}"
             assert "run-now" not in page.text
             assert ">Задачи</h2>" not in page.text
-            assert _quick_action("/app/sources") in page.text
+            # No lone quick-actions card: the one link it would hold sits in the header.
+            assert "Быстрые действия" not in page.text
+            assert "data-header-sources" in page.text
+            # The header names the level as the team tab does, not the platform role code.
+            assert "роль: Наблюдатель" in page.text
+            assert "роль: VIEWER" not in page.text
     finally:
         await _cleanup(owner, viewer)
         await _drop_workspaces(tenant_id)

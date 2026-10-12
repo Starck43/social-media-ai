@@ -41,7 +41,14 @@ class LLMTextEligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.scope = {'Any':Any,'Optional':Optional,'LLMModel':NS(id=0), 'logger':Mock(spec=logging.Logger),
             'httpx':NS(HTTPStatusError=HTTPStatusError,TimeoutException=TimeoutException,TransportError=TransportError),
             'settings':NS(AGENT_MODEL=''), '_is_tools_not_supported_error':lambda error:False}
-        names={'_cap_text','_eligible_text_model','default_model_sort_key','chat_with_fallback','resolve_model','journal_chat_attempt'}
+        names={
+            '_cap_text',
+            '_eligible_text_model',
+            'default_model_sort_key',
+            'chat_with_fallback',
+            'resolve_model',
+            'journal_chat_attempt',
+        }
         source_functions('app/services/ai/llm_client.py',names,self.scope)
         model_scope={}
         source_functions('app/models/analysis/llm_model.py',{'_model_type_to_capabilities'},model_scope)

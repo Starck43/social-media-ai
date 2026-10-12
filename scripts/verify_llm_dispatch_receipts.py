@@ -253,9 +253,7 @@ def reflected_keys(inspector, model):
 
     unique_constraints = inspector.get_unique_constraints(model.name, schema=model.schema)
     expected_unique = {
-        c.name: tuple(column.name for column in c.columns)
-        for c in model.constraints
-        if isinstance(c, UniqueConstraint)
+        c.name: tuple(column.name for column in c.columns) for c in model.constraints if isinstance(c, UniqueConstraint)
     }
     reflected_unique = {c["name"]: tuple(c["column_names"]) for c in unique_constraints}
     require(

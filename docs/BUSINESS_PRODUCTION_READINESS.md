@@ -55,8 +55,13 @@ retries, failed output and failed persistence remain separate attempts.
 
 Authoritative accounting uses a reviewed Decimal USD contract. Preserve adapters
 for legacy USD and USD-cent projections until an approved migration exists.
-Distinguish known priced, known free, unknown tariff, unknown usage and not
-dispatched. Missing usage or a configured zero tariff is not proof of free service.
+Pricing truth is owner-decided (2026-10-12) and three-state: FREE only on an
+explicit zero — the model returned zero cost, or the tariff table explicitly
+holds 0; otherwise the model's own answer arbitrates the cost, with a non-zero
+table price as the known-price basis; no model price with an empty table is
+UNDEFINED — never free, never zero, always registered in statistics and related
+accounting actions. Missing usage stays distinct from a reported zero, and
+not-dispatched attempts are recorded as such.
 
 Acceptance requires atomic budget admission under concurrency, explicit overshoot
 policy, reservation release/settlement after every terminal outcome, and durable
@@ -144,7 +149,7 @@ A release candidate records:
 - focused and integration test commands at their tested revisions;
 - staging install/upgrade/restore and failure-recovery evidence;
 - cross-workspace authorization and recipient tests;
-- cost/admission behavior for known, failed and unknown-price calls;
+- cost/admission behavior for known, free, undefined and failed calls;
 - owner, monitoring, escalation, rollback and kill-switch procedures.
 
 Store detailed evidence in the release PR or deployment record. This document

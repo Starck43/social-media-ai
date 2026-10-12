@@ -126,7 +126,9 @@ Journal `05bf353`, analyzer wiring `5953efb` and contract `9ebe945` are in dev.
 - [x] Capture returned analyzer-stage envelopes before the partial-result skip,
   relevance filter and no-meaningful-results return, independently of the daily row.
 - [x] Snapshot the resolved model tariff and calculate Decimal USD at 1e-9 precision;
-  distinguish `priced`, `free`, `unknown_tariff` and `unknown_usage`.
+  distinguish `priced`, `free` and `undefined` under the owner-decided contract
+  (2026-10-12; the earlier `unknown_tariff`/`unknown_usage` split maps onto
+  `undefined`).
 - [x] Add isolated regression coverage for identity/pricing/orchestration, preserved
   partial-save decisions, failed envelopes and redacted journal-write warnings.
 
@@ -135,9 +137,13 @@ exact commands, counts or a tested SHA; none is inferred here. Remote completion
 review was static and did not rerun Python/DB/provider tests or apply migrations.
 
 The journal records captured analyzer stage envelopes through
-`app/services/ai/attempt_journal.py`. Missing usage or an unresolved model tariff
-keeps cost unknown (NULL), rather than treating it as zero. A configured zero
-tariff is classified as free only with known prompt and completion token counts.
+`app/services/ai/attempt_journal.py`. Pricing truth is owner-decided (2026-10-12)
+and three-state: a cost is FREE only on an explicit zero — the model itself
+returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
+own answer arbitrates: a model-reported price is the cost, and a non-zero price in
+the table is the known-price basis. With no model price and an empty table the
+state is UNDEFINED: cost stays NULL, never zero and never free, and the undefined
+state is registered in statistics and other related accounting actions.
 Source/job/task execution references are plain integers, not foreign keys, so
 source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters
@@ -207,15 +213,22 @@ References to jobs, messages and results must not cascade-delete evidence.
   silently redefine plan ceilings or the existing unlimited sentinel.
 - Monetary authority is Decimal USD at the documented precision. Legacy USD and
   USD-cent columns remain adapters, never summed again on top of ledger spend.
-- A zero default tariff is unknown, not proof of free service. Free service needs
-  explicit operator-confirmed pricing status; known counts still remain distinct
-  from missing usage. Preserve the approved tariff snapshot for each dispatch.
-- For a capped payer, reject dispatch without a reviewed upper-bound reservation
+- Owner-decided pricing truth (2026-10-12), replacing the earlier proposal that a
+  zero default tariff is unknown: FREE only on an explicit zero — the model itself
+  returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
+  own answer at first call arbitrates: a model-reported price is the cost, and a
+  non-zero table price is the known-price basis. No model price with an empty
+  table is UNDEFINED: never free, never zero, always registered in statistics and
+  related accounting actions; dispatch is not blocked by it, but it is
+  unreservable and outside cap-bounded spend by construction. Known token counts
+  remain distinct from missing usage. Preserve the approved tariff snapshot for
+  each dispatch.
+- For a capped payer, dispatch requires a reviewed upper-bound reservation
   for all billable inputs/outputs, including media and provider-specific extras.
   A character count or provider max-output setting alone is not such a bound.
-  Unknown tariff or unsupported billing units fail closed. An unlimited payer
-  may bypass only the cap, not payer validation, receipts or outcome accounting;
-  unknown-price dispatch needs an explicit policy exception, off by default.
+  An unresolvable price (UNDEFINED) does not fail closed: dispatch proceeds with a
+  zero ceiling and the undefined state is recorded. An unlimited payer
+  may bypass only the cap, not payer validation, receipts or outcome accounting.
 - Lock one payer/day budget row in an owned transaction. Admit only when settled
   spend plus existing reservations plus the new ceiling fits the current cap;
   insert receipt/reservation in that same transaction. Distinct tenants isolate
@@ -250,7 +263,8 @@ start a second scheduler/listener/migration owner.
 - [ ] Owner-local PostgreSQL races: concurrent reservations at the cap, separate
   tenants, cap changes, insert races, rollback and lost commit acknowledgements.
   No request starts without committed admission; reserve/settle/replay is atomic.
-- [ ] Failure matrix: missing/invalid/zero-default tariffs, unknown/partial usage,
+- [ ] Failure matrix: missing/invalid tariffs (UNDEFINED, dispatch with recorded
+  state), explicit zero tariffs (FREE), model-reported prices, unknown/partial usage,
   unexpected overrun, cancelled tasks, crash windows, DB outage and UTC rollover;
   unresolved liability cannot silently become free or admit further capped work.
 - [ ] Durable recovery and cleanup: repeated reconciliation adds no duplicate

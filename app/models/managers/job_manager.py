@@ -478,9 +478,12 @@ class JobManager(BaseManager["Job"]):
         A stale lease does not prove no external effect: never requeue it.
         Return the actual number of below-budget stale rows quarantined.
         Budget-stop count remains separate; running evidence is not cleared.
+        Each stopped row's owning Task summary is written in the SAME transaction
+        unless the Task already records a later trigger or outcome.
         """
-        from sqlalchemy import and_, func, or_
+        from sqlalchemy import and_, func, or_, update
 
+        from app.core.database import async_session_maker
         from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
         from app.jobs.attempt_budget import (
             ATTEMPT_BUDGET_STOP_PREFIX,
@@ -490,21 +493,105 @@ class JobManager(BaseManager["Job"]):
 
         from ..job import Job as JobModel
 
+        scope = self._recovery_scope(JobModel)
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(minutes=timeout_minutes)
         stop_eligible = or_(
             and_(JobModel.status == "running", JobModel.locked_at < cutoff),
             and_(JobModel.status == "pending", JobModel.run_at <= now),
         )
-        await self.filter(stop_eligible, unavailable_attempt_budget(JobModel)).update(
-            status="failed",
-            finished_at=now,
-            error=func.concat(ATTEMPT_BUDGET_STOP_PREFIX, func.coalesce(JobModel.error, "")),
+        stopped_evidence = (
+            JobModel.tenant_id,
+            JobModel.agent_task_id,
+            func.coalesce(JobModel.started_at, JobModel.created_at),
+            JobModel.error,
         )
-        return await self.filter(available_attempt_budget(JobModel), status="running", locked_at__lt=cutoff).update(
-            status="failed",
-            finished_at=now,
-            error=func.concat(OUTCOME_UNCONFIRMED_PREFIX, func.coalesce(JobModel.error, "")),
+        async with async_session_maker() as session:
+            async with session.begin():
+                budget_stopped = (
+                    await session.execute(
+                        update(JobModel)
+                        .where(stop_eligible, unavailable_attempt_budget(JobModel), *scope)
+                        .values(
+                            status="failed",
+                            finished_at=now,
+                            error=func.concat(ATTEMPT_BUDGET_STOP_PREFIX, func.coalesce(JobModel.error, "")),
+                        )
+                        .returning(*stopped_evidence)
+                        .execution_options(synchronize_session=False)
+                    )
+                ).all()
+                quarantined = (
+                    await session.execute(
+                        update(JobModel)
+                        .where(
+                            available_attempt_budget(JobModel),
+                            JobModel.status == "running",
+                            JobModel.locked_at < cutoff,
+                            *scope,
+                        )
+                        .values(
+                            status="failed",
+                            finished_at=now,
+                            error=func.concat(OUTCOME_UNCONFIRMED_PREFIX, func.coalesce(JobModel.error, "")),
+                        )
+                        .returning(*stopped_evidence)
+                        .execution_options(synchronize_session=False)
+                    )
+                ).all()
+                for tenant_id, task_id, attempt_started_at, error in (*budget_stopped, *quarantined):
+                    await self._write_stopped_task_outcome(
+                        session, tenant_id, task_id, attempt_started_at=attempt_started_at, error=error, now=now
+                    )
+            # The count is returned only after the Job and Task writes commit together.
+        return len(quarantined)
+
+    @staticmethod
+    def _recovery_scope(model) -> list:
+        """Tenant predicate for recovery writes; explicit bypass is cross-workspace.
+
+        A missing or malformed tenant fails closed before any session is opened.
+        """
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
+        if is_bypass():
+            return []
+        tenant_id = current_tenant_id()
+        if type(tenant_id) is not int or tenant_id <= 0:
+            raise TenantContextError("Stale recovery requires a tenant scope or an explicit bypass")
+        return [model.tenant_id == tenant_id]
+
+    @staticmethod
+    async def _write_stopped_task_outcome(
+        session: "AsyncSession",
+        tenant_id: int,
+        task_id: Optional[int],
+        *,
+        attempt_started_at: datetime,
+        error: Optional[str],
+        now: datetime,
+    ) -> None:
+        """Project one stopped attempt onto its owned Task in the caller's transaction.
+
+        A Task whose last trigger or outcome is later than this attempt's start
+        keeps that newer evidence: an old quarantine never hides a newer run.
+        A missing or newer Task is not an error; the Job row stays authoritative.
+        """
+        if task_id is None:
+            return
+        from sqlalchemy import or_, update
+
+        from ..agent_task import AgentTask
+
+        await session.execute(
+            update(AgentTask)
+            .where(
+                AgentTask.id == task_id,
+                AgentTask.tenant_id == tenant_id,
+                or_(AgentTask.last_run_at.is_(None), AgentTask.last_run_at <= attempt_started_at),
+            )
+            .values(last_status="failed", last_error=error, last_run_at=now)
+            .execution_options(synchronize_session=False)
         )
 
     async def cleanup_done(self, older_than_hours: int | None = None) -> int:

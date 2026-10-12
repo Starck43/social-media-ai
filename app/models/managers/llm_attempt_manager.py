@@ -7,9 +7,34 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert
 
 from .base_manager import BaseManager
+
+
+class AttemptEvidenceConflict(RuntimeError):
+    """An identity already exists with different or inaccessible evidence."""
+
+
+_RECORD_FIELDS = (
+    "attempt_key",
+    "purpose",
+    "stage",
+    "source_id",
+    "analysis_date",
+    "job_id",
+    "agent_task_id",
+    "llm_model_row_id",
+    "model_id",
+    "provider_name",
+    "input_cost_per_1k",
+    "output_cost_per_1k",
+    "prompt_tokens",
+    "completion_tokens",
+    "cost_usd",
+    "cost_certainty",
+    "outcome",
+)
 
 
 class LLMAttemptManager(BaseManager):
@@ -27,17 +52,44 @@ class LLMAttemptManager(BaseManager):
         super().__init__(LLMAttempt)
 
     async def record_attempt(self, record: dict[str, Any]) -> bool:
-        """Record one attempt; False when the ledger already holds it."""
-        existing = await self.get(attempt_key=record["attempt_key"])
-        if existing is not None:
-            return False
-        try:
-            await self.create(**record)
-        except IntegrityError:
-            # A concurrent writer stored the same attempt first; the ledger is
-            # already correct, so the duplicate is not a failure.
-            return False
-        return True
+        """Acknowledge a committed insert or an exact replay, never another error.
+
+        Only the attempt-key constraint suppresses an insert. A collision must
+        match the original payer and every evidence field; a changed tariff,
+        usage or outcome is not an idempotent replay. Other constraint failures
+        and lost commit acknowledgements propagate to the caller.
+        """
+        if set(record) - set(_RECORD_FIELDS) - {"tenant_id"}:
+            raise ValueError("Unsupported attempt evidence fields")
+        values = {field: record.get(field) for field in _RECORD_FIELDS}
+        if "tenant_id" in record:
+            values["tenant_id"] = record["tenant_id"]
+        async with self._get_owned_session() as session:
+            values = await self._apply_tenant(session, values)
+            statement = (
+                insert(self.model.__table__)
+                .values(**values)
+                .on_conflict_do_nothing(constraint="uq_llm_attempts_key")
+                .returning(self.model.id)
+            )
+            inserted_id = (await session.execute(statement)).scalar_one_or_none()
+            created = inserted_id is not None
+            if not created:
+                fields = ("tenant_id",) + _RECORD_FIELDS
+                existing = (
+                    await session.execute(
+                        select(*(getattr(self.model, field) for field in fields)).where(
+                            self.model.attempt_key == values["attempt_key"],
+                            self.model.tenant_id == values["tenant_id"],
+                        )
+                    )
+                ).mappings().one_or_none()
+                if existing is None or any(existing[field] != values[field] for field in fields):
+                    # Do not include private record values or another payer's
+                    # identity in an exception/log.
+                    raise AttemptEvidenceConflict("Attempt identity conflicts with stored evidence")
+        # The owned-session context commits before this acknowledgement.
+        return created
 
     async def accounting_totals(self, utc_day: date | None = None) -> dict[str, Any]:
         """Tenant-scoped captured-journal statistics, never a complete spend cap.

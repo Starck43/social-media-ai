@@ -79,6 +79,7 @@ PLAN_ROWS: tuple[dict[str, Any], ...] = (
     {"key": "allow_reflection", "label": "Рефлексия", "unit": ""},
 )
 
+
 #: Plan -> the value shown in its column for each row. Built from
 #: `PLAN_LIMITS` so a new tier appears without touching the template, and a
 #: changed number appears everywhere it is shown.
@@ -229,6 +230,7 @@ async def settings_page(request: Request):
         invite_default=member_roles.DEFAULT_INVITE_KEY,
         invite_days=INVITE_DAYS,
         issued_invite=_pop_issued_invite(request),
+        open_invites=await _open_invites(request, tenant_id, visible_tabs),
         action_types=ActionType.choices(),
         plans=list(Tenant.PLANS),
         plan_labels=_plan_labels(),
@@ -554,6 +556,54 @@ def invite_qr_svg(link: str) -> str | None:
     return segno.make(link, error="m").svg_inline(scale=4, border=2, dark="#0f172a", light="#ffffff")
 
 
+async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: tuple[str, ...]) -> list[dict]:
+    """Redeemable invites for the team tab — only for someone who manages the workspace."""
+    from app.models.managers.tenant_manager import TenantInviteManager
+    from app.models.role import Role
+
+    perms = getattr(request.state, "web_perms", None)
+    if tenant_id is None or perms is None or not perms.can_manage_workspace(tenant_id):
+        return []
+    rows = await TenantInviteManager().open_for_tenant(tenant_id)
+    if not rows:
+        return []
+    by_codename = {level.codename: level for level in member_roles.MEMBER_ROLES}
+    labels: dict[int, str] = {}
+    for role in await Role.objects.filter(id__in=list({r.role_id for r in rows if r.role_id is not None})):
+        codename = getattr(role.codename, "name", role.codename)
+        level = by_codename.get(codename)
+        labels[role.id] = level.label if level is not None else str(codename)
+    return [
+        {
+            "id": row.id,
+            "role": labels.get(row.role_id, "Владелец" if row.role_id is None else "—"),
+            "created": row.created_at.strftime("%d.%m.%Y %H:%M") if row.created_at else "—",
+            "expires": row.expires_at.strftime("%d.%m.%Y %H:%M UTC") if row.expires_at else "бессрочно",
+            "uses": f"{row.used_count} из {row.max_uses}",
+        }
+        for row in rows
+    ]
+
+
+@router.post("/invites/{invite_id}/revoke")
+async def invite_revoke(request: Request, invite_id: int, token: str = Form("", alias="_csrf")):
+    """Revoke one open invite of this workspace; its code stops working at once."""
+    from app.models.managers.tenant_manager import TenantInviteManager
+
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    if await TenantInviteManager().revoke(tenant_id=tenant_id, invite_id=invite_id):
+        add_flash(request, "success", "Приглашение отозвано")
+    else:
+        add_flash(request, "error", "Приглашение не найдено или уже недействительно")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
 @router.post("/invites")
 async def invite_issue(
     request: Request,
@@ -654,8 +704,7 @@ async def plan_update(
         add_flash(
             request,
             "warning",
-            f"Тариф изменён на «{label}». Придётся сократить: {'; '.join(over)} — "
-            f"до этого добавлять нельзя.",
+            f"Тариф изменён на «{label}». Придётся сократить: {'; '.join(over)} — " f"до этого добавлять нельзя.",
         )
     else:
         add_flash(request, "success", f"Тариф изменён на «{label}»")

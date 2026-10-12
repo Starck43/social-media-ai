@@ -138,7 +138,13 @@ class TenantUserManager(BaseManager["TenantUser"]):
         return row
 
     async def add_member(
-        self, *, tenant_id: int, channel: str, external_user_id: str, role_id: int | None = None, role: str | None = None
+        self,
+        *,
+        tenant_id: int,
+        channel: str,
+        external_user_id: str,
+        role_id: int | None = None,
+        role: str | None = None,
     ) -> TenantUser | None:
         """Backward-compatible wrapper: accept either role_id or legacy role string.
 
@@ -153,6 +159,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
         if role is not None and role_id is None:
             # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
             from app.models import Role
+
             codename = _resolve_role_codename(role)
             role_obj = await Role.objects.filter(codename=codename).first()
             role_id = role_obj.id if role_obj else None
@@ -167,7 +174,9 @@ class TenantUserManager(BaseManager["TenantUser"]):
             tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role_id=role_id
         )
 
-    async def add_web_member(self, *, tenant_id: int, user_id: int, role_id: int | None = None, role: str | None = None) -> "TenantUser | None":
+    async def add_web_member(
+        self, *, tenant_id: int, user_id: int, role_id: int | None = None, role: str | None = None
+    ) -> "TenantUser | None":
         """Backward-compatible wrapper: accept either role_id or legacy role string.
 
         Web membership: same row, but bound to the `users` table via user_id.
@@ -178,6 +187,7 @@ class TenantUserManager(BaseManager["TenantUser"]):
         if role is not None and role_id is None:
             # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
             from app.models import Role
+
             codename = _resolve_role_codename(role)
             role_obj = await Role.objects.filter(codename=codename).first()
             role_id = role_obj.id if role_obj else None
@@ -255,6 +265,7 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
     ) -> tuple["TenantInvite", str]:
         """Create an invitation; returns (row, plaintext code shown once)."""
         from app.core.database import async_session_maker
+
         from ..role import Role
 
         code = generate_invite_code()
@@ -276,6 +287,24 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
             expires_at=expires_at,
         )
         return row, code
+
+    async def open_for_tenant(self, tenant_id: int) -> list["TenantInvite"]:
+        """Invites of a workspace that can still be redeemed, newest first."""
+        now = datetime.now(timezone.utc)
+        rows = await self.filter(tenant_id=tenant_id, is_active=True)
+        open_rows = [
+            row for row in rows if (row.expires_at is None or row.expires_at > now) and row.used_count < row.max_uses
+        ]
+        return sorted(open_rows, key=lambda row: row.id, reverse=True)
+
+    async def revoke(self, *, tenant_id: int, invite_id: int) -> bool:
+        """Switch off one invite of this workspace; False when there is none to revoke.
+
+        Bound to the workspace in the same statement, so an id from another
+        workspace revokes nothing.
+        """
+        changed = await self.filter(id=invite_id, tenant_id=tenant_id, is_active=True).update(is_active=False)
+        return bool(changed)
 
     async def _valid_invite(self, code: str) -> Optional["TenantInvite"]:
         invite = await self.get(code_hash=hash_invite_code(code), is_active=True)
@@ -340,7 +369,9 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
             return {"status": "already", "tenant_id": invite.tenant_id}
 
         try:
-            await TenantUserManager().add_web_member(tenant_id=invite.tenant_id, user_id=user_id, role_id=invite.role_id)
+            await TenantUserManager().add_web_member(
+                tenant_id=invite.tenant_id, user_id=user_id, role_id=invite.role_id
+            )
         except PlanLimitError as e:
             # The code is not burned: the seat may free up, and this person
             # should be able to redeem the same code once it does.

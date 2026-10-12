@@ -13,6 +13,7 @@ import json
 import unittest
 from copy import deepcopy
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -314,6 +315,145 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(created, expected)
         self.assertEqual(len(stored), 2)
+
+    async def test_missing_provider_usage_is_unknown_despite_legacy_projection_zeros(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw.pop("usage")
+                result = await client.analyze("same")
+                self.assertEqual(result["usage"]["prompt_tokens"], 0)
+                self.assertEqual(result["usage"]["completion_tokens"], 0)
+                self.assertEqual(result["accounting_usage"], {"prompt_tokens": None, "completion_tokens": None})
+                record = self.records(result)[0]
+                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0})
+                self.assertIsNone(priced["cost_usd"])
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
+
+    async def test_partial_usage_preserves_the_known_field_without_inventing_the_other(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw["usage"] = {"input_tokens" if name == "AnthropicClient" else "prompt_tokens": 17}
+                result = await client.analyze("same")
+                record = self.records(result)[0]
+                self.assertEqual(record["prompt_tokens"], 17)
+                self.assertIsNone(record["completion_tokens"])
+                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1})
+                self.assertIsNone(priced["cost_usd"])
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
+
+    async def test_malformed_provider_usage_is_not_coerced_to_accounting_tokens(self):
+        for name in self.classes():
+            for invalid in (None, True, -1, 1.5, "120", {}, 2147483648):
+                with self.subTest(client=name, kind=type(invalid).__name__):
+                    client = self.client(name)
+                    prompt_field = "input_tokens" if name == "AnthropicClient" else "prompt_tokens"
+                    completion_field = "output_tokens" if name == "AnthropicClient" else "completion_tokens"
+                    self.raw["usage"] = {prompt_field: invalid, completion_field: 3}
+                    result = await client.analyze("same")
+                    record = self.records(result)[0]
+                    self.assertIsNone(record["prompt_tokens"])
+                    self.assertEqual(record["completion_tokens"], 3)
+
+    async def test_non_mapping_usage_is_unknown_and_does_not_break_the_returned_envelope(self):
+        for name in self.classes():
+            for invalid in (None, [], "untrusted", 5):
+                with self.subTest(client=name, kind=type(invalid).__name__):
+                    client = self.client(name)
+                    self.raw["usage"] = invalid
+                    result = await client.analyze("same")
+                    self.assertIsNone(self.records(result)[0]["prompt_tokens"])
+                    self.assertIsNone(self.records(result)[0]["completion_tokens"])
+
+    async def test_known_zero_token_counts_are_not_confused_with_missing_usage(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw["usage"] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                }
+                result = await client.analyze("same")
+                priced = self.journal.price_attempt(
+                    self.records(result)[0], {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 2}
+                )
+                self.assertEqual(priced["cost_usd"], Decimal(0))
+                self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_PRICED)
+
+    async def test_custom_reported_usage_reaches_journal_without_changing_legacy_projection(self):
+        result = await self.client("CustomClient").analyze("same")
+        self.assertEqual(result["usage"]["cost"], 0.0)
+        record = self.records(result)[0]
+        self.assertEqual((record["prompt_tokens"], record["completion_tokens"]), (120, 40))
+        priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002})
+        self.assertEqual(priced["cost_usd"], Decimal("0.000200000"))
+
+    async def test_provider_owned_accounting_field_cannot_replace_client_evidence(self):
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw.pop("usage")
+                self.raw["accounting_usage"] = {"prompt_tokens": 0, "completion_tokens": 0}
+                result = await client.analyze("same")
+                self.assertEqual(result["accounting_usage"], {"prompt_tokens": None, "completion_tokens": None})
+
+    async def test_invalid_structured_output_remains_failed_output_when_usage_is_missing(self):
+        self.module.validate_with_pydantic = Mock(side_effect=ValueError("synthetic invalid output"))
+        for name in self.classes():
+            with self.subTest(client=name):
+                client = self.client(name)
+                self.raw.pop("usage")
+                result = await client.analyze("same", pydantic_model=Model)
+                self.assertEqual(self.records(result)[0]["outcome"], self.journal.OUTCOME_FAILED_OUTPUT)
+                self.assertIsNone(self.records(result)[0]["prompt_tokens"])
+
+    def test_explicit_malformed_accounting_block_never_falls_back_to_projection_zeros(self):
+        for invalid in (None, [], "untrusted", {}, {"prompt_tokens": True, "completion_tokens": "0"}):
+            with self.subTest(kind=type(invalid).__name__):
+                envelope = {
+                    "request": {"model": "m"},
+                    "accounting_usage": invalid,
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                    "response": {"usage": {"prompt_tokens": 0, "completion_tokens": 0}},
+                }
+                record = self.records(envelope)[0]
+                self.assertIsNone(record["prompt_tokens"])
+                self.assertIsNone(record["completion_tokens"])
+
+    def test_missing_or_invalid_tariff_rate_is_unknown_not_free(self):
+        record = {"prompt_tokens": 120, "completion_tokens": 40}
+        for field in ("input_cost_per_1k", "output_cost_per_1k"):
+            for invalid in (None, True, -1, "bad", "", "NaN", "Infinity", "1e100", "0.000000001"):
+                with self.subTest(field=field, kind=type(invalid).__name__):
+                    tariff = {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0, field: invalid}
+                    priced = self.journal.price_attempt(record, tariff)
+                    self.assertIsNone(priced["cost_usd"])
+                    self.assertIsNone(priced[field])
+                    self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_TARIFF)
+        priced = self.journal.price_attempt(record, {"id": 4})
+        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_TARIFF)
+        self.assertEqual(record, {"prompt_tokens": 120, "completion_tokens": 40})
+
+    def test_tariff_snapshot_keeps_valid_rate_and_model_when_other_rate_is_unknown(self):
+        priced = self.journal.price_attempt(
+            {"prompt_tokens": 120, "completion_tokens": 40},
+            {"id": 4, "input_cost_per_1k": "0.001", "output_cost_per_1k": None},
+        )
+        self.assertEqual(priced["llm_model_row_id"], 4)
+        self.assertEqual(priced["input_cost_per_1k"], Decimal("0.001"))
+        self.assertIsNone(priced["output_cost_per_1k"])
+        self.assertIsNone(priced["cost_usd"])
+
+    def test_unrepresentable_total_cost_is_not_inserted_or_clamped_to_free(self):
+        priced = self.journal.price_attempt(
+            {"prompt_tokens": 2147483647, "completion_tokens": 2147483647},
+            {"id": 4, "input_cost_per_1k": "9999999999.99999999", "output_cost_per_1k": 1},
+        )
+        self.assertIsNone(priced["cost_usd"])
+        self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_TARIFF)
 
 
 if __name__ == "__main__":

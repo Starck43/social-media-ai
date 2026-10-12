@@ -19,7 +19,7 @@ import hashlib
 import json
 import logging
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Callable, Coroutine, Optional
 
 logger = logging.getLogger(__name__)
@@ -48,21 +48,27 @@ STAGE_UNIFIED_SUMMARY = "unified_summary"
 
 def _tokens(value: Any) -> Optional[int]:
     """A non-negative exact int, or None — booleans and floats are not usage."""
-    if type(value) is not int or value < 0:
+    if type(value) is not int or not 0 <= value <= 2147483647:
         return None
     return value
 
 
 def _usage_tokens(envelope: Any) -> tuple[Optional[int], Optional[int]]:
-    """Priced client usage block first, raw provider usage as fallback.
+    """Owned accounting evidence first; legacy priced/raw usage as fallback.
 
-    The client returns the priced block as a sibling of `request`/`response`;
-    transport failures return no usage at all, which stays unknown usage.
+    Presence of accounting_usage is authoritative even if malformed: never
+    fall back to numeric projection zeros or provider-supplied replacements.
+    Transport failures return no usage at all, which stays unknown usage.
     """
     if not isinstance(envelope, dict):
         return None, None
-    usage = envelope.get("usage")
-    if not isinstance(usage, dict):
+    if "accounting_usage" in envelope:
+        usage = envelope["accounting_usage"]
+        if not isinstance(usage, dict):
+            return None, None
+    else:
+        usage = envelope.get("usage")
+    if "accounting_usage" not in envelope and not isinstance(usage, dict):
         response = envelope.get("response")
         usage = response.get("usage") if isinstance(response, dict) else None
         usage = usage if isinstance(usage, dict) else None
@@ -176,8 +182,12 @@ def build_attempt_records(
     for stage, envelope in envelopes:
         prompt, completion = _usage_tokens(envelope)
         response_error = _response_error(envelope)
-        if response_error and prompt is None and completion is None:
-            # No usage block at all: the call never reached a billable response.
+        response = envelope.get("response")
+        invalid_output = isinstance(response, dict) and response.get("error") == "invalid_structured_output"
+        if invalid_output:
+            outcome = OUTCOME_FAILED_OUTPUT
+        elif response_error and prompt is None and completion is None:
+            # A transport error without usage does not prove the call was free.
             outcome = OUTCOME_FAILED_TRANSPORT
         elif response_error:
             outcome = OUTCOME_FAILED_OUTPUT
@@ -219,6 +229,25 @@ def build_attempt_records(
     return records
 
 
+def _tariff_rate(value: Any) -> Optional[Decimal]:
+    """Finite non-negative USD rate representable by the journal tariff column."""
+    if type(value) not in (int, float, str, Decimal):
+        return None
+    try:
+        rate = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not rate.is_finite() or not 0 <= rate <= Decimal("9999999999.99999999"):
+        return None
+    # Preserve the exact rate; do not silently round an unrepresentable snapshot.
+    try:
+        if rate != rate.quantize(Decimal("0.00000001")):
+            return None
+    except InvalidOperation:
+        return None
+    return rate
+
+
 def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> dict[str, Any]:
     """Attach the tariff snapshot, exact cost and cost certainty to a record.
 
@@ -228,7 +257,7 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
     is different from a known zero.
     """
     priced = dict(record)
-    if tariff is None:
+    if not isinstance(tariff, dict):
         priced.update(
             {
                 "llm_model_row_id": None,
@@ -240,8 +269,8 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
         )
         return priced
 
-    input_rate = Decimal(str(tariff.get("input_cost_per_1k") or 0))
-    output_rate = Decimal(str(tariff.get("output_cost_per_1k") or 0))
+    input_rate = _tariff_rate(tariff.get("input_cost_per_1k"))
+    output_rate = _tariff_rate(tariff.get("output_cost_per_1k"))
     priced.update(
         {
             "llm_model_row_id": tariff.get("id"),
@@ -250,12 +279,20 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
         }
     )
 
-    prompt, completion = priced.get("prompt_tokens"), priced.get("completion_tokens")
+    if input_rate is None or output_rate is None:
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_TARIFF})
+        return priced
+
+    prompt, completion = _tokens(priced.get("prompt_tokens")), _tokens(priced.get("completion_tokens"))
+    priced.update({"prompt_tokens": prompt, "completion_tokens": completion})
     if prompt is None or completion is None:
         priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_USAGE})
         return priced
 
     cost = Decimal(prompt) / 1000 * input_rate + Decimal(completion) / 1000 * output_rate
+    if cost > Decimal("999999999.999999999"):
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_TARIFF})
+        return priced
     cost = cost.quantize(COST_SCALE, rounding=ROUND_HALF_UP) if cost > 0 else Decimal(0)
     priced["cost_usd"] = cost
     if cost == 0 and input_rate == 0 and output_rate == 0:
@@ -306,8 +343,6 @@ async def record_analysis_attempts(
     holds them, or there was nothing to record). Injection points exist for
     tests; production uses the project manager and tariff lookup.
     """
-    from app.models.managers.llm_attempt_manager import LLMAttemptManager
-
     records = build_attempt_records(
         analysis_results,
         unified_summary,
@@ -322,7 +357,10 @@ async def record_analysis_attempts(
     resolver = tariff_resolver or resolve_tariffs
     tariffs = await resolver({record["model_id"] for record in records if record["model_id"]})
 
-    journal = journal or LLMAttemptManager()
+    if journal is None:
+        from app.models.managers.llm_attempt_manager import LLMAttemptManager
+
+        journal = LLMAttemptManager()
     created = 0
     for record in records:
         if await journal.record_attempt(price_attempt(record, tariffs.get(record["model_id"]))):

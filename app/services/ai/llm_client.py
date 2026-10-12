@@ -165,6 +165,23 @@ class LLMClient(ABC):
             "dispatch_id": uuid4().hex,
         }
 
+    def _accounting_usage(
+        self, data: Any, prompt_field: str = "prompt_tokens", completion_field: str = "completion_tokens"
+    ) -> dict[str, Optional[int]]:
+        """Owned token evidence, independent of the legacy numeric projection.
+
+        Missing, malformed or out-of-storage-range counts are unknown, not zero.
+        Provider totals or response content cannot supply missing token fields.
+        """
+        usage = data.get("usage") if isinstance(data, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
+
+        def count(field: str) -> Optional[int]:
+            value = usage.get(field)
+            return value if type(value) is int and 0 <= value <= 2147483647 else None
+
+        return {"prompt_tokens": count(prompt_field), "completion_tokens": count(completion_field)}
+
     @abstractmethod
     async def analyze(
         self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
@@ -240,13 +257,13 @@ class OpenAICompatibleClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
+        accounting_usage = self._accounting_usage(data)
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
-            "usage": self._usage_block(
-                (data.get("usage") or {}).get("prompt_tokens", 0), (data.get("usage") or {}).get("completion_tokens", 0)
-            ),
+            "accounting_usage": accounting_usage,
+            "usage": self._usage_block(accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
@@ -416,12 +433,13 @@ class AnthropicClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
-        usage = data.get("usage") or {}
+        accounting_usage = self._accounting_usage(data, "input_tokens", "output_tokens")
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
-            "usage": self._usage_block(usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
+            "accounting_usage": accounting_usage,
+            "usage": self._usage_block(accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
@@ -538,10 +556,12 @@ class CustomClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
+        accounting_usage = self._accounting_usage(data)
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
+            "accounting_usage": accounting_usage,
             "usage": self._usage_block(0, 0),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")))

@@ -6,8 +6,8 @@ are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
 
-Verified `origin/dev`: `d5e7a499403a7aa270ebf2d49d10e057dc45919b` on
-2026-10-12. Merged PRs through #138 are integrated. This checkpoint does not
+Verified `origin/dev`: `79a5cd1` on 2026-10-12. Merged PRs through #148 are
+integrated; PR #137 remains open as a draft. This checkpoint does not
 certify a deployment, database revision or full release gate.
 
 ## Delivered foundations
@@ -20,6 +20,7 @@ certify a deployment, database revision or full release gate.
 | Atomic confirmation consumption | Versioned actor-bound intent, tenant-scoped locked consume of the exact pending snapshot and post-commit single-use authorization; losers, replacements and uncertain commits cannot dispatch the approved write. | PR #105, merge `0179296`; owner-local acceptance at `a4d2673`, subsequent board-only reconciliation. | External-effect exactly-once delivery, crash recovery after consumption, every-write coverage and whole PRD-02 acceptance remain open; no runtime rollout or DB migration certification. |
 | Collection and analysis | Partial-result diagnostics, tenant-scoped staging, bounded retirement, attachment snapshots and conservative text/media coverage. Web marks an explicit `analysis_complete = false` as an incomplete analysis with recorded reasons (`text_sampled`, `media_uncovered`, `stage_failed`) on the detail page, dashboard, day feed and group lists; a row without the marker is never labelled complete. | PRs #69–80, #88, #90, #92, #94, #97, #98; PR #134 (head `e10a7d5`, merge `b54d9f2`; owner-local 50/56/44 tests accepted) | Historical repair, remaining source fidelity, digest/API presentation of incomplete coverage and end-to-end evidence acceptance. |
 | Telegram admission | Durable L1/L2 admission with cursor/receipt coordination and media placeholders. | PRs #97, #101 | Long-term receipt policy and whole-channel recovery acceptance. |
+| Platform rate limits | A platform that refuses with a rate limit gets a bounded pause and retry (VK codes 6/9/29, HTTP 429 `Retry-After`, Bot API 429 `retry_after`, Telethon flood wait detected by class name); a limit that does not clear within the configured budget (`SOCIAL_RATE_LIMIT_RETRIES`, `SOCIAL_RATE_LIMIT_MAX_WAIT`) marks the source deferred with `outcome: "rate_limited"` and a retry hint — not an error and not an empty result. On deferral nothing read so far is staged and the cursor/watermark does not advance; monitored users count rate-limited sources apart from failed. Writes and non-limit API errors keep their existing behavior. | PR #143 (head `28036a8`, merge `79a5cd1`; owner-local command 4 accepted at `28036a8`) | A shared per-platform budget across sources/workers is not implemented; Telegram durable-admission integration and cross-day limits remain open. |
 | Credential diagnostic privacy | Bounded API credential-test and MTProto check-session failure statuses without provider/exception secret text; success labels and access gates preserved. | PR #107, head `5ff3d9f`, merge `f02d6d8`; verified in `dev`. | Other login/OAuth/CLI/vault logs, retention/offboarding and whole PRD-06 acceptance; no live-provider or deployment certification. |
 | Data retention | `DATA_RETENTION_MONTHS` (`app/core/config.py`, `.env.example`; default 1 calendar month, minimum 1). The workspace's daily prune deletes analysis results whose last write is older than the cutoff (not publication date) and caps unanalysed staged raw content at the same age; analyses referenced by bot actions, the LLM attempt journal and job/outcome evidence are kept. A retention failure is logged privately and flagged without aborting the prune. | PR #139 (head `8b78080`, merge `451be42`; owner-local accepted, `tests/test_collected_items.py` 16 passed); integrated in `dev`, not deployed — deployment deferred by owner | Deletion is irreversible with no export/backup or offboarding flow; other data classes, per-workspace overrides and whole PRD-06 acceptance remain open. |
 | Digest delivery | Per-target/per-part state, snapshot/checkpoint foundations and tenant-safe routing safeguards; legacy-path partial delivery is terminal `partial_delivery_requires_review` and blocks automatic rescheduled resends (explicit force only). Zero-success legacy delivery is a terminal unconfirmed outcome (no automatic retry). Scheduled and forced attempts claim the run row on its observed status and `updated_at` version; an in-flight `pending` row stops other attempts with `digest_run_in_progress_requires_review` before build/send, and a forced resend takes it over only after 30 minutes without a write. Lease loss mid-run leaves the run `pending` (no requeue, no resend) and digest review codes stay visible on the job. | PR #12, follow-up delivery packages, PRs #106, #112, #113, #115, #120 | Staging lease-loss and operator-recovery acceptance; delivery of an attempt stopped mid-flight stays unknown (operator decision). |
@@ -63,6 +64,11 @@ certify a deployment, database revision or full release gate.
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing
   [pipeline contract](AI_PIPELINE_AND_PROMPTS.md#usage-and-cost-boundary).
+- Platform rate-limit handling in collection ([PR #143](https://github.com/Starck43/social-media-ai/pull/143),
+  merge `79a5cd1`) is **DONE, integrated**. Owner-local verification at accepted
+  head `28036a8`: command 4 (`tests/test_telegram_durable_admission.py`) passed
+  29 tests after the stub-settings fix on that head; merge tree against dev was
+  clean. No schema migration, provider or live calls were performed.
 - No target migration, schema reset, live activation or deployment was performed.
 
 ## Recording future delivery

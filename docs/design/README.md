@@ -7,9 +7,9 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `e8fc7238d38ef1dca15ee84466741668660a8808` on
-2026-10-12. Merged packages through PR #128 are integrated; PRs #127, #129 and
-#130 remain open. Active lanes are listed
+Verified `origin/dev`: `d5e7a499403a7aa270ebf2d49d10e057dc45919b` on
+2026-10-12. Merged packages through PR #138 are integrated; PR #137 remains
+open as a draft. Active lanes are listed
 under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort

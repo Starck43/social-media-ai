@@ -326,9 +326,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["usage"]["completion_tokens"], 0)
                 self.assertEqual(result["accounting_usage"], {"prompt_tokens": None, "completion_tokens": None})
                 record = self.records(result)[0]
-                priced = self.journal.price_attempt(
-                    record, {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0}
-                )
+                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0, "output_cost_per_1k": 0})
                 self.assertIsNone(priced["cost_usd"])
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
 
@@ -341,9 +339,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                 record = self.records(result)[0]
                 self.assertEqual(record["prompt_tokens"], 17)
                 self.assertIsNone(record["completion_tokens"])
-                priced = self.journal.price_attempt(
-                    record, {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1}
-                )
+                priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 1, "output_cost_per_1k": 1})
                 self.assertIsNone(priced["cost_usd"])
                 self.assertEqual(priced["cost_certainty"], self.journal.CERTAINTY_UNKNOWN_USAGE)
 
@@ -392,9 +388,7 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["usage"]["cost"], 0.0)
         record = self.records(result)[0]
         self.assertEqual((record["prompt_tokens"], record["completion_tokens"]), (120, 40))
-        priced = self.journal.price_attempt(
-            record, {"id": 4, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002}
-        )
+        priced = self.journal.price_attempt(record, {"id": 4, "input_cost_per_1k": 0.001, "output_cost_per_1k": 0.002})
         self.assertEqual(priced["cost_usd"], Decimal("0.000200000"))
 
     async def test_provider_owned_accounting_field_cannot_replace_client_evidence(self):

@@ -144,12 +144,17 @@ per period. Two consequences worth knowing:
 - `agent_task_id IS NULL` rows (manual `digest send-now`) never collide, so
   manual runs are unlimited and each is kept as separate history.
 
-## Delivery failures are retryable
+## Delivery failures stop for review
 
 `build_and_publish` raises `DigestDeliveryError` when the digest was built but
-no recipient received any part of it. The job queue then retries with backoff. A
-config problem (no channel configured) returns `status="skipped"` instead:
-retrying cannot fix missing credentials.
+no recipient received any part of it. The dispatcher does not treat that
+exception as a known, retryable delivery failure: the job is stored as terminal
+`failed` with the "Queue outcome unconfirmed; inspect before retry." marker and
+is not retried automatically, because this path cannot tell a definitive
+rejection from a lost acknowledgement. A new attempt for the same
+`(agent_task_id, period)` — the next scheduled run or an operator's job — reuses
+the run row and delivers again. A config problem (no channel configured)
+returns `status="skipped"` instead: retrying cannot fix missing credentials.
 
 Partial delivery is terminal instead. When at least one recipient received the
 digest (or at least one chunk of a split message) and another recipient failed,
@@ -164,9 +169,10 @@ duplicate the digest for recipients that already received it. Manual runs keep
 separate history and are not blocked.
 
 This legacy path still cannot tell a definitive rejection from a lost
-acknowledgement when no recipient succeeded, so such a retry can repeat an
-external delivery. Per-part receipts and uncertain-send review are provided by
-the disabled-by-default checkpoint delivery path.
+acknowledgement when no recipient succeeded, so the next scheduled run or an
+operator re-attempt can repeat an external delivery. Per-part receipts and
+uncertain-send review are provided by the disabled-by-default checkpoint
+delivery path.
 
 ## Channel rules
 

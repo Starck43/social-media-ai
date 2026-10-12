@@ -344,7 +344,7 @@ async def job_delete(
         deleted = await Job.objects.delete(
             id=job.id,
             tenant_id=job.tenant_id,
-            status__in=DELETABLE,
+            status__in=sorted(DELETABLE),
         )
 
     if deleted == 1:

@@ -34,6 +34,7 @@ from typing import Any, Callable
 from fastapi import Depends, HTTPException
 from starlette import status
 
+from app.core.permissions import member_decision
 from app.models import User
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType, UserRoleType
@@ -75,7 +76,11 @@ def require_model_perm(model_name: str, action: ActionType) -> Callable[..., Any
 
     async def dependency(user: User = Depends(get_authenticated_user)) -> Any:
         loaded = await _load_with_rights(user)
-        if loaded is None or not loaded.has_perm_for(model_name, action):
+        # The shared predicate: inside a workspace a non-owner member's rights on
+        # workspace models come from the membership role (`ApiScopeMiddleware`).
+        decision = None if loaded is None else member_decision(loaded, model_name, action)
+        allowed = loaded is not None and (loaded.has_perm_for(model_name, action) if decision is None else decision)
+        if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Missing permission: {model_name}.{action.db_value}",

@@ -41,6 +41,8 @@ __all__ = [
     "service_permission_scope",
     "operator_permission_scope",
     "WORKSPACE_OWNER_MODELS",
+    "workspace_models",
+    "member_decision",
 ]
 
 _operator_grant: ContextVar[bool] = ContextVar("operator_permission_grant", default=False)
@@ -49,6 +51,30 @@ _current_user: ContextVar[Optional["User"]] = ContextVar("current_user", default
 WORKSPACE_OWNER_MODELS = frozenset({"source", "agenttask", "agentscenario"})
 _workspace_owner: ContextVar[Optional[int]] = ContextVar("workspace_owner", default=None)
 _service_grant: ContextVar[Optional[tuple[int, str, ActionType]]] = ContextVar("service_grant", default=None)
+# A non-owner member's workspace rights: (tenant_id, user_id, {(model, action)}).
+_member_grants: ContextVar[Optional[tuple[int, int, frozenset]]] = ContextVar("member_grants", default=None)
+
+
+@functools.cache
+def _workspace_model_names() -> frozenset[str]:
+    import app.models  # noqa: F401 - register every mapper before reading the registry
+    from app.models.base import Base, TenantScopedMixin
+
+    return frozenset(
+        mapper.class_.__name__.lower()
+        for mapper in Base.registry.mappers
+        if issubclass(mapper.class_, TenantScopedMixin)
+    )
+
+
+def workspace_models() -> frozenset[str]:
+    """`model_types.model_name` values of workspace-owned (tenant-scoped) models.
+
+    Inside a workspace a non-owner member's rights on these models come from the
+    membership role; global models (providers, platforms, users, roles) keep
+    the platform role.
+    """
+    return _workspace_model_names()
 
 
 class PermissionDeniedError(PermissionError):
@@ -125,9 +151,31 @@ def has_permission(user: Optional["User"], model_name: str, action: Union[Action
     ):
         return True
     try:
-        return bool(user.has_perm_for(model_name, resolved))
+        decision = member_decision(user, model_name, resolved)
+        return bool(user.has_perm_for(model_name, resolved)) if decision is None else decision
     except Exception:  # noqa: BLE001 - a rights check must never raise
         return False
+
+
+def member_decision(user: Optional["User"], model_name: str, action: ActionType) -> Optional[bool]:
+    """The membership-role answer for `user`, or None when the platform role decides.
+
+    Applies only inside the `permission_scope(member_grants=...)` of this same
+    user and tenant, and only to workspace models. Platform superusers pass.
+    """
+    member = _member_grants.get()
+    current = get_current_user()
+    if (
+        member is None
+        or user is None
+        or current is None
+        or member[1] is None
+        or member[0] != current_tenant_id()
+        or not member[1] == getattr(current, "id", None) == getattr(user, "id", None)
+        or model_name.lower() not in workspace_models()
+    ):
+        return None
+    return bool(user._is_superuser_role()) or (model_name.lower(), action) in member[2]
 
 
 def has_permission_by_codename(user: Optional["User"], codename: str) -> bool:
@@ -243,14 +291,24 @@ def require_role(role: Union[UserRoleType, str]) -> Callable[[Callable[..., Any]
 
 
 @contextmanager
-def permission_scope(user: Optional["User"], *, is_owner: bool = False) -> Iterator[Optional["User"]]:
+def permission_scope(
+    user: Optional["User"], *, is_owner: bool = False, member_grants: Optional[frozenset] = None
+) -> Iterator[Optional["User"]]:
     """Run a block as `user`; restores the previous user on exit.
 
     `is_owner=True` grants only workspace configuration rights in the tenant
-    active at entry. Nested interactive scopes clear inherited service grants.
+    active at entry. `member_grants` — the `(model, action)` pairs of a non-owner
+    member's workspace role — replaces the platform role for workspace models in
+    that tenant (an owner ignores it). Nested interactive scopes clear inherited
+    service grants.
     """
+    tenant_id = current_tenant_id()
+    member = None
+    if not is_owner and member_grants is not None and tenant_id is not None and user is not None:
+        member = (tenant_id, getattr(user, "id", None), frozenset(member_grants))
     token = set_current_user(user)
-    owner_token = _workspace_owner.set(current_tenant_id() if is_owner else None)
+    owner_token = _workspace_owner.set(tenant_id if is_owner else None)
+    member_token = _member_grants.set(member)
     service_token = _service_grant.set(None)
     operator_token = _operator_grant.set(False)
     try:
@@ -258,6 +316,7 @@ def permission_scope(user: Optional["User"], *, is_owner: bool = False) -> Itera
     finally:
         _current_user.reset(token)
         _workspace_owner.reset(owner_token)
+        _member_grants.reset(member_token)
         _service_grant.reset(service_token)
         _operator_grant.reset(operator_token)
 

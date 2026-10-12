@@ -29,12 +29,14 @@ COST_SCALE = Decimal("0.000000001")
 
 PURPOSE_ANALYSIS = "analysis"
 
-# Cost certainty vocabulary. "Missing usage or a configured zero tariff is not
-# proof of free service": unknown usage stays unknown even with a zero tariff.
+# New monetary outcomes follow the recorded three-state pricing contract.
+# Missing token counts remain independent evidence, including for explicit free.
 CERTAINTY_PRICED = "priced"
 CERTAINTY_FREE = "free"
-CERTAINTY_UNKNOWN_TARIFF = "unknown_tariff"
-CERTAINTY_UNKNOWN_USAGE = "unknown_usage"
+CERTAINTY_UNDEFINED = "undefined"
+# Import compatibility only; historical rows are not rewritten.
+CERTAINTY_UNKNOWN_TARIFF = CERTAINTY_UNDEFINED
+CERTAINTY_UNKNOWN_USAGE = CERTAINTY_UNDEFINED
 CERTAINTY_NOT_DISPATCHED = "not_dispatched"
 
 # Outcome vocabulary: a paid attempt is evidence regardless of its outcome.
@@ -75,6 +77,75 @@ def _usage_tokens(envelope: Any) -> tuple[Optional[int], Optional[int]]:
     if usage is None:
         return None, None
     return _tokens(usage.get("prompt_tokens")), _tokens(usage.get("completion_tokens"))
+
+
+def _usd_amount(value: Any) -> Optional[Decimal]:
+    """A structured non-negative USD amount, never generated text or a boolean."""
+    if type(value) not in (int, float, str, Decimal):
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not amount.is_finite() or amount < 0:
+        return None
+    return amount
+
+
+def _reported_usd(value: Any) -> Optional[Decimal]:
+    amount = _usd_amount(value)
+    if amount is None or amount > Decimal("999999999.999999999"):
+        return None
+    # Extreme exponents stay unresolved, never underflow through a component sum.
+    if amount != 0 and amount.adjusted() < -1000:
+        return None
+    return amount
+
+
+def provider_cost_evidence(response: Any) -> tuple[bool, Optional[Decimal]]:
+    """Recognized API cost metadata, with explicit zeros and exact Decimal math.
+
+    Known API extensions are USD unless their currency says otherwise. A
+    non-USD report stays unresolved, never converted or guessed. Totals outrank component sums;
+    neither parsed model content nor legacy client usage projections are prices.
+    """
+    if not isinstance(response, dict):
+        return False, None
+    usage = response.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    currency = response.get("currency", "USD")
+
+    def usd(mapping: dict[str, Any], fallback: Any) -> bool:
+        value = mapping.get("currency", fallback)
+        return type(value) is str and value.strip().upper() == "USD"
+
+    for mapping, allowed in ((usage, usd(usage, currency)), (response, usd(response, "USD"))):
+        for field in ("total_cost", "cost"):
+            amount = _usd_amount(mapping.get(field))
+            if amount is not None:
+                return True, _reported_usd(amount) if allowed else None
+
+    def component(fields: tuple[str, str]) -> Optional[Decimal]:
+        for field in fields:
+            amount = _usd_amount(usage.get(field))
+            if amount is not None:
+                return amount
+        return None
+
+    prompt = component(("prompt_cost", "input_cost"))
+    completion = component(("completion_cost", "output_cost"))
+    if prompt is None or completion is None:
+        return prompt is not None or completion is not None, None
+    if not usd(usage, currency):
+        return True, None
+    if _reported_usd(prompt) is None or _reported_usd(completion) is None:
+        return True, None
+    return True, _reported_usd(prompt + completion)
+
+
+def provider_reported_cost_usd(response: Any) -> Optional[Decimal]:
+    """Representable report amount; missing/unrepresentable never means free."""
+    return provider_cost_evidence(response)[1]
 
 
 def _request_field(envelope: Any, field: str) -> Optional[str]:
@@ -226,6 +297,17 @@ def build_attempt_records(
                 "outcome": outcome,
             }
         )
+        if "accounting_cost_usd" in envelope:
+            reported = _reported_usd(envelope["accounting_cost_usd"])
+            unresolved = envelope.get("accounting_cost_reported") is True and reported is None
+        else:
+            claimed, reported = provider_cost_evidence(envelope.get("response"))
+            unresolved = claimed and reported is None
+        if reported is not None:
+            # Transient input; price_attempt removes it before manager insertion.
+            records[-1]["_reported_cost_usd"] = reported
+        if unresolved:
+            records[-1]["_unresolved_cost_report"] = True
     return records
 
 
@@ -251,24 +333,15 @@ def _tariff_rate(value: Any) -> Optional[Decimal]:
 def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> dict[str, Any]:
     """Attach the tariff snapshot, exact cost and cost certainty to a record.
 
-    `tariff` is the snapshot of the `llm_models` row at record time, or None
-    when no such row exists. Cost is never hardcoded and never inferred: an
-    unresolvable tariff or missing usage makes the cost unknown (NULL), which
-    is different from a known zero.
+    A valid provider report arbitrates actual cost, including an explicit zero.
+    Otherwise explicit zero table rates are free, known rates plus known usage
+    are priced, and uncomputable actual cost stays NULL/undefined. Tariff fields
+    remain independent snapshot evidence, not a replacement for reported cost.
     """
     priced = dict(record)
-    if not isinstance(tariff, dict):
-        priced.update(
-            {
-                "llm_model_row_id": None,
-                "input_cost_per_1k": None,
-                "output_cost_per_1k": None,
-                "cost_usd": None,
-                "cost_certainty": CERTAINTY_UNKNOWN_TARIFF,
-            }
-        )
-        return priced
-
+    reported = _reported_usd(priced.pop("_reported_cost_usd", None))
+    unresolved_report = priced.pop("_unresolved_cost_report", False)
+    tariff = tariff if isinstance(tariff, dict) else {}
     input_rate = _tariff_rate(tariff.get("input_cost_per_1k"))
     output_rate = _tariff_rate(tariff.get("output_cost_per_1k"))
     priced.update(
@@ -279,26 +352,37 @@ def price_attempt(record: dict[str, Any], tariff: Optional[dict[str, Any]]) -> d
         }
     )
 
-    if input_rate is None or output_rate is None:
-        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_TARIFF})
-        return priced
-
     prompt, completion = _tokens(priced.get("prompt_tokens")), _tokens(priced.get("completion_tokens"))
     priced.update({"prompt_tokens": prompt, "completion_tokens": completion})
-    if prompt is None or completion is None:
-        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_USAGE})
+    if unresolved_report:
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNDEFINED})
+        return priced
+    if reported is not None:
+        priced.update(
+            {
+                "cost_usd": reported.quantize(COST_SCALE, rounding=ROUND_HALF_UP),
+                "cost_certainty": CERTAINTY_FREE if reported == 0 else CERTAINTY_PRICED,
+            }
+        )
         return priced
 
-    cost = Decimal(prompt) / 1000 * input_rate + Decimal(completion) / 1000 * output_rate
+    if input_rate == 0 and output_rate == 0:
+        priced.update({"cost_usd": Decimal(0), "cost_certainty": CERTAINTY_FREE})
+        return priced
+    if input_rate is None or output_rate is None:
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNDEFINED})
+        return priced
+    if (prompt is None and input_rate != 0) or (completion is None and output_rate != 0):
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNDEFINED})
+        return priced
+
+    cost = Decimal(prompt or 0) / 1000 * input_rate + Decimal(completion or 0) / 1000 * output_rate
     if cost > Decimal("999999999.999999999"):
-        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNKNOWN_TARIFF})
+        priced.update({"cost_usd": None, "cost_certainty": CERTAINTY_UNDEFINED})
         return priced
     cost = cost.quantize(COST_SCALE, rounding=ROUND_HALF_UP) if cost > 0 else Decimal(0)
     priced["cost_usd"] = cost
-    if cost == 0 and input_rate == 0 and output_rate == 0:
-        priced["cost_certainty"] = CERTAINTY_FREE
-    else:
-        priced["cost_certainty"] = CERTAINTY_PRICED
+    priced["cost_certainty"] = CERTAINTY_PRICED
     return priced
 
 

@@ -370,7 +370,7 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     # reads `get_current_user()`, and a scope that closed early would leave it
     # None. Anonymous identities are fail-closed here; keep the admitted actor
     # available for every tool gate and confirmation throughout the turn.
-    with permission_scope(identity.user, is_owner=identity.is_owner):
+    with permission_scope(identity.user, is_owner=identity.is_owner, member_grants=identity.member_grants):
         return await _handle_authorized_turn(inbound, resolution, identity)
 
 
@@ -466,7 +466,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             spec = TOOL_REGISTRY.get(pending.get("name"))
             rejection = "identity_revoked" if fresh is None else pending_rejection(pending, fresh, session, spec)
             if rejection is None:
-                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
                     if not has_permission_by_codename(fresh.user, spec.required_permission):
                         rejection = "permission_revoked"
             if rejection is not None:
@@ -492,7 +492,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
                 if fresh is None or pending_rejection(pending, fresh, session, TOOL_REGISTRY.get(pending["name"])):
                     return "Подтверждение отклонено. Попросите подготовить действие заново."
                 spec = TOOL_REGISTRY[pending["name"]]
-                with permission_scope(fresh.user, is_owner=fresh.is_owner):
+                with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
                     if not has_permission_by_codename(fresh.user, spec.required_permission):
                         return "Подтверждение отклонено: права изменились."
                     with confirmed_dispatch_scope(fresh, spec, pending["args"]):
@@ -544,7 +544,7 @@ async def _dispatch_or_stage(
     fresh = await refresh_runtime_identity(identity)
     if fresh is None or not session_matches_identity(session, fresh):
         return "Доступ изменился. Инструмент не выполнен.", True
-    with permission_scope(fresh.user, is_owner=fresh.is_owner):
+    with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
         if spec.required_permission is not None and not has_permission_by_codename(fresh.user, spec.required_permission):
             return "У вас нет прав для вызова этого инструмента.", False
         if spec.confirm:

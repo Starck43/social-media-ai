@@ -81,7 +81,9 @@ class TenantUIMiddleware:
             return
 
         tenant_id = self._active_tenant_id(request, memberships)
-        request.state.web_perms = WebPerms(user, memberships, tenant_id)
+        active = next((m for m in memberships if m.tenant_id == tenant_id), None)
+        grants = await TenantUserManager().member_grants(active) if active is not None else None
+        request.state.web_perms = WebPerms(user, memberships, tenant_id, grants)
         if tenant_id is not None:
             request.state.tenant = await tenants.get(id=tenant_id)
             request.state.tenant_id = tenant_id
@@ -114,7 +116,9 @@ class TenantUIMiddleware:
         perm_ctx = None
         if user is not None:
             perms = getattr(request.state, "web_perms", None)
-            perm_ctx = permission_scope(user, is_owner=bool(perms is not None and perms.is_owner))
+            perm_ctx = permission_scope(
+                user, is_owner=bool(perms is not None and perms.is_owner), member_grants=grants
+            )
 
         with scope_ctx:
             if perm_ctx is not None:

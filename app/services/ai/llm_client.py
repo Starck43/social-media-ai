@@ -182,6 +182,29 @@ class LLMClient(ABC):
 
         return {"prompt_tokens": count(prompt_field), "completion_tokens": count(completion_field)}
 
+    def _accounting_cost(self, data: Any) -> dict[str, Any]:
+        """Owned reported USD evidence; None never means a free provider call."""
+        from app.services.ai.attempt_journal import provider_cost_evidence
+
+        claimed, reported = provider_cost_evidence(data)
+        return {
+            "accounting_cost_usd": str(reported) if reported is not None else None,
+            "accounting_cost_reported": claimed,
+        }
+
+    def _analyze_usage_projection(self, prompt: Optional[int], completion: Optional[int]) -> dict[str, Any]:
+        """Legacy numeric adapter failures cannot discard a paid API envelope."""
+        try:
+            return self._usage_block(prompt, completion)
+        except (ArithmeticError, TypeError, ValueError):
+            prompt, completion = prompt or 0, completion or 0
+            return {
+                "prompt_tokens": prompt,
+                "completion_tokens": completion,
+                "total_tokens": prompt + completion,
+                "cost": 0.0,
+            }
+
     @abstractmethod
     async def analyze(
         self, prompt: str, media_urls: Optional[list[str]] = None, pydantic_model: Optional[type] = None, **kwargs
@@ -263,7 +286,10 @@ class OpenAICompatibleClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            "usage": self._usage_block(accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]),
+            **self._accounting_cost(data),
+            "usage": self._analyze_usage_projection(
+                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
+            ),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
@@ -439,7 +465,10 @@ class AnthropicClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            "usage": self._usage_block(accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]),
+            **self._accounting_cost(data),
+            "usage": self._analyze_usage_projection(
+                accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
+            ),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
@@ -562,7 +591,8 @@ class CustomClient(LLMClient):
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            "usage": self._usage_block(0, 0),
+            **self._accounting_cost(data),
+            "usage": self._analyze_usage_projection(0, 0),
         }
         await _record_llm_usage(self.model, success=not bool(data.get("error")))
         return response

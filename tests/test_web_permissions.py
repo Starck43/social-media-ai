@@ -311,8 +311,8 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
         await _drop(owner, tenant_id)
 
 
-async def test_platform_role_decides_for_a_non_owner() -> None:
-    """MANAGER's `social.source.*` opens sources; its missing `agenttask` rows close tasks."""
+async def test_member_role_decides_for_a_non_owner() -> None:
+    """A MANAGER membership's `social.source.*` opens sources; its missing `agenttask` rows close tasks."""
     owner: User | None = None
     member: User | None = None
     tenant_id = None
@@ -323,6 +323,10 @@ async def test_platform_role_decides_for_a_non_owner() -> None:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "MgrOwner")
             member = await _invitee("RightsManager", UserRoleType.MANAGER, tenant_id, "secret-password-1")
+            # Inside the workspace the membership role decides, so give it the same role.
+            manager = await Role.objects.get(codename=UserRoleType.MANAGER.name)
+            membership = await TenantUserManager().get(tenant_id=tenant_id, user_id=member.id)
+            await TenantUserManager().update_by_id(membership.id, role_id=manager.id)
             loaded = await _loaded(member)
             assert loaded.has_perm_for("source", ActionType.CREATE), "premise: MANAGER may create sources"
             assert not loaded.has_perm_for("agenttask", ActionType.CREATE), "premise: MANAGER may not create tasks"

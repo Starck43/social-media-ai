@@ -9,6 +9,11 @@ if TYPE_CHECKING:
     from ..digest_run import DigestRun
 
 
+# Error prefix of a scheduled run whose delivery reached some recipients but not all.
+# Such a run must not be rebuilt and re-broadcast automatically.
+PARTIAL_DELIVERY_REVIEW = "partial_delivery_requires_review"
+
+
 class DigestRunManager(BaseManager["DigestRun"]):
     """Manager for digest runs: idempotency per (schedule, period)."""
 
@@ -39,6 +44,22 @@ class DigestRunManager(BaseManager["DigestRun"]):
             status="sent",
         )
         return existing is not None
+
+    async def delivery_requires_review(
+        self, agent_task_id: Optional[int], period_start: date, period_end: date
+    ) -> bool:
+        """True if this schedule+period already delivered to some recipients but not all.
+
+        Manual runs (NULL agent_task_id) keep separate history and are never blocked.
+        """
+        if agent_task_id is None:
+            return False
+        existing = await self.get(agent_task_id=agent_task_id, period_start=period_start, period_end=period_end)
+        return (
+            existing is not None
+            and existing.status == "failed"
+            and (existing.error or "").startswith(PARTIAL_DELIVERY_REVIEW)
+        )
 
     async def start_run(
         self,

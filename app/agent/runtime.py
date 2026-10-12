@@ -824,6 +824,7 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
         tools=specs,
         max_tokens=max_tokens,
         temperature=temperature,
+        accounting_purpose="agent_chat",
     )
 
 

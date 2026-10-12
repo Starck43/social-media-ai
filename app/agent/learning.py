@@ -195,7 +195,7 @@ async def run_learn(min_messages: int = 8, window: int = 200) -> dict[str, Any]:
         },
     ]
     try:
-        response = await chat_with_fallback(messages, max_tokens=800, temperature=0.2)
+        response = await chat_with_fallback(messages, max_tokens=800, temperature=0.2, accounting_purpose="learn")
     except Exception:  # No provider response or customer values in result/log.
         logger.error("learn: LLM call failed")
         return {"status": "failed", "error": "llm_call_failed", "llm_cost": None}
@@ -281,7 +281,7 @@ async def run_reflect(dedup: bool = True) -> dict[str, Any]:
         },
     ]
     try:
-        response = await chat_with_fallback(messages, max_tokens=900, temperature=0.1)
+        response = await chat_with_fallback(messages, max_tokens=900, temperature=0.1, accounting_purpose="reflect")
     except Exception:
         logger.error("reflect: LLM call failed")
         return {"status": "failed", "error": "llm_call_failed", "llm_cost": None}

@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     SOCIAL_PAGE_SIZE: int = 50
     SOCIAL_MAX_PAGES: int = 20
     SOCIAL_REQUEST_TIMEOUT: float = 30.0
+    # Platform rate limits during collection: retries of a short limit and the cap
+    # on one pause (seconds). A limit that does not clear defers the source.
+    SOCIAL_RATE_LIMIT_RETRIES: int = 2
+    SOCIAL_RATE_LIMIT_MAX_WAIT: float = 10.0
 
     # --- Channels / owner allowlist ---
     TELEGRAM_OWNER_IDS: str = ""  # comma-separated Telegram user ids allowed to talk to the agent

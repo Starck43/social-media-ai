@@ -312,7 +312,7 @@ class PullTests(unittest.IsolatedAsyncioTestCase):
                 seen.update(kwargs);yield NS(id=21)
         client=Client()
         module=load('pull','app/services/social/tg_client.py',{
-            'app.core.config':NS(settings=NS()),'app.models':NS(Source=object),
+            'app.core.config':NS(settings=NS(SOCIAL_RATE_LIMIT_MAX_WAIT=10)),'app.models':NS(Source=object),
             'app.services.social.base':NS(BaseClient=object),'app.types':NS(SourceType=object),
             'app.services.social.credentials':NS(AuthorizationRequired=type('AuthError',(Exception,),{})),
             'app.services.social.owner':NS(resolve_source_owner=AsyncMock(return_value=3)),

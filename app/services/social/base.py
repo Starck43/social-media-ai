@@ -68,8 +68,7 @@ class BaseClient(ABC):
 
 			logger.info(f"Fetching page {page + 1}, offset: {offset}")
 
-			res = await self._make_request(method, params)
-			self._raise_api_error(res)
+			res = await self._fetch_page(method, params)
 			items = self._extract_items_from_response(res)
 
 			if not items:
@@ -114,8 +113,7 @@ class BaseClient(ABC):
 		logger.info(f"Incremental collection with params: {list(checkpoint_params.keys())}")
 
 		# Collect single page
-		res = await self._make_request(method, params)
-		self._raise_api_error(res)
+		res = await self._fetch_page(method, params)
 		items = self._extract_items_from_response(res)
 
 		if not items:
@@ -194,6 +192,53 @@ class BaseClient(ABC):
 			)
 			response.raise_for_status()
 			return response.json()
+
+	async def _fetch_page(self, method: str, params: dict) -> dict:
+		"""One collection read with bounded rate-limit handling, then error check.
+
+		A short platform limit (VK code 6, HTTP/Bot API 429 with a small
+		retry hint) is waited out and retried within the configured budget. A
+		limit that does not clear, or cannot clear within a run, raises
+		`SourceRateLimited` so the source is deferred instead of failing or
+		reading as empty. Other API errors keep `_raise_api_error` semantics.
+		"""
+		from app.services.social.rate_limit import (
+			SourceRateLimited,
+			http_rate_limit,
+			next_pause,
+			response_rate_limit,
+		)
+
+		attempt = 0
+		while True:
+			try:
+				res = await self._make_request(method, params)
+			except httpx.HTTPStatusError as error:
+				limit = http_rate_limit(error)
+				if limit is None:
+					raise
+			else:
+				limit = response_rate_limit(res)
+				if limit is None:
+					self._raise_api_error(res)
+					return res
+			retryable, retry_after = limit
+			pause = next_pause(attempt, retryable, retry_after)
+			platform = self._platform_name()
+			if pause is None:
+				logger.warning(
+					"social_rate_limit_deferred platform=%s method=%s attempts=%s", platform, method, attempt + 1
+				)
+				raise SourceRateLimited(platform, retry_after)
+			logger.info("social_rate_limited platform=%s method=%s pause=%.1fs", platform, method, pause)
+			await asyncio.sleep(pause)
+			attempt += 1
+
+	def _platform_name(self) -> str:
+		from app.utils.enum_helpers import get_enum_value
+
+		value = get_enum_value(getattr(self.platform, "platform_type", None))
+		return value if isinstance(value, str) and value else "unknown"
 
 	def _raise_api_error(self, response: dict) -> None:
 		"""

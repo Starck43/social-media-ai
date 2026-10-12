@@ -38,6 +38,9 @@ router = APIRouter(prefix="/settings")
 BACK = "/app/settings"
 
 TABS: tuple[str, ...] = ("workspace", "team", "connections", "agent", "channels")
+#: Tabs that only configure the workspace; a member who cannot manage it does
+#: not get them (their forms are refused anyway by `_guard_workspace_settings`).
+MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 
 # Personal kinds a user may store themselves, per platform. `bot_token`,
 # `app_id` and `client_secret` are per-deployment config, so they are not here:
@@ -121,6 +124,19 @@ def _tab_of(request: Request) -> str:
     return tab if tab in TABS else TABS[0]
 
 
+def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
+    """Tabs this caller gets: managers see all, other members their own part."""
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and perms.can_manage_workspace(tenant_id):
+        return TABS
+    return tuple(tab for tab in TABS if tab not in MANAGER_TABS)
+
+
+def _visible_tab(request: Request, tenant_id: int | None, visible: tuple[str, ...]) -> str:
+    tab = _tab_of(request)
+    return tab if tab in visible else visible[0]
+
+
 @router.get("")
 @router.get("/")
 async def settings_page(request: Request):
@@ -133,6 +149,7 @@ async def settings_page(request: Request):
 
     tenant = await tenants.get(id=tenant_id)
     memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
+    visible_tabs = _visible_tabs(request, tenant_id)
     member_names = {}
     member_ids = [m.user_id for m in memberships if m.user_id is not None]
     if member_ids:
@@ -197,7 +214,8 @@ async def settings_page(request: Request):
         request,
         "web/settings.html",
         section="settings",
-        tab=_tab_of(request),
+        tab=_visible_tab(request, tenant_id, visible_tabs),
+        visible_tabs=visible_tabs,
         tenant=tenant,
         memberships=memberships,
         member_names=member_names,

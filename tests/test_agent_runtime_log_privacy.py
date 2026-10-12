@@ -26,6 +26,7 @@ PRIVATE = "synthetic-private-marker"
 SELECTED = {
     "_runtime_error_code", "_log_runtime_failure", "_check_prompt_injection",
     "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
+    "tool_specs_for",
     "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
 }
 

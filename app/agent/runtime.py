@@ -512,7 +512,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             # plan, and the agent keeps going (create source -> create task)
             # instead of waiting for the next message.
             messages = await _build_messages(session)
-            return await _run_tool_loop(session, messages, tool_specs(), limit, identity, seed_reply=seed)
+            return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity, seed_reply=seed)
         if verdict in ("нет", "no", "n", "-", "отменяю"):
             if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
                 return "Это подтверждение относится к другому пользователю."
@@ -529,7 +529,28 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
     # 2) Model loop with tool calling
     await session.append("user", text)
     messages = await _build_messages(session)
-    return await _run_tool_loop(session, messages, tool_specs(), limit, identity)
+    return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity)
+
+
+def tool_specs_for(identity: RuntimeIdentity | None) -> list[dict[str, Any]]:
+    """Tool schemas the model may see for this caller.
+
+    A member is offered only tools their access level may call, so the agent
+    neither proposes nor stages actions the member cannot perform. Dispatch
+    still rechecks fresh rights before any effect (`_dispatch_or_stage`).
+    """
+    specs = tool_specs()
+    if identity is None or identity.user is None:
+        return specs
+    allowed: list[dict[str, Any]] = []
+    with permission_scope(identity.user, is_owner=identity.is_owner, member_grants=identity.member_grants):
+        for schema in specs:
+            spec = TOOL_REGISTRY.get((schema.get("function") or {}).get("name"))
+            if spec is None:
+                continue
+            if spec.required_permission is None or has_permission_by_codename(identity.user, spec.required_permission):
+                allowed.append(schema)
+    return allowed
 
 
 async def _dispatch_or_stage(

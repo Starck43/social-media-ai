@@ -18,7 +18,7 @@
         'channels': 'Каналы',
     } %}
     <nav class="mt-6 ui-segments" aria-label="Разделы настроек">
-        {% for key, label in tab_labels.items() %}{{ segment('/app/settings?tab=' ~ key, label, tab == key) }}{% endfor %}
+        {% for key, label in tab_labels.items() if key in visible_tabs %}{{ segment('/app/settings?tab=' ~ key, label, tab == key) }}{% endfor %}
     </nav>
 
     {# ── workspace ───────────────────────────────────────────────────── #}
@@ -192,6 +192,13 @@
 
     {# ── team ────────────────────────────────────────────────────────── #}
     {% elif tab == 'team' %}
+        {% if member_level and not perms.can_manage_workspace(tenant.id if tenant else none) %}
+            <div class="mt-6 ui-card" data-own-level>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Ваш уровень доступа</p>
+                <p class="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">{{ member_level.label }}</p>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ member_level.hint }}. Изменить уровень может владелец воркспейса.</p>
+            </div>
+        {% endif %}
         {% if issued_invite %}
             <div class="mt-6 rounded-2xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/30 p-5" data-issued-invite>
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Приглашение создано</h3>

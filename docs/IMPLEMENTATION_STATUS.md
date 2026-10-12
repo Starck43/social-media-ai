@@ -49,9 +49,11 @@ certify a deployment, database revision or full release gate.
   checks passed. Full suite NOT RUN; faults were injected, not real network-loss
   proof. No schema setup/reset/migration was performed; synthetic test rows retained.
 - Next bounded package: preparation-receipt storage and frozen tariff basis
-  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `24042d1`),
-  not activated and validation pending. New definition 0093 needs separate
-  schema/retention/rollback review; no schema application or cutover is authorized.
+  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `e8d335e`),
+  not activated. Owner-local isolated verification accepted: 143 methods and
+  compiler/formatters PASS; real PostgreSQL/Alembic proof remains pending.
+  Definition 0093 is NOT applied; target/version-table, RESTRICT/offboarding and
+  evidence-preserving rollback need separate review/approval. No cutover authorized.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import httpx
-
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -34,13 +34,28 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(sys.modules, {"app.agent.identity": self.identity}):
             self.confirmation = load_source("_confirmation_actual", "app/agent/confirmation.py")
         self.actor = self.identity.RuntimeIdentity(
-            tenant_id=31, user_id=12, membership_id=41, channel="telegram", chat_id="7",
-            external_user_id="7", membership_role_id=3, user_role_id=2, is_owner=True, user=self.user,
+            tenant_id=31,
+            user_id=12,
+            membership_id=41,
+            channel="telegram",
+            chat_id="7",
+            external_user_id="7",
+            membership_role_id=3,
+            user_role_id=2,
+            is_owner=True,
+            user=self.user,
         )
         self.spec = SimpleNamespace(name="test_write", confirm=True, required_permission="source.update", parameters={})
         self.session = SimpleNamespace(
-            id=51, tenant_id=31, channel="telegram", chat_id="7", is_active=True, state={},
-            save_state=AsyncMock(), append=AsyncMock(), touch=AsyncMock(),
+            id=51,
+            tenant_id=31,
+            channel="telegram",
+            chat_id="7",
+            is_active=True,
+            state={},
+            save_state=AsyncMock(),
+            append=AsyncMock(),
+            touch=AsyncMock(),
         )
 
         async def save_state(state):
@@ -49,7 +64,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session.save_state.side_effect = save_state
         self.now = datetime.now(timezone.utc)
         self.pending = self.confirmation.make_pending_intent(
-            self.actor, self.session, self.spec, {"source_id": 9}, "c1", now=self.now,
+            self.actor,
+            self.session,
+            self.spec,
+            {"source_id": 9},
+            "c1",
+            now=self.now,
         )
 
         async def patch_state(session_id, updates):
@@ -75,11 +95,14 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             patch_state=AsyncMock(side_effect=patch_state),
             consume_pending_confirmation=AsyncMock(side_effect=consume_pending_confirmation),
         )
-        storage_patch = patch.dict(sys.modules, {
-            "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
-                agent_sessions=self.session_manager,
-            ),
-        })
+        storage_patch = patch.dict(
+            sys.modules,
+            {
+                "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
+                    agent_sessions=self.session_manager,
+                ),
+            },
+        )
         storage_patch.start()
         self.addCleanup(storage_patch.stop)
 
@@ -93,11 +116,14 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         return runtime
 
     def tools(self):
-        with patch.dict(sys.modules, {
-            "app.core.permissions": self.perms,
-            "app.agent.confirmation": self.confirmation,
-            "app.agent": HELPERS.HELPERS.module_with(toolset=HELPERS.HELPERS.module_with()),
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "app.core.permissions": self.perms,
+                "app.agent.confirmation": self.confirmation,
+                "app.agent": HELPERS.HELPERS.module_with(toolset=HELPERS.HELPERS.module_with()),
+            },
+        ):
             tools = load_source("_confirmation_tools_actual", "app/agent/tools.py")
         self.handler = AsyncMock(return_value={"ok": True})
         self.spec.handler = self.handler
@@ -108,9 +134,16 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session.state = {"pending_confirmation": pending}
         self.inbound.text = text
         manager = self.session_manager
-        with patch.dict(sys.modules, {
-            "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(agent_sessions=manager),
-        }), self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(agent_sessions=manager),
+                },
+            ),
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, is_owner=True),
+        ):
             return await runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor)
 
     async def test_valid_intent_and_immutable_arguments_copy(self):
@@ -122,7 +155,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_identical_stage_requests_have_distinct_intent_ids(self):
         replacement = self.confirmation.make_pending_intent(
-            self.actor, self.session, self.spec, {"source_id": 9}, "c1", now=self.now,
+            self.actor,
+            self.session,
+            self.spec,
+            {"source_id": 9},
+            "c1",
+            now=self.now,
         )
         self.assertNotEqual(self.pending["intent_id"], replacement["intent_id"])
 
@@ -151,8 +189,10 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_other_actor_tenant_session_and_role_changes_are_denied(self):
         for field, value, expected in (
-            ("user_id", 13, "actor_mismatch"), ("tenant_id", 32, "actor_mismatch"),
-            ("membership_role_id", 4, "authority_changed"), ("user_role_id", 4, "authority_changed"),
+            ("user_id", 13, "actor_mismatch"),
+            ("tenant_id", 32, "actor_mismatch"),
+            ("membership_role_id", 4, "authority_changed"),
+            ("user_role_id", 4, "authority_changed"),
         ):
             fields = dict(vars(self.actor))
             fields[field] = value
@@ -171,7 +211,9 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_naive_and_malformed_expiry_are_denied(self):
         for expiry in (
             (self.now - timedelta(seconds=1)).isoformat(),
-            self.now.replace(tzinfo=None).isoformat(), "bad", None,
+            self.now.replace(tzinfo=None).isoformat(),
+            "bad",
+            None,
         ):
             changed = {**self.pending, "expires_at": expiry}
             self.assertEqual(
@@ -270,7 +312,11 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
         with self.tenant.tenant_scope(31):
             output, stop = await runtime._dispatch_or_stage(
-                self.session, "test_write", {"source_id": 9}, "c1", self.actor,
+                self.session,
+                "test_write",
+                {"source_id": 9},
+                "c1",
+                self.actor,
             )
         self.assertTrue(stop)
         self.assertEqual(output, "Подтвердите действие")
@@ -385,9 +431,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session_manager.consume_pending_confirmation.side_effect = consume
         self.inbound.text = "да"
         with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
-            replies = await asyncio.wait_for(asyncio.gather(*[
-                runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor) for _ in range(2)
-            ]), 2)
+            replies = await asyncio.wait_for(
+                asyncio.gather(
+                    *[runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor) for _ in range(2)]
+                ),
+                2,
+            )
         self.handler.assert_awaited_once_with(source_id=9)
         self.assertEqual(replies.count("continued"), 1)
         self.assertTrue(any("уже использовано" in reply for reply in replies))
@@ -437,10 +486,16 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         runtime = self.runtime()
         runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
         runtime._record_usage = AsyncMock()
-        runtime._chat = AsyncMock(return_value={"content": "", "usage": {}, "tool_calls": [
-            {"id": "c1", "name": "test_write", "arguments": {"source_id": 9}},
-            {"id": "c2", "name": "test_write", "arguments": {"source_id": 10}},
-        ]})
+        runtime._chat = AsyncMock(
+            return_value={
+                "content": "",
+                "usage": {},
+                "tool_calls": [
+                    {"id": "c1", "name": "test_write", "arguments": {"source_id": 9}},
+                    {"id": "c2", "name": "test_write", "arguments": {"source_id": 10}},
+                ],
+            }
+        )
         runtime.call_tool = AsyncMock()
         with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
             reply = await runtime._run_tool_loop(self.session, [], [], 0, self.actor)

@@ -48,6 +48,24 @@ manager's tenant guard alone — the guard is what keeps the *page* honest, and 
 mutation that trusted it alone would be one refactor away from deleting another
 workspace's row.
 
+### Queue health signals (`/app/jobs`)
+
+Above the history the page shows an amber banner when the queue, in the page's
+current scope and across all its rows (not only the last 50), has:
+
+- **overdue pending** jobs — due (`run_at`) more than 15 minutes ago and still
+  unclaimed, with the age of the oldest: the worker loop is stopped or busy with
+  one long job;
+- **stale running** jobs — `locked_at` older than 30 minutes, the
+  `JobManager.reap_stale` default cutoff. The worker loop reaps such rows before
+  every claim, so one still `running` means the loop itself is not running;
+- **unconfirmed failures** — `failed` rows whose external outcome is unknown
+  (`app/jobs/recovery_policy.py`); inspect them before any retry.
+
+The signals are counts and whole minutes only; no payload, error text or
+recipient is shown. They are read-only: nothing is requeued, reaped or alerted,
+and there is no external notification yet.
+
 ## The reaction: when to look and what to do
 
 A task answers "when to look" (`cron_expr`) and "what to do about a match"

@@ -47,6 +47,7 @@ def load_analyzer(schema, builder):
         'app.core.config': NS(settings=NS(DEBUG=False)),
         'app.models': NS(AgentScenario=NS(objects=NS(get_default_scenario=AsyncMock(return_value=None))),
                          AIAnalytics=NS(objects=Mock()), LLMModel=NS(), Source=NS()),
+        'app.services.ai.attempt_journal': NS(record_analysis_attempts=AsyncMock()),
         'app.services.ai.chain_resolver': NS(_normalize=lambda value: value, _token_set_ratio=Mock(),
                                              resolve_chain_async=AsyncMock()),
         'app.services.ai.content_classifier': NS(ContentClassifier=classifier),

@@ -21,6 +21,9 @@ def load_analyzer():
     from test_scenario_output_contract import load_contract
     schema, _ = load_contract()
     ns = SimpleNamespace
+    # Declared dependency of the analyzer's attempt journal helper; isolated
+    # harnesses must declare it so no real import chain or DB is reached.
+    attempt_journal = ns(record_analysis_attempts=AsyncMock())
     media = type("MediaType", (), {
         "TEXT": ns(db_value="text"), "IMAGE": ns(db_value="image"), "VIDEO": ns(db_value="video")
     })
@@ -32,6 +35,7 @@ def load_analyzer():
         "app.core.config": ns(settings=ns(DEBUG=False)),
         "app.models": ns(AgentScenario=type("Scenario", (), {}), AIAnalytics=type("Analytics", (), {}),
                          LLMModel=type("Model", (), {}), Source=type("Source", (), {})),
+        "app.services.ai.attempt_journal": attempt_journal,
         "app.services.ai.chain_resolver": ns(
             _normalize=Mock(), _token_set_ratio=Mock(), resolve_chain_async=AsyncMock()
         ),
@@ -53,6 +57,7 @@ def load_analyzer():
         "app.utils.translit": ns(translit_slug=Mock()),
     }
     module = load_isolated_source("_reported_analyzer", ROOT / "app/services/ai/analyzer.py", imports)
+    module._attempt_journal = attempt_journal
     return module
 
 

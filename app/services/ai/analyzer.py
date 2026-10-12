@@ -75,6 +75,39 @@ class AIAnalyzer:
             return True
         return False
 
+    async def _journal_paid_attempts(
+        self,
+        analysis_results: dict[str, Any],
+        unified_summary: Optional[dict[str, Any]],
+        source: Source,
+        analysis_date: Optional[date],
+        task_payload: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Durably record provider attempts before any analytics write decision.
+
+        The daily row, job and digest cost columns and the model counters are
+        mutable projections; a paid attempt whose projection is skipped
+        (partial run colliding with an existing daily row, relevance-filtered
+        day, failed batch) must still leave evidence. Called before the skip
+        decisions so journaling never depends on them. Never breaks the
+        analysis flow.
+        """
+        try:
+            from app.services.ai.attempt_journal import record_analysis_attempts
+
+            await record_analysis_attempts(
+                analysis_results,
+                unified_summary,
+                source=source,
+                analysis_date=analysis_date,
+                task_payload=task_payload,
+            )
+        except Exception:
+            logger.warning(
+                "attempt_journal_write_failed source_id=%s",
+                getattr(source, "id", None),
+            )
+
     @staticmethod
     def _validate_stage_result(result: Any, output_contract: ScenarioOutputContract | None) -> Any:
         """Reject invalid semantic output while retaining its usage/audit envelope."""
@@ -281,6 +314,8 @@ class AIAnalyzer:
 
             if not has_results:
                 logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
+                # Paid attempts still need evidence even when nothing is saved.
+                await self._journal_paid_attempts(analysis_results, None, source, date.today(), task_payload)
                 return None
 
             # Create unified summary if multiple analyses
@@ -1288,6 +1323,10 @@ class AIAnalyzer:
         # Use provided date or default to today
         if analysis_date is None:
             analysis_date = date_class.today()
+
+        # Attempt-level accounting happens before every projection decision
+        # below, including the partial-skip and the relevance filter.
+        await self._journal_paid_attempts(analysis_results, unified_summary, source, analysis_date, task_payload)
 
         # Relevance filtering (Phase 3): when the scenario's scope asks for it,
         # drop rows the model itself flagged as noise (`is_meaningful == false`)

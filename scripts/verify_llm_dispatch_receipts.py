@@ -182,7 +182,7 @@ async def catalog(session, schema, role):
 
     constraints = await rows(
         "SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint "
-        "WHERE conrelid=to_regclass(format('%I.llm_dispatch_receipts', :schema)) ORDER BY conname"
+        "WHERE conrelid=to_regclass(format('%I.llm_dispatch_receipts', CAST(:schema AS text))) ORDER BY conname"
     )
     expected = dict(CHECKS)
     expected.update(
@@ -220,7 +220,7 @@ async def catalog(session, schema, role):
         "t.tgnargs, t.tgisinternal, t.tgattr::text AS columns, t.tgconstraint, "
         "p.proname, pn.nspname AS function_schema "
         "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_namespace pn ON pn.oid=p.pronamespace "
-        "WHERE t.tgrelid=to_regclass(format('%I.llm_dispatch_receipts', :schema)) AND NOT t.tgisinternal"
+        "WHERE t.tgrelid=to_regclass(format('%I.llm_dispatch_receipts', CAST(:schema AS text))) AND NOT t.tgisinternal"
     )
     require({t["tgname"]: t["tgtype"] for t in triggers} == TRIGGERS, "Guard trigger types")
     for t in triggers:

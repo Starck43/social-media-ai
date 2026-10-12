@@ -28,6 +28,27 @@ class HelpersTests(unittest.TestCase):
     def test_require_success(self):
         self.assertIsNone(MODULE.require(True, "unused"))
 
+    def test_catalog_relation_queries_explicitly_type_asyncpg_schema_bind(self):
+        import ast
+        import inspect
+
+        from sqlalchemy import text
+        from sqlalchemy.dialects.postgresql.asyncpg import dialect
+
+        nodes = ast.walk(ast.parse(inspect.getsource(MODULE.catalog)))
+        statements = [
+            node.value
+            for node in nodes
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and "to_regclass(" in node.value
+        ]
+        self.assertEqual(len(statements), 2)
+        for sql in statements:
+            with self.subTest(query=sql):
+                compiled = text(sql).compile(dialect=dialect())
+                self.assertIn("format('%I.llm_dispatch_receipts', CAST($1 AS text))", str(compiled))
+                self.assertEqual(compiled.positiontup, ["schema"])
+                self.assertEqual(compiled.params, {"schema": None})
+
     def test_digest_is_order_independent(self):
         self.assertEqual(MODULE.digest({"a": 1, "b": 2}), MODULE.digest({"b": 2, "a": 1}))
 

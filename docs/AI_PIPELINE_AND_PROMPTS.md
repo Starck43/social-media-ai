@@ -136,8 +136,11 @@ review was static and did not rerun Python/DB/provider tests or apply migrations
 
 The journal records captured analyzer stage envelopes through
 `app/services/ai/attempt_journal.py`. Missing usage or an unresolved model tariff
-keeps cost unknown (NULL), rather than treating it as zero. A configured zero
-tariff is classified as free only with known prompt and completion token counts.
+keeps uncomputable actual cost NULL, rather than treating it as zero. A valid
+structured provider USD report arbitrates actual cost, including an explicit
+zero and regardless of whether the tariff/usage is available. Without a report,
+two explicit zero table rates qualify as FREE even if token counts are missing;
+non-zero rates require known counts only for their billable components.
 New analyzer envelopes carry a client-owned `accounting_usage` block separately
 from legacy numeric `usage` projections. Missing, non-integer, negative or
 out-of-column-range token counts remain NULL evidence. The journal treats this
@@ -148,18 +151,45 @@ custom adapters read `prompt_tokens`/`completion_tokens`; Anthropic reads
 token fields. Legacy envelopes without this block retain their old usage fallback.
 
 Missing, malformed, negative, non-finite or unrepresentable tariff rates produce
-`unknown_tariff` and NULL cost rather than defaulting to zero or losing the
+`undefined` and NULL cost without a valid provider report, rather than defaulting to zero or losing the
 record through a Decimal exception. Valid snapshot fields and model identity
 remain available when the other rate is unknown. Costs beyond the existing
 numeric column range likewise remain NULL/unknown, not silently clamped.
 Structured-output rejection stays `failed_output` even when usage is unknown.
 
-The existing USD/USD-cent projections and chat adapters remain compatible; this
-does not repair their missing-usage zeros or historical rows. The paragraphs above
-describe the integrated legacy certainty labels, not full implementation of the
-owner pricing policy below. That policy supersedes the previous proof-of-free
-proposal: an explicit table zero qualifies as FREE. Provider-reported actual
-cost and three-state runtime mapping remain pending.
+**Provider-price implementation: local verification pending for this package.**
+The analyze clients own `accounting_cost_usd` evidence extracted only from recognized
+USD API cost fields (`usage.total_cost`, `usage.cost`, top-level totals, or complete
+input/output cost components). An explicit zero is preserved; generated content,
+parsed model text, caller keywords and numeric projection zeros are not reports.
+Non-USD or malformed reports are not converted or guessed. A valid numeric
+report with unresolved currency or only partial cost components stays
+reported-but-unresolved, not a fallback to a free table. Valid totals take
+precedence over component sums; no global model tariff is edited from a response.
+An unrepresentable positive report retains a reported-but-unresolved marker;
+it must not fall back to a free table rate. Extreme component exponents likewise
+remain unresolved rather than underflowing into a fabricated zero. A malformed
+legacy numeric projection tariff cannot discard the analyzer's paid response:
+the numeric adapter keeps its zero fallback, while journal evidence is independent.
+
+New monetary journal rows use `priced`, `free` or `undefined`; the two old constant
+names remain import aliases, not new persisted labels. Provider reports arbitrate
+before table pricing; a positive sub-precision report stays `priced` even if its
+rounded USD amount is zero. Transient report evidence is removed before insertion
+into the existing schema. No historical row is rewritten.
+
+`LLMAttemptManager.accounting_totals()` supplies tenant-scoped captured-journal
+statistics with known Decimal USD and separate priced/free/undefined counts.
+Historical unknown labels and NULL actual costs remain visible as undefined;
+a zero known subtotal never certifies that those calls were free. Optional UTC
+filtering uses journal creation time, not a certified dispatch timestamp.
+These statistics are a partial-journal read API, not a replacement cap, a UI
+rollout, every-path capture or durable provider-report provenance.
+
+The existing USD/USD-cent projection adapters and chat paths remain compatible.
+Known rates with missing billable counts still have undefined actual cost; the
+known tariff snapshot must continue to govern reservation/reconciliation, not be
+reclassified as an unreservable admission merely because usage is missing.
 Source/job/task execution references are plain integers, not foreign keys, so
 source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters
@@ -200,7 +230,9 @@ No whole-gate, target-database or production acceptance is claimed.
 Status: **Owner pricing decision recorded; admission implementation and evidence
 still pending — not activated**. This is the full-gate contract, not a new backlog
 or a release claim. Analyzer accounting certainty is integrated in PR #118;
-provider-reported pricing and the three-state runtime mapping remain to implement.
+provider-reported analyzer pricing and the three-state monetary mapping are
+implemented in the current package but still await local verification. All-path
+receipts, immutable report provenance and atomic admission remain to implement.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass
 one accounting/admission boundary, whether reached by analysis, digest, agent

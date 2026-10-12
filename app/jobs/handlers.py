@@ -1,6 +1,7 @@
 """Background job handlers. Heavy work runs here (worker process)."""
 
 import logging
+import math
 from typing import Any, TYPE_CHECKING
 
 from app.services.social.credentials import AuthorizationRequired
@@ -214,6 +215,7 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         excluded_users:  list[str] — skip these users
     """
     from app.services.monitoring.collector import ContentCollector
+    from app.services.social.rate_limit import SourceRateLimited
 
     task = await _load_task(payload.get("agent_task_id"))
     task_payload = _task_payload(task)
@@ -270,6 +272,10 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         "error_sources": [],
         "excluded_sources": [],
         "error_messages": [],
+        # Sources whose platform rate limit did not clear within the bounded
+        # retry budget: deferred to the next run, neither failed nor empty.
+        "rate_limited": 0,
+        "rate_limited_sources": [],
         # Items the platforms actually handed over, and how many of those were
         # never seen before. Platforms do not remember what we fetched, so
         # `items` repeats itself on every re-run — `new_items` is the number that
@@ -290,6 +296,7 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             monitored_failures = 0
             monitored_auth_required = 0
+            monitored_rate_limited = 0
             if monitored_users:
                 result = await collector.collect_monitored_users(
                     source,
@@ -310,6 +317,8 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                 # failed requests, so do not add the two counts together.
                 monitored_auth_required = auth_required if type(auth_required) is int and auth_required > 0 else 0
                 monitored_failures = max(failed if type(failed) is int and failed > 0 else 0, monitored_auth_required)
+                rate_limited = (result or {}).get("rate_limited")
+                monitored_rate_limited = rate_limited if type(rate_limited) is int and rate_limited > 0 else 0
                 if result and result.get("total_items", 0) > 0:
                     stats["collected"] += 1
                     stats["items"] += result["total_items"]
@@ -318,6 +327,8 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                     outcome = "collected"
                 elif monitored_failures:
                     outcome = "auth_required" if monitored_auth_required else "error"
+                elif monitored_rate_limited:
+                    outcome = "rate_limited"
                 else:
                     stats["empty"] += 1
                     stats["empty_sources"].append(source.name)
@@ -380,6 +391,28 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
                 if monitored_auth_required:
                     per["auth_required"] = True
                     per["auth_hint"] = "Проверьте авторизацию отслеживаемых пользователей."
+            if monitored_rate_limited:
+                # Some (or all) monitored users were deferred: the source is at
+                # best partially collected in this run, never "complete".
+                stats["rate_limited"] += 1
+                stats["rate_limited_sources"].append(source.name)
+                stats["per_source"][-1]["rate_limited"] = monitored_rate_limited
+        except SourceRateLimited as e:
+            logger.warning("collect deferred for source %s: platform rate limit", source.id)
+            stats["rate_limited"] += 1
+            stats["rate_limited_sources"].append(source.name)
+            stats["per_source"].append(
+                {
+                    "source_id": source.id,
+                    "name": source.name,
+                    "items": 0,
+                    "new_items": 0,
+                    "outcome": "rate_limited",
+                    "analyzed": 0,
+                    "retry_after": math.ceil(e.retry_after) if e.retry_after else None,
+                    "hint": e.hint,
+                }
+            )
         except Exception as e:
             logger.error(f"collect failed for source {source.id}: {e}", exc_info=True)
             stats["error"] += 1

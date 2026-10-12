@@ -166,12 +166,15 @@ def _job_success_message(job: Any, result: dict | None) -> str:
         # `new_items` is absent on jobs written before it existed — say "not counted",
         # never "0 new", which would be a claim about data we simply did not measure.
         new_items = result.get("new_items")
+        rate_limited = _result_count(result, "rate_limited") or 0
 
-        parts = [
-            f"Задача «{label}» завершена с ошибками. Данные могут быть неполными."
-            if error
-            else f"Задача «{label}» успешно завершена."
-        ]
+        if error:
+            headline = f"Задача «{label}» завершена с ошибками. Данные могут быть неполными."
+        elif rate_limited:
+            headline = f"Задача «{label}» выполнена частично: платформа ограничила частоту запросов."
+        else:
+            headline = f"Задача «{label}» успешно завершена."
+        parts = [headline]
 
         if collected:
             names = _format_name_list(result.get("collected_sources") or [])
@@ -192,6 +195,12 @@ def _job_success_message(job: Any, result: dict | None) -> str:
             names = _format_name_list(result.get("error_sources") or [])
             names_detail = f" ({names})" if names else ""
             parts.append(f"Ошибки при сборе: {error}{names_detail}.")
+        if rate_limited:
+            names = _format_name_list(result.get("rate_limited_sources") or [])
+            names_detail = f" ({names})" if names else ""
+            parts.append(
+                f"Отложено из-за лимита запросов платформы: {rate_limited}{names_detail} — соберём при следующем запуске."
+            )
         if empty:
             parts.append(f"Без контента: {empty} (источники опрошены, но постов нет).")
         if excluded:

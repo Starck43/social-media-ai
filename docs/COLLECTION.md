@@ -300,11 +300,44 @@ reporting a bug, not a fact.
 > (bypasses dedup) and overwrites `ai_analytics` rows by `(source, date)` — see
 > `docs/CLI.md`.
 
+## Platform rate limits
+
+`app/services/social/rate_limit.py`. A platform that refuses with "too many
+requests" has neither failed nor returned an empty source, so collection treats
+it as a third outcome:
+
+- **Short limit → bounded pause and retry.** VK code 6 (too many requests per
+  second) and HTTP / Bot API 429 with a small `retry_after` are retried on the
+  collection read path (`BaseClient._fetch_page`, both full and incremental mode)
+  up to `SOCIAL_RATE_LIMIT_RETRIES` times (default 2), pausing 1 s, 2 s, …
+  or the platform's hint, never more than `SOCIAL_RATE_LIMIT_MAX_WAIT` seconds
+  (default 10) per pause. Telethon waits out a flood limit itself; its
+  `flood_sleep_threshold` is set to the same cap for L2 pulls.
+- **Limit that does not clear → deferred.** VK code 9 (flood control) and 29
+  (method quota), a hint above the cap, an exhausted retry budget, or a
+  Telegram `FloodWaitError` longer than the cap raise `SourceRateLimited`. The
+  collect job records the source with `outcome: "rate_limited"` (and
+  `retry_after` when known), counts it in `rate_limited` /
+  `rate_limited_sources`, not in `error` or `empty`, and sends no failure alert.
+  For a monitored-users source, deferred users are counted apart from failed
+  ones; a source with some users collected and some deferred keeps
+  `outcome: "collected"` with `rate_limited: N`.
+- **Nothing is acknowledged on deferral.** Items read before the limit are not
+  staged and the cursor/watermark does not advance, so the next scheduled run
+  reads the same window. The run summary reports «выполнено частично» and the
+  source history shows «отложено».
+
+`SourceRateLimited` is not a `RuntimeError`, so VK L1→L2 fallback and token
+refresh do not switch credentials into the same limit. External writes (for
+example `wall.createComment`) are never retried by this policy. The fixed 0.1 s
+pacing between pages is unchanged; there is no shared per-platform budget across
+sources or workers yet.
+
 ## Next steps (later milestones)
 
 1. **L3 browser fallback** — Playwright client for sources without an API.
-2. **Rate limits** — honour `Platform.rate_limit_remaining`/reset with backoff
-   per platform instead of per request.
+2. **Shared rate budget** — honour `Platform.rate_limit_remaining`/reset across
+   sources and workers instead of per request.
 
 ## Deduplication
 

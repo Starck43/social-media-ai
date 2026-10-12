@@ -1313,6 +1313,9 @@ def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
 		# even when every source failed — the outcome carries that instead.
 		if _as_int(result.get("error")):
 			return "partial"
+		# A source deferred by a platform rate limit was not collected this run.
+		if type(result.get("rate_limited")) is int and result["rate_limited"] > 0:
+			return "partial"
 		# Jobs recorded before `new_items` existed have no such key; fall back
 		# to the total rather than calling a legacy run "no data".
 		found = result.get("new_items", result.get("items", 0))
@@ -1342,7 +1345,7 @@ _OUTCOME_LABELS = {
 _OUTCOME_NOTES = {
 	"collect": {
 		"no_data": "Все источники ответили, но новых записей не нашлось — всё уже собрано ранее.",
-		"partial": "Часть источников не ответила или требует авторизации — подробности ниже.",
+		"partial": "Часть источников не ответила, требует авторизации или отложена из-за лимита запросов платформы — подробности ниже.",
 	},
 	"analyze": {
 		"no_data": "Нечего анализировать — новых данных нет.",
@@ -1423,6 +1426,8 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			# used to read 0 for every run that actually had failures.
 			_stat(result.get("error", 0), "ошибок"),
 		]
+		if type(result.get("rate_limited")) is int and result["rate_limited"] > 0:
+			stats.append(_stat(result["rate_limited"], "отложено (лимит запросов)"))
 	elif job_type == "analyze":
 		stats = [
 			_stat(result.get("sources", 0), "источников проверено"),
@@ -1491,6 +1496,8 @@ def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, An
 		outcome = entry.get("outcome") or "empty"
 		if outcome == "error":
 			note = "ошибка"
+		elif outcome == "rate_limited":
+			note = "отложено: лимит запросов"
 		elif outcome == "collected":
 			items = int(entry.get("items") or 0)
 			# Prefer the new count: "32 records" for a source that re-serves the

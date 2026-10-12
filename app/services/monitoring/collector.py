@@ -6,6 +6,7 @@ from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
 from app.models import Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.services.social.factory import get_social_client
+from app.services.social.rate_limit import SourceRateLimited
 from app.types import NotificationType, SourceType
 from app.utils.collected_content import _build_permalink, build_staged_rows
 
@@ -242,6 +243,11 @@ class ContentCollector:
 				result["analysis_errors"] = analysis_errors
 			return result
 
+		except SourceRateLimited:
+			# Deferred, not failed: no error notification or operator alert. The
+			# caller records the source as rate limited for the next run.
+			logger.warning("collection_source_deferred error_code=rate_limited")
+			raise
 		except Exception as e:
 			logger.error("collection_source_failed error_code=collection_operation_failed")
 
@@ -342,6 +348,7 @@ class ContentCollector:
 		not a failure. Authentication failures are a subset of failed requests.
 		No raw exception or authorization hint is added to the returned counters.
 		Only positive reported inline diagnostics are aggregated; absence is not zero.
+		A platform rate limit is a deferred request, counted apart from failures.
 		This does not measure complete coverage or change retry.
 		"""
 		from app.services.social.credentials import AuthorizationRequired
@@ -356,6 +363,8 @@ class ContentCollector:
 			"failed": 0,
 			"empty": 0,
 			"auth_required": 0,
+			# Deferred by a platform rate limit; not counted as failed.
+			"rate_limited": 0,
 			"total_items": 0,
 			"total_new_items": 0,
 		}
@@ -398,6 +407,8 @@ class ContentCollector:
 				analysis_errors = result.get("analysis_errors")
 				if type(analysis_errors) is int and analysis_errors > 0:
 					results["analysis_errors"] = results.get("analysis_errors", 0) + analysis_errors
+			except SourceRateLimited:
+				results["rate_limited"] += 1
 			except Exception as error:
 				results["failed"] += 1
 				if isinstance(error, AuthorizationRequired):

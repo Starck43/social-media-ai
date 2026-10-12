@@ -37,7 +37,9 @@ class HelpersTests(unittest.TestCase):
     def test_digest_preserves_exact_decimal(self):
         from decimal import Decimal
 
-        self.assertNotEqual(MODULE.digest(Decimal("9999999999.99999998")), MODULE.digest(Decimal("9999999999.99999999")))
+        self.assertNotEqual(
+            MODULE.digest(Decimal("9999999999.99999998")), MODULE.digest(Decimal("9999999999.99999999"))
+        )
 
     def test_signature_tracks_string_length(self):
         from sqlalchemy import Column, MetaData, String, Table

@@ -106,7 +106,9 @@ def table_signature(table):
         if isinstance(item, CheckConstraint):
             constraints.append(("check", item.name, str(item.sqltext)))
         elif isinstance(item, ForeignKeyConstraint):
-            constraints.append(("fk", tuple(item.column_keys), tuple(e.target_fullname for e in item.elements), item.ondelete))
+            constraints.append(
+                ("fk", tuple(item.column_keys), tuple(e.target_fullname for e in item.elements), item.ondelete)
+            )
         elif isinstance(item, PrimaryKeyConstraint):
             constraints.append(("pk", tuple(c.name for c in item.columns)))
         elif isinstance(item, UniqueConstraint):
@@ -115,7 +117,12 @@ def table_signature(table):
             raise VerificationFailure("Unexpected definition constraint")
     return {
         "columns": [
-            (c.name, str(c.type.compile(dialect=dialect)), c.nullable, str(c.server_default.arg) if c.server_default else None)
+            (
+                c.name,
+                str(c.type.compile(dialect=dialect)),
+                c.nullable,
+                str(c.server_default.arg) if c.server_default else None,
+            )
             for c in table.columns
         ],
         "constraints": sorted(constraints, key=repr),
@@ -178,11 +185,13 @@ async def catalog(session, schema, role):
         "WHERE conrelid=to_regclass(format('%I.llm_dispatch_receipts', :schema)) ORDER BY conname"
     )
     expected = dict(CHECKS)
-    expected.update({
-        "llm_dispatch_receipts_pkey": "PRIMARY KEY (id)",
-        "uq_llm_dispatch_receipts_identity": "UNIQUE (dispatch_id)",
-        "llm_dispatch_receipts_tenant_id_fkey": f"FOREIGN KEY (tenant_id) REFERENCES {schema}.tenants(id) ON DELETE RESTRICT",
-    })
+    expected.update(
+        {
+            "llm_dispatch_receipts_pkey": "PRIMARY KEY (id)",
+            "uq_llm_dispatch_receipts_identity": "UNIQUE (dispatch_id)",
+            "llm_dispatch_receipts_tenant_id_fkey": f"FOREIGN KEY (tenant_id) REFERENCES {schema}.tenants(id) ON DELETE RESTRICT",
+        }
+    )
     require({r["conname"]: r["definition"] for r in constraints} == expected, "Constraint parity")
     functions = await rows(
         "SELECT p.prosrc, p.pronargs, p.prosecdef, p.proconfig, p.prorettype::regtype::text AS returns, "
@@ -195,9 +204,15 @@ async def catalog(session, schema, role):
     f = functions[0]
     require(" ".join(f["prosrc"].split()) == FUNCTION_BODY, "Guard function body")
     require(
-        f["pronargs"] == 0 and f["returns"] == "trigger" and f["lanname"] == "plpgsql"
-        and not f["prosecdef"] and f["proconfig"] is None and f["owner"] == role
-        and f["volatility"] == "v" and f["parallel"] == "u" and not f["proleakproof"],
+        f["pronargs"] == 0
+        and f["returns"] == "trigger"
+        and f["lanname"] == "plpgsql"
+        and not f["prosecdef"]
+        and f["proconfig"] is None
+        and f["owner"] == role
+        and f["volatility"] == "v"
+        and f["parallel"] == "u"
+        and not f["proleakproof"],
         "Guard function attributes",
     )
     triggers = await rows(
@@ -210,14 +225,21 @@ async def catalog(session, schema, role):
     require({t["tgname"]: t["tgtype"] for t in triggers} == TRIGGERS, "Guard trigger types")
     for t in triggers:
         require(
-            t["enabled"] == "O" and t["proname"] == "reject_llm_receipt_mutation"
-            and t["function_schema"] == schema and t["no_when"] and t["tgnargs"] == 0 and not t["tgargs"]
-            and not t["columns"] and t["tgconstraint"] == 0,
+            t["enabled"] == "O"
+            and t["proname"] == "reject_llm_receipt_mutation"
+            and t["function_schema"] == schema
+            and t["no_when"]
+            and t["tgnargs"] == 0
+            and not t["tgargs"]
+            and not t["columns"]
+            and t["tgconstraint"] == 0,
             "Guard trigger binding/enabled/condition",
         )
-    return {"constraints": constraints, "function": functions, "triggers": [
-        {k: v for k, v in t.items() if k != "tgargs"} for t in triggers
-    ]}
+    return {
+        "constraints": constraints,
+        "function": functions,
+        "triggers": [{k: v for k, v in t.items() if k != "tgargs"} for t in triggers],
+    }
 
 
 def reflected_parity(connection, model, definition):
@@ -228,13 +250,17 @@ def reflected_parity(connection, model, definition):
     columns = inspector.get_columns(model.name, schema=model.schema)
     from sqlalchemy.dialects import postgresql
 
-    actual = [(c["name"], str(c["type"].compile(dialect=postgresql.dialect())), c["nullable"], c["default"]) for c in columns]
+    actual = [
+        (c["name"], str(c["type"].compile(dialect=postgresql.dialect())), c["nullable"], c["default"]) for c in columns
+    ]
     expected = table_signature(model)["columns"]
     require(len(actual) == len(expected), "Column count")
     for found, wanted in zip(actual, expected):
         if wanted[0] == "id":
             require(found[:3] == wanted[:3], "Identity type/nullability")
-            require(found[3] == f"nextval('{model.schema}.llm_dispatch_receipts_id_seq'::regclass)", "Identity sequence")
+            require(
+                found[3] == f"nextval('{model.schema}.llm_dispatch_receipts_id_seq'::regclass)", "Identity sequence"
+            )
         else:
             require(found == wanted, "Column type/length/default/nullability")
     indexes = inspector.get_indexes(model.name, schema=model.schema)
@@ -248,7 +274,9 @@ def reflected_parity(connection, model, definition):
     )
     require(all(not i.get("dialect_options", {}).get("postgresql_where") for i in indexes), "Partial index")
     require(all(not i.get("include_columns") for i in indexes), "Unexpected covering index")
-    require(all(i.get("dialect_options", {}).get("postgresql_using", "btree") == "btree" for i in indexes), "Index method")
+    require(
+        all(i.get("dialect_options", {}).get("postgresql_using", "btree") == "btree" for i in indexes), "Index method"
+    )
     return {"column_count": len(columns), "columns": actual, "indexes": indexes}
 
 
@@ -258,7 +286,11 @@ async def snapshot(session, schema):
 
     result = {}
     for name in ("llm_attempts", "llm_dispatch_receipts", "tenants"):
-        rows = (await session.execute(text(f'SELECT id, row_to_json(t)::text AS value FROM "{schema}"."{name}" t ORDER BY id'))).all()
+        rows = (
+            await session.execute(
+                text(f'SELECT id, row_to_json(t)::text AS value FROM "{schema}"."{name}" t ORDER BY id')
+            )
+        ).all()
         result[name] = {row.id: digest(json.loads(row.value, parse_float=Decimal)) for row in rows}
     return result
 
@@ -270,7 +302,11 @@ async def verify(args):
     from app.core.database import async_engine, async_session_maker
     from app.core.tenant_context import tenant_scope
     from app.models import LLMDispatchReceipt
-    from app.models.managers.llm_dispatch_receipt_manager import LLMDispatchReceiptManager, ReceiptEvidenceConflict, ReceiptStorageUnavailable
+    from app.models.managers.llm_dispatch_receipt_manager import (
+        LLMDispatchReceiptManager,
+        ReceiptEvidenceConflict,
+        ReceiptStorageUnavailable,
+    )
     from app.services.ai.dispatch_receipts import build_dispatch_receipt
 
     schema = settings.DB_SCHEMA
@@ -282,11 +318,18 @@ async def verify(args):
 
     def record(tenant=1):
         model = SimpleNamespace(
-            id=1, model_id="synthetic-evidence-model", provider=SimpleNamespace(id=1, name="synthetic-evidence-provider"),
-            input_cost_per_1k=Decimal("0.001"), output_cost_per_1k=Decimal("0.002"),
+            id=1,
+            model_id="synthetic-evidence-model",
+            provider=SimpleNamespace(id=1, name="synthetic-evidence-provider"),
+            input_cost_per_1k=Decimal("0.001"),
+            output_cost_per_1k=Decimal("0.002"),
         )
         return build_dispatch_receipt(
-            model, tenant_id=tenant, dispatch_id=uuid4().hex, purpose="evidence", stage="evidence_review",
+            model,
+            tenant_id=tenant,
+            dispatch_id=uuid4().hex,
+            purpose="evidence",
+            stage="evidence_review",
             prepared_at=datetime.now(timezone.utc),
         )
 
@@ -306,7 +349,11 @@ async def verify(args):
     async def stored(key):
         async with rollback_only(async_session_maker) as session:
             await timeouts(session)
-            return (await session.execute(text(f"SELECT * FROM {table} WHERE dispatch_id=:key"), {"key": key})).mappings().one_or_none()
+            return (
+                (await session.execute(text(f"SELECT * FROM {table} WHERE dispatch_id=:key"), {"key": key}))
+                .mappings()
+                .one_or_none()
+            )
 
     async def keep(value):
         row = await stored(value["dispatch_id"])
@@ -318,16 +365,24 @@ async def verify(args):
     async def invariants(session):
         identity = (await session.execute(text("SELECT current_database(), current_user"))).one()
         require(tuple(identity) == (args.expected_database, args.expected_role), "Actual target identity")
-        versions = (await session.execute(text("SELECT schemaname FROM pg_tables WHERE tablename='alembic_version'"))).scalars().all()
+        versions = (
+            (await session.execute(text("SELECT schemaname FROM pg_tables WHERE tablename='alembic_version'")))
+            .scalars()
+            .all()
+        )
         require(versions == ["public"], "Version layout")
         revision = (await session.execute(text("SELECT version_num FROM public.alembic_version"))).scalar_one()
         require(revision == "0092", "Public revision changed")
-        public_objects = (await session.execute(text(
-            "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
-            "WHERE n.nspname='public' AND c.relname LIKE 'llm_dispatch_receipt%' "
-            "UNION ALL SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
-            "WHERE n.nspname='public' AND p.proname='reject_llm_receipt_mutation'"
-        ))).all()
+        public_objects = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+                    "WHERE n.nspname='public' AND c.relname LIKE 'llm_dispatch_receipt%' "
+                    "UNION ALL SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
+                    "WHERE n.nspname='public' AND p.proname='reject_llm_receipt_mutation'"
+                )
+            )
+        ).all()
         require(not public_objects, "Public receipt object")
 
     try:
@@ -347,7 +402,9 @@ async def verify(args):
                     require({1, 94}.issubset(baseline["tenants"]), "Approved tenants absent")
                     definition = capture_definition(schema)
                     conn = await session.connection()
-                    parity = await conn.run_sync(lambda sync: reflected_parity(sync, LLMDispatchReceipt.__table__, definition))
+                    parity = await conn.run_sync(
+                        lambda sync: reflected_parity(sync, LLMDispatchReceipt.__table__, definition)
+                    )
                     guards = await catalog(session, schema, args.expected_role)
                 emit("preflight", run_id=run_id, parity=parity, guards=guards, baseline_hash=digest(baseline))
                 checks.append("complete_definition_model_catalog_parity")
@@ -372,7 +429,12 @@ async def verify(args):
                                 pass
                             else:
                                 raise VerificationFailure("Manager accepted disabled guard")
-                        absent = (await session.execute(text(f"SELECT count(*) FROM {table} WHERE dispatch_id=:key"), {"key": candidate["dispatch_id"]})).scalar_one()
+                        absent = (
+                            await session.execute(
+                                text(f"SELECT count(*) FROM {table} WHERE dispatch_id=:key"),
+                                {"key": candidate["dispatch_id"]},
+                            )
+                        ).scalar_one()
                         require(absent == 0, "Disabled guard wrote evidence")
                     async with rollback_only(async_session_maker) as session:
                         await timeouts(session)
@@ -416,7 +478,9 @@ async def verify(args):
                         with tenant_scope(1):
                             require(await manager().record_receipt(candidate) is False, "Lost ack replay inserted")
                         await keep(candidate)
-                    emit("injected_boundary", after_successful_commit=persist, persisted=persist, real_network_loss=False)
+                    emit(
+                        "injected_boundary", after_successful_commit=persist, persisted=persist, real_network_loss=False
+                    )
                 checks.append("before_commit_rollback_and_after_commit_lost_ack_replay")
 
                 for conflicting in (False, True):
@@ -455,9 +519,13 @@ async def verify(args):
                         require(sum(o is False for o in outcomes) == 1, "Race exact replay")
                     winner = first if outcomes[0] is True else second
                     await keep(winner)
-                    emit("barrier_race", conflicting=conflicting, outcomes=[
-                        o if isinstance(o, bool) else type(o).__name__ for o in outcomes
-                    ], separate_sessions=True, multi_process=False)
+                    emit(
+                        "barrier_race",
+                        conflicting=conflicting,
+                        outcomes=[o if isinstance(o, bool) else type(o).__name__ for o in outcomes],
+                        separate_sessions=True,
+                        multi_process=False,
+                    )
                 checks.append("barrier_synchronized_identical_and_conflicting_sessions")
 
                 async with rollback_only(async_session_maker) as session:
@@ -468,11 +536,24 @@ async def verify(args):
                 require(final["llm_attempts"] == baseline["llm_attempts"], "Journal content changed")
                 require(final["tenants"] == baseline["tenants"], "Tenant content changed")
                 receipts = final["llm_dispatch_receipts"]
-                require(all(receipts.get(k) == v for k, v in baseline["llm_dispatch_receipts"].items()), "Retained receipt changed")
-                require(set(receipts) - set(baseline["llm_dispatch_receipts"]) == {r["id"] for r in manifest}, "Unexplained new rows")
+                require(
+                    all(receipts.get(k) == v for k, v in baseline["llm_dispatch_receipts"].items()),
+                    "Retained receipt changed",
+                )
+                require(
+                    set(receipts) - set(baseline["llm_dispatch_receipts"]) == {r["id"] for r in manifest},
+                    "Unexplained new rows",
+                )
                 checks.append("baseline_content_preservation_since_this_preflight")
-                emit("result", status="PASS", checks=checks, retained=manifest, total_receipts=len(receipts),
-                     baseline_integrity_since_preflight_only=True, whole_gate_accepted=False)
+                emit(
+                    "result",
+                    status="PASS",
+                    checks=checks,
+                    retained=manifest,
+                    total_receipts=len(receipts),
+                    baseline_integrity_since_preflight_only=True,
+                    whole_gate_accepted=False,
+                )
             finally:
                 await lock.execute(text("SELECT pg_advisory_unlock(1370093)"))
                 await lock.rollback()
@@ -498,15 +579,21 @@ def main():
         require(args.expected_receipts >= 44 and args.expected_journal == 79, "Approved baseline")
         head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
         require(head == args.expected_head, "Exact head mismatch")
-        require(not subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip(), "Dirty checkout")
+        require(
+            not subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip(), "Dirty checkout"
+        )
         from scripts.setup_test_db import resolve_test_schema, resolve_test_url, resolve_working_schema
         from scripts.verify_llm_attempt_persistence import validate_target
 
         test_url = resolve_test_url()
         test_schema = resolve_test_schema()
         validate_target(
-            os.environ.get("POSTGRES_URL", "").strip(), resolve_working_schema(), test_url,
-            test_schema, args.expected_database, args.expected_schema,
+            os.environ.get("POSTGRES_URL", "").strip(),
+            resolve_working_schema(),
+            test_url,
+            test_schema,
+            args.expected_database,
+            args.expected_schema,
         )
         os.environ["POSTGRES_URL"] = test_url
         os.environ["DB_SCHEMA"] = test_schema

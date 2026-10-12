@@ -77,7 +77,7 @@ class ApiScopeMiddleware:
             await self._unauthorized(scope, receive, send)
             return
 
-        tenant_id, error = await self._resolve_tenant(request, user)
+        tenant_id, error, grants = await self._resolve_tenant(request, user)
         if tenant_id is None:
             logger.warning("API access denied for user %s: %s", getattr(user, "username", "?"), error)
             await JSONResponse({"detail": error or "No workspace access"}, status_code=403)(scope, receive, send)
@@ -87,8 +87,9 @@ class ApiScopeMiddleware:
         request.state.tenant_id = tenant_id
 
         # Everything below — endpoints, managers, background tasks — sees exactly
-        # one workspace through the queryset guard in BaseManager.
-        with tenant_scope(tenant_id), permission_scope(user):
+        # one workspace through the queryset guard in BaseManager. A non-owner
+        # member's workspace rights come from the membership role.
+        with tenant_scope(tenant_id), permission_scope(user, member_grants=grants):
             await self.app(scope, receive, send)
 
     # ── authentication ──────────────────────────────────────────────────────
@@ -126,8 +127,11 @@ class ApiScopeMiddleware:
 
     # ── workspace resolution ────────────────────────────────────────────────
 
-    async def _resolve_tenant(self, request: Request, user: Any) -> tuple[Optional[int], Optional[str]]:
-        """`(tenant_id, error)` — the workspace to run in, or why not.
+    async def _resolve_tenant(self, request: Request, user: Any) -> tuple[Optional[int], Optional[str], Any]:
+        """`(tenant_id, error, member_grants)` — the workspace to run in, or why not.
+
+        `member_grants` is `TenantUserManager.member_grants()` of the selected
+        membership: None for an owner, the membership role's rights otherwise.
 
         Never returns a workspace the caller is not a member of, whatever the
         headers say.
@@ -136,7 +140,7 @@ class ApiScopeMiddleware:
 
         memberships = await TenantUserManager().web_memberships(user.id)
         if not memberships:
-            return None, "User has no workspace membership"
+            return None, "User has no workspace membership", None
 
         allowed = {m.tenant_id for m in memberships}
 
@@ -146,17 +150,18 @@ class ApiScopeMiddleware:
             # Default: the first workspace the caller belongs to (same order the
             # web UI uses). Members of several workspaces select another one with
             # the headers.
-            return memberships[0].tenant_id, None
+            return memberships[0].tenant_id, None, await TenantUserManager().member_grants(memberships[0])
 
         if raw_id.isdigit():
             tenant = await tenants.get(id=int(raw_id))
         else:
             tenant = await tenants.get_by_slug(raw_slug)
         if tenant is None:
-            return None, "Workspace not found"
+            return None, "Workspace not found", None
         if tenant.id not in allowed:
-            return None, "User is not a member of this workspace"
-        return tenant.id, None
+            return None, "User is not a member of this workspace", None
+        membership = next(m for m in memberships if m.tenant_id == tenant.id)
+        return tenant.id, None, await TenantUserManager().member_grants(membership)
 
     @staticmethod
     async def _unauthorized(scope: Scope, receive: Receive, send: Send) -> None:

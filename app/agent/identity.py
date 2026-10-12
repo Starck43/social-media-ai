@@ -28,6 +28,8 @@ class RuntimeIdentity:
     user_role_id: int | None
     is_owner: bool
     user: Any = field(repr=False, compare=False)
+    # Non-owner member's workspace-role rights; None for an owner.
+    member_grants: frozenset | None = field(default=None, repr=False, compare=False)
 
     def actor_binding(self) -> dict[str, Any]:
         return {
@@ -115,11 +117,15 @@ async def resolve_runtime_identity(resolution: Any) -> RuntimeIdentity | None:
         codename = getattr(role, "codename", None)
         role_name = getattr(codename, "name", codename)
         owner = role is not None and role_name == "SUPERUSER"
+        # No NULL-role elevation here either: a role-less member has no workspace rights.
+        grants = None if owner else (
+            frozenset() if membership.role_id is None else await tenant_users.member_grants(membership)
+        )
         return RuntimeIdentity(
             tenant_id=tenant_id, user_id=user.id, membership_id=membership.id,
             channel=channel, chat_id=chat_id, external_user_id=external_id,
             membership_role_id=membership.role_id, user_role_id=user.role_id,
-            is_owner=owner, user=user,
+            is_owner=owner, user=user, member_grants=grants,
         )
     except Exception:  # closed/detached/failed identity loads must never authorize
         logger.warning("runtime_identity_load_failed")

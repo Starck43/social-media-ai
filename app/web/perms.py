@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
-from app.core.permissions import WORKSPACE_OWNER_MODELS
+from app.core.permissions import WORKSPACE_OWNER_MODELS, workspace_models
 from app.types import ActionType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -45,17 +45,20 @@ def _resolve_action(action: ActionType | str) -> ActionType | None:
 class WebPerms:
     """What the caller may do in the workspace this request runs for."""
 
-    __slots__ = ("_user", "_memberships", "_tenant_id")
+    __slots__ = ("_user", "_memberships", "_tenant_id", "_member_grants")
 
     def __init__(
         self,
         user: "User | None" = None,
         memberships: Iterable["TenantUser"] | None = None,
         tenant_id: int | None = None,
+        member_grants: frozenset | None = None,
     ) -> None:
         self._user = user
         self._memberships = list(memberships or [])
         self._tenant_id = tenant_id
+        # `TenantUserManager.member_grants()` of the active membership; None = owner/unknown.
+        self._member_grants = member_grants
 
     # --- who ---------------------------------------------------------------
 
@@ -117,6 +120,14 @@ class WebPerms:
         if self._tenant_id is not None and self.is_owner and model_name in WORKSPACE_OWNER_MODELS:
             return True
         try:
+            if (
+                self._tenant_id is not None
+                and self._member_grants is not None
+                and not self.is_owner
+                and model_name in workspace_models()
+            ):
+                # A member's workspace role, not the platform role, decides here.
+                return bool(self._user._is_superuser_role()) or (model_name, resolved) in self._member_grants
             return bool(self._user.has_perm_for(model_name, resolved))
         except Exception:  # noqa: BLE001 - a rights check must never 500 a page
             return False

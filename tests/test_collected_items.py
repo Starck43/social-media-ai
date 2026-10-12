@@ -51,8 +51,15 @@ async def source():
 
 
 @pytest.fixture(autouse=True)
-def _source_tenant_scope(source):
-    """Give this file's raw-SQL paths the source tenant, without global bypass."""
+def _source_tenant_scope(request):
+    """Give this file's raw-SQL paths the source tenant, without global bypass.
+
+    `@pytest.mark.tenancy` tests build their own workspaces and scopes instead.
+    """
+    if request.node.get_closest_marker("tenancy"):
+        yield
+        return
+    source = request.getfixturevalue("source")
     with tenant_scope(source.tenant_id):
         yield
 
@@ -495,76 +502,100 @@ async def test_staging_json_metrics_author_and_original_survive_deferred_replay(
     assert display["original_links"] == ["https://example.com/original"]
 
 
-async def test_prune_deletes_analyses_older_than_data_retention(source, monkeypatch):
+@pytest.mark.tenancy
+async def test_prune_deletes_analyses_older_than_data_retention(monkeypatch):
     """`DATA_RETENTION_MONTHS` governs analysis results by last write, not publication date.
 
-    A stale row goes; a fresh row with an old `analysis_date` stays; a stale row
-    a bot action still references stays as that action's evidence; another
-    workspace's stale row is out of scope.
+    Runs like the worker: `execute_job` wraps the handler in
+    `tenant_scope(job.tenant_id)`, so the real tenant guard is on (no legacy
+    bypass). A stale row goes; a fresh row with an old `analysis_date` stays; a
+    stale row a bot action still references stays as that action's evidence;
+    another workspace's stale row is out of scope.
     """
     from app.core.config import settings
+    from app.core.permissions import service_permission_scope
     from app.jobs.handlers import handle_prune
-    from app.models import AgentScenario, AgentTask, AIAnalytics, BotAction, Tenant
+    from app.models import AgentScenario, AIAnalytics, BotAction, Tenant
     from app.types import AgentActionType, BotActionStatus, PeriodType
 
     monkeypatch.setattr(settings, "DATA_RETENTION_MONTHS", 1)
     old = datetime.now(timezone.utc) - timedelta(days=70)
     long_ago = (datetime.now(timezone.utc) - timedelta(days=400)).date()
+    suffix = uuid.uuid4().hex[:8]
+    tenants, sources = [], []
+    platform = scenario = action = None
 
     def make(source_id, day):
         return AIAnalytics.objects.create(
             source_id=source_id, analysis_date=day, period_type=PeriodType.DAY, summary_data={"retention": True}
         )
 
-    stale = await make(source.id, long_ago)
-    fresh_old_date = await make(source.id, long_ago - timedelta(days=1))
-    evidence = await make(source.id, long_ago - timedelta(days=2))
-    task, scenario = await _task_with_scenario()
-    action = await BotAction.objects.create(
-        agent_scenario_id=scenario.id,
-        source_id=source.id,
-        analytics_id=evidence.id,
-        action_type=AgentActionType.COMMENT,
-        status=BotActionStatus.PENDING,
-        payload={"text": "t", "post_id": 1},
-        dry_run=True,
-    )
-    suffix = uuid.uuid4().hex[:6]
-    with tenant_scope(bypass=True):
-        other_tenant = await Tenant.objects.create(name=f"ret-{suffix}", slug=f"ret-{suffix}")
-    other_source = None
     try:
-        with tenant_scope(other_tenant.id):
-            other_source = await Source.objects.create(
-                platform_id=source.platform_id,
-                name="ret-other",
-                source_type=SourceType.CHANNEL.name,
-                external_id=f"ret-other-{suffix}",
-                is_active=True,
+        with tenant_scope(bypass=True):
+            for label in ("own", "other"):
+                tenants.append(await Tenant.objects.create(name=f"ret-{label}-{suffix}", slug=f"ret-{label}-{suffix}"))
+            platform = await Platform.objects.create(
+                name=f"vk_{suffix}", platform_type="vk", base_url="https://vk.com", params={}
             )
+        own, other = tenants
+        for tenant in tenants:
+            with tenant_scope(tenant.id), service_permission_scope("source", "create"):
+                sources.append(
+                    await Source.objects.create(
+                        platform_id=platform.id,
+                        name=f"ret-src-{tenant.id}",
+                        source_type=SourceType.CHANNEL.name,
+                        external_id=f"ret-{suffix}-{tenant.id}",
+                        is_active=True,
+                    )
+                )
+        own_source, other_source = sources
+
+        with tenant_scope(own.id):
+            stale = await make(own_source.id, long_ago)
+            fresh_old_date = await make(own_source.id, long_ago - timedelta(days=1))
+            evidence = await make(own_source.id, long_ago - timedelta(days=2))
+            with service_permission_scope("agentscenario", "create"):
+                scenario = await AgentScenario.objects.create(
+                    name=f"ret-sc-{suffix}", analysis_types=["summary"], content_types=["posts"], is_active=True
+                )
+            action = await BotAction.objects.create(
+                agent_scenario_id=scenario.id,
+                source_id=own_source.id,
+                analytics_id=evidence.id,
+                action_type=AgentActionType.COMMENT,
+                status=BotActionStatus.PENDING,
+                payload={"text": "t", "post_id": 1},
+                dry_run=True,
+            )
+            await AIAnalytics.objects.filter(id__in=[stale.id, evidence.id]).update(updated_at=old)
+        with tenant_scope(other.id):
             foreign = await make(other_source.id, long_ago)
             await AIAnalytics.objects.filter(id=foreign.id).update(updated_at=old)
 
-        await AIAnalytics.objects.filter(id__in=[stale.id, evidence.id]).update(updated_at=old)
-
-        result = await handle_prune({"days": 7})
+        with tenant_scope(own.id):
+            result = await handle_prune({"days": 7})
 
         assert result["retention_months"] == 1
         assert result["analytics_deleted"] == 1
         assert "analytics_retention_failed" not in result
-        assert await AIAnalytics.objects.get(id=stale.id) is None
-        assert await AIAnalytics.objects.get(id=fresh_old_date.id) is not None
-        assert await AIAnalytics.objects.get(id=evidence.id) is not None
-        with tenant_scope(other_tenant.id):
+        with tenant_scope(own.id):
+            assert await AIAnalytics.objects.get(id=stale.id) is None
+            assert await AIAnalytics.objects.get(id=fresh_old_date.id) is not None
+            assert await AIAnalytics.objects.get(id=evidence.id) is not None
+        with tenant_scope(other.id):
             assert await AIAnalytics.objects.get(id=foreign.id) is not None
     finally:
-        await BotAction.objects.delete_by_id(action.id)
-        await AIAnalytics.objects.filter(source_id=source.id).delete()
-        await AgentTask.objects.delete_by_id(task.id)
-        await AgentScenario.objects.delete_by_id(scenario.id)
-        with tenant_scope(other_tenant.id):
-            if other_source is not None:
-                await AIAnalytics.objects.filter(source_id=other_source.id).delete()
-                await Source.objects.delete_by_id(other_source.id)
         with tenant_scope(bypass=True):
-            await Tenant.objects.delete_by_id(other_tenant.id)
+            if action is not None:
+                await BotAction.objects.delete_by_id(action.id)
+            for src in sources:
+                await AIAnalytics.objects.filter(source_id=src.id).delete()
+            if scenario is not None:
+                await AgentScenario.objects.delete_by_id(scenario.id)
+            for src in sources:
+                await Source.objects.delete_by_id(src.id)
+            if platform is not None:
+                await Platform.objects.delete_by_id(platform.id)
+            for tenant in reversed(tenants):
+                await Tenant.objects.delete_by_id(tenant.id)

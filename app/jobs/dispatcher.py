@@ -502,13 +502,15 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
     """Return ordinary committed receipts, never a newer attempt's current row."""
     handler = HANDLERS.get(job.job_type)
     if not handler:
+        # A missing handler is not a transient execution failure. Stop this row
+        # for operator inspection instead of spending its remaining attempts.
         claim = JobClaim.capture(job)
         with tenant_scope(claim.tenant_id):
             try:
                 receipt = await jobs.mark_failed(
                     claim.job_id,
                     error=f"Unknown job type: {claim.job_type}",
-                    allow_retry=allow_retry,
+                    allow_retry=False,
                     claim=claim,
                 )
                 receipt = _require_outcome_receipt(receipt, claim)

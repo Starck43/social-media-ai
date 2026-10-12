@@ -418,12 +418,59 @@ class DispatcherClaimTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.get.assert_not_awaited()
         self.handler.assert_not_awaited()
 
-    async def test_unknown_handler_uses_claim_bound_receipt_and_actual_retry_status(self):
+    async def test_unknown_handler_is_terminal_even_when_caller_allows_retry(self):
         self.dispatcher.HANDLERS.clear()
-        self.jobs.mark_failed.return_value = CLAIMS.JobOutcomeReceipt(self.fixture.claim, CLAIMS.OutcomeAck.RETRY)
-        result = await self.dispatcher._execute_claimed(self.job)
-        self.assertEqual(result["status"], "pending")
-        self.assertEqual(self.jobs.mark_failed.await_args.kwargs["claim"], self.fixture.claim)
+        for allow_retry in (True, False):
+            with self.subTest(allow_retry=allow_retry):
+                self.jobs.mark_failed.reset_mock()
+                result = await self.dispatcher._execute_claimed(self.job, allow_retry=allow_retry)
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(result["error"], "Unknown job type: learn")
+                self.jobs.mark_failed.assert_awaited_once_with(
+                    self.job.id,
+                    error="Unknown job type: learn",
+                    allow_retry=False,
+                    claim=self.fixture.claim,
+                )
+        self.handler.assert_not_awaited()
+        self.jobs.renew_claim.assert_not_awaited()
+        self.jobs.mark_done.assert_not_awaited()
+        self.jobs.get.assert_not_awaited()
+        self.fixture.notify.assert_not_awaited()
+
+    async def test_unknown_handler_claim_loss_is_not_terminal_success_or_a_newer_row(self):
+        self.dispatcher.HANDLERS.clear()
+        self.jobs.mark_failed.return_value = CLAIMS.JobOutcomeReceipt(self.fixture.claim, CLAIMS.OutcomeAck.CLAIM_LOST)
+        with self.assertRaises(CLAIMS.JobClaimLostError):
+            await self.dispatcher._execute_claimed(self.job)
+        self.jobs.mark_failed.assert_awaited_once()
+        self.assertFalse(self.jobs.mark_failed.await_args.kwargs["allow_retry"])
+        self.handler.assert_not_awaited()
+        self.jobs.get.assert_not_awaited()
+        self.fixture.notify.assert_not_awaited()
+
+    async def test_unknown_handler_write_uncertainty_does_not_attempt_another_outcome(self):
+        self.dispatcher.HANDLERS.clear()
+        self.jobs.mark_failed.side_effect = ConnectionError(PRIVATE)
+        with self.assertRaises(self.dispatcher.JobOutcomePersistenceError) as raised:
+            await self.dispatcher._execute_claimed(self.job)
+        self.assertNotIn(PRIVATE, str(raised.exception))
+        self.jobs.mark_failed.assert_awaited_once()
+        self.assertFalse(self.jobs.mark_failed.await_args.kwargs["allow_retry"])
+        self.handler.assert_not_awaited()
+        self.jobs.mark_done.assert_not_awaited()
+        self.jobs.get.assert_not_awaited()
+        self.fixture.notify.assert_not_awaited()
+
+    async def test_unknown_handler_rejects_a_receipt_from_another_generation(self):
+        self.dispatcher.HANDLERS.clear()
+        self.jobs.mark_failed.side_effect = None
+        other = replace(self.fixture.claim, attempts=self.fixture.claim.attempts + 1)
+        self.jobs.mark_failed.return_value = CLAIMS.JobOutcomeReceipt(other, CLAIMS.OutcomeAck.FAILED)
+        with self.assertRaises(self.dispatcher.JobOutcomePersistenceError):
+            await self.dispatcher._execute_claimed(self.job)
+        self.jobs.mark_failed.assert_awaited_once()
+        self.handler.assert_not_awaited()
         self.jobs.get.assert_not_awaited()
         self.fixture.notify.assert_not_awaited()
 

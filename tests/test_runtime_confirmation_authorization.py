@@ -34,13 +34,28 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(sys.modules, {"app.agent.identity": self.identity}):
             self.confirmation = load_source("_confirmation_actual", "app/agent/confirmation.py")
         self.actor = self.identity.RuntimeIdentity(
-            tenant_id=31, user_id=12, membership_id=41, channel="telegram", chat_id="7",
-            external_user_id="7", membership_role_id=3, user_role_id=2, is_owner=True, user=self.user,
+            tenant_id=31,
+            user_id=12,
+            membership_id=41,
+            channel="telegram",
+            chat_id="7",
+            external_user_id="7",
+            membership_role_id=3,
+            user_role_id=2,
+            is_owner=True,
+            user=self.user,
         )
         self.spec = SimpleNamespace(name="test_write", confirm=True, required_permission="source.update", parameters={})
         self.session = SimpleNamespace(
-            id=51, tenant_id=31, channel="telegram", chat_id="7", is_active=True, state={},
-            save_state=AsyncMock(), append=AsyncMock(), touch=AsyncMock(),
+            id=51,
+            tenant_id=31,
+            channel="telegram",
+            chat_id="7",
+            is_active=True,
+            state={},
+            save_state=AsyncMock(),
+            append=AsyncMock(),
+            touch=AsyncMock(),
         )
 
         async def save_state(state):
@@ -49,7 +64,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session.save_state.side_effect = save_state
         self.now = datetime.now(timezone.utc)
         self.pending = self.confirmation.make_pending_intent(
-            self.actor, self.session, self.spec, {"source_id": 9}, "c1", now=self.now,
+            self.actor,
+            self.session,
+            self.spec,
+            {"source_id": 9},
+            "c1",
+            now=self.now,
         )
 
         async def patch_state(session_id, updates):
@@ -62,15 +82,27 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
                     state[key] = value
             return state
 
+        async def consume_pending_confirmation(session_id, expected):
+            self.assertEqual(session_id, self.session.id)
+            if self.session.state.get("pending_confirmation") != expected:
+                return None
+            state = dict(self.session.state)
+            state.pop("pending_confirmation")
+            return state
+
         self.session_manager = SimpleNamespace(
             get_or_create=AsyncMock(return_value=self.session),
             patch_state=AsyncMock(side_effect=patch_state),
+            consume_pending_confirmation=AsyncMock(side_effect=consume_pending_confirmation),
         )
-        storage_patch = patch.dict(sys.modules, {
-            "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
-                agent_sessions=self.session_manager,
-            ),
-        })
+        storage_patch = patch.dict(
+            sys.modules,
+            {
+                "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(
+                    agent_sessions=self.session_manager,
+                ),
+            },
+        )
         storage_patch.start()
         self.addCleanup(storage_patch.stop)
 
@@ -84,11 +116,14 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         return runtime
 
     def tools(self):
-        with patch.dict(sys.modules, {
-            "app.core.permissions": self.perms,
-            "app.agent.confirmation": self.confirmation,
-            "app.agent": HELPERS.HELPERS.module_with(toolset=HELPERS.HELPERS.module_with()),
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "app.core.permissions": self.perms,
+                "app.agent.confirmation": self.confirmation,
+                "app.agent": HELPERS.HELPERS.module_with(toolset=HELPERS.HELPERS.module_with()),
+            },
+        ):
             tools = load_source("_confirmation_tools_actual", "app/agent/tools.py")
         self.handler = AsyncMock(return_value={"ok": True})
         self.spec.handler = self.handler
@@ -99,9 +134,16 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session.state = {"pending_confirmation": pending}
         self.inbound.text = text
         manager = self.session_manager
-        with patch.dict(sys.modules, {
-            "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(agent_sessions=manager),
-        }), self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "app.models.managers.agent_session_manager": HELPERS.HELPERS.module_with(agent_sessions=manager),
+                },
+            ),
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, is_owner=True),
+        ):
             return await runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor)
 
     async def test_valid_intent_and_immutable_arguments_copy(self):
@@ -110,6 +152,33 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         intent = self.confirmation.make_pending_intent(self.actor, self.session, self.spec, args, "c1")
         args["nested"]["value"] = "changed"
         self.assertEqual(intent["args"]["nested"]["value"], "initial")
+
+    async def test_identical_stage_requests_have_distinct_intent_ids(self):
+        replacement = self.confirmation.make_pending_intent(
+            self.actor,
+            self.session,
+            self.spec,
+            {"source_id": 9},
+            "c1",
+            now=self.now,
+        )
+        self.assertNotEqual(self.pending["intent_id"], replacement["intent_id"])
+
+    async def test_legacy_missing_or_malformed_intent_id_is_denied(self):
+        for value in (None, "", "not-an-id", 1, "z" * 32):
+            pending = {**self.pending, "intent_id": value}
+            self.assertEqual(
+                self.confirmation.pending_rejection(pending, self.actor, self.session, self.spec),
+                "unbound_intent",
+            )
+
+    async def test_legacy_binding_version_is_denied_even_with_an_intent_id(self):
+        pending = copy.deepcopy(self.pending)
+        pending["authorization"]["version"] = 1
+        self.assertEqual(
+            self.confirmation.pending_rejection(pending, self.actor, self.session, self.spec),
+            "unbound_intent",
+        )
 
     async def test_legacy_actorless_intent_is_denied(self):
         legacy = {k: v for k, v in self.pending.items() if k != "authorization"}
@@ -120,8 +189,10 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_other_actor_tenant_session_and_role_changes_are_denied(self):
         for field, value, expected in (
-            ("user_id", 13, "actor_mismatch"), ("tenant_id", 32, "actor_mismatch"),
-            ("membership_role_id", 4, "authority_changed"), ("user_role_id", 4, "authority_changed"),
+            ("user_id", 13, "actor_mismatch"),
+            ("tenant_id", 32, "actor_mismatch"),
+            ("membership_role_id", 4, "authority_changed"),
+            ("user_role_id", 4, "authority_changed"),
         ):
             fields = dict(vars(self.actor))
             fields[field] = value
@@ -140,7 +211,9 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_naive_and_malformed_expiry_are_denied(self):
         for expiry in (
             (self.now - timedelta(seconds=1)).isoformat(),
-            self.now.replace(tzinfo=None).isoformat(), "bad", None,
+            self.now.replace(tzinfo=None).isoformat(),
+            "bad",
+            None,
         ):
             changed = {**self.pending, "expires_at": expiry}
             self.assertEqual(
@@ -239,7 +312,11 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
         with self.tenant.tenant_scope(31):
             output, stop = await runtime._dispatch_or_stage(
-                self.session, "test_write", {"source_id": 9}, "c1", self.actor,
+                self.session,
+                "test_write",
+                {"source_id": 9},
+                "c1",
+                self.actor,
             )
         self.assertTrue(stop)
         self.assertEqual(output, "Подтвердите действие")
@@ -322,14 +399,103 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("pending_confirmation", self.session.state)
         runtime.call_tool.assert_not_awaited()
 
+    async def test_two_stale_session_snapshots_authorize_only_one_handler(self):
+        runtime = self.runtime()
+        tools = self.tools()
+        runtime.call_tool = tools.call_tool
+        runtime.confirmed_dispatch_scope = self.confirmation.confirmed_dispatch_scope
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock(return_value="continued")
+        snapshots = [
+            SimpleNamespace(**{**vars(self.session), "state": {"pending_confirmation": copy.deepcopy(self.pending)}})
+            for _ in range(2)
+        ]
+        stored = {"pending_confirmation": copy.deepcopy(self.pending), "keep": "fresh"}
+        lock, both_arrived = asyncio.Lock(), asyncio.Event()
+        arrivals = 0
+
+        async def consume(session_id, expected):
+            nonlocal arrivals
+            self.assertEqual(session_id, self.session.id)
+            arrivals += 1
+            if arrivals == 2:
+                both_arrived.set()
+            await both_arrived.wait()
+            async with lock:
+                if stored.get("pending_confirmation") != expected:
+                    return None
+                stored.pop("pending_confirmation")
+                return dict(stored)
+
+        self.session_manager.get_or_create.side_effect = snapshots
+        self.session_manager.consume_pending_confirmation.side_effect = consume
+        self.inbound.text = "да"
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+            replies = await asyncio.wait_for(
+                asyncio.gather(
+                    *[runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor) for _ in range(2)]
+                ),
+                2,
+            )
+        self.handler.assert_awaited_once_with(source_id=9)
+        self.assertEqual(replies.count("continued"), 1)
+        self.assertTrue(any("уже использовано" in reply for reply in replies))
+        self.assertEqual(stored, {"keep": "fresh"})
+        runtime._run_tool_loop.assert_awaited_once()
+
+    async def test_lost_compare_and_consume_never_calls_handler_or_model(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock()
+        self.session_manager.consume_pending_confirmation.return_value = None
+        self.session_manager.consume_pending_confirmation.side_effect = None
+        result = await self.authorized_turn(runtime, self.pending)
+        self.assertIn("уже использовано", result)
+        runtime.call_tool.assert_not_awaited()
+        runtime._run_tool_loop.assert_not_awaited()
+        runtime._write_tool_result.assert_not_awaited()
+
+    async def test_consume_commit_uncertainty_is_redacted_and_never_dispatches(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        runtime._run_tool_loop = AsyncMock()
+        self.session_manager.consume_pending_confirmation.side_effect = RuntimeError("PRIVATE provider token")
+        with self.assertLogs(runtime.logger, level="WARNING") as logs:
+            result = await self.authorized_turn(runtime, self.pending)
+        self.assertIn("сохранение не подтверждено", result)
+        self.assertNotIn("PRIVATE", result + "\n".join(logs.output))
+        runtime.call_tool.assert_not_awaited()
+        runtime._run_tool_loop.assert_not_awaited()
+
+    async def test_rejected_stale_intent_cleanup_compares_exact_snapshot(self):
+        runtime = self.runtime()
+        runtime.call_tool = AsyncMock()
+        runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
+        expired = {**self.pending, "expires_at": (self.now - timedelta(seconds=1)).isoformat()}
+        self.session_manager.consume_pending_confirmation.side_effect = None
+        self.session_manager.consume_pending_confirmation.return_value = None
+        result = await self.authorized_turn(runtime, expired)
+        self.assertIn("отклонено", result)
+        self.session_manager.consume_pending_confirmation.assert_awaited_once_with(self.session.id, expired)
+        self.session_manager.patch_state.assert_not_awaited()
+        runtime.call_tool.assert_not_awaited()
+
     async def test_batch_stops_effects_after_first_stage_but_records_every_tool_result(self):
         runtime = self.runtime()
         runtime.refresh_runtime_identity = AsyncMock(return_value=self.actor)
         runtime._record_usage = AsyncMock()
-        runtime._chat = AsyncMock(return_value={"content": "", "usage": {}, "tool_calls": [
-            {"id": "c1", "name": "test_write", "arguments": {"source_id": 9}},
-            {"id": "c2", "name": "test_write", "arguments": {"source_id": 10}},
-        ]})
+        runtime._chat = AsyncMock(
+            return_value={
+                "content": "",
+                "usage": {},
+                "tool_calls": [
+                    {"id": "c1", "name": "test_write", "arguments": {"source_id": 9}},
+                    {"id": "c2", "name": "test_write", "arguments": {"source_id": 10}},
+                ],
+            }
+        )
         runtime.call_tool = AsyncMock()
         with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
             reply = await runtime._run_tool_loop(self.session, [], [], 0, self.actor)

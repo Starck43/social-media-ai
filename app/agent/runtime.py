@@ -89,10 +89,19 @@ async def _set_pending(session: Any, payload: dict) -> None:
     await _patch_session_state(session, {"pending_confirmation": payload})
 
 
-async def _clear_pending(session: Any) -> None:
+async def _clear_pending(session: Any, *, expected: Optional[dict] = None) -> bool:
+    """Consume this snapshot only; never clear a replacement intent."""
+    from app.models.managers.agent_session_manager import agent_sessions
+
     state = session.state if isinstance(session.state, dict) else {}
-    if state.get("pending_confirmation") is not None:
-        await _patch_session_state(session, {"pending_confirmation": None})
+    pending = expected if expected is not None else state.get("pending_confirmation")
+    if not isinstance(pending, dict):
+        return False
+    fresh_state = await agent_sessions.consume_pending_confirmation(session.id, pending)
+    if fresh_state is None:
+        return False
+    session.state = fresh_state
+    return True
 
 
 def _format_tool_result(name: str, result: Any) -> str:
@@ -430,7 +439,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         from app.models.managers.agent_message_manager import agent_messages
 
         await agent_messages.clear(session.id)
-        await _clear_pending(session)
+        await _clear_pending(session, expected=pending)
         return "История диалога очищена."
 
     if text.split()[0].split("@")[0].lower() == "/help":
@@ -463,13 +472,19 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             if rejection is not None:
                 # Another group member cannot consume the rightful actor's intent.
                 if rejection != "actor_mismatch":
-                    await _clear_pending(session)
+                    await _clear_pending(session, expected=pending)
                 await session.append("user", text)
                 reply = "Подтверждение отклонено. Попросите подготовить действие заново."
                 await session.append("assistant", reply)
                 await session.touch()
                 return reply
-            await _clear_pending(session)
+            try:
+                consumed = await _clear_pending(session, expected=pending)
+            except Exception as error:
+                _log_runtime_failure(logging.WARNING, "agent_confirmation_consume_unconfirmed", error)
+                return "Подтверждение не выполнено: сохранение не подтверждено. Проверьте действие перед повтором."
+            if not consumed:
+                return "Подтверждение уже использовано или изменилось. Попросите подготовить действие заново."
             await session.append("user", text)
             try:
                 # Consumption awaits storage; reload AFTER it, immediately before effects.
@@ -501,7 +516,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         if verdict in ("нет", "no", "n", "-", "отменяю"):
             if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
                 return "Это подтверждение относится к другому пользователю."
-            await _clear_pending(session)
+            await _clear_pending(session, expected=pending)
             await session.append("user", text)
             reply = "Отменено."
             await session.append("assistant", reply)
@@ -509,7 +524,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             return reply
         # An unrelated group member must not cancel/overwrite another actor's intent.
         if not isinstance(pending.get("authorization"), dict) or pending_actor_matches(pending, identity):
-            await _clear_pending(session)
+            await _clear_pending(session, expected=pending)
 
     # 2) Model loop with tool calling
     await session.append("user", text)

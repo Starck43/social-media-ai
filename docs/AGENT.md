@@ -56,27 +56,48 @@ raw manager writes требуют отдельного аудита. Trusted ser
 
 ### Confirmation flow
 
-1. Fresh identity/right + `confirm=True` создают intent: actor/tenant/membership,
-   session, role IDs, текущий contract/schema инструмента, аргументы и expiry (1 час).
-2. Runtime возвращает preview и не исполняет следующие эффекты в том же batch.
-3. Тот же actor отвечает «да»/«нет»; другой actor не может потребить/заменить intent,
-   отменить его или удалить через `/stop`.
-4. При «да» identity/right/contract/args/session проверяются заново. Pending
-   очищается, затем перед эффектом выполняется ещё одна проверка и одноразовый
-   approval потребляется registry до handler. При отзыве/изменении/expiry отказ.
-5. Старые intents без binding не принимаются: запросить действие заново.
+1. Fresh identity/right + `confirm=True` create a version-2 intent with a unique intent ID,
+   actor/tenant/membership, session, role IDs, current tool contract/schema,
+   arguments and expiry (one hour).
+2. Runtime returns a preview and does not execute further effects in that batch.
+3. The same actor answers yes/no; another actor cannot consume, replace or cancel
+   the intent, including through `/stop`.
+4. On yes, identity/right/contract/args/session are rechecked. The pending intent
+   is consumed through `AgentSessionManager.consume_pending_confirmation`: locked
+   fresh state must match the exact observed snapshot in the active tenant-scoped
+   session. Removal preserves unrelated keys and returns only after its owned
+   transaction commits. A concurrent loser, replacement or commit uncertainty
+   never grants dispatch. Identity and permissions are refreshed again immediately
+   before the registry consumes the one-use in-process approval and invokes the
+   handler. Revocation, change or expiry refuses execution; stale cleanup cannot
+   erase a replacement.
+5. Legacy version-1 intents, missing bindings or missing unique intent IDs are
+   refused: request the action again. Older runtimes reject version 2 rather than
+   authorizing an action without atomic consumption.
 
-Это in-process защита, не DB CAS/transaction fence или гарантия exactly-once при
-одновременных «да». Revoke→restore не имеет epoch. Общая политика shared-session
-и durable confirmation требуют отдельного контракта.
+The prepared compare-and-consume boundary admits at most one handler invocation
+for the same stored intent across cooperating processes; PostgreSQL acceptance
+is pending local verification. This is not an external-effect transaction fence
+or exactly-once delivery guarantee. A crash after consumption can leave an action
+unexecuted, and an uncertain commit is not automatically replayed. Privileged
+full-state replacement must not resurrect a consumed intent.
+Revoke→restore has no epoch. Shared-session policy, durable action receipts and
+external-effect recovery require a separate contract.
+Use a coordinated runtime upgrade before acceptance: older workers can still
+discard newer intents on rejection, and their legacy-only flows are not covered
+by this boundary. This package neither deploys nor authorizes a rollout.
 
 `actions_log` и `action_send` требуют `botaction.view`. Последний — только
 подтверждаемый локальный preview с literal `dry_run=True`: состояние PENDING,
 без approval/result/attempt writes и без отправки. Live request отклоняется.
 Другие publication paths этим пакетом глобально не перепроектированы.
 
-Контракт подготовлен, тесты не запускались агентом; команды и ограничения — в
-[TENANCY](TENANCY.md) and [business readiness](BUSINESS_PRODUCTION_READINESS.md). PR #22 is integrated, while durable approval lifecycle work remains open.
+The atomic-consumption checks are prepared, not executed remotely: manager
+transaction doubles, actual runtime/registry race and rejection checks, and
+owner-only PostgreSQL serialization/rollback/acknowledgement probes.
+Use the current PR handoff for exact commands and revision; constraints are in
+[TENANCY](TENANCY.md) and [business readiness](BUSINESS_PRODUCTION_READINESS.md).
+PR #22 is integrated, while full durable approval lifecycle work remains open.
 
 ### LLM модели и провайдеры
 

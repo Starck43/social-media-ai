@@ -150,9 +150,18 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
                     state[key] = value
             return state
 
+        async def consume_pending_confirmation(session_id, expected):
+            self.assertEqual(session_id, session.id)
+            state = dict(session.state)
+            if state.get("pending_confirmation") != expected:
+                return None
+            state.pop("pending_confirmation")
+            return state
+
         manager.agent_sessions = SimpleNamespace(
             get_or_create=AsyncMock(return_value=session),
             patch_state=AsyncMock(side_effect=patch_state),
+            consume_pending_confirmation=AsyncMock(side_effect=consume_pending_confirmation),
         )
         inbound = SimpleNamespace(text="да", channel="telegram", chat_id="synthetic-chat")
         resolution = SimpleNamespace(onboarded=False, tenant_id=31)
@@ -163,7 +172,8 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with("example_tool", {})
         write_result.assert_awaited_once_with(session, pending, PRIVATE)
         resume.assert_awaited_once_with(session, [], [], None, self.identity, seed_reply=expected)
-        manager.agent_sessions.patch_state.assert_awaited_once_with(17, {"pending_confirmation": None})
+        manager.agent_sessions.consume_pending_confirmation.assert_awaited_once_with(17, pending)
+        manager.agent_sessions.patch_state.assert_not_awaited()
         self.assertNotIn("pending_confirmation", session.state)
         self.assertEqual(session.messages, [("user", "да", {}), ("assistant", expected, {})])
         self.assertEqual(session.touches, 1)

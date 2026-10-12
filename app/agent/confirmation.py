@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
+from uuid import uuid4
 
 from app.agent.identity import RuntimeIdentity, session_matches_identity
 from app.core.permissions import get_current_user
@@ -58,12 +59,14 @@ def make_pending_intent(
         return None
     now = now or datetime.now(timezone.utc)
     return {
+        "intent_id": uuid4().hex,
         "name": spec.name, "args": json.loads(_canonical(args)), "tool_call_id": call_id,
         "expires_at": (now + timedelta(hours=1)).isoformat(),
         "required_permission": spec.required_permission,
         "arguments_digest": _digest(args), "tool_contract": tool_contract(spec),
         "authorization": {
-            "version": 1, "actor": identity.actor_binding(), "session_id": session.id,
+            # Older runtimes reject this binding instead of bypassing consumption.
+            "version": 2, "actor": identity.actor_binding(), "session_id": session.id,
             "membership_role_id": identity.membership_role_id, "user_role_id": identity.user_role_id,
         },
     }
@@ -80,8 +83,14 @@ def pending_rejection(
     """Static reason, or None. Authorization against fresh rights is separate."""
     if not isinstance(pending, dict) or not isinstance(pending.get("authorization"), dict):
         return "unbound_intent"
+    intent_id = pending.get("intent_id")
+    if (
+        not isinstance(intent_id, str) or len(intent_id) != 32
+        or any(character not in "0123456789abcdef" for character in intent_id)
+    ):
+        return "unbound_intent"
     auth = pending["authorization"]
-    if type(auth.get("version")) is not int or auth["version"] != 1:
+    if type(auth.get("version")) is not int or auth["version"] != 2:
         return "unbound_intent"
     if _canonical(auth.get("actor")) != _canonical(identity.actor_binding()):
         return "actor_mismatch"

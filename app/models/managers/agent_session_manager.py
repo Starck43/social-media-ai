@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
@@ -28,6 +29,16 @@ def _is_session_chat_conflict(error: IntegrityError) -> bool:
         # SQLAlchemy's asyncpg adapter keeps driver diagnostics on the cause.
         constraint = getattr(getattr(original, "__cause__", None), "constraint_name", None)
     return constraint == "uq_agent_session_tenant_channel_chat"
+
+
+def _confirmation_snapshot(value: Any) -> str | None:
+    """Compare JSON intent snapshots without Python's bool/integer equality."""
+    if not isinstance(value, dict):
+        return None
+    try:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return None
 
 
 class AgentSessionManager(BaseManager["AgentSession"]):
@@ -89,9 +100,10 @@ class AgentSessionManager(BaseManager["AgentSession"]):
     ) -> dict[str, Any] | None:
         """Merge keys from fresh locked state; None deletes, other keys survive.
 
-        This serializes cooperating key writers, not full-state replacements or
-        confirmation consumption. Caller-owned transactions retain the row lock
-        until their own commit/rollback, following with_db_session semantics.
+        This merges keys only; exact-intent consumption uses the dedicated
+        consume_pending_confirmation method. Full-state replacements are not
+        fenced. Caller-owned transactions retain the row lock until their own
+        commit/rollback, following with_db_session semantics.
         """
         criteria = (self.model.id == session_id, *self._tenant_criterion())
         statement = select(self.model.state).where(*criteria).with_for_update()
@@ -113,6 +125,37 @@ class AgentSessionManager(BaseManager["AgentSession"]):
     async def set_state(self, session_id: int, **updates: Any) -> None:
         """Merge keys into state atomically (pass value=None to drop a key)."""
         await self.patch_state(session_id, updates)
+
+    async def consume_pending_confirmation(
+        self, session_id: int, expected: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Remove only the observed intent, returning state AFTER owned commit.
+
+        No caller-owned transaction is accepted: a provisional removal must not
+        authorize a handler before commit. A commit error/uncertain acknowledgement
+        propagates without granting dispatch. This does not fence the external
+        effect itself or prevent privileged full-state replacement.
+        """
+        snapshot = _confirmation_snapshot(expected)
+        if snapshot is None:
+            return None
+        criteria = (
+            self.model.id == session_id, *self._tenant_criterion(), self.model.is_active.is_(True),
+        )
+        async with self._get_owned_session() as session:
+            statement = select(self.model.state).where(*criteria).with_for_update()
+            row = (await session.execute(statement)).first()
+            if row is None or not isinstance(row[0], dict):
+                return None
+            state = dict(row[0])
+            if _confirmation_snapshot(state.get("pending_confirmation")) != snapshot:
+                return None
+            state.pop("pending_confirmation")
+            await session.execute(
+                update(self.model).where(*criteria).values(state=state)
+                .execution_options(synchronize_session=False)
+            )
+        return state
 
     async def set_update_offset(self, session_id: int, offset: int) -> None:
         await self.set_state(session_id, update_offset=offset)

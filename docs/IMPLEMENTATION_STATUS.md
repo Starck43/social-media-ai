@@ -52,9 +52,13 @@ certify a deployment, database revision or full release gate.
 - Next bounded package: preparation-receipt storage and frozen tariff basis
   ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `e8d335e`),
   not activated. Owner-local isolated verification accepted: 143 methods and
-  compiler/formatters PASS; real PostgreSQL/Alembic proof remains pending.
-  Definition 0093 is NOT applied; target/version-table, RESTRICT/offboarding and
-  evidence-preserving rollback need separate review/approval. No cutover authorized.
+  compiler/formatters PASS. Owner-relayed read-only preflight confirms shared DB,
+  public version 0092 and metadata-bootstrapped test_schema without version history;
+  receipt objects absent. Option (b) definition-only application in test_schema,
+  preserving public version, is proposed in the PR; owner approval of narrow DDL,
+  retention/RESTRICT and mutation tests remains pending. Real PostgreSQL proof NOT RUN.
+  Existing target alembic check is not drift proof; scoped catalog parity is planned.
+  Definition 0093 is NOT applied. No runtime/cutover authorized.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

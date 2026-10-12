@@ -24,27 +24,27 @@ database revision or full release gate.
 | Credential diagnostic privacy | Bounded API credential-test and MTProto check-session failure statuses without provider/exception secret text; success labels and access gates preserved. | PR #107, head `5ff3d9f`, merge `f02d6d8`; verified in `dev`. | Other login/OAuth/CLI/vault logs, retention/offboarding and whole PRD-06 acceptance; no live-provider or deployment certification. |
 | Digest delivery | Per-target/per-part state, snapshot/checkpoint foundations and tenant-safe routing safeguards; legacy-path partial delivery is terminal `partial_delivery_requires_review` and blocks automatic rescheduled resends (explicit force only). Zero-success legacy delivery is a terminal unconfirmed outcome (no automatic retry). Scheduled and forced attempts claim the run row on its observed status and `updated_at` version; an in-flight `pending` row stops other attempts with `digest_run_in_progress_requires_review` before build/send, and a forced resend takes it over only after 30 minutes without a write. Lease loss mid-run leaves the run `pending` (no requeue, no resend) and digest review codes stay visible on the job. | PR #12, follow-up delivery packages, PRs #106, #112, #113, #115, #120 | Staging lease-loss and operator-recovery acceptance; delivery of an attempt stopped mid-flight stays unknown (operator decision). |
 | LLM routing | DB-managed providers/models, model-level defaults and capability-aware selection/fallback. | PR #96 and migrations through 0091 | Complete per-attempt cost ledger and concurrent budget admission. |
-| LLM analyzer journal foundation — DONE | Tenant-scoped captured stage records before result projection; tariff snapshot, Decimal USD and explicit unknown cost; execution IDs independent of source/job/task foreign keys. New OpenAI-compatible, Anthropic and custom analyze calls have pre-HTTP UUID identities: distinct identical dispatches remain distinct and replay of one envelope stays stable. | Journal `05bf353`, analyzer wiring `5953efb`, contract `9ebe945`, migration definition 0092; PR #114, head `55db324`, merge `f8b468e`; integrated in `dev`. | Legacy/mixed-version envelopes, fallback/learning/agent-chat capture, durable pre-dispatch evidence/write recovery, dispatch-time tariffs and concurrent budget admission; whole PRD-03 remains OPEN. |
+| LLM analyzer journal foundation — DONE | Tenant-scoped captured stage records before result projection; tariff snapshot, Decimal USD and explicit unknown cost; execution IDs independent of source/job/task foreign keys. New OpenAI-compatible, Anthropic and custom analyze calls have pre-HTTP UUID identities: distinct identical dispatches remain distinct and replay of one envelope stays stable. Client-owned token evidence preserves unknown counts independently of zero projections; missing/invalid tariff snapshots remain NULL rather than being coerced to free. | Journal `05bf353`, analyzer wiring `5953efb`, contract `9ebe945`, migration definition 0092; PR #114, head `55db324`, merge `f8b468e`; PR #118, tested head `e62bf40`, merge `ab21917`; integrated in `dev`. | Recorded owner three-state/provider-price policy (PR #119) implementation, legacy/mixed-version envelopes, fallback/learning/agent-chat capture, durable pre-dispatch evidence/write recovery, dispatch-time tariffs and concurrent budget admission; whole PRD-03 remains OPEN. |
 | Web and operations | Truthful job outcomes, secure cookies outside development, runtime readiness, conservative recovery guidance and redacted `/app/jobs` backlog/stale-worker signals. | PRs #27, #40, #67, #68, #110 | External alerting, repeatable staging install/restore and release evidence packet. |
 | Development workflow | Canonical local/remote skills, collaboration rules and compact handoff format. | PRs #103, #104; commits `7833ac6`, `84ee16d` | Keep instructions aligned with the canonical document set. |
 
 ## Current handoff
 
-- Completed package: PRD-03 captured analyzer dispatch identity — **DONE, integrated**
-  in PR #114 (merge `f8b468e`), building on the existing journal foundation.
-- Owner-local tests and focused compilation/formatting were accepted at `55db324`;
-  exact commands, counts, environment correction and baseline comparison are in
-  the PR review. Remote verification was static plus clean merge/readback checks;
-  no Python/DB/provider tests or migrations were run remotely.
-- Whole PRD-03 remains **OPEN**. New analyzer dispatches no longer collapse solely
-  because their scope/model/usage match. Legacy/mixed-version envelopes still use
-  content-derived keys; capture is from returned envelopes and journal write
-  failures remain warnings. Chat/fallback/learning coverage, durable pre-dispatch
-  evidence, dispatch-time tariffs and concurrent budget admission remain open.
-  See the [usage/cost boundary](AI_PIPELINE_AND_PROMPTS.md#usage-and-cost-boundary)
-  and [readiness gate](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
-- The completed package is released from active ownership. No remaining gate,
-  schema/runtime activation or deployment is marked complete here.
+- Analyzer accounting certainty (PR #118, merge `ab21917`) is **DONE, integrated**.
+  Owner-local 28/20/4 tests were accepted after a Black-only test correction at
+  `e62bf40`; review/formatter/baseline details remain in the PR. Remote checks
+  were static readback/diff/merge checks, not Python, database or provider tests.
+- Owner three-state pricing decision and all-path admission contract (PR #119,
+  merge `852ba14`) are recorded. This documentation does not implement admission
+  or certify the runtime price policy. Explicit provider/table zero is FREE;
+  provider-reported cost arbitrates; missing price is UNDEFINED, separately tracked
+  and not silently free. Undefined-price dispatch is permitted by owner policy.
+- Next package: provider-reported accounting price and three-state runtime mapping.
+  Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
+  dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
+  concurrency/cutover evidence still require completion. See the existing
+  [pipeline contract](AI_PIPELINE_AND_PROMPTS.md#usage-and-cost-boundary).
+- No target migration, schema reset, live activation or deployment was performed.
 
 ## Recording future delivery
 

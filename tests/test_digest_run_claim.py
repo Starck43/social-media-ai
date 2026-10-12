@@ -154,5 +154,16 @@ class StartRunClaimTests(unittest.TestCase):
             start(self.manager, agent_task_id=None)
 
 
+class ReviewCodeVisibilityTests(unittest.TestCase):
+    def test_digest_review_stops_keep_their_code_on_the_job(self):
+        outcomes = load_isolated_source("app.jobs._result_outcomes_digest_codes", ROOT / "app/jobs/result_outcomes.py")
+        for code in (MODULE.DIGEST_RUN_IN_PROGRESS, MODULE.PARTIAL_DELIVERY_REVIEW):
+            failure = outcomes.returned_failure({"status": "failed", "error": code, "detail": "PRIVATE"})
+            self.assertEqual(failure.audit_result(), {"status": "failed", "error": code, "llm_cost": None})
+        # A detailed partial-delivery message is not a code and stays redacted.
+        detailed = outcomes.returned_failure({"status": "failed", "error": MODULE.PARTIAL_DELIVERY_REVIEW + "\nmax:1"})
+        self.assertEqual(detailed.code, "handler_returned_failure")
+
+
 if __name__ == "__main__":
     unittest.main()

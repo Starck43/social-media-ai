@@ -47,7 +47,9 @@ model result must not certify the parent content hash as fully analyzed.
 
 Variable precedence is system-owned values, then task payload, then scenario scope.
 Lower-trust values cannot replace system-owned instructions. Unknown placeholders
-must fail validation instead of leaking unresolved template text to a provider.
+are reported as validation warnings, not errors: the scenario API and the agent's
+`scenario_validate_prompt` tool name every `{variable}` outside the registry, the
+prompt is still saved, and an unresolved placeholder stays literal at runtime.
 Collected content, documents, messages and provider output are untrusted data, not
 instructions that can grant tools or permissions. The unified-summary prompt frames
 the text, image and video analysis results it receives as untrusted data, in both

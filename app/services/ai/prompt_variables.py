@@ -186,7 +186,7 @@ class PromptSubstitution:
 		Placeholders are resolved in one pass over the template, so text inserted
 		for one variable is never re-scanned for further placeholders. Values whose
 		top-level name is in `untrusted` are framed as untrusted data.
-		
+
 		Args:
 			template: Prompt template with {variable} placeholders
 			variables: Dictionary of variable values

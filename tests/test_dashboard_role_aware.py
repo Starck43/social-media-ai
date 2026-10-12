@@ -8,6 +8,8 @@ full dashboard.
 
 from __future__ import annotations
 
+import pytest
+
 from app.models import User
 from app.types import UserRoleType
 from app.web.dashboard import _offers
@@ -48,6 +50,7 @@ def test_a_call_to_create_needs_both_view_and_create() -> None:
 # ── flows ──────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.tenancy
 async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_open() -> None:
     owner: User | None = None
     viewer: User | None = None

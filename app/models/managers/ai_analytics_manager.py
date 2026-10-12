@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional, Sequence
 
 from sqlalchemy import select
@@ -24,6 +24,26 @@ class AIAnalyticsManager(BaseManager):
         from ..ai_analytics import AIAnalytics
 
         super().__init__(AIAnalytics)
+
+    async def delete_expired(self, cutoff: datetime) -> int:
+        """Retention sweep: delete rows whose last write is before `cutoff`.
+
+        Runs through the scoped queryset, so it touches only the current tenant
+        (or the explicit platform bypass). A row referenced by a bot action is
+        kept as evidence for that action. Attempt-journal rows are separate and
+        reference analyses by plain integers, so accounting is not deleted here.
+        """
+        from sqlalchemy import select
+
+        from app.models import AIAnalytics, BotAction
+
+        if cutoff.tzinfo is None:
+            raise ValueError("Retention cutoff must be timezone-aware")
+        # Correlated to the deleted row; never an uncorrelated "any action exists".
+        referenced = (
+            select(BotAction.id).where(BotAction.analytics_id == AIAnalytics.id).correlate(AIAnalytics).exists()
+        )
+        return await self.filter(AIAnalytics.updated_at < cutoff, ~referenced).delete()
 
     async def get_by_source_id(self, source_id: int, skip: int = 0, limit: int = 100) -> Sequence[Any]:
         """Retrieve analytics by source ID with pagination."""

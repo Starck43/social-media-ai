@@ -84,12 +84,17 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.query = QueryDouble()
         self.session = SessionDouble()
         self.sweep = AsyncMock(return_value=3)
+        self.expire = AsyncMock(return_value=4)
         job = SimpleNamespace(objects=self.query, created_at=FieldDouble(), error=FieldDouble())
         modules = {
             "sqlalchemy": module_with(not_=lambda expr: ("not", expr), or_=lambda *exprs: ("or", exprs)),
             "app.core.database": module_with(new_session=lambda: self.session),
             "app.jobs.attempt_budget": module_with(ATTEMPT_BUDGET_STOP_PREFIX="bounded_stop"),
-            "app.models": module_with(Job=job, CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep))),
+            "app.models": module_with(
+                Job=job,
+                CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep)),
+                AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=self.expire)),
+            ),
         }
         patcher = patch.dict(sys.modules, modules)
         patcher.start()
@@ -111,7 +116,10 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(self.logger, level="WARNING") as logs:
             result = await self.prune({"job_id": 31, "staged_days": 9})
         self.assert_private(logs, 31, "runtime_error")
-        self.assertEqual(result, {"deleted": 5, "staged_deleted": 0, "staged_days": 9})
+        self.assertEqual(
+            result,
+            {"deleted": 5, "staged_deleted": 0, "staged_days": 9, "analytics_deleted": 4, "retention_months": 1},
+        )
         self.sweep.assert_awaited_once_with(self.session, 9)
         self.session.close.assert_awaited_once_with()
         self.assertEqual(self.session.exits, [RuntimeError])
@@ -143,7 +151,10 @@ class PruneLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_success_keeps_default_days_counts_and_closes_session(self):
         with self.assertNoLogs(self.logger, level="WARNING"):
             result = await self.prune({"job_id": 31})
-        self.assertEqual(result, {"deleted": 5, "staged_deleted": 3, "staged_days": 7})
+        self.assertEqual(
+            result,
+            {"deleted": 5, "staged_deleted": 3, "staged_days": 7, "analytics_deleted": 4, "retention_months": 1},
+        )
         self.sweep.assert_awaited_once_with(self.session, 7)
         self.session.close.assert_awaited_once_with()
         self.query.delete.assert_awaited_once_with()

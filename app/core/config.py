@@ -1,6 +1,7 @@
 from typing import Optional
 
 from dotenv import load_dotenv
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -129,6 +130,12 @@ class Settings(BaseSettings):
     # --- Background jobs ---
     JOB_MAX_ATTEMPTS: int = 3
     JOB_RETRY_BACKOFF_SECONDS: int = 300
+
+    # --- Data retention ---
+    # Calendar months to keep analysis results and unanalysed raw content. The
+    # daily prune removes older rows, measured by their last write, not by the
+    # publication date. Minimum 1; deleted rows are not recoverable from the app.
+    DATA_RETENTION_MONTHS: int = Field(default=1, ge=1)
 
     LOG_LEVEL: str = "WARNING"
 

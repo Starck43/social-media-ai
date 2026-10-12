@@ -394,7 +394,8 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
             'sqlalchemy':SA,'app.core.database':SimpleNamespace(new_session=lambda:session),
             'app.jobs.attempt_budget':BUDGET,'app.jobs.recovery_policy':POLICY,
             'app.models':SimpleNamespace(Job=SimpleNamespace(objects=query,created_at=Job.created_at,error=Job.error),
-                CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=AsyncMock(return_value=0))))})
+                CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=AsyncMock(return_value=0))),
+                AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))))})
         await module.handle_prune({})
         self.assertIn(BUDGET.ATTEMPT_BUDGET_STOP_PREFIX,repr(query.calls))
         self.assertIn(POLICY.OUTCOME_UNCONFIRMED_PREFIX,repr(query.calls))

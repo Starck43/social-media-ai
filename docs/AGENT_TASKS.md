@@ -225,6 +225,8 @@ memory is empty — so both are cheap even when there is little to do.
 
 `SCHEDULER_ENABLED`, `SCHEDULER_POLL_SECONDS`, `SCHEDULER_TIMEZONE`,
 `JOB_MAX_ATTEMPTS`, `JOB_RETRY_BACKOFF_SECONDS` (see `app/core/config.py`).
+`daily-prune` also applies `DATA_RETENTION_MONTHS` (default 1) to analysis results
+and unanalysed raw content; see `docs/CONFIGURATION.md#data-retention`.
 
 `SCHEDULER_TIMEZONE` is only the **fallback**: a workspace's own
 `tenants.timezone` decides when its tasks fire (`app/tasks/cron.py::resolve_tz`

@@ -128,6 +128,9 @@ AGENT_TEMPERATURE=0.4
 JOB_MAX_ATTEMPTS=3
 JOB_RETRY_BACKOFF_SECONDS=300
 
+# ─── Data retention ───────────────────────────────────────────
+DATA_RETENTION_MONTHS=1        # calendar months; minimum 1; deletion is irreversible
+
 # ─── LLM ──────────────────────────────────────────────────────
 LLM_REQUEST_DELAY=3000         # ms between requests (rate limit)
 LLM_DEFAULT_TEMPERATURE=0.3    # for analysis tasks
@@ -259,6 +262,19 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `JOB_MAX_ATTEMPTS` | `3` | Max retry attempts for a job |
 | `JOB_RETRY_BACKOFF_SECONDS` | `300` | Base backoff in seconds; actual = `backoff * 2^(attempts-1)` |
+
+### Data retention
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_RETENTION_MONTHS` | `1` | Calendar months to keep analysis results (`ai_analytics`) and unanalysed raw content (`collected_items`). The daily `prune` task deletes older rows in each workspace, measured by last write, not publication date. Minimum `1`; startup fails on `0` or a non-integer. |
+
+Kept regardless of age: analyses referenced by a bot action, the LLM attempt
+journal (`llm_attempts`, accounting evidence), and job rows with an operational
+budget stop or unconfirmed outcome. Finished job history keeps its own `days`
+budget (default 7). Deleted rows cannot be restored from the application; there
+is no export or offboarding flow yet. Lowering the value takes effect at the next
+`prune` run, so back up first if older history matters.
 
 ### LLM
 

@@ -8,8 +8,8 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 ## Current checkpoint
 
 Verified local `dev`: `84ee16d284a6355006dd71c7157a0744ab203ddd` on
-2026-10-12. Packages through PR #104 are integrated. No implementation lane is
-reserved. Refresh `dev`, open PRs and this row before selecting work.
+2026-10-12. Packages through PR #104 are integrated. Active lanes are listed
+under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
 estimate. Select one bounded change with an observable acceptance condition.
@@ -37,6 +37,7 @@ starts only when the applicable foundation gates are accepted.
 | --- | --- | --- | --- |
 | PRD-03 attempt journal (analyzer attempts) | Local session, `dev`; `llm_attempts` ledger + analyzer wiring | VALIDATED | One journal row per analyzer provider attempt: usage, tariff snapshot, cost certainty and outcome survive a skipped daily row, a filtered day and a failed batch. Remaining: fallback, learning and agent-chat attempts; per-dispatch identity; concurrent budget admission. |
 | PRD-05 unknown-handler terminal outcome | Local session, `dev`; dispatcher + focused tests | VALIDATED | A claimed job with no registered handler records a terminal `failed` outcome even when the caller allows retries; no handler runs and no automatic retry is scheduled. Claim loss and outcome-write uncertainty stay explicit errors. 30 focused tests + 22 subtests passed. Remove this row after verified integration. |
+| PRD-01 partial-delivery retry safety | Remote Notion agent; branch TBD from `dev`, Draft PR to `dev` | IN_PROGRESS | Verify in code whether a digest retry after partial failure, lost acknowledgement or lease loss can resend already-delivered recipients/parts; close one bounded gap so successful parts are not resent and ambiguous sends stop for review. Do not touch the dispatcher (PRD-05 local work). |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

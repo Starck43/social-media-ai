@@ -64,6 +64,9 @@ dependencies = [
     # Telegram MTProto (L2 collection; imported lazily — the app boots without it)
     "telethon>=1.36.0",
 
+    # Invite QR codes (pure Python; imported lazily — the link works without it)
+    "segno>=1.6.0",
+
 ]
 
 [project.optional-dependencies]

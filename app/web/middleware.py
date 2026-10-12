@@ -70,7 +70,10 @@ class TenantUIMiddleware:
         request.state.web_perms = WebPerms(user, memberships)
 
         if user is None and path not in PUBLIC_PATHS:
-            await self._redirect(scope, receive, send, f"/app/login?next={quote(path, safe='')}")
+            # Keep the query so an invite link (`/app/invite?code=…`) survives sign-in.
+            query = scope.get("query_string", b"").decode("latin-1")
+            target = f"{path}?{query}" if query else path
+            await self._redirect(scope, receive, send, f"/app/login?next={quote(target, safe='')}")
             return
 
         if user is not None and not memberships and path not in NO_WORKSPACE_PATHS:

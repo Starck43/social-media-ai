@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.ai.analysis_render import (
+    analysis_coverage,
     extract_content_statistics,
     extract_text_analysis,
     render_analysis,
@@ -242,3 +243,48 @@ def test_display_title_cascade_summary_before_topic_without_changing_saved_data(
         ]
         == "Сводка."
     )
+
+
+def test_coverage_marker_absent_is_not_reported_as_incomplete_or_complete():
+    coverage = render_analysis({"analysis_metadata": {"analysis_version": "3.0-multi-llm"}})["coverage"]
+    assert coverage == {"incomplete": False, "reasons": []}
+    assert render_analysis({})["coverage"] == {"incomplete": False, "reasons": []}
+
+
+def test_explicit_incomplete_marker_maps_known_reasons_in_order():
+    coverage = render_analysis(
+        {
+            "analysis_metadata": {
+                "analysis_complete": False,
+                "coverage_limits": ["media_uncovered", "text_sampled", "media_uncovered", "stage_failed"],
+            }
+        }
+    )["coverage"]
+    assert coverage["incomplete"] is True
+    assert coverage["reasons"] == [
+        "часть вложений (изображения, видео, файлы) не проанализирована",
+        "часть текстов не вошла в выборку для анализа",
+        "один из этапов анализа завершился ошибкой",
+    ]
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [None, "text_sampled", ["<script>alert(1)</script>", 3, None], {"text_sampled": True}],
+)
+def test_legacy_or_malformed_reasons_keep_generic_incomplete_notice(limits):
+    meta = {"analysis_complete": False}
+    if limits is not None:
+        meta["coverage_limits"] = limits
+    assert analysis_coverage({"analysis_metadata": meta}) == {"incomplete": True, "reasons": []}
+
+
+@pytest.mark.parametrize("value", [None, True, 0, "false", "False", [], {}])
+def test_only_boolean_false_counts_as_incomplete(value):
+    meta = {"analysis_complete": value, "coverage_limits": ["text_sampled"]}
+    assert analysis_coverage({"analysis_metadata": meta}) == {"incomplete": False, "reasons": []}
+
+
+@pytest.mark.parametrize("data", [None, "x", [], {"analysis_metadata": "x"}, {"analysis_metadata": None}])
+def test_coverage_tolerates_non_dict_storage(data):
+    assert analysis_coverage(data) == {"incomplete": False, "reasons": []}

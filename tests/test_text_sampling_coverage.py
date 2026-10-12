@@ -91,6 +91,7 @@ class TextSamplingCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(row.summary_data["content_hashes"]), self.hashes(selected))
         self.assertEqual(row.content_hash, self.dedup.batch_hash(selected))
         self.assertFalse(row.summary_data["analysis_metadata"]["analysis_complete"])
+        self.assertEqual(row.summary_data["analysis_metadata"]["coverage_limits"], ["text_sampled"])
         self.assert_pending(content, row, pending)
         self.client.analyze.assert_awaited_once()
         self.assertEqual(self.module.PromptBuilder.get_prompt.call_args.kwargs["text"], legacy_prompt(content))

@@ -145,6 +145,7 @@ async def _analytics_in_scope(tenant_filter: int | None) -> dict:
                 "title": display["display_title"],
                 "summary": (display["analysis_summary"] or "")[:220],
                 "topics": display["main_topics"][:4],
+                "analysis_incomplete": display["coverage"]["incomplete"],
                 "cost_usd": float(a.estimated_cost or 0) / 100,
             }
         )

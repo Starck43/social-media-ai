@@ -536,3 +536,9 @@
         {% endif %}
     </div>
 {%- endmacro %}
+
+
+{# Shown only for an explicit incomplete marker; no badge is not a "complete" claim. #}
+{% macro incomplete_analysis_badge(incomplete) -%}
+    {% if incomplete %}<span data-coverage="incomplete" title="Анализ охватил не все собранные материалы" class="inline-flex shrink-0 items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Неполный анализ</span>{% endif %}
+{%- endmacro %}

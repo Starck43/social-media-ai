@@ -352,6 +352,7 @@ class AIAnalyzer:
             # field is produced by _analyze_text, not by provider parsed output.
             content_hashes = [item_hash(item) for item in content]
             coverage_limited = False
+            text_coverage_limited = False
             text_result = analysis_results.get("text_analysis")
             if isinstance(text_result, dict) and "_submitted_text_hashes" in text_result:
                 submitted = text_result["_submitted_text_hashes"]
@@ -363,6 +364,7 @@ class AIAnalyzer:
                 omitted = text_hashes - (set(submitted) if valid else set())
                 content_hashes = [value for value in content_hashes if value not in omitted]
                 coverage_limited = bool(omitted)
+                text_coverage_limited = bool(omitted)
 
             if media_coverage_gaps:
                 # One missing attachment keeps its parent post unretired, even
@@ -387,6 +389,7 @@ class AIAnalyzer:
                 if coverage_limited else batch_hash(content),
                 content_hashes=content_hashes,
                 coverage_limited=coverage_limited,
+                text_coverage_limited=text_coverage_limited,
                 media_coverage_limited=bool(media_coverage_gaps),
                 reported_partial=self.reported_errors > errors_before,
                 task_payload=task_payload,
@@ -1308,6 +1311,7 @@ class AIAnalyzer:
         coverage_limited: bool = False,
         media_coverage_limited: bool = False,
         output_contract: ScenarioOutputContract | None = None,
+        text_coverage_limited: bool = False,
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1508,6 +1512,18 @@ class AIAnalyzer:
 
         if reported_partial is True or coverage_limited is True:
             comprehensive_data["analysis_metadata"]["analysis_complete"] = False
+            # Display-only reasons; the boolean above stays the coverage authority.
+            coverage_limits = [
+                code
+                for code, flag in (
+                    ("text_sampled", text_coverage_limited),
+                    ("media_uncovered", media_coverage_limited),
+                    ("stage_failed", reported_partial),
+                )
+                if flag is True
+            ]
+            if coverage_limits:
+                comprehensive_data["analysis_metadata"]["coverage_limits"] = coverage_limits
         # Absence of this marker is not proof of complete media/content coverage.
 
         # Dedup ledger: hashes of the items this run analyzed (merged with the

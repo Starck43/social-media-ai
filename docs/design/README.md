@@ -35,7 +35,7 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| PRD-05 independent renewal/reaper ordering | Local Codex, `dev`; PostgreSQL regression only | READY | Two distinct PostgreSQL backends prove both committed orderings; full `test_job_stale_reap_db.py` is 14 passed. Commit the validated test/docs patch if accepted. No schema/runtime change. |
+| PRD-08 stale-job quarantine signal | Local Codex, `dev`; dispatcher log + focused tests | VALIDATED | One redacted warning only when recovery quarantines stale jobs with a positive exact integer count; nothing for zero or malformed counts. 53 focused tests passed. Remove this row after verified integration. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

@@ -15,10 +15,10 @@ optional for ordinary local work. Never push `dev`, merge or deploy automaticall
 
 ## Testing delegation
 
-OpenCode was found at `/usr/local/bin/opencode`. Its installed `run --help`
-supports `--dir`, `--file`, `--format json`, and `--model`. Kilo was not found in
-PATH; do not assume an installed IDE extension is callable from the terminal.
-No provider/model settings or credentials were changed by this setup.
+OpenCode is available at `/usr/local/bin/opencode`. Kilo CLI 7.8.8 is available
+as `kilo`; its local `test-runner` agent is stored under the ignored
+`.kilo/agents/` directory. No provider/model credentials are stored in the
+repository or changed by this setup.
 
 For a broad check, write a task file under `.agent/` (ignored unless explicitly
 tracked), then launch OpenCode from the task worktree:
@@ -35,6 +35,18 @@ requires sandbox escalation, use the normal approval mechanism rather than
 bypassing it. Local CLI help is the source of truth for installed flags;
 [OpenCode CLI documentation](https://dev.opencode.ai/v2/docs/cli/commands/)
 also describes noninteractive runs and file attachments.
+
+Kilo uses the same task/report files and a permission-restricted project agent:
+
+```sh
+kilo run "Execute the attached testing task and write .agent/test-report.md." \
+  --pure --dir /absolute/task/worktree --agent test-runner --format json \
+  --file /absolute/task/worktree/.agent/test-task.md
+```
+
+Choose a configured Kilo model with `--model provider/model` only when the owner
+or coordinator names it. Kilo's `mcp` command connects tools to Kilo; it does not
+expose Kilo models to Codex. Delegation therefore uses the headless CLI directly.
 
 Each testing task must specify:
 

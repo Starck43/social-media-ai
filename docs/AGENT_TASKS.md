@@ -95,7 +95,9 @@ platform; the guards (`app/services/social/guards.py`) are checked against the
 4. The handler from `jobs/handlers.py` runs, then the job is marked `done` with
    its result, or retried: `attempts++` happened at claim time, and
    `JOB_RETRY_BACKOFF_SECONDS * 2**(attempts-1)` sets the next `run_at`.
-5. `reap_stale()` returns jobs stuck in `running` (crashed worker) to `pending`.
+5. `reap_stale()` quarantines stale `running` jobs as failed with an unconfirmed-
+   outcome marker; it never replays them automatically. The worker emits one
+   redacted warning with the quarantined count so operators can investigate.
 
 Job columns are merged into the handler payload by `execute_job()`, so handlers
 receive `agent_task_id` and `job_id` alongside their own `payload` keys. Digest

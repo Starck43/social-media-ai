@@ -48,8 +48,10 @@ certify a deployment, database revision or full release gate.
   `196ce7b`: 108 methods, compiler/formatters and nine standalone PostgreSQL
   checks passed. Full suite NOT RUN; faults were injected, not real network-loss
   proof. No schema setup/reset/migration was performed; synthetic test rows retained.
-- Next bounded package: durable payer-bound pre-HTTP receipts and dispatch-time
-  tariff snapshots; no new schema application or cutover is authorized.
+- Next bounded package: preparation-receipt storage and frozen tariff basis
+  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `24042d1`),
+  not activated and validation pending. New definition 0093 needs separate
+  schema/retention/rollback review; no schema application or cutover is authorized.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

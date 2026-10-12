@@ -187,6 +187,22 @@ operator re-attempt can repeat an external delivery. Per-part receipts and
 uncertain-send review are provided by the disabled-by-default checkpoint
 delivery path.
 
+### Lease loss mid-run
+
+If the worker loses its job lease while a legacy digest is being built or sent
+(heartbeat renewal fails, or the stale-lease reaper takes the row), the handler is
+cancelled and the job is stored as terminal `failed` with the unconfirmed-outcome
+marker; nothing is requeued. The run row stays `pending` with no `message_id`,
+because delivery is unknown. Scheduled re-attempts for that `(agent_task_id,
+period)` then stop with `digest_run_in_progress_requires_review` before summary
+cost or delivery, and so does a forced resend within `FORCED_TAKEOVER_AFTER`
+(30 minutes); after that an explicit `force_refresh` run may take the row over.
+
+The review codes `digest_run_in_progress_requires_review` and
+`partial_delivery_requires_review` are kept verbatim as the job error, so the
+operator sees why a digest job stopped on `/app/jobs`; other returned failure
+text is still stored as `handler_returned_failure`.
+
 ## Channel rules
 
 |                | Telegram                             | MAX                                    |

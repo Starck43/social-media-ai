@@ -78,8 +78,8 @@ async def execute():
     try:
         async with engine.connect() as connection:
             # Driver/dialect initialization precedes the guarded fixture query.
-            event.listen(connection, "before_cursor_execute", read_only_sql)
-            event.listen(connection, "commit", reject_commit)
+            event.listen(connection.sync_connection, "before_cursor_execute", read_only_sql)
+            event.listen(connection.sync_connection, "commit", reject_commit)
             transaction = await connection.begin()
             try:
                 await connection.exec_driver_sql("SET TRANSACTION READ ONLY")
@@ -120,8 +120,8 @@ async def execute():
                 try:
                     await transaction.rollback()
                 finally:
-                    event.remove(connection, "before_cursor_execute", read_only_sql)
-                    event.remove(connection, "commit", reject_commit)
+                    event.remove(connection.sync_connection, "before_cursor_execute", read_only_sql)
+                    event.remove(connection.sync_connection, "commit", reject_commit)
     finally:
         await engine.dispose()
     if commit_attempts or statements.count("SET") != 1 or "SELECT" not in statements:

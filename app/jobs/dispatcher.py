@@ -581,7 +581,9 @@ async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_k
 async def run_pending_once() -> int:
     """Claim and execute one due job. Returns number processed (0 or 1)."""
     with tenant_scope(bypass=True):
-        await jobs.reap_stale()
+        quarantined = await jobs.reap_stale()
+        if type(quarantined) is int and quarantined > 0:
+            logger.warning("job_stale_quarantined count=%s", quarantined)
         await jobs.cleanup_done()
     job = await jobs.claim_next()
     if not job:

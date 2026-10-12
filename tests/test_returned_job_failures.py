@@ -97,6 +97,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             mark_failed=AsyncMock(return_value=False),
             get=AsyncMock(return_value=self.job),
             claim_job=AsyncMock(return_value=self.job),
+            renew_claim=AsyncMock(return_value=True),
         )
         self.claim = CLAIMS.JobClaim.capture(self.job)
         async def done(job_id, *, claim, result=None, **kwargs):
@@ -181,12 +182,16 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.notify.assert_not_awaited()
         self.jobs.mark_done.assert_not_awaited()
 
-    async def test_normal_exception_backoff_is_preserved(self):
+    async def test_unknown_exception_stops_without_raw_error_or_retry(self):
         self.handler.side_effect = RuntimeError("transport_failed")
-        self.jobs.mark_failed.return_value = CLAIMS.JobOutcomeReceipt(self.claim, CLAIMS.OutcomeAck.RETRY)
         await self.dispatcher.execute_job(self.job, self.handler)
-        self.jobs.mark_failed.assert_awaited_once_with(7, claim=self.claim, error="transport_failed", allow_retry=True)
-        self.notify.assert_not_awaited()
+        self.jobs.mark_failed.assert_awaited_once_with(
+            7,
+            claim=self.claim,
+            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX,
+            allow_retry=False,
+        )
+        self.assertIn("не подтверждён", self.notify.await_args.kwargs["error"])
 
     async def test_inline_exception_remains_terminal(self):
         self.handler.side_effect = RuntimeError("transport_failed")

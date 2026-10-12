@@ -142,8 +142,8 @@ class OutcomeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_failed.assert_awaited_once_with(
             7,
             claim=self.fixture.claim,
-            error="original handler failure",
-            allow_retry=True,
+            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX,
+            allow_retry=False,
         )
         self.jobs.mark_done.assert_not_awaited()
         self.notify.assert_not_awaited()

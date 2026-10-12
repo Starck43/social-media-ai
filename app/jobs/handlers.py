@@ -509,7 +509,7 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     from app.core.config import settings
     from app.core.database import new_session
     from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
-    from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX
+    from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
     from app.models import AIAnalytics, CollectedItem, Job
     from app.utils.retention import months_before
 
@@ -518,13 +518,14 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     cutoff = now - timedelta(days=days)
     retention_months = settings.DATA_RETENTION_MONTHS
     retention_cutoff = months_before(now, retention_months)
-    # An operational budget stop can retain uncertain external effects/cost.
-    # Keep its evidence for explicit review; ordinary NULL errors stay eligible.
+    # Operational stops and operator cancellations can retain uncertain effects/cost.
+    # Keep their evidence for explicit review; ordinary NULL errors stay eligible.
     deleted = await (
         Job.objects.filter(status__in=["done", "failed"])
         .filter(Job.created_at < cutoff)
         .filter(or_(Job.error.is_(None), not_(Job.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX))))
         .filter(or_(Job.error.is_(None), not_(Job.error.startswith(OUTCOME_UNCONFIRMED_PREFIX))))
+        .filter(or_(Job.error.is_(None), not_(Job.error == OPERATOR_CANCELLED_ERROR)))
         .delete()
     )
 

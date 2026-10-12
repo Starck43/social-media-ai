@@ -117,6 +117,15 @@ platform; the guards (`app/services/social/guards.py`) are checked against the
    outcome marker; it never replays them automatically. The worker emits one
    redacted warning with the quarantined count so operators can investigate.
 
+Operator cancellation records a fenced `failed` transition, not proof that an
+in-flight handler or external request stopped. New and existing rows with the
+exact `Cancelled by operator` error are classified as unconfirmed outcomes: the
+queue shows the review warning and does not offer its ordinary retry button.
+Scheduled prune preserves these rows, including attempt, result and cost evidence;
+late completion by the cancelled claim cannot overwrite them. No automatic replay
+or operator-resolution workflow is introduced. Explicit history deletion/clear
+remains destructive and is outside this protection.
+
 Job columns are merged into the handler payload by `execute_job()`, so handlers
 receive `agent_task_id` and `job_id` alongside their own `payload` keys. Digest
 idempotency depends on this.

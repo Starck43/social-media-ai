@@ -138,6 +138,26 @@ The journal records captured analyzer stage envelopes through
 `app/services/ai/attempt_journal.py`. Missing usage or an unresolved model tariff
 keeps cost unknown (NULL), rather than treating it as zero. A configured zero
 tariff is classified as free only with known prompt and completion token counts.
+New analyzer envelopes carry a client-owned `accounting_usage` block separately
+from legacy numeric `usage` projections. Missing, non-integer, negative or
+out-of-column-range token counts remain NULL evidence. The journal treats this
+block as authoritative, even when malformed; it never recovers certainty from
+projection zeros or provider-supplied replacement fields. OpenAI-compatible and
+custom adapters read `prompt_tokens`/`completion_tokens`; Anthropic reads
+`input_tokens`/`output_tokens`. Totals and response text do not imply missing
+token fields. Legacy envelopes without this block retain their old usage fallback.
+
+Missing, malformed, negative, non-finite or unrepresentable tariff rates produce
+`unknown_tariff` and NULL cost rather than defaulting to zero or losing the
+record through a Decimal exception. Valid snapshot fields and model identity
+remain available when the other rate is unknown. Costs beyond the existing
+numeric column range likewise remain NULL/unknown, not silently clamped.
+Structured-output rejection stays `failed_output` even when usage is unknown.
+
+The existing USD/USD-cent projections and chat adapters remain compatible; this
+does not repair their missing-usage zeros or historical rows. The current legacy
+zero-rate/free classification also remains unchanged: operator confirmation of
+known-free tariffs versus unconfigured zero defaults is still an acceptance gap.
 Source/job/task execution references are plain integers, not foreign keys, so
 source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters

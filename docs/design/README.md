@@ -8,8 +8,8 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 ## Current checkpoint
 
 Verified local `dev`: `84ee16d284a6355006dd71c7157a0744ab203ddd` on
-2026-10-12. Packages through PR #104 are integrated. No implementation lane is
-reserved. Refresh `dev`, open PRs and this row before selecting work.
+2026-10-12. Packages through PR #104 are integrated. Active lanes are listed
+under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
 estimate. Select one bounded change with an observable acceptance condition.
@@ -35,9 +35,12 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| PRD-02 exact intent consumption | Remote Notion agent, `fix/atomic-confirmation-consumption`; PR to `dev` | IN_PROGRESS | Only one concurrent confirmation may dispatch the same stored intent; stale cleanup preserves replacements. Draft pending project-venv unit/runtime checks and local PostgreSQL commit/serialization evidence. No schema or live-action changes. |
+| PRD-04 loopback-only database binding | Remote Notion agent; `fix/compose-db-loopback`, Draft PR to `dev` | IN_PROGRESS | Restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`; preserve container `db:5432` and local-owner tools. Prepare configuration/negative regression checks; actual network isolation needs local/staging evidence. Do not start/restart Compose: API startup runs Alembic. No DDL/deploy/firewall/runtime-owner changes. |
+| PRD-06 credential diagnostic privacy | Remote Notion agent; `fix/credential-diagnostics-privacy`, [Draft PR #107](https://github.com/Starck43/social-media-ai/pull/107) to `dev` | BLOCKED — final formatter acceptance | Owner re-verification on `07394fe`: 14 isolated tests passed; focused existing suite 57 passed, 3 baseline-reproduced failures. EOF-only head `5ff3d9f` adds final LF to the two new files; byte readback verified. Await local Black confirmation; current dev compatibility is clean. Exact evidence in PR; no live/schema changes. |
+| PRD-02 atomic confirmation consumption | Remote Notion agent; `fix/atomic-confirmation-consumption`, [Draft PR #105](https://github.com/Starck43/social-media-ai/pull/105) to `dev` | BLOCKED — final formatter acceptance | Owner re-verification on `5346099`: six checks, 62 tests passed, including PostgreSQL and fixed log-privacy mock. Code/test revision `bbbc0e0` retains behavior. Owner-approved board synchronization preserves current dev ownership/status rows; integration conflict resolved by matching this board. Await focused Black/isort confirmation; exact SHA evidence in PR. No live/schema changes. |
 | PRD-03 attempt journal (analyzer attempts) | Local session, `dev`; `llm_attempts` ledger + analyzer wiring | VALIDATED | One journal row per analyzer provider attempt: usage, tariff snapshot, cost certainty and outcome survive a skipped daily row, a filtered day and a failed batch. Remaining: fallback, learning and agent-chat attempts; per-dispatch identity; concurrent budget admission. |
 | PRD-05 unknown-handler terminal outcome | Local session, `dev`; dispatcher + focused tests | VALIDATED | A claimed job with no registered handler records a terminal `failed` outcome even when the caller allows retries; no handler runs and no automatic retry is scheduled. Claim loss and outcome-write uncertainty stay explicit errors. 30 focused tests + 22 subtests passed. Remove this row after verified integration. |
+| PRD-01 partial-delivery retry safety | Remote Notion agent; `fix/digest-partial-delivery-review`, Draft PR #106 to `dev` | IN_PROGRESS — awaiting local verification | Legacy digest path: partial delivery (some recipients or chunks delivered) is terminal `partial_delivery_requires_review`; later scheduled attempts for the same task+period stop before rebuild/resend; only explicit force resends. Implementation `8b9d9b9`; run the PR handoff commands locally. Zero-success lost-ack and concurrent publishers remain open. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

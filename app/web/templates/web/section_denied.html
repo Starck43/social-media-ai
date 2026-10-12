@@ -1,0 +1,15 @@
+{% extends "web/base.html" %}
+{% block title %}Раздел недоступен — AI Monitor{% endblock %}
+{% block content %}
+    <div class="flex min-h-[40vh] flex-col items-center justify-center text-center" data-section-denied>
+        <p class="text-5xl font-semibold text-slate-600 dark:text-slate-400">403</p>
+        <p class="mt-3 text-lg text-slate-800 dark:text-slate-200">Раздел «{{ denied_section }}» недоступен для вашего уровня доступа</p>
+        <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
+            {% if member_level %}Ваш уровень в этом воркспейсе — «{{ member_level }}». {% endif %}
+            Чтобы открыть раздел, попросите владельца воркспейса изменить ваш уровень в «Настройки → Команда».
+        </p>
+        <a href="/app/" class="mt-6 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+            ← На дашборд
+        </a>
+    </div>
+{% endblock %}

@@ -229,12 +229,15 @@ async def test_a_read_only_member_cannot_save_the_scenario() -> None:
 
         async with await _client() as m:
             await _login(m, member.username)
+            # A viewer is not offered the section at all; the page answers 403
+            # with a reason, and a crafted POST is still refused on its own.
             page = await m.get(f"/app/scenarios/{scenario_id}")
+            assert page.status_code == 403
             resp = await m.post(
                 f"/app/scenarios/{scenario_id}",
                 data={"name": "sneaky", "is_active": "on", "_csrf": CSRF_RE.search(page.text).group(1)},
             )
-            assert resp.status_code == 200
+            assert resp.status_code == 403  # the redirect back lands on the refused section
             assert DENIED in resp.text
 
             with tenant_scope(tenant_id):

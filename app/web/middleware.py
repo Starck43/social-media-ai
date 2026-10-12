@@ -30,6 +30,7 @@ from app.core.tenant_context import tenant_scope
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 
+from .nav import allows, section_of
 from .perms import WebPerms
 
 logger = logging.getLogger(__name__)
@@ -116,9 +117,7 @@ class TenantUIMiddleware:
         perm_ctx = None
         if user is not None:
             perms = getattr(request.state, "web_perms", None)
-            perm_ctx = permission_scope(
-                user, is_owner=bool(perms is not None and perms.is_owner), member_grants=grants
-            )
+            perm_ctx = permission_scope(user, is_owner=bool(perms is not None and perms.is_owner), member_grants=grants)
 
         with scope_ctx:
             if perm_ctx is not None:
@@ -131,10 +130,30 @@ class TenantUIMiddleware:
                         request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
                     except Exception:  # noqa: BLE001 — a badge must never break a page
                         request.state.unread_notifications = 0
+                denied = self._denied_section(request, path)
+                if denied is not None:
+                    from .deps import render_section_denied
+
+                    await render_section_denied(request, denied)(scope, receive, send)
+                    return
                 await self.app(scope, receive, send)
             finally:
                 if perm_ctx is not None:
                     perm_ctx.__exit__(None, None, None)
+
+    @staticmethod
+    def _denied_section(request: Request, path: str):
+        """The section a page view is refused for, or None.
+
+        Only reads are gated here: every write already passes `guard_web`, which
+        answers with its own message. Hiding the nav item is not the check.
+        """
+        if request.method not in ("GET", "HEAD") or getattr(request.state, "web_user", None) is None:
+            return None
+        item = section_of(path)
+        if item is None or allows(item, getattr(request.state, "web_perms", None)):
+            return None
+        return item
 
     @staticmethod
     async def _connection_alerts(user_id: int) -> list:

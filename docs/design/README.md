@@ -7,9 +7,9 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `d5e7a499403a7aa270ebf2d49d10e057dc45919b` on
-2026-10-12. Merged packages through PR #138 are integrated; PR #137 remains
-open as a draft. Active lanes are listed
+Verified `origin/dev`: `9071dc9e6ed897c031845fddd81e7f2039642104` on
+2026-10-12. Merged packages through PR #156, including PRs #137, #151 and #153, are
+integrated. Active lanes are listed
 under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
@@ -40,6 +40,7 @@ starts only when the applicable foundation gates are accepted.
 | PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |
 | PRD-06 data-retention rollout | Owner; no branch or PR (code merged in `dev` via PR #139) | DEFERRED — deployment not yet approved | Owner decision (2026-10-12): do not deploy yet. Before deploying, back up `ai_analytics` if history matters and confirm `DATA_RETENTION_MONTHS` (default 1): the first daily prune after deploy irreversibly deletes analyses whose last write is older than the cutoff. Remove this row after the deployment is verified. |
 | PRD-05 cancellation uncertainty evidence | Remote Notion agent; planned `fix/cancel-uncertainty-evidence` to `dev`; reservation branch `docs/reserve-cancel-uncertainty` | RESERVED — owner-approved scope | Classify new and legacy operator cancellations as unconfirmed external outcomes; show uncertainty and no ordinary replay offer; preserve records in scheduled prune; retain attempt/result/cost evidence and reject late completion of the cancelled claim. No schema, replay-path or rollout change. Implement after the reservation docs-PR is integrated; owner-local validation required. |
+| PRD-05 stale/budget-stop outcome on the task | Remote Notion agent; `feat/reaped-task-outcome` to `dev`; reservation branch `docs/reserve-reaped-task-outcome` | RESERVED — owner-selected | When the worker quarantines a stale run or stops an exhausted attempt budget, the owning task's `last_status`/`last_error` record that unconfirmed terminal outcome in the same transaction, so web/API never keep `queued` or an older result; newer task evidence is not overwritten. `reap_stale` only — no cancellation/prune, replay or schema change. Owner-local validation required. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

@@ -7,8 +7,8 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `9071dc9e6ed897c031845fddd81e7f2039642104` on
-2026-10-12. Merged packages through PR #156, including PRs #137, #151 and #153, are
+Verified `origin/dev`: `5941642c4caa052ef54e90e03ba1c00f3433c4c4` on
+2026-10-12. Merged packages through PR #161, including PRs #137, #151, #153 and #158, are
 integrated. Active lanes are listed
 under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
 
@@ -36,11 +36,10 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| PRD-03 immutable preparation receipts | Remote Notion agent; merged [PR #137](https://github.com/Starck43/social-media-ai/pull/137) (`9f76c81`); `test/receipt-storage-pg-evidence`, [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154), corrected head `569c368` | #137 MERGED; #154 BLOCKED — corrected verifier local checks pending | Owner-local 16 tests/compiler/formatters PASS at `aa0a744`; PG stopped read-only at faulty Index parity, baseline 44 receipts/79 journal/guards O/public 0092 unchanged. Corrected separate UNIQUE/index reflection, 12 new regressions (28 total); new-head Python/style/PG NOT RUN remotely, no .venv. Re-intake #154, run no-DB then verbatim PG command from PR. No baseline tuning/reapply/bootstrap/cleanup, runtime change or whole-gate acceptance. |
+| PRD-03 immutable preparation receipts | Remote Notion agent; merged [PR #137](https://github.com/Starck43/social-media-ai/pull/137) (`9f76c81`); `test/receipt-storage-pg-evidence`, [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154), corrected head `69f95c9` | #137 MERGED; #154 BLOCKED — new-head local verification pending | Owner-local 28/compiler/formatters PASS at `25f01bd`; PG stopped read-only in catalog with asyncpg 42P18, before probes/writes. Both relation lookups now CAST schema bind to text; actual-query asyncpg compilation regression added (29 prepared methods). New-head Python/style/PG NOT RUN remotely (no .venv); security/diff/merge-tree PASS. Baseline 44/79/guards O/public 0092 unchanged per report; exact intake/no-DB/PG handoff in PR, no reapply/cleanup or whole-gate acceptance. |
 | PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |
 | PRD-06 data-retention rollout | Owner; no branch or PR (code merged in `dev` via PR #139) | DEFERRED — deployment not yet approved | Owner decision (2026-10-12): do not deploy yet. Before deploying, back up `ai_analytics` if history matters and confirm `DATA_RETENTION_MONTHS` (default 1): the first daily prune after deploy irreversibly deletes analyses whose last write is older than the cutoff. Remove this row after the deployment is verified. |
 | PRD-05 cancellation uncertainty evidence | Remote Notion agent; `fix/cancel-uncertainty-evidence`, [Draft PR #155](https://github.com/Starck43/social-media-ai/pull/155), implementation `c4eb2db`; reservation #153 merged | BLOCKED — owner-local validation pending | New/legacy cancellation is classified as unconfirmed; existing queue warning/retry fence applies; scheduled prune retains evidence. Regression and read-only PG predicate runners prepared. Remote diff/readback checked; Python/formatters/PG NOT RUN (.venv unavailable). Exact commands and APPROVED/CHANGES handoff in #155. No schema, replay-path or rollout change; cancelled-claim fencing unchanged. |
-| PRD-05 stale/budget-stop outcome on the task | Remote Notion agent; `feat/reaped-task-outcome` ([Draft PR #158](https://github.com/Starck43/social-media-ai/pull/158), impl `ff81e7c`) to `dev` | BLOCKED — #158 awaits owner-local verification | When the worker quarantines a stale run or stops an exhausted attempt budget, the owning task's `last_status`/`last_error` record that unconfirmed terminal outcome in the same transaction, so web/API never keep `queued` or an older result; newer task evidence is not overwritten. `reap_stale` only — no cancellation/prune, replay or schema change. Owner-local validation required. |
 
 For a new implementation lane, replace or add one row with its exact bounded
 acceptance condition, owner, branch/PR and state. Remove the row after verified

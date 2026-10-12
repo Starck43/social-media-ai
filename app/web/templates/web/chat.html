@@ -65,12 +65,21 @@
                 <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Спросите агента о ваших данных</p>
                 <p class="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-400">
                     {% if is_owner or not member_level %}
-                    Он видит источники, задачи и аналитику этого workspace и умеет их менять (с подтверждением). Начать
-                    можно с «/help».
+                    Я вижу источники, задачи и аналитику этого workspace и меняю их только после вашего «да».
                     {% else %}
-                    Он работает с тем, что открывает ваш уровень: {{ member_level.hint | lower }}. Начать можно с «/help».
+                    Я работаю с тем, что открывает ваш уровень: {{ member_level.hint | lower }}.
                     {% endif %}
+                    Выберите, с чего начать, или просто напишите.
                 </p>
+                <div class="chat-starters">
+                    <template x-for="starter in starters" :key="starter.text">
+                        <button type="button" class="chat-starter" @click="sendMessage(starter.text)" :disabled="pending">
+                            <span class="chat-starter-icon" x-text="starter.icon" aria-hidden="true"></span>
+                            <span class="chat-starter-title" x-text="starter.title"></span>
+                            <span class="chat-starter-hint" x-text="starter.hint"></span>
+                        </button>
+                    </template>
+                </div>
             </div>
 
             <!-- Message list -->
@@ -147,9 +156,27 @@
                                 </svg>
                             </button>
                         </div>
+
+                        <!-- Quick replies: only for the latest answer, one tap sends the label -->
+                        <div x-show="!pending && message.role !== 'user' && message.options?.length && isLast(message)"
+                             class="chat-quick-replies" role="group" aria-label="Варианты ответа">
+                            <template x-for="option in (message.options || [])" :key="option">
+                                <button type="button" class="chat-quick-reply" @click="sendMessage(option)"
+                                        :disabled="pending" x-text="option"></button>
+                            </template>
+                        </div>
                     </div>
                 </div>
             </template>
+
+            <!-- Thinking indicator while the agent works on a turn -->
+            <div x-show="sending" x-cloak class="chat-row chat-row-assistant msg-enter" role="status" aria-live="polite">
+                <div class="chat-thinking">
+                    <span class="chat-thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="chat-thinking-label" x-text="thinkingLabel()"></span>
+                    <span x-show="thinkingSeconds >= 3" class="chat-thinking-time" x-text="thinkingSeconds + ' с'"></span>
+                </div>
+            </div>
 
             <!-- Scroll anchor -->
             <div x-ref="end"></div>
@@ -183,12 +210,11 @@
             <button type="button" @click="performConfirmation()" :disabled="pending">Подтвердить</button>
             <button type="button" @click="confirmation = null">Отмена</button>
         </div>
-        <div x-show="pending" x-cloak class="chat-pending" role="status">Агент готовит ответ…</div>
         <!-- Composer -->
         <form @submit.prevent="sendMessage()" class="chat-composer" x-ref="form">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <textarea
-                name="text" rows="2" required placeholder="Спросите агента… /help — список возможностей"
+                name="text" rows="2" required placeholder="Напишите сообщение или /help"
                 x-ref="input"
                 @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
                 @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
@@ -198,13 +224,13 @@
                 <!-- Presets send immediately, they never fill the input -->
                 <div class="chat-suggestions">
                     <button type="button" @click="sendMessage('/help')" :disabled="pending">
-                        Возможности агента
+                        Что ты умеешь?
                     </button>
                     <button type="button" @click="sendMessage('Сводка за неделю')" :disabled="pending">
                         Сводка за неделю
                     </button>
-                    <button type="button" @click="sendMessage('Покажи мои источники')" :disabled="pending">
-                        Мои источники
+                    <button type="button" @click="sendMessage('Покажи мои задачи')" :disabled="pending">
+                        Мои задачи
                     </button>
                 </div>
                 <!-- Attach a file (placeholder until uploads exist) -->
@@ -237,14 +263,6 @@
         </form>
         <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span class="">Enter — отправить · Shift+Enter — новая строка</span>
-            <span x-show="pending" class="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-400">
-            <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Отправка…
-        </span>
         </p>
     </section>
 </div>

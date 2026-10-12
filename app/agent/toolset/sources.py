@@ -129,3 +129,24 @@ async def source_disable(source_id: int) -> dict:
         return {"error": f"Source {source_id} not found"}
     await Source.objects.update_by_id(source.id, is_active=False)
     return {"status": "disabled", "source_id": source.id, "name": source.name}
+
+
+@tool(
+    name="source_enable",
+    description="Снова включить сбор из ранее отключённого источника по id.",
+    confirm=True,
+    required_permission="source.update",
+    parameters={
+        "type": "object",
+        "properties": {"source_id": {"type": "integer", "description": "ID источника"}},
+        "required": ["source_id"],
+    },
+)
+async def source_enable(source_id: int) -> dict:
+    from app.models import Source
+
+    source = await Source.objects.get(id=int(source_id))
+    if source is None:
+        return {"error": f"Source {source_id} not found"}
+    await Source.objects.update_by_id(source.id, is_active=True)
+    return {"status": "enabled", "source_id": source.id, "name": source.name}

@@ -100,11 +100,23 @@ def _render_assistant_content(content: str | None) -> str:
 
 
 def _enrich_message(msg) -> dict:
-    """Enrich a message with formatted fields for the template."""
+    """Enrich a message with formatted fields for the template.
+
+    Assistant replies may carry quick-reply choices; they are split off here so
+    the bubble never shows the marker and the client renders buttons instead.
+    """
+    from app.agent.quick_replies import split_quick_replies
+
+    if msg.role == "user":
+        content, options = msg.content, []
+    else:
+        content, options = split_quick_replies(msg.content)
+        content = _render_assistant_content(content)
     return {
         "id": msg.id,
         "role": msg.role,
-        "content": _render_assistant_content(msg.content) if msg.role != "user" else msg.content,
+        "content": content,
+        "options": options,
         "created_at": _format_message_time(msg.created_at),
     }
 

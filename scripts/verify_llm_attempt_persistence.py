@@ -103,33 +103,41 @@ async def verify(args) -> list[str]:
             # A missing table/constraint is a blocker, never permission for DDL.
             async with LLMAttempt.objects._get_owned_session() as session:
                 columns = (
-                    await session.execute(
-                        text(
-                            "SELECT column_name FROM information_schema.columns "
-                            "WHERE table_schema = :schema AND table_name = 'llm_attempts'"
-                        ),
-                        {"schema": args.expected_schema},
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT column_name FROM information_schema.columns "
+                                "WHERE table_schema = :schema AND table_name = 'llm_attempts'"
+                            ),
+                            {"schema": args.expected_schema},
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 require(
                     {column.name for column in LLMAttempt.__table__.columns}.issubset(set(columns)),
                     "Existing journal table does not match the model",
                 )
                 key_columns = (
-                    await session.execute(
-                        text(
-                            "SELECT k.column_name FROM information_schema.table_constraints t "
-                            "JOIN information_schema.key_column_usage k "
-                            "ON k.constraint_catalog = t.constraint_catalog "
-                            "AND k.constraint_schema = t.constraint_schema AND k.constraint_name = t.constraint_name "
-                            "AND k.table_name = t.table_name "
-                            "WHERE t.table_schema = :schema AND t.table_name = 'llm_attempts' "
-                            "AND t.constraint_name = 'uq_llm_attempts_key' AND t.constraint_type = 'UNIQUE' "
-                            "ORDER BY k.ordinal_position"
-                        ),
-                        {"schema": args.expected_schema},
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT k.column_name FROM information_schema.table_constraints t "
+                                "JOIN information_schema.key_column_usage k "
+                                "ON k.constraint_catalog = t.constraint_catalog "
+                                "AND k.constraint_schema = t.constraint_schema AND k.constraint_name = t.constraint_name "
+                                "AND k.table_name = t.table_name "
+                                "WHERE t.table_schema = :schema AND t.table_name = 'llm_attempts' "
+                                "AND t.constraint_name = 'uq_llm_attempts_key' AND t.constraint_type = 'UNIQUE' "
+                                "ORDER BY k.ordinal_position"
+                            ),
+                            {"schema": args.expected_schema},
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 require(
                     key_columns == ["attempt_key"], "Required unique attempt-key constraint is missing or different"
                 )

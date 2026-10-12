@@ -77,13 +77,17 @@ class LLMAttemptManager(BaseManager):
             if not created:
                 fields = ("tenant_id",) + _RECORD_FIELDS
                 existing = (
-                    await session.execute(
-                        select(*(getattr(self.model, field) for field in fields)).where(
-                            self.model.attempt_key == values["attempt_key"],
-                            self.model.tenant_id == values["tenant_id"],
+                    (
+                        await session.execute(
+                            select(*(getattr(self.model, field) for field in fields)).where(
+                                self.model.attempt_key == values["attempt_key"],
+                                self.model.tenant_id == values["tenant_id"],
+                            )
                         )
                     )
-                ).mappings().one_or_none()
+                    .mappings()
+                    .one_or_none()
+                )
                 if existing is None or any(existing[field] != values[field] for field in fields):
                     # Do not include private record values or another payer's
                     # identity in an exception/log.

@@ -424,6 +424,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
                 "source_name": names.get(row.source_id, f"Источник #{row.source_id}"),
                 "title": display["display_title"],
                 "summary_missing": not bool(display["analysis_summary"]),
+                "analysis_incomplete": display["coverage"]["incomplete"],
                 "sentiment": _extract_sentiment(row.summary_data),
                 "chain_url": (
                     _analytics_url(
@@ -581,9 +582,11 @@ async def _fetch_grouped(
         rows_by_id = {row.id: row for row in rows}
         for group in result.get("groups", []):
             for entry in group.get("entries", []):
-                entry["display_title"] = render_analysis(
+                entry_display = render_analysis(
                     rows_by_id[entry["id"]].summary_data, source_name=source_names.get(entry["source_id"])
-                )["display_title"]
+                )
+                entry["display_title"] = entry_display["display_title"]
+                entry["analysis_incomplete"] = entry_display["coverage"]["incomplete"]
                 entry["url"] = _analytics_url(
                     request,
                     f"/app/analytics/{entry['id']}",

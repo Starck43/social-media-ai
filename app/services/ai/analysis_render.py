@@ -186,6 +186,32 @@ def summary_display_heading(summary: Any, limit: int = 120) -> str | None:
     return shortened.rstrip(" .,;:!?…") + "…"
 
 
+# Codes written by the analyzer next to `analysis_complete = False`.
+COVERAGE_LIMIT_LABELS = {
+    "text_sampled": "часть текстов не вошла в выборку для анализа",
+    "media_uncovered": "часть вложений (изображения, видео, файлы) не проанализирована",
+    "stage_failed": "один из этапов анализа завершился ошибкой",
+}
+
+
+def analysis_coverage(summary_data: Any) -> dict[str, Any]:
+    """Explicit incomplete-coverage marker for display.
+
+    Only a stored `analysis_complete is False` counts as incomplete. A missing
+    marker is unknown coverage, never proof of a complete analysis, so callers
+    must not render it as "complete". Unknown reason codes are ignored.
+    """
+    meta = _as_dict(_as_dict(summary_data).get("analysis_metadata"))
+    incomplete = meta.get("analysis_complete") is False
+    reasons: list[str] = []
+    if incomplete:
+        for code in _as_list(meta.get("coverage_limits")):
+            label = COVERAGE_LIMIT_LABELS.get(code) if isinstance(code, str) else None
+            if label and label not in reasons:
+                reasons.append(label)
+    return {"incomplete": incomplete, "reasons": reasons}
+
+
 def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = None) -> dict[str, Any]:
     data = _as_dict(summary_data)
     text = extract_text_analysis(data)
@@ -260,6 +286,7 @@ def render_analysis(summary_data: dict[str, Any], *, source_name: str | None = N
         "source_metadata": source_meta,
         "scenario_metadata": _as_dict(data.get("scenario_metadata")),
         "analysis_metadata": _as_dict(data.get("analysis_metadata")),
+        "coverage": analysis_coverage(data),
         "unified_summary": unified,
         "original_links": originals[:50],
         "content_window_start": window.get("earliest") or rollup.get("start") or date_range.get("first"),

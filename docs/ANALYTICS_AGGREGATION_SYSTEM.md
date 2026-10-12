@@ -102,6 +102,18 @@ shared extraction/grouping semantics. A presentation change must preserve:
 - explicit partial coverage and source errors;
 - no per-row database query for chain counts or labels.
 
+### Incomplete analysis
+
+The analyzer writes `analysis_metadata.analysis_complete = false` when text was
+sampled, an attachment was not analyzed or a stage failed, plus display-only
+`coverage_limits` codes (`text_sampled`, `media_uncovered`, `stage_failed`).
+`render_analysis()["coverage"]` turns only an explicit boolean `false` into an
+incomplete state. The detail page shows a notice with the recorded reasons (or a
+generic one for older rows without codes); the dashboard, day feed and group lists
+show an "incomplete" badge. A row without the marker is unknown coverage and gets
+no badge — it is never labelled complete. Digests are unchanged; API responses that
+return raw `summary_data` only gain the additive `coverage_limits` key.
+
 ## Validation focus
 
 For grouping changes, test row membership, duplicate normalization, empty fields,

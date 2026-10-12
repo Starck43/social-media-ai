@@ -293,6 +293,51 @@ async def test_analytics_detail_shows_single_analysis(client: AsyncClient) -> No
         await _drop(user, tenant_id, source_id)
 
 
+async def test_incomplete_analysis_is_marked_on_detail_and_dashboard(client: AsyncClient) -> None:
+    """Only an explicit stored marker is shown; a row without it gets no notice."""
+    user, tenant_id = await _register(client, "ic")
+    source_id = await _make_source(client, tenant_id, "Покрытие источник")
+    try:
+        with tenant_scope(tenant_id):
+            partial = await AIAnalytics.objects.create(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                analysis_date=date.today(),
+                period_type=PeriodType.DAY,
+                summary_data={
+                    "analysis_title": "Частичный анализ",
+                    "analysis_metadata": {
+                        "analysis_complete": False,
+                        "coverage_limits": ["media_uncovered", "<b>unknown</b>"],
+                    },
+                },
+            )
+            legacy = await AIAnalytics.objects.create(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                analysis_date=date.today() - timedelta(days=1),
+                period_type=PeriodType.DAY,
+                summary_data={"analysis_title": "Без маркера", "analysis_metadata": {}},
+            )
+
+        await _login(client, user.username)
+        resp = await client.get(f"/app/analytics/{partial.id}")
+        assert resp.status_code == 200
+        assert 'data-coverage="incomplete"' in resp.text
+        assert "часть вложений (изображения, видео, файлы) не проанализирована" in resp.text
+        assert "<b>unknown</b>" not in resp.text
+
+        resp = await client.get(f"/app/analytics/{legacy.id}")
+        assert resp.status_code == 200
+        assert 'data-coverage="incomplete"' not in resp.text
+
+        resp = await client.get("/app/")
+        assert resp.status_code == 200
+        assert resp.text.count('data-coverage="incomplete"') == 1
+    finally:
+        await _drop(user, tenant_id, source_id)
+
+
 async def test_analytics_detail_404_for_unknown_id(client: AsyncClient) -> None:
     user, tenant_id = await _register(client, "a4")
     try:

@@ -123,6 +123,7 @@ class PartialCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["multi_llm_analysis"]["text_analysis"], self.good["parsed"])
         self.assertEqual(data["multi_llm_analysis"]["image_analysis"], {})
         self.assertIs(data["analysis_metadata"]["analysis_complete"], False)
+        self.assertIn("stage_failed", data["analysis_metadata"]["coverage_limits"])
         self.assertNotIn(PRIVATE, repr(data))
         self.assert_b_uncovered([row])
         self.assertIsNone(row.content_hash)
@@ -177,6 +178,7 @@ class PartialCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(complete.summary_data["content_hashes"], [self.dedup.item_hash(self.b)])
         self.assertEqual(complete.content_hash, self.dedup.batch_hash([self.b]))
         self.assertNotIn("analysis_complete", complete.summary_data["analysis_metadata"])
+        self.assertNotIn("coverage_limits", complete.summary_data["analysis_metadata"])
         self.assertEqual(self.dedup._split([self.b], [complete], 1), ([], complete))
         self.assertEqual(self.dedup.analysed_hashes([complete]), {self.dedup.item_hash(self.b)})
 

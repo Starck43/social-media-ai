@@ -68,6 +68,7 @@ class MediaSkipCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.models["image"] = None
         row = await self.analyze(content)
         self.assert_coverage(content, row, [])
+        self.assertEqual(row.summary_data["analysis_metadata"]["coverage_limits"], ["media_uncovered"])
         self.client.analyze.assert_awaited_once()
         self.assertIsNone(row.content_hash)
         self.assertEqual(row.summary_data["multi_llm_analysis"]["text_analysis"], self.f.good["parsed"])

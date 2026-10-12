@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import plan_badge, empty_state with context %}
+{% from "web/_macros.html" import incomplete_analysis_badge, plan_badge, empty_state with context %}
 {% block title %}Дашборд — AI Monitor{% endblock %}
 {% block content %}
     <div class="mb-6">
@@ -233,6 +233,7 @@
                                     {{ a.source_name|e }} · {{ a.analysis_date|human_dt(tz=_tz) }}
                                 </span>
                             </div>
+                            {% if a.analysis_incomplete %}<p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>{% endif %}
                             {% if a.summary %}
                                 <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ a.summary|e }}</p>
                             {% endif %}

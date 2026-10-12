@@ -64,11 +64,12 @@ certify a deployment, database revision or full release gate.
   row counts do not prove historical content integrity. Do not rerun this runner
   or clean up evidence. Stock Alembic check/production migrator/full suite and
   runtime/cutover are not certified. Detailed evidence and follow-ups are in the PR.
-  Corrected evidence verifier is prepared in [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154),
-  head `a739578`: two new script/test files, 16 no-DB methods prepared. Real owned
-  post-commit ack hook, same-session rollback-only guard probes, stored-key tenant
-  collision, barrier races and complete scoped parity/fingerprints await local
-  validation. Python/formatters/PG NOT RUN remotely; no runtime/schema change.
+  Corrected evidence verifier remains [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154),
+  head `569c368`. Owner-local 16 tests/compiler/formatters PASS at formatting head
+  `aa0a744`; PG stopped read-only at Index parity (verifier defect, target unchanged).
+  UniqueConstraint reflection is now separated from logical indexes; 12 new
+  regressions bring prepared count to 28. New-head Python/style/PG checks pending;
+  no remote .venv or runtime/schema changes. Exact rerun handoff is in the PR.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

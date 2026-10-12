@@ -20,6 +20,7 @@ from .agent_session import AgentSession
 from .ai_analytics import AIAnalytics
 from .llm_attempt import LLMAttempt
 from .llm_dispatch_receipt import LLMDispatchReceipt
+from .llm_outcome_event import LLMOutcomeEvent
 
 # Core models
 from .base import Base, TenantScopedMixin, TimestampMixin
@@ -88,6 +89,7 @@ __all__ = [
     "AIAnalytics",
     "LLMAttempt",
     "LLMDispatchReceipt",
+    "LLMOutcomeEvent",
     # Task runner / jobs
     "AgentTask",
     "Job",

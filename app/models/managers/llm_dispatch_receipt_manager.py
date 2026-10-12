@@ -8,7 +8,6 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.tenant_context import TenantContextError, current_tenant_id
-from app.services.ai.dispatch_receipts import RECEIPT_FIELDS, validate_receipt
 
 from .base_manager import BaseManager
 
@@ -37,6 +36,10 @@ class LLMDispatchReceiptManager(BaseManager):
         tenant_id = current_tenant_id()
         if type(tenant_id) is not int or not 0 < tenant_id <= 2147483647:
             raise TenantContextError("Dispatch receipt requires an explicit payer scope")
+        # The AI package eagerly imports its analyzer. Defer this dependency
+        # until root model registration/binding is complete.
+        from app.services.ai.dispatch_receipts import RECEIPT_FIELDS, validate_receipt
+
         value = validate_receipt(record)
         if value["tenant_id"] != tenant_id:
             raise TenantContextError("Dispatch receipt payer differs from the trusted scope")

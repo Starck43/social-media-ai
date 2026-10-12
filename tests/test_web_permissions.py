@@ -40,9 +40,13 @@ CREATE_BUTTON = '@click="openAdd = true"'
 
 
 class _StubUser:
-    """Just enough of `User` for the rule: the superuser flag and the predicate."""
+    """Just enough of `User` for the rule: the active and superuser flags and the predicate."""
 
-    def __init__(self, *, superuser: bool = False, rights: set[tuple[str, ActionType]] | None = None) -> None:
+    def __init__(
+        self, *, superuser: bool = False, rights: set[tuple[str, ActionType]] | None = None, active: bool = True
+    ) -> None:
+        # `WebPerms.can` fails closed for an inactive user, so the stub must say it is active.
+        self.is_active = active
         self.is_superuser = superuser
         self._rights = rights or set()
 
@@ -87,6 +91,11 @@ def test_workspace_owner_writes_his_own_workspace_regardless_of_platform_role() 
     assert perms.is_owner
     assert perms.can("source", ActionType.CREATE)
     assert perms.can("agenttask", ActionType.DELETE)
+
+
+def test_inactive_user_gets_nothing_even_as_owner_or_superuser() -> None:
+    assert not _perms(_StubUser(active=False), role="owner", is_owner=True).can("source", ActionType.VIEW)
+    assert not _perms(_StubUser(superuser=True, active=False)).can("source", ActionType.VIEW)
 
 
 def test_superuser_writes_everywhere() -> None:

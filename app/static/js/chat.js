@@ -158,7 +158,7 @@ function chatApp() {
 
             async sendMessage(preset = '') {
                 const textarea = this.$refs.input
-                const text = (typeof preset === 'string' ? preset : textarea.value).trim()
+                const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
                 if (!text || this.pending) return
                 this.notice = ''
 

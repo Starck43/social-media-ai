@@ -9,12 +9,12 @@ import re
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from app.types import MediaType
+from app.services.ai.prompt_sanitizer import frame_untrusted_text, sanitize_untrusted_text
 from app.services.ai.prompt_variables import (
 	UNTRUSTED_UNIFIED_VARIABLES,
 	PromptSubstitution,
 	render_untrusted_value,
 )
-from app.services.ai.prompt_sanitizer import frame_untrusted_text, sanitize_untrusted_text
 
 if TYPE_CHECKING:
 	from app.models import AgentScenario

@@ -17,7 +17,8 @@ from fastapi.responses import RedirectResponse, Response
 from app.models import AgentScenario, AgentTask, Job, Source
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.tasks.cron import cron_to_human
-from app.jobs.recovery_policy import outcome_unconfirmed
+from app.jobs.progress import read_snapshot
+from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
 
 from .deps import (
@@ -1357,6 +1358,179 @@ _OUTCOME_NOTES = {
 }
 
 
+_ACTIVITY = {
+	"collect": "Агент по очереди опрашивает источники и сохраняет новые публикации.",
+	"analyze": "Агент по очереди разбирает собранные записи каждого источника и готовит анализ и черновики действий.",
+	"digest": "Агент собирает итоги за период и отправляет дайджест получателям.",
+	"prune": "Удаляются устаревшие записи по правилам хранения данных.",
+	"learn": "Агент изучает свежие результаты и обновляет свои выводы.",
+	"reflect": "Агент разбирает свою недавнюю работу и сохраняет выводы.",
+}
+_PENDING_ACTIVITY = "Задача в очереди и начнётся, как только освободится обработчик."
+
+_CANCEL_STOP_NOTE = "Остановка займёт до полуминуты: текущий шаг завершится, следующие не начнутся."
+_CANCEL_UNCONFIRMED_NOTE = (
+	"Прерванный запуск будет отмечен как неподтверждённый — проверьте результат перед повторным запуском."
+)
+_CANCEL_TYPE_NOTES = {
+	"collect": ["Готовые анализы сохраняются в любом случае."],
+	"analyze": [
+		"Готовые результаты анализа сохранятся, их стоимость уже учтена.",
+		"Необработанные записи останутся и будут проанализированы при следующем запуске.",
+		"Подготовленные действия — черновики, сами они не выполняются.",
+	],
+	"digest": ["Уже отправленные сообщения отозвать нельзя; часть получателей может не получить дайджест."],
+	"prune": ["Уже удалённые записи восстановить нельзя; остальные будут удалены при следующей очистке."],
+	"learn": ["Выводы, которые агент уже сохранил, останутся."],
+	"reflect": ["Выводы, которые агент уже сохранил, останутся."],
+}
+_CONTENT_CHOICES = [
+	{
+		"value": "keep",
+		"label": "Оставить собранные записи",
+		"hint": "Рекомендуется: их обработает следующий анализ.",
+	},
+	{
+		"value": "discard",
+		"label": "Удалить собранные записи",
+		"hint": (
+			"Записи этого запуска, ещё не прошедшие анализ, будут удалены; "
+			"следующий сбор сможет получить их снова."
+		),
+	},
+]
+
+
+def _cancel_info(job: "Job") -> dict[str, Any]:
+	"""What the modal's «Отменить задачу» does for this job, in plain words."""
+	job_type = job.job_type
+	if job.status == "pending":
+		if _as_int(getattr(job, "attempts", 0)):
+			return {"kind": "unavailable", "reason": "Задача ждёт повторной попытки — отменить её отсюда нельзя."}
+		return {
+			"kind": "before_start",
+			"title": "Отменить запуск?",
+			"notes": ["Задача ещё не началась — ничего не будет собрано, отправлено или изменено."],
+			"confirm": "Отменить запуск",
+		}
+	info: dict[str, Any] = {
+		"kind": "running",
+		"title": "Остановить задачу?",
+		"notes": [_CANCEL_STOP_NOTE, *_CANCEL_TYPE_NOTES.get(job_type, []), _CANCEL_UNCONFIRMED_NOTE],
+		"confirm": "Остановить задачу",
+	}
+	if job_type == "collect":
+		info["content_question"] = "Что сделать с записями, которые этот запуск уже сохранил?"
+		info["content_choices"] = _CONTENT_CHOICES
+	return info
+
+
+def _source_note(entry: dict[str, Any]) -> str:
+	"""One source's line in the modal: what this run got from it."""
+	outcome = entry.get("outcome") or "empty"
+	if outcome == "error":
+		note = "ошибка"
+	elif outcome == "rate_limited":
+		note = "отложено: лимит запросов"
+	elif outcome == "collected":
+		items = int(entry.get("items") or 0)
+		# Prefer the new count: "32 records" for a source that re-serves the
+		# same 32 every hour reads as 32 new records, which is not what
+		# happened. Older jobs have no counter — fall back to the total.
+		if entry.get("new_items") is not None:
+			new_items = int(entry["new_items"])
+			if new_items:
+				note = f"{new_items} {_plural(new_items, 'новая', 'новых', 'новых')}"
+			else:
+				note = "новых нет"
+		else:
+			note = f"{items} {_plural(items, 'запись', 'записи', 'записей')}"
+	else:
+		note = "без новых данных"
+	# `analyze` records what the agent looked at rather than rows collected,
+	# so the line carries that count instead of the collection wording.
+	analyzed = entry.get("analyzed")
+	if outcome != "error" and analyzed:
+		count = int(analyzed)
+		note = f"{count} {_plural(count, 'анализ', 'анализа', 'анализов')}"
+	return note
+
+
+_STEP_NOTES = {"running": "выполняется…", "waiting": "", "skipped": "пропущен", "stopped": "остановлено"}
+
+
+def _progress_view(job: "Job", *, stopped: bool = False) -> dict[str, Any] | None:
+	"""Per-source progress of the current attempt, ready for the modal."""
+	snapshot = read_snapshot(job.result, getattr(job, "attempts", None))
+	if snapshot is None or not snapshot["total"]:
+		return None
+	steps = []
+	for item in snapshot["items"]:
+		state = item["state"]
+		if stopped and state == "running":
+			state = "stopped"
+		error = item.get("error") is True or item.get("outcome") == "error"
+		if state == "done":
+			note = "ошибка" if error else _source_note(item)
+		else:
+			note = _STEP_NOTES.get(state, "")
+		steps.append({
+			"source_id": item.get("source_id"),
+			"name": item["name"],
+			"state": state,
+			"note": note,
+			"error": state == "done" and error,
+		})
+	total, completed = snapshot["total"], snapshot["completed"]
+	return {
+		"total": total,
+		"completed": completed,
+		"percent": int(completed * 100 / total),
+		"current": None if stopped else snapshot["current"],
+		"steps": steps,
+		"hidden_before": snapshot["first"],
+		"hidden_after": max(0, total - snapshot["first"] - len(steps)),
+	}
+
+
+def _cancelled_summary(job: "Job", title: str, task_name: str | None) -> dict[str, Any]:
+	"""A cancelled run is its own outcome, not an error with a raw message."""
+	before_start = job.error == CANCELLED_BEFORE_START_ERROR
+	result = job.result if isinstance(job.result, dict) else {}
+	if before_start:
+		notes = ["Задача отменена до начала — ничего не выполнялось."]
+	else:
+		notes = [
+			"Задача остановлена по запросу.",
+			"Результат прерванного запуска не подтверждён — проверьте данные перед повторным запуском.",
+		]
+	cancellation = result.get("cancellation")
+	if isinstance(cancellation, dict) and job.job_type == "collect":
+		if cancellation.get("discard_collected") is True:
+			discarded = cancellation.get("discarded")
+			if type(discarded) is int and discarded >= 0:
+				notes.append(
+					f"Удалено записей этого запуска: {discarded}."
+					if discarded else "Записей этого запуска для удаления не нашлось."
+				)
+			if cancellation.get("settled") is not True:
+				notes.append("Записи, сохранённые после отмены, будут удалены, когда обработчик остановится.")
+		elif cancellation.get("discard_collected") is False:
+			notes.append("Собранные записи сохранены — их обработает следующий анализ.")
+	summary: dict[str, Any] = {
+		"status": "cancelled",
+		"label": "Отменено до начала" if before_start else "Задача остановлена",
+		"title": title,
+		"notes": notes,
+	}
+	progress = None if before_start else _progress_view(job, stopped=True)
+	if progress is not None:
+		summary["progress"] = progress
+	if task_name:
+		summary["task_name"] = task_name
+	return summary
+
+
 def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	"""Structured result summary for a finished job (run-now modal).
 
@@ -1376,7 +1550,13 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			"title": JOB_TYPE_TITLES.get(job_type, job_type),
 			"created_at": job.created_at.isoformat() if job.created_at else None,
 			"started_at": job.started_at.isoformat() if job.started_at else None,
+			"activity": _PENDING_ACTIVITY if status == "pending" else _ACTIVITY.get(job_type, ""),
+			"cancel": _cancel_info(job),
 		}
+		if status == "running":
+			progress = _progress_view(job)
+			if progress is not None:
+				summary["progress"] = progress
 		# A job nobody claimed is not "running" — it is waiting for a worker.
 		# Without this the modal dead-ends on its client timeout and the row
 		# keeps a spinner for a job that never started, which reads as a hang.
@@ -1388,6 +1568,8 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 					"(python -m app.runtime или python -m app.worker)"
 				)
 		return summary
+	if status == "failed" and job.error in (OPERATOR_CANCELLED_ERROR, CANCELLED_BEFORE_START_ERROR):
+		return _cancelled_summary(job, JOB_TYPE_TITLES.get(job_type, job_type), task_name)
 	if status == "failed":
 		return {
 			"status": "failed",
@@ -1493,38 +1675,12 @@ def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, An
 		source_id = entry.get("source_id")
 		if not source_id:
 			continue
-		outcome = entry.get("outcome") or "empty"
-		if outcome == "error":
-			note = "ошибка"
-		elif outcome == "rate_limited":
-			note = "отложено: лимит запросов"
-		elif outcome == "collected":
-			items = int(entry.get("items") or 0)
-			# Prefer the new count: "32 records" for a source that re-serves the
-			# same 32 every hour reads as 32 new records, which is not what
-			# happened. Older jobs have no counter — fall back to the total.
-			if entry.get("new_items") is not None:
-				new_items = int(entry["new_items"])
-				if new_items:
-					note = f"{new_items} {_plural(new_items, 'новая', 'новых', 'новых')}"
-				else:
-					note = "новых нет"
-			else:
-				note = f"{items} {_plural(items, 'запись', 'записи', 'записей')}"
-		else:
-			note = "без новых данных"
 		link = {
 			"source_id": source_id,
 			"name": entry.get("name") or f"Источник {source_id}",
-			"note": note,
-			"error": outcome == "error",
+			"note": _source_note(entry),
+			"error": (entry.get("outcome") or "empty") == "error",
 		}
-		# `analyze` records what the agent looked at rather than rows collected,
-		# so the link carries that count instead of the collection wording.
-		analyzed = entry.get("analyzed")
-		if outcome != "error" and analyzed:
-			count = int(analyzed)
-			link["note"] = f"{count} {_plural(count, 'анализ', 'анализа', 'анализов')}"
 		links.append(link)
 	return links
 
@@ -1547,4 +1703,64 @@ async def job_status(request: Request, job_id: int):
 	# Mini-links to the sources this run touched; they need the DB, so they are
 	# resolved here rather than in the pure `_job_summary`.
 	summary["sources"] = _source_links(job)
+	if summary.get("status") in ("pending", "running"):
+		summary["can_cancel"] = bool(perms_can(request, "agenttask", "update"))
 	return JSONResponse(summary)
+
+
+@router.post("/job/{job_id}/cancel")
+async def job_cancel_from_modal(
+		request: Request,
+		job_id: int,
+		token: str = Form("", alias="_csrf"),
+		content: str = Form(""),
+):
+	"""Cancel the run shown in the run-status modal (JSON; tenant-scoped).
+
+	`pending` (never claimed) is stopped before start; `running` is cancelled
+	only for the generation observed here, like the queue page. For a collect
+	run `content` chooses whether the rows it already staged stay (`keep`) or
+	go (`discard`). Cancellation fences the Job write; it does not recall an
+	external effect that already happened.
+	"""
+	from fastapi.responses import JSONResponse
+
+	def reply(ok: bool, message: str, status_code: int = 200, **extra: Any) -> JSONResponse:
+		return JSONResponse({"ok": ok, "message": message, **extra}, status_code=status_code)
+
+	if not ensure_csrf(request, token):
+		return reply(False, "Сессия истекла — обновите страницу и попробуйте ещё раз.", 403)
+	if not perms_can(request, "agenttask", "update"):
+		return reply(False, "Недостаточно прав, чтобы отменить задачу.", 403)
+	if content not in ("", "keep", "discard"):
+		return reply(False, "Неизвестный вариант для собранных записей.", 400)
+	tenant_id = getattr(request.state, "tenant_id", None)
+	if type(tenant_id) is not int:
+		return reply(False, "Задача не найдена.", 404)
+
+	from app.core.tenant_context import tenant_scope
+	from app.jobs.claim_outcomes import JobClaim
+
+	with tenant_scope(tenant_id):
+		# Two passes: a pending row may be claimed between the read and the write.
+		for _ in range(2):
+			job = await Job.objects.filter(id=job_id, tenant_id=tenant_id).first()
+			if job is None:
+				return reply(False, "Задача не найдена.", 404)
+			if job.status == "pending":
+				if _as_int(getattr(job, "attempts", 0)):
+					return reply(False, "Задача ждёт повторной попытки — отменить её отсюда нельзя.", 409)
+				if await Job.objects.cancel_pending(job.id):
+					return reply(True, "Запуск отменён до начала.")
+				continue
+			if job.status == "running":
+				try:
+					observed = JobClaim.capture(job)
+				except ValueError:
+					return reply(False, "Отмена не подтверждена: данные запуска неполны.", 409)
+				discard = (content == "discard") if job.job_type == "collect" else None
+				if await Job.objects.cancel_running(observed, discard_collected=discard):
+					return reply(True, "Задача остановлена.")
+				continue
+			return reply(False, "Задача уже завершилась — отменять нечего.", 409, status=job.status)
+	return reply(False, "Состояние задачи изменилось — проверьте результат.", 409)

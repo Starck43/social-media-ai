@@ -17,6 +17,7 @@ from dataclasses import replace
 from typing import Any, Callable, NoReturn, Optional
 
 from app.core.tenant_context import tenant_scope
+from app.jobs import progress as job_progress
 from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
 from app.jobs.result_outcomes import reported_llm_cost, returned_failure
@@ -363,7 +364,14 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
             return await execute_digest_job(job, payload, handler)
         return await handler(payload)
 
-    handler_task = asyncio.create_task(invoke())
+    # The handler task copies the bound context; per-source progress uses this claim.
+    progress = job_progress.ProgressSession(claim)
+    token = job_progress.bind(progress)
+    try:
+        handler_task = asyncio.create_task(invoke())
+    finally:
+        job_progress.unbind(token)
+    claim_lost = False
     state = _OrdinaryHeartbeatState()
     heartbeat_task = asyncio.create_task(_ordinary_heartbeat(claim, state))
     try:
@@ -375,14 +383,22 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
         if heartbeat_task.done():
             try:
                 heartbeat_task.result()
-            except (JobClaimLostError, JobClaimRenewalError) as error:
+            except JobClaimLostError as error:
+                claim_lost = True
+                raise _OrdinaryHeartbeatStopped(error) from None
+            except JobClaimRenewalError as error:
                 raise _OrdinaryHeartbeatStopped(error) from None
             except asyncio.CancelledError:
                 raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
             except Exception:
                 raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
             raise _OrdinaryHeartbeatStopped(JobClaimRenewalError(claim)) from None
-        return handler_task.result()
+        try:
+            return handler_task.result()
+        except job_progress.ProgressStopped:
+            # A progress write found no running claim: same meaning as heartbeat loss.
+            claim_lost = True
+            raise _OrdinaryHeartbeatStopped(JobClaimLostError(claim)) from None
     finally:
         # Do not return a receipt while a cancelled handler can still run locally.
         for task in (handler_task, heartbeat_task):
@@ -397,6 +413,10 @@ async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, pa
                 interrupted = True
         if interrupted:
             raise asyncio.CancelledError
+        if claim_lost or progress.lost:
+            # Rows staged after an operator's "discard" cancellation are removed only
+            # once the handler has drained; never raises.
+            await progress.settle()
 
 
 async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow_retry: bool) -> JobOutcomeReceipt:

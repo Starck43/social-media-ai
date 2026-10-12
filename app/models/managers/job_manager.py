@@ -166,11 +166,148 @@ class JobManager(BaseManager["Job"]):
                 ).scalar_one_or_none()
         return changed == claim.job_id
 
-    async def cancel_running(self, claim: "JobClaim") -> bool:
+    @staticmethod
+    def _claim_predicates(model, claim: "JobClaim") -> tuple:
+        return (
+            model.id == claim.job_id,
+            model.tenant_id == claim.tenant_id,
+            model.job_type == claim.job_type,
+            model.agent_task_id.is_not_distinct_from(claim.agent_task_id),
+            model.attempts == claim.attempts,
+            model.started_at == claim.started_at,
+        )
+
+    @staticmethod
+    def _require_claim_tenant(claim: "JobClaim", message: str) -> None:
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.claim_outcomes import JobClaim
+
+        if not isinstance(claim, JobClaim):
+            raise ValueError("A validated acquired claim is required")
+        if not is_bypass() and current_tenant_id() != claim.tenant_id:
+            raise TenantContextError(message)
+
+    async def record_progress(self, claim: "JobClaim", progress: dict) -> bool:
+        """Store a bounded progress snapshot for exactly this running generation.
+
+        Display data only: other result keys survive; locked_at, updated_at and
+        outcome evidence are untouched. False means no matching running claim
+        (cancelled, reaped or finished); DB/commit errors propagate.
+        """
+        from sqlalchemy import select, update
+
+        from app.core.database import async_session_maker
+
+        from ..job import Job as JobModel
+
+        self._require_claim_tenant(claim, "Progress claim does not match the current tenant")
+        if not isinstance(progress, dict):
+            raise ValueError("Progress snapshot must be a mapping")
+        predicates = (*self._claim_predicates(JobModel, claim), JobModel.status == "running")
+        async with async_session_maker() as session:
+            async with session.begin():
+                current = (
+                    await session.execute(select(JobModel.id, JobModel.result).where(*predicates).with_for_update())
+                ).one_or_none()
+                if current is None:
+                    return False
+                result = dict(current.result) if isinstance(current.result, dict) else {}
+                result["progress"] = {**progress, "attempt": claim.attempts}
+                await session.execute(
+                    update(JobModel)
+                    .where(*predicates)
+                    .values(result=result, updated_at=JobModel.updated_at)
+                    .execution_options(synchronize_session=False)
+                )
+        return True
+
+    async def cancel_pending(self, job_id: int) -> bool:
+        """Cancel a queued row that no worker has claimed yet (it never ran).
+
+        Conditional on `pending` with zero attempts, so a concurrent claim wins
+        and this returns False. Retry-scheduled rows are not touched here.
+        """
+        from sqlalchemy import update
+
+        from app.core.database import async_session_maker
+        from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR
+
+        from ..job import Job as JobModel
+
+        scope = self._recovery_scope(JobModel)
+        now = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            async with session.begin():
+                changed = (
+                    await session.execute(
+                        update(JobModel)
+                        .where(JobModel.id == job_id, JobModel.status == "pending", JobModel.attempts == 0, *scope)
+                        .values(status="failed", error=CANCELLED_BEFORE_START_ERROR, finished_at=now)
+                        .returning(JobModel.id)
+                        .execution_options(synchronize_session=False)
+                    )
+                ).scalar_one_or_none()
+        return changed == job_id
+
+    async def settle_cancelled_discard(self, claim: "JobClaim") -> Optional[int]:
+        """After a cancelled collect drained: remove rows it staged after the cancel.
+
+        Runs once per cancellation (`settled`), only for the generation that an
+        operator cancelled with "discard". Returns rows removed, or None.
+        """
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR
+
+        from ..job import Job as JobModel
+        from .collected_item_manager import CollectedItemManager
+
+        self._require_claim_tenant(claim, "Cancellation claim does not match the current tenant")
+        if claim.job_type != "collect":
+            return None
+        async with async_session_maker() as session:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(
+                            *self._claim_predicates(JobModel, claim),
+                            JobModel.status == "failed",
+                            JobModel.error == OPERATOR_CANCELLED_ERROR,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if row is None or not isinstance(row.result, dict):
+                    return None
+                cancellation = row.result.get("cancellation")
+                if (
+                    not isinstance(cancellation, dict)
+                    or cancellation.get("discard_collected") is not True
+                    or cancellation.get("settled") is True
+                ):
+                    return None
+                removed = await CollectedItemManager.delete_run(session, claim.job_id)
+                earlier = cancellation.get("discarded")
+                row.result = {
+                    **row.result,
+                    "cancellation": {
+                        **cancellation,
+                        "discarded": (earlier if type(earlier) is int and earlier >= 0 else 0) + removed,
+                        "settled": True,
+                    },
+                }
+        return removed
+
+    async def cancel_running(self, claim: "JobClaim", *, discard_collected: Optional[bool] = None) -> bool:
         """Cancel only the running generation observed by an authorized operator.
 
         This fences the Job write, not external effects or Task summaries. False
         means the snapshot no longer matches; database/commit errors propagate.
+        `discard_collected` (run-status modal) records the operator's choice in
+        `result["cancellation"]`; for a collect run `True` also deletes the rows
+        this run staged, in the same transaction. None keeps the legacy write.
         """
         from sqlalchemy import select
 
@@ -203,9 +340,20 @@ class JobManager(BaseManager["Job"]):
                 ).scalar_one_or_none()
                 if row is None:
                     return False
+                now = datetime.now(timezone.utc)
                 row.status = "failed"
                 row.error = "Cancelled by operator"
-                row.finished_at = datetime.now(timezone.utc)
+                row.finished_at = now
+                if discard_collected is not None:
+                    discard = discard_collected is True and claim.job_type == "collect"
+                    cancellation: dict = {"requested_at": now.isoformat(), "discard_collected": discard}
+                    if discard:
+                        from .collected_item_manager import CollectedItemManager
+
+                        cancellation["discarded"] = await CollectedItemManager.delete_run(session, claim.job_id)
+                        cancellation["settled"] = False
+                    previous = row.result if isinstance(row.result, dict) else {}
+                    row.result = {**previous, "cancellation": cancellation}
             # Return success only after the cancellation commit is acknowledged.
         return True
 

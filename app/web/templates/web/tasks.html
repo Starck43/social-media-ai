@@ -447,7 +447,8 @@
 
     <!-- Run-now result modal -->
     <div x-show="runModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4">
-        <div class="w-[95%] max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
+        <div class="w-[95%] max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl"
+             :class="runModal.widthClass" role="dialog" aria-modal="true">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400"
@@ -457,13 +458,25 @@
                         <p class="mt-0.5 text-xs text-slate-600 dark:text-slate-400" x-text="runModal.data.task_name"></p>
                     </template>
                 </div>
-                <button type="button" @click="runModal.close()" aria-label="Закрыть"
+                <div class="flex shrink-0 items-center gap-2">
+                {# Window size: remembered per browser; long step lists read better wide. #}
+                <div class="hidden sm:flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5" role="group" aria-label="Размер окна">
+                    <template x-for="opt in runModal.sizes" :key="opt.key">
+                        <button type="button" @click="runModal.setSize(opt.key)" :title="opt.title" :aria-label="opt.title"
+                                :aria-pressed="runModal.size === opt.key"
+                                class="rounded-md px-2 py-0.5 text-xs"
+                                :class="runModal.size === opt.key ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'"
+                                x-text="opt.label"></button>
+                    </template>
+                </div>
+                <button type="button" @click="closeRunModal()" aria-label="Закрыть"
                         class="flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                          stroke="currentColor" class="h-5 w-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
                     </svg>
                 </button>
+                </div>
             </div>
 
             <template x-if="runModal.loading">
@@ -482,10 +495,119 @@
                         <span class="ml-auto shrink-0 text-xs text-slate-600 dark:text-slate-400"
                               x-text="runModal.elapsedLabel"></span>
                     </div>
+                    <template x-if="runModal.data.activity">
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400" x-text="runModal.data.activity"></p>
+                    </template>
                     <template x-if="runModal.data.hint">
                         <p class="mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2 text-xs text-amber-800 dark:text-amber-300"
                            x-text="runModal.data.hint"></p>
                     </template>
+                    {# Real per-source progress of long collect/analyze runs. #}
+                    <template x-if="runModal.data.progress">
+                        <div class="mt-4">
+                        <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                            <span x-text="`Источников обработано: ${runModal.data.progress.completed} из ${runModal.data.progress.total}`"></span>
+                            <span x-text="`${runModal.data.progress.percent}%`"></span>
+                        </div>
+                        <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                            <div class="h-full rounded-full bg-cyan-600 dark:bg-cyan-500 transition-all duration-500"
+                                 :style="`width: ${Math.max(2, runModal.data.progress.percent)}%`"></div>
+                        </div>
+                        <template x-if="runModal.data.progress.current">
+                            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">Сейчас: <span class="font-medium text-slate-800 dark:text-slate-200" x-text="runModal.data.progress.current"></span></p>
+                        </template>
+                        <ul class="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+                            <template x-if="runModal.data.progress.hidden_before">
+                                <li class="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400" x-text="`…ещё ${runModal.data.progress.hidden_before} выше`"></li>
+                            </template>
+                            <template x-for="(st, i) in runModal.data.progress.steps" :key="i">
+                                <li class="flex items-center gap-2 px-3 py-1.5 text-sm">
+                                    <template x-if="st.state === 'running'">
+                                        <svg class="h-4 w-4 shrink-0 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    </template>
+                                    <template x-if="st.state !== 'running'">
+                                        <span class="w-4 shrink-0 text-center text-xs" :class="stepTone(st)" x-text="stepIcon(st)"></span>
+                                    </template>
+                                    <template x-if="st.source_id && st.state === 'done'">
+                                        <a :href="`/app/sources/${st.source_id}`" class="min-w-0 flex-1 truncate text-slate-800 dark:text-slate-200 hover:text-cyan-700 dark:hover:text-cyan-300" x-text="st.name"></a>
+                                    </template>
+                                    <template x-if="!(st.source_id && st.state === 'done')">
+                                        <span class="min-w-0 flex-1 truncate" :class="st.state === 'waiting' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'" x-text="st.name"></span>
+                                    </template>
+                                    <span class="shrink-0 text-xs" :class="st.error ? 'text-rose-700 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'" x-text="st.note"></span>
+                                </li>
+                            </template>
+                            <template x-if="runModal.data.progress.hidden_after">
+                                <li class="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400" x-text="`…и ещё ${runModal.data.progress.hidden_after}`"></li>
+                            </template>
+                        </ul>
+                        </div>
+                    </template>
+
+                    <div class="mt-5 border-t border-slate-200 dark:border-slate-800 pt-4">
+                        <template x-if="!runModal.confirming">
+                            <div>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">
+                                    Окно можно закрыть — задача продолжит выполняться на сервере. Когда она завершится,
+                                    придёт уведомление в колокольчике, а результат появится в строке задачи.
+                                </p>
+                                <template x-if="runModal.data.cancel && runModal.data.cancel.kind === 'unavailable'">
+                                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400" x-text="runModal.data.cancel.reason"></p>
+                                </template>
+                                <div class="mt-3 flex flex-wrap justify-end gap-2">
+                                    <template x-if="runModal.canCancel">
+                                        <button type="button" @click="runModal.askCancel()"
+                                                class="rounded-lg border border-rose-300 dark:border-rose-800 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
+                                            Отменить задачу
+                                        </button>
+                                    </template>
+                                    <button type="button" @click="runInBackground()"
+                                            class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
+                                        Продолжить в фоновом режиме
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-if="runModal.confirming && runModal.data.cancel">
+                            <div class="rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-4">
+                                <p class="text-sm font-semibold text-rose-800 dark:text-rose-200" x-text="runModal.data.cancel.title"></p>
+                                <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-rose-800 dark:text-rose-200/80">
+                                    <template x-for="(note, i) in (runModal.data.cancel.notes || [])" :key="i">
+                                        <li x-text="note"></li>
+                                    </template>
+                                </ul>
+                                <template x-if="runModal.data.cancel.content_choices">
+                                    <fieldset class="mt-3">
+                                        <legend class="text-xs font-medium text-slate-800 dark:text-slate-200" x-text="runModal.data.cancel.content_question"></legend>
+                                        <template x-for="c in runModal.data.cancel.content_choices" :key="c.value">
+                                            <label class="mt-2 flex cursor-pointer items-start gap-2 text-sm">
+                                                <input type="radio" name="run-cancel-content" class="mt-1" :value="c.value" x-model="runModal.content">
+                                                <span>
+                                                    <span class="block text-slate-800 dark:text-slate-200" x-text="c.label"></span>
+                                                    <span class="block text-xs text-slate-600 dark:text-slate-400" x-text="c.hint"></span>
+                                                </span>
+                                            </label>
+                                        </template>
+                                    </fieldset>
+                                </template>
+                                <template x-if="runModal.cancelError">
+                                    <p class="mt-3 text-xs text-rose-700 dark:text-rose-300" x-text="runModal.cancelError"></p>
+                                </template>
+                                <div class="mt-4 flex flex-wrap justify-end gap-2">
+                                    <button type="button" @click="runModal.confirming = false" :disabled="runModal.cancelling"
+                                            class="rounded-lg bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">
+                                        Не отменять
+                                    </button>
+                                    <button type="button" @click="cancelRun()" :disabled="runModal.cancelling"
+                                            class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-60"
+                                            x-text="runModal.cancelling ? 'Останавливаем…' : runModal.data.cancel.confirm"></button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </template>
 
@@ -563,13 +685,56 @@
                             <p x-text="runModal.data.error || 'Ошибка выполнения'"></p>
                         </div>
                     </template>
+                    <template x-if="runModal.data.status === 'cancelled'">
+                        <div class="rounded-lg border border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-4">
+                            <ul class="space-y-1 text-sm text-amber-800 dark:text-amber-200">
+                                <template x-for="(note, i) in (runModal.data.notes || [])" :key="i">
+                                    <li x-text="note"></li>
+                                </template>
+                            </ul>
+                            <template x-if="runModal.data.progress">
+                                <div class="mt-3">
+                                    <p class="text-xs text-amber-800 dark:text-amber-300"
+                                       x-text="`Обработано до остановки: ${runModal.data.progress.completed} из ${runModal.data.progress.total}`"></p>
+                                    <ul class="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+                            <template x-if="runModal.data.progress.hidden_before">
+                                <li class="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400" x-text="`…ещё ${runModal.data.progress.hidden_before} выше`"></li>
+                            </template>
+                            <template x-for="(st, i) in runModal.data.progress.steps" :key="i">
+                                <li class="flex items-center gap-2 px-3 py-1.5 text-sm">
+                                    <template x-if="st.state === 'running'">
+                                        <svg class="h-4 w-4 shrink-0 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    </template>
+                                    <template x-if="st.state !== 'running'">
+                                        <span class="w-4 shrink-0 text-center text-xs" :class="stepTone(st)" x-text="stepIcon(st)"></span>
+                                    </template>
+                                    <template x-if="st.source_id && st.state === 'done'">
+                                        <a :href="`/app/sources/${st.source_id}`" class="min-w-0 flex-1 truncate text-slate-800 dark:text-slate-200 hover:text-cyan-700 dark:hover:text-cyan-300" x-text="st.name"></a>
+                                    </template>
+                                    <template x-if="!(st.source_id && st.state === 'done')">
+                                        <span class="min-w-0 flex-1 truncate" :class="st.state === 'waiting' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'" x-text="st.name"></span>
+                                    </template>
+                                    <span class="shrink-0 text-xs" :class="st.error ? 'text-rose-700 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'" x-text="st.note"></span>
+                                </li>
+                            </template>
+                            <template x-if="runModal.data.progress.hidden_after">
+                                <li class="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400" x-text="`…и ещё ${runModal.data.progress.hidden_after}`"></li>
+                            </template>
+                        </ul>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
                     <template x-if="runModal.data.status === 'not_found'">
                         <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 text-sm text-slate-700 dark:text-slate-300">
                             Задача не найдена.
                         </div>
                     </template>
                     <div class="mt-4 flex justify-end">
-                        <button @click="runModal.close()"
+                        <button @click="closeRunModal()"
                                 class="rounded-lg bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
                             Закрыть
                         </button>
@@ -583,6 +748,8 @@
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
     const RUNNING_JOBS = {{ running_jobs|tojson }};
+    const RUN_CSRF = {{ csrf|tojson }};
+    const RUN_TERMINAL = ["done", "failed", "cancelled", "not_found"];
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
     const TARGET_FIELDS = [
         { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
@@ -651,7 +818,33 @@
                 pollTimer: null,
                 watchTimer: null,
                 finished: false,
-                close() {
+                confirming: false,
+                cancelling: false,
+                cancelError: "",
+                content: "keep",
+                size: (() => { try { return localStorage.getItem("tasks.runModal.size") || "md" } catch (e) { return "md" } })(),
+                sizes: [
+                    { key: "sm", label: "S", title: "Размер окна: компактный" },
+                    { key: "md", label: "M", title: "Размер окна: обычный" },
+                    { key: "lg", label: "L", title: "Размер окна: широкий" },
+                ],
+                get widthClass() {
+                    return { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl" }[this.size] || "max-w-xl"
+                },
+                setSize(key) {
+                    this.size = key
+                    try { localStorage.setItem("tasks.runModal.size", key) } catch (e) { /* private mode */ }
+                },
+                get canCancel() {
+                    const c = this.data.cancel
+                    return Boolean(this.data.can_cancel && c && c.kind !== "unavailable")
+                },
+                askCancel() {
+                    this.cancelError = ""
+                    this.content = "keep"
+                    this.confirming = true
+                },
+                close(watch) {
                     this.open = false
                     if (this.pollTimer) clearInterval(this.pollTimer)
                     if (this.finished && RUN_JOB_ID !== null) {
@@ -666,7 +859,7 @@
                     } else {
                         // Still in flight: keep watching so the button does not
                         // stay a spinner after the job ends behind the modal.
-                        this.watchRunningJobs()
+                        watch()
                     }
                 },
                 get elapsedLabel() {
@@ -711,6 +904,57 @@
                     return tones.ok
                 },
             },
+            closeRunModal() {
+                this.runModal.close(() => this.watchRunningJobs())
+            },
+            runInBackground() {
+                // The job keeps running on the server; drop ?job_id so a reload
+                // does not reopen the modal, and keep watching the row's button.
+                this.runModal.open = false
+                if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
+                if (RUN_JOB_ID !== null) {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("job_id")
+                    window.history.replaceState(null, "", url.toString())
+                }
+                this.watchRunningJobs()
+            },
+            stepIcon(st) {
+                if (st.error) return "✕"
+                return { done: "✓", waiting: "○", skipped: "—", stopped: "■" }[st.state] || "•"
+            },
+            stepTone(st) {
+                if (st.error) return "text-rose-700 dark:text-rose-400"
+                if (st.state === "done") return "text-emerald-700 dark:text-emerald-400"
+                if (st.state === "stopped") return "text-amber-700 dark:text-amber-400"
+                return "text-slate-400 dark:text-slate-500"
+            },
+            cancelRun() {
+                if (RUN_JOB_ID === null || this.runModal.cancelling) return
+                this.runModal.cancelling = true
+                this.runModal.cancelError = ""
+                const body = new FormData()
+                body.append("_csrf", RUN_CSRF)
+                if (this.runModal.data.cancel && this.runModal.data.cancel.content_choices) {
+                    body.append("content", this.runModal.content)
+                }
+                fetch(`/app/tasks/job/${RUN_JOB_ID}/cancel`, { method: "POST", body, headers: { "Accept": "application/json" } })
+                    .then((r) => r.json().catch(() => ({ ok: false, message: "Не удалось отменить задачу." })))
+                    .then((res) => {
+                        this.runModal.cancelling = false
+                        if (!res.ok) {
+                            this.runModal.cancelError = res.message || "Не удалось отменить задачу."
+                            return
+                        }
+                        this.runModal.confirming = false
+                        // The next poll renders the cancelled outcome.
+                        this.pollOnce()
+                    })
+                    .catch(() => {
+                        this.runModal.cancelling = false
+                        this.runModal.cancelError = "Нет связи с сервером — попробуйте ещё раз."
+                    })
+            },
             init() {
                 if (RUN_JOB_ID !== null) this.pollRun()
                 else this.watchRunningJobs()
@@ -719,12 +963,17 @@
                 // No client-side deadline: a long analyze run is legitimate, and
                 // a job stuck in the queue is reported by the server hint below
                 // instead of a bogus "timeout" that implies the work ended.
-                const poll = () => {
+                const poll = () => this.pollOnce()
+                poll()
+                this.runModal.pollTimer = setInterval(poll, 2000)
+            },
+            pollOnce() {
+                {
                     fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { "Accept": "application/json" } })
                         .then(r => r.json())
                         .then((data) => {
                             this.runModal.data = data
-                            if (data.status === "done" || data.status === "failed" || data.status === "not_found") {
+                            if (RUN_TERMINAL.includes(data.status)) {
                                 this.runModal.loading = false
                                 this.runModal.finished = true
                                 if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
@@ -733,8 +982,6 @@
                         .catch(() => { /* transient — keep polling */
                         })
                 }
-                poll()
-                this.runModal.pollTimer = setInterval(poll, 2000)
             },
             watchRunningJobs() {
                 // The run button is server-rendered from job status. A job that
@@ -743,6 +990,7 @@
                 // and re-render once every one of them has ended.
                 if (this.runModal.watchTimer) clearInterval(this.runModal.watchTimer)
                 const ids = Object.values(RUNNING_JOBS || {}).map((j) => j.id)
+                if (RUN_JOB_ID !== null && !this.runModal.finished && !ids.includes(RUN_JOB_ID)) ids.push(RUN_JOB_ID)
                 if (!ids.length) return
                 const check = () => {
                     Promise.all(
@@ -753,9 +1001,7 @@
                                 .catch(() => "running")
                         )
                     ).then((statuses) => {
-                        const settled = statuses.every(
-                            (s) => s === "done" || s === "failed" || s === "not_found"
-                        )
+                        const settled = statuses.every((s) => RUN_TERMINAL.includes(s))
                         if (settled) window.location.reload()
                     })
                 }

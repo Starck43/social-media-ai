@@ -311,6 +311,23 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(result.rowcount or 0)
 
+    @staticmethod
+    async def delete_run(session: Any, run_id: int) -> int:
+        """Discard rows first staged by one job run (operator cancellation choice).
+
+        Only rows still waiting for analysis exist here: analysed rows are already
+        retired. Rows staged earlier by another run keep that run's id (ON CONFLICT
+        DO NOTHING) and are untouched. The caller owns the transaction.
+        """
+        if type(run_id) is not int or run_id <= 0:
+            raise ValueError("A persisted run id is required")
+        tenant_clause, tenant_params = _staged_mutation_scope()
+        result = await session.execute(
+            sa_text(f"DELETE FROM {settings.DB_SCHEMA}.collected_items WHERE run_id = :run_id" + tenant_clause),
+            {"run_id": run_id, **tenant_params},
+        )
+        return int(result.rowcount or 0)
+
     async def delete_older_than(self, session: Any, days: int) -> int:
         """Expire old staged rows in the current tenant or explicit bypass.
 

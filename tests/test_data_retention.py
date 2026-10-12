@@ -141,7 +141,9 @@ class PruneWiringTests(unittest.IsolatedAsyncioTestCase):
             "app.core.config": module_with(settings=self.settings),
             "app.core.database": module_with(new_session=Session),
             "app.jobs.attempt_budget": module_with(ATTEMPT_BUDGET_STOP_PREFIX="stop"),
-            "app.jobs.recovery_policy": module_with(OUTCOME_UNCONFIRMED_PREFIX="unconfirmed"),
+            "app.jobs.recovery_policy": module_with(
+                OPERATOR_CANCELLED_ERROR="Cancelled by operator", OUTCOME_UNCONFIRMED_PREFIX="unconfirmed"
+            ),
             "app.models": module_with(
                 Job=SimpleNamespace(objects=Query(), created_at=Field(), error=Field()),
                 CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=self.sweep)),

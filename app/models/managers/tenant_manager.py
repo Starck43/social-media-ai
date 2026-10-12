@@ -15,6 +15,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
+from sqlalchemy import select
+
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
@@ -195,7 +197,18 @@ class TenantUserManager(BaseManager["TenantUser"]):
         )
 
     async def web_memberships(self, user_id: int) -> list["TenantUser"]:
-        rows = await self.filter(user_id=user_id, channel=WEB_CHANNEL, is_active=True)
+        """Active web memberships in active workspaces only.
+
+        This list is the access source for `/app` and `/api`: a deactivated
+        workspace must not stay reachable through a membership row that is still
+        active, matching the chat identity resolver and invite redemption.
+        """
+        from ..tenant import Tenant, TenantUser
+
+        active_tenants = select(Tenant.id).where(Tenant.is_active.is_(True))
+        rows = await self.filter(
+            TenantUser.tenant_id.in_(active_tenants), user_id=user_id, channel=WEB_CHANNEL, is_active=True
+        )
         return sorted(rows, key=lambda m: m.id)
 
     async def web_memberships_for_tenant(self, tenant_id: int) -> list["TenantUser"]:

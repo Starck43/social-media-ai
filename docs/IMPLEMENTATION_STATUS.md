@@ -50,16 +50,20 @@ certify a deployment, database revision or full release gate.
   `196ce7b`: 108 methods, compiler/formatters and nine standalone PostgreSQL
   checks passed. Full suite NOT RUN; faults were injected, not real network-loss
   proof. No schema setup/reset/migration was performed; synthetic test rows retained.
-- Next bounded package: preparation-receipt storage and frozen tariff basis
-  ([Draft PR #137](https://github.com/Starck43/social-media-ai/pull/137), `e8d335e`),
-  not activated. Owner-local isolated verification accepted: 143 methods and
-  compiler/formatters PASS. Owner reports approved option (b) applied in test_schema
-  with PostgreSQL PASS: public version 0092, journal 79, guards enabled and 44
-  synthetic receipts retained; FK RESTRICT accepted. Detailed PG evidence review
-  is PENDING: the verdict comment contains a local @file path, not report contents;
-  runner/log/report are not accessible remotely. Keep Draft; publish existing
-  redacted evidence, do not reapply or clean up. Stock Alembic check, production
-  migrator and full suite are not certified. No runtime/cutover authorized.
+- Preparation-receipt storage and frozen tariff basis ([PR #137](https://github.com/Starck43/social-media-ai/pull/137),
+  merge `9f76c81`, tested head `e8d335e`) are **MERGED, not activated**.
+  Accepted 143 no-DB methods and compiler/formatters; published PG source/log now
+  reviewed. Insert/replay/mismatch, tenant-scope refusal, UTC/tariff and mutation
+  rejection SQLSTATE 55000 are supported; final public revision 0092, journal 79,
+  enabled guards and 44 retained synthetic receipts are reported in the final log.
+  Approved definition-only application in test_schema is report-attributed.
+  Limitations: verifier COMMITTED trigger disable/restore, with one interrupted
+  disabled interval, rather than approved same-transaction rollback. Fault injection
+  raises BEFORE commit, not after successful commit/lost ack. Full catalog parity,
+  stored-key cross-tenant collision and stronger concurrency proof remain OPEN;
+  row counts do not prove historical content integrity. Do not rerun this runner
+  or clean up evidence. Stock Alembic check/production migrator/full suite and
+  runtime/cutover are not certified. Detailed evidence and follow-ups are in the PR.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

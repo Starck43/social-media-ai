@@ -84,6 +84,15 @@ async def _summarize(data: dict[str, Any]) -> tuple[str | None, dict]:
         logger.error("Digest LLM summary call failed")
         return None, {"model": getattr(model, "name", None), "cost": None, "error": "llm_call_failed"}
 
+    # The returned envelope is a dispatched attempt; journal it before any
+    # decision about the summary, independently of `digest_runs.llm_cost`.
+    try:
+        from app.services.ai.attempt_journal import PURPOSE_DIGEST, STAGE_DIGEST_SUMMARY, journal_scoped_attempts
+
+        await journal_scoped_attempts({STAGE_DIGEST_SUMMARY: result}, purpose=PURPOSE_DIGEST)
+    except Exception:
+        logger.warning("attempt_journal_write_failed purpose=digest")
+
     info = {"model": model.name, "cost": known_cost_usd(result)}
     if not isinstance(result, dict):
         return None, {**info, "error": "invalid_structured_output"}

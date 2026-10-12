@@ -205,6 +205,39 @@ source, queue or transcript cleanup does not cascade through those references.
 Daily `ai_analytics`, `jobs.llm_cost`, `digest_runs.llm_cost` and model counters
 remain mutable projections, not the ledger.
 
+### Non-analyzer journal capture
+
+Status: **DONE — journal/projection separation extended to every non-analyzer
+caller; not admission or whole-gate acceptance**.
+
+- [x] `chat_with_fallback` journals each provider try separately, including a
+  failed try followed by a fallback success; every try gets a fresh local
+  `dispatch_id`. Callers label purpose: `agent_chat`, `learn`, `reflect`,
+  `prompt_suggest`; unlabelled callers record `chat`. The `accounting_purpose`
+  keyword is consumed locally and is never sent to the provider.
+- [x] The agent `llm_model_test` tool (`model_test`) and the digest summary
+  (`digest`, stage `digest_summary`) record their direct client attempts.
+- [x] Token evidence is read only from the raw provider usage fields
+  (`prompt_tokens`/`completion_tokens`; Anthropic `input_tokens`/`output_tokens`),
+  never from the chat numeric projection that defaults missing counts to zero.
+  Pricing reuses the analyzer three-state rules: provider report arbitrates,
+  explicit zero is FREE, missing price is UNDEFINED with NULL cost.
+- [x] A try that raised after possible dispatch is `failed_transport` with
+  undefined cost. Pre-dispatch refusals (no API key, custom model without
+  endpoint) are not journaled as paid attempts. Cancellation is not journaled.
+- [x] The payer is the ambient tenant passed explicitly on every row, so a
+  bypass context cannot charge the bootstrap workspace; no tenant scope means
+  no row and a redacted `attempt_journal_payer_missing` warning.
+- [x] Journaling is best-effort: failures emit a redacted bounded warning and
+  never change the chat/digest result. Chat return values, `AgentMessage.cost`,
+  `digest_runs.llm_cost`, `jobs.llm_cost`, model counters and the cap metric
+  (`daily_cost_today`) are unchanged projections; the journal is not summed into
+  them, so nothing is counted twice.
+
+No schema change: `purpose`/`stage` are existing free-text columns. Regression:
+`tests/test_scoped_attempt_journal.py`. Admin connection tests have no trusted
+tenant/operator payer and are not journaled.
+
 ### Remaining acceptance boundary
 
 Fresh OpenAI-compatible, Anthropic and custom `analyze()` invocations allocate a
@@ -232,7 +265,7 @@ at dispatch time. Capture occurs after returned stage envelopes, and a journal
 write failure emits a bounded warning while analysis continues; durable recovery
 from that failure is not implemented by this slice.
 
-Chat/fallback/retry/internal-tool, learning and agent-chat capture, durable
+Admin connection-test capture (needs an operator payer), durable
 dispatch receipts and timestamps, failure recovery, and atomic budget admission
 with reservation settlement remain OPEN under
 [business readiness](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).

@@ -43,7 +43,7 @@ async def suggest_base_prompt(description: str) -> str | None:
         {"role": "user", "content": f"Задача: {description}"},
     ]
     try:
-        response = await chat_with_fallback(messages, max_tokens=400)
+        response = await chat_with_fallback(messages, max_tokens=400, accounting_purpose="prompt_suggest")
     except Exception:  # noqa: BLE001 — the caller falls back, it does not fail
         return None
     return ((response or {}).get("content") or "").strip() or None

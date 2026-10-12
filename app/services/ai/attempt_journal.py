@@ -450,3 +450,124 @@ async def record_analysis_attempts(
         if await journal.record_attempt(price_attempt(record, tariffs.get(record["model_id"]))):
             created += 1
     return created
+
+
+# Non-analyzer purposes. Each is a separate execution kind of the same journal;
+# the column is free text, so new purposes need no schema change.
+PURPOSE_CHAT = "chat"
+PURPOSE_AGENT_CHAT = "agent_chat"
+PURPOSE_LEARN = "learn"
+PURPOSE_REFLECT = "reflect"
+PURPOSE_PROMPT_SUGGEST = "prompt_suggest"
+PURPOSE_MODEL_TEST = "model_test"
+PURPOSE_DIGEST = "digest"
+
+STAGE_CHAT = "chat"
+STAGE_DIGEST_SUMMARY = "digest_summary"
+
+#: Error marker of a chat try that raised after a possible dispatch.
+CHAT_CALL_FAILED = "chat_call_failed"
+
+
+class MissingAttemptPayer(ValueError):
+    """No trusted tenant scope: evidence is never charged to a bootstrap workspace."""
+
+
+def chat_attempt_envelope(
+    *,
+    model_id: Optional[str],
+    provider_name: Optional[str],
+    dispatch_id: str,
+    raw: Any = None,
+    failed: bool = False,
+    usage_fields: tuple[str, str] = ("prompt_tokens", "completion_tokens"),
+) -> dict[str, Any]:
+    """Analyzer-shaped envelope for one chat HTTP attempt.
+
+    Token evidence comes only from the provider's raw usage fields, never from
+    the client's numeric projection, which defaults missing counts to zero.
+    A failed try keeps no usage, so it stays a failed transport with undefined
+    cost rather than a free call.
+    """
+    request = {"model": model_id, "provider": provider_name, "dispatch_id": dispatch_id}
+    if failed:
+        return {"request": request, "response": {"error": CHAT_CALL_FAILED}}
+    raw = raw if isinstance(raw, dict) else {}
+    usage = raw.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    claimed, reported = provider_cost_evidence(raw)
+    return {
+        "request": request,
+        "response": raw,
+        "accounting_usage": {
+            "prompt_tokens": _tokens(usage.get(usage_fields[0])),
+            "completion_tokens": _tokens(usage.get(usage_fields[1])),
+        },
+        "accounting_cost_usd": str(reported) if reported is not None else None,
+        "accounting_cost_reported": claimed,
+    }
+
+
+async def record_scoped_attempts(
+    envelopes: Any,
+    *,
+    purpose: str,
+    tenant_id: Optional[int],
+    task_payload: Any = None,
+    journal: Any = None,
+    tariff_resolver: Optional[Callable[[set[str]], Coroutine[Any, Any, dict[str, Optional[dict[str, Any]]]]]] = None,
+) -> int:
+    """Record non-analyzer attempts (stage -> envelope) for an explicit payer.
+
+    The payer is passed on every row, so a superuser/bypass context cannot
+    silently move the evidence to the bootstrap workspace. Missing payer is
+    refused. Returns the number of newly recorded attempts.
+    """
+    if type(tenant_id) is not int:
+        raise MissingAttemptPayer("attempt_journal_payer_missing")
+    records = build_attempt_records(
+        envelopes,
+        None,
+        tenant_id=tenant_id,
+        source_id=None,
+        analysis_date=None,
+        task_payload=task_payload,
+        purpose=purpose,
+    )
+    if not records:
+        return 0
+
+    resolver = tariff_resolver or resolve_tariffs
+    tariffs = await resolver({record["model_id"] for record in records if record["model_id"]})
+
+    if journal is None:
+        from app.models.managers.llm_attempt_manager import LLMAttemptManager
+
+        journal = LLMAttemptManager()
+    created = 0
+    for record in records:
+        priced = price_attempt(record, tariffs.get(record["model_id"]))
+        priced["tenant_id"] = tenant_id
+        if await journal.record_attempt(priced):
+            created += 1
+    return created
+
+
+async def journal_scoped_attempts(envelopes: Any, *, purpose: str, task_payload: Any = None) -> int:
+    """Best-effort journaling in the ambient tenant scope; never breaks the caller.
+
+    Like the analyzer's bounded warning, a failure here is not durable
+    accounting and is not retried; the log carries no prompt, response or
+    payer values.
+    """
+    try:
+        from app.core.tenant_context import current_tenant_id
+
+        return await record_scoped_attempts(
+            envelopes, purpose=purpose, tenant_id=current_tenant_id(), task_payload=task_payload
+        )
+    except MissingAttemptPayer:
+        logger.warning("attempt_journal_payer_missing purpose=%s", purpose)
+    except Exception:
+        logger.warning("attempt_journal_write_failed purpose=%s", purpose)
+    return 0

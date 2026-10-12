@@ -10,7 +10,7 @@ from typing import Any
 from app.agent.tools import tool
 from app.models import AgentScenario, LLMModel, LLMProvider
 from app.models.managers.llm_model_manager import LLMModelManager
-from app.services.ai.llm_client import LLMClientFactory
+from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,12 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
 
     try:
         client = LLMClientFactory.create(model)
-        response = await client.chat([{"role": "user", "content": prompt}], max_tokens=200)
+        try:
+            response = await client.chat([{"role": "user", "content": prompt}], max_tokens=200)
+        except Exception:
+            await journal_chat_attempt(client, "model_test", None)
+            raise
+        await journal_chat_attempt(client, "model_test", response)
         content = response.get("content") or ""
         usage = response.get("usage", {})
         return {

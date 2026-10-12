@@ -693,10 +693,41 @@ async def _llm_models(query) -> list[LLMModel]:
     return list(await query.prefetch_related("provider"))
 
 
+async def journal_chat_attempt(client: Any, purpose: str, response: Optional[dict[str, Any]]) -> None:
+    """Journal one chat HTTP try in the ambient tenant scope; never breaks the call.
+
+    Every provider try is its own attempt with a fresh local identity,
+    including failed tries of the fallback chain. Returned chat values and the
+    message/digest/job cost projections are unchanged. Pre-dispatch refusals
+    (no API key, custom model without endpoint) are not paid attempts.
+    """
+    if not getattr(client, "api_key", None):
+        return
+    if isinstance(client, CustomClient) and not getattr(client.model, "custom_endpoint_path", None):
+        return
+    try:
+        from app.services.ai.attempt_journal import STAGE_CHAT, chat_attempt_envelope, journal_scoped_attempts
+
+        fields = ("input_tokens", "output_tokens") if isinstance(client, AnthropicClient) else None
+        envelope = chat_attempt_envelope(
+            model_id=client.model_name,
+            provider_name=client.provider.name.lower(),
+            dispatch_id=uuid4().hex,
+            raw=response.get("raw") if isinstance(response, dict) else None,
+            failed=response is None,
+            **({"usage_fields": fields} if fields else {}),
+        )
+        await journal_scoped_attempts({STAGE_CHAT: envelope}, purpose=purpose)
+    except Exception:
+        logger.warning("attempt_journal_write_failed purpose=%s", purpose)
+
+
 async def chat_with_fallback(
     messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
     preferred_model: Optional[LLMModel] = None, **kwargs
 ) -> dict[str, Any]:
+    # Accounting label only, never sent to the provider.
+    accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
     allowed_types = await _allowed_model_types()
@@ -718,7 +749,14 @@ async def chat_with_fallback(
         try:
             client = LLMClientFactory.create(model)
             # Usage is recorded inside client.chat (single recording point).
-            return await client.chat(messages, tools=tools, **kwargs)
+            # Each try, failed or not, is journaled as its own attempt.
+            try:
+                response = await client.chat(messages, tools=tools, **kwargs)
+            except Exception:
+                await journal_chat_attempt(client, accounting_purpose, None)
+                raise
+            await journal_chat_attempt(client, accounting_purpose, response)
+            return response
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
             if code == 429:

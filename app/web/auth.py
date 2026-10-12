@@ -161,7 +161,9 @@ async def register_submit(
 @router.get("/invite")
 async def invite_page(request: Request):
     needs_workspace = not getattr(request.state, "memberships", [])
-    return render(request, "web/invite.html", needs_workspace=needs_workspace)
+    # An invite link carries its code; the person only confirms joining.
+    code = request.query_params.get("code", "").strip().upper()[:32]
+    return render(request, "web/invite.html", needs_workspace=needs_workspace, code=code)
 
 
 @router.post("/invite")

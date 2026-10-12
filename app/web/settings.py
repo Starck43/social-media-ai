@@ -28,6 +28,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.models.tenant import Tenant
+from app.services.tenancy import member_roles
 from app.types import ActionType
 
 from .deps import action_tenant_id, add_flash, ensure_csrf, render
@@ -49,12 +50,10 @@ SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "telegram": (("session", "Telegram: файл сессии MTProto"),),
 }
 
-ROLE_LABELS = {
-    "owner": "Владелец",
-    "admin": "Администратор",
-    "member": "Участник",
-    "viewer": "Наблюдатель",
-}
+#: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
+ROLE_LABELS = {role.key: role.label for role in member_roles.MEMBER_ROLES}
+#: Invite validity choices, days.
+INVITE_DAYS: tuple[int, ...] = (1, 7, 30)
 
 #: The comparison table's rows: what each tier is compared on.
 #:
@@ -207,6 +206,11 @@ async def settings_page(request: Request):
         channels=channels,
         self_service_kinds=SELF_SERVICE_KINDS,
         role_labels=ROLE_LABELS,
+        member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
+        invite_roles=member_roles.INVITABLE,
+        invite_default=member_roles.DEFAULT_INVITE_KEY,
+        invite_days=INVITE_DAYS,
+        issued_invite=_pop_issued_invite(request),
         action_types=ActionType.choices(),
         plans=list(Tenant.PLANS),
         plan_labels=_plan_labels(),
@@ -488,19 +492,17 @@ async def membership_role(
         add_flash(request, "error", "Участник не найден")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
-    new_role = role.strip().lower()
-    if new_role not in ROLE_LABELS:
+    level = member_roles.resolve(role)
+    if level is None:
         add_flash(request, "error", f"Неизвестная роль: {role}")
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    new_role = level.key
 
-    # Resolve role string → role_id
-    codename_map = {"owner": "SUPERUSER", "admin": "ADMIN", "member": "VIEWER", "viewer": "VIEWER"}
-    codename = codename_map.get(new_role)
-    new_role_id: int | None = None
-    if codename is not None:
-        r = await Role.objects.filter(codename=codename).first()
-        if r is not None:
-            new_role_id = r.id
+    r = await Role.objects.filter(codename=level.codename).first()
+    if r is None:
+        add_flash(request, "error", "Роль не настроена — обратитесь к оператору")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    new_role_id = r.id
 
     if membership.is_owner and new_role != "owner":
         owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.is_owner]
@@ -510,6 +512,71 @@ async def membership_role(
 
     await tenant_users.update_by_id(membership.id, role_id=new_role_id)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+_ISSUED_INVITE_KEY = "_issued_invite"
+
+
+def _pop_issued_invite(request: Request) -> dict[str, Any] | None:
+    """The invite issued by the previous POST, shown exactly once."""
+    issued = request.session.pop(_ISSUED_INVITE_KEY, None)
+    if not isinstance(issued, dict) or not isinstance(issued.get("code"), str):
+        return None
+    link = f"{str(request.base_url).rstrip('/')}/app/invite?code={issued['code']}"
+    return {**issued, "link": link, "qr_svg": invite_qr_svg(link)}
+
+
+def invite_qr_svg(link: str) -> str | None:
+    """Inline SVG QR code for the invite link, or None when `segno` is missing."""
+    try:
+        import segno
+    except ImportError:  # optional: the link and the code still work without it
+        return None
+    return segno.make(link, error="m").svg_inline(scale=4, border=2, dark="#0f172a", light="#ffffff")
+
+
+@router.post("/invites")
+async def invite_issue(
+    request: Request,
+    role: str = Form(member_roles.DEFAULT_INVITE_KEY),
+    days: int = Form(7),
+    token: str = Form("", alias="_csrf"),
+):
+    """Issue a single-use invite link for this workspace with a chosen access level.
+
+    Only someone who manages this workspace may invite; the owner level is not
+    invitable (promote an existing member on this tab instead). The plaintext
+    code exists only in this response cycle — the database keeps its hash.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.managers.tenant_manager import TenantInviteManager
+
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    level = member_roles.resolve(role, invitable_only=True)
+    if level is None or days not in INVITE_DAYS:
+        add_flash(request, "error", "Выберите уровень доступа и срок действия из списка")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+    invite, code = await TenantInviteManager().issue(
+        tenant_id=tenant_id, role=level.codename, max_uses=1, expires_at=expires_at
+    )
+    if invite is None or invite.role_id is None:
+        add_flash(request, "error", "Роль не настроена — обратитесь к оператору")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    request.session[_ISSUED_INVITE_KEY] = {
+        "code": code,
+        "role": level.label,
+        "expires": expires_at.strftime("%d.%m.%Y %H:%M UTC"),
+    }
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
 

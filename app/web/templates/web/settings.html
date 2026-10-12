@@ -192,6 +192,58 @@
 
     {# ── team ────────────────────────────────────────────────────────── #}
     {% elif tab == 'team' %}
+        {% if issued_invite %}
+            <div class="mt-6 rounded-2xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/30 p-5" data-issued-invite>
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Приглашение создано</h3>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                    Уровень: {{ issued_invite.role }} · действует до {{ issued_invite.expires }} · одно использование.
+                    Код показывается один раз — скопируйте его сейчас.
+                </p>
+                <div class="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+                    {% if issued_invite.qr_svg %}
+                        <div class="shrink-0 rounded-lg bg-white p-2">{{ issued_invite.qr_svg|safe }}</div>
+                    {% endif %}
+                    <div class="min-w-0 flex-1 space-y-3">
+                        <div>
+                            <div class="text-xs text-slate-600 dark:text-slate-400">Код</div>
+                            <div class="font-mono text-lg tracking-widest text-slate-900 dark:text-slate-100">{{ issued_invite.code }}</div>
+                        </div>
+                        <div>
+                            <label for="invite-link" class="text-xs text-slate-600 dark:text-slate-400">Ссылка</label>
+                            <input id="invite-link" readonly value="{{ issued_invite.link }}" onclick="this.select()"
+                                   class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+        {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
+            <form method="post" action="/app/settings/invites"
+                  class="mt-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Пригласить участника</h3>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                    Ссылка и QR-код одноразовые. Уровень доступа можно поменять позже в таблице ниже.
+                </p>
+                <div class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                    <label class="block text-xs text-slate-600 dark:text-slate-400">Уровень доступа
+                        <select name="role" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for level in invite_roles %}
+                                <option value="{{ level.key }}" {% if level.key == invite_default %}selected{% endif %}>{{ level.label }} — {{ level.hint }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="block text-xs text-slate-600 dark:text-slate-400">Срок
+                        <select name="days" class="mt-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
+                            {% for d in invite_days %}
+                                <option value="{{ d }}" {% if d == 7 %}selected{% endif %}>{{ d }} {{ 'день' if d == 1 else 'дней' }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">Создать приглашение</button>
+                </div>
+            </form>
+        {% endif %}
         <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">
                 <thead>
@@ -210,7 +262,8 @@
                                     <span class="ml-2 text-xs text-slate-600 dark:text-slate-400">это вы</span>
                                 {% endif %}
                             </td>
-                            <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m.role, m.role) }}</td>
+                            {% set m_key = member_role_keys.get(m.id) %}
+                            <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m_key, 'Роль не назначена') if m_key else 'Роль не назначена' }}</td>
                             {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                                 <td class="px-5 py-3 text-right">
                                     <form method="post" action="/app/settings/members/{{ m.id }}/role"
@@ -218,7 +271,7 @@
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         <select name="role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
                                             {% for value, label in role_labels.items() %}
-                                                <option value="{{ value }}" {% if value == m.role %}selected{% endif %}>{{ label }}</option>
+                                                <option value="{{ value }}" {% if value == m_key %}selected{% endif %}>{{ label }}</option>
                                             {% endfor %}
                                         </select>
                                         <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>

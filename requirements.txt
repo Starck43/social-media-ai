@@ -39,6 +39,9 @@ sqladmin==0.32.0
 # Telegram MTProto (L2 collection; imported lazily — the app boots without it)
 telethon==1.45.0
 
+# Invite QR codes (pure Python; imported lazily — the link works without it)
+segno==1.6.6
+
 # Testing and development
 pytest==9.1.1
 pytest-asyncio==1.4.0

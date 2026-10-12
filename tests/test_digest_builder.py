@@ -5,7 +5,10 @@ import uuid
 import pytest
 
 from app.models import AgentTask, DigestRun
+from app.models.managers.digest_run_manager import PARTIAL_DELIVERY_REVIEW
 from app.services.digest import builder
+
+TASK_NAMES = ["it-digest", "it-digest-2", "it-digest-cost", "it-digest-partial", "it-digest-chunks"]
 
 
 @pytest.fixture(autouse=True)
@@ -17,10 +20,10 @@ async def _cleanup():
     tenant = await Tenant.objects.get(slug=settings.DEFAULT_TENANT_SLUG)
     with tenant_scope(tenant.id):
         await DigestRun.objects.delete()
-        await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
+        await AgentTask.objects.delete(name__in=TASK_NAMES)
         yield
         await DigestRun.objects.delete()
-        await AgentTask.objects.delete(name__in=["it-digest", "it-digest-2", "it-digest-cost"])
+        await AgentTask.objects.delete(name__in=TASK_NAMES)
 
 
 async def test_skipped_when_no_channels(monkeypatch):
@@ -128,6 +131,96 @@ async def test_scheduled_retry_reuses_run_row(monkeypatch):
 
     # And after success the period is locked in
     assert (await builder.build_and_publish(period="day", agent_task_id=schedule.id))["reason"] == "already_sent"
+
+
+async def _schedule(name):
+    return await AgentTask.objects.create(
+        name=name, cron_expr="0 9 * * *", job_type="digest", payload={"period": "day"}, is_active=True
+    )
+
+
+async def test_partial_delivery_is_terminal_and_not_resent(monkeypatch):
+    """One recipient succeeded, another failed: no retry error and no automatic resend."""
+    broadcasts, summaries = [], []
+
+    async def fake_broadcast(text):
+        broadcasts.append(text)
+        return {
+            "telegram:111": {"success": True, "message_id": 5, "message_ids": [5]},
+            "max:222": {"success": False, "error": "HTTP 503", "message_ids": []},
+        }
+
+    async def fake_summarize(data):
+        summaries.append(data)
+        return "ok", {"model": "test-model", "cost": 0.1}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+    schedule = await _schedule("it-digest-partial")
+
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    assert result["status"] == "failed" and result["error"] == PARTIAL_DELIVERY_REVIEW
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert len(rows) == 1 and rows[0].status == "failed"
+    assert rows[0].error.startswith(PARTIAL_DELIVERY_REVIEW) and "max:222" in rows[0].error
+    assert rows[0].message_id == "5" and rows[0].llm_cost == pytest.approx(0.1)
+
+    # A later attempt for the same schedule+period neither rebuilds nor resends.
+    again = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    assert again == {"status": "failed", "error": PARTIAL_DELIVERY_REVIEW}
+    assert len(broadcasts) == 1 and len(summaries) == 1
+    rows = await DigestRun.objects.filter(agent_task_id=schedule.id)
+    assert rows[0].error.startswith(PARTIAL_DELIVERY_REVIEW) and rows[0].llm_cost == pytest.approx(0.1)
+
+    # An explicit force run is the operator's resend decision.
+    forced = await builder.build_and_publish(period="day", agent_task_id=schedule.id, force=True)
+    assert forced["status"] == "failed" and len(broadcasts) == 2
+
+
+async def test_failed_recipient_with_delivered_chunks_is_partial(monkeypatch):
+    """A split message that failed after its first chunk must not be resent from the start."""
+
+    async def fake_broadcast(text):
+        return {"telegram:111": {"success": False, "error": "HTTP 502", "message_ids": [11], "message_id": 11}}
+
+    async def fake_summarize(data):
+        return None, {"model": None}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+    schedule = await _schedule("it-digest-chunks")
+
+    result = await builder.build_and_publish(period="day", agent_task_id=schedule.id)
+    assert result["status"] == "failed" and result["error"] == PARTIAL_DELIVERY_REVIEW
+    assert (await DigestRun.objects.filter(agent_task_id=schedule.id))[0].error.startswith(PARTIAL_DELIVERY_REVIEW)
+
+
+async def test_manual_partial_delivery_does_not_block_next_manual_run(monkeypatch):
+    calls = []
+
+    async def fake_broadcast(text):
+        calls.append(text)
+        return {
+            "telegram:111": {"success": True, "message_id": 1},
+            "telegram:333": {"success": False, "error": "HTTP 403"},
+        }
+
+    async def fake_summarize(data):
+        return None, {"model": None}
+
+    monkeypatch.setattr("app.channels.registry.broadcast_digest", fake_broadcast)
+    monkeypatch.setattr(builder, "_summarize", fake_summarize)
+
+    assert (await builder.build_and_publish(period="day"))["error"] == PARTIAL_DELIVERY_REVIEW
+    assert (await builder.build_and_publish(period="day"))["error"] == PARTIAL_DELIVERY_REVIEW
+    assert len(calls) == 2
+
+
+def test_delivered_any_classification():
+    assert builder._delivered_any({"success": True})
+    assert builder._delivered_any({"success": False, "message_ids": [3]})
+    assert not builder._delivered_any({"success": False, "error": "boom"})
+    assert not builder._delivered_any({"success": False, "message_ids": []})
 
 
 async def test_aggregate_shape():

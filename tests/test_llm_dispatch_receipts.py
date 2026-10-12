@@ -74,7 +74,11 @@ class ReceiptBuilderTests(unittest.TestCase):
     def test_explicit_zero_rates_are_free_basis_not_actual_provider_price(self):
         value = HELPERS.build_dispatch_receipt(
             model(input_cost_per_1k=0, output_cost_per_1k=0),
-            tenant_id=7, purpose="analysis", stage="text", dispatch_id="b" * 32, prepared_at=NOW
+            tenant_id=7,
+            purpose="analysis",
+            stage="text",
+            dispatch_id="b" * 32,
+            prepared_at=NOW,
         )
         self.assertEqual(value["tariff_state"], "free")
         self.assertNotIn("cost_usd", value)
@@ -85,7 +89,11 @@ class ReceiptBuilderTests(unittest.TestCase):
             with self.subTest(rate=rate):
                 value = HELPERS.build_dispatch_receipt(
                     model(input_cost_per_1k=rate, output_cost_per_1k=0),
-                    tenant_id=7, purpose="analysis", stage="text", dispatch_id="b" * 32, prepared_at=NOW
+                    tenant_id=7,
+                    purpose="analysis",
+                    stage="text",
+                    dispatch_id="b" * 32,
+                    prepared_at=NOW,
                 )
                 self.assertIsNone(value["input_cost_per_1k"])
                 self.assertEqual(value["tariff_state"], "undefined")
@@ -136,15 +144,16 @@ class ReceiptBuilderTests(unittest.TestCase):
 
     def test_labels_and_names_are_bounded(self):
         for field, value in (
-            ("purpose", "caller text"), ("stage", "A"), ("model_id", ""), ("provider_name", "x" * 201)
+            ("purpose", "caller text"),
+            ("stage", "A"),
+            ("model_id", ""),
+            ("provider_name", "x" * 201),
         ):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 HELPERS.validate_receipt(receipt(**{field: value}))
 
     def test_inconsistent_tariff_state_or_policy_is_rejected(self):
-        for changes in (
-            {"tariff_state": "free"}, {"pricing_policy_version": "injected"}, {"input_cost_per_1k": 0.1}
-        ):
+        for changes in ({"tariff_state": "free"}, {"pricing_policy_version": "injected"}, {"input_cost_per_1k": 0.1}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 HELPERS.validate_receipt(receipt(**changes))
 
@@ -152,8 +161,13 @@ class ReceiptBuilderTests(unittest.TestCase):
         for field in ("tenant_id", "dispatch_id", "prompt"):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 HELPERS.build_dispatch_receipt(
-                    model(), tenant_id=7, purpose="analysis", stage="text", dispatch_id="b" * 32,
-                    prepared_at=NOW, execution={field: "PRIVATE"}
+                    model(),
+                    tenant_id=7,
+                    purpose="analysis",
+                    stage="text",
+                    dispatch_id="b" * 32,
+                    prepared_at=NOW,
+                    execution={field: "PRIVATE"},
                 )
 
     def test_input_record_is_not_mutated(self):
@@ -211,6 +225,7 @@ def label(name):
     def decorate(cls):
         cls._app_label = name
         return cls
+
     return decorate
 
 
@@ -283,7 +298,9 @@ class ReceiptStorageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_changed_snapshot_time_or_execution_is_conflict(self):
         for field, value in (
-            ("input_cost_per_1k", Decimal("3")), ("prepared_at", NOW - timedelta(seconds=1)), ("job_id", 9)
+            ("input_cost_per_1k", Decimal("3")),
+            ("prepared_at", NOW - timedelta(seconds=1)),
+            ("job_id", 9),
         ):
             with self.subTest(field=field):
                 manager = MANAGER.LLMDispatchReceiptManager()
@@ -390,8 +407,11 @@ class DefinitionTests(unittest.TestCase):
             self.assertEqual(str(actual.type), str(column.type))
             self.assertEqual(actual.nullable, column.nullable)
         definitions = {item.name: str(item.sqltext) for item in captured.table[1] if hasattr(item, "sqltext")}
-        declared = {item.name: str(item.sqltext) for item in LEAF.LLMDispatchReceipt.__table__.constraints
-                    if hasattr(item, "sqltext")}
+        declared = {
+            item.name: str(item.sqltext)
+            for item in LEAF.LLMDispatchReceipt.__table__.constraints
+            if hasattr(item, "sqltext")
+        }
         self.assertEqual(definitions, declared)
         self.assertEqual(migration.down_revision, "0092")
 

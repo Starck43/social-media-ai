@@ -41,9 +41,7 @@ class LLMDispatchReceipt(Base, TenantScopedMixin):
         UniqueConstraint("dispatch_id", name="uq_llm_dispatch_receipts_identity"),
         CheckConstraint("dispatch_id ~ '^[0-9a-f]{32}$'", name="ck_llm_dispatch_receipts_identity"),
         CheckConstraint("tariff_state IN ('known', 'free', 'undefined')", name="ck_llm_dispatch_receipts_tariff_state"),
-        CheckConstraint(
-            "utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_llm_dispatch_receipts_utc_day"
-        ),
+        CheckConstraint("utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_llm_dispatch_receipts_utc_day"),
         CheckConstraint(
             "(input_cost_per_1k IS NULL OR (input_cost_per_1k >= 0 AND input_cost_per_1k <= 9999999999.99999999)) "
             "AND (output_cost_per_1k IS NULL OR "

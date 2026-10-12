@@ -50,9 +50,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "tariff_state IN ('known', 'free', 'undefined')", name="ck_llm_dispatch_receipts_tariff_state"
         ),
-        sa.CheckConstraint(
-            "utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_llm_dispatch_receipts_utc_day"
-        ),
+        sa.CheckConstraint("utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_llm_dispatch_receipts_utc_day"),
         sa.CheckConstraint(
             "(input_cost_per_1k IS NULL OR (input_cost_per_1k >= 0 AND input_cost_per_1k <= 9999999999.99999999)) "
             "AND (output_cost_per_1k IS NULL OR "

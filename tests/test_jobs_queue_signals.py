@@ -7,10 +7,11 @@ used, so "unconfirmed" means exactly what the job list already shows.
 """
 
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from source_import_isolation import load_isolated_source
 
@@ -71,9 +72,15 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
             guard_superuser=lambda *args, **kwargs: None,
             guard_web=lambda *args, **kwargs: None,
             plural=lambda *args: "",
-            render=AsyncMock(),
-            tenant_filter_context=AsyncMock(),
+            render=Mock(return_value="page"),
+            tenant_filter_context=AsyncMock(return_value=(None, [])),
         )
+        self.deps = deps
+
+        @contextmanager
+        def tenant_scope(**kwargs):
+            yield
+
         self.source = load_isolated_source(
             "app.web._jobs_queue_signals_isolated",
             ROOT / "app/web/jobs.py",
@@ -83,6 +90,14 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
                 "app.models.job": SimpleNamespace(Job=SimpleNamespace(objects=self.query)),
                 "app.web.deps": deps,
                 "app.jobs.recovery_policy": POLICY,
+                "app.core.tenant_context": SimpleNamespace(tenant_scope=tenant_scope),
+                "app.web.tasks": SimpleNamespace(_run_outcome=lambda job_type, result: "ok"),
+                "app.models": SimpleNamespace(
+                    Source=SimpleNamespace(
+                        id=SimpleNamespace(in_=lambda ids: ids),
+                        objects=SimpleNamespace(filter=AsyncMock(return_value=[])),
+                    )
+                ),
             },
         )
 
@@ -163,6 +178,22 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
     async def test_overview_without_tenant_does_not_add_a_filter(self):
         await self.source._queue_overview(None)
         self.assertEqual(self.query.filters, [])
+
+    async def test_jobs_list_passes_signals_and_thresholds_to_the_page(self):
+        self.query.rows = [job("running", locked_at=datetime.now(timezone.utc) - timedelta(hours=1))]
+        self.query.order_by = lambda *args: self.query
+        self.query.limit = lambda *args: self.query
+        self.source.Job.created_at = SimpleNamespace(desc=lambda: None)
+        for row in self.query.rows:
+            row.id, row.job_type, row.result, row.payload = 1, "collect", {}, {}
+        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_superuser=False), tenant_id=31))
+        self.assertEqual(await self.source.jobs_list(request), "page")
+        kwargs = self.deps.render.call_args.kwargs
+        self.assertEqual(kwargs["signals"]["stale_running"], 1)
+        self.assertEqual(kwargs["stats"]["running"], 1)
+        self.assertEqual(kwargs["overdue_pending_minutes"], self.source.OVERDUE_PENDING_MINUTES)
+        self.assertEqual(kwargs["stale_running_minutes"], self.source.STALE_RUNNING_MINUTES)
+        self.assertIn({"tenant_id": 31}, self.query.filters)
 
     def test_page_renders_signals_without_row_content(self):
         page = (ROOT / "app/web/templates/web/jobs.html").read_text()

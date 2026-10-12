@@ -186,6 +186,16 @@ filtering uses journal creation time, not a certified dispatch timestamp.
 These statistics are a partial-journal read API, not a replacement cap, a UI
 rollout, every-path capture or durable provider-report provenance.
 
+Journal persistence suppresses only the named `uq_llm_attempts_key` constraint.
+A duplicate is acknowledged only when its effective tenant and every persisted
+evidence field match (NULL is not zero); changed usage, tariff, price or outcome
+raises a redacted `AttemptEvidenceConflict`, never rewrites the row. Other
+integrity, read and commit failures propagate. The owned transaction must commit
+before the manager acknowledges an insert or exact replay. This is a persistence
+contract, not PostgreSQL race evidence or a durable pre-HTTP admission receipt.
+The analyzer's existing bounded write warning still applies: it is not a recovery
+queue and must not be interpreted as successful durable accounting.
+
 The existing USD/USD-cent projection adapters and chat paths remain compatible.
 Known rates with missing billable counts still have undefined actual cost; the
 known tariff snapshot must continue to govern reservation/reconciliation, not be
@@ -206,7 +216,10 @@ idempotency header. Caller keywords and provider response fields cannot replace 
 For these envelopes, the journal hashes a versioned identity bound to the tenant,
 purpose, stage and dispatch UUID. Separate invocations with identical model/usage
 remain distinct; persistence retries of one envelope retain its key even if usage,
-tariffs or projection/execution references change. No new schema fields are added:
+tariffs or projection/execution references change, but only identical persisted
+evidence is accepted as a replay. Re-resolving a changed tariff is a conflict, not
+permission to re-price history; dispatch-time snapshots remain to implement.
+No new schema fields are added:
 the UUID contributes to the existing `attempt_key`, rather than being a new column.
 Malformed non-null IDs are rejected, not replaced with a freshly minted identity.
 

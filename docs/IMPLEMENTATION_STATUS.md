@@ -51,26 +51,24 @@ certify a deployment, database revision or full release gate.
   checks passed. Full suite NOT RUN; faults were injected, not real network-loss
   proof. No schema setup/reset/migration was performed; synthetic test rows retained.
 - Preparation-receipt storage and frozen tariff basis ([PR #137](https://github.com/Starck43/social-media-ai/pull/137),
-  merge `9f76c81`, tested head `e8d335e`) are **MERGED, not activated**.
-  Accepted 143 no-DB methods and compiler/formatters; published PG source/log now
-  reviewed. Insert/replay/mismatch, tenant-scope refusal, UTC/tariff and mutation
-  rejection SQLSTATE 55000 are supported; final public revision 0092, journal 79,
-  enabled guards and 44 retained synthetic receipts are reported in the final log.
-  Approved definition-only application in test_schema is report-attributed.
-  Limitations: verifier COMMITTED trigger disable/restore, with one interrupted
-  disabled interval, rather than approved same-transaction rollback. Fault injection
-  raises BEFORE commit, not after successful commit/lost ack. Full catalog parity,
-  stored-key cross-tenant collision and stronger concurrency proof remain OPEN;
-  row counts do not prove historical content integrity. Do not rerun this runner
-  or clean up evidence. Stock Alembic check/production migrator/full suite and
-  runtime/cutover are not certified. Detailed evidence and follow-ups are in the PR.
-  Corrected verifier remains [Draft PR #154](https://github.com/Starck43/social-media-ai/pull/154),
-  head `69f95c9`. Owner-relayed 29 tests/compileall and all six PG checks PASS;
-  five receipts retained (44 -> 49). Verdict/manifest copied into PR with source
-  review and historical limitations retained. Targeted current-head Black/isort
-  confirmation remains pending; repository-wide formatting drift is not proof.
-  No PG repeat requested; existing successful log should be published, not rerun.
-  Earlier Index parity/42P18 failures occurred before writes; no runtime/schema change.
+  merge `9f76c81`, tested head `e8d335e`) and corrected PostgreSQL verifier
+  ([PR #154](https://github.com/Starck43/social-media-ai/pull/154), merge `e13905d`,
+  tested head `69f95c9`) are **DONE, integrated; storage NOT ACTIVATED**.
+  Accepted owner-local evidence: 143 foundation tests; 29 verifier tests,
+  compileall and focused Black/isort exit 0 at the exact verifier SHA; six PG
+  assertions PASS (scoped definition/model/catalog parity, transaction-local
+  guard refusal with rollback, stored-key tenant collision, pre-commit rollback
+  and post-successful-commit injected ack loss/replay, two-session barrier races,
+  preflight-to-final content fingerprints). Security/fresh merge compatibility passed.
+  Approved test-only 0093 definition application was report-attributed; public
+  version stays 0092, old journal 79, enabled guards and 49 receipts retained
+  after five new synthetic records. Do NOT rerun the old 44-row command or clean up.
+  Earlier #137 verifier committed guard disable/restore, leaving one interrupted
+  disabled interval; #154 fixes the proof method but does not certify historical
+  integrity during that interval. Faults are injected, not real network loss;
+  concurrency is same-process/two-session, not multi-process/load evidence.
+  Stock Alembic check/production migrator/full suite, runtime and cutover are not
+  certified. Fresh remote refs independently resolved the local SSH-fetch gap.
   Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
   dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
   concurrency/cutover evidence still require completion. See the existing

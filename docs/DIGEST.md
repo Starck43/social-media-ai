@@ -36,6 +36,11 @@ same payload for every channel; channels differ only in transport rules.
    rendered. A successful call prices its usage from `llm_models` tariffs and
    stores it on `digest_runs.llm_cost`, which is part of the cap's spend metric
    (`tenancy.resolver.daily_cost_today()`).
+   The owner-decided target pricing is three-state: provider-reported cost takes
+   precedence; an explicit zero from the provider or tariff table is FREE; a
+   known non-zero table rate is the reservation basis; no report and no tariff
+   is UNDEFINED (NULL, never free/zero, tracked separately). This policy does
+   not claim the current projection adapter or atomic admission is implemented.
 
 5. `render.py` renders HTML-safe text (the brief's Markdown is converted to the
    HTML subset the channels accept) with a length budget per channel.

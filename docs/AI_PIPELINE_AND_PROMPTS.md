@@ -193,6 +193,105 @@ with reservation settlement remain OPEN under
 [business readiness](BUSINESS_PRODUCTION_READINESS.md#prd-03--complete-bounded-economics).
 No whole-gate, target-database or production acceptance is claimed.
 
+### Proposed all-path accounting and admission contract
+
+Status: **Owner pricing decision recorded; admission implementation and evidence
+still pending — not activated**. This is the full-gate contract, not a new backlog
+or a release claim. Analyzer accounting certainty is integrated in PR #118;
+provider-reported pricing and the three-state runtime mapping remain to implement.
+
+**Payer and coverage.** Every actual HTTP attempt in all three clients must pass
+one accounting/admission boundary, whether reached by analysis, digest, agent
+chat, learning/reflection, prompt suggestion, an internal tool, fallback or retry.
+Trusted execution context binds tenant or explicitly configured operator payer,
+purpose and execution references; prompts, provider output and caller keywords
+cannot choose a payer. Missing scope is denied, never silently charged to a
+bootstrap workspace. Each fallback/retry gets a fresh dispatch identity; replay
+of one persistence event retains its identity. Record local validation failures
+as not-dispatched without claiming a paid attempt.
+
+**Durable preflight and evidence.** Before HTTP, use the existing manager/owned
+transaction conventions to atomically reserve budget and append an immutable
+receipt: payer, UUID, purpose/execution, provider/model, UTC day and preparation
+time, exact tariff snapshot, conservative reservation ceiling and policy version.
+Only an acknowledged commit grants dispatch. No DB lock spans network I/O.
+Preparation time is not proof that the provider received the request: a crash
+between commit and HTTP is an unresolved receipt, not a fabricated paid success.
+Terminal/uncertainty events append to the same identity; do not rewrite the
+insert-only journal or re-price old attempts from current model tariffs. The
+raw dispatch identity/time must be durable, not only an irreversible key hash.
+References to jobs, messages and results must not cascade-delete evidence.
+
+**Recorded pricing policy and admission contract.**
+
+- Keep the existing UTC day and resolved workspace/global cap semantics; do not
+  silently redefine plan ceilings or the existing unlimited sentinel.
+- Monetary authority is Decimal USD at the documented precision. Legacy USD and
+  USD-cent columns remain adapters, never summed again on top of ledger spend.
+- Owner-decided pricing truth (2026-10-12), replacing the earlier proposal that a
+  zero default tariff is unknown: FREE only on an explicit zero — the model itself
+  returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
+  own answer at first call arbitrates: a model-reported price is the cost, and a
+  non-zero table price is the known-price basis. No model price with an empty
+  table is UNDEFINED: never free, never zero, always registered in statistics and
+  related accounting actions; dispatch is not blocked by it, but it is
+  unreservable and outside cap-bounded spend by construction. Known token counts
+  remain distinct from missing usage. Preserve the approved tariff snapshot for
+  each dispatch.
+- For a capped payer, dispatch requires a reviewed upper-bound reservation
+  for all billable inputs/outputs, including media and provider-specific extras.
+  A character count or provider max-output setting alone is not such a bound.
+  An unresolvable price (UNDEFINED) does not fail closed: dispatch proceeds with a
+  zero ceiling and the undefined state is recorded. An unlimited payer
+  may bypass only the cap, not payer validation, receipts or outcome accounting.
+- Lock one payer/day budget row in an owned transaction. Admit only when settled
+  spend plus existing reservations plus the new ceiling fits the current cap;
+  insert receipt/reservation in that same transaction. Distinct tenants isolate
+  balances; a changed cap is checked at admission. Denial cannot trigger fallback
+  to bypass the same payer's limit. Intended overshoot is zero.
+- Settle known actual cost and release the unused reservation atomically and
+  idempotently with terminal evidence. Unexpected actual cost above its ceiling
+  records the full liability, freezes further admission and requires review;
+  do not clamp it to the reservation or claim the cap was never exceeded.
+- Missing usage, timeout, cancellation after possible dispatch, process loss or
+  uncertain settlement retains liability and blocks capped admission until
+  reconciled, including across UTC-day rollover. Release only with known cost
+  or proof of no dispatch/no charge. A TTL is not proof and never grants a refund.
+  Unknown evidence remains auditable even for explicitly unlimited payers.
+
+**Recovery and rollout.** A bounded reconciler retries append/settlement with the
+same event IDs, records unresolved states without raw secrets, and never resends
+an LLM request to repair accounting. Duplicate suppression must match the exact
+unique constraint; other integrity/commit failures remain visible. Use reviewed
+schema-qualified Alembic definitions only; no runtime-created tables, migration
+application, schema reset or deployment is authorized by this proposal. Before
+cutover, approve an existing-day baseline and old-worker/in-flight fence so
+projection-only spend is neither erased nor counted twice. Disable admission if
+the required schema/accounting service is unavailable; staged rollout must not
+start a second scheduler/listener/migration owner.
+
+**Full-gate acceptance evidence required, all still open.**
+
+- [ ] Mocked all-client/all-caller path matrix: every observed HTTP attempt has a
+  payer-bound receipt and distinct identity, including fallback, retry, tool,
+  failed output and failed transport; no double-recording or scope injection.
+- [ ] Owner-local PostgreSQL races: concurrent reservations at the cap, separate
+  tenants, cap changes, insert races, rollback and lost commit acknowledgements.
+  No request starts without committed admission; reserve/settle/replay is atomic.
+- [ ] Failure matrix: missing/invalid tariffs (UNDEFINED, dispatch with recorded
+  state), explicit zero tariffs (FREE), model-reported prices, unknown/partial usage,
+  unexpected overrun, cancelled tasks, crash windows, DB outage and UTC rollover;
+  unresolved liability cannot silently become free or admit further capped work.
+- [ ] Durable recovery and cleanup: repeated reconciliation adds no duplicate
+  cost; transcript/job/result cleanup retains immutable receipts/outcomes.
+- [ ] Operator-reviewed migration/cutover/rollback and baseline packet against an
+  explicitly approved isolated test target; focused unit plus affected integration
+  suites, exact SHAs and redacted transcripts. No automatic schema operations.
+
+The recorded owner pricing decision and development task permit preparing code
+and migration definitions, not applying them or enabling live dispatch. Gate acceptance requires
+this evidence, not merely merging the proposal or the analyzer patches.
+
 ## Key implementation files
 
 - `app/services/ai/analyzer.py` — modality analysis, validation, coverage and save flow.

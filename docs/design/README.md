@@ -7,7 +7,7 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `75a5347` (merge of [PR #179](https://github.com/Starck43/social-media-ai/pull/179)).
+Verified `origin/dev`: `7af4e0c7f01406c56de585dd77c45cbaf53a7eb3` (merge of [PR #184](https://github.com/Starck43/social-media-ai/pull/184)).
 Test-bootstrap evidence protection and stored-text escaping are integrated;
 prior delivered foundations remain in the implementation index. Active lanes
 are listed under Active ownership. Refresh `dev`, open PRs and this row before selecting work.

@@ -6,7 +6,7 @@ are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
 
-Verified `origin/dev`: `75a5347` (merge of [PR #179](https://github.com/Starck43/social-media-ai/pull/179)); test-bootstrap evidence protection is integrated. Stored-text escaping (PR #178, merge `6d99ffa`) and PR #168 outcome storage (merge `32924f7`) remain integrated. Receipt storage/verifier (PRs #137/#154), non-analyzer journal capture (#163) and registration privilege protection (#165) remain integrated. Immutable outcome storage is integrated but UNWIRED. This checkpoint does not certify deployment, a production database revision or any whole release gate.
+Verified `origin/dev`: `7af4e0c7f01406c56de585dd77c45cbaf53a7eb3` (merge of [PR #184](https://github.com/Starck43/social-media-ai/pull/184)); test-bootstrap evidence protection is integrated. Stored-text escaping (PR #178, merge `6d99ffa`) and PR #168 outcome storage (merge `32924f7`) remain integrated. Receipt storage/verifier (PRs #137/#154), non-analyzer journal capture (#163) and registration privilege protection (#165) remain integrated. Immutable outcome storage is integrated but UNWIRED. This checkpoint does not certify deployment, a production database revision or any whole release gate.
 
 ## Delivered foundations
 

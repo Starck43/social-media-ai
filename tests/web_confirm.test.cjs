@@ -116,7 +116,7 @@ test('template consumers reuse one shell and no native confirms', () => {
     const base = fs.readFileSync(path.join(root, 'base.html'), 'utf8');
     assert.equal(base.split('{% include "web/_confirm.html" %}').length, 2);
     assert.match(base, /defer[^\n]+ui-confirm\.js/);
-    for (const name of ['jobs', 'task_detail', 'task_edit', 'source_detail']) {
+    for (const name of ['jobs', 'task_detail', 'task_edit', 'source_detail', 'analytics_chains', 'analytics_chain_detail']) {
         const text = fs.readFileSync(path.join(root, `${name}.html`), 'utf8');
         assert.doesNotMatch(text, /\bconfirm\s*\(/);
         assert.match(text, /data-confirm/); assert.match(text, /name="_csrf"/);

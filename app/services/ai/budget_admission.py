@@ -72,8 +72,12 @@ def reservation_plan(
             ceiling_state = "bounded"
     else:
         raise ValueError("Invalid receipt tariff state")
-    return dict(ceiling_state=ceiling_state, ceiling_usd=ceiling_usd, bound_version=bound_version,
-                undefined_policy_version=UNDEFINED_POLICY_VERSION)
+    return dict(
+        ceiling_state=ceiling_state,
+        ceiling_usd=ceiling_usd,
+        bound_version=bound_version,
+        undefined_policy_version=UNDEFINED_POLICY_VERSION,
+    )
 
 
 def require_capacity(
@@ -97,8 +101,14 @@ def require_capacity(
 
 
 async def reserve_dispatch_receipt(
-    model: Any, *, purpose: str, stage: str, ceiling_usd: Decimal | None,
-    bound_version: str | None = None, execution: Mapping[str, Any] | None = None, budget: Any = None,
+    model: Any,
+    *,
+    purpose: str,
+    stage: str,
+    ceiling_usd: Decimal | None,
+    bound_version: str | None = None,
+    execution: Mapping[str, Any] | None = None,
+    budget: Any = None,
 ) -> Mapping[str, Any]:
     """Fresh trusted preparation plus reservation; never called by clients yet.
 
@@ -119,8 +129,13 @@ async def reserve_dispatch_receipt(
     if not _positive_id(payer):
         raise TenantContextError("Budget admission requires an explicit payer scope")
     record = build_dispatch_receipt(
-        model, tenant_id=payer, purpose=purpose, stage=stage, dispatch_id=uuid4().hex,
-        prepared_at=datetime.now(timezone.utc), execution=execution,
+        model,
+        tenant_id=payer,
+        purpose=purpose,
+        stage=stage,
+        dispatch_id=uuid4().hex,
+        prepared_at=datetime.now(timezone.utc),
+        execution=execution,
     )
     reservation_plan(record, ceiling_usd, bound_version)
     if budget is None:

@@ -44,8 +44,10 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Integer, sa.ForeignKey(f"{schema}.tenants.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("utc_day", sa.Date, nullable=False),
         sa.Column(
-            "dispatch_id", sa.String(32),
-            sa.ForeignKey(f"{schema}.llm_dispatch_receipts.dispatch_id", ondelete="RESTRICT"), nullable=False,
+            "dispatch_id",
+            sa.String(32),
+            sa.ForeignKey(f"{schema}.llm_dispatch_receipts.dispatch_id", ondelete="RESTRICT"),
+            nullable=False,
         ),
         sa.Column("ceiling_state", sa.String(16), nullable=False),
         sa.Column("ceiling_usd", sa.Numeric(18, 9), nullable=True),
@@ -56,7 +58,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["tenant_id", "utc_day"],
             [f"{schema}.llm_budget_days.tenant_id", f"{schema}.llm_budget_days.utc_day"],
-            ondelete="RESTRICT", name="fk_llm_budget_reservations_day",
+            ondelete="RESTRICT",
+            name="fk_llm_budget_reservations_day",
         ),
         sa.CheckConstraint("dispatch_id ~ '^[0-9a-f]{32}$'", name="ck_llm_budget_reservations_identity"),
         sa.CheckConstraint(

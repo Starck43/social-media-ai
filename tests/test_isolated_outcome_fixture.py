@@ -186,6 +186,119 @@ class SourceBoundaries(unittest.TestCase):
             self.assertIn(marker.lower(), source.lower())
 
 
+class ColumnStorageSignature(unittest.TestCase):
+    def test_float_and_double_precision_are_same_postgresql_storage(self):
+        from sqlalchemy import Float
+        from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
+
+        self.assertEqual(F.column_type_signature(Float()), F.column_type_signature(DOUBLE_PRECISION()))
+
+    def test_real_is_not_default_double_precision(self):
+        from sqlalchemy import Float
+        from sqlalchemy.dialects.postgresql import REAL
+
+        self.assertNotEqual(F.column_type_signature(Float()), F.column_type_signature(REAL()))
+        self.assertEqual(F.column_type_signature(Float(24)), F.column_type_signature(REAL()))
+        self.assertEqual(F.column_type_signature(Float(25)), F.column_type_signature(Float(53)))
+
+    def test_invalid_float_precision_rejects(self):
+        from sqlalchemy import Float
+
+        for precision in (0, 54):
+            with self.subTest(precision=precision), self.assertRaises(F.receipts.VerificationFailure):
+                F.column_type_signature(Float(precision))
+
+    def test_timestamp_rendering_does_not_hide_timezone(self):
+        from sqlalchemy import DateTime
+        from sqlalchemy.dialects.postgresql import TIMESTAMP
+
+        self.assertEqual(
+            F.column_type_signature(DateTime(timezone=True)), F.column_type_signature(TIMESTAMP(timezone=True))
+        )
+        self.assertNotEqual(
+            F.column_type_signature(DateTime(timezone=True)), F.column_type_signature(TIMESTAMP(timezone=False))
+        )
+
+    def test_timestamp_precision_is_preserved(self):
+        from sqlalchemy import DateTime
+        from sqlalchemy.dialects.postgresql import TIMESTAMP
+
+        self.assertEqual(
+            F.column_type_signature(DateTime(timezone=True)),
+            F.column_type_signature(TIMESTAMP(timezone=True, precision=6)),
+        )
+        self.assertNotEqual(
+            F.column_type_signature(DateTime(timezone=True)),
+            F.column_type_signature(TIMESTAMP(timezone=True, precision=3)),
+        )
+
+    def test_numeric_precision_and_scale_are_preserved(self):
+        from sqlalchemy import Numeric
+        from sqlalchemy.dialects.postgresql import NUMERIC
+
+        expected = F.column_type_signature(Numeric(18, 9))
+        self.assertEqual(expected, F.column_type_signature(NUMERIC(18, 9)))
+        for other in (NUMERIC(17, 9), NUMERIC(18, 8), NUMERIC()):
+            self.assertNotEqual(expected, F.column_type_signature(other))
+
+    def test_length_collation_integer_width_and_json_kind_are_preserved(self):
+        from sqlalchemy import JSON, BigInteger, Integer, String, Text
+        from sqlalchemy.dialects.postgresql import JSONB, VARCHAR
+
+        self.assertEqual(F.column_type_signature(String(100)), F.column_type_signature(VARCHAR(100)))
+        for other in (String(50), String(100, collation="C"), Text()):
+            self.assertNotEqual(F.column_type_signature(String(100)), F.column_type_signature(other))
+        self.assertNotEqual(F.column_type_signature(Integer()), F.column_type_signature(BigInteger()))
+        self.assertNotEqual(F.column_type_signature(JSON()), F.column_type_signature(JSONB()))
+
+    def test_unreviewed_type_is_not_accepted_by_rendering(self):
+        from sqlalchemy import LargeBinary
+
+        with self.assertRaises(F.receipts.VerificationFailure):
+            F.column_type_signature(LargeBinary())
+
+    def shape(self, *, timezone=True, length=100, nullable=False, reverse=False):
+        from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table
+        from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, INTEGER, TIMESTAMP, VARCHAR
+
+        table = Table(
+            "fixture_shape",
+            MetaData(schema=F.TARGET[1]),
+            Column("id", Integer, primary_key=True),
+            Column("cost", Float, nullable=False),
+            Column("name", String(100), nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+        )
+        columns = [
+            {"name": "id", "type": INTEGER(), "nullable": False, "default": "nextval('fixture_id_seq')"},
+            {"name": "cost", "type": DOUBLE_PRECISION(), "nullable": False, "default": "5.0"},
+            {"name": "name", "type": VARCHAR(length), "nullable": nullable, "default": None},
+            {"name": "created_at", "type": TIMESTAMP(timezone=timezone), "nullable": False, "default": "now()"},
+        ]
+        inspector = SimpleNamespace(
+            get_columns=lambda *a, **kw: list(reversed(columns)) if reverse else columns,
+            get_pk_constraint=lambda *a, **kw: {"constrained_columns": ["id"]},
+            get_check_constraints=lambda *a, **kw: [],
+            get_foreign_keys=lambda *a, **kw: [],
+        )
+        with (
+            patch("sqlalchemy.inspect", return_value=inspector),
+            patch.object(F.receipts, "reflected_keys", return_value={}),
+        ):
+            return F.base_shape(object(), table)
+
+    def test_real_type_objects_pass_base_shape_without_string_equality(self):
+        value = self.shape()
+        self.assertEqual(value["columns"][1][1], ("float", 53))
+        self.assertEqual(value["columns"][3][1], ("timestamp", True, 6))
+        self.assertEqual(value["columns"][3][3], "now()")
+
+    def test_base_shape_rejects_real_timezone_length_nullability_and_order_drift(self):
+        for change in ({"timezone": False}, {"length": 50}, {"nullable": True}, {"reverse": True}):
+            with self.subTest(change=change), self.assertRaises(F.receipts.VerificationFailure):
+                self.shape(**change)
+
+
 class Transaction:
     def __init__(self, engine):
         self.engine = engine

@@ -239,21 +239,67 @@ def prepare(connection, models, receipt_module, outcome_module):
         connection.execute(insert(receipt.__table__).values(**value, created_at=FIXTURE_TIME))
 
 
+def column_type_signature(value):
+    """Compare PostgreSQL storage properties, not driver-specific type rendering."""
+    from sqlalchemy import types
+    from sqlalchemy.dialects import postgresql
+
+    if isinstance(value, types.Float):
+        if isinstance(value, postgresql.REAL):
+            bits = 24
+        elif isinstance(value, types.Double):
+            bits = 53
+        else:
+            precision = value.precision
+            require(precision is None or 1 <= precision <= 53, "Fixture float precision")
+            bits = 53 if precision is None or precision > 24 else 24
+        return ("float", bits)
+    if isinstance(value, types.DateTime):
+        precision = getattr(value, "precision", None)
+        return ("timestamp", value.timezone, 6 if precision is None else precision)
+    if isinstance(value, postgresql.JSONB):
+        return ("jsonb",)
+    generic = value.as_generic()
+    kind = type(generic)
+    require(
+        kind
+        in (
+            types.SmallInteger,
+            types.Integer,
+            types.BigInteger,
+            types.String,
+            types.Text,
+            types.Boolean,
+            types.JSON,
+            types.Numeric,
+            types.Date,
+        ),
+        "Unsupported fixture column type",
+    )
+    return (
+        kind.__name__,
+        getattr(generic, "length", None),
+        getattr(generic, "precision", None),
+        getattr(generic, "scale", None),
+        getattr(generic, "collation", None),
+    )
+
+
 def base_shape(connection, table):
     from sqlalchemy import inspect
-    from sqlalchemy.dialects import postgresql
 
     inspector = inspect(connection)
     columns = inspector.get_columns(table.name, schema=TARGET[1])
-    wanted = [(c.name, str(c.type.compile(dialect=postgresql.dialect())), c.nullable) for c in table.columns]
-    require([(c["name"], str(c["type"]), c["nullable"]) for c in columns] == wanted, "Fixture model columns")
+    wanted = [(c.name, column_type_signature(c.type), c.nullable) for c in table.columns]
+    actual = [(c["name"], column_type_signature(c["type"]), c["nullable"]) for c in columns]
+    require(actual == wanted, "Fixture model columns")
     require(
         inspector.get_pk_constraint(table.name, schema=TARGET[1])["constrained_columns"] == ["id"],
         "Fixture primary key",
     )
     keys = receipts.reflected_keys(inspector, table)
     return {
-        "columns": [(c["name"], str(c["type"]), c["nullable"], c["default"]) for c in columns],
+        "columns": [(c["name"], column_type_signature(c["type"]), c["nullable"], c["default"]) for c in columns],
         "checks": inspector.get_check_constraints(table.name, schema=TARGET[1]),
         "foreign_keys": inspector.get_foreign_keys(table.name, schema=TARGET[1]),
         **keys,

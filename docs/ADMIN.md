@@ -321,6 +321,22 @@ All templates have access to:
 
 ## Security
 
+### Web template escaping (`/app`)
+
+The separate web Jinja environment (`app/web/deps.py`) autoescapes HTML/XML
+templates and string templates. Stored names, prompts, errors and form values
+are text; do not bypass escaping with `safe` or a template-wide autoescape block.
+Serialize script data with `tojson`, not string interpolation. Alpine macro
+attributes use mappings rendered through `xmlattr`; only template-authored
+expressions belong there. Dynamic confirmation messages use `data-confirm` and
+the shared text-only dialog, never interpolation inside executable handlers.
+
+Template macros and captured template blocks retain their own HTML markup while
+their variable values are escaped. The invite QR SVG is the one explicit `safe`
+exception: it is generated locally by `segno`, not supplied as stored/user HTML.
+This policy does not change sqladmin's separate template environment, authorize
+external actions or sanitize URL schemes.
+
 ### Session Authentication
 
 - Uses sqladmin's `AuthenticationBackend` with session storage

@@ -1,6 +1,6 @@
 {# One confirmation shell per /app page; callers provide text through data-confirm. #}
 <style>
-    .ui-confirm-dialog { width: min(28rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); }
+    .ui-confirm-dialog { box-sizing: border-box; width: min(28rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); }
     .ui-confirm-dialog::backdrop { background: rgb(2 6 23 / 60%); }
     .dark .ui-confirm-dialog::backdrop { background: rgb(2 6 23 / 80%); }
 </style>

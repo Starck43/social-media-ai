@@ -84,20 +84,19 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **BLOCKED, NOT merged/activated**, primary head `f8cbe69`. Unchanged
-  foundation `5511a69`: remote 43 tests, owner-local 116/registry checks PASS.
-  Application runner: 18 remote no-DB tests/compiler/scoped formatters PASS.
-  Approved option-(b) attempt stopped BEFORE DDL on shared-journal drift;
-  [owner report](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6134825709)
-  diagnoses 49 receipts (full hash unchanged), 188 journal, 362 tenants,
-  public0092, intact0093, absent0094. Historical journal/tenant subset integrity
-  is not established by the new whole-table digest. Next: agreed idle window,
-  fresh read-only baseline confirmation, then one revised pinned application.
-  Auxiliary prepared verifier `c1320ac` adds only two files and has 16 remote
-  no-DB tests/compiler/scoped formatters PASS; not applied to the primary head
-  or run against PG. Synthetic writes/rollback-only probes require separate
-  approval and successful application evidence. No runtime/admission/settlement
-  or full PRD-03 acceptance. Exact hashes, commands and handoff are in the PR.
+  is **IN_PROGRESS, NOT merged/activated**, primary head `f8cbe69`. Foundation
+  `5511a69`:remote43 / owner-local116 + registry PASS; application runner18
+  remote tests PASS. [Owner published application](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6147777786)
+  atf8cbe69 is **APPLICATION_PASS, exit0**: rollback rehearsal, committed0094
+  definition/model/catalog parity, public0092, zero events, UTC49/188/380 baseline
+  preserved since preflight. Remote validation of the published JSONL structure
+  passed; no remote DB execution.0094 now exists in test_schema; do not rerun
+  application or cleanup. Auxiliary verifier`c1320ac`/16 remote tests remains
+  prepared, not primary head. Functional PG replay/collision/guards/races/ack/UTC
+  evidence awaits separate approval for seven synthetic events and NEW-object
+  rollback-only probes, followed by verifier integration/exact-head handoff.
+  No production migrator, permissions/bootstrap, runtime/admission/settlement
+  or full PRD-03 acceptance. Exact attribution and retention limits in PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

@@ -85,18 +85,16 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **BLOCKED, NOT merged/activated**, head`bc854b4`; prior43/116/registry,
-  application18 and verifier16 checks retain original SHA attribution in PR.
-  Application atf8cbe69 PASS. Functional preflight stopped on shared-target drift
-  and missing event UNIQUE. [Owner restoration](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6151232195)
-  RESTORE_PASS accepted for restored-catalog equality only; public0092,zero events.
-  Moving tenant382/hash is NOT accepted; functional command withdrawn pending
-  coordinated window and two fresh stableUTC snapshots. Generic test-bootstrap
-  repair can drop db-only table uniques when older metadata omits the model:
-  two remote pure-function assertions reproduced this mechanism withoutDB/DDL.
-  Actual drop actor is unproven; review existing schema-repair logs, no replay.
-  Preserve evidence, no additional repair/application/reset/cleanup or access
-  changes. Functional approval retained but execution held; no full-gate acceptance.
+  is **BLOCKED, NOT merged/activated**, head`bc854b4`; original43/116/registry,
+  runner18/verifier16 evidence retains SHA attribution in PR. Applicationf8cbe69
+  PASS; restored catalog accepted, functional PG not run. [Owner stable snapshots](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6151619294)
+  are identicalUTC49/188/384 with enabled0093/0094,public0092,zero events.
+  Current384-row snapshot accepted for preservation, NOT future writer exclusion.
+  Remaining blocker: owner/cooperating shared-schema writers acknowledge pause
+  through functional run+final verification; observation alone is insufficient.
+  Then fresh exactUTCpreflight/reissued384 command atsameSHA; no repeated waiting
+  probes/application/repair/reset/cleanup. Older-metadata automatic UNIQUE drop
+  mechanism confirmed, actual actor still unproven. FullPRD-03 remains open.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

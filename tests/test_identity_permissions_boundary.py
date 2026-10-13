@@ -187,7 +187,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             return send_response
 
         modules = {
-            "jose": module_with(JWTError=RuntimeError, jwt=None),
             "starlette.requests": module_with(Request=lambda scope: SimpleNamespace(state=SimpleNamespace())),
             "starlette.responses": module_with(JSONResponse=response),
             "starlette.types": module_with(ASGIApp=object, Receive=object, Scope=object, Send=object),

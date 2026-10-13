@@ -45,8 +45,14 @@
   Preserve the private environment.
 
 - **R10 — Kilo owns test execution.** Start Kilo's `test-orchestrator` with
-  `kilo run --dir <worktree> --agent test-orchestrator --format json --file <task-file>`;
+  `kilo run "<message>" --dir <worktree> --agent test-orchestrator --format json --file <task-file>`;
   it delegates to the project's `test-runner` child using Kilo's `task` tool.
+  For Kilo 7.8.8 the message is required and must precede the flags: `--file`
+  accepts an array and consumes a trailing message as another filename.
+  The agent configuration is selected from `--dir`; verify that its orchestrator
+  can read the assigned task file. Internal placement alone does not fix
+  `read: deny`; external files also require permitted external-directory access.
+  A read denial is BLOCKED, never permission to use an IDE/shell fallback.
   The child must use the connected `pare-test` MCP `run` tool, passing the project
   `.venv/bin/python`, the worktree root, the assigned test paths as **positional
   arguments**, and the pytest args `--noconftest -o addopts= -q --tb=short --no-header`.

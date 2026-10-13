@@ -59,11 +59,13 @@ and consumes the compact final summary. External headless launch:
 
 ```sh
 # Kilo CLI — test-orchestrator delegates to .kilo/agents/test-runner.md
-kilo run --dir /absolute/task/worktree --agent test-orchestrator --format json \
-  --file /absolute/task/worktree/.agent/test-task.md \
-  "Delegate the attached test task to the project test-runner child using Kilo's task tool. Return only the child's TEST RUN summary."
+kilo run "Delegate the attached test task to test-runner. Return only its TEST RUN summary." \
+  --dir /absolute/task/worktree --agent test-orchestrator --format json \
+  --file /absolute/task/worktree/.agent/test-task.md
 ```
 
+- For Kilo 7.8.8, supply the required message **before the flags**. `--file` is an array option: text after it is treated as another file; omitting the message also fails.
+- Agent configuration comes from the checkout selected by `--dir`. The orchestrator must be permitted to read the attached task file; moving it inside the worktree does not overcome `read: deny`. External task files additionally require permitted external-directory access. Fix the reviewed configuration/placement or return BLOCKED; do not read through an IDE/shell tool to bypass a denial.
 - Kilo uses its configured `test-orchestrator` and `test-runner` agents, plus the connected `pare-test` MCP server. The child passes `<worktree>/.venv/bin/python` and the worktree path to MCP. Do not use `--pure` (it disables external plugins), `--auto`, or shared sessions. If the child or MCP runner is unavailable, report BLOCKED.
 - The Codex `subagents` MCP (`codex-as-mcp`) creates Codex agents and is separate from this Kilo test route.
 - No provider/model credentials are stored in the repository.

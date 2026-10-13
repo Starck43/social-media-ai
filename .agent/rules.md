@@ -21,9 +21,11 @@
 - **R6 — Preserve local owner work.** `/Users/admin/Projects/social-media-ai`
   (branch `dev`) is the primary sequential development and integration checkout.
   Inspect status before changes; never discard, stash, or commit unrelated work.
-  Direct local commits in `dev` are allowed after the owner accepts the proposed
-  coherent commit split/messages. The closeout phrases defined in `AGENTS.md`
-  provide that authorization for completed, validated and task-scoped changes.
+  For ordinary work, direct local commits in `dev` require owner acceptance of
+  the proposed coherent commit split/messages. A user-started ROADMAP Goal that
+  explicitly requires a commit after each accepted task authorizes those local,
+  task-scoped commits without another prompt. Closeout phrases in `AGENTS.md`
+  authorize validated task-scoped commits as well.
   Use an isolated worktree only when parallel work, PR review, risky
   experimentation or conflicting changes require it.
 - **R7 — Isolate PR review and parallel work.** Never verify two PRs in one working tree:
@@ -37,9 +39,19 @@
   prepared. Never create, reset, drop, stamp or migrate schemas automatically —
   `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
   column fix require an explicit owner instruction. These restrictions override
-  any older automatic-reset advice. Delegation to local OpenCode/Kilo is authorized:
-  they may execute requested tests sequentially with these same restrictions.
+  any older automatic-reset advice. Delegation through Kilo's `test-orchestrator`
+  to its local `test-runner` child is authorized; it must execute requested tests
+  sequentially with these restrictions.
   Preserve the private environment.
+
+- **R10 — Kilo owns test execution.** Start Kilo's `test-orchestrator` with
+  `kilo run --dir <worktree> --agent test-orchestrator --format json --file <task-file>`;
+  it delegates to the project's `test-runner` child using Kilo's `task` tool.
+  The child must use the connected `pare-test` MCP `run` tool, passing the project
+  `.venv/bin/python` and `-o addopts='' -q --tb=short --no-header`. Never run
+  pytest in the coordinating Codex process or fall back to shell pytest in Kilo.
+  Kilo's global config is `~/.config/kilo/kilo.jsonc`; the active server is
+  `mcp.pare-test`. Runs remain sequential under R8.
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
   packages after verifying fresh PR/dev heads, compatibility, required checks

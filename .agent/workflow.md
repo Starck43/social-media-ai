@@ -3,10 +3,9 @@
 ## Sources of truth
 - Read AGENTS.md and .agent/rules.md for engineering and environment constraints.
 - Use docs/PRODUCT_PLAN.md for product direction and docs/BUSINESS_PRODUCTION_READINESS.md for stable engineering and release gates. Read only task-relevant sections.
-- Use docs/design/README.md as the only prioritized open-work queue and ownership board.
+- Use docs/design/README.md as the only persistent product queue and ownership board. Root ROADMAP.md is a per-audit execution ledger; keep its task section empty between audits.
 - Use docs/IMPLEMENTATION_STATUS.md as the compact index of delivered foundations. Use Git and the linked PR for exact revisions and original evidence. MERGED is not whole-gate acceptance.
-- Treat .agent/tasks.md and .agent/state.json as historical/supporting records unless reconciled with fresh GitHub heads and the board. Never select their old "next" items blindly. Invalid JSON is unavailable state, not permission to discard or reconstruct another agent's records.
-- Do not create a second backlog or additional competing handoff documents.
+- Treat .agent/state.json as historical/supporting state unless reconciled with fresh GitHub heads and the board. Never select old "next" items blindly. Invalid JSON is unavailable state, not permission to discard or reconstruct another agent's records.
 
 ## Start or resume
 1. Identify local or remote execution, branch, HEAD, base dev and dirty files. Read current instructions.
@@ -22,23 +21,41 @@
 - Reuse completed evidence at its exact revision. Repeat checks only for changed code, dependencies, failures or unresolved risk.
 - One bounded task per session/PR. Do not add many speculative skills or MCP tools.
 
+## Audit and parallel execution
+
+For a requested audit of completed work, first verify branch, HEAD, PR heads and
+the task board. Split read-only coverage by independent subsystem or claim family.
+Ask each Codex subagent for evidence-backed findings, file/PR/SHA references,
+risk and an executable acceptance condition. The parent deduplicates findings,
+checks important claims against current code, and writes only accepted bounded
+work items to the task section of root ROADMAP.md.
+
+Each item needs an ID, outcome/acceptance check, dependencies, exclusive file
+ownership and status (TODO, IN_PROGRESS, BLOCKED, DONE, DROPPED). Mark parallel
+items and file boundaries so agents do not own the same write lane. Use the
+smallest useful number of subagents (often two or three); skip delegation when
+coordination costs exceed the parallel/context benefit. Assign one task per
+Codex subagent, each in a separate worktree/branch; request a compact summary
+and changed paths, not investigation traces. Parallelize only independent
+lanes. The parent integrates and reviews evidence, updates the ledger, and
+commits completed items one at a time. Run dependent work in dependency order.
+Mark a checkbox [x] only after acceptance evidence is verified. Tests remain
+serialized through Kilo under .agent/rules.md R8/R10.
+
+Start or resume a long-running implementation with /goal pointing at the
+specific ROADMAP.md and naming completion evidence and constraints. /goal is
+thread-scoped continuation state, not a repository task tracker. Do not ask
+subagents to edit generated Codex memories; store durable policy here, product
+priority on the board, and exact evidence in Git/PRs.
+
 ## Checkpoint and handoff
-Update the current board/ledger and any existing PR description before ending,
-switching sessions or handing off. When there is no PR, provide the compact block
-in chat. Preserve relevant evidence and never invent a commit SHA for uncommitted work.
+Update the current board, active ROADMAP task rows and any existing PR
+description before ending, switching sessions or handing off. When there is no
+PR, provide the compact block in chat. Preserve relevant evidence and never
+invent a commit SHA for uncommitted work.
 
-### Current handoff
-- Task/gate and acceptance criteria:
-- Execution mode and owner:
-- Branch / base dev SHA / implementation SHA:
-- Uncommitted files or patch, if any:
-- Completed behavior and relevant paths:
-- Decisions and unresolved questions:
-- Checks: exact command, tested SHA, result, attribution (executed here / owner-reported / deferred):
-- Blockers and required local checks:
-- Next concrete action:
-
-Keep this block under about 500 words; link to existing contracts/evidence. The implementation SHA is the revision tested, not necessarily the later documentation-only commit.
+Use the compact handoff template in docs/COLLABORATION.md; keep it under about
+500 words, link existing evidence, and record the tested implementation SHA.
 
 ## Completion
 Update the existing ownership row and implementation ledger when integration/evidence changes. Distinguish IN_PROGRESS, BLOCKED, READY (checks complete), MERGED and gate ACCEPTED. Verify actual merge before releasing reservation; never close a whole gate from one merged slice.

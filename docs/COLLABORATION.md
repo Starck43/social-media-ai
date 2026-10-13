@@ -1,91 +1,75 @@
-# Local collaboration
+# Collaboration Protocol
 
-The owner develops locally, with `dev` as the integration branch. Agents complete
-authorized work independently and keep result reports short. The durable workflow
-is in `AGENTS.md`; shared database restrictions are in `.agent/rules.md`.
+Handoff, delegation-launch, and task-file contract. Operational rules: `AGENTS.md`; DB/worktree constraints: `.agent/rules.md`.
 
-## Branches and pull requests
+## Audits, Goals and Codex subagents
 
-Inspect `git status` and `git worktree list` first. For one sequential local task,
-work directly in `dev` and keep its diff coherent. Preserve unrelated edits.
-Create a branch/worktree for parallel work, PR review, risky experiments,
-conflicts, or an explicit owner request. At completion, show the proposed commit
-split/messages and offer to commit the validated task directly in `dev`. A PR is
-optional for ordinary local work. Never push `dev`, merge or deploy automatically.
+Use Codex subagents for independent read-heavy audit lanes and bounded
+implementation tasks. They reduce noise in the coordinating thread, but add
+total model work; reserve them for parallelizable tasks. Give each agent one
+question or task, a file/claim boundary, relevant SHA, expected evidence and a
+compact response format. The coordinator owns audit synthesis, task acceptance,
+integration and final verification.
 
-## Testing delegation
+For an audit execution, populate root ROADMAP.md only after findings are
+deduplicated and accepted. Clear its task rows between executions;
+docs/design/README.md remains the only persistent product queue. Record task
+ID, acceptance check, dependencies, exclusive write ownership, status and
+verification. Independent write tasks get separate Codex subagents in separate
+worktrees/branches.
+Integrate one finished task at a time, then update its checkbox and make a local
+commit with matching evidence. Never mark a task done because an agent merely
+reports completion; inspect the diff and verification at the exact tested SHA.
+Commit only task-scoped work. After integration, clear completed rows and
+transfer unresolved product work to the canonical board.
 
-OpenCode is available at `/usr/local/bin/opencode`. Kilo CLI 7.8.8 is available
-as `kilo`; its local `test-runner` agent is stored under the ignored
-`.kilo/agents/` directory. No provider/model credentials are stored in the
-repository or changed by this setup.
+Start /goal only when the audit/implementation has a measurable finish line.
+Point it at the active ROADMAP.md task list; include verification, constraints
+and a blocked stop condition. Goals persist within a thread and do not replace the
+checked-in task ledger. Codex-generated memories are opportunistic recall, not
+the source of project policy or current task state; do not manually maintain
+them for workflow continuity.
 
-For a broad check, write a task file under `.agent/` (ignored unless explicitly
-tracked), then launch OpenCode from the task worktree:
+Useful OpenAI guidance: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
+[Codex memories](https://learn.chatgpt.com/docs/customization/memories),
+[Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
-```sh
-opencode run --dir /absolute/task/worktree --format json \
-  --file /absolute/task/worktree/.agent/test-task.md \
-  "Execute the attached testing task and write the requested report."
-```
+## Closeout procedure (triggered by the phrases listed in AGENTS.md)
 
-Use the configured model by default; choose a cheaper configured model only when
-its availability is known. Do not enable `--auto` or share sessions. If a launch
-requires sandbox escalation, use the normal approval mechanism rather than
-bypassing it. Local CLI help is the source of truth for installed flags;
-[OpenCode CLI documentation](https://dev.opencode.ai/v2/docs/cli/commands/)
-also describes noninteractive runs and file attachments.
-
-Kilo uses the same task/report files and a permission-restricted project agent:
-
-```sh
-kilo run "Execute the attached testing task and write .agent/test-report.md." \
-  --pure --dir /absolute/task/worktree --agent test-runner --format json \
-  --file /absolute/task/worktree/.agent/test-task.md
-```
-
-Choose a configured Kilo model with `--model provider/model` only when the owner
-or coordinator names it. Kilo's `mcp` command connects tools to Kilo; it does not
-expose Kilo models to Codex. Delegation therefore uses the headless CLI directly.
-
-Each testing task must specify:
-
-- Absolute worktree, branch, expected commit, changed behavior, and test scope.
-- Read `AGENTS.md` and `.agent/rules.md`; use the project `.venv`.
-- Run tests only, without application edits, Git changes, publication, or DB
-  setup/reset/drop/stamp/migration operations.
-- Check for active pytest processes before starting. All existing worktrees
-  share the test schema: tests must run sequentially. If another runner is active,
-  report the conflict and do not start. The coordinating agent must serialize runs.
-- Report exact commands, exit codes, passed/failed/skipped counts, failure excerpts,
-  environment blockers, and any incomplete/interrupted runs to `.agent/test-report.md`.
-  Never include secrets or full environment dumps.
-
-The coordinating agent reads the report, checks that the tested commit matches,
-and reports completed validation accurately. Infrastructure blockers are not a
-successful test. Do not run a broad suite simply to validate documentation edits.
-
-## Closing a substantial task
-
-The phrases `закрываю чат`, `чат закрываем`, `закрываем чат`, `завершаем чат`,
-`задача завершена`, `задача с подзадачами завершена`, or
-`подготовь новый чат` request this closeout even when the task stops early. These
-phrases authorize local `dev` commits for completed, validated and task-scoped
-changes without another question. Exclude unrelated, incomplete or unvalidated
-changes, record them in the handoff, and do not convert an early stop into completion.
-
-Provide a concise result and offer a new chat with this handoff filled in:
+1. Record the actual state in the board/ledger/PR when it changed.
+2. Commit each completed, validated, task-scoped part locally in `dev`; exclude unrelated/incomplete/unvalidated changes and list them in the handoff; an early stop is never converted into completion.
+3. Offer a new chat with this copyable handoff (never claim to open/close chats automatically):
 
 ```text
 Project: <absolute worktree>; integration branch: dev.
-Read AGENTS.md, .agent/rules.md, and docs/COLLABORATION.md.
+Read AGENTS.md, .agent/rules.md, docs/COLLABORATION.md.
 Completed: <behavior/result>.
 Branch/commit/PR: <references>; uncommitted changes: <summary or none>.
-Validation: <completed checks; delegated report path; pending checks>.
+Validation: <checks done; TEST RUN summary block; pending checks>.
 Next task: <specific next action, or wait for the owner>.
-Constraints: preserve unrelated work; broad tests via local OpenCode/Kilo,
-sequential shared test DB; no automatic merge/deployment/DB reset.
+Constraints: preserve unrelated work; all tests through Kilo's test-orchestrator, test-runner child, and pare-test MCP; sequential shared test DB; no automatic push/merge/deploy/DB reset.
 ```
 
-Historical `.agent/tasks.md` and `.agent/state.json` may describe old review queues;
-verify current Git state before acting on them. This setup does not resume those queues.
+## Headless delegation launches (from a task worktree)
+
+All pytest execution goes through Kilo's restricted `test-orchestrator`, which
+can only delegate to the project `test-runner` child agent. That child can run
+tests only through the connected `pare-test` MCP runner. Codex only coordinates
+and consumes the compact final summary. External headless launch:
+
+```sh
+# Kilo CLI — test-orchestrator delegates to .kilo/agents/test-runner.md
+kilo run --dir /absolute/task/worktree --agent test-orchestrator --format json \
+  --file /absolute/task/worktree/.agent/test-task.md \
+  "Delegate the attached test task to the project test-runner child using Kilo's task tool. Return only the child's TEST RUN summary."
+```
+
+- Kilo uses its configured `test-orchestrator` and `test-runner` agents, plus the connected `pare-test` MCP server. The child passes `<worktree>/.venv/bin/python` and the worktree path to MCP. Do not use `--pure` (it disables external plugins), `--auto`, or shared sessions. If the child or MCP runner is unavailable, report BLOCKED.
+- The Codex `subagents` MCP (`codex-as-mcp`) creates Codex agents and is separate from this Kilo test route.
+- No provider/model credentials are stored in the repository.
+
+## Testing task-file contract (`.agent/test-task.md`)
+
+Minimal fields: absolute worktree, branch, expected HEAD, test files, behavior under test (1–2 lines), pointer "follow AGENTS.md and .agent/rules.md".
+Runner-side obligations (defined once in the agent definitions, not repeated per task): sequential runs; `pgrep -fl pytest` pre-check (exact command, no operators; exit 1 = free; shared test schema across worktrees ⇒ coordinator serializes); quiet pytest flags; `.agent/test-report.md` evidence (commands, exit codes, counts, failure excerpts, HEAD, dirty paths; no secrets); final `TEST RUN …` summary block to the coordinator.
+Infrastructure blockers are not successful tests; do not run a broad suite to validate documentation edits.

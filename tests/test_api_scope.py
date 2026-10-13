@@ -147,7 +147,7 @@ async def test_user_without_membership_is_forbidden():
 
 
 async def _user_id_of_token(token: str) -> int:
-    from jose import jwt
+    import jwt
 
     from app.core.config import settings
 

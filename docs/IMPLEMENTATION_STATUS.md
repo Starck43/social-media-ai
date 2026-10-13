@@ -85,16 +85,15 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **BLOCKED, NOT merged/activated**, head`bc854b4`; original43/116/registry,
-  runner18/verifier16 evidence retains SHA attribution in PR. Applicationf8cbe69
-  PASS; restored catalog accepted, functional PG not run. [Owner stable snapshots](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6151619294)
-  are identicalUTC49/188/384 with enabled0093/0094,public0092,zero events.
-  Current384-row snapshot accepted for preservation, NOT future writer exclusion.
-  Remaining blocker: owner/cooperating shared-schema writers acknowledge pause
-  through functional run+final verification; observation alone is insufficient.
-  Then fresh exactUTCpreflight/reissued384 command atsameSHA; no repeated waiting
-  probes/application/repair/reset/cleanup. Older-metadata automatic UNIQUE drop
-  mechanism confirmed, actual actor still unproven. FullPRD-03 remains open.
+  is **IN_PROGRESS, NOT merged/activated**, head`bc854b4`; original remote43,
+  owner116/registry,runner18/verifier16 evidence retains SHA attribution in PR.
+  Applicationf8 PASS and restored catalog accepted. StableUTC49/188/384 baseline
+  reviewed; owner pause now acknowledged through functionalrun+finalsnapshot.
+  One fresh exactUTCpreflight then ONE reissued384 functionalcommand authorized.
+  ReturnPASS/exit0/allchecks/7-eventmanifest/finalcatalog+UTCparenthashes, or stop
+  with partialevidence; no retry/reset/cleanup/application/repair/bootstrap.
+  Specific UNIQUE-drop actor remains unproven; genericmetadata mechanism confirmed.
+  PR176 DB work held/untouched; functional PG result pending,wholePRD-03 open.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

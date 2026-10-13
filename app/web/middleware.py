@@ -19,7 +19,8 @@ from __future__ import annotations
 import logging
 from urllib.parse import quote
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send

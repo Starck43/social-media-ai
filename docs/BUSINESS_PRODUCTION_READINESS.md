@@ -56,11 +56,11 @@ retries, failed output and failed persistence remain separate attempts.
 Authoritative accounting uses a reviewed Decimal USD contract. Preserve adapters
 for legacy USD and USD-cent projections until an approved migration exists.
 Pricing truth is owner-decided (2026-10-12) and three-state: FREE only on an
-explicit zero — the model returned zero cost, or the tariff table explicitly
-holds 0; otherwise the model's own answer arbitrates the cost, with a non-zero
-table price as the known-price basis; no model price with an empty table is
-UNDEFINED — never free, never zero, always registered in statistics and related
-accounting actions. Missing usage stays distinct from a reported zero, and
+explicit zero in a structured provider USD report or an explicit zero tariff.
+Structured provider price, never generated model text, arbitrates actual cost;
+a non-zero tariff is a known-price basis. Missing/unresolved price is UNDEFINED,
+never implicitly free or zero, separately recorded and admitted under the owner's
+explicit undefined-price policy outside cap-bounded spend. Missing usage stays distinct from a reported zero, and
 not-dispatched attempts are recorded as such.
 
 Acceptance requires atomic budget admission under concurrency, explicit overshoot

@@ -91,6 +91,11 @@ async def tenant_daily_cost_limit(tenant_id: int) -> float:
     unset column with no global setting), and callers treat 0 as unlimited.
     """
     tenant = await tenants.get(id=tenant_id)
+    return resolved_daily_cost_limit(tenant)
+
+
+def resolved_daily_cost_limit(tenant: Any) -> float:
+    """Same cap policy for an already loaded (optionally locked) workspace."""
     if tenant is None:
         return float(settings.AGENT_DAILY_COST_LIMIT or 0)
 

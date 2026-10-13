@@ -32,7 +32,14 @@ The page shows the last 50 rows and can delete them: a trash icon per row
 (`POST /app/jobs/{id}/delete`) and «Очистить всё» (`POST /app/jobs/clear`).
 Both are gated on `agenttask.delete` — the same right as the task delete on
 `/app/tasks`, since the rows are the tasks' run history — plus CSRF and a
-`confirm()`.
+shared in-app confirmation dialog (no native browser `confirm()`).
+The same component confirms queue cancellation and source/task deletion.
+`web/base.html` includes `web/_confirm.html` once; `js/ui-confirm.js` intercepts
+forms or submit buttons marked `data-confirm`, with optional
+`data-confirm-title` and `data-confirm-label`. It resumes via `requestSubmit`
+only after acceptance, preserving CSRF, workspace fields, validation and the
+original submit button (including `formaction`/`formnovalidate`). Cancel, Escape
+and backdrop dismissal do not submit; the dialog restores focus and scroll.
 
 Two limits are deliberate:
 

@@ -52,8 +52,21 @@ logs/
 !.agent/rules.md
 !.agent/tasks.md
 !.agent/state.json
+!.agent/workflow.md
+!.agent/todo.md
+!.agent/index.md
+!.agent/lessons/
+!.agent/test-task.md
+!.agent/test-report.md
 .gigacode/
-.kilo/
+# Kilo: allow traversal so agent config (agents, skills, IDE links) can be
+# tracked; ignore generated/runtime state inside.
+!.kilo/
+.kilo/*
+!.kilo/agents/
+!.kilo/skills/
+!.kilo/jetbrains.json
+!.kilo/.gitignore
 
 # Backup artifacts
 *.backup

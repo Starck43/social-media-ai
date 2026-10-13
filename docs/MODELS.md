@@ -141,6 +141,34 @@ when empty. Schema application, offboarding and evidence-preserving rollback
 need separate review/approval. See the
 [storage boundary](AI_PIPELINE_AND_PROMPTS.md#preparation-receipt-storage-foundation-not-activated).
 
+### `llm_outcome_events` — definition only, not activated
+
+[Source](../app/models/analysis/llm_outcome_event.py); migration definition 0094
+follows 0093. Append-only observations/reconciliations reference a preparation
+receipt; they are not a settlement, dispatch authorization or aggregate spend.
+Several events may describe one attempt: **never sum their costs as independent
+attempts**.
+
+Fields: `id`; explicit `tenant_id` FK RESTRICT; globally unique `event_id`
+String(32); `dispatch_id` FK to the receipt's unique identity, RESTRICT;
+`event_kind`, timezone-aware `observed_at`, `dispatch_state`, `outcome`; nullable
+Integer prompt/completion counts; `provider_price_state`, nullable decimal-only
+`provider_cost_raw` String(128), nullable Decimal USD `cost_usd` Numeric(18,9);
+`cost_certainty`, `price_source`, `pricing_policy_version`; server `created_at`.
+No prompt, credentials, raw provider response or mutable model reference is kept.
+
+The definition rejects UPDATE/DELETE/TRUNCATE. An insert trigger binds payer,
+policy and observation time to the receipt, verifies resolved provider amount
+consistency and refuses a free tariff unless both frozen rates are explicitly
+zero. The manager also recomputes all pricing from the persisted receipt and
+requires the enabled receipt/event guards. Metadata bootstrap lacks those guards
+and is not approved. Direct SQL is not an alternative pricing API.
+
+Definition application, PostgreSQL validation, retention/offboarding and rollout
+require separate review/approval. Ordinary downgrade refuses deletion. Both the
+event and parent receipt block tenant deletion when retained. See the
+[outcome boundary](AI_PIPELINE_AND_PROMPTS.md#immutable-outcome-event-storage-foundation-not-activated).
+
 ## Tenant-scoped scheduling and delivery
 
 Every table below inherits tenant_id and timestamps, except agent_task_sources.

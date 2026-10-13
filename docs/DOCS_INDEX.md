@@ -38,6 +38,7 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [API](API.md), [CLI](CLI.md) and [Admin](ADMIN.md) — supported interfaces.
 - [Configuration](CONFIGURATION.md) and [Deployment](DEPLOYMENT.md) — setup and operation.
 - [Collaboration](COLLABORATION.md) — local and remote development handoff.
+- [Agent workflow](../AGENTS.md) and [workflow details](../.agent/workflow.md) — concise instructions, audit and delegation lifecycle.
 - [Current work](design/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
 
 ## Maintenance rule

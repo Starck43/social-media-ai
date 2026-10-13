@@ -21,9 +21,11 @@
 - **R6 — Preserve local owner work.** `/Users/admin/Projects/social-media-ai`
   (branch `dev`) is the primary sequential development and integration checkout.
   Inspect status before changes; never discard, stash, or commit unrelated work.
-  Direct local commits in `dev` are allowed after the owner accepts the proposed
-  coherent commit split/messages. The closeout phrases defined in `AGENTS.md`
-  provide that authorization for completed, validated and task-scoped changes.
+  For ordinary work, direct local commits in `dev` require owner acceptance of
+  the proposed coherent commit split/messages. A user-started ROADMAP Goal that
+  explicitly requires a commit after each accepted task authorizes those local,
+  task-scoped commits without another prompt. Closeout phrases in `AGENTS.md`
+  authorize validated task-scoped commits as well.
   Use an isolated worktree only when parallel work, PR review, risky
   experimentation or conflicting changes require it.
 - **R7 — Isolate PR review and parallel work.** Never verify two PRs in one working tree:

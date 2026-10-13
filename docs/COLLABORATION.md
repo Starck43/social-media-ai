@@ -2,6 +2,38 @@
 
 Handoff, delegation-launch, and task-file contract. Operational rules: `AGENTS.md`; DB/worktree constraints: `.agent/rules.md`.
 
+## Audits, Goals and Codex subagents
+
+Use Codex subagents for independent read-heavy audit lanes and bounded
+implementation tasks. They reduce noise in the coordinating thread, but add
+total model work; reserve them for parallelizable tasks. Give each agent one
+question or task, a file/claim boundary, relevant SHA, expected evidence and a
+compact response format. The coordinator owns audit synthesis, task acceptance,
+integration and final verification.
+
+For an audit execution, populate root ROADMAP.md only after findings are
+deduplicated and accepted. Clear its task rows between executions;
+docs/design/README.md remains the only persistent product queue. Record task
+ID, acceptance check, dependencies, exclusive write ownership, status and
+verification. Independent write tasks get separate Codex subagents in separate
+worktrees/branches.
+Integrate one finished task at a time, then update its checkbox and make a local
+commit with matching evidence. Never mark a task done because an agent merely
+reports completion; inspect the diff and verification at the exact tested SHA.
+Commit only task-scoped work. After integration, clear completed rows and
+transfer unresolved product work to the canonical board.
+
+Start /goal only when the audit/implementation has a measurable finish line.
+Point it at the active ROADMAP.md task list; include verification, constraints
+and a blocked stop condition. Goals persist within a thread and do not replace the
+checked-in task ledger. Codex-generated memories are opportunistic recall, not
+the source of project policy or current task state; do not manually maintain
+them for workflow continuity.
+
+Useful OpenAI guidance: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
+[Codex memories](https://learn.chatgpt.com/docs/customization/memories),
+[Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
+
 ## Closeout procedure (triggered by the phrases listed in AGENTS.md)
 
 1. Record the actual state in the board/ledger/PR when it changed.

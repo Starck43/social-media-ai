@@ -35,70 +35,9 @@ database revision or full release gate.
 | Run-status modal | `/app/tasks` run modal shows real per-source progress for collect/analyze (bounded snapshot in the running job's `result["progress"]`, written under the heartbeat claim predicates and shown only for the current attempt; no migration), S/M/L window sizes and a background mode. Cancel is tenant-scoped, CSRF-protected and needs `agenttask.update`: a job that has not started is cancelled before start; a running collect keeps or discards this run's staged rows (rows staged after the cancel are settled once when the handler stops); analyze cancel has no delete option; retry-pending jobs are not cancellable from the modal. A stopped claim halts the handler at the next source boundary. | [PR #169](https://github.com/Starck43/social-media-ai/pull/169) (owner-local at `aa490d9`: 18 new tests and 55 test_schema cancel/progress scenarios passed; owner manual browser check of sizes, background mode, cancel confirmation and cancelled view; focused and full-suite failure sets identical to dev `15669ae`) | Handlers stop only at source boundaries; the cancelled run's external effects stay unconfirmed. |
 | JWT authentication backend | Access/refresh tokens remain HS256 JWTs with unchanged claims; signing/verification moved from the unpatched `python-jose` to PyJWT with HMAC-only algorithm pinning (no algorithm confusion), and `python-jose` plus its orphan `ecdsa` dependency are gone (`rsa`/`pyasn1` retained for Telethon). Login, logout and `/api` bearer/no-token behavior unchanged; owner-local tests and HTTP checks accepted. | [PR #174](https://github.com/Starck43/social-media-ai/pull/174) (implementation `72f5c1b`, test fix `507e235`, merge `9c63f26`) | Dependabot alert closes only after the default branch (`master`) receives the change; key rotation/revocation policy remains open. |
 
-## Current handoff
+## Current work
 
-- Analyzer accounting certainty (PR #118, merge `ab21917`) is **DONE, integrated**.
-  Owner-local 28/20/4 tests were accepted after a Black-only test correction at
-  `e62bf40`; review/formatter/baseline details remain in the PR. Remote checks
-  were static readback/diff/merge checks, not Python, database or provider tests.
-- Owner three-state pricing decision and all-path admission contract (PR #119,
-  merge `852ba14`) are recorded. This documentation does not implement admission
-  or certify the runtime price policy. Explicit provider/table zero is FREE;
-  provider-reported cost arbitrates; missing price is UNDEFINED, separately tracked
-  and not silently free. Undefined-price dispatch is permitted by owner policy.
-- Provider-reported analyzer pricing and three-state runtime mapping (PR #125,
-  merge `d2b687d`) are **DONE, integrated**. Owner-local evidence at accepted head
-  `08c53e1` covers 83 tests and isort; Black/compileall evidence was reused from
-  unchanged relevant files at `16ff8b1`. PostgreSQL and full suite were NOT RUN.
-  Statistics remain captured-journal-only, not full spend or a new budget cap.
-- Strict journal replay/error acknowledgement ([PR #129](https://github.com/Starck43/social-media-ai/pull/129),
-  merge `b0582b0`) is **DONE, integrated**. Accepted owner-local evidence at
-  `196ce7b`: 108 methods, compiler/formatters and nine standalone PostgreSQL
-  checks passed. Full suite NOT RUN; faults were injected, not real network-loss
-  proof. No schema setup/reset/migration was performed; synthetic test rows retained.
-- Preparation-receipt storage and frozen tariff basis ([PR #137](https://github.com/Starck43/social-media-ai/pull/137),
-  merge `9f76c81`, tested head `e8d335e`) and corrected PostgreSQL verifier
-  ([PR #154](https://github.com/Starck43/social-media-ai/pull/154), merge `e13905d`,
-  tested head `69f95c9`) are **DONE, integrated; storage NOT ACTIVATED**.
-  Accepted owner-local evidence: 143 foundation tests; 29 verifier tests,
-  compileall and focused Black/isort exit 0 at the exact verifier SHA; six PG
-  assertions PASS (scoped definition/model/catalog parity, transaction-local
-  guard refusal with rollback, stored-key tenant collision, pre-commit rollback
-  and post-successful-commit injected ack loss/replay, two-session barrier races,
-  preflight-to-final content fingerprints). Security/fresh merge compatibility passed.
-  Approved test-only 0093 definition application was report-attributed; public
-  version stays 0092, old journal 79, enabled guards and 49 receipts retained
-  after five new synthetic records. Do NOT rerun the old 44-row command or clean up.
-  Earlier #137 verifier committed guard disable/restore, leaving one interrupted
-  disabled interval; #154 fixes the proof method but does not certify historical
-  integrity during that interval. Faults are injected, not real network loss;
-  concurrency is same-process/two-session, not multi-process/load evidence.
-  Stock Alembic check/production migrator/full suite, runtime and cutover are not
-  certified. Fresh remote refs independently resolved the local SSH-fetch gap.
-  Whole PRD-03 remains **OPEN**: all-path capture, durable pre-dispatch receipts,
-  dispatch-time tariff snapshots, recovery, reservation/settlement and PostgreSQL
-  concurrency/cutover evidence still require completion. See the existing
-  [pipeline contract](AI_PIPELINE_AND_PROMPTS.md#usage-and-cost-boundary).
-- Platform rate-limit handling in collection ([PR #143](https://github.com/Starck43/social-media-ai/pull/143),
-  merge `79a5cd1`) is **DONE, integrated**. Owner-local verification at accepted
-  head `28036a8`: command 4 (`tests/test_telegram_durable_admission.py`) passed
-  29 tests after the stub-settings fix on that head; merge tree against dev was
-  clean. No schema migration, provider or live calls were performed.
-- Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **BLOCKED, NOT merged/activated**, head`bc854b4`; prior43/116/registry,
-  application18 and verifier16 checks retain original SHA attribution in PR.
-  Application atf8cbe69 PASS. Functional preflight stopped on shared-target drift
-  and missing event UNIQUE. [Owner restoration](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6151232195)
-  RESTORE_PASS accepted for restored-catalog equality only; public0092,zero events.
-  Moving tenant382/hash is NOT accepted; functional command withdrawn pending
-  coordinated window and two fresh stableUTC snapshots. Generic test-bootstrap
-  repair can drop db-only table uniques when older metadata omits the model:
-  two remote pure-function assertions reproduced this mechanism withoutDB/DDL.
-  Actual drop actor is unproven; review existing schema-repair logs, no replay.
-  Preserve evidence, no additional repair/application/reset/cleanup or access
-  changes. Functional approval retained but execution held; no full-gate acceptance.
-- Owner reports test-only 0093 definition application; no working-schema migration,
-  schema reset, live activation or deployment is claimed.
+Open ownership, blocked items and next actions live in [design/README.md](design/README.md). Exact decisions, hashes, test evidence and operational caveats remain in their source PRs.
 
 ## Recording future delivery
 

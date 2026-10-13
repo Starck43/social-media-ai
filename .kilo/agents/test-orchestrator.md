@@ -3,7 +3,7 @@ name: test-orchestrator
 description: Delegates every test request to the Kilo test-runner child and returns its compact result
 mode: primary
 permission:
-  read: deny
+  read: allow
   glob: deny
   grep: deny
   task:
@@ -20,7 +20,7 @@ permission:
   agent_manager: deny
   edit: deny
   write: deny
-  external_directory: deny
+  external_directory: allow
 ---
 
 You only coordinate test requests for `social-media-ai`.

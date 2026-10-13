@@ -48,10 +48,14 @@
   `kilo run --dir <worktree> --agent test-orchestrator --format json --file <task-file>`;
   it delegates to the project's `test-runner` child using Kilo's `task` tool.
   The child must use the connected `pare-test` MCP `run` tool, passing the project
-  `.venv/bin/python` and `-o addopts='' -q --tb=short --no-header`. Never run
-  pytest in the coordinating Codex process or fall back to shell pytest in Kilo.
-  Kilo's global config is `~/.config/kilo/kilo.jsonc`; the active server is
+  `.venv/bin/python`, the worktree root, the assigned test paths as **positional
+  arguments**, and the pytest args `--noconftest -o addopts= -q --tb=short --no-header`.
+  Never run pytest in the coordinating Codex process or fall back to shell pytest
+  in Kilo. Kilo's global config is `~/.config/kilo/kilo.jsonc`; the active server is
   `mcp.pare-test`. Runs remain sequential under R8.
+  See `.kilo/agents/test-runner.md` for the verified `pare-test` argument rules
+  (separate array elements; `--noconftest` is mandatory for isolated scopes; paths
+  are positional, never `filter`).
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
   packages after verifying fresh PR/dev heads, compatibility, required checks

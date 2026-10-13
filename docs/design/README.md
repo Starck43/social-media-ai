@@ -7,10 +7,10 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 
 ## Current checkpoint
 
-Verified `origin/dev`: `5941642c4caa052ef54e90e03ba1c00f3433c4c4` on
-2026-10-12. Merged packages through PR #161, including PRs #137, #151, #153 and #158, are
-integrated. Active lanes are listed
-under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
+Verified `origin/dev`: `6d99ffa` (merge of [PR #178](https://github.com/Starck43/social-media-ai/pull/178)).
+Stored-text escaping is integrated; prior delivered foundations remain in the
+implementation index. Active lanes are listed under Active ownership. Refresh
+`dev`, open PRs and this row before selecting work.
 
 Nine readiness areas remain open. They are gates, not nine commits or an effort
 estimate. Select one bounded change with an observable acceptance condition.
@@ -36,7 +36,7 @@ starts only when the applicable foundation gates are accepted.
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
-| Stored XSS in web template rendering | Remote Notion agent; `fix/web-template-autoescape`, [PR #178](https://github.com/Starck43/social-media-ai/pull/178) | ACCEPTED — integration pending | Autoescape/xmlattr and text-only confirmations accepted with owner no-DB regression, actual Jinja/DOM, offline Alpine-runtime and exact endpoint evidence in PR. Fresh dev merged; rendering and confirmation inputs unchanged. Next: verify final head/checks, integrate, then remove this row and record the delivered boundary. No schema operations, live probes or deployment. |
+| Task-add source selection initialization | Unassigned; no implementation branch or PR | OPEN — inherited Alpine runtime follow-up | Owner reproduced addTaskForm().task.source_ids missing while :checked calls includes; pre-fix control has the same error. Evidence: [PR178 runtime report](https://github.com/Starck43/social-media-ai/pull/178#issuecomment-6154504317). Next: initialize source_ids in the actual add-task model and verify selection/reset with real Alpine. Accept when opening the form has no includes error and selected IDs round-trip without changing submit semantics; no server/DB/live probes required. |
 | Mobile web page-width overflow | Unassigned; no implementation branch or PR | OPEN — inherited layout follow-up | Owner observed app document width 432px under 375px mobile emulation; confirmation dialog remains contained. Evidence: [PR175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703). Next: identify the overflowing base layout element independently of the Chromium emulation discrepancy. Accept when affected pages fit a verified 375px viewport without unintended horizontal scrolling and confirmation focus/keyboard behavior is retained. |
 | PRD-02 digest send permission parity | Remote Notion agent; `fix/digest-send-permission-parity`, [Draft PR #176](https://github.com/Starck43/social-media-ai/pull/176) | BLOCKED — test-runner environment/fixtures; DB membership acceptance incomplete | Owner reports completed sequential verification window with passing bounded checks and unchanged observed shared data. Remaining: web/registry collection setup, permissions suite and DB-backed membership matrix. Next: review bootstrap-free runner setup or obtain narrow approval for conftest side effects; Kilo/pare-test only. Do not repeat accepted outcome checks or infer full PR168 acceptance. |
 | PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |

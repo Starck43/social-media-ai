@@ -86,18 +86,17 @@ database revision or full release gate.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
   is **IN_PROGRESS, NOT merged/activated**, primary head `f8cbe69`. Foundation
   `5511a69`:remote43 / owner-local116 + registry PASS; application runner18
-  remote no-DB tests PASS. Auxiliary `c1320ac`:16 remote tests PASS, not primary
-  head and no PG execution. Two application attempts stopped BEFORE DDL.
-  [Owner UTC comparison](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6144743883)
-  explains diagnostic receipt/journal mismatch as TimeZone serialization;
-  accepted UTC hashes match49/188 and two observed UTC snapshots are equal.
-  Current tenants380/UTC hash explicitly accepted as preservation baseline,
-  not historical362-row provenance.0094 absent, public0092. Next: fresh exact
-  UTC count/hash/catalog checks in coordinated sequential window, then one
-  reissued approved option-(b) application. No cleanup or automatic rebaseline.
-  Functional synthetic writes/probes require separate approval and successful
-  application evidence. No runtime/admission/settlement/full-gate acceptance.
-  Exact command, full hashes, attribution and retention limits are in the PR.
+  remote tests PASS. [Owner published application](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6147777786)
+  atf8cbe69 is **APPLICATION_PASS, exit0**: rollback rehearsal, committed0094
+  definition/model/catalog parity, public0092, zero events, UTC49/188/380 baseline
+  preserved since preflight. Remote validation of the published JSONL structure
+  passed; no remote DB execution.0094 now exists in test_schema; do not rerun
+  application or cleanup. Auxiliary verifier`c1320ac`/16 remote tests remains
+  prepared, not primary head. Functional PG replay/collision/guards/races/ack/UTC
+  evidence awaits separate approval for seven synthetic events and NEW-object
+  rollback-only probes, followed by verifier integration/exact-head handoff.
+  No production migrator, permissions/bootstrap, runtime/admission/settlement
+  or full PRD-03 acceptance. Exact attribution and retention limits in PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

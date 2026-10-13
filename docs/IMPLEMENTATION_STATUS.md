@@ -85,18 +85,18 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **IN_PROGRESS, NOT merged/activated**, current head`bc854b4`. Foundation
-  `5511a69`:remote43/owner-local116+registry PASS; application runner18 tests
-  PASS. [Owner application](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6147777786)
-  at`f8cbe69`:APPLICATION_PASS, rollback rehearsal+commit, public0092,zero events,
-  UTC49/188/380 preserved. Do not repeat application. Owner separately approved
-  seven retained synthetic events and NEW-object rollback-only functional probes.
-  Two prepared verifier paths now integrated;16 remote no-DB tests,compiler,
-  scoped formatters PASS atbc854b4; published tree identical topreparedc1320ac;
-  freshdevce6a986 merge-tree clean. Functional PostgreSQL is pending local exact
-  command in PR after freshUTC preflight/idle window. Return JSONL/catalog/IDs;
-  on failure stop without retry/cleanup. No parent writes,permissions/bootstrap,
-  runtime/providers/admission/settlement or fullPRD-03 acceptance.
+  is **BLOCKED, NOT merged/activated**, head`bc854b4`; prior43/116/registry,
+  application18 and verifier16 checks retain original SHA attribution in PR.
+  Application atf8cbe69 PASS. Functional preflight stopped on shared-target drift
+  and missing event UNIQUE. [Owner restoration](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6151232195)
+  RESTORE_PASS accepted for restored-catalog equality only; public0092,zero events.
+  Moving tenant382/hash is NOT accepted; functional command withdrawn pending
+  coordinated window and two fresh stableUTC snapshots. Generic test-bootstrap
+  repair can drop db-only table uniques when older metadata omits the model:
+  two remote pure-function assertions reproduced this mechanism withoutDB/DDL.
+  Actual drop actor is unproven; review existing schema-repair logs, no replay.
+  Preserve evidence, no additional repair/application/reset/cleanup or access
+  changes. Functional approval retained but execution held; no full-gate acceptance.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

@@ -33,7 +33,7 @@ from scripts.verify_llm_dispatch_receipts import (
 )
 
 
-def application_evidence(path, expected_head):
+def application_evidence(path, expected_head, *, isolated=False):
     path = Path(path)
     require(path.stat().st_size <= 2_000_000, "Application report size")
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
@@ -53,15 +53,28 @@ def application_evidence(path, expected_head):
         "Application commit evidence",
     )
     result = phase("result")
+    if isolated:
+        from scripts.isolated_outcome_fixture import TARGET
+
+        require(
+            result.get("target") == list(TARGET)
+            and result.get("provenance") == "isolated_synthetic_fixture"
+            and phase("intake").get("target") == list(TARGET)
+            and phase("preflight").get("fixture_schema") == "absent"
+            and phase("preflight").get("public_revision") is None
+            and phase("preflight").get("target") == list(TARGET),
+            "Isolated preparation provenance",
+        )
     require(
-        result.get("status") == "APPLICATION_PASS"
-        and result.get("public_revision") == "0092"
+        result.get("status") == ("FIXTURE_PASS" if isolated else "APPLICATION_PASS")
+        and "public_revision" in result
+        and result.get("public_revision") == (None if isolated else "0092")
         and type(result.get("outcome_rows")) is int
         and result["outcome_rows"] == 0,
         "Application final verdict",
     )
     require(
-        result.get("baseline_preserved_since_preflight") is True
+        result.get("fixture_matches_rehearsal" if isolated else "baseline_preserved_since_preflight") is True
         and result.get("whole_gate_accepted") is False
         and result.get("synthetic_and_mutation_probes_run") is False,
         "Application scope",
@@ -125,6 +138,10 @@ async def verify(args, expected_catalog):
     manifest = []
 
     async def inspect():
+        if getattr(args, "isolated_fixture", False):
+            from scripts.isolated_outcome_fixture import inspect_state
+
+            return await inspect_state(async_engine, args)
         return await application.inspect_state(async_engine, args, expect_absent=False)
 
     async def event_rows():
@@ -392,6 +409,9 @@ async def verify(args, expected_catalog):
             checks=checks,
             retained=manifest,
             total_events=len(rows),
+            public_revision=None if getattr(args, "isolated_fixture", False) else "0092",
+            catalog=final_catalog,
+            baseline=final["tables"],
             baseline_integrity_since_preflight_only=True,
             whole_gate_accepted=False,
         )
@@ -416,16 +436,31 @@ def main():
         parser.add_argument("--" + name, type=int, required=True)
     parser.add_argument("--allow-test-event-writes", action="store_true")
     parser.add_argument("--allow-rollback-guard-probes", action="store_true")
+    parser.add_argument("--isolated-fixture", action="store_true")
+    parser.add_argument("--tenant-digest")
     args = parser.parse_args()
     try:
         require(
             args.allow_test_event_writes and args.allow_rollback_guard_probes, "Separate event/probe approval flags"
         )
-        require(
-            (args.expected_database, args.expected_schema, args.expected_role)
-            == ("social_manager", "test_schema", "starck"),
-            "Approved target",
-        )
+        if args.isolated_fixture:
+            from scripts.isolated_outcome_fixture import TARGET
+
+            require(
+                (args.expected_database, args.expected_schema, args.expected_role) == TARGET,
+                "Approved isolated target",
+            )
+            require(
+                (args.expected_receipts, args.expected_journal, args.expected_tenants) == (2, 0, 2)
+                and re.fullmatch(r"[0-9a-f]{64}", args.tenant_digest or ""),
+                "Explicit isolated fixture baseline",
+            )
+        else:
+            require(
+                (args.expected_database, args.expected_schema, args.expected_role)
+                == ("social_manager", "test_schema", "starck"),
+                "Approved target",
+            )
         require(
             all(re.fullmatch(r"[0-9a-f]{40}", v) for v in (args.expected_head, args.expected_application_head)),
             "Head syntax",
@@ -453,25 +488,47 @@ def main():
             "app/services/ai/outcome_events.py",
             "scripts/apply_llm_outcome_definition.py",
         ]
+        if args.isolated_fixture:
+            frozen.extend(
+                [
+                    "scripts/isolated_outcome_fixture.py",
+                    "migrations/versions/0093_add_llm_dispatch_receipts.py",
+                    "app/models/tenancy/tenant.py",
+                    "app/models/analysis/llm_attempt.py",
+                    "app/models/analysis/llm_dispatch_receipt.py",
+                    "app/models/base.py",
+                    "app/services/ai/dispatch_receipts.py",
+                    "scripts/verify_llm_dispatch_receipts.py",
+                    "app/core/config.py",
+                    "app/core/database.py",
+                ]
+            )
         require(
             not subprocess.check_output(
                 ["git", "diff", args.expected_application_head, "HEAD", "--", *frozen], cwd=ROOT, text=True
             ).strip(),
             "Applied definition/runtime contract changed",
         )
-        expected = application_evidence(args.application_report, args.expected_application_head)
+        expected = application_evidence(
+            args.application_report, args.expected_application_head, isolated=args.isolated_fixture
+        )
         from scripts.setup_test_db import resolve_test_schema, resolve_test_url, resolve_working_schema
         from scripts.verify_llm_attempt_persistence import validate_target
 
-        url, schema = resolve_test_url(), resolve_test_schema()
-        validate_target(
-            os.environ.get("POSTGRES_URL", "").strip(),
-            resolve_working_schema(),
-            url,
-            schema,
-            args.expected_database,
-            args.expected_schema,
-        )
+        if args.isolated_fixture:
+            from scripts.isolated_outcome_fixture import resolve_target
+
+            url, schema = resolve_target()
+        else:
+            url, schema = resolve_test_url(), resolve_test_schema()
+            validate_target(
+                os.environ.get("POSTGRES_URL", "").strip(),
+                resolve_working_schema(),
+                url,
+                schema,
+                args.expected_database,
+                args.expected_schema,
+            )
         os.environ.update(POSTGRES_URL=url, DB_SCHEMA=schema, DEBUG="false")
         emit("intake", head=args.expected_head, application_head=args.expected_application_head, schema=schema)
         asyncio.run(verify(args, expected))

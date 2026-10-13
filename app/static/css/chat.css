@@ -196,7 +196,7 @@
 .json-copy-btn { min-height:40px; color:var(--color-text-secondary); }
 .chat-composer { display:flex; flex-direction:column; gap:8px; margin:12px 16px 0; padding:10px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-surface); transition:border-color 150ms ease; }
 .chat-composer:focus-within { border-color:var(--ui-accent); }
-.chat-input { width:100%; min-height:48px; max-height:180px; resize:none; border:0; padding:8px; color:var(--color-text); background:transparent; font-size:16px; }
+.chat-input { width:100%; min-height:48px; max-height:180px; resize:none; border:0; padding:8px; color:var(--color-text); background:transparent; font-size:14px; line-height:1.5; }
 .chat-input:focus { outline:none; }
 .chat-composer-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .chat-attach { display:flex; align-items:center; justify-content:center; width:36px; min-width:36px; height:36px; padding:0; border-radius:10px; color:var(--color-text-secondary); background:transparent; transition:background 150ms ease, color 150ms ease; }
@@ -213,6 +213,28 @@
 .chat-hint { margin:8px 24px 12px; }
 .chat-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; color:var(--color-text); background:var(--color-surface-secondary); font-size:14px; }
 .chat-notice button { padding:4px 8px; text-decoration:underline; min-height:0; }
-.chat-pending { padding:8px 24px; color:var(--color-text-secondary); font-size:14px; }
 .ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
-@media(max-width:639px) { .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
+@media(max-width:639px) { .chat-input { font-size:16px; } .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
+
+/* Starter cards in the empty state */
+.chat-starters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; width:100%; max-width:520px; margin-top:16px; }
+.chat-starter { display:grid; grid-template-columns:auto 1fr; column-gap:10px; align-items:center; text-align:left; padding:10px 12px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-surface); transition:border-color 150ms ease, background 150ms ease, transform 150ms ease; }
+.chat-starter:hover:not(:disabled) { border-color:var(--ui-accent); background:var(--ui-accent-soft); transform:translateY(-1px); }
+.chat-starter:disabled { opacity:.5; cursor:not-allowed; }
+.chat-starter-icon { grid-row:span 2; font-size:18px; }
+.chat-starter-title { font-size:13px; font-weight:600; color:var(--color-text); }
+.chat-starter-hint { font-size:12px; color:var(--color-text-secondary); }
+/* Quick replies under the latest assistant answer */
+.chat-quick-replies { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chat-quick-reply { padding:5px 12px; min-height:0; font-size:13px; border:1px solid var(--ui-accent); border-radius:999px; color:var(--ui-accent); background:transparent; transition:background 150ms ease, color 150ms ease; animation:msgSlideIn .2s ease-out; }
+.chat-quick-reply:hover:not(:disabled) { background:var(--ui-accent-soft); }
+.chat-quick-reply:disabled { opacity:.5; cursor:not-allowed; }
+/* Thinking indicator */
+.chat-thinking { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:var(--color-surface-secondary); color:var(--color-text-secondary); font-size:13px; }
+.chat-thinking-dots { display:inline-flex; gap:3px; }
+.chat-thinking-dots i { width:6px; height:6px; border-radius:50%; background:var(--ui-accent); animation:typingBounce 1.4s infinite ease-in-out both; }
+.chat-thinking-dots i:nth-child(2) { animation-delay:150ms; }
+.chat-thinking-dots i:nth-child(3) { animation-delay:300ms; }
+.chat-thinking-time { font-variant-numeric:tabular-nums; opacity:.7; }
+@media(max-width:639px) { .chat-starters { grid-template-columns:1fr; } }
+@media(prefers-reduced-motion:reduce) { .chat-thinking-dots i, .chat-quick-reply, .msg-enter { animation:none; } }

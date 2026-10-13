@@ -545,7 +545,10 @@ async def get_topic_chain_evolution(
 
 
 @router.get("/debug/topic-chain/{chain_id}", response_model=dict)
-async def debug_topic_chain(chain_id: str):
+async def debug_topic_chain(
+    chain_id: str,
+    _user=Depends(require_model_perm("aianalytics", ActionType.VIEW)),
+):
     """Диагностический эндпоинт для проверки данных цепочки тем."""
     analytics = await AIAnalytics.objects.filter(topic_chain_id=chain_id).order_by(AIAnalytics.analysis_date.asc())
 
@@ -572,7 +575,9 @@ async def debug_topic_chain(chain_id: str):
 
 
 @router.get("/debug/analytics", response_model=list[dict])
-async def debug_analytics_data():
+async def debug_analytics_data(
+    _user=Depends(require_model_perm("aianalytics", ActionType.VIEW)),
+):
     """Диагностический эндпоинт для проверки данных аналитики."""
     analytics = await AIAnalytics.objects.filter().limit(5)
 
@@ -590,11 +595,18 @@ async def debug_analytics_data():
             if getattr(a, 'response_payload', None) else []
         })
 
+    return result
+
 
 @router.get("/debug/analytics/{analytics_id}", response_model=dict)
-async def debug_single_analytics(analytics_id: int):
+async def debug_single_analytics(
+    analytics_id: int,
+    _user=Depends(require_model_perm("aianalytics", ActionType.VIEW)),
+):
     """Диагностический эндпоинт для проверки данных конкретной аналитики."""
     analytics = await AIAnalytics.objects.get(id=analytics_id)
+    if analytics is None:
+        raise HTTPException(status_code=404, detail="Analytics not found")
 
     result = {
         "id": analytics.id,

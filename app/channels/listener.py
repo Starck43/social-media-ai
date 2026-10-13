@@ -68,8 +68,11 @@ async def _handle_safely(inbound: Inbound) -> str | None:
     """Run the agent on one inbound message; errors become a short reply."""
     from app.agent.runtime import handle_inbound
 
+    from app.agent.quick_replies import render_for_channel
+
     try:
-        return await handle_inbound(inbound)
+        reply = await handle_inbound(inbound)
+        return render_for_channel(reply) if reply else reply
     except Exception as e:  # noqa: BLE001
         logger.error(f"Agent failed for {inbound.channel}:{inbound.chat_id}: {e}", exc_info=True)
         return "Внутренняя ошибка агента. Попробуйте позже."

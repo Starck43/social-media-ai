@@ -6,6 +6,8 @@ comes from the signed `state` (workspace + PKCE verifier), verified inside
 `app.services.social.vk_oauth` before any token is exchanged.
 """
 
+from html import escape
+
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -59,11 +61,11 @@ async def vk_callback(
     """Handle the VK ID redirect for the L2 (user) token."""
     if error or not code or not state:
         msg = error or "Отсутствует code/state"
-        return HTMLResponse(_ERROR_HTML.replace("{error}", msg), status_code=400)
+        return HTMLResponse(_ERROR_HTML.replace("{error}", escape(msg)), status_code=400)
     try:
         await complete_authorization(code, state, device_id=device_id)
     except ValueError as e:
-        return HTMLResponse(_ERROR_HTML.replace("{error}", str(e)), status_code=400)
+        return HTMLResponse(_ERROR_HTML.replace("{error}", escape(str(e))), status_code=400)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return HTMLResponse(_SUCCESS_HTML)

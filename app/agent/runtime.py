@@ -761,7 +761,13 @@ async def _build_messages(session: Any) -> list[dict]:
 
 async def build_system_prompt() -> str:
     """System prompt (+ style and learned memory) and session history."""
-    from app.agent.prompts import ANALYTICS_SECTION, SCENARIO_SECTION, TASK_SECTION, render_style_block
+    from app.agent.prompts import (
+        ANALYTICS_SECTION,
+        QUICK_REPLIES_SECTION,
+        SCENARIO_SECTION,
+        TASK_SECTION,
+        render_style_block,
+    )
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.agent_memory_manager import agent_memory
     from app.models.managers.tenant_manager import tenants
@@ -769,7 +775,7 @@ async def build_system_prompt() -> str:
     # Use env var if set, otherwise fall back to the built-in default.
     system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
 
-    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION, ANALYTICS_SECTION]
+    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION, ANALYTICS_SECTION, QUICK_REPLIES_SECTION]
 
     tenant = None
     tid = current_tenant_id()

@@ -59,11 +59,13 @@ and consumes the compact final summary. External headless launch:
 
 ```sh
 # Kilo CLI — test-orchestrator delegates to .kilo/agents/test-runner.md
-kilo run --dir /absolute/task/worktree --agent test-orchestrator --format json \
-  --file /absolute/task/worktree/.agent/test-task.md \
-  "Delegate the attached test task to the project test-runner child using Kilo's task tool. Return only the child's TEST RUN summary."
+kilo run "Delegate the attached test task to test-runner. Return only its TEST RUN summary." \
+  --dir /absolute/task/worktree --agent test-orchestrator --format json \
+  --file /absolute/task/worktree/.agent/test-task.md
 ```
 
+- For Kilo 7.8.8, supply the required message **before the flags**. `--file` is an array option: text after it is treated as another file; omitting the message also fails.
+- Agent configuration comes from the checkout selected by `--dir`. The orchestrator must be permitted to read the attached task file; moving it inside the worktree does not overcome `read: deny`. External task files additionally require permitted external-directory access. Fix the reviewed configuration/placement or return BLOCKED; do not read through an IDE/shell tool to bypass a denial.
 - Kilo uses its configured `test-orchestrator` and `test-runner` agents, plus the connected `pare-test` MCP server. The child passes `<worktree>/.venv/bin/python` and the worktree path to MCP. Do not use `--pure` (it disables external plugins), `--auto`, or shared sessions. If the child or MCP runner is unavailable, report BLOCKED.
 - The Codex `subagents` MCP (`codex-as-mcp`) creates Codex agents and is separate from this Kilo test route.
 - No provider/model credentials are stored in the repository.
@@ -73,3 +75,15 @@ kilo run --dir /absolute/task/worktree --agent test-orchestrator --format json \
 Minimal fields: absolute worktree, branch, expected HEAD, test files, behavior under test (1–2 lines), pointer "follow AGENTS.md and .agent/rules.md".
 Runner-side obligations (defined once in the agent definitions, not repeated per task): sequential runs; `pgrep -fl pytest` pre-check (exact command, no operators; exit 1 = free; shared test schema across worktrees ⇒ coordinator serializes); quiet pytest flags; `.agent/test-report.md` evidence (commands, exit codes, counts, failure excerpts, HEAD, dirty paths; no secrets); final `TEST RUN …` summary block to the coordinator.
 Infrastructure blockers are not successful tests; do not run a broad suite to validate documentation edits.
+
+## Test bootstrap compatibility
+
+`scripts/setup_test_db.py` inspects an existing target in a read-only catalog
+transaction before create/reset/seed. A live table absent from the branch's ORM
+metadata (other than Alembic's version table), missing columns on existing tables,
+or UNIQUE drift stops the run; bootstrap never adds or drops UNIQUE constraints
+to reconcile an existing table. Missing model tables retain the fresh-table path.
+Schema reconciliation/reset still needs separate owner approval, never a retry
+or weaker baseline to obtain PASS. `--check` remains offline target diagnostics,
+not this database preflight. These checks are not a shared-writer lock: R8/R10
+coordination and any existing evidence-preservation pauses remain in force.

@@ -116,7 +116,7 @@
                                 icon("topics") ~ " " ~ at.display_name,
                                 checked=(draft.analysis_types and at.db_value in draft.analysis_types),
                                 cls="analysis-cb",
-                                attrs='@change="rebuildScope()"'
+                                attrs={'@change': 'rebuildScope()'}
                             ) }}
                         {% endfor %}
                     </ul>

@@ -283,3 +283,15 @@ Digest narrative resolves the active configured quality/default text model via
 before resolution. Report preview tools use zero-LLM compact aggregates instead
 of invoking digest aggregation or weekly rollup writes; the existing agent chat
 cycle narrates with cost-efficient routing. Publication still needs confirmation.
+
+### Interactive manual-send authorization
+
+The web manual-send action and the agent `digest_send_now` tool both require
+`digestrun.create`: sending creates a new run rather than editing an existing
+one. `digestrun.view` or `digestrun.update` alone cannot authorize a send. The
+agent still requires an actor-bound, single-use confirmation and rechecks the
+current right before dispatch. Pending confirmations recorded under the old
+`digestrun.update` tool contract are rejected; request and confirm the action
+again. The read-only `report_period` tool retains `digestrun.view`. This does
+not change scheduled/operator sends, channel scope, delivery safeguards or
+external-write activation policy.

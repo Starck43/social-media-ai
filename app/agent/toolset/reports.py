@@ -108,7 +108,7 @@ async def report_period(
     name="digest_send_now",
     description="Построить дайджест и отправить в настроенные каналы после подтверждения.",
     confirm=True,
-    required_permission="digestrun.update",
+    required_permission="digestrun.create",
     parameters={
         "type": "object",
         "properties": {

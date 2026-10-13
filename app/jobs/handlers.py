@@ -286,7 +286,11 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         # run, which is what left "what did *this* source yield?" unanswerable.
         "per_source": [],
     }
+    from app.jobs import progress as job_progress
+
     for source in sources:
+        # Before the exclusion check: progress counts every resolved source.
+        await job_progress.step(sources, stats["per_source"])
         if _is_excluded(source):
             stats["excluded"] += 1
             stats["excluded_sources"].append(source.name)
@@ -626,7 +630,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
     sources = await _resolve_sources(task, payload)
 
+    from app.jobs import progress as job_progress
+
     for source in sources:
+        await job_progress.step(sources, stats["per_source"])
         if (source.external_id or "").lstrip("@") in excluded_users:
             stats["skipped"] += 1
             continue

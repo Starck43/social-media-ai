@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from zoneinfo import ZoneInfo
 
 from app.models import Tenant
@@ -24,6 +24,8 @@ from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS, allows
 
 _j2_env = Environment(
     loader=FileSystemLoader("app/web/templates", encoding="UTF-8"),
+    # Stored names, prompts and errors are text, never template-authored HTML.
+    autoescape=select_autoescape(("html", "htm", "xml"), default_for_string=True),
     auto_reload=True,  # recompile templates on change
 )
 templates = Jinja2Templates(env=_j2_env)

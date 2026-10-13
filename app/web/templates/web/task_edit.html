@@ -140,7 +140,7 @@
                     content=source.name,
                     checked=source.id in edit.source_ids,
                     cls="content-cb",
-                    attrs=':checked="editing.source_ids.includes(' ~ source.id ~ ')"'
+                    attrs={':checked': 'editing.source_ids.includes(' ~ source.id ~ ')'}
                 ) }}
                 {% endfor %}
             </ul>
@@ -209,7 +209,7 @@
                         </select>
                     </div>
                 </div>
-                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs='x-model="editing.digest_time_breakdown"') }}
+                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs={'x-model': 'editing.digest_time_breakdown'}) }}
             </div>
         </template>
 
@@ -238,7 +238,7 @@
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
-        {{ switch_toggle("is_active", "Активна", checked=False, attrs='x-model="editing.is_active"') }}
+        {{ switch_toggle("is_active", "Активна", checked=False, attrs={'x-model': 'editing.is_active'}) }}
         <div class="flex flex-wrap items-center gap-2 pt-2">
             {# Delete lives with the edit form, not in the row: it is the one
                action that cannot be undone, and a bare trash icon next to

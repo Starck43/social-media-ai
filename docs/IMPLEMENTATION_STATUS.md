@@ -85,16 +85,19 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **IN_PROGRESS, NOT merged/activated**, current head `f8cbe69`. Foundation
-  `5511a69` is unchanged: remote 43 tests and owner-local 116/actual registry
-  checks passed; read-only PG preflight passed (0093 enabled, 0094 absent,
-  public 0092; 49 receipts / 152 journal / 289 tenants). Owner approved option
-  (b) for 0094 rehearsal/rollback and definition-only application. The new
-  pinned application runner has 18 remote no-DB tests/compiler/scoped formatters
-  passing; local application is still NOT RUN. Synthetic event writes and
-  functional trigger/mutation probes require separate approval. No runtime,
-  budget admission/settlement or full PRD-03 acceptance is supplied. Exact
-  commands, retained baseline hashes and current handoff are in the PR.
+  is **IN_PROGRESS, NOT merged/activated**, primary head `f8cbe69`. Foundation
+  `5511a69`:remote43 / owner-local116 + registry PASS; application runner18
+  remote tests PASS. [Owner published application](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6147777786)
+  atf8cbe69 is **APPLICATION_PASS, exit0**: rollback rehearsal, committed0094
+  definition/model/catalog parity, public0092, zero events, UTC49/188/380 baseline
+  preserved since preflight. Remote validation of the published JSONL structure
+  passed; no remote DB execution.0094 now exists in test_schema; do not rerun
+  application or cleanup. Auxiliary verifier`c1320ac`/16 remote tests remains
+  prepared, not primary head. Functional PG replay/collision/guards/races/ack/UTC
+  evidence awaits separate approval for seven synthetic events and NEW-object
+  rollback-only probes, followed by verifier integration/exact-head handoff.
+  No production migrator, permissions/bootstrap, runtime/admission/settlement
+  or full PRD-03 acceptance. Exact attribution and retention limits in PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

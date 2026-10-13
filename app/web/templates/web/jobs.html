@@ -28,7 +28,8 @@
            most eye-catching thing on an idle page. #}
         {% if jobs and perms and perms.can('agenttask', 'delete') %}
             <form method="post" action="/app/jobs/clear"
-                  @submit="return confirm('Удалить все задания этого пространства? Выполняющиеся задания останутся.')">
+                  data-confirm="Удалить все задания этого пространства? Выполняющиеся задания останутся."
+                  data-confirm-title="Очистить очередь?" data-confirm-label="Очистить всё">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {% if is_superuser and filter_tenant_id %}
                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
@@ -177,7 +178,8 @@
                         {% endif %}
                         {% if job.status in cancellable and perms and perms.can('agenttask', 'delete') %}
                             <form method="post" action="/app/jobs/{{ job.id }}/cancel"
-                                  @submit="return confirm('Прервать задание #{{ job.id }}?')">
+                                  data-confirm="Записать отмену задания #{{ job.id }}? Внешние действия могли продолжиться — проверьте результат вручную."
+                                  data-confirm-title="Прервать задание?" data-confirm-label="Прервать">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
@@ -192,13 +194,14 @@
                            The confirm is what makes an icon-only control safe:
                            without it a stray click is an unrecoverable delete. #}
                         {% if job.status in deletable and perms and perms.can('agenttask', 'delete') %}
-                            <form method="post" action="/app/jobs/{{ job.id }}/delete">
+                            <form method="post" action="/app/jobs/{{ job.id }}/delete"
+                                  data-confirm="Задание #{{ job.id }} будет удалено безвозвратно."
+                                  data-confirm-title="Удалить задание?" data-confirm-label="Удалить">
                                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                                 {% if is_superuser and filter_tenant_id %}
                                     <input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">
                                 {% endif %}
                                 <button type="submit" title="Удалить задание" aria-label="Удалить задание #{{ job.id }}"
-                                        @click="if (!confirm('Удалить задание #{{ job.id }}?')) $event.preventDefault()"
                                         class="flex items-center justify-center rounded-md border border-slate-300 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                          stroke-width="1.5" stroke="currentColor" class="h-4 w-4">

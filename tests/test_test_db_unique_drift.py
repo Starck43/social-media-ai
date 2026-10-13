@@ -6,8 +6,8 @@ table but never rewrite an existing table's UNIQUE constraint, so a model that
 widens one (agent_sessions gaining tenant_id) would otherwise leave the stale
 constraint in place and every later run would test a schema nobody chose.
 
-Run: python tests/test_test_db_unique_drift.py
-No database, no app import; only the bootstrap module and stdlib.
+Run through the approved pytest runner with --noconftest.
+No database or app import; the bootstrap module uses the project dependencies.
 """
 
 from __future__ import annotations

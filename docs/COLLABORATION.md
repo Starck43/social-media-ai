@@ -32,7 +32,7 @@ them for workflow continuity.
 
 Useful OpenAI guidance: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
 [Codex memories](https://learn.chatgpt.com/docs/customization/memories),
-[Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
+[Using Goals](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
 ## Closeout procedure (triggered by the phrases listed in AGENTS.md)
 
@@ -73,3 +73,15 @@ kilo run --dir /absolute/task/worktree --agent test-orchestrator --format json \
 Minimal fields: absolute worktree, branch, expected HEAD, test files, behavior under test (1–2 lines), pointer "follow AGENTS.md and .agent/rules.md".
 Runner-side obligations (defined once in the agent definitions, not repeated per task): sequential runs; `pgrep -fl pytest` pre-check (exact command, no operators; exit 1 = free; shared test schema across worktrees ⇒ coordinator serializes); quiet pytest flags; `.agent/test-report.md` evidence (commands, exit codes, counts, failure excerpts, HEAD, dirty paths; no secrets); final `TEST RUN …` summary block to the coordinator.
 Infrastructure blockers are not successful tests; do not run a broad suite to validate documentation edits.
+
+## Test bootstrap compatibility
+
+`scripts/setup_test_db.py` inspects an existing target in a read-only catalog
+transaction before create/reset/seed. A live table absent from the branch's ORM
+metadata (other than Alembic's version table), missing columns on existing tables,
+or UNIQUE drift stops the run; bootstrap never adds or drops UNIQUE constraints
+to reconcile an existing table. Missing model tables retain the fresh-table path.
+Schema reconciliation/reset still needs separate owner approval, never a retry
+or weaker baseline to obtain PASS. `--check` remains offline target diagnostics,
+not this database preflight. These checks are not a shared-writer lock: R8/R10
+coordination and any existing evidence-preservation pauses remain in force.

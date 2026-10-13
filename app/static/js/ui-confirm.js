@@ -50,9 +50,14 @@
         event.stopPropagation();
         dismiss();
     });
-    dialog.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') event.stopPropagation();
-    });
+    // Native dialog focus may move to browser chrome at a Tab boundary. Capture
+    // Escape even then, before Alpine window handlers close the editor behind it.
+    document.addEventListener('keydown', (event) => {
+        if (!dialog.open || event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dismiss();
+    }, true);
     dialog.addEventListener('close', () => {
         // A queued close event from the previous use must not dismiss a new one.
         if (!dialog.open) dismiss();

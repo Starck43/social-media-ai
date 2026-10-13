@@ -10,9 +10,31 @@
 ## Collaboration workflow
 - `dev` is the integration branch. Complete authorized tasks autonomously, without routine confirmations.
 - Default: work in the current `dev` checkout when one sequential task owns its changes; inspect status first, preserve unrelated edits. Separate branch/worktree only for parallel tasks, PR review, risky experiments, conflicts, or an explicit owner request — never as routine ceremony.
-- Parallel work: use Codex subagents for independent bounded lanes; assign each a separate worktree/branch and non-overlapping ownership. Keep coordination and synthesis here; request concise findings only. Do not parallelize shared-DB tests.
+- Delegate only when requested or when independent lanes materially help. One
+  concrete task, a short review, and dependent steps stay in the current agent.
+  For a broad audit, use the fewest Codex subagents needed, give each one
+  bounded area, and ask for concise findings. Implementation lanes need
+  separate worktrees and file ownership. Shared-DB tests always stay sequential.
 - On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
 - Tests: every pytest run follows `.agent/rules.md` R10 and is delegated through Kilo. Neither Codex coordinator nor Codex subagents run pytest directly.
+
+## Understand common requests
+- “Audit completed work”, “check what is done”, or “find gaps in completed
+  tasks” means compare `docs/IMPLEMENTATION_STATUS.md` with current code and PR
+  evidence. Report verified findings and a prioritized fix plan; do not change
+  code unless asked to fix or implement.
+- For one named feature, task, or PR, inspect only that slice. Do not launch
+  subagents unless the review has independent parts or the user asks for them.
+- “Take the next active task” means select one unreserved item from
+  `docs/design/README.md`, verify current code and ownership, then implement
+  that item. It does not mean execute the whole board.
+- “Implement/fix the audit findings” means record accepted items in root
+  `ROADMAP.md`, then implement dependency-ready items with subagents only
+  when useful. Verify each before marking it done; make per-item commits when
+  the request or active Goal asks for them.
+- Run focused checks appropriate to changed behavior. Request broad suites only
+  when warranted; all pytest commands go through Kilo. Docs-only edits do not
+  need pytest.
 
 ## Project rules
 - Extensible assistant on the existing modular monolith: read `README.md`, `docs/DOCS_INDEX.md`, then relevant `docs/*.md` before changing behavior.

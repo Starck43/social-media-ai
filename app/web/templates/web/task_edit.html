@@ -248,7 +248,8 @@
             {% if perms and perms.can('agenttask', 'delete') %}
             <button type="submit" formnovalidate
                     :formaction="'/app/tasks/' + editing.id + '/delete'"
-                    @click="if (!confirm('Удалить задачу «' + editing.name + '»?')) $event.preventDefault()"
+                    :data-confirm="'Задача «' + editing.name + '» будет удалена безвозвратно.'"
+                    data-confirm-title="Удалить задачу?" data-confirm-label="Удалить навсегда"
                     class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                 Удалить
             </button>

@@ -35,7 +35,7 @@ function setup({ missing = false, broken = false } = {}) {
     const document = {
         body: { style: { overflow: 'auto' } }, activeElement: cancel,
         getElementById: id => ({ 'ui-confirm': missing ? null : dialog, 'ui-confirm-title': title, 'ui-confirm-message': message })[id],
-        addEventListener(name, fn, capture) { assert.equal(name, 'submit'); assert.equal(capture, true); this.submit = fn; },
+        addEventListener(name, fn, capture) { assert.equal(capture, true); this[name] = fn; },
     };
     function submit(form, submitter) {
         const event = { target: form, submitter, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
@@ -129,4 +129,15 @@ test('queued close from an earlier use does not dismiss a newly opened dialog', 
     const h = setup(); h.submit(h.form, h.button); h.cancel.fire('click');
     h.submit(h.form, h.button); h.dialog.fire('close');
     assert.equal(h.dialog.open, true); h.accept.fire('click'); assert.equal(h.form.requests, 1);
+});
+
+test('document-level Escape cancels even when focus moved outside the dialog', () => {
+    const h = setup(); h.submit(h.form, h.button);
+    const event = { key: 'Escape', preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
+    h.document.keydown(event);
+    assert.equal(event.prevented, true); assert.equal(event.stopped, true);
+    assert.equal(h.dialog.open, false); assert.equal(h.form.requests, undefined);
+    assert.equal(h.document.activeElement, h.button);
+    const idle = { key: 'Escape', preventDefault() { throw Error('idle intercepted'); } };
+    h.document.keydown(idle);
 });

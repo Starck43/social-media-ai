@@ -323,7 +323,7 @@
                             content=source_label,
                             checked=false,
                             cls="content-cb",
-                            attrs=':checked="task.source_ids.includes(' ~ source.id ~ ')"'
+                            attrs={':checked': 'task.source_ids.includes(' ~ source.id ~ ')'}
                         ) }}
                         {% endfor %}
                     </ul>
@@ -395,7 +395,7 @@
                                 </select>
                             </div>
                         </div>
-                        {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs='x-model="task.digest_time_breakdown"') }}
+                        {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs={'x-model': 'task.digest_time_breakdown'}) }}
                     </div>
                 </template>
 

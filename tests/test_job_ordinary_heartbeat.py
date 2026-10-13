@@ -274,7 +274,16 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(CLAIMS.JobClaimLostError):await asyncio.wait_for(task,1)
         self.no_outcome()
 
-    async def test_handler_exception_retains_retry_policy_after_renewal(self):
+    def assert_unconfirmed_failure(self, receipt):
+        # An unclassified handler exception may hide an external effect: it is
+        # recorded as an unconfirmed outcome for review, never replayed automatically.
+        self.assertEqual(receipt.acknowledgement,CLAIMS.OutcomeAck.FAILED)
+        kwargs=self.jobs.mark_failed.await_args.kwargs
+        self.assertFalse(kwargs['allow_retry'])
+        self.assertTrue(kwargs['error'].startswith(self.module.OUTCOME_UNCONFIRMED_PREFIX))
+        self.jobs.mark_done.assert_not_awaited()
+
+    async def test_handler_exception_after_renewal_is_unconfirmed_not_retried(self):
         async def failed(payload):
             self.started.set()
             await self.release_handler.wait()
@@ -283,15 +292,30 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         task=await self.begin()
         await self.periodic()
         receipt=await self.finish(task)
+        self.assert_unconfirmed_failure(receipt)
+        self.assertNotIn('handler failure',self.jobs.mark_failed.await_args.kwargs['error'])
+
+    async def test_retryable_delivery_failure_keeps_retry_after_renewal(self):
+        class RetryableDelivery(DeliveryFailure):
+            retryable=True
+        async def failed(payload):
+            self.started.set()
+            await self.release_handler.wait()
+            raise RetryableDelivery('provider busy')
+        self.handler.side_effect=failed
+        task=await self.begin()
+        await self.periodic()
+        receipt=await self.finish(task)
         self.assertEqual(receipt.acknowledgement,CLAIMS.OutcomeAck.RETRY)
+        self.assertTrue(self.jobs.mark_failed.await_args.kwargs['allow_retry'])
         self.jobs.mark_done.assert_not_awaited()
 
     async def test_handler_owned_error_is_not_confused_with_monitor_stop(self):
         async def failed(payload):raise self.module.JobClaimRenewalError(self.claim)
         self.handler.side_effect=failed
         receipt=await asyncio.wait_for(self.start(),1)
-        self.assertEqual(receipt.acknowledgement,CLAIMS.OutcomeAck.RETRY)
         self.jobs.mark_failed.assert_awaited_once()
+        self.assert_unconfirmed_failure(receipt)
 
     async def test_returned_failure_keeps_known_cost_and_no_retry(self):
         async def failed(payload):return {'status':'failed','error':'invalid_structured_output','llm_cost':0.25}

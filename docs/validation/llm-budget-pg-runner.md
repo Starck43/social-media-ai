@@ -23,6 +23,33 @@ acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
   and initial non-network injected commit-loss caveats are not superseded.
   No repetition, cleanup, definition workaround or guard disable is authorized.
 
+## Owner-relayed offline review at the prepared runner pin
+
+Review source: owner-relayed report at FULL SHA
+`ffc860f8f8556d80c0df4190564f7f29d83b007c`, clean review checkout;
+application/migration delta from style pin zero. Overall **OFFLINE REVIEW FAIL**.
+Project interpreter in the primary checkout was confirmed; review-worktree
+`.venv` was confirmed absent. The runner's two venv demands intentionally
+fail closed: do not delete/relax them or create/link/install an environment
+automatically. Environment accessibility remains a separate owner decision.
+
+Owner reports AST/syntax/compile exit0, Black --check exit1 and isort
+--check-only exit1 on the new runner only. The report elides the complete
+compile expression; no invented literal command or independent remote
+execution claim. Source-only review describes guarded transaction/race/manifest
+boundaries; it does not establish runtime/PG safety. Empirical report-write
+isolation remains UNVERIFIED. Connections0, SQL0, pytest/collection0,
+app/runner imports0, tracked changes0, commits/pushes0 were reported.
+
+Next bounded assignment: isort then Black on the new runner only using the
+existing project interpreter, recheck both, prove structural AST equivalence
+before/after (normalize import ordering only), compile without imports and
+inspect the exact diff/whitespace. No pytest, app import, PG, venv changes,
+style waiver, guard relaxation or inherited import-drift repair. Return the
+one-file patch as an attachment and exact command/exit evidence; no local
+commit/push is assigned. Coordinator will review/publish a real successor
+commit and repin it separately; never relabel original evidence.
+
 ## Gate A owner-relayed facts
 
 The clean owner review worktree was reported at style pin, not the eventual

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from pydantic import ValidationError
 from starlette import status
 from starlette.responses import RedirectResponse

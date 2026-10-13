@@ -1,7 +1,7 @@
 from datetime import timedelta, datetime, timezone
 from typing import Any, Optional
 
-from jose import jwt
+import jwt
 
 from app.core.config import settings
 

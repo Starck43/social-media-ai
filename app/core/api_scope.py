@@ -24,7 +24,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send

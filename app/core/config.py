@@ -1,7 +1,7 @@
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -48,8 +48,16 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     TOKEN_URL: str = f"{API_V1_STR}/auth/login"
 
-    # JWT настройки
+    # JWT настройки: only HMAC with SECRET_KEY; asymmetric algorithms are refused
+    # so a public key can never be accepted as an HMAC secret.
     ALGORITHM: str = "HS256"
+
+    @field_validator("ALGORITHM")
+    @classmethod
+    def _hmac_algorithm_only(cls, value: str) -> str:
+        if value not in ("HS256", "HS384", "HS512"):
+            raise ValueError("ALGORITHM must be HS256, HS384 or HS512")
+        return value
     # Токен доступа истекает через 30 дней в development и 1 час в production
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
     # Refresh токен истекает через 30 дней

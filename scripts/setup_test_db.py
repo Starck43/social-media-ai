@@ -10,7 +10,8 @@ Alembic version table alone. Schema separation is not a privilege sandbox.
 Fresh tables come from Base.metadata.create_all because the early migration
 chain expects existing tables. Reference roles, permissions, platforms and the
 bootstrap tenant are seeded with the canonical setup scripts. Existing drift
-is reported, not automatically migrated.
+is checked before schema creation, reset or seeding and is never automatically
+repaired. A branch missing live table metadata must stop, not remove evidence.
 
     python -m scripts.setup_test_db            # create + seed if absent
     python -m scripts.setup_test_db --reset    # truncate, then re-seed (destructive)
@@ -142,7 +143,7 @@ async def _create_tables() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _missing_columns(conn, metadata, schema: str) -> list[str]:
+async def _missing_columns(conn, metadata, schema: str, *, existing_tables: set[str] | None = None) -> list[str]:
     """Model columns missing in the schema; create_all only adds tables."""
     result = await conn.execute(
         text("select table_name, column_name from information_schema.columns " "where table_schema = :schema"),
@@ -153,6 +154,8 @@ async def _missing_columns(conn, metadata, schema: str) -> list[str]:
     missing: list[str] = []
     for table in metadata.sorted_tables:
         if table.schema not in (None, schema):
+            continue
+        if existing_tables is not None and table.name not in existing_tables:
             continue
         for column in table.columns:
             if (table.name, column.name) not in present:
@@ -188,6 +191,7 @@ async def _db_uniques(conn, schema: str) -> dict:
             "from information_schema.table_constraints tc "
             "join information_schema.key_column_usage kcu "
             "  on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema "
+            "  and kcu.table_name = tc.table_name "
             "where tc.table_schema = :schema and tc.constraint_type = 'UNIQUE' "
             "group by tc.table_name, tc.constraint_name"
         ),
@@ -210,7 +214,7 @@ def unique_constraint_drift(model_uniques: dict, db_uniques: dict) -> tuple[list
     — a regression can then pass or fail against a schema nobody chose (a
     session constraint that was never widened to
     (tenant_id, channel, chat_id) still rejects the second workspace's row).
-    The test schema is model-driven, so it must follow the models exactly.
+    Drift is diagnostic only: bootstrap must never apply this diff as DDL.
 
     Column sets, not names, decide staleness: `Column(unique=True)` declares no
     name, and the database calls it `<table>_<column>_key`.
@@ -225,27 +229,62 @@ def unique_constraint_drift(model_uniques: dict, db_uniques: dict) -> tuple[list
             if frozenset(columns) not in model_columns:
                 stale.append((table, name))
         for name, columns in sorted(model.items()):
-            if name in db:
-                continue
             if any(frozenset(db[k]) == frozenset(columns) for k in db):
                 continue
             missing.append((table, columns, name))
     return stale, missing
 
 
-async def repair_unique_constraints(conn, metadata, schema: str) -> list[str]:
-    """Align live UNIQUE constraints with the models; returns what it did."""
-    stale, missing = unique_constraint_drift(_model_uniques(metadata, schema), await _db_uniques(conn, schema))
+async def check_existing_schema(conn, metadata, schema: str, *, require_all_tables: bool = False) -> None:
+    """Refuse incompatible existing tables using catalog reads only."""
+    result = await conn.execute(
+        text(
+            "select table_name from information_schema.tables "
+            "where table_schema = :schema and table_type = 'BASE TABLE'"
+        ),
+        {"schema": schema},
+    )
+    existing_tables = {row[0] for row in result}
+    model_tables = {table.name for table in metadata.sorted_tables if table.schema in (None, schema)}
+    # Alembic owns its version table, not ORM metadata. It is never altered here.
+    unknown = existing_tables - model_tables - {"alembic_version"}
+    if unknown:
+        raise RuntimeError(
+            "Test bootstrap refused: live tables absent from this branch's model metadata: "
+            + ", ".join(sorted(unknown))
+            + ". Preserve their constraints and evidence; coordinate with the schema owner. "
+            "Do not reset, drop or repair the schema to make this branch pass."
+        )
 
-    actions: list[str] = []
-    for table, name in stale:
-        await conn.execute(text(f'alter table "{schema}"."{table}" drop constraint "{name}"'))
-        actions.append(f"dropped {table} {name}")
-    for table, columns, name in missing:
-        columns_sql = ", ".join(f'"{column}"' for column in columns)
-        await conn.execute(text(f'alter table "{schema}"."{table}" add constraint "{name}" unique ({columns_sql})'))
-        actions.append(f"created {table} {name} ({columns_sql})")
-    return actions
+    if require_all_tables and model_tables - existing_tables:
+        raise RuntimeError(
+            "Test bootstrap refused: model tables still absent after table creation: "
+            + ", ".join(sorted(model_tables - existing_tables))
+            + ". Stop; no reference rows were seeded."
+        )
+
+    missing_columns = await _missing_columns(conn, metadata, schema, existing_tables=existing_tables)
+    if missing_columns:
+        raise RuntimeError(
+            "Test bootstrap refused: existing tables have missing model columns: "
+            + ", ".join(sorted(missing_columns))
+            + ". Stop and request separately approved, schema-qualified reconciliation; no automatic rebuild."
+        )
+
+    # Absent model tables may be created by the existing fresh-table path.
+    model_uniques = {
+        name: uniques for name, uniques in _model_uniques(metadata, schema).items() if name in existing_tables
+    }
+    stale, missing = unique_constraint_drift(model_uniques, await _db_uniques(conn, schema))
+    if stale or missing:
+        details = [f"unexpected {table}.{name}" for table, name in stale]
+        details.extend(f"missing {table}.{name}" for table, _, name in missing)
+        raise RuntimeError(
+            "Test bootstrap refused: UNIQUE constraint drift: "
+            + ", ".join(details)
+            + ". No constraints were changed. Coordinate a separately approved reconciliation; "
+            "do not reset, drop or repair the schema automatically."
+        )
 
 
 def _stamp_head(url: str) -> None:
@@ -361,7 +400,9 @@ def resolve_and_redirect() -> tuple[str, str, str]:
 
 async def ensure_test_database(test_url: str, *, shares_working_database: bool = False, reset: bool = False) -> None:
     """Ensure redirected test tables/reference rows; reset is explicitly destructive."""
+    from app.core.config import settings
     from app.core.database import async_engine
+    from app.models import Base
 
     def say(message: str) -> None:
         print(f"[test-db] {message}")
@@ -380,6 +421,12 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
 
     say(f"database {database_name(test_url)}: {state}")
 
+    # Check before create_all, reset or reference writes. Read-only preflight is
+    # not a writer-exclusion lock: shared-schema coordination is still required.
+    async with async_engine.connect() as conn:
+        await conn.execute(text("set transaction isolation level repeatable read, read only"))
+        await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA)
+
     if state == "created" or await _table_count() == 0:
         await _create_schema()
         await _create_tables()
@@ -396,26 +443,10 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
     await _create_schema()
     await _create_tables()
 
-    from app.core.config import settings
-    from app.models import Base
-
-    # create_all cannot change an existing table's constraints, so a model that
-    # rewrites a UNIQUE leaves the previous one in place for every later run.
-    # Align them with the models before anything reads the schema.
-    async with async_engine.begin() as conn:
-        repairs = await repair_unique_constraints(conn, Base.metadata, settings.DB_SCHEMA)
-    for action in repairs:
-        say(f"schema repaired: {action}")
-
+    # Verify the resulting catalog before seeding; never repair it in bootstrap.
     async with async_engine.connect() as conn:
-        missing = await _missing_columns(conn, Base.metadata, settings.DB_SCHEMA)
-    if missing:
-        raise RuntimeError(
-            "The test schema is behind the models (missing columns): "
-            + ", ".join(sorted(missing))
-            + ". `create_all` only adds tables, never columns — rebuild the schema, e.g.:\n"
-            f"    psql -c 'drop schema \"{settings.DB_SCHEMA}\" cascade' && pytest"
-        )
+        await conn.execute(text("set transaction isolation level repeatable read, read only"))
+        await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
 
     await _seed_reference_rows()
     say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")

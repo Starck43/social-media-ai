@@ -84,20 +84,19 @@ database revision or full release gate.
   29 tests after the stub-settings fix on that head; merge tree against dev was
   clean. No schema migration, provider or live calls were performed.
 - Immutable outcome-event storage [Draft PR #168](https://github.com/Starck43/social-media-ai/pull/168)
-  is **BLOCKED, NOT merged/activated**, primary head `f8cbe69`. Unchanged
-  foundation `5511a69`: remote 43 tests, owner-local 116/registry checks PASS.
-  Application runner: 18 remote no-DB tests/compiler/scoped formatters PASS.
-  Approved option-(b) attempt stopped BEFORE DDL on shared-journal drift;
-  [owner report](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6134825709)
-  diagnoses 49 receipts (full hash unchanged), 188 journal, 362 tenants,
-  public0092, intact0093, absent0094. Historical journal/tenant subset integrity
-  is not established by the new whole-table digest. Next: agreed idle window,
-  fresh read-only baseline confirmation, then one revised pinned application.
-  Auxiliary prepared verifier `c1320ac` adds only two files and has 16 remote
-  no-DB tests/compiler/scoped formatters PASS; not applied to the primary head
-  or run against PG. Synthetic writes/rollback-only probes require separate
-  approval and successful application evidence. No runtime/admission/settlement
-  or full PRD-03 acceptance. Exact hashes, commands and handoff are in the PR.
+  is **BLOCKED, NOT merged/activated**, primary head `f8cbe69`. Foundation
+  `5511a69`: remote43 / owner-local116 + registry PASS; application runner18
+  remote no-DB tests PASS. Auxiliary verifier `c1320ac`:16 remote tests PASS,
+  not primary head and not executed against PG. Two approved application attempts
+  stopped BEFORE DDL; [second report](https://github.com/Starck43/social-media-ai/pull/168#issuecomment-6144536663)
+  records Tenant count mismatch (380 versus362), 0094 absent, public0092.
+  Later receipt/journal hashes differ at unchanged counts; these are NOT an
+  accepted replacement baseline. Runner JSON includes timezone-sensitive timestamps;
+  next is read-only same-snapshot original-TimeZone/UTC comparison and diagnosis
+  source review, not attribution to a writer without evidence. Prior application
+  command withdrawn pending review; no cleanup/reset/third application. Synthetic
+  writes/probes require separate approval and successful application evidence.
+  No runtime/admission/settlement or full PRD-03 acceptance. Exact handoff in PR.
 - Owner reports test-only 0093 definition application; no working-schema migration,
   schema reset, live activation or deployment is claimed.
 

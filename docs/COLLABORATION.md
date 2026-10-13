@@ -32,7 +32,7 @@ them for workflow continuity.
 
 Useful OpenAI guidance: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
 [Codex memories](https://learn.chatgpt.com/docs/customization/memories),
-[Using Goals](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
+[Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
 ## Closeout procedure (triggered by the phrases listed in AGENTS.md)
 

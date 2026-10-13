@@ -313,6 +313,55 @@ worker fence, old-day baseline, admission, terminal events, reconciliation,
 UTC-rollover liability handling, all-path cutover or migration/rollback proof
 is supplied by this storage-only package.
 
+### Immutable outcome-event storage foundation (not activated)
+
+Status: **Definition and standalone storage API only; caller wiring, PostgreSQL
+evidence and activation pending**. `outcome_events.py` builds one normalized
+observation against a frozen receipt. `LLMOutcomeEventManager.record_event`
+requires explicit trusted payer scope, reads that payer's persisted receipt,
+validates price/usage evidence, and acknowledges only an owned commit or an
+exact scoped replay. Only the named event-identity constraint suppresses an
+insert; differing/inaccessible evidence and other write/commit errors propagate.
+An uncertain commit is not a dispatch or settlement authorization.
+
+Only client-owned `accounting_usage`, `accounting_cost_reported` and
+`accounting_cost_usd` fields are read. Generated text, legacy projection zeros
+and current model tariffs are not monetary evidence. Structured provider price
+arbitrates; a reported but unresolved amount blocks tariff fallback. Explicit
+provider zero or both explicit frozen zero rates are FREE. Missing price/usage
+remains NULL/UNDEFINED. Zero observed usage at a nonzero tariff is priced zero,
+not explicit FREE. Not-dispatched evidence is a separate NULL-cost state.
+
+This new, unwired builder requires exact representability in Numeric(18,9);
+unrepresentable positive amounts are never rounded to zero/FREE. Safe normalized
+decimal provenance is retained when possible, not raw billing payloads or signed
+provider proof. This differs from the existing journal's rounding adapter and
+must be reconciled deliberately before activation, not by rewriting history.
+Tariff calculation uses the receipt snapshot, never a later model price.
+
+Timeout, cancellation and unknown observations remain uncertain even if cost
+is known. A later reconciliation uses another event UUID and never mutates
+the earlier event. Observed UTC time may cross midnight without changing the
+receipt's preparation day. No reducer/settlement is provided: multiple events
+for a receipt must not be summed as multiple paid attempts; this API cannot
+release a reservation or unresolved liability.
+
+Migration definition 0094 adds only the event table, RESTRICT foreign keys,
+constraints/index and schema-bound mutation/binding guards. It does not alter
+0093 or existing evidence. The manager requires both receipt and event guards;
+it never creates them. The insert guard checks payer/policy/time and explicit
+free/provider consistency; full tariff recomputation is manager validation, not
+a general direct-SQL authorization guarantee. Privileged DDL is outside this
+guard threat model.
+
+0094 is **NOT APPLIED**. Prior test-only permission for 0093 does not authorize
+0094 or pytest's metadata/bootstrap/permission registration. Before commit,
+rollback is transactional; after application, preserve events, receipts and
+guards. Ordinary downgrade is refused, even when empty. PostgreSQL definition/
+model/catalog parity, guard rollback, trusted-payer isolation, exact replay/
+collision, owned commit/ack faults and real two-session races remain required.
+Production migrator, cutover, runtime and full PRD-03 are not certified.
+
 ### Proposed all-path accounting and admission contract
 
 Status: **Owner pricing decision recorded; admission implementation and evidence

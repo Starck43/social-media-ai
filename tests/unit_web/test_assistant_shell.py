@@ -255,7 +255,7 @@ def test_theme_and_collapse_leave_navbar_and_keep_unique_control_targets():
         ("SUPERUSER", 1, "Владелец"),
         ("MANAGER", 1, "Менеджер"),
         ("UNKNOWN", 1, "Роль не назначена"),
-        (None, None, "Владелец"),
+        (None, None, "Роль не назначена"),
     ],
 )
 def test_workspace_role_caption_reuses_canonical_labels_without_app_imports(codename, role_id, expected):

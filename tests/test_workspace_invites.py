@@ -53,7 +53,7 @@ def test_key_of_reads_the_membership_role() -> None:
         def __init__(self, role_id, role):
             self.role_id, self.role = role_id, role
 
-    assert member_roles.key_of(_M(None, None)) == "owner"
+    assert member_roles.key_of(_M(None, None)) is None
     assert member_roles.key_of(_M(3, _Role(UserRoleType.ANALYST))) == "analyst"
     assert member_roles.key_of(_M(3, _Role("MANAGER"))) == "manager"
     assert member_roles.key_of(_M(3, None)) is None

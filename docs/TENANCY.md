@@ -190,8 +190,9 @@ user's role grants the required pair. This is the same check used by:
 
 Before migration 0080, `tenant_users.role` was a string column (`"owner"` / `"member"`).
 Migration 0080 replaced it with `tenant_users.role_id` (FK to `roles.id`).
-Legacy rows with `role_id = NULL` are treated as owners (`is_owner = True`) for
-backward compatibility.
+Since `fdb6c18`, legacy rows with `role_id = NULL` are fail-closed:
+`is_owner = False`, empty workspace grants. Such memberships need an
+explicit role assignment to restore access; no automatic repair.
 
 Role string resolution helpers:
 - `_resolve_role_codename("owner")` → `"SUPERUSER"`

@@ -621,6 +621,21 @@ Deletes read notifications older than `days` (1–365).
 
 ## Dashboard
 
+### Web home overview
+
+`GET /app/` is a compact read-only overview, not the machine dashboard below.
+The prepared cleanup removes KPI/aggregation cards, quick commands, analytical
+sidebar and inline task execution. It shows up to five permitted analysis cards,
+three recent task summaries, one conditional setup step and a chat entry.
+Analysis/task loading requires the effective aianalytics.view / agenttask.view;
+source labels additionally require source.view. The operator workspace filter
+is retained. No home-request KPI aggregation, new LLM call or migration.
+
+The attention block, mixed analysis/digest feed and truly upcoming schedules are
+explicitly deferred in [the canonical task](design/README.md#prd-081--outcome-focused-home-overview).
+The current task preview is recent-by-creation, not a nearest-run claim. This
+source change is not evidence of deployment or completed runtime validation.
+
 ### Get Dashboard Stats
 
 ```

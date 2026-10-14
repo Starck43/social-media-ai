@@ -199,8 +199,8 @@ async def test_invite_redeem_adds_second_membership(client: AsyncClient) -> None
 # ── middleware scope handoff ───────────────────────────────────────────────
 
 
-async def test_dashboard_shows_kpis(client: AsyncClient) -> None:
-    """Dashboard renders real KPIs (even if all zeros on empty DB)."""
+async def test_dashboard_shows_compact_overview(client: AsyncClient) -> None:
+    """Home is a read-only overview, without the retired KPI/command panels."""
     username = _name("web")
     token = await _csrf(client, "/app/register")
     await client.post(
@@ -217,12 +217,10 @@ async def test_dashboard_shows_kpis(client: AsyncClient) -> None:
     try:
         resp = await client.get("/app/")
         assert resp.status_code == 200
-        # KPIs are rendered (even if zero)
-        assert "Источники активны" in resp.text
-        assert "Постов за сутки" in resp.text
-        assert "LLM-расход за сутки" in resp.text
-        # Values are present (0 or numbers)
-        assert ">0<" in resp.text or ">0.00<" in resp.text
+        assert "Последние результаты" in resp.text
+        assert "data-home-chat" in resp.text
+        for label in ("Источники активны", "Постов за сутки", "LLM-расход за сутки", "Быстрые действия"):
+            assert label not in resp.text
     finally:
         if user is not None:
             ms = await TenantUserManager().web_memberships(user.id)
@@ -352,31 +350,23 @@ async def _register(client: AsyncClient, workspace: str) -> tuple[User, int]:
     return user, memberships[0].tenant_id
 
 
-async def test_dashboard_shows_toxicity_and_hashtags(client: AsyncClient) -> None:
-    """The two stage-3 widgets reach the dashboard with real values.
-
-    `ReportAggregator` grew eight specialized aggregations that only the digest
-    ever called, so two of them had no UI at all. This pins that the dashboard
-    actually renders their readings — a widget that is wired into the template
-    but fed an empty aggregation looks identical to a working one on an empty
-    database, which is why the rows are written here rather than checking only
-    that the headings appear.
-    """
+async def test_dashboard_keeps_results_without_the_analytical_sidebar(client: AsyncClient) -> None:
+    """Existing analysis cards remain; specialized metrics are not home widgets."""
     from datetime import date
 
     from app.models import AIAnalytics, Platform, Source
     from app.types import SourceType
 
-    user, tenant_id = await _register(client, "Tox Studio")
+    user, tenant_id = await _register(client, "Result Studio")
     platform = await Platform.objects.filter(platform_type="vk").first()
     source = None
     try:
         source = await Source.objects.create(
             tenant_id=tenant_id,
             platform_id=platform.id,
-            name="Tox Channel",
+            name="Overview Channel",
             source_type=SourceType.CHANNEL.name,
-            external_id=f"tox-{secrets.token_hex(6)}",
+            external_id=f"overview-{secrets.token_hex(6)}",
             params={},
             is_active=True,
         )
@@ -384,26 +374,14 @@ async def test_dashboard_shows_toxicity_and_hashtags(client: AsyncClient) -> Non
             tenant_id=tenant_id,
             source_id=source.id,
             analysis_date=date.today(),
-            summary_data={
-                "multi_llm_analysis": {
-                    "text_analysis": {
-                        "toxicity_score": 0.9,
-                        "hashtags": [{"tag": "жалоба", "count": 4}, {"tag": "отзыв", "count": 2}],
-                    }
-                }
-            },
+            summary_data={"multi_llm_analysis": {"text_analysis": {"toxicity_score": 0.9}}},
         )
-
         resp = await client.get("/app/")
         assert resp.status_code == 200
-        # The KPI reports the share, not just the count: one toxic row out of
-        # one analysed row is 100%, and a bare "1" would read as one incident.
-        assert "Токсичных за 7 дней" in resp.text
-        assert "100.0%" in resp.text
-        # Hashtags reach the sidebar, normalised to a single leading '#'.
-        assert "Хэштеги за 7 дней" in resp.text
-        assert "#жалоба" in resp.text
-        assert "##" not in resp.text
+        assert "Последние результаты" in resp.text
+        assert "Overview Channel" in resp.text
+        for label in ("Токсичных за 7 дней", "Хэштеги за 7 дней", "Топ тем за 7 дней", "Типы контента"):
+            assert label not in resp.text
     finally:
         if user is not None:
             await _delete_user(user.id)

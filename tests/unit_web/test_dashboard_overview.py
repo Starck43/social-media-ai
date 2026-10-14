@@ -30,7 +30,10 @@ def _functions(*names):
         node.body = [
             child
             for child in node.body
-            if not (isinstance(child, ast.ImportFrom) and child.module == "app.services.ai.analysis_render")
+            if not (
+                isinstance(child, ast.ImportFrom)
+                and child.module in ("app.services.ai.analysis_render", "app.models.ai_analytics", "app.models.collected_item", "app.models.job")
+            )
         ]
     module = ast.Module(
         body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes],
@@ -87,6 +90,7 @@ def _render(offer, *, real_base=False, **extra):
         "recent_results": [],
         "recent_tasks": [],
         "effective_active": set(),
+        "pipeline": None,
         "_tz": "Europe/Moscow",
         "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
         "perms": SimpleNamespace(can_manage_workspace=lambda target: False, is_owner=False, workspace_role="VIEWER"),
@@ -223,6 +227,7 @@ async def test_handler_skips_unauthorized_queries():
         _recent_results=results,
         _recent_tasks=tasks,
         _effective_active_ids=AsyncMock(return_value=set()),
+        _pipeline=AsyncMock(return_value=None),
         render=lambda request, template, **context: context,
     )
     request = SimpleNamespace(
@@ -249,6 +254,7 @@ async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
         _recent_results=results,
         _recent_tasks=tasks,
         _effective_active_ids=AsyncMock(return_value=set()),
+        _pipeline=AsyncMock(return_value=None),
         render=lambda request, template, **context: context,
     )
     rights = {("aianalytics", "view"), ("agenttask", "view")}
@@ -263,3 +269,90 @@ async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
     results.assert_awaited_once_with(11, True, False)
     tasks.assert_awaited_once_with(7, True, 11, show_sources=False)
     assert len(context["recent_tasks"]) == 3
+
+
+class _CountQuery:
+    """Minimal chainable stand-in: filter/order_by/limit recorded, await yields rows."""
+
+    def __init__(self, count=0, rows=()):
+        self.count_value = count
+        self.rows = list(rows)
+        self.filters = []
+
+    def filter(self, *args, **kwargs):
+        self.filters.append((args, kwargs))
+        return self
+
+    def order_by(self, *args):
+        return self
+
+    def limit(self, value):
+        assert value == 3
+        return self
+
+    async def count(self):
+        return self.count_value
+
+    def __await__(self):
+        async def _await_rows():
+            return list(self.rows)
+
+        return _await_rows().__await__()
+
+
+def _with_models(staged=0, analyzed=0, jobs=()):
+    import types
+
+    AIAnalytics = types.SimpleNamespace(objects=_CountQuery(analyzed))
+    CollectedItem = types.SimpleNamespace(objects=_CountQuery(staged))
+    Job = types.SimpleNamespace(
+        objects=_CountQuery(rows=jobs), created_at=types.SimpleNamespace(desc=lambda: "created-desc")
+    )
+    return {"AIAnalytics": AIAnalytics, "CollectedItem": CollectedItem, "Job": Job}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_hidden_without_analytics_or_task_rights():
+    scope = _functions("_pipeline")
+    scope.update(_with_models())
+    assert await scope["_pipeline"](7, False, _offer()) is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_superuser_without_workspace_sees_global_hint():
+    scope = _functions("_pipeline")
+    scope.update(_with_models())
+    assert await scope["_pipeline"](None, True, _offer(("aianalytics", "view"))) == {"scope_all": True}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_counts_staged_analyzed_and_running_jobs():
+    running = SimpleNamespace(status="running", job_type="collect")
+    queued = SimpleNamespace(status="pending", job_type="analyze")
+    stubs = _with_models(staged=4, analyzed=9, jobs=(running, queued))
+    scope = _functions("_pipeline")
+    scope.update(stubs)
+    result = await scope["_pipeline"](7, False, _offer(("aianalytics", "view")))
+    assert result["staged"] == 4 and result["analyzed"] == 9
+    assert result["running"] == [{"job_type": "collect", "collect": True}]
+    assert result["queued_count"] == 1 and result["job_count"] == 2
+    assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["CollectedItem"].objects.filters)
+    assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["Job"].objects.filters)
+
+
+def test_pipeline_strip_shows_waiting_and_model_activity():
+    markup = _render(
+        _offer(("aianalytics", "view")),
+        pipeline={
+            "scope_all": False,
+            "staged": 4,
+            "analyzed": 9,
+            "running": [{"job_type": "analyze", "collect": False}],
+            "queued_count": 0,
+            "job_count": 1,
+        },
+    )
+    assert "data-home-pipeline" in markup
+    assert "ожидают анализа" in markup
+    assert "сохранено анализов" in markup
+    assert "Модель анализирует…" in markup

@@ -62,6 +62,53 @@
 
     {# Extension point: actionable attention projection; hidden until implemented. #}
 
+    {% if pipeline is defined and pipeline %}
+    <section data-home-pipeline class="ui-card mb-6 min-w-0" aria-label="Состояние обработки">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Обработка данных</h2>
+            <a href="/app/jobs" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Очередь →</a>
+        </div>
+        {% if pipeline.scope_all %}
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Выберите пространство, чтобы увидеть состояние его обработки.</p>
+        {% else %}
+        <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+                <p class="text-2xl font-semibold">{{ pipeline.staged }}</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">ожидают анализа</p>
+            </div>
+            <div>
+                <p class="text-2xl font-semibold">{{ pipeline.analyzed }}</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">сохранено анализов</p>
+            </div>
+            <div>
+                <p class="text-2xl font-semibold">{{ pipeline.running|length }}</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">выполняется сейчас</p>
+            </div>
+            <div>
+                <p class="text-2xl font-semibold">{{ pipeline.queued_count }}</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">в очереди</p>
+            </div>
+        </div>
+        {% if pipeline.running %}
+        <ul class="mt-3 space-y-1.5">
+            {% for job in pipeline.running %}
+            <li class="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+                <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <span>{% if job.collect %}Сбор выполняется…{% else %}Модель анализирует…{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% elif pipeline.job_count == 0 %}
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Очередь пуста — новых сборов и анализов нет.</p>
+        {% else %}
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Задачи в очереди, выполнение скоро начнётся.</p>
+        {% endif %}
+        {% endif %}
+    </section>
+    {% endif %}
+
     <div class="ui-home-grid{% if offer.tasks %} ui-home-grid-split{% endif %}">
         <section data-home-results class="ui-card min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-3">

@@ -508,6 +508,7 @@ def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
         ),
         recent_tasks=[],
         effective_active=set(),
+        pipeline=None,
         cron_to_human=SimpleNamespace(__call__=lambda e: ""),
         show_welcome=show_welcome,
         scenarios_count=scenarios_count,

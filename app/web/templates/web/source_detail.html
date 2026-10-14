@@ -22,18 +22,22 @@
 <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
         {% if perms and perms.can('source', 'analyze') %}
             {% if running.collect or running.analyze %}
-                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
-                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                    <span class="ml-1">Анализ…</span>
-                </span>
+                {% if running.collect %}
                 <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Сбор выполняется">
                     <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                     </svg>
                     <span class="ml-1">Сбор…</span>
                 </span>
+                {% endif %}
+                {% if running.analyze %}
+                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
+                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <span class="ml-1">Анализ…</span>
+                </span>
+                {% endif %}
             {% else %}
                 <form method="post" action="/app/sources/{{ source.id }}/analyze">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">

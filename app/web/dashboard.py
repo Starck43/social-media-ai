@@ -1,7 +1,9 @@
 """Read-only workspace overview: permitted results and compact task summaries.
 
-No KPI/aggregation work or LLM calls on the home request. Future attention and
-mixed-result projections are specified in the canonical development board.
+The pipeline strip shows data state only (staged items waiting, stored
+analyses, job activity) — never KPI/aggregations or LLM calls on the home
+request. Future attention and mixed-result projections are specified in the
+canonical development board.
 """
 
 from __future__ import annotations
@@ -111,6 +113,44 @@ async def _effective_active_ids(recent_tasks) -> set[int]:
 # A path of "" is rejected by FastAPI when the router is included, so the index
 # is registered as "/" only. Requests to "/app" (no slash) are redirected here
 # by Starlette's redirect_slashes.
+async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> dict | None:
+    """Data-state strip: staged items, stored analyses, running collect/analyze jobs.
+
+    Shown only when the caller already sees analytics or tasks — no new rights
+    are implied by this strip. Superusers without an active workspace see the
+    global queue instead of a meaningless workspace count.
+    """
+    if not (offer.get("analytics") or offer.get("tasks")):
+        return None
+    if is_superuser and tenant_id is None:
+        return {"scope_all": True}
+
+    from app.models.ai_analytics import AIAnalytics
+    from app.models.collected_item import CollectedItem
+    from app.models.job import Job
+
+    staged = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
+    analyzed = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
+    active_jobs = await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"]).order_by(
+        Job.created_at.desc()
+    ).limit(3)
+
+    running = [
+        {"job_type": j.job_type, "collect": j.job_type == "collect"}
+        for j in active_jobs
+        if getattr(j, "status", None) == "running"
+    ]
+    queued = sum(1 for j in active_jobs if getattr(j, "status", None) == "pending")
+    return {
+        "scope_all": False,
+        "staged": staged,
+        "analyzed": analyzed,
+        "running": running,
+        "queued_count": queued,
+        "job_count": len(active_jobs),
+    }
+
+
 def _offers(perms) -> dict[str, bool]:
     """What the dashboard may point at: a link only where the caller's level opens the page.
 
@@ -160,6 +200,8 @@ async def dashboard(request: Request):
     # never evidence that a permitted task is inactive.
     effective_active = await _effective_active_ids(recent_tasks) if offer["sources"] else None
 
+    pipeline = await _pipeline(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer)
+
     # A single first-value step, never a permanent command panel. Only query a
     # model when the caller can both view and create it in the active workspace.
     next_step = None
@@ -176,6 +218,7 @@ async def dashboard(request: Request):
         recent_results=recent_results,
         recent_tasks=recent_tasks,
         effective_active=effective_active,
+        pipeline=pipeline,
         is_superuser=is_superuser,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,

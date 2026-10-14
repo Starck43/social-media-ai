@@ -170,3 +170,27 @@ def test_one_time_code_is_bound_to_issuing_workspace():
     )
     assert scope["_pop_issued_invite"](request) is None
     assert "_issued_invite" not in request.session
+
+
+def test_invite_buttons_expose_dialog_target_in_both_shells():
+    markup = environment().get_template("shell-fixture.html").render(**context(manager=True))
+    invites = [attrs for tag, attrs in Tags(markup).tags if "data-invite-open" in attrs]
+    assert len(invites) == 2
+    assert all(
+        attrs.get("aria-controls") == "invite-dialog" and attrs.get("aria-haspopup") == "dialog" for attrs in invites
+    )
+
+
+@pytest.mark.parametrize("operator", [True, False])
+def test_platform_admin_link_keeps_operator_gate(operator):
+    markup = environment().get_template("shell-fixture.html").render(**context(operator=operator))
+    assert ('href="/admin/"' in markup) is operator
+
+
+def test_workspace_switch_keeps_post_and_csrf():
+    values = context(manager=True)
+    values["workspaces"] = [SimpleNamespace(active=False, tenant=SimpleNamespace(id=8, name="Other"), role="Viewer")]
+    markup = environment().get_template("shell-fixture.html").render(**values)
+    assert 'method="post" action="/app/workspaces/select"' in markup
+    assert 'name="tenant_id" value="8"' in markup
+    assert 'name="_csrf" value="csrf&#34;&lt;token&gt;"' in markup

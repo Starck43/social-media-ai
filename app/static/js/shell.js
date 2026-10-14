@@ -63,14 +63,29 @@
             panel.querySelectorAll('[data-theme-choice]').forEach(choice => choice.addEventListener('click', () => closePopover(popover, true)));
         });
         let scrollDepth = 0, oldOverflow = '';
+        document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+            trigger.setAttribute('aria-controls', trigger.dataset.dialogOpen);
+            trigger.setAttribute('aria-expanded', 'false');
+        });
         document.querySelectorAll('dialog.shell-dialog, dialog.shell-drawer, dialog.shell-right-panel').forEach(dialog => {
             dialog.addEventListener('close', () => {
                 scrollDepth = Math.max(0, scrollDepth - 1);
                 if (!scrollDepth) document.body.style.overflow = oldOverflow;
+                document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                    if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
+                });
                 // Native dialog normally restores focus; handle disappeared/hidden launchers.
                 const launcher = dialog.shellLauncher;
                 if (launcher?.isConnected && launcher.getClientRects().length) launcher.focus();
                 else document.getElementById('page-content')?.focus();
+            });
+            dialog.addEventListener('keydown', event => {
+                if (event.key !== 'Tab') return;
+                const controls = Array.from(dialog.querySelectorAll('a[href], button, input, select, textarea, [tabindex="0"]'))
+                    .filter(el => el.getClientRects().length && !el.disabled);
+                const first = controls[0], last = controls[controls.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
             });
             dialog.addEventListener('click', event => {
                 const rect = dialog.getBoundingClientRect();
@@ -82,6 +97,9 @@
             dialog.shellLauncher = launcher;
             if (!scrollDepth++) { oldOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
             dialog.showModal();
+            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'true');
+            });
         }
         async function openInvites(launcher) {
             const dialog = document.getElementById('invite-dialog');
@@ -89,17 +107,20 @@
             document.querySelectorAll('[data-shell-popover]').forEach(p => closePopover(p));
             // Leave the mobile drawer before giving the invitation dialog focus.
             const drawer = document.getElementById('navigation-drawer');
+            const focusTarget = drawer?.open ? drawer.shellLauncher :
+                (launcher?.closest('[data-shell-popover]')?.querySelector('[data-popover-trigger]') || launcher);
             if (drawer?.open) drawer.close();
-            openDialog(dialog, launcher);
+            openDialog(dialog, focusTarget);
             const body = document.getElementById('invite-body');
-            if (body.dataset.loaded === 'true' || body.dataset.loading === 'true') return;
+            // Recheck current server capability on each opening; do not retain a
+            // previously authorized invite list after role changes in another tab.
+            if (body.dataset.loading === 'true') return;
             body.dataset.loading = 'true';
             body.textContent = 'Загрузка…';
             try {
                 const response = await fetch('/app/settings/invites', { headers: { Accept: 'text/html' }, cache: 'no-store' });
                 if (!response.ok || response.redirected) throw new Error('load');
                 body.innerHTML = await response.text();
-                body.dataset.loaded = 'true';
             } catch (_) {
                 body.textContent = 'Не удалось загрузить приглашения. Права могли измениться. ';
                 const retry = document.createElement('button');

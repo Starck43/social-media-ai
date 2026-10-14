@@ -201,7 +201,7 @@
             </div>
         {% endif %}
         {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
-        <button type="button" data-invite-open class="mt-6 ui-control">Приглашения и отзыв открытых приглашений</button>
+        <button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog" class="mt-6 ui-control">Приглашения и отзыв открытых приглашений</button>
         {% endif %}
         <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">

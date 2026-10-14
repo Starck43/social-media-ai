@@ -265,7 +265,6 @@
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Запусков пока не было.</p>
         {% endif %}
     </div>
-</div>
 
 <!-- Edit modal ───────────────────────────────────────────────────────── -->
 {% if perms_can(request, 'agenttask', 'update') %}
@@ -382,5 +381,6 @@
     </div>
 </div>
 {% endif %}
+</div>
 {% endif %}
 {% endblock %}

@@ -12,7 +12,7 @@
         {% endfor %}
         <form method="post" action="/app/workspaces/new"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Создать пространство</button></form>
         <a href="/app/invite">Присоединиться по коду</a>
-        {% if tenant and perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open>Пригласить участника</button>{% endif %}
+        {% if tenant and perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">Пригласить участника</button>{% endif %}
         {% if tenant %}<a href="/app/settings">{{ icon('settings') }} Настройки</a>{% endif %}
         {% if user.is_superuser %}<a href="/admin/" target="_blank" rel="noopener">Админка ↗</a>{% endif %}
         <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Выйти</button></form>

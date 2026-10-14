@@ -159,3 +159,63 @@ notification refill and read failure; all viewport/theme combinations, 44px
 shell targets, contrast, reduced motion, no overflow or composer/control overlap;
 optional right-panel authorized fixture. Preserve PR185's separately deferred
 ASGI/DB checks and the inherited add-task source_ids follow-up.
+
+### All-page/dialog follow-up (remote no-DB)
+
+Continued A from PR HEAD `199cff9bb708c08de683267aae70599fdb045043`
+in a fresh isolated worktree `/data/smai-shell-a-completion`, preserving existing
+worktrees/dirty files. The owner's Mac checkout is inaccessible and untouched.
+Fresh dev reservation was `7e26f552393ac02d91b5f9a5fc084d332fa7623a`.
+
+- Shell dialog launchers expose controlled target/expanded state. Shell drawer,
+  invitation and optional context dialogs explicitly wrap Tab/Shift+Tab.
+- Closing invitations restores the visible account trigger or mobile drawer
+  opener, not a hidden invite entry. Every reopening fetches the protected
+  no-store partial again; a failed/revoked response replaces previous code/list
+  with an error and retry. No invitation is issued by these GETs.
+- The task-detail edit modal now remains inside the same Alpine state owner as
+  its navbar trigger. A browser interaction caught the out-of-scope modal; moving
+  one closing wrapper fixes the trigger without changing forms or permission gates.
+- Added `tests/shell_page_fixtures.py` and `tests/web_shell_pages.cjs`: strict Jinja
+  fixtures for all 21 direct base children, six read-only representative variants,
+  and one authorized context slot. Real section values are used, including chat.
+  Empty collections intentionally bound the fixture scope; this is not complete
+  populated-page or role/tenant acceptance. No permissive Undefined fallback,
+  app import/runtime, real HTTP, DB, secret, provider or send is used.
+
+Executed on the exact working source subsequently published/byte-verified:
+72 isolated pytest checks passed (0 failed/skipped), mocked notification state
+checks passed, and the all-page offline browser run passed 336 viewport/theme
+cases plus 11 interaction scenarios, exit 0. The matrix covers 375/390/768/1440px
+and light/dark/system, document AND main-region horizontal overflow, single h1,
+notification/content separation, runtime errors and chat composer geometry.
+Interactions cover desktop/mobile lazy invites, issued/revoke form CSRF/choices,
+403 reopening, focus trap/return, context panel, four relocated dialog actions
+the editor's live navbar heading and native form ownership for two scenario Save buttons.
+The final sequential run also repeated home regression: 48 viewport/theme cases
+plus 2 interaction scenarios passed, exit 0. Static syntax/diff checks passed. Fixture expectations for CSRF
+and the task-create label were corrected. The read-only source fixture also now
+sets the server-derived can_delete predicate false, matching sources.py rather
+than inheriting the editable fixture flag. Assertions were not removed.
+Four representative 390px/light snapshots (chat, onboarding, source detail and
+task editor) were visually inspected, not every matrix image or measured contrast.
+
+Reproduce with the isolated project test environment and locally supplied vendor
+files matching base plus `marked@4.3.0`; this is a test-only offline asset, not a
+new application dependency:
+- `python tests/shell_page_fixtures.py --out <fixtures>`
+- `node tests/web_shell_pages.cjs <fixtures> <offline-vendor-dir>`
+- `node tests/web_shell_pages.cjs <fixtures> <offline-vendor-dir> --contracts-only`
+  repeats the six read-only variants/context panel and all interaction contracts,
+  including native form ownership for relocated scenario Save buttons.
+Set `CHROMIUM_BIN` to sandbox Chromium and resolve the preinstalled Playwright
+module. Every browser request is fulfilled/aborted by the offline harness.
+
+Still required: real Kilo R8/R10 ASGI/DB permission/revocation/workspace checks,
+actual invite issuance/revocation/one-time QR/seat/last-owner flows, full populated
+pages/roles, chat history/send/attachment flows, confirmation submissions,
+individual full visual matrix, contrast/reduced-motion and PR185 deferred checks.
+The inherited add-task source_ids defect remains open: the empty-source fixture
+must not be reported as source selection acceptance. Read-only scenario-wizard
+runtime is not covered by the six read-only variants. Packages B/C/D, remaining
+PRD-08.1 and feature integration remain outside this package; keep PR Draft.

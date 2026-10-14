@@ -973,6 +973,7 @@ async def analytics_retry(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.jobs.source_activity import SourceJobBusy
     from app.models import AIAnalytics, CollectedItem
     from app.models.managers.job_manager import JobManager
     from app.services.ai.analysis_retry import parse_staged_window
@@ -1010,8 +1011,9 @@ async def analytics_retry(
         session = new_session()
         try:
             async with session.begin():
+                await JobManager.lock_source_admission(session, tenant_id)
                 await CollectedItem.objects.reset_attempts(session, row.source_id, **window)
-                await JobManager().enqueue(
+                await JobManager().admit_source_job(
                     job_type="analyze",
                     payload={
                         "source_ids": [row.source_id],
@@ -1020,6 +1022,9 @@ async def analytics_retry(
                     tenant_id=tenant_id,
                     session=session,
                 )
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(back, status_code=302)
         finally:
             await session.close()
     add_flash(

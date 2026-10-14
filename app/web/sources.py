@@ -607,19 +607,9 @@ async def _source_has_running_job(source_id: int) -> dict:
     Returns ``{"collect": bool, "analyze": bool}`` so the template can show
     the right label — "Сбор…" vs "Анализ…" — instead of a generic "Выполняется".
     """
-    from app.models.job import Job
+    from app.models.managers.job_manager import JobManager
 
-    result = {"collect": False, "analyze": False}
-    running = await Job.objects.filter(status__in=["pending", "running"])
-    for job in running:
-        payload = job.payload or {}
-        source_ids = payload.get("source_ids", [])
-        if source_id in source_ids:
-            if job.job_type == "collect":
-                result["collect"] = True
-            elif job.job_type == "analyze":
-                result["analyze"] = True
-    return result
+    return await JobManager().source_activity(source_id)
 
 
 def _mode_view(mode_key: str) -> dict:
@@ -880,7 +870,13 @@ async def source_collect_now(
         # instead of draining the whole history. Priority: linked task payload
         # cli_dates → source params cli_dates.
         window = await _resolve_source_window(source)
-        outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+        from app.jobs.source_activity import SourceJobBusy
+
+        try:
+            outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     name = source.name
     if not outcome:
@@ -922,6 +918,7 @@ async def source_analyze_now(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.jobs.source_activity import SourceJobBusy
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(tenant_id):
@@ -954,13 +951,17 @@ async def source_analyze_now(
         session = new_session()
         try:
             async with session.begin():
+                await JobManager.lock_source_admission(session, tenant_id)
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
-                await JobManager().enqueue(
+                await JobManager().admit_source_job(
                     job_type="analyze",
                     payload={"source_ids": [source.id], **window},
                     tenant_id=tenant_id,
                     session=session,
                 )
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
         finally:
             await session.close()
 

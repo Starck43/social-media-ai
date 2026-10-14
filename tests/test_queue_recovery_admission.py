@@ -98,6 +98,8 @@ class Base:
     def __init__(self, model): self.model=model
     @classmethod
     def __class_getitem__(cls,item):return cls
+    async def _apply_tenant(self, session, kwargs):
+        return kwargs | {"tenant_id": self.fixture.tenant}
     async def create(self,*,session=None,**kwargs):
         self.fixture.create_calls.append((session,kwargs.copy()))
         job=SimpleNamespace(**(kwargs | {'id':100+len(self.fixture.jobs),'tenant_id':self.fixture.tenant}))
@@ -136,6 +138,10 @@ class Fixture:
             'app.jobs.recovery_policy':POLICY,'sqlalchemy':SA}
         self.job_module=load('app.models.managers._closure_jobs','app/models/managers/job_manager.py',imports)
         self.job_manager=self.job_module.JobManager()
+        # Existing task-lock/schedule tests double the new outer workspace gate;
+        # actual source-overlap and workspace-lock tests live in test_source_job_admission.py.
+        self.job_module.JobManager.lock_source_admission = AsyncMock()
+        self.job_module.JobManager._source_activity_context = AsyncMock(return_value=([], {}, set()))
         self.cron_calls=[]
         def cron(value,tz,*,after):
             self.cron_calls.append((value,tz,after))
@@ -146,7 +152,7 @@ class Fixture:
             'app.types':SimpleNamespace(ActionType=SimpleNamespace(CREATE='create',UPDATE='update',DELETE='delete')),
             'app.models.agent_task':SimpleNamespace(AgentTask=Task),
             'app.models.source':SimpleNamespace(Source=Source),
-            'app.models.managers.job_manager':SimpleNamespace(JobManager=lambda:self.job_manager),
+            'app.models.managers.job_manager':SimpleNamespace(JobManager=self.job_module.JobManager),
             'app.core.database':SimpleNamespace(async_session_maker=lambda:Session(self)),
             'sqlalchemy.orm':SimpleNamespace(selectinload=lambda value:value),
             'app.tasks.cron':SimpleNamespace(next_run_at=cron)}

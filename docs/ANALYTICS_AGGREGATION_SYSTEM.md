@@ -137,9 +137,12 @@ assertion that analysis never ran or that every absent field should exist.
   of a retry button. To rebuild a historical result, configure the desired
   period and explicit full-cycle refresh on a collection task; staged inputs
   are not a permanent archive. A retry cannot manufacture unavailable metrics.
-- Pending/running explicit source collect/analyze jobs suppress another manual
-  request. This is a best-effort busy check, not a concurrency/idempotency lock
-  across simultaneous requests or task jobs with indirectly resolved sources.
+- Pending/running collect/analyze jobs suppress another explicit run, including
+  sources resolved from task links or all active workspace sources. The shared
+  manager admission gate serializes check-and-insert across explicit task/source
+  starts; the read-only page hint is not the enforcement boundary. See
+  [source-aware admission](AGENT_TASKS.md#source-aware-run-admission) for lock order,
+  busy-task bookkeeping and the distinct new-input wakeup boundary.
 - Attempt reset and enqueue share a transaction. Reset failure is not swallowed,
   and enqueue failure cannot commit the reset or report successful admission.
 

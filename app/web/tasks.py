@@ -414,8 +414,12 @@ async def queue_task_now(task: "AgentTask") -> dict[str, Any]:
 	Returns the same `{job_id, status}` shape so both callers read alike.
 	"""
 	from app.jobs.enqueue import enqueue_task_run
+	from app.jobs.source_activity import SourceJobBusy
 
-	job = await enqueue_task_run(task)
+	try:
+		job = await enqueue_task_run(task)
+	except SourceJobBusy as busy:
+		return {"job_id": busy.job.id, "status": busy.job.status, "already_running": True}
 	return {"job_id": job.id, "status": job.status}
 
 
@@ -709,7 +713,10 @@ async def task_create(
 	# follows the queued job instead.
 	if run_now:
 		outcome = await queue_task_now(task)
-		add_flash(request, "success", f"Задача «{name}» создана и поставлена в очередь на выполнение")
+		if outcome.get("already_running"):
+			add_flash(request, "info", f"Задача «{name}» создана, но источник уже занят. Новый запуск не создан")
+		else:
+			add_flash(request, "success", f"Задача «{name}» создана и поставлена в очередь на выполнение")
 		# The run-status modal lives on the tasks page; from onboarding there is
 		# nothing to poll, so land on the caller's page with the flash instead.
 		job_id = (outcome or {}).get("job_id")
@@ -1000,7 +1007,10 @@ async def task_run_now(
 		return RedirectResponse(f"/app/tasks?job_id={existing.id}", status_code=302)
 
 	outcome = await queue_task_now(task)
-	add_flash(request, "success", f"Задача «{task.name}» поставлена в очередь на выполнение")
+	if outcome.get("already_running"):
+		add_flash(request, "info", "Источник уже занят сбором или анализом. Новый запуск не создан")
+	else:
+		add_flash(request, "success", f"Задача «{task.name}» поставлена в очередь на выполнение")
 	job_id = (outcome or {}).get("job_id")
 	if not job_id:
 		return RedirectResponse("/app/tasks", status_code=302)
@@ -1209,7 +1219,10 @@ async def task_update(
 	if run_now:
 		updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
 		outcome = await queue_task_now(updated)
-		add_flash(request, "success", f"Задача «{name}» обновлена и поставлена в очередь на выполнение")
+		if outcome.get("already_running"):
+			add_flash(request, "info", f"Задача «{name}» обновлена, но источник уже занят. Новый запуск не создан")
+		else:
+			add_flash(request, "success", f"Задача «{name}» обновлена и поставлена в очередь на выполнение")
 		job_id = (outcome or {}).get("job_id")
 		if not job_id:
 			return RedirectResponse("/app/tasks", status_code=302)

@@ -57,6 +57,170 @@ class JobManager(BaseManager["Job"]):
             max_attempts=max_attempts or settings.JOB_MAX_ATTEMPTS,
         )
 
+    async def admit_source_job(
+        self,
+        job_type: str,
+        payload: Optional[dict] = None,
+        *,
+        agent_task_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
+        run_at: Optional[datetime] = None,
+        max_attempts: Optional[int] = None,
+        session: Optional["AsyncSession"] = None,
+    ) -> "Job":
+        """Admit an explicit collect/analyze run, or report an occupied source.
+
+        Keep low-level enqueue available for new-input wakeups: coalescing a
+        wakeup into an already-running batch could strand those new raw inputs.
+        All task/manual run surfaces use this guarded boundary instead.
+        """
+        from app.jobs.source_activity import SOURCE_JOB_TYPES, SourceJobBusy, source_conflict
+
+        if job_type not in SOURCE_JOB_TYPES:
+            raise ValueError("Source admission only accepts collect/analyze")
+        if session is None:
+            from app.core.database import async_session_maker
+
+            async with async_session_maker() as owned:
+                async with owned.begin():
+                    return await self.admit_source_job(
+                        job_type,
+                        payload,
+                        agent_task_id=agent_task_id,
+                        tenant_id=tenant_id,
+                        run_at=run_at,
+                        max_attempts=max_attempts,
+                        session=owned,
+                    )
+        from app.core.tenant_context import current_tenant_id, is_bypass
+
+        if tenant_id is None and not is_bypass():
+            tenant_id = current_tenant_id()
+        stamped = await self._apply_tenant(session, {"tenant_id": tenant_id})
+        tenant_id = stamped["tenant_id"]
+        await self.lock_source_admission(session, tenant_id)
+        jobs, task_sources, active = await self._source_activity_context(session, tenant_id, agent_task_id)
+        existing = source_conflict(payload, agent_task_id, jobs, task_sources, active)
+        if existing is not None:
+            raise SourceJobBusy(existing)
+        return await self.enqueue(
+            job_type,
+            payload,
+            agent_task_id=agent_task_id,
+            tenant_id=tenant_id,
+            run_at=run_at,
+            max_attempts=max_attempts,
+            session=session,
+        )
+
+    @staticmethod
+    async def lock_source_admission(session: "AsyncSession", tenant_id: int) -> None:
+        """Serialize short admission transactions, never handler execution.
+
+        NO KEY UPDATE is exclusive against other admission locks but compatible
+        with FK key-share locks held by ordinary tenant-owned inserts. Acquire
+        it before task/staged-row locks; nested admission reuses the lock.
+        """
+        from sqlalchemy import select
+
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.models.tenant import Tenant
+
+        if type(tenant_id) is not int or tenant_id <= 0 or (not is_bypass() and current_tenant_id() != tenant_id):
+            raise TenantContextError("Source admission requires the owning workspace")
+        connection = await session.connection()
+        if await connection.get_isolation_level() != "READ COMMITTED":
+            # A transaction-wide snapshot could miss the winner's inserted Job
+            # after waiting for the gate. Refuse rather than claim deduplication.
+            raise TenantContextError("Source admission requires READ COMMITTED isolation")
+        locked = (
+            await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update(key_share=True))
+        ).scalar_one_or_none()
+        if locked is None:
+            raise TenantContextError("Source admission workspace is unavailable")
+
+    @staticmethod
+    async def _source_activity_context(session: "AsyncSession", tenant_id: int, task_id: int | None = None):
+        """Batch-load job/task memberships using the worker's source precedence."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from app.models.agent_task import AgentTask
+        from app.models.job import Job
+        from app.models.source import Source
+
+        jobs = list(
+            (
+                await session.execute(
+                    select(Job)
+                    .where(
+                        Job.tenant_id == tenant_id,
+                        Job.status.in_(["pending", "running"]),
+                        Job.job_type.in_(["collect", "analyze"]),
+                    )
+                    .order_by(Job.id)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        task_ids = {job.agent_task_id for job in jobs if job.agent_task_id is not None}
+        if task_id is not None:
+            task_ids.add(task_id)
+        tasks = (
+            list(
+                (
+                    await session.execute(
+                        select(AgentTask)
+                        .where(
+                            AgentTask.tenant_id == tenant_id,
+                            AgentTask.id.in_(task_ids),
+                        )
+                        .options(selectinload(AgentTask.sources))
+                        .execution_options(populate_existing=True)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if task_ids
+            else []
+        )
+        task_sources = {
+            task.id: {source.id for source in task.sources if source.tenant_id == tenant_id} for task in tasks
+        }
+        active = set(
+            (
+                await session.execute(
+                    select(Source.id).where(
+                        Source.tenant_id == tenant_id,
+                        Source.is_active.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return jobs, task_sources, active
+
+    async def source_activity(self, source_id: int) -> dict[str, bool]:
+        """Read-only UI hint. Admission still rechecks under its transaction lock."""
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.source_activity import job_source_ids
+
+        tenant_id = current_tenant_id()
+        if type(tenant_id) is not int or tenant_id <= 0 or is_bypass():
+            raise TenantContextError("Source activity requires a concrete workspace")
+        async with async_session_maker() as session:
+            jobs, task_sources, active = await self._source_activity_context(session, tenant_id)
+        result = {"collect": False, "analyze": False}
+        for job in jobs:
+            if source_id in job_source_ids(job.payload, job.agent_task_id, task_sources, active):
+                result[job.job_type] = True
+        return result
+
     @staticmethod
     async def _claim(where_clause, now: Optional[datetime] = None) -> Optional["Job"]:
         """Atomically flip one matching pending job to `running`.

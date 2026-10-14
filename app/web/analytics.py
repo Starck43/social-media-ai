@@ -954,6 +954,82 @@ async def analytics_delete(
 # Registered last so the static `/chains` routes win over the dynamic
 # `{analysis_id}` (a request to `/analytics/chains` must not be captured as an
 # analysis id — FastAPI would answer 422 instead of the chains page).
+@router.post("/{analysis_id}/retry")
+async def analytics_retry(
+    request: Request,
+    analysis_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Retry only raw inputs still staged inside this row's stored time range."""
+    back = f"/app/analytics/{analysis_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+    for model, action in (("aianalytics", "view"), ("source", "analyze")):
+        denied = guard_web(request, model, action, back=back)
+        if denied is not None:
+            return denied
+
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.models import AIAnalytics, CollectedItem
+    from app.models.managers.job_manager import JobManager
+    from app.services.ai.analysis_retry import parse_staged_window
+    from app.web.sources import _source_has_running_job
+
+    tenant_id = action_tenant_id(request, tenant_id)
+    if type(tenant_id) is not int or tenant_id <= 0:
+        return render(request, "web/not_found.html", status_code=404)
+    with tenant_scope(tenant_id):
+        row = await AIAnalytics.objects.select_related("source").get(id=analysis_id, tenant_id=tenant_id)
+        if row is None or row.source is None or row.source.tenant_id != tenant_id:
+            return render(request, "web/not_found.html", status_code=404)
+        display = render_analysis(row.summary_data)
+        try:
+            window = parse_staged_window(
+                {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
+            )
+        except ValueError:
+            add_flash(
+                request, "info", "Период материалов не сохранён. Откройте карточку источника и проверьте период сбора."
+            )
+            return RedirectResponse(back, status_code=302)
+        running = await _source_has_running_job(row.source_id)
+        if running["collect"] or running["analyze"]:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(back, status_code=302)
+        staged = await CollectedItem.objects.for_source(row.source_id, limit=1, include_exhausted=True, **window)
+        if not staged:
+            add_flash(
+                request,
+                "info",
+                "В этом периоде нет оставшихся сырых материалов. Для пересборки проверьте сбор в карточке источника.",
+            )
+            return RedirectResponse(back, status_code=302)
+        session = new_session()
+        try:
+            async with session.begin():
+                await CollectedItem.objects.reset_attempts(session, row.source_id, **window)
+                await JobManager().enqueue(
+                    job_type="analyze",
+                    payload={
+                        "source_ids": [row.source_id],
+                        "staged_window": {key: value.isoformat() for key, value in window.items()},
+                    },
+                    tenant_id=tenant_id,
+                    session=session,
+                )
+        finally:
+            await session.close()
+    add_flash(
+        request,
+        "success",
+        "Повторный анализ оставшихся материалов за сохранённый период поставлен в очередь. Это не пересборка старого отчёта.",
+    )
+    return RedirectResponse(back, status_code=302)
+
+
 @router.get("/{analysis_id}")
 async def analytics_detail(request: Request, analysis_id: int):
     """One stored analysis with honest metric states and origin-aware navigation."""
@@ -1033,12 +1109,42 @@ async def analytics_detail(request: Request, analysis_id: int):
         }
         for topic in display["main_topics"]
     ]
+    retry_needed = display["coverage"]["incomplete"] or not display["analysis_summary"] or display["metrics_legacy"]
+    retry_available = False
+    retry_running = False
+    retry_window_known = False
+    can_retry = bool(row.source and row.source.tenant_id == row.tenant_id and perms_can(request, "source", "analyze"))
+    if retry_needed and can_retry:
+        from app.core.tenant_context import tenant_scope
+        from app.models import CollectedItem
+        from app.services.ai.analysis_retry import parse_staged_window
+        from app.web.sources import _source_has_running_job
+
+        try:
+            window = parse_staged_window(
+                {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
+            )
+        except ValueError:
+            window = None
+        retry_window_known = window is not None
+        with tenant_scope(row.tenant_id):
+            running = await _source_has_running_job(row.source_id)
+            retry_running = running["collect"] or running["analyze"]
+            if window:
+                retry_available = bool(
+                    await CollectedItem.objects.for_source(row.source_id, limit=1, include_exhausted=True, **window)
+                )
     return render(
         request,
         "web/analytics_detail.html",
         section="analytics",
         analysis=row,
         display=display,
+        retry_needed=retry_needed,
+        can_retry=can_retry,
+        retry_available=retry_available,
+        retry_running=retry_running,
+        retry_window_known=retry_window_known,
         chain=chain,
         chain_url=chain_url,
         back_url=back_url,

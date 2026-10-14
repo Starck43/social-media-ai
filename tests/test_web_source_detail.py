@@ -188,8 +188,28 @@ async def test_detail_page_explains_how_the_source_collects() -> None:
             source = await _make_source(tenant_id, "Detailed source", external_id, {"mode": MODE_USER})
             source_id = source.id
 
+            # A source with real analytics used to import a removed dashboard
+            # helper and fail before rendering its recent-results table.
+            from datetime import date
+
+            from app.models import AIAnalytics
+            from app.types import PeriodType
+
+            with tenant_scope(tenant_id):
+                await AIAnalytics.objects.create(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    analysis_date=date.today(),
+                    period_type=PeriodType.DAY,
+                    summary_data={
+                        "sentiment_score": 0.8,
+                        "analysis_metadata": {"analysis_complete": False},
+                    },
+                )
             page = await client.get(f"/app/sources/{source_id}")
             assert page.status_code == 200
+            assert "0.80" in page.text
+            assert 'data-coverage="incomplete"' in page.text
             # The mode is now visible instead of living only in the params JSON.
             assert "Как собирается" in page.text
             assert dict(COLLECTION_MODES)[MODE_USER] in page.text

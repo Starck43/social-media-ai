@@ -605,6 +605,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     # window that gated collection, so analysis never touches content outside
     # the task's configured period.
     window = _resolve_content_window(task_payload, payload, None)
+    if "staged_window" in payload:
+        from app.services.ai.analysis_retry import parse_staged_window
+
+        # A detail-page retry must never widen its stored timestamp range to
+        # CLI dates (or all history) if its payload is malformed.
+        window = parse_staged_window(payload["staged_window"])
 
     stats: dict[str, Any] = {
         "sources": 0,

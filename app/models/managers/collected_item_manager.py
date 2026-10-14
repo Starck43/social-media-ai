@@ -355,20 +355,30 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(result.rowcount or 0)
 
-    async def reset_attempts(self, session: Any, source_id: int) -> int:
-        """Reset `analyze_attempts` to 0 for all staged rows of a source.
+    async def reset_attempts(
+        self, session: Any, source_id: int, *, start_date: Any = None, end_date: Any = None
+    ) -> int:
+        """Reset attempts for staged rows of a source, optionally within a window.
 
         Used when an operator triggers a manual retry (e.g. after fixing the LLM
         model or raising `give_up_after_attempts`). Returns the number of rows
         affected.
         """
         tenant_clause, tenant_params = _staged_mutation_scope()
+        params = {"source_id": source_id, **tenant_params}
+        window_clause = ""
+        if start_date is not None:
+            window_clause += " AND published_at >= :start_date"
+            params["start_date"] = start_date
+        if end_date is not None:
+            window_clause += " AND published_at <= :end_date"
+            params["end_date"] = end_date
         result = await session.execute(
             sa_text(
                 f"UPDATE {settings.DB_SCHEMA}.collected_items "
                 "SET analyze_attempts = 0 "
-                "WHERE source_id = :source_id AND analyze_attempts > 0" + tenant_clause
+                "WHERE source_id = :source_id AND analyze_attempts > 0" + tenant_clause + window_clause
             ),
-            {"source_id": source_id, **tenant_params},
+            params,
         )
         return int(result.rowcount or 0)

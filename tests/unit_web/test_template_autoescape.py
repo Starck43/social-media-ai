@@ -126,6 +126,7 @@ def context(name):
         "analytics_count": 0, "usage_count": 0, "can_delete": True, "cost_usd": 0,
         "is_ready": True, "monitored_users": [name],
         "platforms": [source["platform"]], "source_types": [source["source_type"]],
+        "pending_count": 0, "given_up": 0,
         "schedules": [], "collections": [], "recent": [],
     }
 

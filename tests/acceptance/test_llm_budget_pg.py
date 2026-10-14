@@ -738,9 +738,7 @@ class BudgetPackage:
 
     async def payer_isolation(self):
         record = self.receipt("other", "other")
-        await self.denied(
-            record, scope=self.cfg["fixtures"]["fresh"], expected=self.context.TenantContextError
-        )
+        await self.denied(record, scope=self.cfg["fixtures"]["fresh"], expected=self.context.TenantContextError)
         demand(await self.admit(record, D("0.6")) is True, "payer-isolation")
         await self.balances("other", "0.6")
 
@@ -842,9 +840,7 @@ class BudgetPackage:
                 )
             )
             await s.commit()
-        await self.denied(
-            self.receipt("historical_denied", "historical"), expected=self.policy.BudgetAdmissionDenied
-        )
+        await self.denied(self.receipt("historical_denied", "historical"), expected=self.policy.BudgetAdmissionDenied)
         await self.balances("historical", "0")
 
     async def tariff_states(self):
@@ -862,14 +858,10 @@ class BudgetPackage:
         await self.denied(
             self.receipt("undefined_inactive", "inactive", "undefined"), D(0), expected=self.context.TenantContextError
         )
-        await self.denied(
-            self.receipt("no_bound", "inactive"), D("0.1"), expected=self.context.TenantContextError
-        )
+        await self.denied(self.receipt("no_bound", "inactive"), D("0.1"), expected=self.context.TenantContextError)
         demand(await self.admit(self.receipt("unlimited", "unlimited"), None) is True, "unlimited")
         await self.balances("unlimited", "0", unbounded=1)
-        await self.denied(
-            self.receipt("no_bound", "fresh"), None, expected=self.policy.BudgetAdmissionDenied
-        )
+        await self.denied(self.receipt("no_bound", "fresh"), None, expected=self.policy.BudgetAdmissionDenied)
         demand(await self.admit(self.receipt("quantum", "quantum"), D("0.000000001")) is True, "quantum")
         await self.denied(self.receipt("quantum_bad", "quantum"), D("0.0000000001"), expected=ValueError)
         await self.balances("quantum", "0.000000001")

@@ -1,9 +1,10 @@
 {% extends "web/base.html" %}
 {% block title %}Задания — AI Monitor{% endblock %}
+{% block page_heading %}Задания{% endblock %}
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Задания</h1>
+
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Очередь выполнения: что ждёт запуска, что упало и с какой ошибкой.
         </p>
@@ -27,7 +28,7 @@
            Hidden while the list is empty so the destructive control is not the
            most eye-catching thing on an idle page. #}
         {% if jobs and perms and perms.can('agenttask', 'delete') %}
-            <form method="post" action="/app/jobs/clear"
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><form method="post" action="/app/jobs/clear"
                   data-confirm="Удалить все задания этого пространства? Выполняющиеся задания останутся."
                   data-confirm-title="Очистить очередь?" data-confirm-label="Очистить всё">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -37,7 +38,7 @@
                 <button class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                     Очистить всё
                 </button>
-            </form>
+            </form></div></template>
         {% endif %}
     </div>
 </div>

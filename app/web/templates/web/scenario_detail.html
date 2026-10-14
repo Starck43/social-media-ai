@@ -1,13 +1,14 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import switch_toggle %}
 {% block title %}{{ scenario.name }} | Сценарии{% endblock %}
+{% block page_heading %}{{ scenario.name }}{% endblock %}
 {% block content %}
 {% set editable = perms and perms.can('agentscenario', 'update') %}
 <div class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
             <a href="/app/scenarios" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">← Все сценарии</a>
-            <h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ scenario.name }}</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if scenario.is_default %}
                     Сценарий по умолчанию для новых источников.
@@ -17,10 +18,10 @@
             </p>
         </div>
         {% if editable %}
-            <button type="submit" form="scenario-form"
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button type="submit" form="scenario-form"
                     class="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Сохранить
-            </button>
+            </button></div></template>
         {% endif %}
     </div>
 

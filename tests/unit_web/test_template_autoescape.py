@@ -1,7 +1,7 @@
 """No-app/no-DB regression checks for the exact web Jinja configuration.
 
-Run through Kilo/pare-test with --noconftest: the suite's root conftest performs
-shared-schema bootstrap. These checks intentionally import no application code.
+Run isolated with --noconftest under the remote no-DB skill exception: the
+suite's root conftest performs shared-schema bootstrap. These checks intentionally import no application code.
 Owner acceptance must also render with the real app environment and check Alpine.
 """
 
@@ -264,7 +264,7 @@ def test_only_server_generated_invite_qr_retains_explicit_safe_html(page_env):
                   for line in path.read_text().splitlines() if "|safe" in line]
     assert len(safe_lines) == 1 and "issued_invite.qr_svg|safe" in safe_lines[0][1]
     qr = '<svg data-qr="fixture"><path d="M0 0h1v1H0z"/></svg>'
-    rendered = page_env.get_template("web/settings.html").render(
+    rendered = page_env.get_template("web/_invite_dialog.html").render(
         **context(PAYLOADS[0]), tab="team", visible_tabs=["team"], tenant={"id": 9},
         issued_invite={"qr_svg": qr, "link": "/app/invite/code", "code": "fixture",
                        "role": PAYLOADS[0], "expires": "fixture"},

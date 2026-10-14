@@ -1,20 +1,21 @@
 {% from "web/_macros.html" import control, task_dates, task_trigger_actions, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задача — AI Monitor{% endblock %}
+{% block page_heading %}{{ task.name }}{% endblock %}
 {% block content %}
 {# The task editor as a full page, not a modal: the form already needed a
    scroll inside a modal bounded by the screen, so it lives at its own URI
    (/app/tasks/{id}/edit) and the row's name button links here. #}
-<div x-data="taskEditPage()" class="mx-auto max-w-4xl">
+<div x-data="taskEditPage()" x-effect="document.getElementById('page-heading').textContent = editing.name || 'Задача'" class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
             <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Редактирование задачи</p>
-            <h1 class="text-2xl font-semibold tracking-tight" x-text="editing.name || 'Задача'"></h1>
+
         </div>
-        <a href="/app/tasks"
+        <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><a href="/app/tasks"
            class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
             ← К списку задач
-        </a>
+        </a></div></template>
     </div>
 
     <form method="post" :action="'/app/tasks/' + editing.id"

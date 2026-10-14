@@ -19,6 +19,7 @@ env = Environment(
 )
 env.filters["ui_label"] = str
 env.filters["human_dt"] = lambda value, **kwargs: str(value or "")
+env.globals["static_v"] = lambda path: "http://fixture.test/static/" + path
 env.globals["url_for"] = lambda name, path: "http://fixture.test/static/" + path
 all_rights = {
     ("source", "view"),
@@ -40,9 +41,32 @@ nav_data = [
 base = {
     "tenant": {"id": 7, "name": "Мониторинг рынка"},
     "user": {"username": "test-member", "is_superuser": False},
-    "workspaces": [{"tenant": {"id": 7, "name": "Мониторинг рынка"}, "active": True, "role": "owner"}],
-    "nav": [{"key": key, "href": href, "label": label, "ready": True} for key, href, label in nav_data],
-    "mobile_nav": [{"key": key, "href": href, "label": label, "ready": True} for key, href, label in nav_data[:3]],
+    "workspaces": [
+        {
+            "tenant": {"id": 7, "name": "Мониторинг рынка"},
+            "active": True,
+            "role": "SUPERUSER",
+            "role_label": "Владелец",
+        },
+        {
+            "tenant": {"id": 8, "name": "Команда аналитики"},
+            "active": False,
+            "role": "MANAGER",
+            "role_label": "Менеджер",
+        },
+        {
+            "tenant": {"id": 9, "name": "ДлинноеНазваниеДругогоПространстваБезПробелов" * 3},
+            "active": False,
+            "role": "VIEWER",
+            "role_label": "Наблюдатель",
+        },
+    ],
+    "nav": [
+        {"key": key, "href": href, "label": label, "ready": True, "icon": "circle"} for key, href, label in nav_data
+    ],
+    "mobile_nav": [
+        {"key": key, "href": href, "label": label, "ready": True, "icon": "circle"} for key, href, label in nav_data[:3]
+    ],
     "section": "dashboard",
     "csrf": "local-fixture-only",
     "connection_alerts": [],
@@ -96,7 +120,9 @@ base = {
     ],
     "effective_active": {1, 2},
     "_tz": "Europe/Moscow",
-    "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query="")),
+    "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
+    "perms": SimpleNamespace(can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="MANAGER"),
+    "member_level": None,
 }
 states = {
     "owner": {},
@@ -143,6 +169,7 @@ states = {
 }
 for state, extra in states.items():
     c = {**base, **extra}
+    c["workspaces"] = [{**w, "tenant": c["tenant"]} if w["active"] else w for w in base["workspaces"]]
     html = env.get_template("web/dashboard.html").render(**c)
     for external, local in [
         ("https://cdn.tailwindcss.com", "tailwind.js"),

@@ -80,7 +80,9 @@ async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: i
     titles = [n["title"] for n in resp.json()["notifications"]]
     assert n1.title in titles and n2.title in titles
 
-    read = await client.post("/app/notifications/read-all")
+    page = await client.get("/app/")
+    csrf = CSRF_RE.search(page.text).group(1)
+    read = await client.post("/app/notifications/read-all", data={"_csrf": csrf})
     assert read.status_code == 200
 
     # Read notifications drop out of the list entirely (no longer resurface).
@@ -103,7 +105,11 @@ async def test_notification_read_one_marks_single(client: AsyncClient, logged_in
             title=_name("n2"), message="world", notification_type="REPORT_READY"
         )
 
-    resp = await client.post(f"/app/notifications/read/{n1.id}")
+    page = await client.get("/app/")
+    csrf = CSRF_RE.search(page.text).group(1)
+    rejected = await client.post(f"/app/notifications/read/{n1.id}")
+    assert rejected.status_code == 403
+    resp = await client.post(f"/app/notifications/read/{n1.id}", data={"_csrf": csrf})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
@@ -122,8 +128,8 @@ async def test_notifications_bell_modal_in_base(client: AsyncClient, logged_in: 
     assert page.status_code == 200
     # Bell modal component present and the endpoint wired in; the dashboard's
     # standalone notifications block is gone.
-    assert "notificationsBell()" in page.text
-    assert "/app/notifications" in page.text
+    assert "notificationsBell(" in page.text
+    assert "js/shell.js" in page.text
     assert "Уведомления" in page.text
     assert "Нет новых уведомлений" not in page.text
 

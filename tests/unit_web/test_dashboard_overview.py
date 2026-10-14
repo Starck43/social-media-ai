@@ -1,7 +1,7 @@
 """Isolated home contract checks; no application imports or database bootstrap.
 
 Normal local execution follows Kilo/test-runner/pare-test with --noconftest.
-Direct sandbox checks require explicit owner authorization and never access DB.
+Remote sandbox checks use the skill's no-DB exception and never access DB.
 AST-loaded functions check orchestration; acceptance still needs the real ASGI app.
 """
 
@@ -54,7 +54,7 @@ def _render(offer, *, real_base=False, **extra):
                     {}
                     if real_base
                     else {
-                        "web/base.html": "<html>{% block content %}{% endblock %}</html>",
+                        "web/base.html": "<html>{% block page_actions %}{% endblock %}{% block content %}{% endblock %}</html>",
                     }
                 ),
                 FileSystemLoader(ROOT / "app/web/templates"),
@@ -65,9 +65,10 @@ def _render(offer, *, real_base=False, **extra):
     )
     env.filters["ui_label"] = str
     env.filters["human_dt"] = lambda value, **kwargs: str(value or "")
+    env.globals["static_v"] = lambda path: "/static/" + path
     env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
-        "tenant": {"name": "Fixture workspace"},
+        "tenant": {"id": 7, "name": "Fixture workspace"},
         "user": {"username": "fixture", "is_superuser": False},
         "section": "dashboard",
         "nav": [],
@@ -87,7 +88,9 @@ def _render(offer, *, real_base=False, **extra):
         "recent_tasks": [],
         "effective_active": set(),
         "_tz": "Europe/Moscow",
-        "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query="")),
+        "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
+        "perms": SimpleNamespace(can_manage_workspace=lambda target: False, is_owner=False, workspace_role="VIEWER"),
+        "member_level": None,
     }
     context.update(extra)
     return env.get_template("web/dashboard.html").render(**context)
@@ -152,7 +155,7 @@ def test_operator_filter_remains_available_without_task_preview():
 
 def test_real_base_and_partials_render_with_home_only_style_scope():
     markup = _render(_offer(), real_base=True)
-    assert "ui-shell ui-home-shell " in markup
+    assert 'data-shell-section="dashboard"' in markup
     assert 'class="ui-home"' in markup
     assert 'id="ui-confirm"' in markup
     assert "Последние результаты" in markup
@@ -160,7 +163,7 @@ def test_real_base_and_partials_render_with_home_only_style_scope():
 
 def test_home_shell_class_is_not_added_to_other_sections():
     markup = _render(_offer(), real_base=True, section="sources")
-    assert 'class="ui-shell ui-home-shell ' not in markup
+    assert 'data-shell-section="sources"' in markup
 
 
 @pytest.mark.asyncio

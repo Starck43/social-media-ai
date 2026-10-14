@@ -1,0 +1,57 @@
+{% from "web/_macros.html" import icon %}
+<div class="shell-account-row">
+    <div class="shell-popover shell-account" data-shell-popover data-hover-popover>
+        <button type="button" class="shell-account-trigger" data-popover-trigger aria-expanded="false" aria-controls="account-{{ menu_id }}" aria-label="Меню пользователя: {{ user.username }}">
+            <span class="shell-avatar" aria-hidden="true">{{ (user.username or '?')[:2]|upper }}</span>
+            <span class="shell-nav-label">{{ user.username }}</span>
+        </button>
+        <div id="account-{{ menu_id }}" class="shell-popover-panel shell-account-panel" hidden>
+            {% if tenant %}
+            <section class="shell-menu-group" aria-labelledby="workspace-tools-{{ menu_id }}">
+                <h2 id="workspace-tools-{{ menu_id }}" class="shell-menu-heading">В текущем пространстве</h2>
+                <div class="shell-workspace-actions">
+                    <a href="/app/settings">{{ icon('settings') }}<span>Настройки</span></a>
+                    {% if perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">{{ icon('mentions') }}<span>Пригласить участника</span></button>{% endif %}
+                </div>
+            </section>
+            {% endif %}
+            <section class="shell-menu-group" aria-labelledby="workspaces-{{ menu_id }}">
+                <h2 id="workspaces-{{ menu_id }}" class="shell-menu-heading">Пространства</h2>
+                <p class="shell-menu-hint">Выберите пространство для быстрой смены контекста.</p>
+                <ul class="shell-workspaces">
+                    {% for w in workspaces %}
+                    <li>
+                        {% if w.active %}
+                        <div class="shell-workspace-current" aria-current="true">
+                            <span class="shell-menu-label">{{ w.tenant.name }}</span>
+                            <span class="shell-menu-hint">Активное · {{ 'Владелец' if perms and perms.is_owner else (member_level.label if member_level else (w.role_label|default(w.role or 'Роль не назначена'))) }}</span>
+                        </div>
+                        {% else %}
+                        <form method="post" action="/app/workspaces/select">
+                            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="tenant_id" value="{{ w.tenant.id }}">
+                            <button aria-label="Переключиться в пространство «{{ w.tenant.name }}»"><span class="shell-menu-label">{{ w.tenant.name }}</span><span class="shell-menu-hint">Переключиться · {{ w.role_label|default(w.role or 'Роль не назначена') }}</span></button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% else %}
+                    <li class="shell-workspace-current"><span class="shell-menu-label">{{ tenant.name if tenant else 'Нет пространства' }}</span>{% if tenant and perms %}<span class="shell-menu-hint">Активное · {{ 'Владелец' if perms.is_owner else (member_level.label if member_level else (perms.workspace_role or 'Роль не назначена')) }}</span>{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                <form method="post" action="/app/workspaces/new"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>{{ icon('layers') }} Создать пространство</button></form>
+                {% if not tenant %}<a href="/app/invite">Присоединиться по коду</a>{% endif %}
+            </section>
+            <section class="shell-menu-group" aria-labelledby="account-tools-{{ menu_id }}">
+                <h2 id="account-tools-{{ menu_id }}" class="shell-menu-heading">Аккаунт</h2>
+                {% if user.is_superuser %}<a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование платформы ↗</span><span class="shell-menu-hint">Откроется в новой вкладке</span></span></a>{% endif %}
+                <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Выйти из аккаунта</button></form>
+            </section>
+        </div>
+    </div>
+    {% if menu_id == 'desktop' %}<button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" aria-controls="nav-desktop" title="Свернуть / развернуть навигацию">{{ icon('sidebar-collapse') }}</button>{% endif %}
+</div>
+<nav id="nav-{{ menu_id }}" class="shell-daily-nav" aria-label="Основные разделы">
+{% if tenant %}{% for item in nav if item.key != 'settings' %}
+{% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span></a>
+{% else %}<span class="shell-unavailable" aria-disabled="true">{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }} · скоро</span></span>{% endif %}
+{% endfor %}{% endif %}
+</nav>

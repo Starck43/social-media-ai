@@ -30,6 +30,7 @@ from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
+from app.services.tenancy import member_roles
 
 from .nav import allows, section_of
 from .perms import WebPerms
@@ -100,10 +101,12 @@ class TenantUIMiddleware:
                     if membership.role is not None:
                         codename = membership.role.codename
                         role_codename = codename.name if hasattr(codename, "name") else str(codename)
+                    level = member_roles.resolve(member_roles.key_of(membership))
                     request.state.workspaces.append(
                         {
                             "tenant": workspace,
                             "role": role_codename,
+                            "role_label": level.label if level is not None else "Роль не назначена",
                             "active": membership.tenant_id == tenant_id,
                         }
                     )
@@ -124,13 +127,6 @@ class TenantUIMiddleware:
             if perm_ctx is not None:
                 perm_ctx.__enter__()
             try:
-                if tenant_id is not None:
-                    try:
-                        from app.models import Notification
-
-                        request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
-                    except Exception:  # noqa: BLE001 — a badge must never break a page
-                        request.state.unread_notifications = 0
                 denied = self._denied_section(request, path)
                 if denied is not None:
                     from .deps import render_section_denied

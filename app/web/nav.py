@@ -2,7 +2,7 @@
 
 Section labels and routes live here, not in the template, so a page cannot
 appear and leave a dead link behind. `render()` puts `nav` into the context and
-the sidebar and the mobile bar both iterate it, marking the active entry by
+the sidebar and mobile drawer both iterate it, marking the active entry by
 `section`.
 
 `ready=False` means the section has a plan but no page yet: it renders as a
@@ -21,20 +21,20 @@ class NavItem(NamedTuple):
     label: str
     ready: bool = True
     required_permission: str | None = None  # e.g., "source.view", "agenttask.create"
+    icon: str = "circle"
 
 
-# The desktop sidebar shows everything (including the roadmap); the mobile bar
-# shows only `ready` items, so it never dead-ends on a placeholder.
+# The shell and mobile drawer consume the same permission-filtered daily sections.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    NavItem("dashboard", "/app/", "Дашборд"),
-    NavItem("sources", "/app/sources", "Источники", required_permission="source.view"),
-    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view"),
-    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view"),
-    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view"),
-    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view"),
-    NavItem("jobs", "/app/jobs", "Очередь задач"),
-    NavItem("chat", "/app/chat", "Чат с агентом"),
-    NavItem("settings", "/app/settings", "Настройки"),
+    NavItem("dashboard", "/app/", "Обзор", icon="home"),
+    NavItem("sources", "/app/sources", "Источники", required_permission="source.view", icon="database"),
+    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view", icon="layers"),
+    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view", icon="calendar"),
+    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view", icon="chart"),
+    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view", icon="document"),
+    NavItem("jobs", "/app/jobs", "Очередь задач", icon="list"),
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="message"),
+    NavItem("settings", "/app/settings", "Настройки", icon="settings"),
 )
 
 # Sections that fit the fixed mobile bar. Capped deliberately: seven full labels

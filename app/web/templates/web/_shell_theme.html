@@ -1,0 +1,9 @@
+{% from "web/_macros.html" import icon %}
+<div class="shell-popover shell-theme" data-shell-popover>
+    <button type="button" class="shell-icon-button" data-popover-trigger aria-expanded="false" aria-controls="theme-popover-{{ theme_id }}" aria-label="Тема оформления" title="Тема оформления">{{ icon('sun') }}</button>
+    <div id="theme-popover-{{ theme_id }}" class="shell-popover-panel shell-theme-panel" hidden>
+        {% for value, label, glyph in [('system', 'Системная', 'monitor'), ('light', 'Светлая', 'sun'), ('dark', 'Тёмная', 'moon')] %}
+        <button type="button" data-theme-choice="{{ value }}" aria-pressed="false">{{ icon(glyph) }}<span>{{ label }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
+        {% endfor %}
+    </div>
+</div>

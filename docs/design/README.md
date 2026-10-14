@@ -192,6 +192,28 @@ not a claim that other services use exactly this layout.
    account menu, not the daily rail. Every compact link keeps its accessible name,
    focus/hover tooltip and active marker; no invented unavailable sections.
 
+### Owner-requested shell refinements
+
+These owner choices supersede the original navbar theme and single-column home
+placement above for package A; they do not implement B/C/D or the remaining home
+feed/schedule functionality:
+- Put a reversible double-chevron collapse control at the right of the desktop
+  account/navigation block. Keep local collapse state and accessible control labels.
+  Put AppTheme choices at the bottom left of the rail; on mobile use the navigation
+  drawer footer. Remove the web navbar theme control, not the mobile drawer opener.
+- Group workspace selection/creation separately from current-workspace tools and
+  account/platform utilities. Show one clearly marked active workspace and explicit
+  switch targets; use canonical workspace role captions only for explanation.
+  Keep every mutation POST+CSRF and every server permission check unchanged.
+- Move join-by-code to Settings Team for users with an active workspace, available
+  independently of invitation-management rights. Preserve the no-workspace join
+  entry so first-time users are not stranded; do not introduce a daily duplicate.
+- Let home use the available content width. At 1200px viewport and wider, permitted
+  latest-results/tasks cards share a row; below that breakpoint they stack. If tasks
+  are forbidden, results retain the full width. Do not change their data/VIEW gates.
+- Give every web navbar a transparent background and retain its separator; other
+  page-specific form width limits and the admin shell remain unchanged.
+
 ### Implementation sequence and bounded handoff
 
 - **A — Shell, next implementation package.** Inventory all base-extending pages,

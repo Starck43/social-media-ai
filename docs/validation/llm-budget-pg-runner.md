@@ -23,6 +23,38 @@ acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
   and initial non-network injected commit-loss caveats are not superseded.
   No repetition, cleanup, definition workaround or guard disable is authorized.
 
+## Accepted formatter-only successor (no PG execution)
+
+Runner FULL SHA: `efe8553fbadf1233e92f0ab7cdb140e491926e60`; parent
+`ad2f3971a951912d5a3a17039c13e0cd02e824b6`. Exactly one changed path:
+`tests/acceptance/test_llm_budget_pg.py`, +486/−120. The supplied patch
+applied cleanly to the exact parent and the published file matches it verbatim.
+Git blob: `e4366f4b89c1d373abc8ed04a287d5504b8f2604`.
+File SHA256: `1dd7449a4b5a0613e2778aff9bbfe927359765a028e1f2e12294530efd7eeeb5`.
+
+Owner-local STYLE PACKAGE PASS used Black26.5.1 / isort9.0.1 and the existing
+primary project interpreter: formatting and both rechecks exit0; AST/compile
+and structural equivalence reported exit0. Equivalence normalization was
+limited to contiguous import blocks in the same scope; all other AST nodes
+compared structurally. The report's compile/AST commands are abbreviated,
+not independently reproduced remotely. This evidence pertains to the supplied
+formatted source based on ad2f397, not a pytest run of the subsequently
+published commit. No new tested-HEAD or PG safety claim.
+
+Remote confirmation: one-path scope, exact patch/publication byte match,
+whitespace PASS, application/migration delta from style pin zero. Lexical
+source review found only wrapping parentheses/trailing commas and one
+contiguous import reorder, with no other non-delimiter token changes.
+This is a diff review, NOT independent Python parsing/AST execution.
+No remote project venv, formatter invocation, Python import, pytest or PG.
+
+The initial FAIL below remains historical evidence. Formatter assignment is
+complete; do not repeat checks without a changed risk. Runner guards,
+scenario/identity manifests and proposed deltas are unchanged. Review .venv
+remains absent, report-write isolation unverified, and target/roles/window/tenant
+IDs UNKNOWN. No automatic environment linking/bootstrap, diagnostic test run
+or Gate B/C permission follows from this style acceptance.
+
 ## Owner-relayed offline review at the prepared runner pin
 
 Review source: owner-relayed report at FULL SHA
@@ -232,12 +264,15 @@ Reviewed/fixed boundaries:
   It records STOP/partial evidence, drains tasks, closes sessions/disposes pools.
   Check backend/task absence separately before releasing the exclusive window.
 
-**Pending offline local verification, no PG permission:** at the exact runner
-SHA, verify syntax/compile/import dependencies without importing this runner's
-application paths; Black/isort only new Python file, inspect any resulting diff
-and repin a real successor commit if needed. Do not run the accepted31 tests or
-any pytest/collect/import-app/PG step. Verify review `.venv` and report-path
-isolation; preserve primary checkout and `local/agent-session-d841`.
+**Next environment/approval boundary, no PG permission:** formatter successor
+and owner-local syntax/structural-equivalence evidence are recorded above.
+Do not repeat them without a changed risk. Application import/dependency runtime
+validation is NOT RUN. Verify review `.venv` accessibility and report-path
+isolation only under a separately agreed offline plan; preserve primary checkout
+and `local/agent-session-d841`. Name an existing dedicated nonproduction target,
+roles/window and actual fixture tenant IDs before asking for separate Gate B
+read-only approval. No accepted31 rerun, pytest/collection, app import or PG
+operation is assigned by this checkpoint.
 A dependency/private API mismatch, missing role privilege, denied read,
 unsupported target or unsafe plugin configuration is BLOCKED, never repaired
 by bootstrap, system Python, permissions bypass or application refactor.

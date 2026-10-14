@@ -12,6 +12,7 @@ import argparse
 import ast
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import logging
 import os
@@ -341,6 +342,15 @@ def role_floor(connection):
             )
 
 
+def loopback_server_address(value):
+    """PostgreSQL inet::text may include a /32 or /128 host mask."""
+    try:
+        address = ipaddress.ip_interface(value)
+    except ValueError:
+        return False
+    return str(address.ip) in ("127.0.0.1", "::1") and address.network.prefixlen == address.max_prefixlen
+
+
 def identity_and_exclusivity(connection, *, readonly, role):
     row = sql(
         connection,
@@ -348,7 +358,7 @@ def identity_and_exclusivity(connection, *, readonly, role):
         "current_setting('transaction_read_only'),current_setting('session_replication_role')",
     ).one()
     require(row[0] == TARGET_DATABASE and row[1] == role and row[3] == TARGET_PORT, "server-target")
-    require(row[2] in ("127.0.0.1", "::1") and row[5] == "origin", "server-address-or-replication")
+    require(loopback_server_address(row[2]) and row[5] == "origin", "server-address-or-replication")
     require(row[4] == ("on" if readonly else "off"), "transaction-mode")
     require(
         sql(

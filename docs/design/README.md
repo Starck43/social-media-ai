@@ -10,8 +10,11 @@ foundations in [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
 Planning baseline verified on `origin/dev`: `aac8bfabe66010b38858102c0746776315ec367f`.
 Bounded home cleanup was integrated via [PR #185](https://github.com/Starck43/social-media-ai/pull/185),
 merge `628b021`, by explicit owner approval with real-app ASGI/DB validation deferred.
-The owner-selected next UI package is PRD-08.2 below; this checkpoint does not
-claim that the shell or attention feed is implemented.
+Historical planning baseline only. At audited dev `c62f948`, PRD-08.2 A/B and
+the bounded C/D slices are merged (#188–191). Source-aware admission (#192/#193)
+and budget reservation closeout (#180/#194) are also integrated. See the
+[delivered index](../IMPLEMENTATION_STATUS.md) for separately attributed owner-local
+home and A/B acceptance; merged does not mean whole-gate acceptance.
 Test-bootstrap evidence protection and stored-text escaping are integrated;
 prior delivered foundations remain in the implementation index. Active lanes
 are listed under Active ownership. Refresh `dev`, open PRs and this row before selecting work.
@@ -102,12 +105,15 @@ or acceptance of the whole PRD-08 gate.
 ## PRD-08.2 — Assistant shell and unified notification area
 
 Owner-selected UI task under priority 8 / PRD-08, linked to PRD-08.1.
-Status: **PLANNED — design and implementation sequence recorded; no UI code changed**.
+Status: **A/B MERGED; C BROWSER-LOCAL SLICE MERGED; D BOUNDED SLICE MERGED**.
+Full PRD-08 acceptance and durable preference storage remain open. Current
+contracts: [shell](assistant-shell.md), [notifications](../NOTIFICATIONS.md),
+[settings/access](../TENANCY.md#web-settings-and-ownedgranted-workspace-context).
 This is not a new readiness gate. Preserve the current FastAPI/Jinja/Alpine/HTMX
 stack, managers and shared authorization predicates; no SPA/framework replacement,
 new navigation service, LLM call or schema migration for the first shell slice.
 
-### Verified starting point
+### Historical verified starting point (before A–D)
 
 Inspected dev `aac8bfabe66010b38858102c0746776315ec367f`:
 `app/web/templates/web/base.html`, `dashboard.html`, `app/web/nav.py`, `deps.py`,
@@ -214,9 +220,9 @@ feed/schedule functionality:
 - Give every web navbar a transparent background and retain its separator; other
   page-specific form width limits and the admin shell remain unchanged.
 
-### Implementation sequence and bounded handoff
+### Approved implementation sequence (historical plan; merged boundaries above)
 
-- **A — Shell, next implementation package.** Inventory all base-extending pages,
+- **A — Shell, merged via #188.** Inventory all base-extending pages,
   their headings/actions, auth/onboarding/403 states, icon macro and current tests.
   Implement account menu, desktop collapse/mobile drawer, per-page navbar/title and
   home chat icon, theme popover, content-gated right-panel slot. Move the existing
@@ -227,7 +233,7 @@ feed/schedule functionality:
   changed flows before integrating. Do not redesign the remaining settings forms
   or change shared read-state semantics in A. Prefer small reusable partials and
   scoped CSS; rework the home-only header selectors without regressing PR #185.
-- **B — Unified attention, after A.** Use a bounded service/read-time projection
+- **B — Unified attention, merged via #189.** Use a bounded service/read-time projection
   over existing notifications, the caller's connection statuses and authorized
   task failures. Typed items carry stable source-qualified key, kind, safe title,
   redacted summary, scope, destination, state/time and supported action. Deduplicate
@@ -243,14 +249,14 @@ feed/schedule functionality:
   person's acknowledgement/preference in this global is_read flag. If per-person
   durable read/dismiss is required, stop for a separate storage/ACL decision rather
   than pretending it exists. Maintain CSRF and truthful failed-request handling.
-- **C — Future notification preferences, separately bounded.** Personal settings
+- **C — Notification preferences, browser-local slice merged via #190.** Personal settings
   for which supported kinds appear in the bell, reading/acknowledgement behaviour,
   optional popup policy and quiet hours. Distinguish event read, issue resolution
   and suppression. A display preference never grants permissions, removes audit
   evidence or mutes another member; define mandatory security/approval notices
   before allowing suppression. Use existing user preference storage only after
   verifying it; otherwise propose a minimal reviewed schema change separately.
-- **D — Future settings scopes, separately bounded.** Produce and implement a
+- **D — Settings scopes, bounded slice merged via #191.** Produce and implement a
   field/action/query matrix, not an enum-name-only Owner/Member split:
 
   | Scope | Proposed availability and boundary |
@@ -298,9 +304,11 @@ checks; planning this task does not satisfy them or the PRD-08 gate.
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
 | Source-aware explicit-run admission / incomplete-analysis retry | Remote Notion agent; `fix/source-analysis-admission`, [PR #193](https://github.com/Starck43/social-media-ai/pull/193); initial retry integrated via [PR #192](https://github.com/Starck43/social-media-ai/pull/192), merge `bed48ce` | CLOSED — owner accepted the bounded slice and authorized integration | Owner: “закрывай, все хорошо”. Implementation `b032b4739302d5ad536a491354bd9bdfcc2c40c6`; compatibility with dev `f2e6bbd` checked without conflicts and isolated checks repeated. Real PostgreSQL race/rollback and ASGI workspace/permission acceptance remain unperformed, not PASS. Explicit manual/task/cron admission only; raw new-input wakeups retained. Preserve PR evidence; no schema/deploy or whole-gate acceptance. |
-| PRD-08.1 outcome-focused home overview | Unassigned for mixed results/upcoming schedules; cleanup integrated via [PR #185](https://github.com/Starck43/social-media-ai/pull/185), merge `628b021` | OPEN — cleanup MERGED; full layer and deferred real-app checks remain open | Preserve cleanup and run deferred ASGI/DB role/workspace checks on a safe existing target. Attention implementation moved to PRD-08.2; mixed results and actual upcoming schedules remain here. No migration or deployment accepted. |
-| PRD-08.2 assistant shell / notification area | Remote Notion agent; C `feat/notification-preferences`, [PR #190](https://github.com/Starck43/social-media-ai/pull/190); D `feat/settings-scopes`, [PR #191](https://github.com/Starck43/social-media-ai/pull/191) | A/B MERGED; C BROWSER-LOCAL SLICE MERGED (durable state decision open); D BOUNDED SLICE MERGED — real acceptance deferred by owner | C `8186cac`: user-keyed browser-local display/popup/quiet hours, explicit shared reads unchanged, empty-bell restoration reachable. Prior D `264bf2e`: scoped selected-tab queries; concrete capability gates shared config/team. Final sandbox: 166 no-DB pytest, 35 JS checks, Settings 80+8 cases, shell 336+38, home 72+2; fixtures are not real acceptance. Nine C paths / twelve D-only deltas byte-verified. Owner accepted C visually. D follow-up `43608e6` (code `4a7cfe7`): 226 no-DB pytest, 14 preference JS checks, final owner/guest 40+8 and Settings 80 cases PASS; shared shell 336+38 and home 72+2 also checked, with team CSS specifically rerun. 26 paths byte-verified; GitGuardian success. Active authenticated admin entry retains model/action guards; token-bound grants, label owned/shared workspaces, expose guarded membership disable, deny guest-workspace chat at every web endpoint, verify tenant-scoped reads; no individual object ACL or schema changes. Owners protected from disable; membership rows retained. Admin remains global/platform, not dashboard tenant scope. Owner authorized merge: “сливай в dev. буду смотреть”. C integrated first at `734e479ad29022c6597899029407135cc8ce6ffd`; D at `ae77f558fb4b518653c840e8348f8b8088db088e`. Fresh heads/checks and clean merge composition verified; both source heads are ancestors of dev, all 26 D follow-up paths preserved byte-for-byte. Implementation lane released; await owner feedback. Real SQLAdmin/ASGI/PG role, revocation, disable race/rollback acceptance and adjusted application-importing tests are still unexecuted; durable preferences need separate storage approval; all real acceptance/legacy gaps remain deferred. No schema/live changes. |
+| PRD-08.1 outcome-focused home overview | Unassigned for mixed results/upcoming schedules; cleanup integrated via [PR #185](https://github.com/Starck43/social-media-ai/pull/185), merge `628b021` | OPEN — cleanup MERGED; owner-local bounded home acceptance recorded; full layer remains open | Preserve cleanup and owner-local 69-pass home/identity acceptance at `01f719d` plus reviewed working diff, recorded in IMPLEMENTATION_STATUS. This is not full home-layer or C/D acceptance. Attention implementation moved to PRD-08.2; mixed results and actual upcoming schedules remain here. No migration or deployment accepted. |
+| PRD-08.2 assistant shell / notification area | Remote Notion agent; C `feat/notification-preferences`, [PR #190](https://github.com/Starck43/social-media-ai/pull/190); D `feat/settings-scopes`, [PR #191](https://github.com/Starck43/social-media-ai/pull/191) | A/B MERGED; C BROWSER-LOCAL SLICE MERGED (durable state decision open); D BOUNDED SLICE MERGED — real acceptance deferred by owner | C `8186cac`: user-keyed browser-local display/popup/quiet hours, explicit shared reads unchanged, empty-bell restoration reachable. Prior D `264bf2e`: scoped selected-tab queries; concrete capability gates shared config/team. Final sandbox: 166 no-DB pytest, 35 JS checks, Settings 80+8 cases, shell 336+38, home 72+2; fixtures are not real acceptance. Nine C paths / twelve D-only deltas byte-verified. Owner accepted C visually. D follow-up `43608e6` (code `4a7cfe7`): 226 no-DB pytest, 14 preference JS checks, final owner/guest 40+8 and Settings 80 cases PASS; shared shell 336+38 and home 72+2 also checked, with team CSS specifically rerun. 26 paths byte-verified; GitGuardian success. Active authenticated admin entry retains model/action guards; token-bound grants, label owned/shared workspaces, expose guarded membership disable, deny guest-workspace chat at every web endpoint, verify tenant-scoped reads; no individual object ACL or schema changes. Owners protected from disable; membership rows retained. Admin remains global/platform, not dashboard tenant scope. Owner authorized merge: “сливай в dev. буду смотреть”. C integrated first at `734e479ad29022c6597899029407135cc8ce6ffd`; D at `ae77f558fb4b518653c840e8348f8b8088db088e`. Fresh heads/checks and clean merge composition verified; both source heads are ancestors of dev, all 26 D follow-up paths preserved byte-for-byte. Implementation lane released; await owner feedback. Real SQLAdmin/ASGI/PG role, revocation, disable race/rollback acceptance and adjusted application-importing tests are still unexecuted; durable preferences need separate storage approval. Later owner-local home (69) and A/B (77) checks are recorded in IMPLEMENTATION_STATUS at their original revisions; they do not close the remaining C/D/legacy acceptance gaps. No schema/live changes. |
 | Task-add source selection initialization | Unassigned; no implementation branch or PR | OPEN — inherited Alpine runtime follow-up | Owner reproduced addTaskForm().task.source_ids missing while :checked calls includes; pre-fix control has the same error. Evidence: [PR178 runtime report](https://github.com/Starck43/social-media-ai/pull/178#issuecomment-6154504317). Next: initialize source_ids in the actual add-task model and verify selection/reset with real Alpine. Accept when opening the form has no includes error and selected IDs round-trip without changing submit semantics; no server/DB/live probes required. |
+| Merged web documentation reconciliation | Remote Notion agent; `docs/merged-web-contracts` | DOCS-ONLY PR — static review complete; no application tests | Audit baseline `c62f948`; reconcile ledger, A–D plan and current notification/settings/admin contracts. Review recent merged #180/#185–194, retaining historical evidence and original test attribution. PR bodies compressed separately; no runtime/schema/provider action. |
+| Unresolved membership display label | Unassigned; verified at `c62f948` | OPEN — code follow-up, not part of this docs patch | `member_roles.key_of()` still returns owner for NULL role, while `TenantUser.is_owner` and membership grants now fail closed. Reconcile menu/navbar/team labels without granting rights or repairing data automatically; accept with NULL-role label regressions plus unchanged denied authorization. |
 | Mobile web page-width overflow | Unassigned; no implementation branch or PR | OPEN — inherited layout follow-up | Owner observed app document width 432px under 375px mobile emulation; confirmation dialog remains contained. Evidence: [PR175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703). Next: PRD-08.2 A must cover the shared shell overflow while preserving this acceptance boundary; identify the overflowing base layout element independently of the Chromium emulation discrepancy. Accept when affected pages fit a verified 375px viewport without unintended horizontal scrolling and confirmation focus/keyboard behavior is retained. |
 | PRD-02 digest send permission parity | Remote Notion agent; `fix/digest-send-permission-parity`, [Draft PR #176](https://github.com/Starck43/social-media-ai/pull/176); handoff requested via PR180 | DEFERRED — owner stopped coordinator infrastructure work; recipient acknowledgement pending | Delegation request: PR180 comment6166461970. Reuse existing collection exception; resolve reusable orchestration/fallback contract once, then delegate remaining PR176 acceptance at pinned verification HEAD0c18bab. Preserve all work/evidence; no duplicate runs, parallel shared-schema writers, repair or merge. Not DONE; no claim that recipient accepted ownership. |
 | PRD-04 loopback-only database binding | Owner, local only; no remote branch or PR | DEFERRED — pre-production | Resume before the production release: restrict the checked-in PostgreSQL host publish to `127.0.0.1:5432:5432`, preserve container `db:5432` and local-owner tools, and prove network isolation with local/staging evidence. `docker/docker-compose.yml` on `dev` still publishes `5432:5432`. Do not start/restart Compose: API startup runs Alembic. |

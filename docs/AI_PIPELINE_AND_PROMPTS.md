@@ -410,8 +410,9 @@ provider-reported analyzer pricing and the three-state monetary mapping are
 integrated in PR #125 (accepted head `08c53e1`, merge `d2b687d`); owner-local
 checks were accepted, while PostgreSQL and full suite were NOT RUN at that original
 revision. Preparation receipts (#137/#154) and immutable outcome storage (#168)
-are now integrated but UNWIRED. All-path activation, atomic admission and
-reservation/settlement remain open; do not relabel their original evidence.
+are now integrated but UNWIRED. The #180 atomic receipt/reservation manager is
+also merged but UNWIRED. All-path admission/activation, settlement and release
+remain open; do not relabel their original evidence.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass
 one accounting/admission boundary, whether reached by analysis, digest, agent

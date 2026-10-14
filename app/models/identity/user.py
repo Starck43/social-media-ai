@@ -108,20 +108,8 @@ class User(Base, TimestampMixin):
         return action in self.model_permissions(model_name)
 
     def has_admin_access(self) -> bool:
-        """Whether the user may enter the operator console (/admin).
-
-        Superusers always may. Anyone else may only if their role carries at
-        least one model `view` permission — they then see only the models that
-        permission grants. Requires the ``role`` relationship (with its
-        ``permissions``) to be eager-loaded.
-        """
-        if self._is_superuser_role():
-            return True
-        for permission in self.role.permissions:
-            model_type = permission.model_type
-            if model_type is not None and permission.action_type == ActionType.VIEW:
-                return True
-        return False
+        """Active users may enter; per-model/action rights still gate every view."""
+        return bool(self.is_active)
 
     def __str__(self) -> str:
         return f"{self.username}"

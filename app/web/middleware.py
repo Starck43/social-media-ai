@@ -74,7 +74,12 @@ class TenantUIMiddleware:
             await self._redirect(scope, receive, send, f"/app/login?next={quote(target, safe='')}")
             return
 
-        if user is not None and not memberships and path not in NO_WORKSPACE_PATHS:
+        if (
+            user is not None
+            and not memberships
+            and path not in NO_WORKSPACE_PATHS
+            and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
+        ):
             await self._redirect(scope, receive, send, "/app/invite")
             return
 
@@ -101,6 +106,7 @@ class TenantUIMiddleware:
                         {
                             "tenant": workspace,
                             "role": role_codename,
+                            "is_owner": bool(membership.is_owner),
                             "role_label": level.label if level is not None else "Роль не назначена",
                             "active": membership.tenant_id == tenant_id,
                         }

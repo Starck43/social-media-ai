@@ -17,24 +17,24 @@
             {% endif %}
             <section class="shell-menu-group" aria-labelledby="workspaces-{{ menu_id }}">
                 <h2 id="workspaces-{{ menu_id }}" class="shell-menu-heading">Пространства</h2>
-                <p class="shell-menu-hint">Выберите пространство для быстрой смены контекста.</p>
+                <p class="shell-menu-hint">Свои пространства и пространства других владельцев. Данные и права меняются при переключении.</p>
                 <ul class="shell-workspaces">
                     {% for w in workspaces %}
                     <li>
                         {% if w.active %}
                         <div class="shell-workspace-current" aria-current="true">
                             <span class="shell-menu-label">{{ w.tenant.name }}</span>
-                            <span class="shell-menu-hint">Активное · {{ 'Владелец' if perms and perms.is_owner else (member_level.label if member_level else (w.role_label|default(w.role or 'Роль не назначена'))) }}</span>
+                            <span class="shell-menu-hint">Активное · {{ 'Своё пространство' if perms and perms.is_owner else 'Доступ предоставлен' }} · {{ 'Владелец' if perms and perms.is_owner else (member_level.label if member_level else (w.role_label|default(w.role or 'Роль не назначена'))) }}</span>
                         </div>
                         {% else %}
                         <form method="post" action="/app/workspaces/select">
                             <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="tenant_id" value="{{ w.tenant.id }}">
-                            <button aria-label="Переключиться в пространство «{{ w.tenant.name }}»"><span class="shell-menu-label">{{ w.tenant.name }}</span><span class="shell-menu-hint">Переключиться · {{ w.role_label|default(w.role or 'Роль не назначена') }}</span></button>
+                            <button aria-label="Переключиться в пространство «{{ w.tenant.name }}»"><span class="shell-menu-label">{{ w.tenant.name }}</span><span class="shell-menu-hint">{{ 'Своё пространство' if w.is_owner|default(false) else 'Доступ предоставлен' }} · {{ w.role_label|default(w.role or 'Роль не назначена') }}</span></button>
                         </form>
                         {% endif %}
                     </li>
                     {% else %}
-                    <li class="shell-workspace-current"><span class="shell-menu-label">{{ tenant.name if tenant else 'Нет пространства' }}</span>{% if tenant and perms %}<span class="shell-menu-hint">Активное · {{ 'Владелец' if perms.is_owner else (member_level.label if member_level else (perms.workspace_role or 'Роль не назначена')) }}</span>{% endif %}</li>
+                    <li class="shell-workspace-current"><span class="shell-menu-label">{{ tenant.name if tenant else 'Нет пространства' }}</span>{% if tenant and perms %}<span class="shell-menu-hint">Активное · {{ 'Своё пространство' if perms and perms.is_owner else 'Доступ предоставлен' }} · {{ 'Владелец' if perms.is_owner else (member_level.label if member_level else (perms.workspace_role or 'Роль не назначена')) }}</span>{% endif %}</li>
                     {% endfor %}
                 </ul>
                 <form method="post" action="/app/workspaces/new"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>{{ icon('layers') }} Создать пространство</button></form>
@@ -42,7 +42,8 @@
             </section>
             <section class="shell-menu-group" aria-labelledby="account-tools-{{ menu_id }}">
                 <h2 id="account-tools-{{ menu_id }}" class="shell-menu-heading">Аккаунт</h2>
-                {% if user.is_superuser %}<a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование платформы ↗</span><span class="shell-menu-hint">Откроется в новой вкладке</span></span></a>{% endif %}
+                <a href="/app/settings?tab=account">{{ icon('settings') }}<span>Мой аккаунт</span></a>
+                <a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование ↗</span><span class="shell-menu-hint">Модели и действия — по правам аккаунта</span></span></a>
                 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Выйти из аккаунта</button></form>
             </section>
         </div>

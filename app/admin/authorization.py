@@ -139,20 +139,19 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
             return cached
 
         user: Optional[User] = None
-        user_id = request.session.get("user_id")
-        if user_id:
+        token = request.session.get("token")
+        if token:
             try:
-                # `select_related("role")` + `prefetch_related("role.permissions")`
-                # conflict on the same path, and the prefetch alone loads both
-                # (nested selectinload) — the same trick as `AdminAuthBackend`.
-                user = await User.objects.prefetch_related("role.permissions").get(id=int(user_id))
-            except (TypeError, ValueError):
-                logger.warning("Admin session carries a malformed user_id: %r", user_id)
+                from app.services.user.auth import get_authenticated_user
+
+                authenticated = await get_authenticated_user(token=token)
+                if authenticated is not None and authenticated.is_active:
+                    user = await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
+                    if user is not None and not user.is_active:
+                        user = None
             except Exception:
-                # The account was deleted (or the database blinked) between login
-                # and this request: treat the session as signed out rather than
-                # handing a half-loaded user to the permission checks.
-                logger.warning("Admin user %s could not be loaded", user_id, exc_info=True)
+                # Revoked/invalid identity or unavailable DB must grant nothing.
+                logger.warning("Admin identity could not be resolved", exc_info=True)
 
         request.state.admin_user = user
         return user

@@ -47,6 +47,8 @@ MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item
 
 def allows(item: NavItem, perms: Any) -> bool:
     """True when the caller may open the section (no requirement = everyone signed in)."""
+    if item.key == "chat":
+        return bool(perms is not None and getattr(perms, "can_open_chat", False))
     if item.required_permission is None:
         return True
     model_name, _, action = item.required_permission.rpartition(".")
@@ -56,6 +58,8 @@ def allows(item: NavItem, perms: Any) -> bool:
 def section_of(path: str) -> NavItem | None:
     """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
     for item in NAV_ITEMS:
-        if item.required_permission is not None and (path == item.href or path.startswith(item.href + "/")):
+        if (item.required_permission is not None or item.key == "chat") and (
+            path == item.href or path.startswith(item.href + "/")
+        ):
             return item
     return None

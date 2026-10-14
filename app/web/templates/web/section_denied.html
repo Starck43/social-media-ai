@@ -13,6 +13,10 @@
         <p class="mt-4 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Ошибка 403 · доступ ограничен</p>
 
 
+        {% if section == 'chat' %}
+            <p class="mt-3 text-sm ui-muted">Чат доступен только владельцам текущего пространства. Переключитесь в своё пространство, чтобы пользоваться агентом без расходов другого владельца.</p>
+        {% endif %}
+
         {% if member_level %}
             <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
                 Ваш уровень{% if tenant %} в «{{ tenant.name }}»{% endif %}:
@@ -36,7 +40,8 @@
         {% endif %}
 
         <p class="mt-5 text-xs text-slate-500 dark:text-slate-400">
-            Нужен доступ? Попросите владельца воркспейса изменить ваш уровень в «Настройки → Команда».
+            {% if section == 'chat' %}Права на просмотр и изменение моделей не открывают чат в чужом пространстве.
+            {% else %}Нужен доступ? Попросите владельца воркспейса изменить ваш уровень в «Настройки → Команда».{% endif %}
         </p>
         <div class="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
             <a href="/app/" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">На дашборд</a>

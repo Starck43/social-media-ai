@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable
 
 from app.core.permissions import WORKSPACE_OWNER_MODELS, workspace_models
+from app.services.tenancy.web_access import owns_web_workspace
 from app.types import ActionType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -99,6 +100,11 @@ class WebPerms:
             if membership.tenant_id == self._tenant_id:
                 return membership.is_owner
         return False
+
+    @property
+    def can_open_chat(self) -> bool:
+        """No guest workspace chat, even for a platform superuser."""
+        return owns_web_workspace(self._user, self._memberships, self._tenant_id)
 
     # --- what they may do --------------------------------------------------
 

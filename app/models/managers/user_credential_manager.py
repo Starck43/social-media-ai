@@ -44,6 +44,26 @@ class UserCredentialManager(BaseManager["UserCredential"]):
         candidates.sort(key=lambda row: row.updated_at or row.created_at, reverse=True)
         return candidates[0] if candidates else None
 
+    async def web_metadata_for_user(self, *, user_id: int) -> list[Any]:
+        """Caller-owned UI metadata only; bounded history, never encrypted secret columns."""
+        if type(user_id) is not int or user_id <= 0:
+            return []
+        from ..user_credential import UserCredential
+
+        return await (
+            self.filter(user_id=user_id)
+            .order_by(UserCredential.platform, UserCredential.kind, UserCredential.id.desc())
+            .limit(100)
+            .values(
+                UserCredential.id,
+                UserCredential.platform,
+                UserCredential.kind,
+                UserCredential.label,
+                UserCredential.is_active,
+            )
+            .rows()
+        )
+
     async def newest_status_metadata(self, *, user_id: int, platform: str, kind: str) -> Optional[Any]:
         """One caller-owned status row; never load/decrypt the encrypted secret."""
         from sqlalchemy import func

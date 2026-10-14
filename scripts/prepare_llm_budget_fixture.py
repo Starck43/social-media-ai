@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT))
 CODE_PIN = "9dd748cef465e09df74cc98c07ecc65748b41a8c"
 RUN_ID = "7417a3edbb5e42ce990c721c900d682f"
 TARGET_HOST, TARGET_PORT = "localhost", 5432
-TARGET_DATABASE, TARGET_SCHEMA = "social_manager_budget_pr180", "budget_review_pr180"
+TARGET_DATABASE, TARGET_SCHEMA = "social_manager_budget_pr180_verified", "budget_review_pr180"
 DDL_OWNER, RUNNER_ROLE = "starck", "smai_pr179_probe"
 WORKING_DATABASE = "social_manager"
 FORBIDDEN_SCHEMAS = ("public", "test_schema", "social_manager", "pg_catalog", "information_schema")
@@ -383,7 +383,7 @@ def user_objects(connection):
         list(row)
         for row in sql(
             connection,
-            "SELECT n.nspname,c.relname,c.relkind,pg_get_userbyid(c.relowner) "
+            "SELECT n.nspname,c.relname,c.relkind::text,pg_get_userbyid(c.relowner) "
             "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema' ORDER BY 1,2",
         ).all()
@@ -500,7 +500,7 @@ def inspect_prepared(connection):
         list(row)
         for row in sql(
             connection,
-            "SELECT n.nspname,t.typname,t.typtype,pg_get_userbyid(t.typowner) FROM pg_type t "
+            "SELECT n.nspname,t.typname,t.typtype::text,pg_get_userbyid(t.typowner) FROM pg_type t "
             "JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname NOT LIKE 'pg_%' "
             "AND n.nspname<>'information_schema' ORDER BY 1,2",
         ).all()
@@ -558,7 +558,7 @@ def inspect_prepared(connection):
         list(row)
         for row in sql(
             connection,
-            "SELECT c.relname||'.'||t.tgname,t.tgenabled FROM pg_trigger t "
+            "SELECT c.relname||'.'||t.tgname,t.tgenabled::text FROM pg_trigger t "
             "JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=:schema AND NOT t.tgisinternal ORDER BY 1",
             {"schema": TARGET_SCHEMA},

@@ -1,7 +1,8 @@
 """Isolated home contract checks; no application imports or database bootstrap.
 
-Run only through Kilo/test-runner/pare-test with --noconftest. AST-loaded
-functions check orchestration; owner acceptance still needs the real ASGI app.
+Normal local execution follows Kilo/test-runner/pare-test with --noconftest.
+Direct sandbox checks require explicit owner authorization and never access DB.
+AST-loaded functions check orchestration; acceptance still needs the real ASGI app.
 """
 
 from __future__ import annotations
@@ -20,13 +21,21 @@ ROOT = Path(__file__).resolve().parents[2]
 def _functions(*names):
     tree = ast.parse((ROOT / "app/web/dashboard.py").read_text())
     nodes = [
-        node for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
+        node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
     ]
     for node in nodes:
         node.decorator_list = []
-    module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
-                              *nodes], type_ignores=[])
+        # Inject the result renderer in these isolated checks, never import app
+        # services (which would initialize application dependencies).
+        node.body = [
+            child
+            for child in node.body
+            if not (isinstance(child, ast.ImportFrom) and child.module == "app.services.ai.analysis_render")
+        ]
+    module = ast.Module(
+        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes],
+        type_ignores=[],
+    )
     scope = {}
     exec(compile(ast.fix_missing_locations(module), "isolated home functions", "exec"), scope)
     return scope
@@ -37,18 +46,37 @@ def _offer(*rights):
     return scope["_offers"](SimpleNamespace(can=lambda model, action: (model, action) in rights))
 
 
-def _render(offer, **extra):
+def _render(offer, *, real_base=False, **extra):
     env = Environment(
-        loader=ChoiceLoader([
-            DictLoader({"web/base.html": "<html>{% block content %}{% endblock %}</html>"}),
-            FileSystemLoader(ROOT / "app/web/templates"),
-        ]),
+        loader=ChoiceLoader(
+            [
+                DictLoader(
+                    {}
+                    if real_base
+                    else {
+                        "web/base.html": "<html>{% block content %}{% endblock %}</html>",
+                    }
+                ),
+                FileSystemLoader(ROOT / "app/web/templates"),
+            ]
+        ),
         autoescape=select_autoescape(("html", "htm", "xml"), default_for_string=True),
         undefined=StrictUndefined,
     )
+    env.filters["ui_label"] = str
     env.filters["human_dt"] = lambda value, **kwargs: str(value or "")
+    env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
         "tenant": {"name": "Fixture workspace"},
+        "user": {"username": "fixture", "is_superuser": False},
+        "section": "dashboard",
+        "nav": [],
+        "mobile_nav": [],
+        "workspaces": [],
+        "connection_alerts": [],
+        "unread_notifications": 0,
+        "flashes": [],
+        "csrf": "fixture-only",
         "can_open_chat": True,
         "is_superuser": False,
         "tenants": [],
@@ -81,8 +109,14 @@ def test_no_rights_do_not_render_injected_model_content():
 
 def test_results_are_bounded_escaped_and_have_no_metric_sidebar():
     results = [
-        {"id": i, "source_name": "hidden-source", "created_at": "fixture-time",
-         "title": f"result-{i}<script>bad()</script>", "summary": "short result", "analysis_incomplete": False}
+        {
+            "id": i,
+            "source_name": "hidden-source",
+            "created_at": "fixture-time",
+            "title": f"result-{i}<script>bad()</script>",
+            "summary": "short result",
+            "analysis_incomplete": False,
+        }
         for i in range(7)
     ]
     markup = _render(_offer(("aianalytics", "view")), recent_results=results)
@@ -94,10 +128,7 @@ def test_results_are_bounded_escaped_and_have_no_metric_sidebar():
 
 
 def test_task_preview_is_bounded_read_only_and_honestly_named():
-    tasks = [
-        {"id": i, "name": f"task-{i}", "next_run_at": None, "last_status": None}
-        for i in range(5)
-    ]
+    tasks = [{"id": i, "name": f"task-{i}", "next_run_at": None, "last_status": None} for i in range(5)]
     markup = _render(_offer(("agenttask", "view")), recent_tasks=tasks, effective_active={0})
     assert "task-2" in markup and "task-3" not in markup
     assert "Недавно созданные" in markup
@@ -113,11 +144,71 @@ def test_digest_link_is_not_a_fake_digest_feed():
 
 
 def test_operator_filter_remains_available_without_task_preview():
-    markup = _render(_offer(), is_superuser=True, tenants=[{"id": 7, "name": "Workspace seven"}],
-                     filter_tenant_id=7)
+    markup = _render(_offer(), is_superuser=True, tenants=[{"id": 7, "name": "Workspace seven"}], filter_tenant_id=7)
     assert 'name="tenant_id"' in markup
     assert 'value="7" selected' in markup
     assert "data-home-tasks" not in markup
+
+
+def test_real_base_and_partials_render_with_home_only_style_scope():
+    markup = _render(_offer(), real_base=True)
+    assert "ui-shell ui-home-shell " in markup
+    assert 'class="ui-home"' in markup
+    assert 'id="ui-confirm"' in markup
+    assert "Последние результаты" in markup
+
+
+def test_home_shell_class_is_not_added_to_other_sections():
+    markup = _render(_offer(), real_base=True, section="sources")
+    assert 'class="ui-shell ui-home-shell ' not in markup
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("show_sources", [False, True])
+async def test_result_query_only_loads_source_metadata_with_view_right(show_sources):
+    scope = _functions("_recent_results_in_scope")
+    calls = []
+
+    class Analysis:
+        id = 9
+        created_at = "fixture-time"
+        summary_data = {}
+
+        @property
+        def source(self):
+            assert show_sources, "source metadata accessed without source.view"
+            return SimpleNamespace(name="fixture-source")
+
+    class Query:
+        def filter(self, **kwargs):
+            calls.append(("filter", kwargs))
+            return self
+
+        def select_related(self, value):
+            calls.append(("relation", value))
+            return self
+
+        def order_by(self, value):
+            return self
+
+        async def limit(self, value):
+            assert value == 5
+            return [Analysis()]
+
+    scope.update(
+        AIAnalytics=SimpleNamespace(objects=Query(), created_at=SimpleNamespace(desc=lambda: "created-desc")),
+        render_analysis=lambda data, source_name: {
+            "display_title": "Fixture result",
+            "analysis_summary": "x" * 300,
+            "coverage": {"incomplete": True},
+        },
+    )
+    results = await scope["_recent_results_in_scope"](7, show_sources)
+    assert ("filter", {"tenant_id": 7}) in calls
+    assert (("relation", "source") in calls) == show_sources
+    assert results[0]["source_name"] == ("fixture-source" if show_sources else None)
+    assert len(results[0]["summary"]) == 220
+    assert results[0]["analysis_incomplete"]
 
 
 @pytest.mark.asyncio
@@ -131,9 +222,13 @@ async def test_handler_skips_unauthorized_queries():
         _effective_active_ids=AsyncMock(return_value=set()),
         render=lambda request, template, **context: context,
     )
-    request = SimpleNamespace(state=SimpleNamespace(
-        tenant_id=7, web_user=SimpleNamespace(is_superuser=False), web_perms=None,
-    ))
+    request = SimpleNamespace(
+        state=SimpleNamespace(
+            tenant_id=7,
+            web_user=SimpleNamespace(is_superuser=False),
+            web_perms=None,
+        )
+    )
     context = await scope["dashboard"](request)
     assert context["recent_results"] == context["recent_tasks"] == []
     assert context["next_step"] is None
@@ -154,11 +249,13 @@ async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
         render=lambda request, template, **context: context,
     )
     rights = {("aianalytics", "view"), ("agenttask", "view")}
-    request = SimpleNamespace(state=SimpleNamespace(
-        tenant_id=7,
-        web_user=SimpleNamespace(is_superuser=True),
-        web_perms=SimpleNamespace(can=lambda model, action: (model, action) in rights),
-    ))
+    request = SimpleNamespace(
+        state=SimpleNamespace(
+            tenant_id=7,
+            web_user=SimpleNamespace(is_superuser=True),
+            web_perms=SimpleNamespace(can=lambda model, action: (model, action) in rights),
+        )
+    )
     context = await scope["dashboard"](request)
     results.assert_awaited_once_with(11, True, False)
     tasks.assert_awaited_once_with(7, True, 11)

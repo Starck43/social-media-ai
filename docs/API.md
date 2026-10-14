@@ -629,7 +629,9 @@ sidebar and inline task execution. It shows up to five permitted analysis cards,
 three recent task summaries, one conditional setup step and a chat entry.
 Analysis/task loading requires the effective aianalytics.view / agenttask.view;
 source labels additionally require source.view. The operator workspace filter
-is retained. No home-request KPI aggregation, new LLM call or migration.
+is retained. The home has a 960px content bound, wrapping metadata, two-line
+title previews, three-line summaries and home-only mobile header rules.
+No home-request KPI aggregation, new LLM call or migration.
 
 The attention block, mixed analysis/digest feed and truly upcoming schedules are
 explicitly deferred in [the canonical task](design/README.md#prd-081--outcome-focused-home-overview).

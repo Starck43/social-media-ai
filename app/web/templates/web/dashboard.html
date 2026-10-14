@@ -1,10 +1,40 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import incomplete_analysis_badge, empty_state with context %}
 {% block title %}Обзор — AI Assistant{% endblock %}
+{% block extra_head %}
+<style>
+    .ui-home { width: 100%; max-width: 960px; margin-inline: auto; }
+    .ui-home-shell header > div { min-width: 0; max-width: 100%; }
+    .ui-home-shell header > div:last-child { flex-wrap: wrap; gap: .5rem; }
+    .ui-home-shell :is(header button, header select, nav[aria-label="Основные разделы"] a),
+    .ui-home :is(a, select) { min-height: 44px; }
+    .ui-home a:not(.ui-home-result) { display: inline-flex; align-items: center; }
+    .ui-home-title { overflow-wrap: anywhere; font-size: 1.75rem; line-height: 1.25;
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+    .ui-home h2 { font-size: 1.125rem; line-height: 1.5; font-weight: 600; }
+    .ui-home :is(.text-xs, [data-coverage]) { font-size: .875rem; line-height: 1.5; }
+    .ui-home-result { display: block; overflow-wrap: anywhere; }
+    .ui-home-meta > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+    .ui-home-result-title { font-size: 1.125rem; line-height: 1.5; font-weight: 600; }
+    .ui-home .ui-home-summary { max-width: 70ch; font-size: 1rem; line-height: 1.6;
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+    .ui-home-result-title, .ui-home-task-name, .ui-home-source { display: -webkit-box;
+        -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+    .ui-home .ui-home-task-name { font-size: 1rem; line-height: 1.5; }
+    .ui-home .border-dashed p { max-width: 52ch; font-size: 1rem; line-height: 1.6; }
+    .ui-home .ui-home-task { min-width: 0; overflow-wrap: anywhere; }
+    @media (max-width: 639px) {
+        .ui-home-title { font-size: 1.5rem; }
+        .ui-home .ui-card { padding: 1rem; }
+        .ui-home .ui-home-task { flex-basis: 100%; }
+    }
+</style>
+{% endblock %}
 {% block content %}
+<div class="ui-home">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
-            <h1 class="break-words text-2xl font-semibold tracking-tight">{{ tenant.name }}</h1>
+            <h1 title="{{ tenant.name }}" class="ui-home-title font-semibold tracking-tight">{{ tenant.name }}</h1>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Обзор</p>
         </div>
         {% if can_open_chat %}
@@ -53,27 +83,27 @@
             <div class="mt-4 space-y-3">
                 {% for result in recent_results[:5] %}
                 <a href="/app/analytics/{{ result.id }}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}"
-                   class="block min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span>Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}</span>
+                   class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
+                    <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span class="ui-home-source">Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}</span>
                         <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
                     </div>
-                    <p class="mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
+                    <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
                     {% if result.analysis_incomplete %}
                     <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
                     {% endif %}
                     {% if result.summary %}
-                    <p class="mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
+                    <p class="ui-home-summary mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
                     {% endif %}
                 </a>
                 {% endfor %}
             </div>
             {% elif offer.analytics %}
-                {{ empty_state("Результатов анализа пока нет.", "Здесь появятся доступные вам результаты.", height="h-24", radius="rounded-xl") }}
+                {{ empty_state("Результатов анализа пока нет.", "Здесь появятся доступные вам результаты.", height="min-h-32 py-6", radius="rounded-xl") }}
             {% elif offer.digests %}
-                {{ empty_state("Дайджесты доступны в отдельном разделе.", "Откройте «Дайджесты», чтобы посмотреть сводки.", height="h-24", radius="rounded-xl") }}
+                {{ empty_state("Дайджесты доступны в отдельном разделе.", "Откройте «Дайджесты», чтобы посмотреть сводки.", height="min-h-32 py-6", radius="rounded-xl") }}
             {% else %}
-                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="h-24", radius="rounded-xl") }}
+                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="min-h-32 py-6", radius="rounded-xl") }}
             {% endif %}
         </section>
 
@@ -91,8 +121,8 @@
             <ul class="mt-4 divide-y divide-slate-200 dark:divide-slate-800">
                 {% for task in recent_tasks[:3] %}
                 <li class="flex flex-wrap items-start justify-between gap-3 py-3">
-                    <div class="min-w-0 flex-1">
-                        <p class="break-words text-sm font-medium text-slate-900 dark:text-slate-100">{{ task.name }}</p>
+                    <div class="ui-home-task min-w-0 flex-1">
+                        <p title="{{ task.name }}" class="ui-home-task-name break-words text-sm font-medium text-slate-900 dark:text-slate-100">{{ task.name }}</p>
                         {% if is_superuser %}
                         <p class="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{{ task.tenant.name }}</p>
                         {% endif %}
@@ -102,7 +132,7 @@
                             {% else %}Время следующего запуска не определено{% endif %}
                         </p>
                     </div>
-                    <span class="text-xs text-slate-500 dark:text-slate-400">
+                    <span class="text-xs {% if task.last_status == 'failed' %}text-rose-700 dark:text-rose-300{% else %}text-slate-500 dark:text-slate-400{% endif %}">
                         {% if task.last_status == 'failed' %}Последний запуск: ошибка
                         {% elif task.id in effective_active %}Активна
                         {% else %}Неактивна{% endif %}
@@ -111,9 +141,10 @@
                 {% endfor %}
             </ul>
             {% else %}
-                {{ empty_state("Задач пока нет.", "Расписания будут доступны в разделе «Задачи».", height="h-24", radius="rounded-xl") }}
+                {{ empty_state("Задач пока нет.", "Расписания будут доступны в разделе «Задачи».", height="min-h-32 py-6", radius="rounded-xl") }}
             {% endif %}
         </section>
         {% endif %}
     </div>
+</div>
 {% endblock %}

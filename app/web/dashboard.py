@@ -171,5 +171,5 @@ async def dashboard(request: Request):
         filter_tenant_id=filter_tenant_id,
         offer=offer,
         next_step=next_step,
-        can_open_chat=bool(user and tenant_id is not None),
+        can_open_chat=bool(getattr(getattr(request.state, "web_perms", None), "can_open_chat", False)),
     )

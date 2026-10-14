@@ -6,6 +6,19 @@
 {% from "web/_macros.html" import segment, connection_badge, control, plan_badge, plan_comparison_table, switch_toggle with context %}
 {% block title %}Настройки — AI Monitor{% endblock %}
 {% block page_heading %}Настройки{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+[data-team-members] select, [data-team-members] button { min-height: 44px; max-width: 100%; }
+[data-team-members] form { flex-wrap: wrap; }
+@media (max-width: 639px) {
+    [data-team-members] table, [data-team-members] tbody, [data-team-members] tr, [data-team-members] td { display: block; width: 100%; }
+    [data-team-members] thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    [data-team-members] td { padding: .75rem 1rem; text-align: left; }
+    [data-team-members] td::before { content: attr(data-label); display: block; font-size: .75rem; opacity: .7; margin-bottom: .35rem; }
+}
+</style>
+{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-4xl">
 
@@ -20,7 +33,7 @@
         </nav>
         {% endif %}
         {% endfor %}
-        {% if is_superuser %}<nav aria-label="Платформа"><p class="text-xs ui-muted">Платформа — отдельные операторские права</p><a href="/admin/" class="ui-control inline-flex">Консоль администратора</a></nav>{% endif %}
+        <nav aria-label="Администрирование"><p class="text-xs ui-muted">Администрирование — по правам аккаунта на модели, не по роли в пространстве</p><a href="/admin/" class="ui-control inline-flex">Консоль администратора</a></nav>
     </div>
     {% if tab == 'account' %}
         <section class="mt-6 ui-card" aria-label="Мой аккаунт">
@@ -222,7 +235,7 @@
         <button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog" class="mt-6 ui-control">Приглашения и отзыв открытых приглашений</button>
         {% endif %}
         {% if settings_team_visible %}
-        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+        <div data-team-members class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -234,16 +247,16 @@
                 <tbody>
                     {% for m in memberships %}
                         <tr class="border-b border-slate-200 dark:border-slate-800/50 last:border-0">
-                            <td class="px-5 py-3">
+                            <td data-label="Участник" class="px-5 py-3">
                                 <span class="text-slate-800 dark:text-slate-200">{{ member_names.get(m.user_id, '—') }}</span>
                                 {% if m.user_id == user.id %}
                                     <span class="ml-2 text-xs text-slate-600 dark:text-slate-400">это вы</span>
                                 {% endif %}
                             </td>
                             {% set m_key = member_role_keys.get(m.id) %}
-                            <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m_key, 'Роль не назначена') if m_key else 'Роль не назначена' }}</td>
+                            <td data-label="Роль" class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m_key, 'Роль не назначена') if m_key else 'Роль не назначена' }}</td>
                             {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
-                                <td class="px-5 py-3 text-right">
+                                <td data-label="Действия" class="px-5 py-3 text-right">
                                     <form method="post" action="/app/settings/members/{{ m.id }}/role"
                                           class="inline-flex items-center gap-2">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -254,6 +267,13 @@
                                         </select>
                                         <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">Сохранить</button>
                                     </form>
+                                    {% if m_key != 'owner' %}
+                                    <form method="post" action="/app/settings/members/{{ m.id }}/disable"
+                                          class="mt-2" data-confirm="Отключить доступ участника к текущему пространству?">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <button class="ui-control text-xs">Отключить доступ</button>
+                                    </form>
+                                    {% else %}<p class="mt-2 text-xs ui-muted">Владелец защищён от отключения. Сначала передайте владение и измените роль.</p>{% endif %}
                                 </td>
                             {% endif %}
                         </tr>

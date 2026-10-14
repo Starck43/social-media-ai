@@ -263,3 +263,35 @@ For a tenancy change, verify at least unknown identity, missing membership,
 revoked/disabled membership, cross-workspace read/write, manager update/delete,
 channel rebind and transaction rollback behavior. Broaden to the relevant API,
 web, agent and job entry points when the shared authorization contract changes.
+
+### Web owner/guest context and membership disable
+
+The web shell labels each membership as an owned workspace or granted access,
+with the active role visible beside the page context. Ownership follows the
+existing membership owner contract, not the creator's identity. Workspace data
+remains tenant-scoped: switching changes context; it does not merge the caller's
+resources from another workspace. Ordinary member model rights come from the
+role assigned to that membership, not from object authorship or a new allowlist.
+Platform-operator overrides remain separate from ordinary member access.
+
+Web chat is owner-only in the active workspace. Non-owner members, including
+platform operators visiting as a non-owner, have no chat navigation or home
+entry; direct transcript, send and delete routes refuse them. Runtime admission
+reloads the existing RuntimeIdentity and refuses non-owner/revoked web identities
+before starting the authorized turn. Messenger policy is unchanged. Legacy web
+owner inference is retained; runtime still requires its explicit owner identity.
+
+Settings Team exposes `POST /app/settings/members/{id}/disable` only with the
+existing concrete workspace-management capability. CSRF is required. The manager
+conditionally updates an active, bound web membership in that workspace to
+`is_active=False`; it retains the row and personal credentials. Owners, including
+legacy NULL-role rows, are protected from this action even when more than one
+owner exists: transfer ownership and change the role first. The owner predicate
+is part of the UPDATE, not a separate stale read. Subsequent web/API membership
+resolution excludes the disabled row. Existing sessions and unrelated workspace
+memberships are not deleted. Invite/session races, in-flight requests and real
+role/revocation/tenant acceptance remain environment-dependent verification.
+
+Admin entry is open to active authenticated accounts, independently of workspace
+membership. Per-model/action **platform** permissions remain authoritative there;
+the console is not the tenant-scoped dashboard. See [ADMIN](ADMIN.md).

@@ -551,6 +551,27 @@ async def membership_role(
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
 
+@router.post("/members/{membership_id}/disable")
+async def membership_disable(request: Request, membership_id: int, token: str = Form("", alias="_csrf")):
+    """Disable web access, retaining the membership and its audit identity."""
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.disable_web_member(tenant_id=tenant_id, membership_id=membership_id)
+    add_flash(
+        request,
+        "success" if changed else "error",
+        "Доступ участника отключён" if changed else "Участник не найден или защищён как владелец",
+    )
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
 _ISSUED_INVITE_KEY = "_issued_invite"
 
 

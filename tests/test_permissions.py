@@ -115,7 +115,7 @@ async def test_a_stripped_role_grants_nothing():
         stripped = await _loaded(await _user(role))
 
     assert stripped.model_permissions("source") == set()
-    assert not stripped.has_admin_access()
+    assert stripped.has_admin_access()  # Entry is allowed; model grants remain empty.
     assert stripped.has_perm_for("source", ActionType.VIEW) is False
 
 

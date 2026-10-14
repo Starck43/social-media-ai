@@ -106,6 +106,7 @@ class TenantUIMiddleware:
                         {
                             "tenant": workspace,
                             "role": role_codename,
+                            "is_owner": bool(membership.is_owner),
                             "role_label": level.label if level is not None else "Роль не назначена",
                             "active": membership.tenant_id == tenant_id,
                         }

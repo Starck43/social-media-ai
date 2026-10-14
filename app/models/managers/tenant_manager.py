@@ -15,7 +15,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .base_manager import BaseManager
 
@@ -242,6 +242,34 @@ class TenantUserManager(BaseManager["TenantUser"]):
             for permission in role.permissions
             if permission.model_type is not None
         )
+
+    async def disable_web_member(self, *, tenant_id: int, membership_id: int) -> bool:
+        """Atomically disable a non-owner web member of the concrete workspace.
+
+        Owners (including legacy NULL roles) cannot be disabled through this
+        action, so concurrent owner disables cannot remove the last owner.
+        The role condition is in the UPDATE, not a stale preflight read.
+        The route checks the concrete workspace capability and CSRF first.
+        """
+        from ..role import Role
+
+        owner_roles = select(Role.id).where(Role.codename == "SUPERUSER")
+        statement = (
+            update(self.model)
+            .where(
+                self.model.id == membership_id,
+                self.model.tenant_id == tenant_id,
+                self.model.channel == WEB_CHANNEL,
+                self.model.user_id.is_not(None),
+                self.model.is_active.is_(True),
+                self.model.role_id.is_not(None),
+                self.model.role_id.not_in(owner_roles),
+            )
+            .values(is_active=False)
+            .returning(self.model.id)
+        )
+        async with self._get_owned_session() as session:
+            return (await session.execute(statement)).scalar_one_or_none() is not None
 
     async def web_memberships_for_tenant(self, tenant_id: int) -> list["TenantUser"]:
         """Active web members of a workspace (with a `user_id` bound)."""

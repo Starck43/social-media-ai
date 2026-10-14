@@ -22,7 +22,8 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from .deps import add_flash, ensure_csrf, render
+from .deps import add_flash, ensure_csrf, render, render_section_denied
+from .nav import section_of
 
 router = APIRouter(prefix="/chat")
 
@@ -161,6 +162,17 @@ def _is_owner(request: Request) -> bool:
     return False
 
 
+def _chat_denied(request: Request, is_ajax: bool):
+    """Deny before importing runtime, reading history or mutating messages."""
+    perms = getattr(request.state, "web_perms", None)
+    if perms is not None and getattr(perms, "can_open_chat", False):
+        return None
+    message = "Чат доступен только владельцу текущего пространства"
+    if is_ajax:
+        return JSONResponse({"error": message}, status_code=403)
+    return render_section_denied(request, section_of("/app/chat"))
+
+
 @router.get("")
 @router.get("/")
 async def chat_page(request: Request):
@@ -172,6 +184,10 @@ async def chat_page(request: Request):
         request.headers.get("x-requested-with") == "XMLHttpRequest"
         or "application/json" in (request.headers.get("accept") or "")
     )
+
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
 
     from app.agent.runtime import web_session_id
 
@@ -223,6 +239,10 @@ async def chat_send(
         or "application/json" in (request.headers.get("accept") or "")
     )
 
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
+
     if not ensure_csrf(request, token):
         if is_ajax:
             return JSONResponse(
@@ -246,9 +266,7 @@ async def chat_send(
 
     from app.agent.runtime import handle_web_message
 
-    # No permission gate here: talking to the agent is a read-ish action every
-    # workspace member may do, and the agent's own tool layer already applies
-    # `WebPerms`-equivalent rules (owner-only writes via `Resolution.is_owner`).
+    # The runtime reloads the owner membership before it admits a paid turn.
     try:
         reply = await handle_web_message(
             text,
@@ -286,6 +304,10 @@ async def chat_send(
             messages=enriched,
             is_owner=_membership_role(request) == "owner",
         )
+    except PermissionError:
+        if is_ajax:
+            return JSONResponse({"error": "Доступ к чату отозван"}, status_code=403)
+        return render_section_denied(request, section_of("/app/chat"))
     except Exception:
         logging.getLogger(__name__).exception("Chat POST failed")
         if is_ajax:
@@ -320,6 +342,10 @@ async def chat_message_delete(
         request.headers.get("x-requested-with") == "XMLHttpRequest"
         or "application/json" in (request.headers.get("accept") or "")
     )
+
+    denied = _chat_denied(request, is_ajax)
+    if denied is not None:
+        return denied
 
     if not ensure_csrf(request, token):
         if is_ajax:

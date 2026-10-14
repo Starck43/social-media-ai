@@ -251,8 +251,9 @@ class AgentTaskManager(BaseManager):
         """Internal trigger boundary: insert and schedule advancement commit together.
 
         Scheduled contenders match their observed due timestamp and skip locked
-        tasks. Manual runs are deliberate new runs, but share the row lock so
-        a stale manual snapshot cannot roll the schedule backwards.
+        tasks. Manual runs share the row lock so a stale snapshot cannot roll
+        the schedule backwards. Source-work conflicts return a busy receipt
+        without recording a trigger or consuming the scheduled occurrence.
         """
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
@@ -277,6 +278,9 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Scheduled admission requires an aware observed due timestamp")
         async with async_session_maker() as session:
             async with session.begin():
+                # One lock order with direct source admission and staging:
+                # workspace admission gate, then task/staged rows.
+                await JobManager.lock_source_admission(session, tenant_id)
                 query = select(AgentTask).where(AgentTask.id == task_id, AgentTask.tenant_id == tenant_id)
                 if scheduled:
                     query = query.where(
@@ -291,9 +295,15 @@ class AgentTaskManager(BaseManager):
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
-                        active_source_ids = set((await session.execute(
-                            select(Source.id).where(Source.tenant_id == tenant_id, Source.is_active.is_(True))
-                        )).scalars().all())
+                        active_source_ids = set(
+                            (
+                                await session.execute(
+                                    select(Source.id).where(Source.tenant_id == tenant_id, Source.is_active.is_(True))
+                                )
+                            )
+                            .scalars()
+                            .all()
+                        )
                     if not self._task_effectively_active(row, active_source_ids):
                         return None
                 once = row.cron_expr == "@once"
@@ -314,9 +324,18 @@ class AgentTaskManager(BaseManager):
                     payload = dict(row.payload or {})
                     if extra_payload:
                         payload.update({key: value for key, value in extra_payload.items() if value is not None})
-                    job = await JobManager().enqueue(
-                        job_type=row.job_type, payload=payload, agent_task_id=row.id, run_at=now, session=session
-                    )
+                    from app.jobs.source_activity import SOURCE_JOB_TYPES, SourceJobBusy
+
+                    jobs = JobManager()
+                    admit = jobs.admit_source_job if row.job_type in SOURCE_JOB_TYPES else jobs.enqueue
+                    try:
+                        job = await admit(
+                            job_type=row.job_type, payload=payload, agent_task_id=row.id, run_at=now, session=session
+                        )
+                    except SourceJobBusy as busy:
+                        # No trigger/schedule/once-state writes: the existing
+                        # job may belong to a different task or methodology.
+                        return {"status": "busy", "task_id": row.id, "job": busy.job}
                     row.last_status = "queued"
                     row.last_error = None
                     if once:

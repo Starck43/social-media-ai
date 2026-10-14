@@ -196,7 +196,12 @@ async def run_task(
     if request.payload:
         payload.update(request.payload)
 
-    job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+    from app.jobs.source_activity import SourceJobBusy
+
+    try:
+        job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+    except SourceJobBusy as busy:
+        raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
     outcome = await run_job_now(job.id, allow_retry=False) or {}
 
     return {
@@ -239,7 +244,12 @@ async def run_task_oneoff(
     if source_ids:
         await AgentTaskManager().add_sources(task.id, source_ids)
 
-    job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+    from app.jobs.source_activity import SourceJobBusy
+
+    try:
+        job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+    except SourceJobBusy as busy:
+        raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
     outcome = await run_job_now(job.id, allow_retry=False) or {}
 
     return {

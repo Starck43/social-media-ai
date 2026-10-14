@@ -29,6 +29,7 @@ def pure_module(name, path):
 
 projection = pure_module("stored_analysis", "app/services/ai/analysis_render.py")
 retry = pure_module("staged_retry", "app/services/ai/analysis_retry.py")
+activity = pure_module("source_activity", "app/jobs/source_activity.py")
 START = "2026-09-10T12:30:00+00:00"
 END = "2026-09-10T19:45:00+00:00"
 
@@ -126,9 +127,13 @@ def route_scope():
     manager.select_related.return_value = manager
     collected = NS(for_source=AsyncMock(return_value=[NS(id=4)]), reset_attempts=AsyncMock(return_value=1))
     jobs = NS(enqueue=AsyncMock(return_value=NS(id=20)))
+    jobs.admit_source_job = jobs.enqueue
     transaction = Transaction()
     session = NS(begin=lambda: transaction, close=AsyncMock())
+    factory = Mock(return_value=jobs)
+    factory.lock_source_admission = AsyncMock()
     scope.update(
+        SourceJobBusy=activity.SourceJobBusy,
         ensure_csrf=Mock(return_value=True),
         guard_web=Mock(return_value=None),
         add_flash=Mock(),
@@ -138,7 +143,7 @@ def route_scope():
         tenant_scope=lambda tid: nullcontext(),
         AIAnalytics=NS(objects=manager),
         CollectedItem=NS(objects=collected),
-        JobManager=lambda: jobs,
+        JobManager=factory,
         new_session=lambda: session,
         render_analysis=projection.render_analysis,
         parse_staged_window=retry.parse_staged_window,
@@ -215,10 +220,10 @@ async def test_enqueue_failure_rolls_back_reset_and_never_reports_success():
 @pytest.mark.asyncio
 async def test_pending_and_running_jobs_are_both_considered():
     scope = functions("app/web/sources.py", "_source_has_running_job")
-    query = AsyncMock(return_value=[NS(payload={"source_ids": [2939]}, job_type="analyze")])
-    scope["Job"] = NS(objects=NS(filter=query))
+    query = AsyncMock(return_value={"collect": False, "analyze": True})
+    scope["JobManager"] = lambda: NS(source_activity=query)
     assert await scope["_source_has_running_job"](2939) == {"collect": False, "analyze": True}
-    query.assert_awaited_once_with(status__in=["pending", "running"])
+    query.assert_awaited_once_with(2939)
 
 
 def template_context(**overrides):
@@ -453,3 +458,28 @@ def test_source_hides_retry_during_collection_or_queued_analysis():
     for running in ({"collect": True, "analyze": False}, {"collect": False, "analyze": True}):
         html = source_html(running=running)
         assert 'action="/app/sources/2939/analyze"' not in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "function,path", [("analytics_retry", "app/web/analytics.py"), ("source_analyze_now", "app/web/sources.py")]
+)
+async def test_atomic_busy_conflict_rolls_back_attempt_reset_and_reports_info(function, path):
+    original, _, _, collected, jobs, session, tx = route_scope()
+    jobs.enqueue.side_effect = activity.SourceJobBusy(NS(id=99, status="pending"))
+    if function == "analytics_retry":
+        scope = original
+        await scope[function](NS(), 1127, token="fake", tenant_id=7)
+    else:
+        scope = functions(path, function)
+        scope.update(original)
+        scope.update(
+            Source=NS(objects=NS(get=AsyncMock(return_value=NS(id=2939, tenant_id=7, name="Fixture")))),
+            AgentTaskManager=NS(parse_date=lambda value: None),
+            _resolve_source_window=AsyncMock(return_value={}),
+        )
+        await scope[function](NS(), 2939, token="fake", tenant_id=7)
+    scope["JobManager"].lock_source_admission.assert_awaited_once_with(session, 7)
+    collected.reset_attempts.assert_awaited_once()
+    assert tx.outcome == "rollback"
+    assert all(call.args[1] == "info" for call in scope["add_flash"].call_args_list)

@@ -1,4 +1,124 @@
-# Budget reservation PostgreSQL runner — offline proposal
+# Budget reservation PostgreSQL runner — current evidence and history
+
+## Current remote closeout — isolated PG PASS, normal online migration BLOCKED
+
+Tested FULL SHA: `d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71`.
+Preparation-script pin: `251e4aeb1533dadc3cea5d004e9a914ec057b502`.
+Actual preparation execution SHA: `943d14a70e32b1c870ee06e49c17853712165ec4`.
+These are real local owned commits; none is a relabelled historical test SHA.
+Publication/merge and compatibility with fresh dev are not certified here.
+
+The owner authorized continuing remote testing/preparation. A new sandbox-local
+PostgreSQL15.18 cluster was initialized, with no access to any Mac or production
+DB. Explicitly provisioned nonadministrative DDL login `starck` and NOINHERIT
+runner `smai_pr179_probe`, no memberships; dedicated final database
+`social_manager_budget_pr180_verified`, schema `budget_review_pr180`.
+Role facts are measured on this cluster, not inherited from the Mac report.
+Runner has CONNECT but no effective database CREATE/TEMP; schema/table/sequence
+ACLs are verified exactly. No app runtime, Compose, provider, deploy or live call.
+
+Project Python3.13 venv: unchanged requirements.txt plus httpx0.28.1, which was
+missing from requirements.txt but already declared by pyproject.toml. `pip check`
+passed. Both dotenv sources were suppressed; no private .env was read.
+Direct remote pytest is the owner's scoped exception; local Kilo rules remain.
+No .agent/test-report.md was read, edited or used as coordinator evidence.
+
+### Completed checks at the repaired source
+
+- New/changed no-DB safety scope: **57 passed,0 failed,0 skipped**,20 subtests;
+  three disabled-asyncio-plugin config warnings. Historical31/accepted6 not run.
+- Genuine READ ONLY preparation preflight; rehearsal PASS with four savepoint
+  guard probes, full enclosing rollback and independent empty-target readback;
+  one acknowledged preparation commit on the final target, postcommit readback.
+- Separate runner `verify_isolated_target()` READ ONLY Gate B PASS.
+- One acceptance node: **1 passed,0 failed,0 skipped**, all **14 journaled
+  scenarios PASS**. Four warnings: three disabled-plugin config keys and inherited
+  SQLAlchemy declarative_base deprecation. No warning was hidden by enabling plugins.
+- Actual retained **11 receipts /10 reservations /18 days**; independent read-only
+  counts agree. Days16 current+2 historical. Sequence advancement19/15/18,
+  untouched outcome/tenant sequences, exact protected-record hashes preserved.
+- Journal SHA256 `d2637a762268325d05c43764d870e7521b278a978a01811aec1a2660f13e1d2c`.
+  Catalog SHA256 `f1e01af9bcda59eb0b3767778874f6b2293f3fcd98076a6bd5a1f22665a84c55`.
+  ACL SHA256 `e7371625619ad83a2b464fecde7cb3931910ba9e073c12ce5ce061f58f6ea304`.
+- Final read-only other-client count0; pools disposed. All data/manifests retained;
+  no trigger disable, receipt cleanup, reset, drop, create_all, chain or stamp.
+- Black/isort and source compile PASS; app/migrations unchanged from9dd748c.
+- Reproducible public safe summary: `llm-budget-pg-isolated-evidence.json`.
+
+Commands (private runner approval/manifest key supplied as process inputs):
+
+```sh
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest   tests/test_budget_isolated_fixture_coherence.py   tests/test_budget_isolated_fixture_coverage.py   --noconftest -o addopts= -q --tb=short --no-header
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest   tests/acceptance/test_llm_budget_pg.py   --noconftest -o addopts= -q --tb=short --no-header
+```
+
+### Failed starts retained, not silently retried
+
+Initial read-only preflight refused PostgreSQL inet::text host-mask notation;
+no writes occurred. Corrected exact loopback handling accepts /32 or /128 only.
+An earlier synthetic target `social_manager_budget_pr180` was prepared at07338ac,
+then its READ ONLY runner verification refused asyncpg byte-valued pg_catalog
+internal-char fields. It retains its18 tenants and all manifests; no acceptance
+admissions were run there, and it was not reset/dropped. The final dedicated DB
+was prepared after adding explicit ::text casts for relkind/typtype/tgenabled.
+The two rehearsal catalogs were compared and are identical.
+
+At943d14a, pytest refused its own built-in LegacyTmpdirPlugin class BEFORE
+BudgetPackage ran, before approval/journal creation or any DB connection. The
+fix recognizes built-in modules, classes and instances, while rejecting external
+plugins. It did not rerun preparation or any owned admission. For this reviewed
+reader-only descendant, provenance retains the ORIGINAL apply.json bytes/hash,
+original execution SHA and all historical source hashes. All preparation and
+migration bytes still match exactly; the historical and current CATALOG_SQL
+must match; real Git ancestry is mandatory. The new runner SHA remains explicit
+in its separate approval. Evidence is never rewritten to pretend preparation
+executed at the newer reader commit.
+
+### Migration closeout — offline PASS is not online acceptance
+
+The REAL repository migrations/env.py, real Settings and real Alembic graph
+rendered `command.upgrade(config,"0094:0095",sql=True)` successfully. Network and
+Engine.connect were blocked. The generated SQL contains exactly two tables, two
+functions, three triggers, transactional BEGIN/COMMIT and the conditional0094→0095
+version UPDATE; no earlier revision, baseline DML or destructive statement.
+Ordinary downgrade raises the reviewed preservation-plan refusal. The SAME0095
+definitions were exercised successfully on PostgreSQL in the isolated package.
+
+**Normal ONLINE Alembic0094→0095 remains NOT VERIFIED / BLOCKED**, because no
+approved reproducible database with genuine0094 migration history and its full
+prerequisite catalog exists in this remote environment. The synthetic target has
+no Alembic history by design. Do NOT insert/stamp a0094 row, use create_all, replay
+0093/0094, bootstrap the non-bootstrap historical chain, restore the business-data
+dump or call definitions as a substitute. Nothing here proves deployability.
+
+To finish that distinct boundary, supply an existing dedicated nonproduction
+0094 target or a provenance-backed sanitized0094 snapshot (schema and actual
+history, not a hand-written version row). No credential in chat. Then:
+1. READ ONLY identity/nonproduction/role/window, SHOW search_path, actual qualified
+   version-table placement and exact0094 row; full prerequisite catalog parity,
+   no0095 objects; durable protected data/catalog/ACL/sequence manifests.
+2. Audit on_version_apply/register_model_types BEFORE approval: it scans the whole
+   schema, can INSERT model_types/permissions for every missing registration AND
+   DELETE stale registrations. Refuse any preexisting drift. Approve only the
+   exact metadata rows/permission codenames for the two new models, with measured
+   existing rows and expected ActionType-derived count; no blanket callback DML.
+3. Target-specific reviewed DDL/DML plan: normal repository Alembic upgrade0095
+   only, explicit process POSTGRES_URL and DB_SCHEMA with both dotenv sources
+   suppressed. Preserve measured version placement/search_path; no routing guesses.
+4. Independent readback of0095, exact new catalog and metadata deltas, enabled
+   guards, immutable receipts/outcomes and all protected records/sequences. Any
+   failed/ambiguous write is STOP and read-only reconciliation, not a retry.
+
+PR stays Draft while this requested normal online migration boundary and fresh-dev
+compatibility/review remain outstanding. HTTP, settlement/release, all-path
+accounting and whole PRD-03 stay OPEN; synthetic ack loss is not network ambiguity.
+PR137 primary caveats and all retained manifests remain unchanged.
+
+## Historical remote no-DB proposal — superseded status, evidence retained
+
+Everything until the owner-local history below describes the EARLIER no-DB
+phase only. Its pending pins/permissions and 50-test result are not current status.
+
 
 **Prepared, NOT EXECUTED / NOT ADMITTED TO PG.** This document is a validation
 contract for the existing bounded Draft PR, not a new task queue or whole-gate

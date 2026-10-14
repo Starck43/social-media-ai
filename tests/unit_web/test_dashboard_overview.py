@@ -1,7 +1,7 @@
 """Isolated home contract checks; no application imports or database bootstrap.
 
 Normal local execution follows Kilo/test-runner/pare-test with --noconftest.
-Direct sandbox checks require explicit owner authorization and never access DB.
+Remote sandbox checks use the skill's no-DB exception and never access DB.
 AST-loaded functions check orchestration; acceptance still needs the real ASGI app.
 """
 

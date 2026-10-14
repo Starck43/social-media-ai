@@ -1,7 +1,7 @@
 """No-app/no-DB regression checks for the exact web Jinja configuration.
 
-Run through Kilo/pare-test with --noconftest: the suite's root conftest performs
-shared-schema bootstrap. These checks intentionally import no application code.
+Run isolated with --noconftest under the remote no-DB skill exception: the
+suite's root conftest performs shared-schema bootstrap. These checks intentionally import no application code.
 Owner acceptance must also render with the real app environment and check Alpine.
 """
 

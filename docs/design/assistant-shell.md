@@ -73,22 +73,58 @@ This is node relocation, not copied forms or a new client router.
 
 ## Verification and handoff
 
-Executed remotely: Git status/HEAD inspection on the isolated checkout, targeted
-source/diff review, `git diff --check`, Python AST syntax only (no application
-imports), `node --check` for changed JS/CJS. These do not prove template rendering,
-Alpine behavior, permissions, layout, contrast or DB integration.
+Remote no-DB checks are now authorized by the repository skill's explicit
+owner-approved exception (policy commit `b65654393e11b014c046eb275ef0312905b5b83d`).
+The initial Draft had syntax/readback evidence only. Subsequent sandbox execution
+found and fixed a missing filter in the new fixture, a real account hover/click
+race and a fixed-bell/content overlap missed by the initial geometry assertion.
+The keyboard-outline assertion now enters keyboard modality before checking
+`:focus-visible`; no assertion was removed to obtain PASS.
 
-Not executed: pytest, Jinja rendering, browser fixtures, real UI/ASGI/DB tests.
-The remote checkout has no project `.venv`, Kilo CLI or owner-local filesystem.
-No direct sandbox pytest authorization is assumed and no substitute environment
-is created. No provider call, real send, schema bootstrap/reset/migration or deploy.
+Sandbox environment: isolated `/data/smai-shell-venv`, source worktree
+`/data/smai-shell-verify`; Python 3.13.14, pytest 9.1.1, pytest-asyncio 1.4.0,
+Jinja2 3.1.6, Starlette 1.8.0, FastAPI 0.143.0, Playwright 1.63.0,
+Chromium 153.0.8010.12. Dependencies installed from `pyproject.toml` dev/runtime
+requirements with the existing Jinja template dependency; not the owner's .venv.
+No `.env`, real secret, DB connection or application/runtime startup was used.
 
-Local owner/coordinator must preserve the primary checkout's dirty files, inspect
-worktrees and fresh ownership, and pin the PR implementation SHA before validation.
-Use Kilo `test-orchestrator` -> `test-runner` -> `pare-test`, serialized under R8/R10.
-If the configured runner cannot collect an integration scope without conftest,
-report BLOCKED and resolve the existing collection contract; never shell-fallback,
-weaken restrictions, repair schemas or bootstrap another target.
+Executed sequentially with mocked boundaries, no root conftest/bootstrap:
+
+```sh
+/data/smai-shell-venv/bin/python -m pytest --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header tests/unit_web/test_assistant_shell.py tests/unit_web/test_dashboard_overview.py tests/unit_web/test_template_autoescape.py
+node tests/web_shell_state.cjs
+/data/smai-shell-venv/bin/python tests/home_overview_fixtures.py --out /data/shell-fixtures
+CHROMIUM_BIN=$(command -v chromium) node tests/web_home_layout.cjs /data/shell-fixtures /data/shell-vendor
+```
+
+Result: 68 isolated pytest checks passed (0 failed/skipped); notification state
+checks passed; 48 home-fixture cases (four states, 375/390/768/1440px,
+light/dark/system) and two interaction scenarios passed, exit 0. The browser
+harness serves static/vendor files locally and intercepts/aborts every HTTP
+request; application endpoints are synthetic. It now checks content viewport
+separation from the bell, last-read empty/close state and POST CSRF wiring,
+mobile drawer/menu, desktop hover/click/ArrowDown/Escape, collapse, theme OS
+following, keyboard focus outline and 44px chat target. Four representative
+screenshots were visually reviewed after the footer fix; this is not an
+individual visual review of all 48 screenshots.
+
+The content region now scrolls inside the stable shell; a nonempty/open bell
+reserves a real footer band, including mobile safe area, rather than overlaying
+intermediate content on long documents. Revalidate every migrated page and chat
+composer in the real app; home fixtures do not cover their individual layouts.
+Source HEAD and final published follow-up SHA/readback are pinned in PR #188's
+current handoff. Also executed static syntax/diff checks; formatted the new shell
+unit-test file with Black/isort. Prepared integration tests have not been run.
+
+Remaining blocker: real UI/ASGI/DB, full role/tenant-isolation acceptance, invite
+issue/revoke/seat/last-owner flows, all migrated pages, chat composer, measured
+contrast and PR185 deferred acceptance. No mock PASS closes these requirements.
+Local coordinator must preserve the primary checkout's dirty files, inspect
+worktrees and fresh ownership, and pin the PR implementation SHA. Use Kilo
+`test-orchestrator` -> `test-runner` -> `pare-test`, serialized under R8/R10 for
+real/shared-DB or environment-dependent checks. An unsafe target or collection
+restriction remains BLOCKED: no shell fallback, schema repair or bootstrap.
+No provider calls, real send, migration or deploy occurred.
 
 Suggested isolated scope (no root conftest):
 `tests/unit_web/test_assistant_shell.py`,
@@ -104,7 +140,7 @@ Integration scopes to review/collect through the approved runner separately:
 Tests touching the shared target must stay sequential; absence of a safe existing
 target is a blocker, not permission to create/reset/migrate one.
 
-Prepared offline checks, not executed here:
+Offline reproduction commands (sandbox-executed subset only):
 - `node tests/web_shell_state.cjs` (mocked notification failures/CSRF/refill).
 - Project `.venv/bin/python tests/home_overview_fixtures.py --out <fixture-dir>`
   then `node tests/web_home_layout.cjs <fixture-dir> <offline-vendor-dir>`.

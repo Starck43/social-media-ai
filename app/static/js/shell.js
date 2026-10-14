@@ -29,14 +29,19 @@
         document.querySelectorAll('[data-shell-popover]').forEach(popover => {
             const trigger = popover.querySelector('[data-popover-trigger]');
             const panel = popover.querySelector('.shell-popover-panel');
-            let timer;
-            const open = () => {
+            let timer, openedByHover = false;
+            const open = (fromHover = false) => {
+                if (panel.hidden) openedByHover = fromHover;
                 clearTimeout(timer);
                 document.querySelectorAll('[data-shell-popover]').forEach(other => { if (other !== popover) closePopover(other); });
                 panel.hidden = false;
                 trigger.setAttribute('aria-expanded', 'true');
             };
-            trigger.addEventListener('click', () => panel.hidden ? open() : closePopover(popover));
+            trigger.addEventListener('click', () => {
+                if (panel.hidden) open();
+                else if (openedByHover) openedByHover = false;
+                else closePopover(popover);
+            });
             trigger.addEventListener('keydown', event => {
                 if (event.key === 'ArrowDown') { event.preventDefault(); open(); panel.querySelector('a, button')?.focus(); }
             });
@@ -49,7 +54,7 @@
             document.addEventListener('click', event => { if (!popover.contains(event.target)) closePopover(popover); });
             if (popover.hasAttribute('data-hover-popover')) {
                 popover.addEventListener('pointerenter', event => {
-                    if (event.pointerType === 'mouse' && matchMedia('(hover: hover)').matches) open();
+                    if (popover.closest('.shell-sidebar') && event.pointerType === 'mouse' && matchMedia('(hover: hover)').matches) open(true);
                 });
                 popover.addEventListener('pointerleave', () => {
                     timer = setTimeout(() => { if (!popover.contains(document.activeElement)) closePopover(popover); }, 180);
@@ -118,7 +123,15 @@
 function notificationsBell(csrf) {
     return {
         openModal: false, loading: false, items: [], error: '', pending: false,
-        init() { this.load(); },
+        init() {
+            this.$watch('items', () => this.updateDockSpace());
+            this.$watch('openModal', () => this.updateDockSpace());
+            this.load();
+        },
+        updateDockSpace() {
+            document.documentElement.style.setProperty('--shell-dock-space',
+                this.items.length || this.openModal ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
+        },
         open() {
             if (this.openModal) return;
             this.returnFocus = document.activeElement;

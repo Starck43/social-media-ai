@@ -35,6 +35,7 @@ const path = require('path');
                     await context.addInitScript(mode => localStorage.setItem('theme', mode), theme);
                     const page = await context.newPage();
                     const errors = [];
+                    let notificationRead = false;
                     page.on('pageerror', e => errors.push(e.message));
                     await page.route('**/*', async route => {
                         const u = new URL(route.request().url());
@@ -53,7 +54,7 @@ const path = require('path');
                             await route.fulfill({
                                 contentType: 'application/json',
                                 body: JSON.stringify({
-                                    notifications: [{
+                                    notifications: notificationRead ? [] : [{
                                         id: 1,
                                         title: 'Тестовое уведомление',
                                         message: 'Проверка локального диалога',
@@ -65,6 +66,8 @@ const path = require('path');
                             return;
                         }
                         if (u.pathname === '/app/notifications/read/1') {
+                            if (route.request().method() !== 'POST' || !route.request().postData().includes('_csrf=')) throw Error('Missing read POST/CSRF');
+                            notificationRead = true;
                             await route.fulfill({
                                 contentType: 'application/json',
                                 body: '{"ok":true}'
@@ -98,24 +101,40 @@ const path = require('path');
                         errors
                     });
                     if (dimensions.document > width) throw Error(`Horizontal overflow ${state}/${width}/${theme}: ${dimensions.document}`);
+                    const dock = await page.locator('.shell-notification-dock').boundingBox();
+                    const content = await page.locator('main').boundingBox();
+                    if (dock && content.y + content.height > dock.y + 1) throw Error('Floating bell overlaps content viewport');
                     const type = await page.evaluate(() => ({
                         summary: document.querySelector('.ui-home-summary') ? parseFloat(getComputedStyle(document.querySelector('.ui-home-summary')).fontSize) : 16,
                         meta: document.querySelector('.ui-home-meta') ? parseFloat(getComputedStyle(document.querySelector('.ui-home-meta')).fontSize) : 14
                     }));
                     if (type.summary < 16 || type.meta < 14) throw Error('Home text below readable size');
-                    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+                    await page.evaluate(() => { const main = document.getElementById('page-content'); main.scrollTo(0, main.scrollHeight); });
                     if (width < 768) {
                         const bell = await page.locator('.shell-notification-dock').boundingBox();
                         const last = await page.locator('.ui-home').boundingBox();
                         if (bell && last.y + last.height > bell.y + 1) throw Error('Last content hidden by floating bell');
                     }
-                    await page.evaluate(() => scrollTo(0, 0));
+                    await page.evaluate(() => document.getElementById('page-content').scrollTo(0, 0));
                     if (dimensions.mode !== (theme === 'system' ? 'dark' : theme)) throw Error('Theme mismatch');
                     if (width >= 768) {
                         await page.locator('[data-sidebar-collapse]').click();
                         await page.waitForFunction(() => document.documentElement.dataset.sidebarCollapsed === 'true');
                         if (await page.locator('.shell-sidebar').evaluate(el => el.getBoundingClientRect().width) !== 64) throw Error('Compact rail width');
                         await page.locator('[data-sidebar-collapse]').click();
+                    }
+                    if (state === 'owner' && width === 1440 && theme === 'light') {
+                        const account = page.locator('.shell-sidebar [data-popover-trigger]');
+                        await account.hover();
+                        await page.locator('#account-desktop').waitFor({ state: 'visible' });
+                        await account.click();
+                        if (!(await page.locator('#account-desktop').isVisible())) throw Error('Hover then click closed account menu');
+                        await page.keyboard.press('Escape');
+                        await account.focus();
+                        await page.keyboard.press('ArrowDown');
+                        if (!(await page.locator('#account-desktop').isVisible())) throw Error('Keyboard account menu failed');
+                        await page.keyboard.press('Escape');
+                        report.interactions.push('desktop hover/click and ArrowDown/Escape account menu');
                     }
                     if (theme === 'system') {
                         await page.emulateMedia({ colorScheme: 'light' });
@@ -147,6 +166,9 @@ const path = require('path');
                         });
                         const box = await dialog.locator('.ui-notification-panel').boundingBox();
                         if (box.x < 0 || box.x + box.width > width) throw Error('Modal overflow');
+                        await dialog.getByRole('button', { name: 'Отметить прочитанным', exact: true }).click();
+                        await dialog.getByText('Нет уведомлений', { exact: true }).waitFor({ state: 'visible' });
+                        if (!(await dialog.isVisible())) throw Error('Last read unexpectedly closed dialog');
                         await page.keyboard.press('Escape');
                         await dialog.waitFor({
                             state: 'hidden'
@@ -154,6 +176,8 @@ const path = require('path');
                         await page.getByRole('button', { name: 'Тема оформления', exact: true }).click();
                         await page.locator('[data-theme-choice=dark]').click();
                         await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+                        // Enter keyboard modality before asserting :focus-visible styling.
+                        await page.keyboard.press('Tab');
                         await page.getByRole('link', {
                             name: 'Открыть чат',
                             exact: true

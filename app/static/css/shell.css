@@ -72,3 +72,10 @@ dialog.ui-notification-overlay:not([open]) { display:none!important; }
 /* The fixed bell occupies a reserved footer band, not the chat input. */
 body[data-shell-section="chat"] .chat-page { height:auto; min-height:calc(100dvh - 240px); }
 body[data-shell-section="chat"] .chat-window { flex:none; height:clamp(320px,calc(100dvh - 300px),900px); }
+/* Reserve a real viewport footer band when the bell exists. Padding on a long
+ * document alone cannot prevent a fixed button covering intermediate content. */
+.shell-layout { height:100dvh; overflow:hidden; }
+.shell-page { min-height:0; padding-bottom:var(--shell-dock-space,0px); }
+.shell-navbar { flex-shrink:0; }
+.shell-content { min-height:0; overflow:auto; overscroll-behavior:contain; padding-bottom:24px; }
+body[data-shell-section="chat"] .shell-content { padding-bottom:24px; }

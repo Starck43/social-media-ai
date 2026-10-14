@@ -37,7 +37,7 @@ router = APIRouter(prefix="/settings")
 
 BACK = "/app/settings"
 
-TABS: tuple[str, ...] = ("workspace", "team", "connections", "agent", "channels")
+TABS: tuple[str, ...] = ("account", "connections", "workspace", "team", "agent", "channels")
 #: Tabs that only configure the workspace; a member who cannot manage it does
 #: not get them (their forms are refused anyway by `_guard_workspace_settings`).
 MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
@@ -122,11 +122,42 @@ def _tab_of(request: Request) -> str:
     # would look like the credentials tab had been deleted.
     if tab == "credentials":
         tab = "connections"
-    return tab if tab in TABS else TABS[0]
+    return tab if tab in TABS else "workspace"
+
+
+def _personal_access(request: Request) -> bool:
+    user = getattr(request.state, "web_user", None)
+    user_id = getattr(user, "id", None)
+    return bool(user is not None and getattr(user, "is_active", False) and type(user_id) is int and user_id > 0)
+
+
+def _workspace_access(request: Request, tenant_id: int | None) -> bool:
+    """Read name/timezone only for this authenticated active workspace context."""
+    if not _personal_access(request) or type(tenant_id) is not int or tenant_id <= 0:
+        return False
+    tenant = getattr(request.state, "tenant", None)
+    if tenant is None or tenant.id != tenant_id or not getattr(tenant, "is_active", False):
+        return False
+    user = request.state.web_user
+    return bool(
+        getattr(user, "is_superuser", False)
+        or any(
+            m.tenant_id == tenant_id
+            and m.user_id == user.id
+            and getattr(m, "channel", None) == "web"
+            and getattr(m, "is_active", False)
+            for m in getattr(request.state, "memberships", ())
+        )
+    )
 
 
 def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
-    """Tabs this caller gets: managers see all, other members their own part."""
+    """Personal data is caller-owned; concrete workspace capabilities gate shared data."""
+    if not _personal_access(request):
+        return ()
+    if not _workspace_access(request, tenant_id):
+        # Existing personal connection write/OAuth routes still require onboarding.
+        return ("account",)
     perms = getattr(request.state, "web_perms", None)
     if perms is not None and perms.can_manage_workspace(tenant_id):
         return TABS
@@ -141,133 +172,119 @@ def _visible_tab(request: Request, tenant_id: int | None, visible: tuple[str, ..
 @router.get("")
 @router.get("/")
 async def settings_page(request: Request):
-    """One page, four tabs; the query string carries the active tab."""
-    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
-
+    """Resolve access/tab first; load only the selected scope, never hidden-tab data."""
     tenant_id = request.state.tenant_id
-    user = getattr(request.state, "web_user", None)
-    user_id = getattr(user, "id", None)
-
-    tenant = await tenants.get(id=tenant_id)
-    memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
     visible_tabs = _visible_tabs(request, tenant_id)
-    member_names = {}
-    member_ids = [m.user_id for m in memberships if m.user_id is not None]
-    if member_ids:
-        from app.models.user import User
-
-        rows = await User.objects.filter(id__in=member_ids)
-        member_names = {row.id: row.username for row in rows}
-
-    # Only the caller's own vault rows. `user_credentials` is not tenant-scoped,
-    # so the filter is by user id — never "the workspace's credentials".
-    credentials = []
-    if user_id is not None:
-        from app.models.managers.user_credential_manager import user_credentials
-
-        credentials = sorted(
-            await user_credentials.filter(user_id=user_id),
-            key=lambda row: (row.platform, row.kind),
-        )
-
-    # One card per platform, each carrying its own state, its action and — for
-    # a manual platform or someone without OAuth — the fallback form.
-    from app.services.social.connections import CONNECTIONS, connection_statuses
-
-    statuses = {status.platform: status for status in await connection_statuses(user_id)}
-    cards = []
-    for spec in CONNECTIONS:
-        status = statuses.get(spec.platform)
-        card = {
-            "platform": spec.platform,
-            "title": spec.title,
-            "purpose": spec.purpose,
-            "is_oauth": spec.is_oauth,
-            "manual_hint": spec.manual_hint,
-            "status": status,
-            "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
-            "rows": [row for row in credentials if row.platform == spec.platform],
-        }
-        cards.append(card)
-
-    channels = await TenantChannelManager().filter(tenant_id=tenant_id)
-
-    # Active LLM models for the agent dropdown
-    from app.models.llm_model import LLMModel
-    from app.services.ai.llm_client import default_model_sort_key
-
-    active_models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
-    active_models = sorted(active_models, key=default_model_sort_key)
-    model_options = []
-    for m in active_models:
-        provider_name = m.provider.name if m.provider else "?"
-        cost = f"${m.input_cost_per_1k:.4f}/${m.output_cost_per_1k:.4f}/1K"
-        label = f"{provider_name}/{m.model_id} ({cost})"
-        if m.is_default:
-            label += " ★"
-        model_options.append({"id": m.name, "label": label})
-
-    # What this workspace has already consumed, so the plan column can show
-    # "3 / 3" instead of a bare ceiling the reader has to count rows to match.
-    usage = await _plan_usage(tenant_id, channels, memberships)
-
-    return render(
-        request,
-        "web/settings.html",
-        section="settings",
-        tab=_visible_tab(request, tenant_id, visible_tabs),
-        visible_tabs=visible_tabs,
-        tenant=tenant,
-        memberships=memberships,
-        member_names=member_names,
-        connections=cards,
-        credentials=credentials,
-        channels=channels,
-        self_service_kinds=SELF_SERVICE_KINDS,
-        role_labels=ROLE_LABELS,
-        member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
-        action_types=ActionType.choices(),
-        plans=list(Tenant.PLANS),
-        plan_labels=_plan_labels(),
-        plan_rows=_plan_table(),
-        plan_usage=usage,
-        agent_model_options=model_options,
-    )
-
-
-async def _plan_usage(
-    tenant_id: int,
-    channels: list[Any],
-    memberships: list[Any],
-) -> dict[str, str]:
-    """Current usage per quota row, as "used/limit" for the plan's column.
-
-    Only rows that are countable get an entry. A row with no counter (a feature
-    flag) simply has no usage to show, which is why the template treats a
-    missing key as "nothing to annotate".
-    """
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
-    from app.models.source import Source
-
-    tenant = await Tenant.objects.get(id=tenant_id)
-    limits = tenant.effective_limits() if tenant else {}
-
-    counts = {
-        "max_sources": await Source.objects.filter(tenant_id=tenant_id).count(),
-        "max_channels": len(channels),
-        "max_scenarios": await AgentScenario.objects.filter(tenant_id=tenant_id).count(),
-        "max_team_members": len([m for m in memberships if m.user_id is not None]),
-        "max_tasks": await AgentTask.objects.filter(tenant_id=tenant_id).count(),
+    if not visible_tabs:
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    tab = _visible_tab(request, tenant_id, visible_tabs)
+    user = request.state.web_user
+    perms = getattr(request.state, "web_perms", None)
+    manage = bool(_workspace_access(request, tenant_id) and perms and perms.can_manage_workspace(tenant_id))
+    context: dict[str, Any] = {
+        "tab": tab,
+        "visible_tabs": visible_tabs,
+        "settings_manage": manage,
+        "settings_team_visible": manage,
+        "is_superuser": bool(getattr(user, "is_superuser", False)),
+        "settings_scope": "personal" if tab in ("account", "connections") else "workspace",
     }
 
-    usage: dict[str, str] = {}
+    if tab == "workspace":
+        tenant = request.state.tenant
+        if manage:
+            # Full configuration and quota projections require concrete-target capability.
+            context.update(
+                tenant=tenant,
+                plans=list(Tenant.PLANS),
+                plan_labels=_plan_labels(),
+                plan_rows=_plan_table(),
+                plan_usage=await _plan_usage(tenant, perms),
+            )
+        else:
+            # Explicit member read contract: no budget/prompt/channel/plan configuration.
+            context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
+    elif tab == "team" and manage:
+        from app.models.managers.tenant_manager import TenantUserManager
+        from app.models.user import User
+
+        memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
+        member_ids = [m.user_id for m in memberships if m.user_id is not None]
+        rows = await User.objects.filter(id__in=member_ids) if member_ids else []
+        context.update(
+            memberships=memberships,
+            member_names={row.id: row.username for row in rows},
+            role_labels=ROLE_LABELS,
+            member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
+        )
+    elif tab == "connections":
+        from app.models.managers.user_credential_manager import user_credentials
+        from app.services.social.connections import CONNECTIONS, connection_statuses
+
+        credentials = await user_credentials.web_metadata_for_user(user_id=user.id)
+        statuses = {status.platform: status for status in await connection_statuses(user.id)}
+        context["connections"] = [
+            {
+                "platform": spec.platform,
+                "title": spec.title,
+                "purpose": spec.purpose,
+                "is_oauth": spec.is_oauth,
+                "manual_hint": spec.manual_hint,
+                "status": statuses.get(spec.platform),
+                "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
+                "rows": [row for row in credentials if row.platform == spec.platform],
+            }
+            for spec in CONNECTIONS
+        ]
+    elif tab == "agent" and manage:
+        from app.models.llm_model import LLMModel
+        from app.services.ai.llm_client import default_model_sort_key
+
+        models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
+        options = []
+        for model in sorted(models, key=default_model_sort_key):
+            provider_name = model.provider.name if model.provider else "?"
+            cost = f"${model.input_cost_per_1k:.4f}/${model.output_cost_per_1k:.4f}/1K"
+            label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
+            options.append({"id": model.name, "label": label})
+        context["agent_model_options"] = options
+    elif tab == "channels" and manage:
+        from app.models.managers.tenant_manager import TenantChannelManager
+
+        context.update(
+            channels=await TenantChannelManager().filter(tenant_id=tenant_id), action_types=ActionType.choices()
+        )
+
+    response = render(request, "web/settings.html", section="settings", **context)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
+    """Manager-only quota projections; resource counts additionally require VIEW."""
+    from app.models.agent_scenario import AgentScenario
+    from app.models.agent_task import AgentTask
+    from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
+    from app.models.source import Source
+
+    counts = {}
+    for key, model, model_name in (
+        ("max_sources", Source, "source"),
+        ("max_scenarios", AgentScenario, "agentscenario"),
+        ("max_tasks", AgentTask, "agenttask"),
+    ):
+        if perms.can(model_name, "view"):
+            counts[key] = await model.objects.filter(tenant_id=tenant.id).count()
+    # Workspace capability includes team and delivery administration, not global rights.
+    counts["max_channels"] = await TenantChannelManager().filter(tenant_id=tenant.id).count()
+    counts["max_team_members"] = len(
+        [m for m in await TenantUserManager().web_memberships_for_tenant(tenant.id) if m.user_id is not None]
+    )
+    usage = {}
     for key, used in counts.items():
-        limit = limits.get(key)
-        if limit is None:
-            continue
-        over = " ⚠" if used > limit else ""
-        usage[key] = f"{used}/{int(limit)}{over}"
+        limit = tenant.effective_limits().get(key)
+        if limit is not None:
+            usage[key] = f"{used}/{int(limit)}" + (" ⚠" if used > limit else "")
     return usage
 
 
@@ -411,7 +428,7 @@ async def credential_store(
     """
     user = getattr(request.state, "web_user", None)
     user_id = getattr(user, "id", None)
-    if user_id is None:
+    if not _personal_access(request):
         add_flash(request, "error", "Только для вошедшего пользователя")
         return RedirectResponse(BACK, status_code=302)
 
@@ -454,6 +471,10 @@ async def credential_disable(
     """Deactivate one of the caller's own rows; the row is kept for audit."""
     user = getattr(request.state, "web_user", None)
     user_id = getattr(user, "id", None)
+
+    if not _personal_access(request):
+        add_flash(request, "error", "Только для вошедшего пользователя")
+        return RedirectResponse(BACK, status_code=302)
 
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
@@ -527,6 +548,27 @@ async def membership_role(
 
     await tenant_users.update_by_id(membership.id, role_id=new_role_id)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/members/{membership_id}/disable")
+async def membership_disable(request: Request, membership_id: int, token: str = Form("", alias="_csrf")):
+    """Disable web access, retaining the membership and its audit identity."""
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.disable_web_member(tenant_id=tenant_id, membership_id=membership_id)
+    add_flash(
+        request,
+        "success" if changed else "error",
+        "Доступ участника отключён" if changed else "Участник не найден или защищён как владелец",
+    )
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
 

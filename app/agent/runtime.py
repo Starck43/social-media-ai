@@ -365,7 +365,11 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
         return "Не удалось подтвердить пользователя этого рабочего пространства."
     identity = await resolve_runtime_identity(resolution)
     if identity is None:
+        if inbound.channel == WEB_CHANNEL:
+            raise PermissionError("Web chat requires active workspace ownership")
         return "Чат не связан с активным пользователем рабочего пространства. Обратитесь к администратору."
+    if inbound.channel == WEB_CHANNEL and not identity.is_owner:
+        raise PermissionError("Web chat requires active workspace ownership")
     # The scope wraps the whole turn, not just the preamble: the tool loop's gate
     # reads `get_current_user()`, and a scope that closed early would leave it
     # None. Anonymous identities are fail-closed here; keep the admitted actor

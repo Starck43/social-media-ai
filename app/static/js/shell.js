@@ -141,13 +141,67 @@
 })();
 
 /* One authorized, context-bound snapshot drives both the bell and its rows. */
+// Browser-local display preferences, never authorization or durable acknowledgement.
+const AttentionPreferences = {
+    defaults() { return { version: 1, connections: true, tasks: true, popup: false, quiet: false, start: '22:00', end: '08:00' }; },
+    key(userId) { return Number.isSafeInteger(userId) && userId > 0 ? 'app:attention:display:v1:user:' + userId : null; },
+    normalize(value) {
+        const defaults = this.defaults();
+        if (!value || value.version !== 1) return defaults;
+        for (const key of ['connections', 'tasks', 'popup', 'quiet']) if (typeof value[key] !== 'boolean') return defaults;
+        for (const key of ['start', 'end']) if (typeof value[key] !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value[key])) return defaults;
+        if (value.quiet && value.start === value.end) return defaults;
+        return Object.fromEntries(Object.keys(defaults).map(key => [key, value[key]]));
+    },
+    read(userId) {
+        try { const key = this.key(userId); return key ? this.normalize(JSON.parse(localStorage.getItem(key))) : this.defaults(); }
+        catch (_) { return this.defaults(); }
+    },
+    visible(item, preferences) {
+        // Persisted messages cannot be suppressed until mandatory notice kinds have a contract.
+        return item.kind === 'notification' || (item.kind === 'connection' && preferences.connections) || (item.kind === 'task' && preferences.tasks);
+    },
+    quietNow(preferences, now = new Date()) {
+        if (!preferences.quiet) return false;
+        const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+        const current = now.getHours() * 60 + now.getMinutes(), start = minutes(preferences.start), end = minutes(preferences.end);
+        return start < end ? current >= start && current < end : current >= start || current < end;
+    }
+};
+
+function notificationPreferences(userId) {
+    return {
+        value: AttentionPreferences.read(userId), message: '',
+        save() {
+            if (!AttentionPreferences.key(userId)) { this.message = 'Не удалось подтвердить пользователя.'; return; }
+            if (this.value.quiet && this.value.start === this.value.end) { this.message = 'Начало и конец тихих часов должны различаться.'; return; }
+            const value = AttentionPreferences.normalize(this.value);
+            if (JSON.stringify(value) !== JSON.stringify(this.value)) { this.message = 'Проверьте значения времени.'; return; }
+            let persisted = false;
+            try { localStorage.setItem(AttentionPreferences.key(userId), JSON.stringify(value)); persisted = true; } catch (_) { /* memory-only fallback */ }
+            window.dispatchEvent(new CustomEvent('app:attention-preferences', { detail: { userId, value } }));
+            this.message = persisted ? 'Сохранено только для вас в этом браузере.' : 'Применено на этой странице. Браузер не разрешил сохранение.';
+        },
+        restore() { this.value = AttentionPreferences.defaults(); this.save(); }
+    };
+}
+
 function notificationsBell(csrf, workspaceId, userId) {
     const destinations = new Set(['', '/app/settings?tab=connections', '/app/tasks', '/app/sources', '/app/analytics', '/app/digests', '/app/scenarios']);
     return {
         openModal: false, loading: false, items: [], error: '', pending: false,
         hasMore: false, complete: false, contextChanged: false, generation: 0,
+        preferences: AttentionPreferences.read(userId), preferencesOpen: false, popupVisible: false, popupKeys: new Set(), primed: false,
         init() {
             this.$watch('items', () => this.updateDockSpace());
+            const preferencesChanged = event => {
+                if (event.type === 'storage' && event.key !== AttentionPreferences.key(userId) && event.key !== null) return;
+                if (event.type !== 'storage' && event.detail?.userId !== userId) return;
+                this.preferences = event.type === 'storage' ? AttentionPreferences.read(userId) : AttentionPreferences.normalize(event.detail.value);
+                this.popupVisible = false; this.updateDockSpace();
+            };
+            window.addEventListener('storage', preferencesChanged);
+            window.addEventListener('app:attention-preferences', preferencesChanged);
             this.$watch('openModal', () => this.updateDockSpace());
             this.$watch('error', () => this.updateDockSpace());
             this.load();
@@ -157,6 +211,8 @@ function notificationsBell(csrf, workspaceId, userId) {
             window.addEventListener('pagehide', () => {
                 window.clearInterval(poll);
                 window.removeEventListener('app:context-changed', changed);
+                window.removeEventListener('storage', preferencesChanged);
+                window.removeEventListener('app:attention-preferences', preferencesChanged);
                 this.generation++;
                 this.items = [];
             }, { once: true });
@@ -166,6 +222,7 @@ function notificationsBell(csrf, workspaceId, userId) {
         reset(message) {
             this.generation++; this.items = []; this.hasMore = false; this.complete = false;
             this.loading = false; this.pending = false; this.contextChanged = true; this.error = message;
+            this.popupVisible = false; this.popupKeys.clear();
             if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
             this.updateDockSpace();
         },
@@ -178,15 +235,25 @@ function notificationsBell(csrf, workspaceId, userId) {
                 typeof item.title === 'string' && typeof item.message === 'string' && typeof item.created_at === 'string' &&
                 (item.read_id === null || (Number.isSafeInteger(item.read_id) && item.read_id > 0));
         },
-        badge() { return this.error ? (this.items.length ? this.items.length + ' · ?' : '?') : String(this.items.length) + (this.hasMore ? '+' : ''); },
+        visibleItems() { return this.items.filter(item => AttentionPreferences.visible(item, this.preferences)); },
+        filtered() { return !this.preferences.connections || !this.preferences.tasks; },
+        showDock() { return this.visibleItems().length > 0 || this.error || this.openModal; },
+        showPopup() { return this.popupVisible && !this.openModal && !this.error && this.preferences.popup && !AttentionPreferences.quietNow(this.preferences) && this.visibleItems().length > 0; },
+        badge() { const count = this.visibleItems().length; return this.error ? (count ? count + ' · ?' : '?') : String(count) + (this.hasMore && !this.filtered() ? '+' : ''); },
+        considerPopup() {
+            const keys = this.visibleItems().map(item => item.key);
+            const fresh = keys.some(key => !this.popupKeys.has(key));
+            this.popupVisible = this.primed && this.complete && fresh && this.preferences.popup && !AttentionPreferences.quietNow(this.preferences);
+            this.popupKeys = new Set(keys); this.primed = true;
+        },
         updateDockSpace() {
             document.documentElement.style.setProperty('--shell-dock-space',
-                this.items.length || this.error || this.openModal ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
+                this.showDock() ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
         },
         open() {
             if (this.openModal) return;
             this.returnFocus = document.activeElement;
-            this.openModal = true; this.savedOverflow = document.body.style.overflow;
+            this.popupVisible = false; this.openModal = true; this.savedOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
             this.$nextTick(() => { this.$refs.dialog.showModal(); this.$refs.dialog.focus(); });
             this.load();
@@ -196,12 +263,12 @@ function notificationsBell(csrf, workspaceId, userId) {
             this.$refs.dialog?.close(); this.openModal = false;
             document.body.style.overflow = this.savedOverflow || '';
             this.$nextTick(() => {
-                if (this.items.length || this.error) this.$refs.bell?.focus();
+                if (this.visibleItems().length || this.error) this.$refs.bell?.focus();
                 else document.getElementById('page-content')?.focus();
             });
         },
         trapFocus(event) {
-            const controls = Array.from(this.$refs.dialog.querySelectorAll('button, a[href], [tabindex="0"]')).filter(el => el.getClientRects().length && !el.disabled);
+            const controls = Array.from(this.$refs.dialog.querySelectorAll('button, a[href], input, select, textarea, [tabindex="0"]')).filter(el => el.getClientRects().length && !el.disabled);
             const first = controls[0], last = controls[controls.length - 1];
             if (!first) { event.preventDefault(); this.$refs.dialog.focus(); return; }
             if (event.shiftKey && (document.activeElement === first || document.activeElement === this.$refs.dialog)) { event.preventDefault(); last.focus(); }
@@ -256,6 +323,7 @@ function notificationsBell(csrf, workspaceId, userId) {
                     !data.notifications.every(n => this.validItem(n)) || new Set(data.notifications.map(n => n.key)).size !== data.notifications.length) throw new Error('shape');
                 this.items = data.notifications; this.hasMore = data.has_more; this.complete = data.complete;
                 this.error = data.complete ? '' : 'Часть уведомлений недоступна. Состояние не полностью известно.';
+                this.considerPopup();
             } catch (_) { if (generation === this.generation) { this.complete = false; this.error = 'Не удалось обновить уведомления. Показаны ранее известные сообщения.'; } }
             finally { if (generation === this.generation) this.loading = false; }
         }

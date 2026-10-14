@@ -86,7 +86,7 @@ def test_menu_is_content_gated_and_stored_values_are_inert(manager):
     assert 'id="context-panel"' not in markup
     assert 'action="/app/logout"' in markup
     assert 'name="_csrf"' in markup
-    assert 'href="/admin/"' not in markup
+    assert 'href="/admin/"' in markup  # Entry is authenticated, actions remain model-gated.
 
 
 def test_no_workspace_has_account_utilities_but_no_workspace_data_or_invite_fetch():
@@ -182,9 +182,9 @@ def test_invite_buttons_expose_dialog_target_in_both_shells():
 
 
 @pytest.mark.parametrize("operator", [True, False])
-def test_platform_admin_link_keeps_operator_gate(operator):
+def test_admin_entry_link_is_available_to_every_authenticated_role(operator):
     markup = environment().get_template("shell-fixture.html").render(**context(operator=operator))
-    assert ('href="/admin/"' in markup) is operator
+    assert 'href="/admin/"' in markup  # Per-model authorization is independent of entry.
 
 
 def test_workspace_switch_keeps_post_and_csrf():
@@ -209,7 +209,7 @@ def test_workspace_group_has_explicit_switch_target_and_no_daily_join_for_member
     markup = environment().get_template("shell-fixture.html").render(**values)
     assert 'aria-labelledby="workspaces-desktop"' in markup
     assert 'aria-label="Переключиться в пространство «Other &lt;script&gt;»"' in markup
-    assert "Переключиться · Менеджер" in markup
+    assert "Доступ предоставлен · Менеджер" in markup
     assert 'href="/app/invite"' not in markup
     assert 'action="/app/workspaces/select"' in markup
     assert 'name="tenant_id" value="8"' in markup
@@ -220,7 +220,15 @@ def test_workspace_group_has_explicit_switch_target_and_no_daily_join_for_member
 def test_team_exposes_join_without_granting_invite_issuance(manager):
     values = context(manager=manager)
     values.update(
-        tab="team", visible_tabs=["team"], memberships=[], member_names={}, member_role_keys={}, role_labels={}
+        tab="team",
+        visible_tabs=["team"],
+        settings_manage=manager,
+        is_superuser=False,
+        settings_team_visible=manager,
+        memberships=[],
+        member_names={},
+        member_role_keys={},
+        role_labels={},
     )
     markup = environment().get_template("web/settings.html").render(**values)
     assert "data-team-join" in markup

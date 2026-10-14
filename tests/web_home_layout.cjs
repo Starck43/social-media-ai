@@ -193,7 +193,7 @@ const path = require('path');
                         const box = await dialog.locator('.ui-notification-panel').boundingBox();
                         if (box.x < 0 || box.x + box.width > width) throw Error('Modal overflow');
                         await dialog.getByRole('button', { name: 'Прочитать сообщение — для всего пространства', exact: true }).click();
-                        await dialog.getByText('Нет доступных уведомлений в текущем окне', { exact: true }).waitFor({ state: 'visible' });
+                        await dialog.getByText('Нет показываемых уведомлений в текущем окне', { exact: true }).waitFor({ state: 'visible' });
                         if (!(await dialog.isVisible())) throw Error('Last read unexpectedly closed dialog');
                         await page.keyboard.press('Escape');
                         await dialog.waitFor({

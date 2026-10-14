@@ -102,3 +102,8 @@ body[data-shell-section="chat"] .chat-window { flex:none; height:clamp(320px,cal
 .shell-navbar { flex-shrink:0; }
 .shell-content { min-height:0; overflow:auto; overscroll-behavior:contain; padding-bottom:24px; }
 body[data-shell-section="chat"] .shell-content { padding-bottom:24px; }
+
+.shell-attention-popup { position: fixed; right: 1rem; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 35; width: min(320px, calc(100vw - 2rem)); }
+
+.ui-notification-panel { overflow-y: auto; }
+.shell-attention-preferences { max-height: 40dvh; overflow-y: auto; flex-shrink: 0; }

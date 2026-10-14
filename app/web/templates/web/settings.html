@@ -269,6 +269,10 @@
 
     {# ── connections ────────────────────────────────────────────────── #}
     {% elif tab == 'connections' %}
+        <section class="mt-6 ui-card" aria-labelledby="connections-notification-display">
+            <h2 id="connections-notification-display" class="mb-3 text-sm font-semibold">Показ уведомлений</h2>
+            {% include 'web/_notification_preferences.html' %}
+        </section>
         <p class="mt-6 text-sm text-slate-600 dark:text-slate-400">
             Личный доступ нужен для сбора закрытых сообществ и истории. Один раз подключили —
             токен продлевается сам, повторно входить не придётся.

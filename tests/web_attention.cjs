@@ -63,7 +63,7 @@ const report = { cases: [], interactions: [], failures: [] };
                             if (!snapshot.complete) {
                                 assert.ok(await dialog.locator('[role="alert"]').isVisible());
                                 assert.ok((await dock.locator('.shell-bell-count').innerText()).includes('?'));
-                                assert.equal(await dialog.getByText('Нет доступных уведомлений в текущем окне', { exact: true }).isVisible(), false);
+                                assert.equal(await dialog.getByText('Нет показываемых уведомлений в текущем окне', { exact: true }).isVisible(), false);
                             }
                             if (mode === 'mixed' && width === 375 && theme === 'dark') await f.page.screenshot({ path: path.join(fixtures, 'attention-375-dark.png') });
                             if (mode === 'mixed' && width === 1440 && theme === 'light') await f.page.screenshot({ path: path.join(fixtures, 'attention-1440-light.png') });

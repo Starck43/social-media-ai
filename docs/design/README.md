@@ -32,10 +32,69 @@ estimate. Select one bounded change with an observable acceptance condition.
 Dependencies and disabled-feature safeguards override this order. Product expansion
 starts only when the applicable foundation gates are accepted.
 
+## PRD-08.1 — Outcome-focused home overview
+
+Owner-approved product task under priority 8 / PRD-08; not a new readiness gate.
+The home page answers: what needs attention, what was produced, what happens next.
+Target: one wide column on desktop and mobile, with no permanent quick-command
+panel, KPI grid or duplicated analytical sidebar. Reuse current models/services;
+no new workflow/result table, provider call or schema migration for this layer.
+
+### Current bounded cleanup — isolated QA passed, real-app acceptance pending
+
+- Remove the six KPI cards, quick actions, analytical sidebar, detailed task
+  table, inline run-now buttons, header slug/tariff/role and multi-step welcome.
+- Keep one chat entry, up to five permitted analysis-result cards, up to three
+  compact recent task summaries, section links and one conditional setup step.
+- Gate data loading as well as rendering with the effective VIEW rights. Do not
+  fetch analysis results without aianalytics.view; do not fetch source metadata or show separate source labels
+  without source.view. Keep operator workspace selection and tenant isolation.
+- Do not calculate the removed KPIs/aggregates on the home request. No new LLM
+  summary and no health/spend claims inferred from missing data.
+
+Sandbox follow-up for [Draft PR #185](https://github.com/Starck43/social-media-ai/pull/185):
+explicit owner authorization permitted direct isolated checks in this session,
+not a permanent R10 policy change. Eleven no-app/no-DB tests passed. Offline
+Chromium fixtures passed 32 viewport/theme cases (375/390/768/1440px; four
+states; light/dark) and a mocked interaction scenario. Six screenshots were
+visually inspected. Fixed long-label horizontal overflow, mobile task wrapping,
+header control wrapping, preview density and text/target sizes; CSS is home-only.
+Real ASGI/DB permission and workspace acceptance remains pending; no deployment
+or migration. Exact code revision and reproducible commands are in the PR.
+
+### Deferred implementation placeholders / acceptance
+
+1. **Needs attention:** at most three actionable, deduplicated, redacted items
+   from existing connection states and authorized task failures; hide when empty.
+   No raw exception tooltip, inferred all-healthy state or live recovery action.
+2. **Latest results:** merge permitted analyses and digest runs into at most five
+   cards using a bounded read-time projection. Label analysis creation time,
+   digest period and actual delivery state separately. No fabricated success,
+   duplicated delivery or additional LLM call. Digests remain a section link
+   during the cleanup; they are not yet cards in this mixed feed.
+3. **Scheduled next:** replace the recent-task preview with at most three actual
+   upcoming, effectively active schedules, ordered by next_run_at. Handle missing
+   next time, paused and completed one-shot tasks honestly. Do not call the current
+   recent-by-creation list the nearest schedules or multi-step workflows.
+4. **Empty/access states:** owner gets one permitted next setup step; invitees
+   without creation rights get an explanation, not prohibited create links.
+   Missing VIEW hides both section content and its query; future member-level
+   allowlists must feed the existing shared permission predicate.
+5. **Future extension points:** approvals, reminders and business outputs may
+   enter attention/results only when their contracts exist. Template comments
+   mark extension points; do not show fake rows, disabled commands or Soon cards.
+
+Acceptance: role matrix for Viewer/Manager/owner/operator, cross-workspace and
+no-rights cases, populated/empty data, stored-text escaping, desktop and verified
+375px mobile layout. All pytest follows R8/R10 via Kilo; no schema bootstrap/reset,
+provider calls, publication or deployment. Cleanup is not completion of this task
+or acceptance of the whole PRD-08 gate.
+
 ## Active ownership
 
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
+| PRD-08.1 outcome-focused home overview | Remote Notion agent; `ui/home-overview-cleanup`; [Draft PR #185](https://github.com/Starck43/social-media-ai/pull/185) | BLOCKED — real-app acceptance pending; sandbox QA passed; full layer remains open | Verify real ASGI/DB role and workspace behavior via local Kilo; then implement the deferred attention, mixed-result and upcoming-schedule projections above. Exclusive lane: `app/web/dashboard.py`, `app/web/templates/web/dashboard.html`, the home-only hook in `base.html`, home fixture/regression tests and this task section. No migration or live action. |
 | Task-add source selection initialization | Unassigned; no implementation branch or PR | OPEN — inherited Alpine runtime follow-up | Owner reproduced addTaskForm().task.source_ids missing while :checked calls includes; pre-fix control has the same error. Evidence: [PR178 runtime report](https://github.com/Starck43/social-media-ai/pull/178#issuecomment-6154504317). Next: initialize source_ids in the actual add-task model and verify selection/reset with real Alpine. Accept when opening the form has no includes error and selected IDs round-trip without changing submit semantics; no server/DB/live probes required. |
 | Mobile web page-width overflow | Unassigned; no implementation branch or PR | OPEN — inherited layout follow-up | Owner observed app document width 432px under 375px mobile emulation; confirmation dialog remains contained. Evidence: [PR175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703). Next: identify the overflowing base layout element independently of the Chromium emulation discrepancy. Accept when affected pages fit a verified 375px viewport without unintended horizontal scrolling and confirmation focus/keyboard behavior is retained. |
 | PRD-02 digest send permission parity | Remote Notion agent; `fix/digest-send-permission-parity`, [Draft PR #176](https://github.com/Starck43/social-media-ai/pull/176) | BLOCKED — final DB acceptance evidence pending; session closed | Owner reports isolated smoke PASS through full Kilo/test-runner/pare-test chain; runner routing is demonstrated, not full DB acceptance. Prior direct-MCP suite evidence remains explicitly non-R10. Resume with verified local tree/plugin/config, outstanding DB suites and actor/membership confirmation matrix, then final evidence-preservation comparison. No automatic merge or repeated outcome suite. |

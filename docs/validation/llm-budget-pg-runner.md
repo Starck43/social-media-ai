@@ -23,6 +23,48 @@ acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
   and initial non-network injected commit-loss caveats are not superseded.
   No repetition, cleanup, definition workaround or guard disable is authorized.
 
+## Refusal assertion precision fix — source-reviewed, execution pending
+
+A subsequent source review found that the former `denied` helper accepted a
+six-class exception tuple, allowing an unrelated setup/domain/validation failure
+to masquerade as the expected refusal. Each of its 14 call sites now supplies
+one required keyword-only `expected` exception class. Only that class is caught;
+other exceptions propagate to STOP. The journal records only synthetic dispatch
+identity and exception class, never the exception message.
+
+| Negative case | Required refusal class |
+| --- | --- |
+| Changed ceiling, standalone receipt upgrade | BudgetAdmissionConflict |
+| Changed receipt stage, cross-payer stored identity | ReceiptEvidenceConflict |
+| Trusted-scope mismatch, inactive payer | TenantContextError |
+| Missing/frozen/blank baseline, undefined missing/frozen | BudgetAdmissionUnavailable |
+| Non-current day, older liability, capped no-bound, current unbounded liability | BudgetAdmissionDenied |
+| Subquantum amount | ValueError |
+
+`tests/test_budget_acceptance_denials.py` prepares six no-DB regression checks:
+expected refusal produces safe class-only evidence; unrelated unavailability
+propagates; unrelated validation error propagates; True and False are not
+refusals; an expected class is mandatory. It extracts only the actual helper and
+Blocked class via stdlib AST, without importing the PG runner/app or connecting
+to DB. This new scope is not the accepted31 scope and does not rerun it.
+
+These six checks are **PREPARED / NOT RUN**, and new syntax/formatter checks are
+also NOT RUN remotely (project .venv and Kilo absent). Text-only checks confirm
+all 14 call sites specify the expected class, unchanged manifest constant blocks
+and whitespace; this is not Python AST/compile or runtime evidence.
+The latest exact runner SHA is pinned in the PR handoff after publication.
+Prior formatter PASS belongs only to its historical source pin below, not this
+intentional helper behavior change. No equivalence-to-old-helper claim.
+
+No admission/session/SQL/guard/environment policy or manifest identity changed.
+Proposed successful retained/sequence deltas and operation list remain unchanged;
+no PG or environment permission added. A separately agreed local environment/
+report-isolation plan is necessary before a single targeted no-DB run through
+Kilo → test-orchestrator → test-runner → pare-test. Its sole positional scope is
+`tests/test_budget_acceptance_denials.py`, never the PG acceptance node, and
+must use `--noconftest -o addopts= -q --tb=short --no-header` with plugins
+reviewed/disabled before startup. No ordinary pytest or system-Python fallback.
+
 ## Accepted formatter-only successor (no PG execution)
 
 Runner FULL SHA: `efe8553fbadf1233e92f0ab7cdb140e491926e60`; parent
@@ -265,8 +307,10 @@ Reviewed/fixed boundaries:
   Check backend/task absence separately before releasing the exclusive window.
 
 **Next environment/approval boundary, no PG permission:** formatter successor
-and owner-local syntax/structural-equivalence evidence are recorded above.
-Do not repeat them without a changed risk. Application import/dependency runtime
+and historical owner-local syntax/structural-equivalence evidence are recorded
+above; the newer refusal precision fix has its own pending checks.
+Do not repeat old checks without a changed risk; the new helper and six-check
+scope are the specific changed risk, not permission to repeat accepted31. Application import/dependency runtime
 validation is NOT RUN. Verify review `.venv` accessibility and report-path
 isolation only under a separately agreed offline plan; preserve primary checkout
 and `local/agent-session-d841`. Name an existing dedicated nonproduction target,

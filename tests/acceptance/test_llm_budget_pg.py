@@ -595,18 +595,12 @@ class BudgetPackage:
                 bound_version="reviewed-bound-v1" if record["tariff_state"] == "known" and amount is not None else None,
             )
 
-    async def denied(self, record, amount=D("0.4"), scope=None):
-        expected = (
-            self.policy.BudgetAdmissionDenied,
-            self.policy.BudgetAdmissionUnavailable,
-            self.policy.BudgetAdmissionConflict,
-            self.context.TenantContextError,
-            self.receipt_module.ReceiptEvidenceConflict,
-            ValueError,
-        )
+    async def denied(self, record, amount=D("0.4"), scope=None, *, expected):
+        """Require the scenario's refusal class, not an unrelated setup failure."""
         try:
             await self.admit(record, amount, scope)
-        except expected:
+        except expected as error:
+            self.emit("denial", dispatch_id=record["dispatch_id"], error_type=type(error).__name__)
             return
         raise Blocked("expected-denial")
 
@@ -717,9 +711,15 @@ class BudgetPackage:
         values = await self.race([record, record])
         demand(values.count(True) == 1 and values.count(False) == 1, "identical-race")
         demand(await self.admit(record, D("0.6")) is False, "replay-is-not-permission")
-        await self.denied(record, D("0.5"))
-        await self.denied({**record, "stage": "changed"}, D("0.6"))
-        await self.denied({**record, "tenant_id": self.cfg["fixtures"]["other"]}, D("0.6"))
+        await self.denied(record, D("0.5"), expected=self.policy.BudgetAdmissionConflict)
+        await self.denied(
+            {**record, "stage": "changed"}, D("0.6"), expected=self.receipt_module.ReceiptEvidenceConflict
+        )
+        await self.denied(
+            {**record, "tenant_id": self.cfg["fixtures"]["other"]},
+            D("0.6"),
+            expected=self.receipt_module.ReceiptEvidenceConflict,
+        )
         with self.context.tenant_scope(record["tenant_id"]):
             try:
                 await self.manager.reserve_receipt(record, ceiling_usd=D("0.6"), bound_version="changed-v1")
@@ -733,12 +733,14 @@ class BudgetPackage:
             demand(
                 await self.receipt_module.LLMDispatchReceiptManager().record_receipt(standalone), "standalone-fixture"
             )
-        await self.denied(standalone, D("0.1"))
+        await self.denied(standalone, D("0.1"), expected=self.policy.BudgetAdmissionConflict)
         await self.balances("replay", "0.6")
 
     async def payer_isolation(self):
         record = self.receipt("other", "other")
-        await self.denied(record, scope=self.cfg["fixtures"]["fresh"])
+        await self.denied(
+            record, scope=self.cfg["fixtures"]["fresh"], expected=self.context.TenantContextError
+        )
         demand(await self.admit(record, D("0.6")) is True, "payer-isolation")
         await self.balances("other", "0.6")
 
@@ -813,8 +815,10 @@ class BudgetPackage:
 
     async def baseline_refusals(self):
         for key in ("missing", "frozen", "blank"):
-            await self.denied(self.receipt(key, key))
-        await self.denied(self.receipt("old_day", "old_day", historical=True))
+            await self.denied(self.receipt(key, key), expected=self.policy.BudgetAdmissionUnavailable)
+        await self.denied(
+            self.receipt("old_day", "old_day", historical=True), expected=self.policy.BudgetAdmissionDenied
+        )
 
     async def historical_liability(self):
         # Explicit old-day immutable pair fixture, NOT fresh admission evidence.
@@ -838,7 +842,9 @@ class BudgetPackage:
                 )
             )
             await s.commit()
-        await self.denied(self.receipt("historical_denied", "historical"))
+        await self.denied(
+            self.receipt("historical_denied", "historical"), expected=self.policy.BudgetAdmissionDenied
+        )
         await self.balances("historical", "0")
 
     async def tariff_states(self):
@@ -848,14 +854,24 @@ class BudgetPackage:
         demand(await self.admit(self.receipt("undefined", "undefined", "undefined"), D(0)) is True, "undefined")
         await self.balances("undefined", "0", undefined=1)
         for fixture in ("missing", "frozen"):
-            await self.denied(self.receipt("undefined_" + fixture, fixture, "undefined"), D(0))
-        await self.denied(self.receipt("undefined_inactive", "inactive", "undefined"), D(0))
-        await self.denied(self.receipt("no_bound", "inactive"), D("0.1"))
+            await self.denied(
+                self.receipt("undefined_" + fixture, fixture, "undefined"),
+                D(0),
+                expected=self.policy.BudgetAdmissionUnavailable,
+            )
+        await self.denied(
+            self.receipt("undefined_inactive", "inactive", "undefined"), D(0), expected=self.context.TenantContextError
+        )
+        await self.denied(
+            self.receipt("no_bound", "inactive"), D("0.1"), expected=self.context.TenantContextError
+        )
         demand(await self.admit(self.receipt("unlimited", "unlimited"), None) is True, "unlimited")
         await self.balances("unlimited", "0", unbounded=1)
-        await self.denied(self.receipt("no_bound", "fresh"), None)
+        await self.denied(
+            self.receipt("no_bound", "fresh"), None, expected=self.policy.BudgetAdmissionDenied
+        )
         demand(await self.admit(self.receipt("quantum", "quantum"), D("0.000000001")) is True, "quantum")
-        await self.denied(self.receipt("quantum_bad", "quantum"), D("0.0000000001"))
+        await self.denied(self.receipt("quantum_bad", "quantum"), D("0.0000000001"), expected=ValueError)
         await self.balances("quantum", "0.000000001")
         # Explicit fixture-only cap/plan change; current unbounded liability
         # remains immutable and must deny known capped admission.
@@ -869,7 +885,9 @@ class BudgetPackage:
             tenant.daily_cost_limit = 1.0
             self.emit("write_intent", operation="unlimited-fixture-to-capped", plan="pro", cap="1.0")
             await s.commit()
-        await self.denied(self.receipt("unbounded_denied", "unlimited"), D("0.1"))
+        await self.denied(
+            self.receipt("unbounded_denied", "unlimited"), D("0.1"), expected=self.policy.BudgetAdmissionDenied
+        )
         await self.balances("unlimited", "0", unbounded=1)
 
     async def rollback_after_receipt(self):

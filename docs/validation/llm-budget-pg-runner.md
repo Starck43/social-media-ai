@@ -23,6 +23,56 @@ acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
   and initial non-network injected commit-loss caveats are not superseded.
   No repetition, cleanup, definition workaround or guard disable is authorized.
 
+## Namespace correction and target proposal review — no SQL authorized
+
+The initial namespace `7417a3edbb5e42ce990c721c900d682f2` at d012a58e and earlier
+was33 hex characters, violating the runner's32-character guard. That is a
+preparation defect, not evidence from an executed run. The frozen v2 namespace
+is `7417a3edbb5e42ce990c721c900d682f`. All30 dispatch IDs were explicitly
+regenerated in the approval template and must be reviewed as a NEW manifest;
+there is no silent reuse/relabeling of the previous IDs. Fixture slugs retain
+their existing8-character namespace prefix and underscore-to-hyphen mapping.
+All18 tenant IDs remain null, all permissions closed. Prior manifest remains
+in Git history. No DB/runner execution or retained-data cleanup was performed.
+The runner Python source remains at d012a58e; this is a documentation/argument
+manifest correction, not a code or tested-SHA successor.
+
+Owner-relayed second offline report states AST parse and Black/isort exit0 on
+locally formatted source; formatter v2 patch (+4/−12) is referenced only by an
+owner-local path and has NOT been attached/integrated. Reported clean status
+and changed-path status need reconciliation (e.g. whether source was restored).
+The shown AST command lacks a literal file-list definition and compile() call;
+no compile PASS is inferred. New6 no-DB regression checks remain NOT RUN.
+
+The submitted PG target proposal is BLOCKED, not accepted for execution:
+- localhost:5432 nonproduction ownership was inferred from old PR137 history,
+  not established currently. testuser existence/privileges are not verified.
+- A fresh empty database has no0094 prerequisites. upgrade head implicitly runs
+  a chain; no-chain/no0093/0094 reapplication wording cannot make it a lone0095
+  step. migrations/env.py also loads dotenv and invokes model-type registration;
+  explicit target routing and all side effects need separate review/approval.
+- budget_review_run_ plus the old/full namespace exceeds40 characters; use an
+  explicitly proposed short identifier, e.g. budget_review_7417a3ed (22 chars),
+  never silently relax the guard. The actual schema remains UNAPPROVED/null.
+- A NOLOGIN runner cannot authenticate directly as the URL username that the
+  runner checks against current_user. DDL NOLOGIN ownership requires a separate
+  named login executor/membership path; new role creation was not enumerated.
+- Blanket table/default-privilege grants are not the approved least-privilege
+  matrix. Sequence USAGE/SELECT/state reads and the explicit reservation
+  TRUNCATE negative probe privilege were omitted. Protected manifest reads span
+  all target-schema tables/sequences; enumerate their SELECT privileges too.
+- Use fixture_slugs from the frozen template verbatim, not full-run-ID slugs.
+  Provision tenants separately under an approved plan; do NOT pre-provision
+  payer/day baselines: verify_empty_fixtures requires them absent and the runner
+  alone inserts its approved18 days. provision_days does NOT create tenants.
+- A venv symlink is not intrinsically read-only. Wrong-HEAD routing does not
+  certify report writes. Canonical Kilo command requires message BEFORE flags;
+  no diagnostic or environment mutation is authorized by the proposal.
+
+Next return must include the actual formatter attachment/provenance and a
+revised target/actor/privilege/prerequisite plan. Creation/SELECT/migration,
+role/grant changes, environment linking and diagnostics remain unassigned.
+
 ## Refusal assertion precision fix — source-reviewed, execution pending
 
 A subsequent source review found that the former `denied` helper accepted a
@@ -203,7 +253,7 @@ direct-definition invocation, schema creation/reset/drop or downgrade exists.
 
 ## Frozen synthetic identities and fixture requirements
 
-Run namespace: `7417a3edbb5e42ce990c721c900d682f2`. The template contains the
+Current run namespace v2: `7417a3edbb5e42ce990c721c900d682f`. The template contains the
 exact 30 dispatch IDs, derived from SHA256(run namespace + ':' + identity key),
 first32 lowercase hex characters. IDs must be compared verbatim before approval;
 no UUID generated during execution. Existing IDs or a manifest at that namespace

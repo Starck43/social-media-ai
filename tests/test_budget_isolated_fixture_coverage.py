@@ -652,3 +652,13 @@ class InetAddressTests(unittest.TestCase):
         for value in ("127.0.0.1/24", "::1/64", "192.0.2.1/32", "localhost", "invalid"):
             with self.subTest(value=value):
                 self.assertFalse(p.loopback_server_address(value))
+
+
+class DriverCatalogTypeTests(unittest.TestCase):
+    def test_internal_char_columns_are_driver_independent(self):
+        import inspect
+
+        self.assertIn("c.relkind::text", inspect.getsource(p.user_objects))
+        source = inspect.getsource(p.inspect_prepared)
+        self.assertIn("t.typtype::text", source)
+        self.assertIn("t.tgenabled::text", source)

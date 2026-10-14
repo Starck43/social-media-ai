@@ -169,7 +169,7 @@
     "manifest_file": "apply.json",
     "manifest_sha256": null,
     "origin": "reviewed-definition-application",
-    "preparation_script": "387545dfedf7ef18eec6ee83c6ac2104577e0c40"
+    "preparation_script": "251e4aeb1533dadc3cea5d004e9a914ec057b502"
   },
   "report_isolation_verified": false,
   "retained_days": 18,
@@ -208,7 +208,7 @@
   "target": [
     "localhost",
     5432,
-    "social_manager_budget_pr180",
+    "social_manager_budget_pr180_verified",
     "smai_pr179_probe"
   ],
   "target_label": "pr180-isolated-fixture",

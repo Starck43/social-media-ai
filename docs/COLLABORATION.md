@@ -30,6 +30,13 @@ checked-in task ledger. Codex-generated memories are opportunistic recall, not
 the source of project policy or current task state; do not manually maintain
 them for workflow continuity.
 
+Standing defaults for every prompt: the product board (`docs/design/README.md`)
+is append-only — rows only change status across executions, evidence stays;
+only `ROADMAP.md` ledger rows are cleared when an execution closes, and board
+rows are deleted only on an explicit owner command. PR evidence is scoped to
+PRs named in the selected rows (`view` without full diffs); open a full diff
+only for a file being edited.
+
 Useful OpenAI guidance: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
 [Codex memories](https://learn.chatgpt.com/docs/customization/memories),
 [Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).

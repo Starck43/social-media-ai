@@ -1,5 +1,6 @@
 {% extends "web/base.html" %}
 {% block title %}Нет доступа: {{ denied_section }} — AI Monitor{% endblock %}
+{% block page_heading %}Раздел «{{ denied_section }}» недоступен{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-xl py-8 sm:py-14" data-section-denied>
     <div class="ui-card text-center">
@@ -10,7 +11,7 @@
             </svg>
         </div>
         <p class="mt-4 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Ошибка 403 · доступ ограничен</p>
-        <h1 class="mt-2 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Раздел «{{ denied_section }}» недоступен</h1>
+
 
         {% if member_level %}
             <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">

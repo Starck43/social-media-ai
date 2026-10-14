@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import empty_state, switch_toggle, check_card, check_mark %}
 {% block title %}{% if task %}{{ task.name }} — AI Monitor{% else %}Задача не найдена{% endif %}{% endblock %}
+{% block page_heading %}{{ task.name if task else 'Задача не найдена' }}{% endblock %}
 {% block content %}
 {% if not task %}
     {{ empty_state("Задача не найдена или принадлежит другому workspace.", height="h-64") }}
@@ -22,13 +23,13 @@
             {% else %}
                 <a href="/app/tasks" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">← Задачи</a>
             {% endif %}
-            <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ task.name }}</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {{ JOB_TYPE_TITLES.get(task.job_type, task.job_type) }} ·
                 {% if task.tenant %}{{ task.tenant.name }}{% else %}—{% endif %}
             </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+<template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
             {% if perms_can(request, 'agenttask', 'update') %}
             <button @click="openEdit = true"
                     class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
@@ -51,7 +52,7 @@
                 <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
             </form>
             {% endif %}
-        </div>
+        </div></div></template>
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">

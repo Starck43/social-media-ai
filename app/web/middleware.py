@@ -124,13 +124,6 @@ class TenantUIMiddleware:
             if perm_ctx is not None:
                 perm_ctx.__enter__()
             try:
-                if tenant_id is not None:
-                    try:
-                        from app.models import Notification
-
-                        request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
-                    except Exception:  # noqa: BLE001 — a badge must never break a page
-                        request.state.unread_notifications = 0
                 denied = self._denied_section(request, path)
                 if denied is not None:
                     from .deps import render_section_denied

@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import connection_badge, empty_state, switch_toggle %}
 {% block title %}{% if source %}{{ source.name|e }}{% else %}Источник не найден{% endif %} — AI Monitor{% endblock %}
+{% block page_heading %}{{ source.name if source else 'Источник не найден' }}{% endblock %}
 {% block content %}
 {% if not source %}
     {{ empty_state("Источник не найден или принадлежит другому workspace.", height="h-64") }}
@@ -12,13 +13,13 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <a href="/app/sources" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">← Источники</a>
-            <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ source.name|e }}</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {{ source.platform.name }} · {{ source.source_type.display_name }} ·
                 <span class="font-mono text-xs">{{ source.external_id }}</span>
             </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+<template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
         {% if perms and perms.can('source', 'analyze') %}
             {% if running.collect or running.analyze %}
                 <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
@@ -72,6 +73,7 @@
                 <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
             </form>
         {% endif %}
+    </div></div></template>
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">

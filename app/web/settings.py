@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.models.tenant import Tenant
 from app.services.tenancy import member_roles
@@ -226,11 +226,6 @@ async def settings_page(request: Request):
         self_service_kinds=SELF_SERVICE_KINDS,
         role_labels=ROLE_LABELS,
         member_role_keys={m.id: member_roles.key_of(m) for m in memberships},
-        invite_roles=member_roles.INVITABLE,
-        invite_default=member_roles.DEFAULT_INVITE_KEY,
-        invite_days=INVITE_DAYS,
-        issued_invite=_pop_issued_invite(request),
-        open_invites=await _open_invites(request, tenant_id, visible_tabs),
         action_types=ActionType.choices(),
         plans=list(Tenant.PLANS),
         plan_labels=_plan_labels(),
@@ -543,6 +538,8 @@ def _pop_issued_invite(request: Request) -> dict[str, Any] | None:
     issued = request.session.pop(_ISSUED_INVITE_KEY, None)
     if not isinstance(issued, dict) or not isinstance(issued.get("code"), str):
         return None
+    if issued.get("tenant_id") != request.state.tenant_id:
+        return None
     link = f"{str(request.base_url).rstrip('/')}/app/invite?code={issued['code']}"
     return {**issued, "link": link, "qr_svg": invite_qr_svg(link)}
 
@@ -585,6 +582,26 @@ async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: t
     ]
 
 
+@router.get("/invites")
+async def invite_dialog(request: Request):
+    """Load only the permitted workspace's invitation UI, on explicit demand."""
+    tenant_id = request.state.tenant_id
+    perms = getattr(request.state, "web_perms", None)
+    if perms is None or not perms.can_manage_workspace(tenant_id):
+        return HTMLResponse("Недостаточно прав", status_code=403)
+    response = render(
+        request,
+        "web/_invite_dialog.html",
+        invite_roles=member_roles.INVITABLE,
+        invite_default=member_roles.DEFAULT_INVITE_KEY,
+        invite_days=INVITE_DAYS,
+        issued_invite=_pop_issued_invite(request),
+        open_invites=await _open_invites(request, tenant_id, ("team",)),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @router.post("/invites/{invite_id}/revoke")
 async def invite_revoke(request: Request, invite_id: int, token: str = Form("", alias="_csrf")):
     """Revoke one open invite of this workspace; its code stops working at once."""
@@ -596,12 +613,12 @@ async def invite_revoke(request: Request, invite_id: int, token: str = Form("", 
         return denied
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
     if await TenantInviteManager().revoke(tenant_id=tenant_id, invite_id=invite_id):
         add_flash(request, "success", "Приглашение отозвано")
     else:
         add_flash(request, "error", "Приглашение не найдено или уже недействительно")
-    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
 
 @router.post("/invites")
@@ -627,11 +644,11 @@ async def invite_issue(
         return denied
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
-        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
     level = member_roles.resolve(role, invitable_only=True)
     if level is None or days not in INVITE_DAYS:
         add_flash(request, "error", "Выберите уровень доступа и срок действия из списка")
-        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
     expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     invite, code = await TenantInviteManager().issue(
@@ -639,13 +656,14 @@ async def invite_issue(
     )
     if invite is None or invite.role_id is None:
         add_flash(request, "error", "Роль не настроена — обратитесь к оператору")
-        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+        return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
     request.session[_ISSUED_INVITE_KEY] = {
         "code": code,
+        "tenant_id": tenant_id,
         "role": level.label,
         "expires": expires_at.strftime("%d.%m.%Y %H:%M UTC"),
     }
-    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+    return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
 
 @router.post("/plan")

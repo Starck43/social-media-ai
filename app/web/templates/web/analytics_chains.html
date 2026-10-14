@@ -1,11 +1,13 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import card, empty_state, page_title, sentiment_badge, sentiment_filters %}
 {% block title %}Цепочки тем — AI Monitor{% endblock %}
+{% block page_heading %}Цепочки тем{% endblock %}
+{% block page_context %}{{ super() }} · Ретроспектива тем, источников и пользователей{% endblock %}
 {% block content %}
     <div class="mb-1">
         <a href="{{ analytics_url|e }}" class="text-sm text-slate-600 dark:text-slate-400 hover:text-cyan-700 dark:hover:text-cyan-400">← Аналитика</a>
     </div>
-    {{ page_title("Цепочки тем", "Ретроспектива: как темы/источники/пользователи развивались во времени") }}
+
 
     <div class="mb-4 flex items-center justify-end">
         <form method="get" class="flex items-center gap-2">

@@ -1,10 +1,11 @@
 {% from "web/_macros.html" import connection_badge, control, source_fields, tenant_field, switch_toggle %}
 {% extends "web/base.html" %}
 {% block title %}Источники — Мониторинг{% endblock %}
+{% block page_heading %}Источники{% endblock %}
 {% block content %}
 <div x-data="sourcesPage()">
     <div class="mb-6 flex items-center justify-between">
-        <h1 class="text-2xl font-semibold tracking-tight">Источники</h1>
+
         <div class="flex items-center gap-3">
             {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
@@ -50,10 +51,10 @@
             </div>
             {% endif %}
             {% if perms and perms.can('source', 'create') %}
-            <button @click="openAdd = true"
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Добавить источник
-            </button>
+            </button></div></template>
             {% endif %}
         </div>
     </div>

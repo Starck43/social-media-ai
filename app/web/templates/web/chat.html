@@ -16,12 +16,13 @@
 
 {% endblock %}
 
+{% block page_heading %}Чат с агентом{% endblock %}
 {% block content %}
 <div class="chat-page mx-auto flex max-w-4xl flex-col" x-data="chatApp()">
     <!-- Header -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Чат с агентом</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {% if is_owner %}
                 Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
@@ -34,12 +35,12 @@
             </p>
         </div>
         {% if messages %}
-        <button
+        <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button
             x-on:click="requestConfirmation('clear')"
             class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
         >
             Очистить историю
-        </button>
+        </button></div></template>
         {% endif %}
     </div>
 

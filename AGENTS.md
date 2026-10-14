@@ -4,7 +4,7 @@
 - Before work read `.agent/rules.md` (worktree/DB constraints) and `.agent/workflow.md` (session handoff); instructions here supersede older procedural rules on conflict.
 - Docs: `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/design/README.md` (tasks/ownership), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/DOCS_INDEX.md` (index).
 - Subagents: `.codex/agents/` (Codex), `.kilo/agents/` (Kilo). `.agent/test-report.md` is human-audit evidence only — never main-context input.
-- Local IDE/CLI: `$develop-social-media-ai-local`; remote GitHub: `$develop-social-media-ai`; same task board and PR handoff.
+- Local IDE/CLI: `$local`; remote GitHub: `$remote`; same task board and PR handoff.
 - Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 
 ## Collaboration workflow

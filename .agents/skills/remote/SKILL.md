@@ -1,5 +1,5 @@
 ---
-name: develop-social-media-ai
+name: remote
 description: Develop social-media-ai remotely through GitHub PRs and hand off environment-dependent verification to a local agent.
 ---
 

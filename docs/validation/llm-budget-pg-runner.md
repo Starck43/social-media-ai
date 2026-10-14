@@ -4,6 +4,141 @@
 contract for the existing bounded Draft PR, not a new task queue or whole-gate
 acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
 
+## Remote Variant B repair — no-DB evidence, uncommitted proposal
+
+The submitted local bundle did not contain its claimed R1–R13 fixes. Remote
+repairs were made in an isolated worktree based on FULL SHA
+`2d5a7586337aeee5f652a288ebf7a03f3c75eac3`. **These are uncommitted source bytes,
+not a new tested commit.** Preparation and PG execution remain unapproved.
+Normal Alembic `0094 -> 0095` is **NOT VERIFIED**. No HTTP/provider/settlement,
+release or whole PRD-03 completion follows from this work.
+
+### Completed remote checks
+
+The owner explicitly authorized a Linux project `.venv` installed from the
+unchanged `requirements.txt`, and direct remote no-DB execution without Kilo.
+This is a scoped owner exception, not a change to local Kilo/R10 rules.
+Python3.13; requirements installation and `pip check` succeeded. No private
+`.env` or credential from the Mac was used.
+
+```
+env -u PYTEST_ADDOPTS -u PYTEST_PLUGINS PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  .venv/bin/python -m pytest \
+  tests/test_budget_isolated_fixture_coherence.py \
+  tests/test_budget_isolated_fixture_coverage.py \
+  --noconftest -o addopts= -q --tb=short --no-header
+```
+
+Final exit0: **50 passed / 0 failed / 0 skipped**, plus11 unittest subtests passed.
+Three warnings concern the disabled pytest-asyncio plugin's config keys; no
+plugin was enabled to suppress them. An intermediate run after adding schema/type
+scope checks had one failure in the new wrong-owner test fake; its missing canned
+schema/type responses were corrected, and subsequent final scope passed.
+Original31 and accepted6 files were not run or relabelled.
+
+AST parse/compile, Black/isort checks passed for the four changed/new Python
+files. Extracted normal shared-target-floor AST matches the original8869263
+body exactly; normal-mode awaiting and revision refusal have separate no-DB
+fake-session checks. This is NOT a PG runtime/parity certification.
+New safety coverage blocks real socket and SQLAlchemy Engine connections; all
+DB-shaped tests use controlled fakes. No DB connection, SQL, migration, runtime,
+provider invocation, schema preparation, fixture insertion, commit or push was
+performed remotely in this repair phase.
+
+### R1–R13 disposition
+
+- R1: owned connections/transactions, close/dispose on all branches; preflight
+  READ ONLY from startup options before dialect handshake and first explicit SQL.
+- R2: exact private phase approvals, code/source/target/window binding; apply
+  requires the hashed successful rollback rehearsal and reviewed catalog digest.
+- R3: no missing-table ACL queries; schema absence and DB-wide empty-target
+  preflight; schema creation is explicitly enumerated inside approved preparation.
+- R4: catalog-resolved separately qualified sequence identifiers; all five ID
+  sequences checked/granted, tenant indexes included from the real model.
+- R5: valid full probe seed shapes, distinct missing dispatch, inner savepoint per
+  failure and outer always-rollback seed scope. Probes run only in rehearsal;
+  the enclosing rollback also removes its newly created sequence objects.
+- R6: measure effective runner ACL in the DDL transaction via role-qualified
+  privilege functions; verify absence after rehearsal rollback and independently
+  read back after acknowledged apply. Never connect as runner to rolled-back tables.
+- R7: one colon-based required-privilege list; one raw measured ACL map/digest;
+  database CONNECT/CREATE/TEMP versus schema USAGE/CREATE checked separately.
+- R8: DB-wide relation/sequence/index/view scope, table-generated types, exact
+  functions/guards, owners and role membership; extra permissions refused.
+  Full reviewed catalog signature from rehearsal remains mandatory, not self-signed.
+- R9: pinned commit AND source bytes checked before helper execution; real private
+  manifest bytes/digest, source/endpoint/target/fixture/catalog/ACL bindings verified.
+- R10: exclusive no-follow private per-phase artifacts, durable fsync including
+  directory, intent and precommit evidence; acknowledge commit separately; any
+  later failure stays incomplete and reconciliation-required, never auto-retry.
+- R11: sanitized environment and both dotenv sources suppressed before app import;
+  connect/statement/lock/idle timeouts; no engine pre-ping/retry repair path.
+- R12: constant drift checks plus exercised no-DB safety guards and fake sessions.
+- R13: historical evidence retained. Later malformed41-character main-report
+  “SHA256” references are transcription errors, not new measurements; original
+ 64-character hash remains in the historical owner-local section below.
+
+### Execution is still deliberately blocked
+
+`PREPARATION_PIN` and the isolated template pin remain
+`PLACEHOLDER-PREPARATION-COMMIT`, gates false/null. Do not replace this with a
+file SHA256: the pin is a40-hex real owned commit that contains the script.
+Commit sequence after source acceptance: preparation code commit A; runner/template
+pin commit B referring to A; verify actual script/definition bytes and bind
+execution SHA/source hashes. No self-referential commit hash and no pinning old
+uncommitted source to the prior tested8869263 result.
+
+A dedicated DB must be separately provisioned; this script never creates the DB
+or roles. Proposed exact tuple remains localhost5432 /
+`social_manager_budget_pr180` / `budget_review_pr180`, DDL login/owner `starck`,
+runner `smai_pr179_probe`. Their existence/attributes in a remote PG target are
+UNKNOWN; Mac role facts are not inherited. Both logins must satisfy the reviewed
+nonadministrative role floor; runner has no memberships/ownership. Provisioning
+must establish CONNECT but no effective CREATE/TEMP for the runner, including
+PUBLIC/default grants. All such provisioning operations need explicit review.
+
+Preparation uses its OWN private approval, separate from runner approval. Required
+fields: kind=`isolated-budget-preparation-approval`; frozen run_id; exact DDL target,
+schema and runner_role; preparation_sha, execution_sha and source hash map;
+nonproduction/exclusive_window attestations; UTC day/current window; exact ordered
+PREPARATION_OPERATIONS and per-phase owner_approval. Phase values are
+`explicit-read-only-approved`, `explicit-definition-rehearsal-approved`, and
+`explicit-definition-commit-approved`. Preflight may start with endpoint=null
+and records the measured approved-local target identity; write phases require that
+exact endpoint. Rehearsal needs preflight_sha256; apply also needs rehearsal_sha256,
+catalog_parity_reviewed=true and the independently reviewed rehearsal catalog hash.
+No unknown field is filled with an inferred approval.
+
+Private files live in `.agent/private-budget-review/7417a3edbb5e42ce990c721c900d682f/`
+with700 directories/600 regular files. Approved stage commands, only after gates:
+
+```
+.venv/bin/python scripts/prepare_llm_budget_fixture.py preflight --approval-file <private-plan>
+.venv/bin/python scripts/prepare_llm_budget_fixture.py rehearsal --approval-file <private-plan> --allow-definition-application
+.venv/bin/python scripts/prepare_llm_budget_fixture.py apply --approval-file <private-plan> --allow-definition-application --allow-commit
+```
+
+Preflight, rehearsal intent/result, apply intent/precommit/acknowledged/result
+artifacts are unique and never overwritten. Preparation retains only five tables,
+their sequences/indexes/types, five guard functions/eight enabled triggers and18
+frozen synthetic tenants (proposed reserved IDs900001–900018); no day baselines or
+probe seed rows. The separate runner still creates its exact11 receipts/10
+reservations/18 days and accounts19/15/18 sequence steps. No stamp, create_all,
+chain upgrade, trigger disable, schema reset/drop or receipt cleanup.
+
+### Prior owner-relayed preflight incident
+
+The owner-relayed local correction states CREATE SCHEMA budget_review, GRANT USAGE
+and DROP SCHEMA budget_review CASCADE were all committed as starck outside the
+read-only authorization. Earlier read-only/preservation PASS was retracted;
+Gate B was not completed. These are reported local facts, not independently
+verified remotely. No automatic restoration/cleanup is assigned. No credential
+from that transcript is reproduced here; rotation remains an owner/admin action.
+
+Older preparation/target/status statements below are historical and are not an
+execution authorization or certification of this repaired source.
+
+
 ## Owner-local no-DB closeout — reported PASS, routing caveat retained
 
 Tested FULL SHA: `8869263046368af840bbe5a9dc8c17c3e2c99eea`. Owner reports **6 passed / 0 failed /

@@ -7,6 +7,7 @@ No schema/reference bootstrap, migrations, cleanup, HTTP or provider calls.
 import asyncio
 import hashlib
 import importlib
+import importlib.util
 import json
 import logging
 import os
@@ -22,7 +23,14 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE_PIN = "9dd748cef465e09df74cc98c07ecc65748b41a8c"
+PREPARATION_PIN = "b26ba816c7687c78a6c9da538e246dc6985b4367"
 D = Decimal
+# `revision-0095` keeps the normal Alembic contract unchanged.
+# `isolated-synthetic-fixture` is a separate, explicitly reviewed mode for a
+# dedicated nonproduction database whose objects come from reviewed
+# definitions instead of a normal migration upgrade. It neither weakens nor
+# replaces the revision mode, and it never certifies 0094->0095.
+MODES = ("revision-0095", "isolated-synthetic-fixture")
 CASES = (
     "catalog",
     "fresh",
@@ -114,6 +122,53 @@ RETAINED = (
     "quantum",
     "ack",
 )
+# Isolated-fixture mode only: the exact relation scope the reviewed preparation
+# script creates. Nothing else may exist in the schema, so the catalog digest
+# and the protected-data manifest both describe a fixed, auditable set.
+ISOLATED_SCOPE = (
+    "llm_budget_days",
+    "llm_budget_reservations",
+    "llm_dispatch_receipts",
+    "llm_outcome_events",
+    "tenants",
+)
+# Isolated-fixture mode only: guard functions and triggers by definition source.
+# 0093 receipts, 0094 outcomes, 0095 reservations. Every trigger must be enabled.
+ISOLATED_FUNCTIONS = (
+    "check_llm_budget_reservation_receipt",
+    "check_llm_outcome_receipt",
+    "reject_llm_budget_reservation_mutation",
+    "reject_llm_outcome_mutation",
+    "reject_llm_receipt_mutation",
+)
+ISOLATED_TRIGGERS = (
+    "llm_budget_reservations.llm_budget_reservations_immutable",
+    "llm_budget_reservations.llm_budget_reservations_no_truncate",
+    "llm_budget_reservations.llm_budget_reservations_receipt_binding",
+    "llm_dispatch_receipts.llm_dispatch_receipts_immutable",
+    "llm_dispatch_receipts.llm_dispatch_receipts_no_truncate",
+    "llm_outcome_events.llm_outcome_events_immutable",
+    "llm_outcome_events.llm_outcome_events_no_truncate",
+    "llm_outcome_events.llm_outcome_events_receipt_binding",
+)
+# Isolated-fixture mode only: the runner must genuinely hold the privileges the
+# guard probes rely on, otherwise a probe fails with 42501 instead of the
+# expected 55000/23503/23514 and the guard is never actually exercised.
+ISOLATED_PRIVILEGES = (
+    ("llm_budget_reservations", "SELECT"),
+    ("llm_budget_reservations", "INSERT"),
+    ("llm_budget_reservations", "UPDATE"),
+    ("llm_budget_reservations", "DELETE"),
+    ("llm_budget_reservations", "TRUNCATE"),
+    ("llm_budget_days", "SELECT"),
+    ("llm_budget_days", "INSERT"),
+    ("llm_budget_days", "UPDATE"),
+    ("llm_dispatch_receipts", "SELECT"),
+    ("llm_dispatch_receipts", "INSERT"),
+    ("llm_outcome_events", "SELECT"),
+    ("tenants", "SELECT"),
+    ("tenants", "UPDATE"),
+)
 CATALOG_SQL = """
 SELECT 'schema', n.nspname, jsonb_build_array(n.nspowner::regrole::text,n.nspacl)::text
 FROM pg_catalog.pg_namespace n WHERE n.nspname=:schema
@@ -170,6 +225,24 @@ def git(*args):
     return subprocess.check_output(["git", "-C", str(ROOT), *args], stderr=subprocess.DEVNULL).decode().strip()
 
 
+def load_preparation_contract(pin):
+    """Verify pinned bytes BEFORE executing even the stdlib-only helper module."""
+    demand(type(pin) is str and re.fullmatch(r"[0-9a-f]{40}", pin), "preparation-commit-pin")
+    demand(git("cat-file", "-t", pin) == "commit", "preparation-pin-not-commit")
+    path = ROOT / "scripts/prepare_llm_budget_fixture.py"
+    source = path.read_bytes()
+    pinned = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", pin + ":scripts/prepare_llm_budget_fixture.py"],
+        stderr=subprocess.DEVNULL,
+    )
+    demand(source == pinned, "preparation-content-drift")
+    spec = importlib.util.spec_from_file_location("_reviewed_budget_preparation", path)
+    contract = importlib.util.module_from_spec(spec)
+    exec(compile(source, str(path), "exec"), contract.__dict__)
+    contract.verify_script_pin(pin)
+    return contract
+
+
 class BudgetPackage:
     async def run(self):
         """One sequential package; scenario results live in the private manifest."""
@@ -180,7 +253,7 @@ class BudgetPackage:
         try:
             self.load_approval()
             self.install_application()
-            await self.verify_target()
+            await self.verify_configured_target()
             self.before = await self.protected()
             self.sequences_before = await self.sequences()
             self.emit(
@@ -238,6 +311,45 @@ class BudgetPackage:
             type(c["target_label"]) is str and re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", c["target_label"]),
             "safe-target-label",
         )
+        # Absent `mode` keeps the historical approval files working unchanged.
+        self.mode = c.get("mode") or "revision-0095"
+        demand(self.mode in MODES, "mode")
+        self.isolated = self.mode == "isolated-synthetic-fixture"
+        # Revision mode keeps its original contract untouched, including the
+        # `verify_target` revision read below.
+        if self.isolated:
+            # Isolated mode never reads a revision table and never pretends one
+            # exists; absence is verified separately before any other query.
+            demand(c["revision_schema"] is None and c["revision_rows"] is None, "isolated-revision-fields")
+            demand(c["alembic_absence_verified"] is True, "alembic-absence-unverified")
+            demand(c["isolated_scope"] == list(ISOLATED_SCOPE), "isolated-scope")
+            demand(c["isolated_functions"] == list(ISOLATED_FUNCTIONS), "isolated-function-scope")
+            demand(c["isolated_triggers"] == list(ISOLATED_TRIGGERS), "isolated-trigger-scope")
+            demand(c["isolated_privileges"] == [f"{t}:{p}" for t, p in ISOLATED_PRIVILEGES], "isolated-privilege-scope")
+            demand(c["ddl_role"] is not None and c["ddl_role"] != c["runner_role"], "role-separation")
+            # A real pinned preparation script SHA is 40 hex; a placeholder can
+            # never pass this, so an unpinned review cannot be executed.
+            demand(
+                type(c["provenance"]) is dict
+                and c["provenance"].get("origin") == "reviewed-definition-application"
+                and re.fullmatch(r"[0-9a-f]{40}", c["provenance"].get("preparation_script", "")),
+                "isolated-provenance-script",
+            )
+            demand(
+                re.fullmatch(r"[0-9a-f]{64}", c["provenance"].get("manifest_sha256", "")),
+                "isolated-provenance-manifest",
+            )
+            demand(c["provenance"]["preparation_script"] == PREPARATION_PIN, "preparation-script-pin")
+            contract = load_preparation_contract(PREPARATION_PIN)
+            self.preparation_contract = contract
+            demand(
+                c["target"]
+                == [contract.TARGET_HOST, contract.TARGET_PORT, contract.TARGET_DATABASE, contract.RUNNER_ROLE]
+                and c["schema"] == contract.TARGET_SCHEMA
+                and c["ddl_role"] == contract.DDL_OWNER,
+                "isolated-exact-target",
+            )
+            contract.verify_runner_manifest(c["provenance"], c)
         demand(c["synthetic_model_id"] > 0 and c["synthetic_provider_id"] > 0, "synthetic-catalog-identities")
         demand(set(c["fixtures"]) == set(FIXTURES), "fixture-list")
         demand(len(set(c["fixtures"].values())) == len(FIXTURES), "shared-fixture")
@@ -370,55 +482,94 @@ class BudgetPackage:
             finally:
                 await session.rollback()
 
-    async def verify_target(self):
-        async with self.session() as s:
-            row = (
-                await s.execute(
-                    self.text(
-                        "SELECT current_database(),current_user,inet_server_addr()::text,"
-                        "inet_server_port(),current_setting('transaction_read_only'),"
-                        "current_setting('session_replication_role')"
-                    )
-                )
-            ).one()
-            demand(list(row[:4]) == self.cfg["server_identity"], "server-identity")
-            demand(tuple(row[4:]) == ("on", "origin"), "readonly-or-replication-role")
-            role = (
-                await s.execute(
-                    self.text(
-                        "SELECT rolsuper,rolbypassrls,rolcreaterole FROM pg_catalog.pg_roles WHERE rolname=current_user"
-                    )
-                )
-            ).one()
-            demand(tuple(role) == (False, False, False), "privileged-runner-role")
-            others = (
-                await s.execute(
-                    self.text(
-                        "SELECT count(*) FROM pg_catalog.pg_stat_activity "
-                        "WHERE datname=current_database() AND backend_type='client backend' AND pid<>pg_backend_pid() "
-                        "AND application_name IS DISTINCT FROM :name"
-                    ),
-                    {"name": "budget-review-" + self.cfg["run_id"]},
-                )
-            ).scalar_one()
-            demand(others == 0, "other-database-clients")
-            signature = digest(
-                sorted(
-                    [
-                        list(row)
-                        for row in (await s.execute(self.text(CATALOG_SQL), {"schema": self.cfg["schema"]})).all()
-                    ]
+    async def _verify_shared_target(self, s):
+        """Target identity, read-only transaction, role floor, exclusivity and
+        catalog parity. Identical for both modes; neither mode may skip it."""
+        row = (
+            await s.execute(
+                self.text(
+                    "SELECT current_database(),current_user,inet_server_addr()::text,"
+                    "inet_server_port(),current_setting('transaction_read_only'),"
+                    "current_setting('session_replication_role')"
                 )
             )
-            demand(signature == self.cfg["catalog_sha256"], "catalog-mismatch")
-            # Gate B must supply EXACT ORM/0095 parity reviewed catalog digest,
-            # not merely an arbitrary current-catalog hash.
-            demand(self.cfg["catalog_parity_reviewed"] is True, "catalog-parity-unreviewed")
+        ).one()
+        demand(list(row[:4]) == self.cfg["server_identity"], "server-identity")
+        demand(tuple(row[4:]) == ("on", "origin"), "readonly-or-replication-role")
+        role = (
+            await s.execute(
+                self.text(
+                    "SELECT rolsuper,rolbypassrls,rolcreaterole FROM pg_catalog.pg_roles WHERE rolname=current_user"
+                )
+            )
+        ).one()
+        demand(tuple(role) == (False, False, False), "privileged-runner-role")
+        others = (
+            await s.execute(
+                self.text(
+                    "SELECT count(*) FROM pg_catalog.pg_stat_activity "
+                    "WHERE datname=current_database() AND backend_type='client backend' AND pid<>pg_backend_pid() "
+                    "AND application_name IS DISTINCT FROM :name"
+                ),
+                {"name": "budget-review-" + self.cfg["run_id"]},
+            )
+        ).scalar_one()
+        demand(others == 0, "other-database-clients")
+        signature = digest(
+            sorted(
+                [list(row) for row in (await s.execute(self.text(CATALOG_SQL), {"schema": self.cfg["schema"]})).all()]
+            )
+        )
+        demand(signature == self.cfg["catalog_sha256"], "catalog-mismatch")
+        # Gate B must supply an EXACT reviewed catalog digest, not merely an
+        # arbitrary current-catalog hash.
+        demand(self.cfg["catalog_parity_reviewed"] is True, "catalog-parity-unreviewed")
+        return signature
+
+    async def verify_target(self):
+        """Revision mode: the normal Alembic contract, unchanged."""
+        async with self.session() as s:
+            signature = await self._verify_shared_target(s)
             q = 'SELECT version_num FROM "' + self.cfg["revision_schema"] + '".alembic_version ORDER BY version_num'
             demand(re.fullmatch(r"[a-z][a-z0-9_]{0,39}", self.cfg["revision_schema"]), "revision-schema")
             demand((await s.execute(self.text(q))).scalars().all() == ["0095"], "revision-mismatch")
             demand(self.cfg["revision_rows"] == ["0095"], "approved-revision-mismatch")
         self.emit("target", safe_label=self.cfg["target_label"], catalog=signature, revision=["0095"])
+
+    async def verify_configured_target(self):
+        if self.isolated:
+            await self.verify_isolated_target()
+        else:
+            await self.verify_target()
+
+    async def verify_isolated_target(self):
+        """Independently measured dedicated fixture, bound to retained evidence."""
+        contract = self.preparation_contract
+        manifest = contract.verify_runner_manifest(self.cfg["provenance"], self.cfg)
+        async with self.session() as session:
+            signature = await self._verify_shared_target(session)
+            others = (
+                await session.execute(
+                    self.text(
+                        "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname=current_database() "
+                        "AND backend_type='client backend' AND pid<>pg_backend_pid()"
+                    )
+                )
+            ).scalar_one()
+            demand(others == 0, "isolated-other-database-clients")
+            connection = await session.connection()
+            state = await connection.run_sync(contract.inspect_prepared)
+            await connection.run_sync(contract.role_floor)
+            demand(state == manifest["prepared"], "isolated-measured-manifest-drift")
+            demand(state["acl_manifest_sha256"] == self.cfg["acl_manifest_sha256"], "acl-manifest")
+        self.emit(
+            "target",
+            mode=self.mode,
+            safe_label=self.cfg["target_label"],
+            catalog=signature,
+            alembic="absent",
+            preparation_manifest=self.cfg["provenance"]["manifest_sha256"],
+        )
 
     async def protected(self):
         result = {}
@@ -1008,7 +1159,13 @@ class BudgetPackage:
         self.emit("variant", name="missing-guard-postgresql", result="NOT_RUN", reason="no-trigger-disable")
 
     async def preservation(self):
-        await self.verify_target()
+        if self.isolated:
+            # All scenarios/tasks have finished: close our idle race pool before
+            # the strict final client check, never exclude clients by label.
+            await self.db.async_engine.dispose()
+            await self.verify_isolated_target()
+        else:
+            await self.verify_target()
         after = await self.protected()
         demand(after == self.before, "protected-records-changed")
         rows = await self.snapshot("final")

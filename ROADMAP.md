@@ -13,6 +13,15 @@ canonical board.
 
 <!-- Accepted audit tasks are recorded below this line. -->
 
+- [ ] TAIL-01 — Close PR #185 home cleanup's deferred real-ASGI/DB role/workspace validation; accept: reviewed focused diff and Kilo TEST RUN PASS for Viewer/Manager/owner/operator, no-rights and cross-workspace cases; depends: none.
+  owns: app/web/dashboard.py, app/web/templates/web/dashboard.html, tests/test_dashboard_role_aware.py, tests/test_merged_home_acceptance.py; owner: Codex coordinator; status: BLOCKED — owner approved target, but Kilo reported unresolved test connection environment (0 collected); HEAD changed during the run from f2e6bbd to c0c89a9. Draft fixture also lacks required AgentTask.cron_expr; diff is not accepted.
+- [ ] TAIL-02 — Close MERGED shell/notification A/B deferred real acceptance only (exclude unmerged C/D); accept: reviewed focused diff and Kilo TEST RUN PASS for scope/count-list/read-update parity, forbidden/revoked entities and ASGI role/workspace boundaries; depends: none; execute after TAIL-01.
+  owns: app/web/notifications.py, app/services/notifications/attention.py, app/web/templates/web/base.html, tests/test_web_notifications.py, tests/unit_web/test_assistant_shell.py, tests/unit_web/test_attention_feed.py; owner: Codex coordinator; status: TODO — not started; same real-ASGI/DB preflight prerequisite. Legacy notification tests expect raw titles and use permission bypass; they do not certify the merged typed-label/access contract.
+
+Checkpoint 2026-10-14: dev `c0c89a943f5326fd7dcbffad2f28fcf09c723339`; TAIL-01 draft tests added, Black/isort and git diff --check passed. Kilo TEST RUN BLOCKED, 0 collected, no acceptance or task commit; TAIL-02 not started. Owner's .agent/rules.md changes preserved separately; board unchanged.
+Next: reconcile the new HEAD, fix the unaccepted fixture's missing cron_expr, and establish inherited test connection settings for Kilo/pare-test without exposing credentials. Owner-approved target remains localhost:5432/social_manager / test_schema; no reconfirmation needed. No bootstrap/seed/reset/migrations or fallback pytest. Stop retained pending this handoff.
+Update 2026-10-14: owner pre-approval recorded in R8 (`.agent/rules.md`) — the resolved `test_schema` target is pre-approved for real ASGI/DB runs (own data only, no reset/drop/migrate/reseed); BLOCKED lifted, resume TAIL-01.
+
 ## Suggested Goal
 
 ```text

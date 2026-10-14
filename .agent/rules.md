@@ -42,6 +42,11 @@
   any older automatic-reset advice. Delegation through Kilo's `test-orchestrator`
   to its local `test-runner` child is authorized; it must execute requested tests
   sequentially with these restrictions.
+  The resolved target itself is pre-approved for real ASGI/DB test execution
+  (including `httpx` `ASGITransport` tests that create and clean up their own
+  data); never ask the owner to reconfirm the target for such runs. This
+  pre-approval covers running tests only — never reset, drop, migrate or reseed
+  — and an uncertain or interrupted state still stops under R4.
   Preserve the private environment.
 
 - **R10 — Kilo owns test execution.** Start Kilo's `test-orchestrator` with

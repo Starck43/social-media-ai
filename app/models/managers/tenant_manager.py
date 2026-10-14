@@ -232,6 +232,8 @@ class TenantUserManager(BaseManager["TenantUser"]):
             return frozenset()
         if membership.is_owner:
             return None
+        if membership.role_id is None:
+            return frozenset()
         from ..role import Role
 
         role = await Role.objects.prefetch_related("permissions.model_type").get(id=membership.role_id)

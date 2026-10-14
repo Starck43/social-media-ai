@@ -14,11 +14,11 @@ client workspace. A chat is bound to exactly one tenant, and every data row
    participant with a platform role assigned via `role_id` (FK to `roles.id`).
    Roles are defined by `Role.codename` (enum `user_role_type`): `VIEWER`,
    `AI_BOT`, `MANAGER`, `ANALYST`, `MODERATOR`, `ADMIN`, `SUPERUSER`.
-   `SUPERUSER` is the canonical "owner" role; legacy rows with `role_id = NULL`
-   are treated as owners by legacy resolver/UI helpers for backward compatibility.
-   The merged runtime boundary from PR #22 does NOT inherit that NULL-role elevation: an active
-   bound User and explicit membership SUPERUSER are required for runtime owner
-   authority. No migration or automatic identity linking is included.
+   Only an explicitly resolved `SUPERUSER` membership grants ownership. A legacy
+   row with `role_id = NULL` has no workspace grants and is not an owner in the
+   web UI, API or runtime; its role must be explicitly assigned before access
+   is restored. Runtime owner authority also requires an active bound User.
+   No migration, automatic role repair or identity linking is included.
 4. **Enforcement** lives in `BaseManager`/`QuerySet`, not in models:
    `TenantScopedMixin` just marks the model. Every SELECT is filtered to
    `current_tenant_id()`, every `create()` stamps `tenant_id`; `update_by_id`
@@ -278,15 +278,17 @@ Web chat is owner-only in the active workspace. Non-owner members, including
 platform operators visiting as a non-owner, have no chat navigation or home
 entry; direct transcript, send and delete routes refuse them. Runtime admission
 reloads the existing RuntimeIdentity and refuses non-owner/revoked web identities
-before starting the authorized turn. Messenger policy is unchanged. Legacy web
-owner inference is retained; runtime still requires its explicit owner identity.
+before starting the authorized turn. Messenger policy is unchanged. Web and
+runtime ownership both require an explicitly resolved membership owner role.
 
 Settings Team exposes `POST /app/settings/members/{id}/disable` only with the
 existing concrete workspace-management capability. CSRF is required. The manager
 conditionally updates an active, bound web membership in that workspace to
-`is_active=False`; it retains the row and personal credentials. Owners, including
-legacy NULL-role rows, are protected from this action even when more than one
-owner exists: transfer ownership and change the role first. The owner predicate
+`is_active=False`; it retains the row and personal credentials. Explicit owners
+are protected from this action even when more than one owner exists: transfer
+ownership and change the role first. Unresolved NULL-role rows are also
+conservatively refused by this endpoint until their role is assigned; that
+protection grants them no workspace access. The role predicate
 is part of the UPDATE, not a separate stale read. Subsequent web/API membership
 resolution excludes the disabled row. Existing sessions and unrelated workspace
 memberships are not deleted. Invite/session races, in-flight requests and real

@@ -6,6 +6,15 @@
             <span class="shell-nav-label">{{ user.username }}</span>
         </button>
         <div id="account-{{ menu_id }}" class="shell-popover-panel shell-account-panel" hidden>
+            {% if tenant %}
+            <section class="shell-menu-group" aria-labelledby="workspace-tools-{{ menu_id }}">
+                <h2 id="workspace-tools-{{ menu_id }}" class="shell-menu-heading">В текущем пространстве</h2>
+                <div class="shell-workspace-actions">
+                    <a href="/app/settings">{{ icon('settings') }}<span>Настройки</span></a>
+                    {% if perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">{{ icon('mentions') }}<span>Пригласить участника</span></button>{% endif %}
+                </div>
+            </section>
+            {% endif %}
             <section class="shell-menu-group" aria-labelledby="workspaces-{{ menu_id }}">
                 <h2 id="workspaces-{{ menu_id }}" class="shell-menu-heading">Пространства</h2>
                 <p class="shell-menu-hint">Выберите пространство для быстрой смены контекста.</p>
@@ -31,13 +40,6 @@
                 <form method="post" action="/app/workspaces/new"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>{{ icon('layers') }} Создать пространство</button></form>
                 {% if not tenant %}<a href="/app/invite">Присоединиться по коду</a>{% endif %}
             </section>
-            {% if tenant %}
-            <section class="shell-menu-group" aria-labelledby="workspace-tools-{{ menu_id }}">
-                <h2 id="workspace-tools-{{ menu_id }}" class="shell-menu-heading">В текущем пространстве</h2>
-                {% if perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">{{ icon('mentions') }}<span><span class="shell-menu-label">Пригласить участника</span><span class="shell-menu-hint">Код, ссылка и открытые приглашения</span></span></button>{% endif %}
-                <a href="/app/settings">{{ icon('settings') }}<span><span class="shell-menu-label">Настройки</span><span class="shell-menu-hint">Пространство, команда и ваши подключения</span></span></a>
-            </section>
-            {% endif %}
             <section class="shell-menu-group" aria-labelledby="account-tools-{{ menu_id }}">
                 <h2 id="account-tools-{{ menu_id }}" class="shell-menu-heading">Аккаунт</h2>
                 {% if user.is_superuser %}<a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование платформы ↗</span><span class="shell-menu-hint">Откроется в новой вкладке</span></span></a>{% endif %}

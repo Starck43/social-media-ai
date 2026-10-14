@@ -215,6 +215,57 @@ const report = { cases: [], interactions: [], failures: [] };
           if (width === 1440 && theme === "system")
             console.log("Checked", name);
         }
+    // Workspace utilities are a paired top row, not buried below the switcher.
+    for (const width of [375, 390, 768, 1440])
+      for (const theme of ["light", "dark", "system"])
+        for (const manager of [true, false]) {
+          const f = await setup(manager ? "settings" : "settings-viewer", width, theme);
+          try {
+            if (width < 768)
+              await f.page.locator('[data-dialog-open="navigation-drawer"]').click();
+            const scope = f.page.locator(width < 768 ? "#navigation-drawer" : ".shell-sidebar");
+            await scope.locator(".shell-account-trigger").click();
+            const actions = scope.locator(".shell-workspace-actions");
+            const settings = actions.locator('a[href="/app/settings"]');
+            const invite = actions.locator("[data-invite-open]");
+            assert.equal(await settings.count(), 1);
+            assert.equal(await invite.count(), manager ? 1 : 0);
+            const row = await actions.boundingBox();
+            const switcher = await scope.locator(".shell-workspaces").boundingBox();
+            assert.ok(row.y + row.height <= switcher.y, "utilities precede workspace switcher");
+            for (const button of await actions.locator("a,button").all()) {
+              const box = await button.boundingBox();
+              assert.ok(box.height >= 44 && box.x >= 0 && box.x + box.width <= width,
+                "44px targets contained in viewport");
+              assert.ok(await button.evaluate(el => el.scrollWidth <= el.clientWidth + 1),
+                "label has no horizontal overflow");
+              assert.ok(await button.locator("span").evaluate(el => {
+                const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+                ctx.font = getComputedStyle(el).font;
+                return el.textContent.trim().split(/\s+/).every(word =>
+                  ctx.measureText(word).width <= el.clientWidth + 1);
+              }), "action labels wrap at word boundaries, not inside words");
+            }
+            if (manager) {
+              const left = await settings.boundingBox(), right = await invite.boundingBox();
+              assert.ok(Math.abs(left.y - right.y) < 1 && left.x + left.width <= right.x,
+                "settings then invite side by side");
+              await settings.focus();
+              await f.page.keyboard.press("Tab");
+              assert.ok(await invite.evaluate(el => document.activeElement === el),
+                "keyboard follows visual action order");
+            }
+            assert.deepEqual(f.calls, [], "opening menu never preloads invites");
+            assert.deepEqual(f.errors, []);
+            if (manager && theme === "dark" && [375, 1440].includes(width))
+              await f.page.screenshot({ path: path.join(fixtures, `workspace-actions-${width}-dark.png`) });
+            report.interactions.push({ name: "workspace-action-pair", width, theme, manager });
+          } catch (e) {
+            report.failures.push({ name: "workspace-action-pair", width, theme, manager, error: e.message });
+          } finally {
+            await f.context.close();
+          }
+        }
     for (const width of [390, 1440]) {
       const f = await setup("dashboard", width);
       try {

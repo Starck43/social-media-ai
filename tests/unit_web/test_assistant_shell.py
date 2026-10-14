@@ -275,3 +275,25 @@ def test_workspace_role_caption_reuses_canonical_labels_without_app_imports(code
         if isinstance(key, ast.Constant) and key.value == "role_label"
     )
     assert eval(compile(ast.Expression(field), "workspace role label", "eval"), scope) == expected
+
+
+@pytest.mark.parametrize("manager", [True, False])
+def test_workspace_actions_are_paired_before_switcher_in_both_menus(manager):
+    markup = environment().get_template("shell-fixture.html").render(**context(manager=manager))
+    for menu in ("desktop", "mobile"):
+        panel = markup.split(f'id="account-{menu}"', 1)[1].split("</nav>", 1)[0]
+        tools, switcher = panel.split(f'aria-labelledby="workspaces-{menu}"', 1)
+        assert f'aria-labelledby="workspace-tools-{menu}"' in tools
+        actions = tools.split('<div class="shell-workspace-actions">', 1)[1].split("</div>", 1)[0]
+        assert actions.count('href="/app/settings"') == 1
+        assert ("data-invite-open" in actions) is manager
+        if manager:
+            assert actions.index('href="/app/settings"') < actions.index("data-invite-open")
+        assert 'href="/app/settings"' not in switcher
+        assert "data-invite-open" not in switcher
+
+
+def test_no_workspace_does_not_render_workspace_action_pair():
+    markup = environment().get_template("shell-fixture.html").render(**context(tenant=False))
+    assert 'class="shell-workspace-actions"' not in markup
+    assert 'href="/app/invite"' in markup

@@ -283,3 +283,64 @@ has bounded scrolling so navigation/theme remain reachable. The connection
 settings glyph is now a gear, visually distinct from the relocated theme control.
 This review is not an individual full visual matrix or measured contrast check.
 All real-app/Kilo R8/R10 and previously recorded acceptance gaps remain open.
+
+### Owner-requested workspace utility placement
+
+Continued A from `22b55fd963210a0d34b983de02a390b244987b11` in the isolated
+`/data/social-media-ai-shell-followup` checkout, using the owner's menu reference.
+The Settings link and Invite member button are now a bordered paired row at the
+start of the account popover, above workspace switching. Desktop keeps leading
+icons; the narrow-screen drawer puts icons above labels so Russian words are not
+split mid-word. The account popover is bounded to the viewport; a member without
+invite capability gets Settings alone. Active workspace is still shown once.
+
+This changes only shared template placement and scoped styles, not server rights,
+queries, invite issuance, membership state or notification behavior. Existing
+`can_manage_workspace(tenant.id)`, lazy invite authorization/refetch, CSRF and
+POST semantics remain. No new dependency, migration, application startup, real
+DB/provider/send or deployment. The owner's Mac checkouts remain inaccessible and
+untouched; their git status/worktree state is unknown. No dev push or merge.
+
+Isolated checks use `/data/shell-menu-venv`, separate from the owner's .venv:
+Python 3.13.14, pytest 9.1.1, pytest-asyncio 1.4.0, Jinja 3.1.6, Starlette 1.8.0;
+Playwright 1.63.0 and Chromium 153.0.8010.12. The selected imports/fixtures were
+inspected first: standard library, Jinja, pytest and Starlette Request, plus AST
+extraction/stdlib-only member_roles. Root conftest (which bootstraps shared DB)
+and cache are disabled. No application module/runtime is imported or started.
+
+Commands (sandbox only):
+
+```sh
+/data/shell-menu-venv/bin/python -m pytest --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header tests/unit_web/test_assistant_shell.py tests/unit_web/test_dashboard_overview.py tests/unit_web/test_template_autoescape.py
+/data/shell-menu-venv/bin/python tests/shell_page_fixtures.py --out /data/shell-menu-fixtures
+CHROMIUM_BIN=$(command -v chromium) node tests/web_shell_pages.cjs /data/shell-menu-fixtures /data/shell-menu-vendor
+node tests/web_shell_state.cjs
+node --check tests/web_shell_pages.cjs
+git diff --check
+```
+
+Local vendor assets match the fixture URLs: Tailwind CDN, Alpine 3.14.1, HTMX
+1.9.12 and marked 4.3.0. Every browser request is fulfilled/aborted locally. The
+first browser attempt stopped because local marked.js was missing; it was a
+harness setup failure, not acceptance evidence. After supplying that asset the
+matrix passed. Screenshot review then found awkward mid-word mobile labels;
+the final mobile styles and stronger no-mid-word assertions were checked again.
+
+Final results (all exit 0): **83 passed, 0 failed/skipped** in the isolated
+pytest subset; **336 all-page viewport/theme cases + 38 interactions**, with no
+browser failures; mocked notification state/error/CSRF contracts passed.
+Black/isort checks for the changed Python test, node syntax and diff checks passed.
+Final desktop 1440px and mobile 375px dark screenshots were visually reviewed;
+this is not an individual review of every viewport/theme image.
+New tests cover top-row placement/order in both menus, no-workspace fallback,
+permission-conditioned invite visibility, identical row geometry, 44px targets,
+word-boundary label wrapping, keyboard order and absence of eager invite fetches
+at 375/390/768/1440px in light/dark/system. Existing mocked invitation
+open/refetch/403/focus return and workspace POST/CSRF contracts are retained.
+
+Owner acceptance of the preceding implementation is attributed only to its
+original SHA, not automatically to this follow-up. This is mocked/fixture evidence,
+not real role/revocation/workspace/ASGI/DB or full visual/contrast/reduced-motion
+acceptance. All previously deferred A/PR185, invite/QR/seats/last-owner, real chat,
+source_ids and scenario-wizard limitations remain open. B/C/D are untouched;
+PR #188 remains Draft/unmerged, with its existing integration conflict unresolved.

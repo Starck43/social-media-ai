@@ -38,7 +38,12 @@
 .shell-menu-group > .shell-menu-hint { padding:0 8px 8px; }
 .shell-workspace-current { padding:8px; border-radius:6px; background:var(--ui-accent-soft); }
 .shell-workspaces button { flex-direction:column; align-items:flex-start; gap:2px; }
-.shell-account-panel { scrollbar-gutter:stable; }
+.shell-account-panel { scrollbar-gutter:stable; width:min(420px,calc(100vw - 32px)); }
+.shell-workspace-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:4px 8px 8px; }
+.shell-workspace-actions > :is(a,button) { border:1px solid var(--color-border); font-size:.875rem; line-height:1.4; min-width:0; }
+.shell-workspace-actions > :only-child { grid-column:1 / -1; }
+.shell-workspace-actions svg { width:20px; height:20px; flex-shrink:0; }
+.shell-workspace-actions span { min-width:0; overflow-wrap:anywhere; }
 .shell-theme-panel { left:0; right:auto; bottom:calc(100% + 8px); top:auto; width:190px; }
 .shell-account-panel { top:100%; left:0; }
 .shell-theme-check { margin-left:auto; visibility:hidden; }
@@ -73,6 +78,7 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-label { position:a
 html[data-sidebar-collapsed="true"] .shell-sidebar .shell-daily-nav { overflow:visible; }
 html[data-sidebar-collapsed="true"] .shell-sidebar .shell-daily-nav a:is(:hover,:focus-visible)::after { content:attr(data-tooltip); position:absolute; left:calc(100% + 8px); z-index:50; padding:8px; border-radius:6px; background:var(--color-surface); color:var(--color-text); border:1px solid var(--color-border); white-space:nowrap; }
 @media (max-width:767px) {
+    .shell-workspace-actions > :is(a,button) { flex-direction:column; justify-content:center; text-align:center; gap:4px; }
     .shell-sidebar { display:none; }
     .shell-mobile-toggle { display:inline-flex; }
     .shell-navbar { padding:12px; gap:8px; }

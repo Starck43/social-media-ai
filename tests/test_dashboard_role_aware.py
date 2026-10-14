@@ -1,10 +1,4 @@
-"""The dashboard offers only what the member's access level can open.
-
-Welcome steps, the tasks card, quick actions and recent-analysis links point at
-sections behind a view right (and, for a call to create, a create right). A
-member whose level cannot open the target is not led there; an owner keeps the
-full dashboard.
-"""
+"""The compact overview loads and offers only permitted workspace content."""
 
 from __future__ import annotations
 
@@ -15,8 +9,6 @@ from app.types import UserRoleType
 from app.web.dashboard import _offers
 from tests.test_web_settings import _cleanup, _client, _drop_workspaces, _invitee, _login, _register
 
-QUICK_ACTION = 'class="block w-full rounded-lg border'
-
 
 class _Perms:
     def __init__(self, rights: set[tuple[str, str]]):
@@ -24,10 +16,6 @@ class _Perms:
 
     def can(self, model_name, action) -> bool:
         return (model_name, action) in self._rights
-
-
-def _quick_action(href: str) -> str:
-    return f'<a href="{href}" {QUICK_ACTION}'
 
 
 # ── pure rules ─────────────────────────────────────────────────────────────
@@ -51,7 +39,7 @@ def test_a_call_to_create_needs_both_view_and_create() -> None:
 
 
 @pytest.mark.tenancy
-async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_open() -> None:
+async def test_owner_and_viewer_get_only_permitted_overview_content() -> None:
     owner: User | None = None
     viewer: User | None = None
     tenant_id = None
@@ -60,13 +48,14 @@ async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_ope
             owner, tenant_id = await _register(c, "DashOwn")
             page = await c.get("/app/")
             assert page.status_code == 200
-            for href in ("/app/onboarding", "/app/scenarios/new", "/app/digests"):
+            for href in ("/app/sources", "/app/digests", "/app/chat"):
                 assert f'href="{href}"' in page.text, f"owner misses {href}"
             assert ">Задачи</h2>" in page.text
-            assert _quick_action("/app/tasks") in page.text
-            assert _quick_action("/app/sources") in page.text
-            assert "data-header-sources" not in page.text
-            assert "роль: Владелец" in page.text
+            assert "data-home-next-step" in page.text
+            assert "Быстрые действия" not in page.text
+            assert "run-now" not in page.text
+            assert "роль: Владелец" not in page.text
+            assert "data-home-results" in page.text
             viewer = await _invitee("DashViewer", UserRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
@@ -78,12 +67,11 @@ async def test_owner_gets_the_full_dashboard_and_a_viewer_only_what_they_can_ope
                 assert f'href="{href}' not in page.text, f"viewer is offered {href}"
             assert "run-now" not in page.text
             assert ">Задачи</h2>" not in page.text
-            # No lone quick-actions card: the one link it would hold sits in the header.
             assert "Быстрые действия" not in page.text
-            assert "data-header-sources" in page.text
-            # The header names the level as the team tab does, not the platform role code.
-            assert "роль: Наблюдатель" in page.text
-            assert "роль: VIEWER" not in page.text
+            assert "data-home-next-step" not in page.text
+            assert "data-home-results" in page.text
+            assert "data-home-chat" in page.text
+            assert "роль: Наблюдатель" not in page.text
     finally:
         await _cleanup(owner, viewer)
         await _drop_workspaces(tenant_id)

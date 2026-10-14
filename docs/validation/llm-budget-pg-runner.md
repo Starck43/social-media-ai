@@ -1,6 +1,57 @@
 # Budget reservation PostgreSQL runner — current evidence and history
 
-## Current remote closeout — isolated PG PASS, normal online migration BLOCKED
+## Current owner-local normal migration closeout — reported PASS
+
+The owner relayed a completed local normal Alembic migration report at exact
+FULL SHA `f4c14c4da0fc212591ca0f88c35db3f8a20d87d3` (clean worktree).
+This is **owner-local evidence**, not a remotely executed Mac migration or a
+remote inspection of the private JSON artifacts. Remote isolated evidence and
+its tested SHAs below remain unchanged; no historical checks were repeated.
+
+- Approved target: `localhost:5432/social_manager_pr180_migration`, schema and
+  sole revision placement `public`, DDL executor `starck`, project venv.
+  Both dotenv mechanisms suppressed; actual Settings/SQL identity verified.
+- Baseline provenance: structure-only clone of the accepted as-found legacy
+  `social_manager.public` revision0092, actual version/service rows and measured
+  sequences, with no business rows. Genuine normal0092→0093→0094 ran once each,
+  with independent local post-step readback. This is not stamp/create_all or a
+  fresh-schema historical-chain bootstrap. Source stayed unchanged.
+- Accepted variance is narrowly limited to the `tenants.ck_tenants_plan`
+  varchar-array versus element-wise text casts after dump/restore. Raw definitions
+  and digests retained separately; original source snapshot unchanged; no general
+  CHECK-ignore rule. Owner-local checks confirmed allowed values/types/NULL.
+- Evidence caveat: pre-0093 evidence was overwritten by verification debugging
+  and reconstructed, with equality to a previously recorded digest. It is not
+  represented as an untouched contemporaneous before-file. Sequence `setval`
+  is not rollback-safe merely because its phase used a transaction; actual
+  sequence states were independently checked, never reset/reapplied.
+- Fresh immutable before-0095 was measured and hashed before the migration:
+  `before-0095-20261014T184014.json`, SHA256
+  `5b2dc57c9714580f6bc5e5721165c4ed1585257fc62a53308ce047c1bc21f240`.
+  Version was exactly0094; model_types28, permissions368, service sequences83/440.
+- Normal repository command: project `.venv/bin/python -m alembic -c
+  <worktree>/alembic.ini upgrade 0095`, **exit0**, executed once. An earlier phase
+  invocation failed at source-expectation inspection (`sys.path`), before the
+  migration; its before-artifact is retained, not an extra upgrade attempt.
+- Independent local readback: sole revision0095; exact two new tables, two guard
+  functions and three enabled reservation triggers, required FK/constraints/
+  indexes/sequences; prior five receipt/outcome triggers and three functions
+  preserved. model_types28→30 (IDs84/85), permissions368→384, service sequences
+  83→85/440→456; old rows unchanged, deletions0, business/new tables empty.
+  No unapproved catalog/ownership/ACL drift; source snapshot remained unchanged.
+- Private after/summary filenames: `after-0095-20261014T184236.json` and
+  `migration-evidence-0095-20261014T184236.json`, mode0600. Only digest prefixes
+  were relayed for these two; full hashes/contents are not remotely verified or
+  invented here. Before/after artifacts are retained outside Git.
+
+This closes the requested **normal online0094→0095 rehearsal on this accepted
+legacy clone**, separately from synthetic transaction/guard acceptance. It does
+not prove production deployability, all possible0094 baselines, downgrade,
+cutover/rollback, HTTP activation, settlement/release or whole PRD-03. No runtime,
+provider/deploy, cleanup, trigger disabling or additional pytest was authorized.
+Final fresh-head review/checks and integration are separate from this report.
+
+## Earlier remote closeout — isolated PG PASS; online migration then BLOCKED
 
 Tested FULL SHA: `d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71`.
 Preparation-script pin: `251e4aeb1533dadc3cea5d004e9a914ec057b502`.
@@ -74,7 +125,7 @@ must match; real Git ancestry is mandatory. The new runner SHA remains explicit
 in its separate approval. Evidence is never rewritten to pretend preparation
 executed at the newer reader commit.
 
-### Migration closeout — offline PASS is not online acceptance
+### Historical remote migration boundary — superseded only by owner-local report above
 
 The REAL repository migrations/env.py, real Settings and real Alembic graph
 rendered `command.upgrade(config,"0094:0095",sql=True)` successfully. Network and
@@ -84,7 +135,7 @@ version UPDATE; no earlier revision, baseline DML or destructive statement.
 Ordinary downgrade raises the reviewed preservation-plan refusal. The SAME0095
 definitions were exercised successfully on PostgreSQL in the isolated package.
 
-**Normal ONLINE Alembic0094→0095 remains NOT VERIFIED / BLOCKED**, because no
+**At that remote closeout, normal ONLINE Alembic0094→0095 was NOT VERIFIED / BLOCKED**, because no
 approved reproducible database with genuine0094 migration history and its full
 prerequisite catalog exists in this remote environment. The synthetic target has
 no Alembic history by design. Do NOT insert/stamp a0094 row, use create_all, replay

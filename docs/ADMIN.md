@@ -48,8 +48,10 @@ The console is gated by the **platform role** of the signed-in operator, the
 same way Django gates a `ModelAdmin`. There is no separate admin permission
 model: the answer to "may this operator do this" comes from `role_permission` →
 `permissions.model_type_id` + `action_type`, read through
-`User.has_perm_for(model_name, action)` — one source of truth shared with `/api`,
-`/app`, the agent tools, and the CLI.
+`User.has_perm_for(model_name, action)`. Admin is a global/platform console,
+not an active-workspace dashboard. Ordinary workspace surfaces additionally
+select membership-role grants through `member_decision()`; workspace ownership
+is not a platform model permission.
 
 **Who may enter:** every active authenticated user (`User.has_admin_access()`).
 Entry itself grants no model/action permission. The verified token identity is
@@ -67,20 +69,9 @@ The permission check uses structured columns:
 - `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
 
 The single predicate `User.has_perm_for(model_name, action)` is the canonical
-check — it is used by `/api`, `/app`, `/admin`, agent tools, and CLI. Changing a
+platform check; workspace surfaces additionally apply membership context. Changing a
 role's codename never breaks permission logic because the check uses structured
 columns, not codename strings.
-
-**Who may enter:** every active authenticated user (`User.has_admin_access()`).
-Entry itself grants no model/action permission. The verified token identity is
-used for both console and external admin-route authorization; a stale session
-`user_id` cannot select another account. An account without model rights sees an
-explanation on the index, no model links, and 403 on forbidden model routes.
-Workspace ownership or a membership role does not grant platform model rights.
-
-**What they may do:** per model, the role's rights map onto the console actions
-one to one, and sqladmin asks about every one of them — hiding a button and
-blocking the route behind it are the same check.
 
 | Console action | Required `ActionType` |
 |---|---|

@@ -9,21 +9,34 @@
 {% block content %}
 <div class="mx-auto max-w-4xl">
 
-    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Пространство, команда, личные ключи и каналы доставки.</p>
-
-    {% set tab_labels = {
-        'workspace': 'Пространство',
-        'team': 'Команда',
-        'connections': 'Подключения',
-        'agent': 'Персональный агент',
-        'channels': 'Каналы',
-    } %}
-    <nav class="mt-6 ui-segments" aria-label="Разделы настроек">
-        {% for key, label in tab_labels.items() if key in visible_tabs %}{{ segment('/app/settings?tab=' ~ key, label, tab == key) }}{% endfor %}
-    </nav>
-
+    <p class="mt-1 text-sm ui-muted">Личные настройки принадлежат вам. Настройки пространства действуют для команды и требуют отдельного права.</p>
+    {% set tab_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент пространства', 'channels': 'Каналы доставки'} %}
+    <div class="mt-6 space-y-3">
+        {% for label, keys in [('Личное', ['account', 'connections']), ('Пространство', ['workspace', 'team', 'agent', 'channels'])] %}
+        {% if keys|select('in', visible_tabs)|list %}
+        <nav aria-label="{{ label }}" class="space-y-1">
+            <p class="text-xs font-semibold ui-muted">{{ label }}</p>
+            <div class="ui-segments flex flex-wrap gap-1">{% for key in keys if key in visible_tabs %}{{ segment('/app/settings?tab=' ~ key, tab_labels[key], tab == key) }}{% endfor %}</div>
+        </nav>
+        {% endif %}
+        {% endfor %}
+        {% if is_superuser %}<nav aria-label="Платформа"><p class="text-xs ui-muted">Платформа — отдельные операторские права</p><a href="/admin/" class="ui-control inline-flex">Консоль администратора</a></nav>{% endif %}
+    </div>
+    {% if tab == 'account' %}
+        <section class="mt-6 ui-card" aria-label="Мой аккаунт">
+            <h2 class="text-sm font-semibold">Мой аккаунт</h2>
+            <dl class="mt-3 space-y-2 break-words"><div><dt class="text-xs ui-muted">Имя</dt><dd>{{ user.username }}</dd></div><div><dt class="text-xs ui-muted">Email</dt><dd>{{ user.email|default('—') }}</dd></div></dl>
+            <p class="mt-3 text-sm ui-muted">Тема меняется внизу бокового меню. Профиль здесь доступен только для чтения.</p>
+        </section>
+        <section class="mt-6 ui-card" aria-labelledby="account-notifications"><h2 id="account-notifications" class="mb-3 text-sm font-semibold">Показ уведомлений</h2>{% include 'web/_notification_preferences.html' %}</section>
+    {% elif tab == 'workspace' and not settings_manage %}
+        <section class="mt-6 ui-card" data-workspace-readonly>
+            <h2 class="text-sm font-semibold">Текущее пространство</h2>
+            <dl class="mt-3 space-y-2 break-words"><div><dt class="text-xs ui-muted">Название</dt><dd>{{ workspace_summary.name }}</dd></div><div><dt class="text-xs ui-muted">Часовой пояс расписаний</dt><dd>{{ workspace_summary.timezone }}</dd></div></dl>
+            <p class="mt-3 text-sm ui-muted">Вам доступны эти сведения только для чтения. Бюджет и конфигурация доступны при праве управления пространством.</p>
+        </section>
     {# ── workspace ───────────────────────────────────────────────────── #}
-    {% if tab == 'workspace' %}
+    {% elif tab == 'workspace' %}
         <form method="post" action="/app/settings/workspace" class="mt-6 max-w-lg space-y-4 ui-card">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             {% if is_superuser and tenant %}<input type="hidden" name="tenant_id" value="{{ tenant.id }}">{% endif %}
@@ -52,7 +65,7 @@
                     Сохранить
                 </button>
             {% else %}
-                <p class="text-sm text-slate-600 dark:text-slate-400">Изменять настройки воркспейса может владелец.</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Изменение требует права управления пространством.</p>
             {% endif %}
         </form>
 
@@ -208,6 +221,7 @@
         {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
         <button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog" class="mt-6 ui-control">Приглашения и отзыв открытых приглашений</button>
         {% endif %}
+        {% if settings_team_visible %}
         <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
             <table class="w-full text-sm">
                 <thead>
@@ -250,6 +264,8 @@
         <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
             Личный ключ участника может использоваться источником этого воркспейса — поэтому состав команды определяет, чьими токенами идёт сбор.
         </p>
+
+        {% else %}<p class="mt-6 ui-card text-sm">Полный состав команды доступен при праве управления пространством. Здесь показан только ваш уровень доступа.</p>{% endif %}
 
     {# ── connections ────────────────────────────────────────────────── #}
     {% elif tab == 'connections' %}
@@ -358,7 +374,7 @@
         </div>
 
         <p class="mt-4 text-xs text-slate-600 dark:text-slate-400">
-            Это только ваши подключения. Источник использует подключение участника, выбранного
+            Показано до 100 записей метаданных только ваших подключений. Источник использует подключение участника, выбранного
             в его настройках, иначе — владельца воркспейса.
         </p>
 

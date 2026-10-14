@@ -265,7 +265,7 @@ def test_only_server_generated_invite_qr_retains_explicit_safe_html(page_env):
     assert len(safe_lines) == 1 and "issued_invite.qr_svg|safe" in safe_lines[0][1]
     qr = '<svg data-qr="fixture"><path d="M0 0h1v1H0z"/></svg>'
     rendered = page_env.get_template("web/_invite_dialog.html").render(
-        **context(PAYLOADS[0]), tab="team", visible_tabs=["team"], tenant={"id": 9},
+        **context(PAYLOADS[0]), tab="team", visible_tabs=["team"], settings_manage=True, settings_team_visible=True, tenant={"id": 9},
         issued_invite={"qr_svg": qr, "link": "/app/invite/code", "code": "fixture",
                        "role": PAYLOADS[0], "expires": "fixture"},
         invite_roles=[], invite_days=[7], memberships=[], member_names={}, role_labels={},

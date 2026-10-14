@@ -220,7 +220,15 @@ def test_workspace_group_has_explicit_switch_target_and_no_daily_join_for_member
 def test_team_exposes_join_without_granting_invite_issuance(manager):
     values = context(manager=manager)
     values.update(
-        tab="team", visible_tabs=["team"], memberships=[], member_names={}, member_role_keys={}, role_labels={}
+        tab="team",
+        visible_tabs=["team"],
+        settings_manage=manager,
+        is_superuser=False,
+        settings_team_visible=manager,
+        memberships=[],
+        member_names={},
+        member_role_keys={},
+        role_labels={},
     )
     markup = environment().get_template("web/settings.html").render(**values)
     assert "data-team-join" in markup

@@ -74,7 +74,12 @@ class TenantUIMiddleware:
             await self._redirect(scope, receive, send, f"/app/login?next={quote(target, safe='')}")
             return
 
-        if user is not None and not memberships and path not in NO_WORKSPACE_PATHS:
+        if (
+            user is not None
+            and not memberships
+            and path not in NO_WORKSPACE_PATHS
+            and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
+        ):
             await self._redirect(scope, receive, send, "/app/invite")
             return
 

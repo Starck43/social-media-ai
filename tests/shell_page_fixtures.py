@@ -121,6 +121,8 @@ common.update(
     show_preview_step=False,
     tab="team",
     visible_tabs=["team"],
+    settings_manage=True,
+    settings_team_visible=True,
     memberships=[],
     member_names={},
     member_role_keys={},

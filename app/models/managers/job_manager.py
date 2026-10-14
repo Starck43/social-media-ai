@@ -92,6 +92,10 @@ class JobManager(BaseManager["Job"]):
                         max_attempts=max_attempts,
                         session=owned,
                     )
+        from app.core.tenant_context import current_tenant_id, is_bypass
+
+        if tenant_id is None and not is_bypass():
+            tenant_id = current_tenant_id()
         stamped = await self._apply_tenant(session, {"tenant_id": tenant_id})
         tenant_id = stamped["tenant_id"]
         await self.lock_source_admission(session, tenant_id)
@@ -155,6 +159,7 @@ class JobManager(BaseManager["Job"]):
                         Job.job_type.in_(["collect", "analyze"]),
                     )
                     .order_by(Job.id)
+                    .execution_options(populate_existing=True)
                 )
             )
             .scalars()
@@ -173,6 +178,7 @@ class JobManager(BaseManager["Job"]):
                             AgentTask.id.in_(task_ids),
                         )
                         .options(selectinload(AgentTask.sources))
+                        .execution_options(populate_existing=True)
                     )
                 )
                 .scalars()

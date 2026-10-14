@@ -330,7 +330,12 @@ class AgentTaskManager(BaseManager):
                     admit = jobs.admit_source_job if row.job_type in SOURCE_JOB_TYPES else jobs.enqueue
                     try:
                         job = await admit(
-                            job_type=row.job_type, payload=payload, agent_task_id=row.id, run_at=now, session=session
+                            job_type=row.job_type,
+                            payload=payload,
+                            agent_task_id=row.id,
+                            tenant_id=tenant_id,
+                            run_at=now,
+                            session=session,
                         )
                     except SourceJobBusy as busy:
                         # No trigger/schedule/once-state writes: the existing

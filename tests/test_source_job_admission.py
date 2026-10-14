@@ -484,6 +484,7 @@ async def test_workspace_predicates_and_non_key_admission_lock_compile_for_postg
     assert "fixture_jobs.tenant_id = 7" in sql[0]
     assert all("tenant_id = 7" in statement for statement in sql[:-1])
     assert len(sql) == 4  # jobs, memberships, active sources, gate; no per-job query loop
+    assert all(query.get_execution_options().get("populate_existing") is True for query in f.queries[:2])
 
 
 @pytest.mark.asyncio

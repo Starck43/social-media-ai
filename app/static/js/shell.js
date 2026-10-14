@@ -140,35 +140,63 @@
     });
 })();
 
-/* One bounded unread list drives both counter and rows; reads remain workspace-shared. */
-function notificationsBell(csrf) {
+/* One authorized, context-bound snapshot drives both the bell and its rows. */
+function notificationsBell(csrf, workspaceId, userId) {
+    const destinations = new Set(['', '/app/settings?tab=connections', '/app/tasks', '/app/sources', '/app/analytics', '/app/digests', '/app/scenarios']);
     return {
         openModal: false, loading: false, items: [], error: '', pending: false,
+        hasMore: false, complete: false, contextChanged: false, generation: 0,
         init() {
             this.$watch('items', () => this.updateDockSpace());
             this.$watch('openModal', () => this.updateDockSpace());
+            this.$watch('error', () => this.updateDockSpace());
             this.load();
+            const poll = window.setInterval(() => { if (!document.hidden) this.load(); }, 30000);
+            const changed = () => this.reset('Контекст изменился. Перезагрузите страницу.');
+            window.addEventListener('app:context-changed', changed);
+            window.addEventListener('pagehide', () => {
+                window.clearInterval(poll);
+                window.removeEventListener('app:context-changed', changed);
+                this.generation++;
+                this.items = [];
+            }, { once: true });
         },
+        headers() { return { Accept: 'application/json', 'X-App-Workspace': String(workspaceId), 'X-App-User': String(userId) }; },
+        matches(data) { return data?.context?.workspace_id === workspaceId && data?.context?.user_id === userId; },
+        reset(message) {
+            this.generation++; this.items = []; this.hasMore = false; this.complete = false;
+            this.loading = false; this.pending = false; this.contextChanged = true; this.error = message;
+            if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
+            this.updateDockSpace();
+        },
+        validItem(item) {
+            return item && typeof item.key === 'string' && item.key.length > 0 &&
+                ['notification', 'connection', 'task'].includes(item.kind) &&
+                item.workspace_id === workspaceId && item.scope === (item.kind === 'connection' ? 'personal' : 'workspace') &&
+                ['none', 'read', 'open'].includes(item.action) && destinations.has(item.destination) &&
+                (item.kind !== 'connection' || (item.read_id === null && item.destination === '/app/settings?tab=connections')) &&
+                typeof item.title === 'string' && typeof item.message === 'string' && typeof item.created_at === 'string' &&
+                (item.read_id === null || (Number.isSafeInteger(item.read_id) && item.read_id > 0));
+        },
+        badge() { return this.error ? (this.items.length ? this.items.length + ' · ?' : '?') : String(this.items.length) + (this.hasMore ? '+' : ''); },
         updateDockSpace() {
             document.documentElement.style.setProperty('--shell-dock-space',
-                this.items.length || this.openModal ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
+                this.items.length || this.error || this.openModal ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
         },
         open() {
             if (this.openModal) return;
             this.returnFocus = document.activeElement;
-            this.openModal = true;
-            this.savedOverflow = document.body.style.overflow;
+            this.openModal = true; this.savedOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
             this.$nextTick(() => { this.$refs.dialog.showModal(); this.$refs.dialog.focus(); });
             this.load();
         },
         close() {
             if (!this.openModal) return;
-            this.$refs.dialog?.close();
-            this.openModal = false;
+            this.$refs.dialog?.close(); this.openModal = false;
             document.body.style.overflow = this.savedOverflow || '';
             this.$nextTick(() => {
-                if (this.items.length) this.$refs.bell?.focus();
+                if (this.items.length || this.error) this.$refs.bell?.focus();
                 else document.getElementById('page-content')?.focus();
             });
         },
@@ -180,37 +208,56 @@ function notificationsBell(csrf) {
             else if (!event.shiftKey && (document.activeElement === last || document.activeElement === this.$refs.dialog)) { event.preventDefault(); first.focus(); }
         },
         async readOne(item) {
-            if (this.pending || this.loading) return;
+            if (this.pending || this.loading || this.contextChanged || !this.validItem(item) || !item.read_id || !this.items.some(n => n.key === item.key && n.read_id === item.read_id)) return;
+            const generation = this.generation;
             this.pending = true; this.error = '';
             let read = false;
             try {
-                const response = await fetch('/app/notifications/read/' + item.id, {
-                    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ _csrf: csrf })
+                const response = await fetch('/app/notifications/read/' + item.read_id, {
+                    method: 'POST', headers: { ...this.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ _csrf: csrf, workspace_id: String(workspaceId) })
                 });
-                if (!response.ok || response.redirected) throw new Error('read');
+                if (generation !== this.generation) return;
+                if ([401, 403, 409].includes(response.status) || response.redirected) {
+                    this.reset('Доступ или контекст изменился. Перезагрузите страницу.'); return;
+                }
+                if (!response.ok) throw new Error('read');
                 const data = await response.json();
-                if (!data.ok) throw new Error('read');
-                this.items = this.items.filter(n => n.id !== item.id);
+                if (generation !== this.generation) return;
+                if (!this.matches(data) || !data.ok) {
+                    this.reset('Не удалось подтвердить доступ к сообщению. Перезагрузите страницу.'); return;
+                }
+                // Read acknowledges the shared event, never the active problem.
+                this.items = this.items.filter(n => n.kind !== 'notification' || n.key !== item.key);
+                for (const n of this.items) if (n.key === item.key) n.read_id = null;
                 read = true;
-                // Reading can remove the focused row. The dialog retains a valid focus target.
                 this.$nextTick(() => this.$refs.dialog?.focus());
-            } catch (_) { this.error = 'Не удалось отметить уведомление прочитанным.'; }
-            finally { this.pending = false; }
+            } catch (_) { if (generation === this.generation) this.error = 'Не удалось отметить сообщение прочитанным.'; }
+            finally { if (generation === this.generation) this.pending = false; }
             if (read) await this.load();
             if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
         },
         async load() {
-            if (this.loading || this.pending) return;
+            if (this.loading || this.pending || this.contextChanged) return;
+            const generation = this.generation;
             this.loading = true;
             try {
-                const response = await fetch('/app/notifications', { headers: { Accept: 'application/json' }, cache: 'no-store' });
-                if (!response.ok || response.redirected) throw new Error('load');
+                const response = await fetch('/app/notifications', { headers: this.headers(), cache: 'no-store' });
+                if (generation !== this.generation) return;
+                if ([401, 403, 409].includes(response.status) || response.redirected) {
+                    this.reset('Доступ или контекст изменился. Перезагрузите страницу.'); return;
+                }
+                if (!response.ok) throw new Error('load');
                 const data = await response.json();
-                if (!Array.isArray(data.notifications)) throw new Error('shape');
-                this.items = data.notifications; this.error = '';
-            } catch (_) { this.error = 'Не удалось обновить уведомления.'; }
-            finally { this.loading = false; }
+                if (generation !== this.generation) return;
+                if (!this.matches(data)) { this.reset('Контекст изменился. Перезагрузите страницу.'); return; }
+                if (!Array.isArray(data.notifications) || data.notifications.length > 100 ||
+                    data.count !== data.notifications.length || typeof data.complete !== 'boolean' || typeof data.has_more !== 'boolean' ||
+                    !data.notifications.every(n => this.validItem(n)) || new Set(data.notifications.map(n => n.key)).size !== data.notifications.length) throw new Error('shape');
+                this.items = data.notifications; this.hasMore = data.has_more; this.complete = data.complete;
+                this.error = data.complete ? '' : 'Часть уведомлений недоступна. Состояние не полностью известно.';
+            } catch (_) { if (generation === this.generation) { this.complete = false; this.error = 'Не удалось обновить уведомления. Показаны ранее известные сообщения.'; } }
+            finally { if (generation === this.generation) this.loading = false; }
         }
     };
 }

@@ -54,8 +54,10 @@ const path = require('path');
                             await route.fulfill({
                                 contentType: 'application/json',
                                 body: JSON.stringify({
+                                    context: { workspace_id: 7, user_id: 101 }, count: notificationRead ? 0 : 1, complete: true, has_more: false,
                                     notifications: notificationRead ? [] : [{
-                                        id: 1,
+                                        id: 1, key: 'notification:7:1', kind: 'notification', scope: 'workspace', workspace_id: 7,
+                                        read_id: 1, action: 'read', state: 'unread', destination: '',
                                         title: 'Тестовое уведомление',
                                         message: 'Проверка локального диалога',
                                         created_at: 'fixture',
@@ -66,11 +68,11 @@ const path = require('path');
                             return;
                         }
                         if (u.pathname === '/app/notifications/read/1') {
-                            if (route.request().method() !== 'POST' || !route.request().postData().includes('_csrf=')) throw Error('Missing read POST/CSRF');
+                            if (route.request().method() !== 'POST' || !route.request().postData().includes('_csrf=') || !route.request().postData().includes('workspace_id=7')) throw Error('Missing read POST/CSRF');
                             notificationRead = true;
                             await route.fulfill({
                                 contentType: 'application/json',
-                                body: '{"ok":true}'
+                                body: JSON.stringify({ ok: true, context: { workspace_id: 7, user_id: 101 } })
                             });
                             return;
                         }
@@ -190,8 +192,8 @@ const path = require('path');
                         });
                         const box = await dialog.locator('.ui-notification-panel').boundingBox();
                         if (box.x < 0 || box.x + box.width > width) throw Error('Modal overflow');
-                        await dialog.getByRole('button', { name: 'Отметить прочитанным', exact: true }).click();
-                        await dialog.getByText('Нет уведомлений', { exact: true }).waitFor({ state: 'visible' });
+                        await dialog.getByRole('button', { name: 'Прочитать сообщение — для всего пространства', exact: true }).click();
+                        await dialog.getByText('Нет доступных уведомлений в текущем окне', { exact: true }).waitFor({ state: 'visible' });
                         if (!(await dialog.isVisible())) throw Error('Last read unexpectedly closed dialog');
                         await page.keyboard.press('Escape');
                         await dialog.waitFor({

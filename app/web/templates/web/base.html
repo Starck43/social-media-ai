@@ -65,8 +65,6 @@
             </div>
             <div id="page-actions" class="shell-page-actions">{% block page_actions %}{% endblock %}</div>
             <div class="shell-navbar-tools">
-                {# Existing caller-only connection indicator; unified feed is a separate package. #}
-                {% if connection_alerts %}<a href="/app/settings?tab=connections" class="shell-icon-button" aria-label="Подключения требуют внимания" title="Подключения требуют внимания">{{ icon('settings') }}</a>{% endif %}
                 {% if panel_content|trim %}<button type="button" class="shell-icon-button" data-dialog-open="context-panel" aria-label="Открыть контекстную панель">{{ icon('document') }}</button>{% endif %}
 
             </div>

@@ -1,9 +1,24 @@
 # Assistant shell implementation notes
 
-Scope: shell package A in [the canonical board](README.md). This is implementation
-and validation guidance, not another queue or an acceptance claim. Packages B/C/D,
-mixed home results/upcoming schedules and PR185 real-app acceptance remain open.
+Scope: original shell package A in [the canonical board](README.md), followed by
+merged B/C/D boundaries below. This is guidance, not another queue or whole-gate
+acceptance. Mixed home results/upcoming schedules remain open. Owner-local bounded
+home and A/B acceptance is recorded separately in the delivered index.
 No migration, SPA, new dependency or permission model is introduced.
+
+## Current integrated boundary
+
+Audited dev `c62f948`: A #188 (merge `2c017f3`), B #189 (`42d0432`),
+C #190 (`734e479`), D #191 (`ae77f55`). B replaces the original A-only unread
+projection with one permitted event/connection/task area; C adds browser-local
+optional display/hint policy, not durable state. D separates personal/workspace
+settings, owned/granted context, guest-web-chat denial and global-admin entry.
+See [notifications](../NOTIFICATIONS.md#current-web-bell-and-display-policy),
+[settings/access](../TENANCY.md#web-settings-and-ownedgranted-workspace-context)
+and [delivered evidence](../IMPLEMENTATION_STATUS.md). Subsequent owner-local
+home/A/B checks do not certify all C/D, accessibility or inherited runtime gaps.
+The A page inventory and source-pinned verification below are historical evidence;
+later patches must not relabel those tests as combined-tree acceptance.
 
 ## Page inventory
 
@@ -62,8 +77,9 @@ This is node relocation, not copied forms or a new client router.
   and reports unknown/error, not a healthy empty state. Empty snapshots hide the
   floating trigger; an open last-item dialog keeps its empty/close state.
   POST reads now explicitly verify CSRF. Existing tenant-scoped managers and
-  workspace-shared `is_read` remain authoritative. No personal/task signal feed
-  is implemented. The existing caller-only connection indicator stays separate.
+  workspace-shared `is_read` remain authoritative. That was the A-only behavior.
+  Merged B now includes caller-only connection and permitted failed-task signals;
+  see the current notification contract above.
 - GET `/app/settings/invites` checks `can_manage_workspace(active_target)` before
   any invite query or one-time code pop; it returns a no-store partial. No menu
   opening issues or sends an invitation. Existing POST issue/revoke guards,

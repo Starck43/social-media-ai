@@ -193,6 +193,11 @@
 
     {# ── team ────────────────────────────────────────────────────────── #}
     {% elif tab == 'team' %}
+        <div class="mt-6 ui-card" data-team-join>
+            <h2 class="text-sm font-semibold">Присоединиться к другому пространству</h2>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Есть код приглашения? Введите его на странице вступления в команду.</p>
+            <a href="/app/invite" class="mt-3 inline-flex ui-control">Присоединиться по коду</a>
+        </div>
         {% if member_level and not perms.can_manage_workspace(tenant.id if tenant else none) %}
             <div class="mt-6 ui-card" data-own-level>
                 <p class="text-xs text-slate-500 dark:text-slate-400">Ваш уровень доступа</p>

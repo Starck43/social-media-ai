@@ -55,6 +55,19 @@ const report = { cases: [], interactions: [], failures: [] };
             ],
           }),
         });
+      if (u.pathname === "/app/workspaces/select") {
+        const fields = new URLSearchParams(request.postData());
+        calls.push({
+          url: u.pathname,
+          method: request.method(),
+          csrf: fields.get("_csrf"),
+          tenant: fields.get("tenant_id"),
+        });
+        return route.fulfill({
+          contentType: "text/html",
+          body: "<p>Mock workspace selection only</p>",
+        });
+      }
       if (u.pathname === "/app/settings/invites") {
         calls.push({ url: u.pathname, method: request.method() });
         return route.fulfill({
@@ -130,6 +143,13 @@ const report = { cases: [], interactions: [], failures: [] };
                 "read-only invite entry gated",
               );
             }
+            assert.equal(
+              await f.page
+                .locator(".shell-navbar")
+                .evaluate((el) => getComputedStyle(el).backgroundColor),
+              "rgba(0, 0, 0, 0)",
+              "navbar only has a separator, no distinct fill",
+            );
             const metrics = await f.page.evaluate(() => ({
               w: document.documentElement.scrollWidth,
               viewport: innerWidth,
@@ -195,6 +215,66 @@ const report = { cases: [], interactions: [], failures: [] };
           if (width === 1440 && theme === "system")
             console.log("Checked", name);
         }
+    for (const width of [390, 1440]) {
+      const f = await setup("dashboard", width);
+      try {
+        if (width < 768)
+          await f.page
+            .locator('[data-dialog-open="navigation-drawer"]')
+            .click();
+        const scope = f.page.locator(
+          width < 768 ? "#navigation-drawer" : ".shell-sidebar",
+        );
+        await scope.locator(".shell-account-trigger").click();
+        assert.equal(
+          await scope.locator(".shell-workspace-current").count(),
+          1,
+          "one active workspace, no duplicate context row",
+        );
+        assert.equal(
+          await scope.locator('form[action="/app/workspaces/select"]').count(),
+          2,
+          "all alternate workspace switches",
+        );
+        assert.equal(
+          await scope.locator('a[href="/app/invite"]').count(),
+          0,
+          "join is not a daily workspace action",
+        );
+        await f.page.screenshot({
+          path: path.join(fixtures, `workspace-menu-${width}.png`),
+        });
+        await scope
+          .getByRole("button", {
+            name: "Переключиться в пространство «Команда аналитики»",
+            exact: true,
+          })
+          .click();
+        await f.page.waitForURL("**/app/workspaces/select");
+        assert.deepEqual(f.calls, [
+          {
+            url: "/app/workspaces/select",
+            method: "POST",
+            csrf: "local-fixture-only",
+            tenant: "8",
+          },
+        ]);
+        assert.deepEqual(f.errors, []);
+        report.interactions.push({
+          name: "grouped-workspace-post-csrf",
+          width,
+        });
+      } catch (e) {
+        report.failures.push({
+          name: "workspace-switch",
+          width,
+          error: e.message,
+          errors: f.errors,
+        });
+      } finally {
+        await f.context.close();
+      }
+    }
     for (const width of [390, 1440]) {
       const f = await setup("settings", width);
       try {
@@ -373,6 +453,68 @@ const report = { cases: [], interactions: [], failures: [] };
       } finally {
         await f.context.close();
       }
+    }
+    const rail = await setup("dashboard", 1440);
+    try {
+      await rail.page.locator("[data-sidebar-collapse]").click();
+      assert.equal(
+        await rail.page
+          .locator("[data-sidebar-collapse]")
+          .getAttribute("aria-expanded"),
+        "false",
+      );
+      assert.equal(
+        await rail.page
+          .locator("[data-sidebar-collapse]")
+          .getAttribute("aria-label"),
+        "Развернуть навигацию",
+      );
+      assert.equal(
+        await rail.page.evaluate(() =>
+          localStorage.getItem("app.sidebar.collapsed"),
+        ),
+        "true",
+      );
+      await rail.page.screenshot({
+        path: path.join(fixtures, "compact-sidebar.png"),
+      });
+      await rail.page
+        .locator(".shell-sidebar .shell-sidebar-footer [data-popover-trigger]")
+        .click();
+      const panel = rail.page.locator("#theme-popover-desktop");
+      const box = await panel.boundingBox();
+      assert.ok(
+        box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440,
+        "footer theme stays inside viewport",
+      );
+      await rail.page.screenshot({
+        path: path.join(fixtures, "footer-theme.png"),
+      });
+      await panel.locator('[data-theme-choice="dark"]').click();
+      await rail.page.waitForFunction(() =>
+        document.documentElement.classList.contains("dark"),
+      );
+      assert.ok(
+        await rail.page
+          .locator(".shell-sidebar .shell-sidebar-footer [data-popover-trigger]")
+          .evaluate((e) => document.activeElement === e),
+      );
+      await rail.page.reload();
+      await rail.page.waitForFunction(
+        () => document.documentElement.dataset.sidebarCollapsed === "true",
+      );
+      assert.deepEqual(rail.errors, []);
+      report.interactions.push({
+        name: "compact-rail-persistence-footer-theme",
+      });
+    } catch (e) {
+      report.failures.push({
+        name: "rail-footer",
+        error: e.message,
+        errors: rail.errors,
+      });
+    } finally {
+      await rail.context.close();
     }
     for (const name of ["scenario_detail", "scenario_wizard"]) {
       const f = await setup(name, 390);

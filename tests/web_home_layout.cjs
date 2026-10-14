@@ -23,7 +23,7 @@ const path = require('path');
     };
     try {
         for (const state of ['owner', 'empty', 'denied', 'long'])
-            for (const width of [375, 390, 768, 1440])
+            for (const width of [375, 390, 768, 1199, 1200, 1440])
                 for (const theme of ['light', 'dark', 'system']) {
                     const context = await browser.newContext({
                         viewport: {
@@ -100,6 +100,21 @@ const path = require('path');
                         ...dimensions,
                         errors
                     });
+                    const shellMetrics = await page.evaluate(() => {
+                        const navbar = document.querySelector('.shell-navbar');
+                        const main = document.querySelector('main');
+                        const results = document.querySelector('[data-home-results]').getBoundingClientRect();
+                        const tasks = document.querySelector('[data-home-tasks]')?.getBoundingClientRect();
+                        return {fill:getComputedStyle(navbar).backgroundColor, mainWidth:main.clientWidth, mainScroll:main.scrollWidth,
+                            homeWidth:document.querySelector('.ui-home').getBoundingClientRect().width,
+                            available:main.clientWidth - parseFloat(getComputedStyle(main).paddingLeft) - parseFloat(getComputedStyle(main).paddingRight),
+                            results:{x:results.x,y:results.y,right:results.right,bottom:results.bottom}, tasks:tasks?{x:tasks.x,y:tasks.y}:null};
+                    });
+                    if(shellMetrics.fill !== 'rgba(0, 0, 0, 0)') throw Error('Navbar has separate fill');
+                    if(shellMetrics.mainScroll > shellMetrics.mainWidth+1) throw Error('Main horizontal overflow');
+                    if(Math.abs(shellMetrics.homeWidth-shellMetrics.available)>1) throw Error('Home is not using available width');
+                    if(shellMetrics.tasks && width>=1200 && Math.abs(shellMetrics.tasks.y-shellMetrics.results.y)>1) throw Error('Wide home cards not in one row');
+                    if(shellMetrics.tasks && width<1200 && shellMetrics.tasks.y<shellMetrics.results.bottom) throw Error('Narrow home cards do not stack');
                     if (dimensions.document > width) throw Error(`Horizontal overflow ${state}/${width}/${theme}: ${dimensions.document}`);
                     const dock = await page.locator('.shell-notification-dock').boundingBox();
                     const content = await page.locator('main').boundingBox();
@@ -118,13 +133,21 @@ const path = require('path');
                     await page.evaluate(() => document.getElementById('page-content').scrollTo(0, 0));
                     if (dimensions.mode !== (theme === 'system' ? 'dark' : theme)) throw Error('Theme mismatch');
                     if (width >= 768) {
+                        const controls = await page.evaluate(() => {
+                            const sidebar = document.querySelector('.shell-sidebar').getBoundingClientRect();
+                            const collapse = document.querySelector('[data-sidebar-collapse]').getBoundingClientRect();
+                            const theme = document.querySelector('.shell-sidebar-footer [data-popover-trigger]').getBoundingClientRect();
+                            return {rightGap:sidebar.right-collapse.right, bottomGap:sidebar.bottom-theme.bottom, themeLeft:theme.left-sidebar.left};
+                        });
+                        if(controls.rightGap>13 || controls.rightGap<0) throw Error('Collapse not at sidebar right edge');
+                        if(controls.bottomGap>13 || controls.themeLeft>13) throw Error('Theme not at sidebar bottom left');
                         await page.locator('[data-sidebar-collapse]').click();
                         await page.waitForFunction(() => document.documentElement.dataset.sidebarCollapsed === 'true');
                         if (await page.locator('.shell-sidebar').evaluate(el => el.getBoundingClientRect().width) !== 64) throw Error('Compact rail width');
                         await page.locator('[data-sidebar-collapse]').click();
                     }
                     if (state === 'owner' && width === 1440 && theme === 'light') {
-                        const account = page.locator('.shell-sidebar [data-popover-trigger]');
+                        const account = page.locator('.shell-sidebar .shell-account-trigger');
                         await account.hover();
                         await page.locator('#account-desktop').waitFor({ state: 'visible' });
                         await account.click();
@@ -144,8 +167,9 @@ const path = require('path');
                     if (errors.length) throw Error(errors.join(';'));
                     if (state === 'owner' && width === 375 && theme === 'light') {
                         await page.getByRole('button', { name: 'Открыть навигацию', exact: true }).click();
-                        await page.locator('#navigation-drawer [data-popover-trigger]').click();
-                        await page.locator('#navigation-drawer').getByText('Присоединиться по коду', { exact: true }).waitFor({ state: 'visible' });
+                        await page.locator('#navigation-drawer .shell-account-trigger').click();
+                        await page.locator('#navigation-drawer').getByRole('heading', { name: 'Пространства', exact: true }).waitFor({ state: 'visible' });
+                        if (await page.locator('#navigation-drawer a[href="/app/invite"]').count()) throw Error('Rare join action remained in daily workspace menu');
                         await page.keyboard.press('Escape');
                         await page.keyboard.press('Escape');
                         await page.locator('#navigation-drawer').waitFor({ state: 'hidden' });
@@ -173,8 +197,11 @@ const path = require('path');
                         await dialog.waitFor({
                             state: 'hidden'
                         });
-                        await page.getByRole('button', { name: 'Тема оформления', exact: true }).click();
-                        await page.locator('[data-theme-choice=dark]').click();
+                        await page.getByRole('button', { name: 'Открыть навигацию', exact: true }).click();
+                        await page.locator('#navigation-drawer').getByRole('button', { name: 'Тема оформления', exact: true }).click();
+                        await page.locator('#navigation-drawer [data-theme-choice=dark]').click();
+                        await page.keyboard.press('Escape');
+                        await page.locator('#navigation-drawer').waitFor({state:'hidden'});
                         await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
                         // Enter keyboard modality before asserting :focus-visible styling.
                         await page.keyboard.press('Tab');

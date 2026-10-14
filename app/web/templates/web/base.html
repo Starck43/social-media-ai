@@ -47,11 +47,12 @@
     {% if user %}
     <aside class="shell-sidebar" aria-label="Боковая навигация">
         {% set menu_id = 'desktop' %}{% include "web/_shell_nav.html" %}
-        <button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" title="Свернуть / развернуть навигацию">{{ icon('menu') }}</button>
+        <div class="shell-sidebar-footer">{% set theme_id = 'desktop' %}{% include "web/_shell_theme.html" %}</div>
     </aside>
     <dialog id="navigation-drawer" class="shell-drawer" aria-label="Навигация">
         <button type="button" class="shell-icon-button" data-dialog-close aria-label="Закрыть навигацию">{{ icon('close') }}</button>
         {% set menu_id = 'mobile' %}{% include "web/_shell_nav.html" %}
+        <div class="shell-sidebar-footer">{% set theme_id = 'mobile' %}{% include "web/_shell_theme.html" %}</div>
     </dialog>
     {% endif %}
     <div class="shell-page">
@@ -67,20 +68,14 @@
                 {# Existing caller-only connection indicator; unified feed is a separate package. #}
                 {% if connection_alerts %}<a href="/app/settings?tab=connections" class="shell-icon-button" aria-label="Подключения требуют внимания" title="Подключения требуют внимания">{{ icon('settings') }}</a>{% endif %}
                 {% if panel_content|trim %}<button type="button" class="shell-icon-button" data-dialog-open="context-panel" aria-label="Открыть контекстную панель">{{ icon('document') }}</button>{% endif %}
-                <div class="shell-popover" data-shell-popover>
-                    <button type="button" class="shell-icon-button" data-popover-trigger aria-expanded="false" aria-controls="theme-popover" aria-label="Тема оформления" title="Тема оформления">{{ icon('sun') }}</button>
-                    <div id="theme-popover" class="shell-popover-panel shell-theme-panel" hidden>
-                        {% for value, label, glyph in [('system', 'Системная', 'monitor'), ('light', 'Светлая', 'sun'), ('dark', 'Тёмная', 'moon')] %}
-                        <button type="button" data-theme-choice="{{ value }}" aria-pressed="false">{{ icon(glyph) }}<span>{{ label }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
-                        {% endfor %}
-                    </div>
-                </div>
+
             </div>
         </header>
         {% include "web/_flashes.html" %}
         <main id="page-content" tabindex="-1" class="shell-content">{% block content %}{% endblock %}</main>
     </div>
 </div>
+{% if not user %}<div class="shell-guest-theme">{% set theme_id = 'guest' %}{% include "web/_shell_theme.html" %}</div>{% endif %}
 {% if panel_content|trim %}<dialog id="context-panel" class="shell-right-panel" aria-label="Контекст страницы"><button type="button" class="shell-icon-button" data-dialog-close aria-label="Закрыть контекстную панель">{{ icon('close') }}</button>{{ panel_content }}</dialog>{% endif %}
 {% if user and tenant %}
 {% include "web/_shell_notifications.html" %}

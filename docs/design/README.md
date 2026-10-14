@@ -192,6 +192,28 @@ not a claim that other services use exactly this layout.
    account menu, not the daily rail. Every compact link keeps its accessible name,
    focus/hover tooltip and active marker; no invented unavailable sections.
 
+### Owner-requested shell refinements
+
+These owner choices supersede the original navbar theme and single-column home
+placement above for package A; they do not implement B/C/D or the remaining home
+feed/schedule functionality:
+- Put a reversible double-chevron collapse control at the right of the desktop
+  account/navigation block. Keep local collapse state and accessible control labels.
+  Put AppTheme choices at the bottom left of the rail; on mobile use the navigation
+  drawer footer. Remove the web navbar theme control, not the mobile drawer opener.
+- Group workspace selection/creation separately from current-workspace tools and
+  account/platform utilities. Show one clearly marked active workspace and explicit
+  switch targets; use canonical workspace role captions only for explanation.
+  Keep every mutation POST+CSRF and every server permission check unchanged.
+- Move join-by-code to Settings Team for users with an active workspace, available
+  independently of invitation-management rights. Preserve the no-workspace join
+  entry so first-time users are not stranded; do not introduce a daily duplicate.
+- Let home use the available content width. At 1200px viewport and wider, permitted
+  latest-results/tasks cards share a row; below that breakpoint they stack. If tasks
+  are forbidden, results retain the full width. Do not change their data/VIEW gates.
+- Give every web navbar a transparent background and retain its separator; other
+  page-specific form width limits and the admin shell remain unchanged.
+
 ### Implementation sequence and bounded handoff
 
 - **A — Shell, next implementation package.** Inventory all base-extending pages,
@@ -276,7 +298,7 @@ checks; planning this task does not satisfy them or the PRD-08 gate.
 | Work | Owner / branch / PR | State | Next action |
 | --- | --- | --- | --- |
 | PRD-08.1 outcome-focused home overview | Unassigned for mixed results/upcoming schedules; cleanup integrated via [PR #185](https://github.com/Starck43/social-media-ai/pull/185), merge `628b021` | OPEN — cleanup MERGED; full layer and deferred real-app checks remain open | Preserve cleanup and run deferred ASGI/DB role/workspace checks on a safe existing target. Attention implementation moved to PRD-08.2; mixed results and actual upcoming schedules remain here. No migration or deployment accepted. |
-| PRD-08.2 assistant shell / notification area | Remote Notion agent; `feat/assistant-shell`, [Draft PR #188](https://github.com/Starck43/social-media-ai/pull/188) (A only) | BLOCKED — all-page sandbox checks passed; real-app acceptance pending | A follow-up: 72 isolated pytest checks, mocked notification state, 336 all-page viewport/theme cases with 11 interaction contracts and repeated 48 home cases with 2 interactions passed. Pin latest PR HEAD for Kilo R8/R10 real roles/workspace/ASGI/DB and invite acceptance; no full-suite or integration claim. B/C/D, PR185 deferred checks, source_ids and real overflow acceptance remain open. No merge, migration or live actions. |
+| PRD-08.2 assistant shell / notification area | Remote Notion agent; `feat/assistant-shell`, [Draft PR #188](https://github.com/Starck43/social-media-ai/pull/188) (A only) | BLOCKED — owner shell polish sandbox checks passed; real-app acceptance pending | A owner follow-up: right-edge chevrons, footer AppTheme, grouped workspace menu, join in Team, full-width home with 1200px split and transparent navbar. 80 isolated pytest checks, mocked notification state, 336 all-page cases + 14 interactions and 72 home cases + 2 interactions passed. Pin latest PR HEAD for Kilo R8/R10 real roles/workspace/ASGI/DB and invite acceptance; no full-suite or integration claim. B/C/D, PR185 deferred checks, source_ids and real overflow acceptance remain open. No merge, migration or live actions. |
 | Task-add source selection initialization | Unassigned; no implementation branch or PR | OPEN — inherited Alpine runtime follow-up | Owner reproduced addTaskForm().task.source_ids missing while :checked calls includes; pre-fix control has the same error. Evidence: [PR178 runtime report](https://github.com/Starck43/social-media-ai/pull/178#issuecomment-6154504317). Next: initialize source_ids in the actual add-task model and verify selection/reset with real Alpine. Accept when opening the form has no includes error and selected IDs round-trip without changing submit semantics; no server/DB/live probes required. |
 | Mobile web page-width overflow | Unassigned; no implementation branch or PR | OPEN — inherited layout follow-up | Owner observed app document width 432px under 375px mobile emulation; confirmation dialog remains contained. Evidence: [PR175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703). Next: PRD-08.2 A must cover the shared shell overflow while preserving this acceptance boundary; identify the overflowing base layout element independently of the Chromium emulation discrepancy. Accept when affected pages fit a verified 375px viewport without unintended horizontal scrolling and confirmation focus/keyboard behavior is retained. |
 | PRD-02 digest send permission parity | Remote Notion agent; `fix/digest-send-permission-parity`, [Draft PR #176](https://github.com/Starck43/social-media-ai/pull/176); handoff requested via PR180 | DEFERRED — owner stopped coordinator infrastructure work; recipient acknowledgement pending | Delegation request: PR180 comment6166461970. Reuse existing collection exception; resolve reusable orchestration/fallback contract once, then delegate remaining PR176 acceptance at pinned verification HEAD0c18bab. Preserve all work/evidence; no duplicate runs, parallel shared-schema writers, repair or merge. Not DONE; no claim that recipient accepted ownership. |

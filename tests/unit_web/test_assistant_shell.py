@@ -194,3 +194,84 @@ def test_workspace_switch_keeps_post_and_csrf():
     assert 'method="post" action="/app/workspaces/select"' in markup
     assert 'name="tenant_id" value="8"' in markup
     assert 'name="_csrf" value="csrf&#34;&lt;token&gt;"' in markup
+
+
+def test_workspace_group_has_explicit_switch_target_and_no_daily_join_for_members():
+    values = context(manager=True)
+    values["workspaces"] = [
+        SimpleNamespace(
+            active=True, tenant=SimpleNamespace(id=7, name="Current"), role="SUPERUSER", role_label="Владелец"
+        ),
+        SimpleNamespace(
+            active=False, tenant=SimpleNamespace(id=8, name="Other <script>"), role="MANAGER", role_label="Менеджер"
+        ),
+    ]
+    markup = environment().get_template("shell-fixture.html").render(**values)
+    assert 'aria-labelledby="workspaces-desktop"' in markup
+    assert 'aria-label="Переключиться в пространство «Other &lt;script&gt;»"' in markup
+    assert "Переключиться · Менеджер" in markup
+    assert 'href="/app/invite"' not in markup
+    assert 'action="/app/workspaces/select"' in markup
+    assert 'name="tenant_id" value="8"' in markup
+    assert 'action="/app/logout"' in markup
+
+
+@pytest.mark.parametrize("manager", [True, False])
+def test_team_exposes_join_without_granting_invite_issuance(manager):
+    values = context(manager=manager)
+    values.update(
+        tab="team", visible_tabs=["team"], memberships=[], member_names={}, member_role_keys={}, role_labels={}
+    )
+    markup = environment().get_template("web/settings.html").render(**values)
+    assert "data-team-join" in markup
+    assert 'href="/app/invite"' in markup
+    assert ("data-invite-open" in markup) is manager
+
+
+def test_theme_and_collapse_leave_navbar_and_keep_unique_control_targets():
+    markup = environment().get_template("shell-fixture.html").render(**context())
+    tags = Tags(markup).tags
+    collapse = [attrs for _, attrs in tags if "data-sidebar-collapse" in attrs]
+    assert len(collapse) == 1
+    assert collapse[0]["aria-controls"] == "nav-desktop"
+    assert "theme-popover-desktop" in markup and "theme-popover-mobile" in markup
+    assert "theme-popover-guest" not in markup
+    header = markup.split('<header class="shell-navbar">', 1)[1].split("</header>", 1)[0]
+    assert "Тема оформления" not in header
+    assert "shell-sidebar-footer" in markup
+
+
+@pytest.mark.parametrize(
+    "codename,role_id,expected",
+    [
+        ("SUPERUSER", 1, "Владелец"),
+        ("MANAGER", 1, "Менеджер"),
+        ("UNKNOWN", 1, "Роль не назначена"),
+        (None, None, "Владелец"),
+    ],
+)
+def test_workspace_role_caption_reuses_canonical_labels_without_app_imports(codename, role_id, expected):
+    import runpy
+
+    # This inspected module imports only dataclasses/typing, not app/runtime/DB.
+    roles = runpy.run_path(str(ROOT / "app/services/tenancy/member_roles.py"))
+    tree = ast.parse((ROOT / "app/web/middleware.py").read_text())
+    assignment = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "level" for t in n.targets)
+    )
+    role = SimpleNamespace(codename=SimpleNamespace(name=codename)) if codename else None
+    scope = dict(
+        member_roles=SimpleNamespace(resolve=roles["resolve"], key_of=roles["key_of"]),
+        membership=SimpleNamespace(role=role, role_id=role_id),
+    )
+    scope["level"] = eval(compile(ast.Expression(assignment.value), "workspace role caption", "eval"), scope)
+    field = next(
+        value
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Dict)
+        for key, value in zip(n.keys, n.values)
+        if isinstance(key, ast.Constant) and key.value == "role_label"
+    )
+    assert eval(compile(ast.Expression(field), "workspace role label", "eval"), scope) == expected

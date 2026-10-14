@@ -219,3 +219,67 @@ The inherited add-task source_ids defect remains open: the empty-source fixture
 must not be reported as source selection acceptance. Read-only scenario-wizard
 runtime is not covered by the six read-only variants. Packages B/C/D, remaining
 PRD-08.1 and feature integration remain outside this package; keep PR Draft.
+
+### Owner-requested layout/menu polish
+
+Continued A from `06d0c56cb342e79db78e446e00084ce23f6dedaf` in isolated
+`/data/smai-shell-polish`. The existing dirty source checkouts were preserved;
+owner-local status is still inaccessible. The newly inspected dev baseline was
+`4a8d84182b58f22ffac67c80a13ec1072546b4ef`; reservation is recorded on the board.
+
+The double-chevron collapse button is separate from the account popover, at its
+right edge, and reverses with the existing locally saved rail state. AppTheme is
+now a reusable footer partial, at bottom left on desktop/in the mobile drawer;
+the mobile navigation opener remains in the navbar. An anonymous shell keeps a
+bottom-left theme control. The navbar is transparent with its existing separator.
+
+The account popover now separates Spaces / Current workspace / Account, explains
+switch targets, shows the active workspace once, and names the platform admin
+new-tab destination. Role captions are derived from existing member_roles rather
+than treating raw SUPERUSER as a platform identity. This adds a display field to
+the already-loaded memberships, not a query or another permission predicate.
+Selection/create/logout retain POST+CSRF; invite management keeps the original gate.
+Join-by-code is in Settings Team for existing members, independent of invite rights.
+The no-workspace join fallback is retained to preserve first-time entry.
+
+Home uses its available width and a two-column results/tasks grid at viewport
+1200px; smaller screens stack. Only permitted tasks produce the second column;
+results use the whole row when tasks are forbidden. Existing query/data scopes,
+result limits and recent-task semantics are unchanged. The canonical board records
+these explicit owner overrides to the earlier navbar/single-column placement.
+
+New isolated regressions cover grouped multi-workspace forms, Team join/invite
+parity, canonical display-role captions, footer/control placement and unique
+popover targets. The home harness also checks available width, transparent navbar,
+main/document overflow, and both sides of 1199/1200px. The all-page harness adds
+transparent navbar and mocked POST/CSRF workspace switching, never a real switch.
+Real role/tenant/ASGI/DB acceptance and the previously listed limitations remain
+open; no runtime/application startup, schema operation or provider/send is used.
+
+Final sequential isolated run on the published source candidate passed:
+- 80 pytest checks across unit_web/test_assistant_shell.py,
+  unit_web/test_dashboard_overview.py and unit_web/test_template_autoescape.py;
+  root conftest/cache disabled, 0 failures/skips, exit 0 (4.92s).
+- Mocked notification state/error/CSRF contracts passed.
+- 72 home viewport/state/theme cases plus 2 interactions passed, including
+  1199/1200px breakpoint boundaries.
+- 336 all-page viewport/theme cases plus 14 interaction contracts passed,
+  including desktop/mobile workspace POST+CSRF and compact-rail persistence.
+- Both changed browser scripts passed node --check; git diff --check passed.
+
+Reproduction uses the existing commands above and
+`pytest --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`
+with the three named unit files, followed sequentially by web_shell_state.cjs,
+web_home_layout.cjs and web_shell_pages.cjs. Environment: Python 3.13.14,
+pytest 9.1.1, Jinja 3.1.6, Playwright 1.63.0, Chromium 153.0.8010.12.
+Browser assets were local and all requests were fulfilled/aborted by the harness.
+Selector corrections scope account/footer controls after relocation; assertions
+were not removed. This is isolated fixture coverage, not full-suite acceptance.
+
+Representative final screenshots were reviewed at 1440/1200/1199px light,
+390px dark with long text, desktop/mobile workspace menus, compact rail and the
+footer theme popover. The mobile close button is right-aligned; the account menu
+has bounded scrolling so navigation/theme remain reachable. The connection
+settings glyph is now a gear, visually distinct from the relocated theme control.
+This review is not an individual full visual matrix or measured contrast check.
+All real-app/Kilo R8/R10 and previously recorded acceptance gaps remain open.

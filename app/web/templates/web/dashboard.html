@@ -3,10 +3,14 @@
 {% block title %}Обзор — AI Assistant{% endblock %}
 {% block extra_head %}
 <style>
-    .ui-home { width: 100%; max-width: 960px; margin-inline: auto; }
+    .ui-home { width: 100%; max-width: none; margin-inline: auto; }
     .ui-home-shell :is(header button, header select, nav[aria-label="Основные разделы"] a),
     .ui-home :is(a, select) { min-height: 44px; }
     .ui-home a:not(.ui-home-result) { display: inline-flex; align-items: center; }
+    .ui-home-grid { display: grid; gap: 24px; align-items: start; }
+    @media (min-width: 1200px) {
+        .ui-home-grid-split { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+    }
     .ui-home-title { overflow-wrap: anywhere; font-size: 1.75rem; line-height: 1.25;
         display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
     .ui-home h2 { font-size: 1.125rem; line-height: 1.5; font-weight: 600; }
@@ -58,7 +62,7 @@
 
     {# Extension point: actionable attention projection; hidden until implemented. #}
 
-    <div class="space-y-6">
+    <div class="ui-home-grid{% if offer.tasks %} ui-home-grid-split{% endif %}">
         <section data-home-results class="ui-card min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>

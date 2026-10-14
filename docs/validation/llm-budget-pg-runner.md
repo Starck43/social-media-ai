@@ -23,6 +23,33 @@ acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
   and initial non-network injected commit-loss caveats are not superseded.
   No repetition, cleanup, definition workaround or guard disable is authorized.
 
+## Formatter v2 received and published — no test permission implied
+
+Latest runner/source FULL SHA: `8869263046368af840bbe5a9dc8c17c3e2c99eea`, parent
+`bee661c7c4e727ef787ad9fee6ed6f7b8596548f`. Exactly one file +4/−12:
+four negative-helper call wraps collapsed, no argument/logic changes.
+Received2315-byte patch SHA256:
+`113987c6ab812ab794f2ec5c7ca4cd4ce1442f4c82b6099b3c9a47b8e310d2ca`.
+Base d012a58e's Python source is unchanged in bee661c; clean exact-base apply,
+whitespace and scope checks passed. Published file matches attachment exactly.
+Git blob `67f6b3900cf734710fc24a890e949a4e97c11d5f`;
+file SHA256 `4bd089e55e8c26da1640bcb084697c9f50966d11e923cbda24667655dd7e8e5a`.
+Remote lexical tokens before/after are identical; this is NOT Python AST
+execution. No application/migration, manifest/identity or six-check file changes.
+
+Owner reports Black/isort and AST parse exit0 on formatted source, then explicit
+AST compile exit0 on both files; command rendering is abbreviated/flattened,
+not independently reproduced remotely. Those owner-local results retain source
+attribution, not a new remotely executed suite or PG certification. The prior
+statement that bee661c reverted formatting is incorrect: that commit changed
+only docs/manifest, and the local formatter patch had not been published.
+
+New6 no-DB checks remain NOT RUN. Remote project .venv/Kilo absent; local review
+.venv access and empirical report isolation still require a separate agreed
+plan. Attachment receipt does NOT authorize the proposed symlink, diagnostic,
+pytest, connection/SQL, target creation, role/grant or migration. No runner guard
+is relaxed and no accepted31 or old style scope is rerun.
+
 ## Namespace correction and target proposal review — no SQL authorized
 
 The initial namespace `7417a3edbb5e42ce990c721c900d682f2` at d012a58e and earlier
@@ -38,9 +65,10 @@ The runner Python source remains at d012a58e; this is a documentation/argument
 manifest correction, not a code or tested-SHA successor.
 
 Owner-relayed second offline report states AST parse and Black/isort exit0 on
-locally formatted source; formatter v2 patch (+4/−12) is referenced only by an
-owner-local path and has NOT been attached/integrated. Reported clean status
-and changed-path status need reconciliation (e.g. whether source was restored).
+locally formatted source; formatter v2 patch (+4/−12) was initially referenced only by an
+owner-local path; the actual attachment is now published at the separate pin
+above. The earlier clean-versus-changed explanation did not imply a remote
+revert: the patch had simply not been published.
 The shown AST command lacks a literal file-list definition and compile() call;
 no compile PASS is inferred. New6 no-DB regression checks remain NOT RUN.
 

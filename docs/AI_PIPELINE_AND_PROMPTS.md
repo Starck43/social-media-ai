@@ -362,6 +362,37 @@ model/catalog parity, guard rollback, trusted-payer isolation, exact replay/
 collision, owned commit/ack faults and real two-session races remain required.
 Production migrator, cutover, runtime and full PRD-03 are not certified.
 
+### Unwired atomic reservation boundary — implementation under review
+
+The bounded boundary under review is `reserve_dispatch_receipt` /
+`LLMBudgetManager.reserve_receipt`; it is not called by any provider client.
+One owned transaction locks the active payer and the pre-provisioned UTC-day
+budget row, resolves the existing plan/override/global cap from that locked payer,
+and appends the receipt plus immutable reservation while changing the balance.
+Only a fresh acknowledged commit returns success; exact replay returns False
+and cannot authorize another HTTP request. Standalone receipts cannot be upgraded.
+
+Migration definition 0095 adds two tables and reservation binding/immutability
+guards, but is NOT applied. No baseline rows, bootstrap, backfill or cutover are
+performed. A missing, frozen or unreviewed day baseline fails closed, including
+for unlimited payers. Reviewed-bound versions are trusted internal inputs,
+not estimates from character counts/max-output settings or HTTP arguments.
+Known paid attempts without a bound are allowed only for unlimited payers and
+are explicitly unbounded, never zero. FREE has an explicit zero tariff basis;
+UNDEFINED uses `owner-undefined-allow-v1`, a separate counter and zero cap ceiling
+that is not an actual cost. Undefined admissions bypass priced-cap arithmetic,
+not payer, schema, baseline or freeze checks. Amounts must be exact Decimal USD
+at 1e-9; unrepresentable legacy caps fail closed rather than being rounded.
+
+There is no release/settlement or expiry path. Outstanding known/free/unbounded
+older-day reservations conservatively block capped priced admissions; current-day
+unbounded liability also blocks them. Unlimited and owner-allowed undefined
+attempts keep their separate accounting states. Original cap/receipt/bound are
+preserved on replay. The reservation balance is not summed with analytics.
+Tests use actual source and transaction doubles/DDL capture only; they are not
+PostgreSQL race, migration, production baseline or whole-gate evidence.
+Client wiring, cap-overrun settlement, all-path accounting and rollout stay OPEN.
+
 ### Proposed all-path accounting and admission contract
 
 Status: **Owner pricing decision recorded; admission implementation and evidence
@@ -369,8 +400,10 @@ still pending — not activated**. This is the full-gate contract, not a new bac
 or a release claim. Analyzer accounting certainty is integrated in PR #118;
 provider-reported analyzer pricing and the three-state monetary mapping are
 integrated in PR #125 (accepted head `08c53e1`, merge `d2b687d`); owner-local
-checks were accepted, while PostgreSQL and full suite were NOT RUN. All-path
-receipts, immutable report provenance and atomic admission remain to implement.
+checks were accepted, while PostgreSQL and full suite were NOT RUN at that original
+revision. Preparation receipts (#137/#154) and immutable outcome storage (#168)
+are now integrated but UNWIRED. All-path activation, atomic admission and
+reservation/settlement remain open; do not relabel their original evidence.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass
 one accounting/admission boundary, whether reached by analysis, digest, agent
@@ -401,11 +434,11 @@ References to jobs, messages and results must not cascade-delete evidence.
 - Monetary authority is Decimal USD at the documented precision. Legacy USD and
   USD-cent columns remain adapters, never summed again on top of ledger spend.
 - Owner-decided pricing truth (2026-10-12), replacing the earlier proposal that a
-  zero default tariff is unknown: FREE only on an explicit zero — the model itself
-  returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
-  own answer at first call arbitrates: a model-reported price is the cost, and a
-  non-zero table price is the known-price basis. No model price with an empty
-  table is UNDEFINED: never free, never zero, always registered in statistics and
+  zero default tariff is unknown: FREE only on an explicit zero in a structured
+  provider USD report or an explicit zero tariff. Structured provider price,
+  never generated model text, arbitrates actual cost; a non-zero tariff is the
+  known-price basis. Missing/unresolved price is UNDEFINED: never implicitly free
+  or zero, separately recorded in statistics and
   related accounting actions; dispatch is not blocked by it, but it is
   unreservable and outside cap-bounded spend by construction. Known token counts
   remain distinct from missing usage. Preserve the approved tariff snapshot for
@@ -451,7 +484,7 @@ start a second scheduler/listener/migration owner.
   tenants, cap changes, insert races, rollback and lost commit acknowledgements.
   No request starts without committed admission; reserve/settle/replay is atomic.
 - [ ] Failure matrix: missing/invalid tariffs (UNDEFINED, dispatch with recorded
-  state), explicit zero tariffs (FREE), model-reported prices, unknown/partial usage,
+  state), explicit zero tariffs (FREE), structured provider prices, unknown/partial usage,
   unexpected overrun, cancelled tasks, crash windows, DB outage and UTC rollover;
   unresolved liability cannot silently become free or admit further capped work.
 - [ ] Durable recovery and cleanup: repeated reconciliation adds no duplicate

@@ -19,6 +19,7 @@ from .agent_session import AgentSession
 # Analytics models
 from .ai_analytics import AIAnalytics
 from .llm_attempt import LLMAttempt
+from .llm_budget import LLMBudgetDay, LLMBudgetReservation
 from .llm_dispatch_receipt import LLMDispatchReceipt
 from .llm_outcome_event import LLMOutcomeEvent
 
@@ -88,6 +89,8 @@ __all__ = [
     # Analytics models
     "AIAnalytics",
     "LLMAttempt",
+    "LLMBudgetDay",
+    "LLMBudgetReservation",
     "LLMDispatchReceipt",
     "LLMOutcomeEvent",
     # Task runner / jobs

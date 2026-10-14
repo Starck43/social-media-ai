@@ -362,9 +362,10 @@ model/catalog parity, guard rollback, trusted-payer isolation, exact replay/
 collision, owned commit/ack faults and real two-session races remain required.
 Production migrator, cutover, runtime and full PRD-03 are not certified.
 
-### Unwired atomic reservation boundary — implementation under review
+### Unwired atomic reservation boundary — merged foundation
 
-The bounded boundary under review is `reserve_dispatch_receipt` /
+The merged bounded boundary ([PR #180](https://github.com/Starck43/social-media-ai/pull/180),
+merge `df06b1e17d5d13d7f3e7171dff6d7a317c87cca2`) is `reserve_dispatch_receipt` /
 `LLMBudgetManager.reserve_receipt`; it is not called by any provider client.
 One owned transaction locks the active payer and the pre-provisioned UTC-day
 budget row, resolves the existing plan/override/global cap from that locked payer,
@@ -373,8 +374,10 @@ Only a fresh acknowledged commit returns success; exact replay returns False
 and cannot authorize another HTTP request. Standalone receipts cannot be upgraded.
 
 Migration definition 0095 adds two tables and reservation binding/immutability
-guards, but is NOT applied. No baseline rows, bootstrap, backfill or cutover are
-performed. A missing, frozen or unreviewed day baseline fails closed, including
+guards. A real owner-local normal0094→0095 rehearsal passed on the approved
+legacy0092 clone advanced through actual0093/0094; this is not an application
+to the source/production database. No runtime baseline provisioning, bootstrap,
+backfill or production cutover is delivered by this API. A missing, frozen or unreviewed day baseline fails closed, including
 for unlimited payers. Reviewed-bound versions are trusted internal inputs,
 not estimates from character counts/max-output settings or HTTP arguments.
 Known paid attempts without a bound are allowed only for unlimited payers and
@@ -389,9 +392,14 @@ older-day reservations conservatively block capped priced admissions; current-da
 unbounded liability also blocks them. Unlimited and owner-allowed undefined
 attempts keep their separate accounting states. Original cap/receipt/bound are
 preserved on replay. The reservation balance is not summed with analytics.
-Tests use actual source and transaction doubles/DDL capture only; they are not
-PostgreSQL race, migration, production baseline or whole-gate evidence.
-Client wiring, cap-overrun settlement, all-path accounting and rollout stay OPEN.
+Evidence now includes57 focused no-DB checks and one real isolated PostgreSQL
+node/all14 journaled scenarios at `d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71`,
+plus the separate owner-local normal migration report at
+`f4c14c4da0fc212591ca0f88c35db3f8a20d87d3`. Original test SHAs and retained-data
+manifests are not relabelled; [exact evidence and limitations](validation/llm-budget-pg-runner.md).
+This is not production-baseline or whole-gate acceptance. Durable day-baseline
+provisioning, reviewed bound production, client/caller wiring, cap-overrun
+settlement, release, all-path accounting and rollout stay OPEN.
 
 ### Proposed all-path accounting and admission contract
 

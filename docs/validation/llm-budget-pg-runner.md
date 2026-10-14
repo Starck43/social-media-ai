@@ -1,5 +1,49 @@
 # Budget reservation PostgreSQL runner — current evidence and history
 
+## Integration closeout — MERGED, bounded package complete, UNWIRED
+
+[PR #180](https://github.com/Starck43/social-media-ai/pull/180) was merged into
+`dev` by a normal merge, preserving all source/test/preparation SHAs:
+`df06b1e17d5d13d7f3e7171dff6d7a317c87cca2`. Parents are fresh dev
+`6a0de8a503cdec38d20a0866ec009bd1796f1920` and reviewed PR HEAD
+`a47cba4f700eb17704ea3a3a07303d8b2d10e45c`. Native fetch/ancestry and byte
+comparison confirmed integration and unchanged reservation/migration code.
+The last PR successor was documentation-only; no tests or DB actions were repeated.
+
+Ready/merge followed the owner's standing bounded-package authorization:
+current-head GitGuardian SUCCESS, GitHub mergeable_state=clean, zero unresolved
+review threads, static fresh-dev compatibility review and docs-only conflict
+resolution preserving concurrent work. Formal reviews were empty; no independent
+reviewer approval or green full-suite result is inferred. Legacy combined
+statuses had no contexts. Initial merge-tool discovery failure left dev unchanged
+(read-only checked); recovery led to one successful actual merge.
+
+### Closed scope and remaining work
+
+- CLOSED: atomic manager-owned receipt/reservation API and immutable storage;
+  isolated transaction/race/guard acceptance at the exact tested source below;
+  ordinary0094→0095 migration rehearsal on the specifically approved legacy
+  clone, attributed to the owner-local report and its stated limitations.
+- OPEN: durable UTC-day baseline provisioning and reviewed bound production for
+  capped attempts; provider/client/caller activation; durable pre-HTTP identity
+  and append/recovery integration; receipt/outcome reconciliation, settlement,
+  release and overrun/freeze recovery; all-path failure/accounting matrix.
+- OPEN: operator-payer policy for admin connection tests, staging/production
+  baseline/cutover/rollback/rollout acceptance and whole PRD-03. No dispatch,
+  paid provider, runtime, Compose or deploy was activated by the merge.
+- Existing PR137 evidence/caveats, accepted old31/new6 results and retained
+  receipt manifests are unchanged. Do not rerun, relabel or clean them up.
+- Local worktree/branch cleanup was only instructed, not confirmed completed.
+  Preserve private `~/.local/share/kilo/pr180-transfer/`, retained targets and
+  `/Users/admin/Projects/pr180-leftovers-20261014-204246`; human-audit report
+  contents must never be read into coordinator context. Preserve other lanes
+  and `local/agent-session-d841`. No DB cleanup authorization is implied.
+
+Next session: fetch current dev and read project instructions, this evidence,
+the canonical board and pipeline contract; choose one bounded remaining task
+with its acceptance/dependencies, not wholesale activation. No active PR180
+implementation ownership remains reserved. ROADMAP remains empty between audits.
+
 ## Current owner-local normal migration closeout — reported PASS
 
 The owner relayed a completed local normal Alembic migration report at exact
@@ -49,7 +93,7 @@ legacy clone**, separately from synthetic transaction/guard acceptance. It does
 not prove production deployability, all possible0094 baselines, downgrade,
 cutover/rollback, HTTP activation, settlement/release or whole PRD-03. No runtime,
 provider/deploy, cleanup, trigger disabling or additional pytest was authorized.
-Final fresh-head review/checks and integration are separate from this report.
+Subsequent fresh-head review/checks and integration are recorded above; they do not expand the scope of this local report.
 
 ## Earlier remote closeout — isolated PG PASS; online migration then BLOCKED
 

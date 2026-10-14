@@ -662,3 +662,101 @@ class DriverCatalogTypeTests(unittest.TestCase):
         source = inspect.getsource(p.inspect_prepared)
         self.assertIn("t.typtype::text", source)
         self.assertIn("t.tgenabled::text", source)
+
+
+class BuiltinPluginTests(unittest.TestCase):
+    def test_builtin_modules_classes_and_instances_only(self):
+        import types
+
+        builtin = type("LegacyTmpdirPlugin", (), {"__module__": "_pytest.legacypath"})
+        foreign = type("InjectedPlugin", (), {"__module__": "external_plugin"})
+        for plugin in (types.ModuleType("_pytest.capture"), builtin, builtin()):
+            self.assertTrue(r.builtin_pytest_plugin(plugin))
+        for plugin in (types.ModuleType("third_party"), foreign, foreign(), types.ModuleType("_pytest_spoof")):
+            self.assertFalse(r.builtin_pytest_plugin(plugin))
+
+
+class RetainedPreparationEvidenceTests(NoNetworkTests):
+    def records(self):
+        import hashlib
+        import subprocess
+
+        head = p.git("rev-parse", "HEAD")
+        sources = {
+            path: hashlib.sha256(
+                subprocess.check_output(["git", "-C", str(ROOT), "show", head + ":" + path])
+            ).hexdigest()
+            for path in p.source_manifest()
+        }
+        manifest = {
+            "phase": "apply",
+            "commit_acknowledged": True,
+            "alembic": "absent",
+            "preparation_sha": r.PREPARATION_PIN,
+            "execution_sha": head,
+            "sources": sources,
+            "target": [p.TARGET_HOST, p.TARGET_PORT, p.TARGET_DATABASE, p.DDL_OWNER],
+            "endpoint": [p.TARGET_DATABASE, "127.0.0.1/32", 5432],
+            "catalog_parity_reviewed": True,
+            "run_id": p.RUN_ID,
+            "fixtures": [
+                [p.FIXTURE_TENANT_IDS[label], slug, plan, cap, active] for label, slug, plan, cap, active in p.FIXTURES
+            ],
+            "prepared": {"catalog_sha256": "c" * 64, "acl_manifest_sha256": "d" * 64},
+        }
+        provenance = {
+            "manifest_file": "apply.json",
+            "manifest_sha256": "e" * 64,
+            "preparation_script": r.PREPARATION_PIN,
+        }
+        approval = {
+            "runner_sha": head,
+            "target": [p.TARGET_HOST, p.TARGET_PORT, p.TARGET_DATABASE, p.RUNNER_ROLE],
+            "schema": p.TARGET_SCHEMA,
+            "server_identity": [p.TARGET_DATABASE, p.RUNNER_ROLE, "127.0.0.1/32", 5432],
+            "run_id": p.RUN_ID,
+            "fixtures": p.FIXTURE_TENANT_IDS,
+            **manifest["prepared"],
+        }
+        return manifest, provenance, approval
+
+    def test_reader_only_change_retains_original_evidence(self):
+        manifest, provenance, approval = self.records()
+        with patch.object(p, "read_private", return_value=(manifest, "e" * 64)):
+            self.assertIs(r.verify_preparation_evidence(p, provenance, approval), manifest)
+
+    def test_definition_or_preparation_drift_stops(self):
+        manifest, provenance, approval = self.records()
+        current = p.source_manifest()
+        current[p.SCRIPT_PATH] = "0" * 64
+        with (
+            patch.object(p, "read_private", return_value=(manifest, "e" * 64)),
+            patch.object(p, "source_manifest", return_value=current),
+        ):
+            with self.assertRaisesRegex(r.Blocked, "manifest-definition-or-preparation-drift"):
+                r.verify_preparation_evidence(p, provenance, approval)
+
+    def test_changed_catalog_query_stops(self):
+        manifest, provenance, approval = self.records()
+        with (
+            patch.object(p, "read_private", return_value=(manifest, "e" * 64)),
+            patch.object(r, "CATALOG_SQL", r.CATALOG_SQL + " "),
+        ):
+            with self.assertRaisesRegex(r.Blocked, "manifest-catalog-query-drift"):
+                r.verify_preparation_evidence(p, provenance, approval)
+
+    def test_unrelated_reader_history_stops(self):
+        manifest, provenance, approval = self.records()
+        real_run = r.subprocess.run
+
+        def only_ancestry_fails(args, **kwargs):
+            if "merge-base" in args:
+                return SimpleNamespace(returncode=1)
+            return real_run(args, **kwargs)
+
+        with (
+            patch.object(p, "read_private", return_value=(manifest, "e" * 64)),
+            patch.object(r.subprocess, "run", side_effect=only_ancestry_fails),
+        ):
+            with self.assertRaisesRegex(r.Blocked, "preparation-not-runner-ancestor"):
+                r.verify_preparation_evidence(p, provenance, approval)

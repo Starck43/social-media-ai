@@ -4,6 +4,7 @@ Never run without separately approved target, catalog, fixtures and write plan.
 No schema/reference bootstrap, migrations, cleanup, HTTP or provider calls.
 """
 
+import ast
 import asyncio
 import hashlib
 import importlib
@@ -18,7 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -243,6 +244,94 @@ def load_preparation_contract(pin):
     return contract
 
 
+def builtin_pytest_plugin(plugin):
+    """Pytest registers modules, instances AND built-in plugin classes."""
+    if isinstance(plugin, ModuleType):
+        module = plugin.__name__
+    elif isinstance(plugin, type):
+        module = plugin.__module__
+    else:
+        module = type(plugin).__module__
+    return module == "_pytest" or module.startswith("_pytest.")
+
+
+def verify_preparation_evidence(contract, provenance, approval):
+    """Retain original preparation evidence when ONLY the reviewed reader changes.
+
+    The old runner bytes and catalog query are verified from the real preparation
+    commit. All preparation/definition bytes must still match exactly. This is
+    not permission to rewrite a manifest or rerun any owned admission.
+    """
+    contract.verify_script_pin(provenance["preparation_script"])
+    demand(provenance["manifest_file"] == "apply.json", "preparation-manifest-path")
+    manifest, actual_hash = contract.read_private(contract.WORKDIR / "apply.json")
+    demand(actual_hash == provenance["manifest_sha256"], "preparation-manifest-hash")
+    demand(
+        manifest["phase"] == "apply" and manifest["commit_acknowledged"] is True and manifest["alembic"] == "absent",
+        "preparation-not-committed",
+    )
+    demand(manifest["preparation_sha"] == provenance["preparation_script"], "manifest-preparation-pin")
+    original = manifest["execution_sha"]
+    demand(re.fullmatch(r"[0-9a-f]{40}", original), "manifest-original-execution-sha")
+    demand(approval["runner_sha"] == git("rev-parse", "HEAD"), "runner-sha")
+    demand(
+        subprocess.run(
+            ["git", "-C", str(ROOT), "merge-base", "--is-ancestor", original, approval["runner_sha"]],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0,
+        "preparation-not-runner-ancestor",
+    )
+    current = contract.source_manifest()
+    demand(set(manifest["sources"]) == set(current), "manifest-source-scope")
+    for path, old_hash in manifest["sources"].items():
+        historical = subprocess.check_output(
+            ["git", "-C", str(ROOT), "show", original + ":" + path], stderr=subprocess.DEVNULL
+        )
+        demand(hashlib.sha256(historical).hexdigest() == old_hash, "manifest-historical-source-drift")
+        if path != contract.RUNNER_PATH:
+            demand(current[path] == old_hash, "manifest-definition-or-preparation-drift")
+        else:
+            tree = ast.parse(historical)
+            catalog = next(
+                ast.literal_eval(node.value)
+                for node in tree.body
+                if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "CATALOG_SQL" for target in node.targets)
+            )
+            demand(catalog == CATALOG_SQL, "manifest-catalog-query-drift")
+    demand(
+        manifest["target"]
+        == [contract.TARGET_HOST, contract.TARGET_PORT, contract.TARGET_DATABASE, contract.DDL_OWNER],
+        "manifest-target",
+    )
+    demand(
+        approval["target"]
+        == [contract.TARGET_HOST, contract.TARGET_PORT, contract.TARGET_DATABASE, contract.RUNNER_ROLE]
+        and approval["schema"] == contract.TARGET_SCHEMA,
+        "runner-exact-target",
+    )
+    demand(manifest["endpoint"] == [approval["server_identity"][i] for i in (0, 2, 3)], "manifest-server-identity")
+    demand(manifest["catalog_parity_reviewed"] is True, "manifest-catalog-unreviewed")
+    demand(manifest["run_id"] == contract.RUN_ID and approval["run_id"] == contract.RUN_ID, "manifest-run-id")
+    demand(approval["fixtures"] == contract.FIXTURE_TENANT_IDS, "manifest-fixture-allocation")
+    demand(
+        manifest["fixtures"]
+        == [
+            [contract.FIXTURE_TENANT_IDS[label], slug, plan, cap, active]
+            for label, slug, plan, cap, active in contract.FIXTURES
+        ],
+        "manifest-fixtures",
+    )
+    demand(
+        manifest["prepared"]["catalog_sha256"] == approval["catalog_sha256"]
+        and manifest["prepared"]["acl_manifest_sha256"] == approval["acl_manifest_sha256"],
+        "manifest-catalog-or-acl",
+    )
+    return manifest
+
+
 class BudgetPackage:
     async def run(self):
         """One sequential package; scenario results live in the private manifest."""
@@ -349,7 +438,7 @@ class BudgetPackage:
                 and c["ddl_role"] == contract.DDL_OWNER,
                 "isolated-exact-target",
             )
-            contract.verify_runner_manifest(c["provenance"], c)
+            verify_preparation_evidence(contract, c["provenance"], c)
         demand(c["synthetic_model_id"] > 0 and c["synthetic_provider_id"] > 0, "synthetic-catalog-identities")
         demand(set(c["fixtures"]) == set(FIXTURES), "fixture-list")
         demand(len(set(c["fixtures"].values())) == len(FIXTURES), "shared-fixture")
@@ -545,7 +634,7 @@ class BudgetPackage:
     async def verify_isolated_target(self):
         """Independently measured dedicated fixture, bound to retained evidence."""
         contract = self.preparation_contract
-        manifest = contract.verify_runner_manifest(self.cfg["provenance"], self.cfg)
+        manifest = verify_preparation_evidence(contract, self.cfg["provenance"], self.cfg)
         async with self.session() as session:
             signature = await self._verify_shared_target(session)
             others = (
@@ -1309,8 +1398,7 @@ def test_reviewed_package(request):
     for name, plugin in request.config.pluginmanager.list_name_plugin():
         if plugin is None:
             continue
-        module = getattr(plugin, "__name__", type(plugin).__module__)
-        demand(module.startswith("_pytest.") or module == "_pytest", "nonbuiltin-plugin")
+        demand(builtin_pytest_plugin(plugin), "nonbuiltin-plugin")
     args = list(request.config.invocation_params.args)
     demand(
         "--noconftest" in args and "--no-header" in args and "--tb=short" in args and "-q" in args,

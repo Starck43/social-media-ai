@@ -44,9 +44,11 @@ const report = { cases: [], interactions: [], failures: [] };
         return route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
+            context: { workspace_id: 7, user_id: 101 }, count: 1, complete: true, has_more: false,
             notifications: [
               {
-                id: 1,
+                id: 1, key: "notification:7:1", kind: "notification", scope: "workspace", workspace_id: 7,
+                read_id: 1, action: "read", state: "unread", destination: "",
                 title: "Мок",
                 message: "Изолированная проверка",
                 created_at: "fixture",

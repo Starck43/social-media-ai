@@ -40,7 +40,7 @@ nav_data = [
 ]
 base = {
     "tenant": {"id": 7, "name": "Мониторинг рынка"},
-    "user": {"username": "test-member", "is_superuser": False},
+    "user": {"id": 101, "username": "test-member", "is_superuser": False},
     "workspaces": [
         {
             "tenant": {"id": 7, "name": "Мониторинг рынка"},

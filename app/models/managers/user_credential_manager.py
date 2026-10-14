@@ -44,5 +44,22 @@ class UserCredentialManager(BaseManager["UserCredential"]):
         candidates.sort(key=lambda row: row.updated_at or row.created_at, reverse=True)
         return candidates[0] if candidates else None
 
+    async def newest_status_metadata(self, *, user_id: int, platform: str, kind: str) -> Optional[Any]:
+        """One caller-owned status row; never load/decrypt the encrypted secret."""
+        from sqlalchemy import func
+
+        from ..user_credential import UserCredential
+
+        return await (
+            self.filter(user_id=user_id, platform=platform, kind=kind, is_active=True)
+            .order_by(
+                func.coalesce(UserCredential.updated_at, UserCredential.created_at).desc(), UserCredential.id.desc()
+            )
+            .values(
+                UserCredential.expires_at, UserCredential.meta, UserCredential.created_at, UserCredential.updated_at
+            )
+            .first_row()
+        )
+
 
 user_credentials = UserCredentialManager()

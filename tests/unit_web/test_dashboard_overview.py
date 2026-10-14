@@ -261,5 +261,5 @@ async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
     )
     context = await scope["dashboard"](request)
     results.assert_awaited_once_with(11, True, False)
-    tasks.assert_awaited_once_with(7, True, 11)
+    tasks.assert_awaited_once_with(7, True, 11, show_sources=False)
     assert len(context["recent_tasks"]) == 3

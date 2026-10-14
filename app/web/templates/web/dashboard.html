@@ -120,13 +120,15 @@
                         <p class="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{{ task.tenant.name }}</p>
                         {% endif %}
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {% if task.id not in effective_active %}Не запланирована
+                            {% if effective_active is none %}Статус расписания неизвестен
+                            {% elif task.id not in effective_active %}Не запланирована
                             {% elif task.next_run_at %}Следующий запуск: {{ task.next_run_at|human_dt(tz=_tz) }}
                             {% else %}Время следующего запуска не определено{% endif %}
                         </p>
                     </div>
                     <span class="text-xs {% if task.last_status == 'failed' %}text-rose-700 dark:text-rose-300{% else %}text-slate-500 dark:text-slate-400{% endif %}">
                         {% if task.last_status == 'failed' %}Последний запуск: ошибка
+                        {% elif effective_active is none %}Статус неизвестен
                         {% elif task.id in effective_active %}Активна
                         {% else %}Неактивна{% endif %}
                     </span>

@@ -6,6 +6,7 @@ application imports; create and remove only this module's own synthetic rows.
 
 from __future__ import annotations
 
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -16,7 +17,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from scripts.setup_test_db import check_existing_schema, resolve_and_redirect
 
@@ -50,7 +51,7 @@ from app.models.agent_task import agent_task_sources  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants  # noqa: E402
 from app.models.role import role_permission  # noqa: E402
-from app.types import SourceType, UserRoleType  # noqa: E402
+from app.types import ActionType, SourceType, UserRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
 from tests.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 
@@ -238,6 +239,52 @@ async def test_missing_membership_rights_hides_data_and_skips_home_queries(home,
         results.assert_not_awaited()
         tasks.assert_not_awaited()
         assert (await client.get("/app/sources")).status_code == 403
+
+
+@pytest.mark.parametrize("show_sources", [False, True])
+async def test_task_view_does_not_imply_source_loading(home, show_sources):
+    user = await actor(home, "viewer")
+    membership = (await TenantUserManager().web_memberships(user.id))[0]
+    original_role_id = membership.role_id
+    role = None
+    source_reads = []
+
+    def observe_sources(connection, cursor, statement, parameters, context, executemany):
+        sql = statement.replace('"', "").lower()
+        if re.search(r"\b(?:from|join)\s+" + re.escape(settings.DB_SCHEMA.lower()) + r"\.sources\b", sql):
+            source_reads.append(True)
+
+    try:
+        with tenant_scope(bypass=True), operator_permission_scope():
+            role = await Role.objects.create(name=_name("TaskViewOnly"), codename=UserRoleType.VIEWER.name)
+            permission_ids = []
+            for model in (["agenttask", "source"] if show_sources else ["agenttask"]):
+                permission = await Permission.objects.filter(
+                    Permission.model_type.has(model_name=model), action_type=ActionType.VIEW.name
+                ).first()
+                assert permission is not None, "Existing reference permission is required; never seed here"
+                permission_ids.append(permission.id)
+            await Role.objects.set_permissions(role.id, permission_ids)
+            await TenantUserManager().update_by_id(membership.id, role_id=role.id)
+        async with await _client() as client:
+            await _login(client, user.username)
+            event.listen(async_engine.sync_engine, "before_cursor_execute", observe_sources)
+            try:
+                page = await client.get("/app/")
+            finally:
+                event.remove(async_engine.sync_engine, "before_cursor_execute", observe_sources)
+            assert page.status_code == 200
+            assert page.text.count('class="ui-home-task ') == 3
+            assert bool(source_reads) is show_sources
+            assert ("Статус расписания неизвестен" in page.text) is (not show_sources)
+            assert ('href="/app/sources' in page.text) is show_sources
+            assert (await client.get("/app/sources")).status_code == (200 if show_sources else 403)
+    finally:
+        if role is not None:
+            with tenant_scope(bypass=True), operator_permission_scope():
+                await TenantUserManager().update_by_id(membership.id, role_id=original_role_id)
+                await Role.objects.set_permissions(role.id, [])
+                await Role.objects.delete_by_id(role.id)
 
 
 @pytest.mark.parametrize(

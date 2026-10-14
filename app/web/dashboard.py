@@ -53,7 +53,13 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
     return recent
 
 
-async def _recent_tasks(tenant_id: int | None, is_superuser: bool = False, filter_tenant_id: int | None = None):
+async def _recent_tasks(
+    tenant_id: int | None,
+    is_superuser: bool = False,
+    filter_tenant_id: int | None = None,
+    *,
+    show_sources: bool = True,
+):
     """Fetch few most recent tasks.
 
     Superuser sees all tasks (optionally narrowed to one tenant via
@@ -70,7 +76,7 @@ async def _recent_tasks(tenant_id: int | None, is_superuser: bool = False, filte
 
     return await (
         AgentTask.objects.filter(tenant_id=tenant_id)
-        .prefetch_related("sources", "agent_scenario")
+        .prefetch_related(*(("sources", "agent_scenario") if show_sources else ("agent_scenario",)))
         .order_by(AgentTask.created_at.desc())
         .limit(3)
     )
@@ -146,9 +152,13 @@ async def dashboard(request: Request):
         else []
     )
     recent_tasks = (
-        await _recent_tasks(tenant_id, is_superuser, filter_tenant_id) if offer["tasks"] else []
+        await _recent_tasks(tenant_id, is_superuser, filter_tenant_id, show_sources=offer["sources"])
+        if offer["tasks"]
+        else []
     )[:3]
-    effective_active = await _effective_active_ids(recent_tasks)
+    # Effective activity depends on source state. Missing access is unknown,
+    # never evidence that a permitted task is inactive.
+    effective_active = await _effective_active_ids(recent_tasks) if offer["sources"] else None
 
     # A single first-value step, never a permanent command panel. Only query a
     # model when the caller can both view and create it in the active workspace.

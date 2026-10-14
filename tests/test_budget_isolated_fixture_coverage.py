@@ -642,3 +642,13 @@ class PhaseAndManifestBinding(NoNetworkTests):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InetAddressTests(unittest.TestCase):
+    def test_postgresql_inet_host_masks(self):
+        for value in ("127.0.0.1", "127.0.0.1/32", "::1", "::1/128"):
+            with self.subTest(value=value):
+                self.assertTrue(p.loopback_server_address(value))
+        for value in ("127.0.0.1/24", "::1/64", "192.0.2.1/32", "localhost", "invalid"):
+            with self.subTest(value=value):
+                self.assertFalse(p.loopback_server_address(value))

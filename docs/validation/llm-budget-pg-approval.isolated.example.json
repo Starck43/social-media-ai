@@ -169,7 +169,7 @@
     "manifest_file": "apply.json",
     "manifest_sha256": null,
     "origin": "reviewed-definition-application",
-    "preparation_script": "b26ba816c7687c78a6c9da538e246dc6985b4367"
+    "preparation_script": "387545dfedf7ef18eec6ee83c6ac2104577e0c40"
   },
   "report_isolation_verified": false,
   "retained_days": 18,

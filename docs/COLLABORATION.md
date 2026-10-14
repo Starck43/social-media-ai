@@ -75,6 +75,7 @@ kilo run "Delegate the attached test task to test-runner. Return only its TEST R
 - Agent configuration comes from the checkout selected by `--dir`. The orchestrator must be permitted to read the attached task file; moving it inside the worktree does not overcome `read: deny`. External task files additionally require permitted external-directory access. Fix the reviewed configuration/placement or return BLOCKED; do not read through an IDE/shell tool to bypass a denial.
 - Kilo uses its configured `test-orchestrator` and `test-runner` agents, plus the connected `pare-test` MCP server. The child passes `<worktree>/.venv/bin/python` and the worktree path to MCP. Do not use `--pure` (it disables external plugins), `--auto`, or shared sessions. If the child or MCP runner is unavailable, report BLOCKED.
 - The Codex `subagents` MCP (`codex-as-mcp`) creates Codex agents and is separate from this Kilo test route.
+- Fallback (Kilo BLOCKED only, never parallel with Kilo — R8 sequential): Codex subagent `.codex/agents/opencode-test-runner.toml` delegates via `opencode run --dir <worktree> -m kilo/stepfun/step-5-preview-free --auto --file <worktree>/.agent/test-task.md` with the same guards (`git rev-parse HEAD`, `pgrep -fl pytest`), same pytest flags, and same `TEST RUN …` summary contract. The subagent may write only `.agent/test-report.md`.
 - No provider/model credentials are stored in the repository.
 
 ## Testing task-file contract (`.agent/test-task.md`)

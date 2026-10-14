@@ -67,6 +67,9 @@
   See `.kilo/agents/test-runner.md` for the verified `pare-test` argument rules
   (separate array elements; `--noconftest` is mandatory for isolated scopes; paths
   are positional, never `filter`).
+  Fallback when Kilo is BLOCKED (never parallel — R8 sequential): Codex subagent
+  `.codex/agents/opencode-test-runner.toml` via OpenCode `build` pinned to
+  `kilo/stepfun/step-5-preview-free`; same guards, flags and `TEST RUN …` contract.
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
   packages after verifying fresh PR/dev heads, compatibility, required checks

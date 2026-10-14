@@ -4,11 +4,64 @@
 contract for the existing bounded Draft PR, not a new task queue or whole-gate
 acceptance. The application stays UNWIRED. No DDL is implemented by this runner.
 
+## Owner-local no-DB closeout — reported PASS, routing caveat retained
+
+Tested FULL SHA: `8869263046368af840bbe5a9dc8c17c3e2c99eea`. Owner reports **6 passed / 0 failed /
+0 skipped**, exit0, for the sole positional file
+`tests/test_budget_acceptance_denials.py`: expected refusal class-only record,
+unrelated unavailability and validation errors propagate, fresh admission and
+replay are not refusals, and the expected class is required. This is new helper
+coverage, not the accepted31 scope or PG acceptance; it was not rerun remotely.
+
+The separately authorized local venv-link/diagnostic/new6 assignment was consumed.
+Both reported commands used `kilo run "<message>" --dir
+/Users/admin/Projects/social-media-ai-pr180-review --agent test-runner --format
+json --file <task-file>`, with diagnostic task /tmp/diag_task_runner.md and test
+task /tmp/test_task.md. **This skipped test-orchestrator**, contrary to the
+required R10 route. Preserve the reported test result, but do not certify full
+Kilo → test-orchestrator → test-runner → pare-test routing. No corrective rerun
+is assigned. pare-test arguments were reported as
+`--noconftest -o addopts= -q --tb=short --no-header tests/test_budget_acceptance_denials.py`;
+interpreter was review-worktree/.venv/bin/python. Plugin autoload was disabled,
+PYTEST_PLUGINS/PYTEST_ADDOPTS/-p/conftest absent; exact pare project_root was not
+provided and is not inferred.
+
+Report-path isolation is owner-reported PASS **for the direct-runner invocation**:
+review report SHA256
+`d4818a497c585a2190cc9e5c9eb481dad8dd4b968ea7796fa31336e1d44385f8`;
+main report unchanged at
+`cb667f0df6cdce2b653f9bf3e29194fc3e0f46492edd285b99c002aad1d81801`;
+no reports in other worktrees, no remaining pytest/children. The human-audit
+report was not read into coordinator context. This does not prove orchestrator
+report isolation or reuse for another lane's plugin/bootstrap problem.
+
+Project-venv provenance was reported verified via the authorized review .venv
+symlink to /Users/admin/Projects/social-media-ai/.venv; no install/bootstrap.
+However, reported sys.executable.parent is the **main** .venv/bin, whereas the
+PG guard requires literal **review ROOT/.venv/bin**. The report also calls .venv
+untracked, whereas the PG guard demands empty git status. Thus strict PG
+entrypoint/clean-worktree admission remains unproven; no guards are weakened.
+
+**PAUSED / no further runs assigned.** Owner-reported connections/SQL/provider
+calls: 0/0/0; no tracked changes, no active pytest/children. No social_manager or
+historical test_schema access/write was reported. No DB writer window was
+assigned to PR180; this is not permission to resume another lane. Target,
+actors/privileges, actual fixture IDs, catalog/revision and exclusive PG window
+remain UNKNOWN/unapproved. Gate B/C and migrations stay closed. PR stays Draft,
+UNWIRED; HTTP, settlement/release and whole PRD-03 remain open.
+
+Fresh dev observed: `aac8bfabe66010b38858102c0746776315ec367f`, not the
+historical22dc7e2 pin. No dev merge or compatibility certification; PR176/151,
+other lanes and local/agent-session-d841 remain separate. Current pause/status
+is recorded in the PR description for [PR176 coordination](https://github.com/Starck43/social-media-ai/pull/180#issuecomment-6165882422).
+Older NOT RUN/absent-venv/unverified-report statements below are historical
+checkpoints, superseded only for the no-DB scope and direct-runner evidence above.
+
 ## Evidence and pins
 
 - Application/style: `9dd748cef465e09df74cc98c07ecc65748b41a8c`.
 - Starting PR head: `20993efcee71a10aaef6809df6579d8c59382a08`.
-- Observed dev: `22dc7e2e485863c71b3b041ba0710212ee2a9565`.
+- Historical observed dev: `22dc7e2e485863c71b3b041ba0710212ee2a9565`; fresh observation above.
 - Original no-DB evidence remains **31 passed / 0 failed / 0 skipped at
   `ff29f82615413533121c5265eec0477e02643f9a`**; never rerun/relabel it here.
 - Runner commit is pinned separately in the PR handoff after publication. The

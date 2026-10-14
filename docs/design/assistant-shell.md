@@ -344,3 +344,29 @@ not real role/revocation/workspace/ASGI/DB or full visual/contrast/reduced-motio
 acceptance. All previously deferred A/PR185, invite/QR/seats/last-owner, real chat,
 source_ids and scenario-wizard limitations remain open. B/C/D are untouched;
 PR #188 remains Draft/unmerged, with its existing integration conflict unresolved.
+
+
+### Owner closeout of the final A implementation
+
+After the final utility-row follow-up was delivered, the owner requested closing
+A and proceeding to B. Record A implementation at
+`2edabe22128020055d1e2ce765f756dfb6dbbf63` as owner-accepted and closed. This
+closeout is not a report that deferred real-environment tests ran and does not
+automatically waive required integration evidence. The 83 isolated pytest and
+336 offline cases plus 38 interactions remain attributed to that implementation;
+this closeout changes documentation only, with no new test run or code change.
+
+Fresh dev remains `cfc669636843c991e6abc64a008daa3cc20ef34f`; shell code is not
+integrated there. PR #188 is open/Draft. Its API metadata still reports the
+preceding head and `dirty` mergeability, whereas direct branch/get_commit/fetch
+checks verify the new implementation head and all six published files. Treat
+PR-head metadata as unresolved/stale, not evidence of a lost write; do not
+republish code or merge from that conflicting snapshot.
+
+B is the next owner-selected bounded package, not C/D or remaining home work.
+Its implementation must include the existing A shell without duplicating it.
+Under the current branch-from-dev remote rule, choose the dependency path before
+starting: satisfy A integration requirements, or obtain an explicit exception for
+a separate stacked B branch from the accepted A implementation. Until then, B
+implementation is blocked on its base, not complete or in progress. All prior
+deferred checks and no-DB/no-runtime/no-live-action restrictions remain open.

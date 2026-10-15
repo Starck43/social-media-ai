@@ -20,6 +20,10 @@ rules: [AGENTS.md](../AGENTS.md); environment/DB/test-delegation constraints:
 
 ## Audits, Goals and subagents
 
+Follow routine and test routing in [AGENTS.md](../AGENTS.md) and
+[docs/RULES.md](RULES.md) (R10). Codex owns architecture, review and acceptance;
+preserve HEAD, permission and ownership blockers.
+
 Use subagents for independent read-heavy audit lanes and bounded implementation
 tasks; reserve them for parallelizable work. Give each agent one question or
 task, a file/claim boundary, relevant SHA, expected evidence and a compact
@@ -63,7 +67,7 @@ push/merge/deploy/DB reset.
 
 ## Headless delegation launches (from a task worktree)
 
-Primary route (R10): Codex subagent `.codex/agents/test-runner.toml` delegates
+Primary test route (R10): Codex subagent `.codex/agents/test-runner.toml` delegates
 to OpenCode:
 
 ```sh

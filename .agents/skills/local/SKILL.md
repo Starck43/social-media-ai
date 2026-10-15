@@ -10,11 +10,12 @@ The main thread keeps plan, decisions, acceptance and integration; noisy work go
 ## Kernel — the same for every entry
 
 1. **Triage:** `git status`, `git worktree list`, open rows in ROADMAP.md and the selected docs/phases/ file; read only task-relevant slices.
-2. **Route each unit of work:**
-   - self — bounded edit under existing manager/service/session conventions;
-   - subagent — read-heavy exploration or an independent task with exclusive files: one task per agent, smallest useful number (often 2–3); reply contract: verdict + file/line refs + changed paths, ≤150 tokens, no logs or file dumps;
-   - OpenCode — executor, committer and primary route for every pytest run (R10 `test-runner`, exact QwenPlan model; contract in .agents/skills/test-runner/). Proven independent no-DB scopes may run in parallel; shared PostgreSQL checks stay sequential under R8. Kilo's test-orchestrator → test-runner route is secondary when OpenCode is BLOCKED. Coordinating Codex never runs pytest.
-   Skip delegation when its coordination cost exceeds the context it saves.
+2. **Route each unit of work** per AGENTS.md:
+   - self — triage, architecture, planning, review, acceptance and integration;
+   - routine and test routes follow AGENTS.md and docs/RULES.md R10;
+   - subagent — independent nonroutine read-heavy exploration or an independent task with exclusive files: one task per agent, smallest useful number (often 2–3); reply contract: verdict + file/line refs + changed paths, ≤150 tokens, no logs or file dumps;
+   - OpenCode executes and commits; coordinating Codex never runs pytest. Keep no-DB parallelism, R8 serialization and acceptance safeguards in AGENTS.md/docs/RULES.md.
+   Keep nonroutine decisions and acceptance in the main thread. A sequential delegated task may use current `dev` with exclusive file ownership; independent implementation lanes require separate worktrees.
 3. **Accept:** verify evidence at the exact SHA/diff; integrate one finished task at a time, never on a bare completion report.
 4. **Close:** update the phase file (status/evidence), delete the resolved ROADMAP.md row, handoff per docs/COLLABORATION.md, propose the commit split; AGENTS.md closeout phrases authorize commits. Phase closure needs Codex approval.
 

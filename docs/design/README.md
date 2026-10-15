@@ -326,6 +326,35 @@ condition, owner, branch/PR and state. Update status after verified integration;
 preserve rows/evidence under the append-only collaboration contract. Delete a
 row only on explicit owner command; keep detailed narratives in the PR.
 
+## 2026-10-15 source audit — new follow-ups
+
+Audit baseline: `7ba5fe4ce0879a38d96ecb92770dad055c014624`.
+[PR #196](https://github.com/Starck43/social-media-ai/pull/196) records the [source-pinned report and acceptance contracts](https://github.com/Starck43/social-media-ai/blob/cea26bc48f0b3f5a7e9b61f714f4bae6aa35790d/docs/audits/2026-10-15-dev.md),
+probe observations and the audit ROADMAP execution ledger. Runtime fixes are
+**not implemented** by that PR or the direct documentation commits. This is
+risk-based source coverage, not a full security/production certification.
+Existing ownership above is preserved. One bounded task per implementation;
+serialize shared-file lanes and all DB acceptance under the project runner.
+
+| Task / priority | Outcome | Owner / state | Acceptance / dependencies |
+| --- | --- | --- | --- |
+| AUD-01 / P0 | Replace unauthenticated password mutation with authorized recovery | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Account-bound, expiring, one-use recovery or approved operator-only reset; no anonymous hash mutation or password logs. |
+| AUD-02 / P1 | Remove password hashes from HTTP user responses | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | HTTP/OpenAPI profiles exclude password hashes; existing rights preserved. Serialize user.py/schema writes with AUD-03. |
+| AUD-03 / P1 | Separate self-service profile updates from privilege updates | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Profile updates cannot elevate authority; fresh privileged operator policy and endpoint/manager negative controls. Shared lane with AUD-02. |
+| AUD-04 / P1 | Use shared, cookie-independent login protection | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Normal failures counted; shared cookie-independent limits across surfaces/processes; valid dummy verifier and generic errors. |
+| AUD-05 / P2 | Align legacy API DB probes with bounded redacted readiness | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Bounded generic legacy probe failures; synthetic DB/DSN sentinels absent; root readiness unchanged. |
+| AUD-06 / P1 | Centralize safe provider-error envelopes without dropping accounting | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Allowlisted failure envelopes/logs; no provider-body/prompt/token sentinel disclosure; preserve attempt identity and unknown accounting. |
+| AUD-07 / P1 | Make digest scope, date window and row set consistent | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | All sections use one source/scenario/window/base-row scope; boundary/rollup regressions and bounded reused reads; no delivery change. |
+| AUD-08 / P1 | Gate home pipeline queries and links per data component | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Denied data component issues no query and shows no forbidden link; actual middleware and revocation cases. |
+| AUD-09 / P2 | Make pipeline counts and activity labels truthful | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Preview vs totals explicit, type-correct activity, literal or eligibility-backed staged counts; depends on AUD-08, same files. |
+| AUD-10 / P2 | Make distributable package include runtime code and encryption dependency | Unassigned — TODO; [PR #196](https://github.com/Starck43/social-media-ai/pull/196) | Wheel contains nested runtime packages/assets; encryption dependency in runtime; isolated no-dev import/asset smoke, no DB/provider. |
+
+Existing NULL-role labels are DELIVERED (`2dd3161`), not a new TODO.
+PR #176 acceptance remains deferred despite code integration `6d16436`.
+Admission activation, operator recovery, C/D validation, DB binding and
+retention rollout retain their earlier allocations; do not close a whole gate
+from this audit. Exclusive file ownership is specified in each report task.
+
 ## Selection rules
 
 - Verify the gap in current code before treating a readiness statement as a bug.

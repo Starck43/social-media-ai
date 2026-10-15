@@ -27,6 +27,11 @@ propose → approve when required → deliver/execute → audit/follow-up.**
 
 Important limits:
 
+- [Source audit follow-ups (PR #196)](https://github.com/Starck43/social-media-ai/pull/196) include unsafe legacy password
+  recovery, public profile hashes and conditional profile privilege escalation.
+  Documentation updates do not fix these runtime paths; do not infer production
+  security from the bounded merged packages.
+
 - MAX transport does not imply MAX content collection.
 - Raw collected content is staged for analysis, not a permanent archive.
 - Current cost fields do not form a complete concurrency-safe billing ledger.

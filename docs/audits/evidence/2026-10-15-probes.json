@@ -1,0 +1,86 @@
+{
+  "baseline": "7ba5fe4ce0879a38d96ecb92770dad055c014624",
+  "method": "offline AST-extracted synthetic doubles / static metadata, not app/DB/ASGI tests",
+  "observations": [
+    {
+      "probe": "anonymous_reset",
+      "observed": {
+        "password_write_calls": 1,
+        "synthetic_password_logged": true,
+        "no_identity_on_request": true
+      }
+    },
+    {
+      "probe": "self_update_privilege",
+      "observed": {
+        "is_superuser_forwarded": true,
+        "prerequisite": "user.update grant; not default Viewer"
+      }
+    },
+    {
+      "probe": "user_response_schema",
+      "observed": {
+        "hashed_password_declared": true,
+        "affected_handlers": [
+          "get_users",
+          "get_current_user",
+          "update_user"
+        ]
+      }
+    },
+    {
+      "probe": "admin_bad_password",
+      "observed": {
+        "track_login_attempt_calls": 0
+      }
+    },
+    {
+      "probe": "legacy_health_error",
+      "observed": {
+        "status": 500,
+        "raw_exception_in_detail": true
+      }
+    },
+    {
+      "probe": "report_day_window",
+      "observed": {
+        "lower_is_yesterday": true,
+        "upper_bound_present": false,
+        "period_type_present": false
+      }
+    },
+    {
+      "probe": "pipeline_tasks_only",
+      "observed": {
+        "queries": [
+          "CollectedItem",
+          "AIAnalytics",
+          "Job"
+        ],
+        "digest_running_maps_to_model_label": true
+      }
+    },
+    {
+      "probe": "pipeline_analytics_only",
+      "observed": {
+        "queries": [
+          "CollectedItem",
+          "AIAnalytics",
+          "Job"
+        ],
+        "digest_running_maps_to_model_label": true
+      }
+    },
+    {
+      "probe": "packaging_metadata",
+      "observed": {
+        "cryptography_only_in_dev": true,
+        "explicit_packages": [
+          "app",
+          "cli"
+        ],
+        "nested_package_example": "app.services.ai"
+      }
+    }
+  ]
+}

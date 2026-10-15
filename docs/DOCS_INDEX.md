@@ -48,3 +48,8 @@ in `ASSISTANT_ARCHITECTURE.md`, readiness criteria in
 `BUSINESS_PRODUCTION_READINESS.md`, current allocation in `design/README.md`, and
 subsystem behavior in its subsystem document. Link to the owner instead of copying
 its text. Keep detailed evidence in Git and PRs.
+
+## Source audit reports
+
+- [2026-10-15 dev audit](audits/2026-10-15-dev.md) — source-pinned findings,
+  scope limits and ten TODO acceptance contracts; no implemented-fix or release claim.

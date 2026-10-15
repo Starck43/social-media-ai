@@ -32,6 +32,7 @@ from app.services.tenancy import member_roles
 from app.types import ActionType
 
 from .deps import action_tenant_id, add_flash, ensure_csrf, render
+from ..models import LLMModel
 
 router = APIRouter(prefix="/settings")
 
@@ -472,8 +473,12 @@ async def agent_model_probe(
 
     tenant = await tenants.get(id=tenant_id)
     model = None
-    if agent_model:
-        model = await LLMModel.objects.select_related("provider").filter(id=int(agent_model), is_active=True).first()
+    if agent_model and agent_model not in ("None", "null", ""):
+        try:
+            model_id = int(agent_model)
+            model = await LLMModel.objects.select_related("provider").filter(id=model_id, is_active=True).first()
+        except ValueError:
+            model = await LLMModel.objects.select_related("provider").filter(name=agent_model, is_active=True).first()
 
     # Tier 0: free local verdict, no provider traffic at all.
     verdict = probe_status(model) if model else {"ok": False, "checks": [], "hint": "Модель не выбрана"}
@@ -734,6 +739,8 @@ async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: t
     labels: dict[int, str] = {}
     for role in await Role.objects.filter(id__in=list({r.role_id for r in rows if r.role_id is not None})):
         codename = getattr(role.codename, "name", role.codename)
+        if not isinstance(codename, str):
+            codename = str(codename) if codename is not None else ""
         level = by_codename.get(codename)
         labels[role.id] = level.label if level is not None else str(codename)
     return [

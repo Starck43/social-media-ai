@@ -116,11 +116,11 @@ Setup details: [CONFIGURATION](docs/CONFIGURATION.md),
 ## Development
 
 Read [AGENTS.md](AGENTS.md), `.agent/rules.md` and `.agent/workflow.md` before
-work. Use the project virtualenv and start with the narrowest relevant check:
-
-```bash
-.venv/bin/python -m pytest -o addopts='' tests/path/to/test_file.py -q
-```
+work. Use the project virtualenv and assign the narrowest relevant check through the
+Kilo test-orchestrator → test-runner → pare-test route in
+[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree).
+Do not run pytest directly from the coordinating process. If that route is
+blocked, follow only the documented fallback; a blocked runner is not a green check.
 
 Database tests share the configured test schema and run sequentially. Schema
 create/reset/drop/stamp/migrate operations require explicit owner instruction.

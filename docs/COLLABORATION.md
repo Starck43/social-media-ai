@@ -35,9 +35,11 @@ to the matching phase file (`P<n>-T<nn>` rows with acceptance, dependencies,
 exclusive ownership) and mirror ID+link rows in ROADMAP.md. Independent write
 tasks get separate agents in separate worktrees/branches. Integrate one
 finished task at a time, then update its status and commit with matching
-evidence. Never mark a task DONE because an agent merely reports completion;
-inspect the diff and verification at the exact tested SHA. After integration,
-delete the ROADMAP row; phase closure requires Codex approval in the phase file.
+evidence. Executors report completed work as READY and may update evidence, but only
+the coordinating Codex reviews the diff/evidence at the exact SHA, marks tasks
+DONE and deletes resolved ROADMAP rows — no subagent self-accepts as DONE or
+removes resolved ROADMAP rows. Phase closure still requires Codex approval in
+the phase file.
 
 Start /goal only when the work has a measurable finish line; point it at the
 active ROADMAP.md rows. Goals persist within a thread and do not replace the

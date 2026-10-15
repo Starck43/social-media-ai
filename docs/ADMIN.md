@@ -1,421 +1,298 @@
 # Admin Panel Reference
 
-The application includes a sqladmin panel for managing all database entities.
-
-**Base URL:** `http://localhost:8000/admin`
-
-## Authentication
-
-Session-based authentication. The admin panel requires a logged-in user session.
-
-- **Login:** `GET /admin/login`
-- **Logout:** handled by sqladmin's built-in logout
-- **Password Reset:** `GET /admin/reset-password` → `POST /admin/reset-password`
-
-### Password Reset Flow
-
-```
-GET  /admin/reset-password     → form (email + CSRF token)
-POST /admin/reset-password     → replaces password, logs a temporary password
-GET  /admin/login?message=password_reset → login with temp password
-```
-
-**Unsafe legacy behavior — open audit finding:** this custom FastAPI route is
-registered outside SQLAdmin model/action guards. Its GET issues a CSRF token to
-an anonymous caller; POST looks up any supplied email, replaces that account
-password without proving account ownership and logs the generated six-character
-password. CSRF and request-rate limits do not authorize an account reset. Do not
-treat this as an approved production recovery procedure. A one-use, expiring,
-account-bound recovery proof (or authorized operator-only reset) and removal of
-password logging require a separate code fix. No reset was performed by this audit.
-
-### Change Password (logged-in user)
-
-```
-GET  /admin/user/change-password/{user_id}
-POST /admin/user/change-password/{user_id}
-```
-
-Requires: `current_password`, `new_password`, `confirm_password`, `csrf_token`.
-
-### Verify Current Password (AJAX)
-
-```
-POST /admin/verify-current-password
-Content-Type: application/json
-
-{"current_password": "pass123"}
-```
-
-Returns: `{"valid": true/false}`
-
----
-
-## Authorization (Django-style per-model permissions)
-
-The console is gated by the **platform role** of the signed-in operator, the
-same way Django gates a `ModelAdmin`. There is no separate admin permission
-model: the answer to "may this operator do this" comes from `role_permission` →
-`permissions.model_type_id` + `action_type`, read through
-`User.has_perm_for(model_name, action)`. Admin is a global/platform console,
-not an active-workspace dashboard. Ordinary workspace surfaces additionally
-select membership-role grants through `member_decision()`; workspace ownership
-is not a platform model permission.
-
-**Who may enter:** active platform `operator` and `admin` accounts, checked by
-`User.has_admin_access()` on login, authenticated requests and external admin
-routes. Workspace ownership grants no operator access. The token subject is the
-identity source; stale session user IDs never select another account. Platform
-admins have full platform authority; operators need explicit model/action grants.
-Only platform admins may assign platform roles or configure operator grants.
-The role and permission catalogs are read-only in SQLAdmin.
-
-**What they may do:** per model, the role's rights map onto the console actions
-one to one, and sqladmin asks about every one of them — hiding a button and
-blocking the route behind it are the same check.
-
-The permission check uses structured columns:
-- `permissions.model_type_id` → `model_types.model_name` (e.g., `source`, `agenttask`, `tenant`)
-- `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
-
-The single predicate `User.has_perm_for(model_name, action)` is the canonical
-platform check; workspace surfaces additionally apply membership context. Changing a
-role's codename never breaks permission logic because the check uses structured
-columns, not codename strings.
-
-| Console action | Required `ActionType` |
-|---|---|
-| list, details | `VIEW` |
-| create, import | `CREATE` |
-| edit | `UPDATE` |
-| delete | `DELETE` |
-| export | `EXPORT` |
-| `@action` buttons | whatever the view declares (below) |
-
-Two rules on top of the table, both Django's:
-
-- **any right implies the change list** — an operator who may only *create* a
-  record still has to open the list to reach the form, so `create` / `update` /
-  `delete` / `export` also grant `list` and `details`;
-- **no right, no model** — a model the role says nothing about is not in the
-  menu (`ModelView.is_accessible`) and its routes answer 403.
-
-A model view can switch an action off entirely with the usual `can_create`,
-`can_edit`, `can_delete`, `can_export` flags (e.g. `AIAnalyticsAdmin` has
-`can_create = False`); a flag off means the action opens nothing, right or not.
-
-**Custom actions** are not model CRUD, so each view declares what its buttons
-need in `BaseAdmin.action_permissions`, keyed by the slug sqladmin generates
-(`@action` slugifies the function name, so `mark_read` is `"mark-read"`):
-
-| View | Action | Right | Why |
-|---|---|---|---|
-| `UserAdmin` | `change-password` | `UPDATE` | it edits a user record |
-| `SourceAdmin` | `check-source` | `UPDATE` | it enqueues a collection run |
-| `AgentScenarioAdmin` | `view-prompts` / `toggle-active` | `VIEW` / `UPDATE` | read / toggles a flag |
-| `AgentTaskAdmin` | `run-now` | `UPDATE` | it enqueues a job |
-| `NotificationAdmin` | `mark-read`, `send-to-messenger` | `UPDATE` | both change state |
-| `AIAnalyticsAdmin` | `view-analysis` | `VIEW` | it opens the details page |
-| `LLMProviderAdmin` | `test-connection` | `CONFIGURE` | it calls the provider with the stored key |
-| `LLMModelAdmin` | `test-model` | `CONFIGURE` | same, for a model |
-
-Unlisted actions default to `UPDATE` (they are mutations by nature), and a key
-that names no action on the view is logged as a warning at startup — the
-spelling mistake is otherwise silent.
-
-**Where the code lives**
-
-| File | Role |
-|---|---|
-| `app/models/user.py` | `has_perm_for()` — the canonical check |
-| `app/core/permissions.py` | `has_permission()`, `has_role()`, `permission_scope()` — non-HTTP surfaces |
-| `app/admin/authorization.py` | `AdminAuthorizationBackend` — turns those rights into grants; also `require_admin_perm()` for routes outside the console |
-| `app/admin/base.py` | `action_permissions` declaration + `get_admin_user()` |
-| `app/admin/views.py` | per-view flags and action declarations |
-| `app/admin/auth.py` | who may enter the console at all |
-| `scripts/setup/assign_roles_permissions.py` | the canonical role → permission matrix |
-
-The backend derives the `identity → model` mapping from the registered views
-(`AgentTask` → `agent-task` → the `model_types` row `agenttask`), so a newly
-added admin view is gated with no extra wiring. A superuser is granted the
-wildcard pair and passes everything.
-
-The routes in `app/admin/endpoints.py` sit outside the sqladmin view tree
-(`/dashboard`, `/dashboard/topic-chains`, the password pages), so they call
-`require_admin_perm()` explicitly; changing *someone else's* password needs
-`user.update`, changing your own does not.
-
----
-
-## CSRF Protection
-
-The admin panel uses CSRF tokens for all state-changing operations. Tokens are
-managed by `CSRFTokenManager` and injected into all forms.
-
-- Token name: `csrf_token`
-- Token lifetime: `SCRF_TOKEN_EXPIRY_MINUTES` (default 15 min)
-- Token length: `SCRF_TOKEN_LENGTH` (default 32 bytes)
-
----
-
-## Rate Limiting
-
-| Endpoint | Rate Limit |
-|---|---|
-| Password Reset | `3/hour` |
-| Change Password | `5/minute` |
-
-Rate limiting is disabled in `DEBUG` mode.
-
----
-
-## Admin Pages
-
-The following model pages are available (all under `/admin/<identity>`):
-
-| Page | Model | Icon | Description |
-|---|---|---|---|
-| Пользователи | `User` | 👤 | User management |
-| Роли | `Role` | 🛡️ | Role definitions |
-| Разрешения | `Permission` | 🔑 | Permission entries |
-| Платформа | `Platform` | 🌐 | VK, Telegram, MAX platforms |
-| Источник | `Source` | 📡 | Content sources |
-| Сценарий агента | `AgentScenario` | 🤖 | AI analysis scenarios |
-| AI Аналитика | `AIAnalytics` | 📊 | AI analysis results |
-| Уведомление | `Notification` | 🔔 | System notifications |
-| Провайдер LLM | `LLMProvider` | 🖥️ | LLM provider config |
-| Модель LLM | `LLMModel` | 💾 | LLM model definitions |
-| Личные креды | `UserCredential` | 🔐 | Personal (per-user) L2 credentials vault |
-
----
-
-## Custom Actions
-
-Each admin page has custom actions available in list and detail views.
-
-### User
-
-| Action | Description |
-|---|---|
-| **Изменить пароль** | Redirects to change-password form for the selected user |
-
-### Platform
-
-| Action | Description |
-|---|---|
-| **Синхронизировать** | Placeholder for platform sync (TODO: implement) |
-
-### Source
-
-| Action | Description |
-|---|---|
-| **Проверить сейчас** | Collects content from this source in real-time and displays results with stats (likes, comments, views) and pagination. Handles VK privacy errors gracefully. |
-
-### AgentScenario
-
-| Action | Description |
-|---|---|
-| **👁️ Просмотр промптов** | Shows all prompts (text, image, video, audio, unified) with JSON instructions and scope config |
-| **Активировать/Деактивировать** | Toggles `is_active` status for selected scenarios |
-
-### AIAnalytics
-
-| Action | Description |
-|---|---|
-| **Просмотр анализа** | Redirects to the analytics detail page |
-
-### Notification
-
-| Action | Description |
-|---|---|
-| **Пометить прочитанным** | Marks selected notifications as read |
-| **Отправить в мессенджер** | Sends notification via Telegram messenger |
-
-### LLMProvider
-
-No custom actions (managed via CRUD).
-
-### LLMModel
-
-| Action | Description |
-|---|---|
-| **🧪 Тестировать модель** | Sends a test prompt to the model (mock or real) and displays the response, latency, token usage, and estimated cost. Can auto-update model prices from the response. |
-
-### Задача (AgentTask)
-
-| Action | Description |
-|---|---|
-| **Выполнить сейчас** | Enqueues the selected task's job immediately; a one-time (`@once`) task is completed (deactivated) in the process |
-
-The task create/edit form exposes **Источники** (multi-select over the
-`agent_task_sources` m2m table) and **Сценарий бота** (`agent_scenario_id`) in
-addition to the `payload` JSON (flat keys such as `period`, `monitored_users`,
-`excluded_users`).
-
----
-
-## Analytics Dashboard
-
-Two custom dashboard pages (outside sqladmin):
-
-### Main Dashboard
-
-```
-GET /dashboard
-```
-
-Displays aggregated analytics:
-- Sentiment trends
-- Top topics
-- LLM statistics and costs
-- Content mix
-- Engagement metrics
-
-Requires authentication via session (redirects to `/admin/login` if not logged in).
-
-### Topic Chains Dashboard
-
-```
-GET /dashboard/topic-chains
-```
-
-Displays topic chain evolution with:
-- List of topic chains
-- Topic evolution over time
-- Links to sources in social networks
-- Timeline of analyses
-
----
-
-## Static Files
-
-```
-GET /static/<file>
-```
-
-Serves static assets (logo, CSS, JS) from `app/static/`.
-
----
-
-## Configuration
-
-### Enable/Disable
-
-Controlled by `ADMIN_ENABLED` env var (default `true`).
-
-### Templates
-
-Custom templates are loaded from:
-1. `app/templates/` (project templates)
-2. `sqladmin/templates/` (sqladmin default templates)
-
-Custom create/edit/detail templates:
-- `sqladmin/source_create.html` / `source_edit.html` / `source_details.html`
-- `sqladmin/bot_scenario_create.html` / `bot_scenario_edit.html`
-- `sqladmin/scenario_prompts.html`
-- `sqladmin/ai_analytics_detail.html`
-- `llm_provider/create.html` / `edit.html`
-- `llm_model/test_results.html` / `test_error.html`
-
-### Template Globals
-
-All templates have access to:
-- `csrf_token()` — generates a new CSRF token
-- `settings` — application settings
-- `debug` — debug mode flag
-
----
-
-## Security
-
-### Web template escaping (`/app`)
-
-The separate web Jinja environment (`app/web/deps.py`) autoescapes HTML/XML
-templates and string templates. Stored names, prompts, errors and form values
-are text; do not bypass escaping with `safe` or a template-wide autoescape block.
-Serialize script data with `tojson`, not string interpolation. Alpine macro
-attributes use mappings rendered through `xmlattr`; only template-authored
-expressions belong there. Dynamic confirmation messages use `data-confirm` and
-the shared text-only dialog, never interpolation inside executable handlers.
-
-Template macros and captured template blocks retain their own HTML markup while
-their variable values are escaped. The invite QR SVG is the one explicit `safe`
-exception: it is generated locally by `segno`, not supplied as stored/user HTML.
-This policy does not change sqladmin's separate template environment, authorize
-external actions or sanitize URL schemes.
-
-### Session Authentication
-
-- Uses SQLAdmin authentication plus Starlette signed browser session cookies,
-  not a server-side session store. Signed content is not encrypted.
-- Access JWT is stored in that cookie; the outer SessionMiddleware lifetime is
-  24 hours and access-token expiry follows environment-specific settings.
-- `LOGIN_TIMEOUT_MINUTES` controls the legacy admin lockout interval, not
-  cookie/session lifetime. Current ordinary bad-password failures do not call
-  `track_login_attempt`; counters are cookie-local, and API/web login have no
-  corresponding shared throttle. Login protection is an open audit task.
-
-### Permission Checks
-
-- All admin operations run with `PlatformScopeMiddleware` (bypass tenancy)
-- The admin panel is the operator's console, not a client API
-- The legacy password-reset route checks only email existence plus CSRF; it
-  does not check admin-like permissions. See the unsafe-flow warning above.
-
-### Password Policy
-
-Password changes enforce the same policy as API:
-- Minimum length: `PASSWORD_MIN_LENGTH`
-- Uppercase, lowercase, digits required
-- Special characters optional (`PASSWORD_REQUIRE_SPECIAL`)
-
----
-
-## Architecture
-
-```
-app/admin/
-├── __init__.py          # Empty
-├── actions.py           # LLMModelActions (test model logic)
-├── auth.py              # AdminAuthBackend (session auth)
-├── base.py              # BaseAdmin (common config)
-├── csrf.py              # CSRFTokenManager
-├── endpoints.py         # Custom endpoints (reset-password, change-password, dashboards)
-├── middleware.py        # CSRF middleware for non-admin paths
-├── setup.py             # setup_admin() — initializes sqladmin, registers views
-├── views.py             # All admin view classes (UserAdmin, SourceAdmin, etc.)
-└── widgets.py           # Custom WTForms widgets (EuropeanDateField)
-```
-
-### Setup Flow
-
-```python
-# app/admin/setup.py
-def setup_admin(app):
-    # 1. Create CSRF manager
-    # 2. Include admin router (custom endpoints)
-    # 3. Create AdminAuthBackend
-    # 4. Create sqladmin instance
-    # 5. Register all view classes
-    # 6. Mount static files
-    # 7. Attach admin to app.state
-```
-
-
-## Notification messenger action
-
-The legacy one-click messenger button is hidden until an explicit recipient
-picker and delivery feedback are available. The authorized action endpoint
-requires `recipient_id` and checks that its active binding belongs to the
-notification row's active workspace. A missing/foreign recipient or ownerless
-notification cannot fall back to the env admin chat. The existing SQLAdmin
-session/role gate is unchanged. See [notification boundaries](NOTIFICATIONS.md).
-
-## Access schema transition
-
-Migration 0096 separates role catalogs and derives `Permission.codename` from
-`ModelType.resource_key` plus action. See [ACCESS_MIGRATION](ACCESS_MIGRATION.md).
-It is prepared but not applied by development or startup verification in this task.
-The old public password-reset POST now returns 410 without changing a password.
-Authenticated cross-account password administration requires a platform admin;
-a verified self-service recovery delivery flow remains separate work.
+The SQLAdmin console is a **global platform/operator interface**, not the
+workspace web application and not an editor for every ORM table.
+
+- Base path: `/admin` (local development: `http://localhost:8000/admin`).
+- Registration: [setup.py](../app/admin/setup.py); views: [views.py](../app/admin/views.py).
+- Enabled by `ADMIN_ENABLED` (default true) in [app.main](../app/main.py).
+- Source baseline: `dev` `edbe0fc02e6ea2d78302129e51febfa0e87464ab`, reviewed
+  on 2026-10-15; reservation commit `916d2e18eeafdd86d4857587638b73a24bcd0891`
+  changes only the ownership board.
+
+This is a source reference. No application startup, SQLAdmin/ASGI/browser test,
+database inspection, migration, provider call or messenger send was performed
+for this documentation update. Registered configuration is not proof that every
+legacy page currently renders; known source/configuration mismatches are listed
+below. See [MODELS](MODELS.md) for ORM definitions and
+[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
+
+## Authentication and platform authority
+
+[Auth backend](../app/admin/auth.py),
+[authorization backend](../app/admin/authorization.py),
+[User](../app/models/identity/user.py),
+[resource catalog](../app/core/access_catalog.py).
+
+`GET /admin/login` displays the SQLAdmin login form. Login accepts username or
+email and password, validates its CSRF token, and requires an active account
+whose **platform** role is `operator` or `admin` (`User.has_admin_access()`).
+Workspace owner/admin membership does not confer console access. SQLAdmin logout
+clears the browser session.
+
+Authenticated requests resolve the JWT subject to a fresh active User with
+platform role/permissions. The backend does not trust a stale session `user_id`
+as a second identity source. A platform admin receives wildcard console grants;
+an operator receives explicit model/action grants. There is no current
+`User.is_superuser` column.
+
+Permissions come from `role_permission` → `permissions.model_type_id` /
+`action_type`, with stable `ModelType.resource_key` registered in
+`app.core.access_catalog`. `Permission.codename` is derived as
+`resource_key.action`, not stored. `User.model_permissions()` resolves the resource
+and the operator's grants; `User.has_perm_for()` additionally validates the
+registered resource/action pair. Workspace surfaces use separate membership-role
+presets and scope checks; do not reuse console grants as workspace membership.
+
+### SQLAdmin action mapping
+
+| Console operation | Required `ActionType` |
+| --- | --- |
+| list, details | VIEW |
+| create, import (if offered by SQLAdmin) | CREATE |
+| edit | UPDATE |
+| delete | DELETE |
+| export | EXPORT |
+| custom action | Explicit `BaseAdmin.action_permissions` entry; otherwise UPDATE |
+
+For operators, any granted non-VIEW action also implies list/details so its form
+can be reached. No grants means no model access. View-level `can_*` flags still
+disable operations even for platform admins. Custom action declarations are
+checked against the action slugs; unknown declaration keys are logged when the
+lazy view catalog is built. Menu visibility alone is not authorization.
+
+Additional restrictions:
+
+- `TenantAdmin.is_accessible()` requires a platform admin, not merely a tenant
+  model grant or ownership of one workspace.
+- Platform roles and permissions are read-only in SQLAdmin (`can_create`,
+  `can_edit`, `can_delete` false); this does not itself disable export.
+- User forms exclude `role` / `role_id`; new users receive the ordinary platform
+  `user` role. Creating an operator/admin or changing operator grants is not an
+  ordinary SQLAdmin user-form operation.
+- External FastAPI dashboards use `require_admin_perm()` explicitly. Password
+  administration has its additional self/cross-account checks below.
+
+The main app's `PlatformScopeMiddleware` supplies explicit tenant bypass for the
+operator console/infrastructure, while `/app` and `/api` have their own scope
+middleware. Admin listings are not filtered by the web UI's selected workspace.
+Actions that execute a task re-enter the selected task's owning workspace.
+
+## Registered model pages
+
+Exactly **16 model views** are registered by `setup_admin()`. Paths shown are the
+SQLAdmin list routes; available menu entries and operations depend on grants.
+Unspecified CRUD/export flags inherit SQLAdmin defaults, not a promise of safe
+business-workflow execution.
+
+| View | Model | List path | Explicit restriction / purpose |
+| --- | --- | --- | --- |
+| `UserAdmin` | `User` | `/admin/user/list` | Account forms exclude platform-role assignment; password action is separate |
+| `RoleAdmin` | `PlatformRole` | `/admin/platform-role/list` | Platform catalog; create/edit/delete disabled |
+| `PermissionAdmin` | `Permission` | `/admin/permission/list` | Permission catalog; create/edit/delete disabled |
+| `PlatformAdmin` | `Platform` | `/admin/platform/list` | Platform configuration; no sync action |
+| `SourceAdmin` | `Source` | `/admin/source/list` | Sources and synchronous collection check |
+| `CollectedItemAdmin` | `CollectedItem` | `/admin/collected-item/list` | Raw staged content |
+| `AgentScenarioAdmin` | `AgentScenario` | `/admin/agent-scenario/list` | Analysis methodology, prompt preview and active flag |
+| `AgentTaskAdmin` | `AgentTask` | `/admin/agent-task/list` | Scheduled tasks and inline run action |
+| `BotActionAdmin` | `BotAction` | `/admin/bot-action/list` | Create disabled; edit form contains only `status` |
+| `AIAnalyticsAdmin` | `AIAnalytics` | `/admin/ai-analytics/list` | Create disabled; stored analysis view |
+| `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
+| `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
+| `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Global provider/key configuration and connection test |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Global model configuration and mock/real test |
+| `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
+| `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
+
+`Role` is a Python compatibility alias; the mapped class is `PlatformRole` and
+its default SQLAdmin identity is `platform-role`, not `role`.
+
+No model view is registered for `ModelType`, `WorkspaceRole`, membership/invite/
+channel rows, `DigestRun`, agent sessions/messages/memory/feedback, or the five
+LLM attempt/receipt/outcome/budget tables. Associations are not separate pages.
+The existence of a model or permission resource never creates an admin view.
+
+## Custom actions and side effects
+
+These are the **10 declared actions** in `views.py`. Default UI placement and
+required model right are shown separately from implementation behavior.
+
+| View / action slug | Right | UI placement | Current behavior |
+| --- | --- | --- | --- |
+| `UserAdmin` / `change-password` | UPDATE | List + detail | Redirects to the selected account's password form; the destination applies stricter cross-account checks |
+| `SourceAdmin` / `check-source` | UPDATE | List + detail | Calls the social client synchronously for the first selected source and renders paginated posts/stats; does not enqueue a collection job |
+| `AgentScenarioAdmin` / `view-prompts` | VIEW | Detail only | Shared ScenarioBuilder/PromptBuilder preview for media and unified prompts, including scope; no LLM call |
+| `AgentScenarioAdmin` / `toggle-active` | UPDATE | List + detail | Toggles selected scenarios' `is_active` |
+| `AgentTaskAdmin` / `run-now` | UPDATE | List + detail | Admits/enqueues the task run, claims that exact Job and executes inline in the request process; not merely a queue submission |
+| `AIAnalyticsAdmin` / `view-analysis` | VIEW | List + detail | Redirects to the stored analysis detail route |
+| `NotificationAdmin` / `mark-read` | UPDATE | List + detail | Sets selected rows' shared `is_read`; not personal acknowledgement or issue resolution |
+| `NotificationAdmin` / `send-to-messenger` | UPDATE | Hidden in list + detail | Endpoint remains registered; first selected notification requires explicit `recipient_id` for an active owned workspace binding |
+| `LLMProviderAdmin` / `test-connection` | CONFIGURE | List + detail | Uses the first active model found for that provider; real `client.analyze()` call with a fixed short prompt and `max_tokens=10` |
+| `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Opens status/test UI; mock is local, real mode is the capped probe described below |
+
+`PlatformAdmin` declares no custom action; there is no implemented or placeholder
+sync button in the current class. `JobAdmin` has no run/cancel/retry button.
+Changing a `BotAction.status` through its form is not evidence that full
+actor-bound approval, replay safety or external execution is implemented.
+
+### Run task now
+
+[Dispatcher](../app/jobs/dispatcher.py), [enqueue helper](../app/jobs/enqueue.py).
+`run_task_directly()` admits/enqueues inside `task.tenant_id`, claims the exact
+due row and runs its handler inline; a competing claim raises rather than
+starting a second handler. The Job remains the execution audit trail. The
+shared trigger path updates task bookkeeping, including one-shot deactivation.
+This action can invoke configured job behavior: do not use it as a harmless UI
+probe. See [AGENT_TASKS](AGENT_TASKS.md) for queue/outcome boundaries.
+
+Task create/edit exposes source multi-selection (`agent_task_sources`),
+`agent_scenario`, schedule/job/payload and trigger/action controls. Scenario =
+methodology; task = execution. Empty source selection and payload semantics are
+runtime contracts, not permission grants or a new business-workflow model.
+
+### LLM testing and prices
+
+[Action implementation](../app/admin/actions.py),
+[capped probe](../app/services/ai/model_probe.py).
+
+- Opening the model action without `prompt` displays local configuration/history
+  checks. It does not prove provider reachability.
+- With a prompt, `test_type` defaults to `mock`. The mock path constructs a
+  request and canned response locally, with simulated token usage; no provider
+  traffic or actual paid usage is implied.
+- `test_type=real` requires local status checks, then uses the fixed one-word
+  probe prompt, `max_tokens=8`, temperature 0 and a 20-second timeout. It does
+  **not** send the user's free-form prompt. The helper currently posts to an
+  OpenAI-shaped `/chat/completions` endpoint; this is not proof that all configured
+  Anthropic/custom formats or multimodal capabilities are validated.
+- On a successful real probe with reported tokens, the action updates
+  `last_request_cost` / `last_request_cost_at` using configured USD-per-1K rates.
+  It does not rewrite model tariff fields from generated text or a response;
+  `price_updated` stays false. This display estimate is not journal completeness,
+  settled spend or concurrency-safe budget enforcement.
+- Provider `test-connection` is a separate real analyze path, not the model
+  probe's local/mock/8-token ladder. Admin probes still need an explicit operator
+  payer/accounting decision; do not infer journal capture or admission from a
+  successful connection test. See [accounting scope](IMPLEMENTATION_STATUS.md).
+
+Only `LLMModel` has `is_default`; providers do not. Model capability/default
+selection and encrypted key access are described in [MODELS](MODELS.md).
+Provider keys are encrypted after save if not already recognized as encrypted;
+this does not authorize exposing plaintext or another user's personal secrets.
+
+### Notification delivery
+
+The messenger action is hidden pending a recipient picker/delivery-feedback UI.
+Its endpoint passes `recipient_id` and the notification's workspace to the
+messenger service. Missing/foreign/inactive recipients or an ownerless row cannot
+fall back to an environment admin chat. The action redirects after attempting
+delivery; it is not a per-recipient delivery report. See [NOTIFICATIONS](NOTIFICATIONS.md).
+
+## Password routes outside SQLAdmin
+
+[Endpoints](../app/admin/endpoints.py).
+
+| Method / route | Current contract |
+| --- | --- |
+| `GET /admin/reset-password` | Legacy public form still renders and issues a CSRF token; it is not a verified recovery flow |
+| `POST /admin/reset-password` | Handler raises **410 Gone** without account lookup, password mutation or temporary-password logging; limiter can reject earlier |
+| `GET /admin/user/change-password/{user_id}` | Active platform operator/admin required; self-change or platform-admin-only cross-account reset |
+| `POST /admin/user/change-password/{user_id}` | Same authority plus CSRF, confirmation and password validation; self-change verifies current password; cross-account reset also checks `user.update` |
+| `POST /admin/verify-current-password` | Uses the authenticated token subject and platform-entry gate; checks only that account's supplied `current_password`; returns `valid` Boolean |
+
+The password action's UPDATE grant alone does **not** authorize an operator to
+reset someone else's password. An operator may change their own through the
+external form without a user UPDATE grant. A platform admin resetting another
+account does not need that account's current password. No delivered expiring,
+one-use, account-bound self-service recovery mechanism is implied by the inert
+legacy form. Historical anonymous password replacement is no longer the current
+POST implementation; this documentation change did not implement that fix.
+
+Password rules come from `validate_password()` and `PASSWORD_*` settings, including
+minimum length and configured uppercase/lowercase/digit/special requirements.
+Rate-limit defaults: reset POST `3/hour`, change-password POST `5/minute`;
+`DEBUG` disables this endpoint limiter. These limits are not authorization.
+
+## Dashboard routes
+
+`GET /dashboard` and `GET /dashboard/topic-chains` are FastAPI template pages,
+not `/admin/<identity>` model views or the tenant home `/app/`. Both redirect a
+missing token to admin login and explicitly require platform entry plus
+`aianalytics` VIEW through `require_admin_perm()` before rendering. They provide
+analytics/trend/cost and topic-chain presentation; do not infer workspace scope
+from the web UI selector or full data-endpoint acceptance from a page GET.
+
+## Sessions, CSRF and known verification limits
+
+[Main setup](../app/main.py), [CSRF manager](../app/admin/csrf.py),
+[legacy middleware](../app/admin/middleware.py).
+
+- The outer Starlette `session` cookie is signed, not encrypted/server-side
+  storage. It carries an access JWT; max age is 24 hours. Access JWT expiry follows
+  the environment-specific token settings. HTTPS-only is false only for the
+  explicit development profile.
+- `LOGIN_TIMEOUT_MINUTES` is the legacy lockout interval, not session lifetime.
+  Login counters are cookie-local; ordinary wrong-password returns do not call
+  `track_login_attempt()`. A shared cross-surface throttle is still open work.
+- Login and password-change handlers explicitly verify `csrf_token`. The current
+  `CSRFTokenManager` constructor defaults to **30 minutes** and a signed timed
+  payload. Setup passes only `secret_key`; the similarly named
+  `SCRF_TOKEN_EXPIRY_MINUTES` / `SCRF_TOKEN_LENGTH` settings are not wired there.
+- Do not claim blanket CSRF coverage for all console CRUD/custom actions from
+  token availability in templates. The main app's legacy `csrf_middleware`
+  registration is commented out; that helper also skips `/admin`. Several custom
+  action handlers take state-changing arguments from GET query parameters.
+  Full SQLAdmin CRUD/action CSRF coverage was not verified by this source audit.
+- Console model rights do not replace tenant, recipient, provider-accounting,
+  external-write approval or runtime safety contracts. No live action is needed
+  to verify this documentation patch.
+
+### Known view/ORM configuration drift
+
+The registered source still contains legacy configuration mismatches; this
+reference must not describe them as working schema fields:
+
+- `SourceAdmin.column_list` names `date_from` / `date_to`, while current `Source`
+  declares neither column nor property (the columns were removed in migration
+  0079). Its create/edit form no longer includes those fields.
+- `PermissionAdmin.column_list` names `description`, but current Permission has
+  no such mapped column/property. The permission catalog is otherwise read-only.
+
+These are source observations, not a claim that startup or a particular rendered
+page was reproduced. Fixing runtime/view code is separate from this docs-only
+package. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains
+outside the checks performed here; prior C/D limits stay in the delivered index.
+
+## Templates and module map
+
+SQLAdmin uses project `app/templates/` plus its own template loader; the custom
+FastAPI pages use both project and installed SQLAdmin template directories.
+Template globals registered by setup: `csrf_token()`, `settings`, `debug`,
+`render_analysis`. Static assets are mounted at `/static`.
+
+Representative overrides: `sqladmin/source_{create,edit,details}.html`,
+`sqladmin/bot_scenario_{create,edit}.html`, `sqladmin/scenario_prompts.html`,
+`sqladmin/ai_analytics_detail.html`, `llm_provider/{create,edit}.html`,
+`llm_model/{test_results,test_error}.html` and `sqladmin/user/` password forms.
+The separate `/app` Jinja autoescaping contract does not certify SQLAdmin's
+independent template environment or URL safety.
+
+| Module | Responsibility |
+| --- | --- |
+| `app/admin/setup.py` | Console/auth/authorization setup, globals, static mount and 16 registered views |
+| `app/admin/views.py` | Forms, lists, flags, queries and 10 action declarations |
+| `app/admin/auth.py` | Login/logout and fresh platform entry |
+| `app/admin/authorization.py` | Per-request grants, lazy identity/action catalog and external-route guard |
+| `app/admin/base.py`, `formatters.py`, `widgets.py` | Shared view configuration, display formatting and form widgets |
+| `app/admin/actions.py` | LLM model status/mock/real action rendering |
+| `app/admin/endpoints.py` | Password and dashboard FastAPI routes |
+| `app/admin/csrf.py`, `middleware.py` | Token manager and legacy middleware helpers; registration/coverage limits above |
+
+## Access schema and rollout
+
+Source head 0096 separates platform/workspace catalogs, adds resource keys and
+personal-memory ownership, and changes membership AI access. See
+[ACCESS_MIGRATION](ACCESS_MIGRATION.md) and [MODELS](MODELS.md). Existing owner-local
+application/validation is recorded in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md);
+it is not proof of production state, universal schema parity or full admin
+acceptance. This patch applies no migrations and activates no provider or live action.

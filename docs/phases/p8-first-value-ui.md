@@ -51,6 +51,22 @@ Attention feed lives in the floating bell (B), not a home card.
   owner: unassigned; status: TODO — evidence:
   [PR #175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703)
 
+- [ ] P8-T06 — shared prompt-free LLM check and operator model-test UI;
+  accept: LLMModelAdmin list/detail/configuration render correctly; short button
+  calls the same local service as web settings without a question/provider call;
+  mock and explicitly confirmed capped real modes remain distinct; GET never
+  dispatches; POST enforces fresh CONFIGURE + CSRF; responsive light/dark/system
+  UI and escaped success/error/unknown-usage results pass local acceptance;
+  depends: owner-local validation and explicit owner merge approval;
+  owns: LLMModelAdmin-only views.py, admin actions/endpoints/price formatter,
+  services/ai/model_probe.py, web settings probe handler/help text,
+  llm_model templates, scoped admin-model-test CSS/JS and tests, ADMIN/MODELS docs;
+  owner: remote Notion agent (`feat/admin-llm-short-probe`); status: BLOCKED —
+  [PR #200](https://github.com/Starck43/social-media-ai/pull/200) Draft;
+  implementation complete, remote no-DB checks passed; real local route/role/
+  revocation/DB acceptance pending. Migrated this lane's reservation after the
+  design board was replaced; no broader P8-T03 or P2-T02 acceptance claimed.
+
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only
 when their contracts exist — no fake rows or Soon cards. NULL-role membership

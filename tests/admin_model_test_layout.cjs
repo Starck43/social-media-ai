@@ -28,8 +28,22 @@ const assert = require('node:assert/strict');
             const expectedDark = theme === 'dark' || theme === 'system-dark';
             assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), expectedDark);
             assert.deepEqual(errors, [], `${width}/${theme}/${state} script errors`);
+            assert((await page.locator('.llm-footer').boundingBox()).height < 140, 'global nav styles must not stretch the footer');
+            const contrasts = await page.evaluate(() => {
+                const color = text => text.startsWith('#') ? text.slice(1).match(/../g).map(v => parseInt(v,16)) : text.match(/[\d.]+/g).slice(0,3).map(Number);
+                const luminance = text => color(text).map(v => {v/=255; return v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4;}).reduce((sum,v,i) => sum+v*[.2126,.7152,.0722][i],0);
+                const ratio = (a,b) => {a=luminance(a); b=luminance(b); return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);};
+                const css = selector => getComputedStyle(document.querySelector(selector));
+                const gradient = css('main').getPropertyValue('--auth-bg-gradient').match(/#[0-9a-f]{6}/gi);
+                const pairs = gradient.map(bg => [css('.llm-test-heading .llm-muted').color,bg]);
+                pairs.push([css('.llm-panel .llm-muted').color,css('.llm-panel').backgroundColor]);
+                pairs.push([css('.llm-mode p').color,css('.llm-mode').backgroundColor]);
+                pairs.push([css('.llm-primary').color,css('.llm-primary').backgroundColor]);
+                return pairs.map(([a,b]) => ratio(a,b));
+            });
+            contrasts.forEach(value => assert(value >= 4.5, `${width}/${theme}/${state} text contrast ${value}`));
             for (const button of await page.locator('button[name="test_type"]').all()) assert((await button.boundingBox()).height >= 44);
-            if (process.env.SCREENSHOT_DIR && ['initial','error','unknown','long'].includes(state) && ['light','dark'].includes(theme)) {
+            if (process.env.SCREENSHOT_DIR && states.includes(state) && ['light','dark'].includes(theme)) {
                 fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive:true});
                 await page.screenshot({path:path.join(process.env.SCREENSHOT_DIR, `${width}-${theme}-${state}.png`), fullPage:true});
             }
@@ -64,6 +78,14 @@ const assert = require('node:assert/strict');
         await page.locator('summary').first().focus(); await page.keyboard.press('Enter');
         assert.equal(await page.locator('details').first().getAttribute('open'), '');
         await context.close();
-        console.log(`PASS: ${cases} viewport/theme/state cases + submission, confirmation, busy guard, bfcache and keyboard checks`);
+        const noJS = await browser.newContext({viewport:{width:390,height:900}, javaScriptEnabled:false});
+        const native = await noJS.newPage();
+        await native.route('**/*', route => route.request().url().startsWith('file:') ? route.continue() : route.abort());
+        await native.goto('file://' + path.join(folder, 'initial.html'));
+        assert.equal(await native.locator('button[type="submit"][name="test_type"]').count(), 3);
+        assert.equal(await native.locator('form#llm-test-form').getAttribute('method'), 'post');
+        assert.equal(await native.locator('input[name="csrf_token"]').count(), 1);
+        await noJS.close();
+        console.log(`PASS: ${cases} viewport/theme/state cases + submission, confirmation, contrast, native no-JS controls, busy guard, bfcache and keyboard checks`);
     } finally { await browser.close(); fs.rmSync(folder, {recursive:true,force:true}); }
 })().catch(error => { console.error(error); process.exit(1); });

@@ -11,6 +11,7 @@ html.dark .llm-test, [data-theme="dark"] .llm-test { --llm-accent: #22d3ee; --ll
 .llm-test .llm-muted, .llm-test dt { color: var(--color-text-secondary, #475569); font-size: 14px; }
 .llm-test-heading, .llm-section-heading, .llm-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .llm-test-heading { padding: 8px 0; } .llm-test .llm-eyebrow { margin: 0 0 8px; color: var(--color-text-secondary, #475569); font-size: 14px; }
+.llm-test-heading .llm-muted, .llm-test-heading .llm-eyebrow, .llm-footer .llm-muted { color: inherit; }
 .llm-panel { border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 12px;
     background: var(--color-surface, #fff); padding: 24px; margin-bottom: 24px; min-width: 0; }
 .llm-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; margin: 24px 0; }

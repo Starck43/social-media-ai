@@ -103,9 +103,32 @@ were not changed.
 
 The OpenCode no-DB authorization suite passed 327 tests, followed by a focused
 62-test `test_access_policy.py` run after the resource-seeding regression was
-added. No shared-test-schema run, concurrent PostgreSQL application test, or
-real ASGI acceptance run was performed. Those behavior checks remain pending;
-the migration result alone does not complete application acceptance.
+added. Subsequent real PostgreSQL/ASGI acceptance passed 29 selected cases
+through OpenCode in three sequential batches (21 + 4 + 4). Coverage includes
+API/workspace boundaries, explicit operator grants, ordinary-user admin denial,
+foreign queue/digest isolation, concurrent last-owner self-demotion, fresh AI
+and membership revocation at actual tool dispatch, and personal facts,
+transcript selection and learning cursors. Foreign learning evidence is refused
+without advancing the cursor. Exact scopes and tested revision/diff are in
+`ROADMAP.md`; these checks do not certify the full suite or production cutover.
+
+The owner also authorized an exceptional in-place update of the existing local
+`social_manager/test_schema`. This schema had no Alembic version table and
+already contained the receipt/outcome/budget tables and their integrity guards.
+After verifying the local target, absence of test writers and a private custom
+archive (399 entries; directory 0700, file 0600), the unchanged revision `0096`
+operations ran through Alembic `MigrationContext`/`Operations` in one transaction
+against that schema. Revisions `0093`–`0095` were not replayed; no version table
+was created and no revision was stamped. This is a bounded update of an
+unversioned test fixture, not evidence of a normal Alembic upgrade chain.
+
+Postflight preserved the checked business counts, all five LLM integrity
+triggers and three supporting functions; `public` counts were unchanged.
+The test catalog contains three platform roles, five workspace roles and 31
+resource identities, with no unmapped or retired resource metadata. Ordinary
+pytest startup now validates schema/reference completeness read-only and does
+not create, migrate or seed the shared target. Exceptional future schema changes
+follow the explicit authorization and backup requirements in `.agent/rules.md`.
 
 ## Acceptance before cutover
 

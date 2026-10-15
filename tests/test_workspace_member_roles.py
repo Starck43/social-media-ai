@@ -12,6 +12,7 @@ import re
 import secrets
 from types import SimpleNamespace
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.permissions import has_permission, permission_scope, workspace_models
@@ -172,6 +173,7 @@ async def _member_of_host(platform_role: PlatformRoleType, member_role: Workspac
     return member, host, own_tenant, host_tenant
 
 
+@pytest.mark.tenancy
 async def test_platform_admin_invited_as_viewer_cannot_write_in_the_host_workspace() -> None:
     member, host, own_tenant, host_tenant = await _member_of_host(PlatformRoleType.ADMIN, WorkspaceRoleType.VIEWER)
     try:
@@ -185,6 +187,7 @@ async def test_platform_admin_invited_as_viewer_cannot_write_in_the_host_workspa
         await _drop([member, host], [own_tenant, host_tenant])
 
 
+@pytest.mark.tenancy
 async def test_member_role_grants_workspace_writes_beyond_the_platform_role() -> None:
     member, host, own_tenant, host_tenant = await _member_of_host(PlatformRoleType.USER, WorkspaceRoleType.MANAGER)
     try:

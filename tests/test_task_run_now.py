@@ -14,6 +14,7 @@ Real PostgreSQL (same policy as the rest of the suite).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
 
@@ -145,6 +146,108 @@ async def test_saving_and_running_queues_the_job_instead_of_blocking(client):
         assert job.status == "pending", f"expected a queued job, got {job.status}"
     finally:
         await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_source_admission_serializes_real_postgres_sessions_and_rolls_back(client, monkeypatch):
+    from app.core.database import new_session
+    from app.jobs.source_activity import SourceJobBusy
+    from app.models.managers.job_manager import JobManager
+
+    user, tenant_id = await _register(client, "admissionrace")
+    source = await _make_source(tenant_id)
+    first_locked = asyncio.Event()
+    second_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    calls = 0
+    original_lock = JobManager.lock_source_admission
+
+    async def held_lock(session, requested_tenant_id):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            second_entered.set()
+        await original_lock(session, requested_tenant_id)
+        if calls == 1:
+            first_locked.set()
+            await release_first.wait()
+
+    monkeypatch.setattr(JobManager, "lock_source_admission", staticmethod(held_lock))
+
+    async def admit():
+        with tenant_scope(tenant_id):
+            session = new_session()
+            try:
+                async with session.begin():
+                    return await Job.objects.admit_source_job(
+                        "analyze", {"source_ids": [source.id]}, session=session
+                    )
+            finally:
+                await session.close()
+
+    try:
+        with tenant_scope(tenant_id):
+            session = new_session()
+            try:
+                with pytest.raises(RuntimeError, match="abort after insert"):
+                    async with session.begin():
+                        await Job.objects.admit_source_job(
+                            "analyze", {"source_ids": [source.id]}, session=session
+                        )
+                        raise RuntimeError("abort after insert")
+            finally:
+                await session.close()
+        with tenant_scope(tenant_id):
+            assert await Job.objects.filter(job_type="analyze").count() == 0
+
+        first = asyncio.create_task(admit())
+        await asyncio.wait_for(first_locked.wait(), timeout=5)
+        second = asyncio.create_task(admit())
+        await asyncio.wait_for(second_entered.wait(), timeout=5)
+        release_first.set()
+        results = await asyncio.gather(first, second, return_exceptions=True)
+        assert sum(isinstance(value, SourceJobBusy) for value in results) == 1
+        assert sum(isinstance(value, Job) for value in results) == 1
+        with tenant_scope(tenant_id):
+            assert await Job.objects.filter(job_type="analyze").count() == 1
+    finally:
+        release_first.set()
+        await _drop(user, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_web_run_now_cannot_cross_workspace_scope(client):
+    from app.core.permissions import service_permission_scope
+
+    owner, owner_tenant_id = await _register(client, "admissionowner")
+    other_client = AsyncClient(
+        transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True
+    )
+    other = other_tenant_id = source = task = None
+    try:
+        other, other_tenant_id = await _register(other_client, "admissionother")
+        source = await _make_source(owner_tenant_id)
+        with tenant_scope(owner_tenant_id), service_permission_scope("agenttask", "create"):
+            task = await AgentTask.objects.create(
+                name=_name("private-task"), job_type="analyze", cron_expr="@once", payload={},
+                is_active=False, tenant_id=owner_tenant_id,
+            )
+        with tenant_scope(owner_tenant_id), service_permission_scope("agenttask", "update"):
+            from app.models.managers.agent_task_manager import AgentTaskManager
+
+            await AgentTaskManager().add_sources(task.id, [source.id])
+
+        response = await other_client.post(
+            f"/app/tasks/{task.id}/run-now", data={"_csrf": await _csrf(other_client, "/app/tasks")}
+        )
+        assert response.status_code == 200
+        assert task.name not in response.text
+        with tenant_scope(owner_tenant_id):
+            assert await Job.objects.filter(agent_task_id=task.id).count() == 0
+    finally:
+        await other_client.aclose()
+        await _drop(other, other_tenant_id)
+        await _drop(owner, owner_tenant_id)
 
 
 @pytest.mark.asyncio
@@ -520,14 +623,13 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["pending", "running"])
 @pytest.mark.parametrize("fallback", [False, True], ids=["recent", "outside-recent-ten"])
-@pytest.mark.parametrize("actor", ["owner", "superuser"])
-async def test_task_detail_renders_active_job_and_sources_inside_authorized_scope(client, status, fallback, actor):
+async def test_task_detail_renders_active_job_and_sources_inside_authorized_scope(client, status, fallback):
     from datetime import datetime, timedelta, timezone
 
     from app.core.permissions import service_permission_scope
 
-    owner = operator = None
-    tenant_id = operator_tenant_id = None
+    owner = None
+    tenant_id = None
     try:
         owner, tenant_id = await _register(client, "detailtarget")
         platform = await Platform.objects.filter(is_active=True).first()
@@ -560,18 +662,7 @@ async def test_task_detail_renders_active_job_and_sources_inside_authorized_scop
                     )
             recent = await Job.objects.filter(agent_task_id=task.id).order_by(Job.created_at.desc()).limit(10)
             assert (active_job.id not in {job.id for job in recent}) == fallback
-        if actor == "superuser":
-            async with AsyncClient(
-                transport=ASGITransport(app=create_application()), base_url="http://testserver", follow_redirects=True,
-            ) as operator_client:
-                operator, operator_tenant_id = await _register(operator_client, "detailoperator")
-                assert operator_tenant_id != tenant_id
-                # Actual platform-superuser identity in its own active workspace,
-                # viewing the target task through the route's existing bypass.
-                await User.objects.update_by_id(operator.id, is_superuser=True)
-                page = await operator_client.get(f"/app/tasks/{task.id}", params={"tenant_id": tenant_id})
-        else:
-            page = await client.get(f"/app/tasks/{task.id}")
+        page = await client.get(f"/app/tasks/{task.id}")
         assert page.status_code == 200
         assert task.name in page.text
         assert f'href="/app/sources/{source.id}"' in page.text and source.name in page.text
@@ -588,5 +679,4 @@ async def test_task_detail_renders_active_job_and_sources_inside_authorized_scop
             assert unchanged.status == status and unchanged.started_at == active_job.started_at
             assert await Job.objects.filter(agent_task_id=task.id).count() == (11 if fallback else 1)
     finally:
-        await _drop(operator, operator_tenant_id)
         await _drop(owner, tenant_id)

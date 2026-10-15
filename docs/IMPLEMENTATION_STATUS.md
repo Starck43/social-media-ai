@@ -58,7 +58,7 @@ Standalone frozen reviewed baseline provisioning is in [Draft PR #197](https://g
 | Area | Delivered behavior | Integration references | Remaining boundary |
 | --- | --- | --- | --- |
 | Notification display — C browser-local slice | Caller-keyed browser-only display preferences for optional connection/task signals, opt-in hint and device-local quiet hours. Counter/list share the filtered snapshot; persisted messages remain visible. Restore is reachable in Settings Account/Connections even with an empty bell. Shared event reads are unchanged. | [PR #190](https://github.com/Starck43/social-media-ai/pull/190), head `8186cac`, merge `734e479`; source-pinned sandbox checks and owner visual acceptance retained in the PR. [Functional contract](NOTIFICATIONS.md#current-web-bell-and-display-policy). | Durable storage/cross-device sync and personal acknowledgement are not implemented; real storage lifecycle and full accessibility acceptance remain separate. |
-| Settings/access contexts — D bounded slice | Selected permitted tabs load only their own data; members receive a limited workspace summary, management needs a concrete-target capability. Team can disable a non-owner bound web membership with confirmation/CSRF, retaining audit rows. Shell distinguishes owned/granted workspaces; all guest-workspace web chat endpoints are denied. Every active authenticated user may enter global SQLAdmin, but existing platform model/action guards still apply to token-bound identity. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191), head `43608e6`, merge `ae77f55`; 226 isolated pytest checks and offline owner/guest 40 cases +8 interactions, Settings 80 cases at the final head. Original evidence/limitations retained in the PR. Local `2dd3161` additionally removes NULL-role owner-label inference without changing memberships. [Scopes](TENANCY.md#web-settings-and-ownedgranted-workspace-context); [admin](ADMIN.md). | Real SQLAdmin/ASGI/PG role, disable race/rollback and adjusted app-importing legacy tests are not certified by sandbox evidence. Later owner-local home/A/B acceptance above is not full C/D acceptance. No schema, runtime or deployment acceptance. |
+| Settings/access contexts — D bounded slice | Selected permitted tabs load only their own data; members receive a limited workspace summary, management needs a concrete-target capability. Team can disable a non-owner bound web membership with confirmation/CSRF, retaining audit rows. Shell distinguishes owned/granted workspaces; all guest-workspace web chat endpoints are denied. At that revision, every active authenticated user could enter global SQLAdmin with platform model/action guards; the later access-model restructuring below supersedes entry with operator/admin-only access. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191), head `43608e6`, merge `ae77f55`; 226 isolated pytest checks and offline owner/guest 40 cases +8 interactions, Settings 80 cases at the final head. Original evidence/limitations retained in the PR. Local `2dd3161` additionally removes NULL-role owner-label inference without changing memberships. [Scopes](TENANCY.md#web-settings-and-ownedgranted-workspace-context); [admin](ADMIN.md). | Real SQLAdmin/ASGI/PG role, disable race/rollback and adjusted app-importing legacy tests are not certified by sandbox evidence. Later owner-local home/A/B acceptance above is not full C/D acceptance. No schema, runtime or deployment acceptance. |
 
 Audit follow-ups: [PR #196](https://github.com/Starck43/social-media-ai/pull/196) records ten TODO security/correctness/refactoring
 contracts and nine synthetic observations at the fixed snapshot. No application
@@ -74,7 +74,7 @@ Add or update one area row only when a merge changes a durable project boundary.
 Link the PR and state the remaining boundary. Keep command output, individual test
 counts, patch hashes and abandoned approaches in the PR rather than this file.
 
-## Access-model restructuring — implementation in working tree
+## Access-model restructuring — local integration accepted
 
 Accepted owner plan: independent platform/workspace catalogs, stable domain
 resource permissions, operator-only admin, membership-only workspace UI/API,
@@ -83,6 +83,15 @@ to the local development PostgreSQL `social_manager/public` schema; this is not
 a production deployment. Original historical evidence above remains tied to its
 original revisions and does not validate the new schema. Current OpenCode and
 redacted migration evidence, plus remaining acceptance boundaries, are recorded
-in ROADMAP.md. Shared-test-schema behavior, concurrent PostgreSQL application
-acceptance, and real ASGI acceptance remain pending; `alembic check` also reports
-existing model/schema drift.
+in ROADMAP.md. The owner-authorized in-place update of the unversioned local
+`test_schema` applied unchanged 0096 operations without stamping or replaying
+0093–0095; checked business counts and all LLM integrity guards were preserved.
+Pytest startup validates the existing target read-only. OpenCode passed 29
+distinct real PostgreSQL/ASGI cases in sequential batches (21 + 4 + 4), covering
+workspace boundaries, explicit operator grants and ordinary-user admin denial,
+scoped queue/digest access, concurrent last-owner preservation, fresh AI and
+membership revocation at tool dispatch, and personal facts/transcripts/cursors.
+Isolated confirmation checks cover pending-approval authority changes; a real
+PostgreSQL pending-confirmation end-to-end run is not claimed. This accepts the
+bounded local implementation, not full-suite, browser or production acceptance.
+`alembic check` still reports existing model/schema drift.

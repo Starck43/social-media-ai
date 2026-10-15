@@ -225,6 +225,7 @@ async def test_digest_history_shows_runs_and_cost_for_the_workspace() -> None:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_digest_history_does_not_leak_another_workspace() -> None:
     owner: User | None = None
     other: User | None = None
@@ -302,6 +303,7 @@ async def test_read_only_member_cannot_send_a_digest() -> None:
 # ── /app/jobs ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.tenancy
 async def test_workspace_owner_can_open_queue() -> None:
     owner: User | None = None
     try:
@@ -316,26 +318,27 @@ async def test_workspace_owner_can_open_queue() -> None:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_jobs_page_lists_queue_health_and_failures() -> None:
     owner: User | None = None
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobOwner")
-            await _seed_job(tenant_id, "pending")
-            await _seed_job(tenant_id, "failed", error="connection reset by peer")
+            pending = await _seed_job(tenant_id, "pending")
+            failed = await _seed_job(tenant_id, "failed", error="connection reset by peer")
 
             page = await client.get("/app/jobs")
             assert page.status_code == 200
             assert "Задания" in page.text
+            assert f"#{pending.id}" in page.text
+            assert f"#{failed.id}" in page.text
             # The error text is the whole point of the page.
             assert "connection reset by peer" in page.text
-            # The workspace column wears the product word — shown because this
-            # workspace owner role grants access to this queue.
-            assert ">Пространство<" in page.text
     finally:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_jobs_page_does_not_leak_another_workspace() -> None:
     owner: User | None = None
     other: User | None = None
@@ -386,6 +389,7 @@ async def test_rerun_refuses_a_job_that_is_not_failed() -> None:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_platform_admin_as_workspace_viewer_cannot_open_queue() -> None:
     owner: User | None = None
     viewer: User | None = None
@@ -399,7 +403,7 @@ async def test_platform_admin_as_workspace_viewer_cannot_open_queue() -> None:
         async with await _client() as client:
             await _login(client, viewer.username)
             refused = await client.get("/app/jobs", follow_redirects=False)
-            assert refused.status_code == 302
+            assert refused.status_code == 403
             dash = await client.get("/app/")
             assert "Очередь задач" not in dash.text
             token = CSRF_RE.search(dash.text).group(1)
@@ -411,6 +415,7 @@ async def test_platform_admin_as_workspace_viewer_cannot_open_queue() -> None:
         await _cleanup(viewer, owner)
 
 
+@pytest.mark.tenancy
 async def test_read_only_member_cannot_rerun_a_job() -> None:
     """A workspace viewer cannot access the queue or rerun jobs."""
     owner: User | None = None
@@ -428,7 +433,7 @@ async def test_read_only_member_cannot_rerun_a_job() -> None:
             await _login(client, viewer.username)
             # The page itself refuses — hiding the sidebar item is not the check.
             refused = await client.get("/app/jobs", follow_redirects=False)
-            assert refused.status_code == 302
+            assert refused.status_code == 403
             dash = await client.get("/app/")
             assert "Очередь задач" not in dash.text, "the sidebar must not offer the queue"
             token = CSRF_RE.search(dash.text).group(1)
@@ -529,6 +534,7 @@ async def test_clear_empties_the_queue_but_keeps_running_jobs() -> None:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_clear_does_not_reach_another_workspace() -> None:
     owner: User | None = None
     other: User | None = None
@@ -615,6 +621,7 @@ async def test_cleanup_without_csrf_is_refused() -> None:
         await _cleanup(owner)
 
 
+@pytest.mark.tenancy
 async def test_row_delete_does_not_reach_another_workspace() -> None:
     owner: User | None = None
     other: User | None = None

@@ -41,7 +41,7 @@ def test_the_owner_level_is_not_invitable_and_legacy_member_reads_as_viewer() ->
     assert member_roles.resolve(" Member ").key == "viewer"
     assert member_roles.resolve("root") is None
     assert member_roles.resolve(None) is None
-    assert {level.codename for level in member_roles.INVITABLE} == {"ADMIN", "MANAGER", "ANALYST", "VIEWER"}
+    assert {level.codename for level in member_roles.INVITABLE} == {"admin", "manager", "analyst", "viewer"}
 
 
 def test_key_of_reads_the_membership_role() -> None:
@@ -55,7 +55,7 @@ def test_key_of_reads_the_membership_role() -> None:
 
     assert member_roles.key_of(_M(None, None)) is None
     assert member_roles.key_of(_M(3, _Role(WorkspaceRoleType.ANALYST))) == "analyst"
-    assert member_roles.key_of(_M(3, _Role("MANAGER"))) == "manager"
+    assert member_roles.key_of(_M(3, _Role(WorkspaceRoleType.MANAGER))) == "manager"
     assert member_roles.key_of(_M(3, None)) is None
 
 

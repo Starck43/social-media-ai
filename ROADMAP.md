@@ -18,8 +18,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P7-T03 — canonical domain model imports → [p7](docs/phases/p7-operations.md) — owner: codex — BLOCKED
-
 - [ ] P1-T01 — prove source admission on PostgreSQL (race/rollback/ASGI scope) → [p1](docs/phases/p1-queue-execution.md) — owner: codex — BLOCKED
 - [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
 - [ ] P2-T01 — one admission activation prerequisite (PR #180 unwired) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO

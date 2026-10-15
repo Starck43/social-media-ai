@@ -1,9 +1,4 @@
-"""Collection-domain models with lazy exports preserving root import order.
-
-The original root imports CollectedItem, Platform and Source at different
-points. Eagerly importing all three here would change mapper registration order.
-Legacy modules retain manager binding; canonical leaves only declare models.
-"""
+"""Collection models with lazy exports. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 

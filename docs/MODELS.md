@@ -13,7 +13,13 @@ live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
 once after class registration. Root-level modules and the older `analysis.llm_*`
 / `scheduling.digest_run` modules are compatibility re-exports of the same mapped
 classes, not additional tables. `Role` aliases `PlatformRole`; it is not another
-mapper. See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
+mapper. The public facade imports domain packages directly; manager registration
+imports managers from `app.models.managers`, independently of legacy wrappers.
+New model declarations belong in the matching domain package. Keep `base.py`,
+`bootstrap.py`, `scenario_schema_guard.py` and `managers/` as shared infrastructure.
+Existing root import paths retain their compatibility exports; do not declare
+models or instantiate managers in these wrappers.
+See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 
 Field inventories omit inherited fields where indicated. Exact types, defaults,
 nullability and constraints remain in the linked declarations. Planned work and

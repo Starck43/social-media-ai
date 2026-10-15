@@ -17,15 +17,17 @@ encrypted credentials; staging-backed install/upgrade/rollback/restore proofs.
   chosen operation; depends: staging availability; owns: docs/evidence lane;
   owner: unassigned; status: TODO
 
-- [ ] P7-T03 — use canonical domain model imports and direct manager registration;
+- [x] P7-T03 — use canonical domain model imports and direct manager registration;
   accept: public/legacy/domain class identity, manager bindings and schema preserved;
   focused import checks completed; depends: none; owns: `app/models/`,
-  `tests/test_model_bootstrap.py`, `docs/MODELS.md`; owner: codex; status: BLOCKED
-  — implementation reviewed on `a3a3262` + working diff; Black, isort checks and
-  `git diff --check` passed. OpenCode collection/execution pending: existing pytest
-  PID 47047 uses shared `test_schema` and overlapping model-layout scopes. Resume
-  the assigned `.agents/tmp/test-task-model-domains.md` after that run finishes;
-  no migrations or schema changes required.
+  `tests/test_model_bootstrap.py`, `docs/MODELS.md`; owner: codex; status: DONE —
+  2026-10-16; `tests/test_model_bootstrap.py` PASS 17/17 on dirty diff at HEAD
+  da83366; Black/isort check-only and `git diff --check` clean. Wider model-layout
+  run at the same HEAD: FAIL, 138 passed/20 failed; failures assert leaf-class app
+  labels, schema fingerprints and relationship contracts. This refactor changes only
+  facade/bootstrap/package docs and adds bootstrap checks; leaf declarations and tests
+  are untouched, so the wider result is not claimed green. No migrations or schema
+  changes required.
 
 - [x] P7-T04 — document routine OpenCode routing and separate pytest route;
   status: DONE — 2026-10-15; TOML and `git diff --check` passed; OpenCode API

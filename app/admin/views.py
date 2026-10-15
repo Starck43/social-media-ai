@@ -9,10 +9,10 @@ from sqladmin.fields import SelectField
 from sqlalchemy import Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from wtforms import validators, widgets
+from wtforms import FloatField, validators, widgets
 
 from app.admin.actions import LLMModelActions
-from app.admin.formatters import format_date, format_usd, plan_badge
+from app.admin.formatters import format_date, format_usd, model_price, plan_badge
 from app.core.hashing import get_password_hash
 from app.models import (
     AgentScenario,
@@ -1326,7 +1326,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     name_plural = "Модели ИИ"
     icon = "fa fa-microchip"
 
-    # Как и у провайдера: реальный вызов модели по сохранённому ключу.
+    # Local checks and an explicitly confirmed real probe require operator configuration rights.
     action_permissions = {"test-model": ActionType.CONFIGURE}
 
     column_list = [
@@ -1369,6 +1369,8 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             "is_default": "По умолчанию",
             "use_count": "Вызовов всего",
             "fail_count": "Ошибок всего",
+            "last_request_cost": "Оценка последней пробы, $",
+            "last_request_cost_at": "Время последней оценки",
             "last_used_at": "Последний вызов",
             "last_success_at": "Последний успех",
             "last_error_at": "Последняя ошибка",
@@ -1376,10 +1378,42 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         **BaseAdmin.column_labels,
     )
 
-    form_excluded_columns = BaseAdmin.form_excluded_columns + ["text_scenarios", "image_scenarios", "video_scenarios"]
+    column_details_list = column_list + [
+        "description",
+        "custom_endpoint_path",
+        "max_tokens",
+        "default_temperature",
+        "last_request_cost",
+        "last_request_cost_at",
+        "use_count",
+        "fail_count",
+        "last_used_at",
+        "last_success_at",
+        "last_error_at",
+        "created_at",
+        "updated_at",
+    ]
+    form_columns = [
+        "provider",
+        "name",
+        "model_id",
+        "description",
+        "model_type",
+        "custom_endpoint_path",
+        "input_cost_per_1k",
+        "output_cost_per_1k",
+        "max_tokens",
+        "default_temperature",
+        "is_active",
+        "is_default",
+    ]
 
     form_overrides = {
         "model_type": CommaSeparatedSelectMultipleField,
+        # Explicit fields also support SQLAlchemy 2.1 Float conversion in SQLAdmin.
+        "input_cost_per_1k": FloatField,
+        "output_cost_per_1k": FloatField,
+        "default_temperature": FloatField,
         **BaseAdmin.form_overrides,
     }
 
@@ -1404,7 +1438,10 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         },
         "input_cost_per_1k": {"label": "Цена входа $/1K токенов", "description": "Например: 0.0015 для GPT-3.5"},
         "output_cost_per_1k": {"label": "Цена выхода $/1K токенов", "description": "Например: 0.002"},
-        "max_tokens": {"label": "Макс. токенов", "description": "Лимит контекстного окна модели"},
+        "max_tokens": {
+            "label": "Макс. токенов",
+            "description": "Максимум токенов генерации (не размер контекстного окна)",
+        },
         "default_temperature": {
             "label": "Температура",
             "description": "Температура генерации (0.0 — максимальная точность, 1.0 — творческий ответ). По умолчанию 0.3",
@@ -1455,10 +1492,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
     column_formatters = {
         "provider": lambda m, a: m.provider.name if m.provider else "—",
         "model_type": lambda m, a: m.model_type if m.model_type else "—",
-        "input_cost_per_1k": lambda m, a: f"${m.input_cost_per_1k:.4f}",
-        "output_cost_per_1k": lambda m, a: f"${m.output_cost_per_1k:.4f}",
+        "input_cost_per_1k": lambda m, a: model_price(m.input_cost_per_1k),
+        "output_cost_per_1k": lambda m, a: model_price(m.output_cost_per_1k),
         **BaseAdmin.column_formatters,
     }
+
+    column_formatters_detail = column_formatters
 
     async def scaffold_form(self, rules=None):
         form = await super().scaffold_form(rules)

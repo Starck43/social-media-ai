@@ -265,3 +265,51 @@ Owner-reported social_manager_pr180_migration0095 is historical; no new DB
 inspection/migration performed remotely. No unfreeze, HTTP/client wiring or rollout.
 Local tests follow current OpenCode primary / Kilo only if primary BLOCKED, not
 old historical runner instructions. Preserve old PR180 evidence and target data.
+
+
+### Latest dev compatibility checkpoint
+
+Fresh authoritative dev `edbe0fc02e6ea2d78302129e51febfa0e87464ab` was included
+by normal merge `eb918239af51f6e1d19232fc6785722650e093de`. It adds role lookup
+runtime-import correction, complete workspace role seeding, read-only pytest
+schema/reference validation and separately attributed local access acceptance.
+Owner changes are preserved:14 changed paths byte-equal to dev; two shared docs
+retain the dev evidence plus PR197 additions. No permission policy, role grants,
+access0096 or seed/bootstrap behavior was changed by this package.
+
+Concrete affected scope: compatibility pin/role-manager source and read-only
+pytest startup. At clean exact SHA `2e8a769f3bc609e07e4631e61f61ee97b0798691`:
+
+```sh
+/data/baseline-venv/bin/python -m pytest tests/test_reviewed_budget_access_compatibility.py --collect-only --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+/data/baseline-venv/bin/python -m pytest tests/test_reviewed_budget_access_compatibility.py --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+```
+
+Collection exit0:10 tests (0.22s). Execution exit0: **10 passed /16 subtests
+passed; failed0; skipped0; warnings0** (0.28s). Same isolated venv/versions,
+explicit source/config/session/catalog doubles; no app/root-conftest execution,
+DB/provider/schema writes. Added static AST coverage confirms default pytest
+startup is read-only and has no schema/bootstrap/reference-seed calls.
+
+Baseline implementation, definition0097 and original two focused test files are
+byte-unchanged from6f38406d; their already-recorded56/135 combined evidence is
+retained at that SHA. They were not redundantly rerun or relabelled. This latest
+10-test scope is not a57-test/full-suite run. Accepted PR180/194 and local access
+29-case evidence are not rerun or claimed as baseline acceptance.
+
+The new [local assignment](reviewed-budget-baseline-local.md) supersedes earlier
+localhost messages and packets. Existing selected migration DB is still only
+owner-reported at0095; the shared unversioned test_schema's separately approved
+access update is NOT a normal migration baseline for that DB. Default root pytest
+may refuse a schema missing baseline0097 metadata; do not weaken that check,
+auto-create the table or fabricate an Alembic revision. Real PG harness/launcher,
+target-specific approvals/application and PG acceptance remain local pending work.
+
+
+Read-only is not a permanent prohibition on PG acceptance: the current local
+assignment contains a proposed explicit owner-forwardable write grant for the
+selected isolated migration DB, one-step normal access0096/baseline0097 maintenance
+and identified synthetic test writes after preflight/private-backup checks. It
+is not a claim that these steps ran remotely or that vague read-only startup
+permission authorizes arbitrary schema repair. Shared pytest bootstrap remains
+read-only; bounded maintenance and PG test writes are separate execution phases.

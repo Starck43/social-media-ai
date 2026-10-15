@@ -112,3 +112,11 @@ STOP for catalog/version/evidence reconciliation, never stamp/reset/reapply.
 For local pytest follow current AGENTS.md/.agent/rules.md: primary OpenCode route,
 Kilo secondary only if primary BLOCKED, DB checks sequential. Historical Kilo
 instructions below/in old evidence are not the current routing authority.
+
+
+Latest checkpoint: authoritative dev `edbe0fc02e6ea2d78302129e51febfa0e87464ab`
+includes read-only pytest schema/reference validation and separately accepted
+local access behavior. That acceptance is not baseline0097 certification. Follow
+[the current local assignment](../validation/reviewed-budget-baseline-local.md),
+not old PR180 runners or historical baseline0096 instructions. No default pytest
+bootstrap/seed is available or authorized to repair a missing baseline table.

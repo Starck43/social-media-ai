@@ -1,10 +1,8 @@
-"""Rights on the client UI: the workspace owner or the platform role — nobody else.
+"""Web access comes from active workspace membership grants, not platform role.
 
-`/app` is a first-class surface, so it answers "may this caller do this" the
-same way the sqladmin console and `/api` do (`User.has_perm_for` over the
-structured `permissions.model_type_id` + `action_type`), with the one product
-rule: whoever owns a workspace may configure it whatever their platform role
-is. Hiding a button is not a check — every mutation is gated server-side by
+`/app` answers "may this caller do this" from the active membership's
+workspace-role grants. Platform roles govern `/admin` and platform APIs;
+they do not supply workspace rights. Hiding a button is not a check — every mutation is gated server-side by
 `guard_web`, which the second half of this file proves by posting straight past
 the hidden form.
 
@@ -18,6 +16,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -26,7 +25,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AgentTask, Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import ActionType, UserRoleType
+from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
 from app.web.perms import WebPerms
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
@@ -40,29 +39,28 @@ CREATE_BUTTON = '@click="openAdd = true"'
 
 
 class _StubUser:
-    """Just enough of `User` for the rule: the active and superuser flags and the predicate."""
+    """Minimal active identity with optional platform-admin status."""
 
     def __init__(
-        self, *, superuser: bool = False, rights: set[tuple[str, ActionType]] | None = None, active: bool = True
+        self, *, platform_admin: bool = False, rights: set[tuple[str, ActionType]] | None = None, active: bool = True
     ) -> None:
         # `WebPerms.can` fails closed for an inactive user, so the stub must say it is active.
+        self.id = 42
         self.is_active = active
-        self.is_superuser = superuser
+        self.is_platform_admin = platform_admin
         self._rights = rights or set()
 
     def has_perm_for(self, model_name: str, action: ActionType) -> bool:
         return (model_name.lower(), action) in self._rights
 
-    def _is_superuser_role(self) -> bool:
-        # The flag half of `User._is_superuser_role`; the SUPERUSER-role half is
-        # the real User's contract (tests/test_permissions.py) and needs a db row.
-        return self.is_superuser
-
 
 class _StubMembership:
     def __init__(self, tenant_id: int, role: str, is_owner: bool = False) -> None:
         self.tenant_id = tenant_id
-        self.role = role
+        self.user_id = 42
+        self.channel = "web"
+        self.is_active = True
+        self.role = SimpleNamespace(codename=role)
         self._is_owner = is_owner
 
     @property
@@ -72,7 +70,9 @@ class _StubMembership:
 
 def _perms(user, *, role: str = "member", same_tenant: bool = True, is_owner: bool = False) -> WebPerms:
     memberships = [_StubMembership(1 if same_tenant else 999, role, is_owner=is_owner)] if user is not None else []
-    return WebPerms(user, memberships, 1)
+    owner_grants = {("source", ActionType.CREATE), ("agenttask", ActionType.DELETE)}
+    grants = owner_grants if is_owner else getattr(user, "_rights", set())
+    return WebPerms(user, memberships, 1, member_grants=frozenset(grants) if user is not None else None)
 
 
 def test_section_gate_asks_who_the_user_is_and_fails_closed() -> None:
@@ -81,7 +81,7 @@ def test_section_gate_asks_who_the_user_is_and_fails_closed() -> None:
     assert not _perms(None).is_superuser_role
     assert not _perms(_StubUser()).is_superuser_role
     assert not _perms(_StubUser(), role="owner").is_superuser_role
-    assert _perms(_StubUser(superuser=True)).is_superuser_role
+    assert not _perms(_StubUser(platform_admin=True)).is_superuser_role
 
 
 def test_workspace_owner_writes_his_own_workspace_regardless_of_platform_role() -> None:
@@ -93,14 +93,14 @@ def test_workspace_owner_writes_his_own_workspace_regardless_of_platform_role() 
     assert perms.can("agenttask", ActionType.DELETE)
 
 
-def test_inactive_user_gets_nothing_even_as_owner_or_superuser() -> None:
+def test_inactive_user_gets_nothing_even_as_workspace_owner_or_platform_admin() -> None:
     assert not _perms(_StubUser(active=False), role="owner", is_owner=True).can("source", ActionType.VIEW)
-    assert not _perms(_StubUser(superuser=True, active=False)).can("source", ActionType.VIEW)
+    assert not _perms(_StubUser(platform_admin=True, active=False)).can("source", ActionType.VIEW)
 
 
-def test_superuser_writes_everywhere() -> None:
-    perms = _perms(_StubUser(superuser=True), role="member")
-    assert perms.can("source", "create")
+def test_platform_admin_does_not_bypass_workspace_grants() -> None:
+    perms = _perms(_StubUser(platform_admin=True), role="member")
+    assert not perms.can("source", "create")
 
 
 def test_plain_member_without_platform_rights_is_read_only() -> None:
@@ -207,20 +207,19 @@ async def _drop(user: User | None, tenant_id: int | None) -> None:
         await tenants.delete_by_id(tenant_id)
 
 
-async def _invitee(prefix: str, platform_role: UserRoleType, tenant_id: int, password: str) -> User:
+async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: int, password: str) -> User:
     """A second web user in someone else's workspace with a *non*-owner membership,
     so the ownership branch of the rule cannot rescue them."""
     username = _name(prefix)
-    role = await Role.objects.get(codename=platform_role.name)
-    assert role is not None, f"role {platform_role.name} is seeded"
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
+    assert role is not None, f"role {PlatformRoleType.USER.value} is seeded"
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password=password,
         role_id=role.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=workspace_role.value)
     return user
 
 
@@ -236,7 +235,13 @@ async def test_owner_may_create_a_task_and_sees_the_button() -> None:
             token = CSRF_RE.search(page.text).group(1)
             resp = await client.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
+                data={
+                    "name": name,
+                    "job_type": "collect",
+                    "cron_custom": "@once",
+                    "start_date": "2026-09-01",
+                    "_csrf": token,
+                },
             )
             assert resp.status_code == 200
             assert DENIED not in resp.text
@@ -294,7 +299,7 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "RightsOwner")
-            member = await _invitee("RightsViewer", UserRoleType.VIEWER, tenant_id, password)
+            member = await _invitee("RightsViewer", WorkspaceRoleType.VIEWER, tenant_id, password)
             loaded = await _loaded(member)
             assert not loaded.has_perm_for("agenttask", ActionType.CREATE), "premise: VIEWER may not create tasks"
 
@@ -310,7 +315,13 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
             token = CSRF_RE.search(page.text).group(1)
             resp = await m.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
+                data={
+                    "name": name,
+                    "job_type": "collect",
+                    "cron_custom": "@once",
+                    "start_date": "2026-09-01",
+                    "_csrf": token,
+                },
             )
             assert resp.status_code == 403  # the redirect back lands on the refused section
             assert DENIED in resp.text
@@ -333,9 +344,11 @@ async def test_member_role_decides_for_a_non_owner() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "MgrOwner")
-            member = await _invitee("RightsManager", UserRoleType.MANAGER, tenant_id, "secret-password-1")
+            member = await _invitee("RightsManager", WorkspaceRoleType.MANAGER, tenant_id, "secret-password-1")
             # Inside the workspace the membership role decides, so give it the same role.
-            manager = await Role.objects.get(codename=UserRoleType.MANAGER.name)
+            from app.models import WorkspaceRole
+
+            manager = await WorkspaceRole.objects.get(codename=WorkspaceRoleType.MANAGER.value)
             membership = await TenantUserManager().get(tenant_id=tenant_id, user_id=member.id)
             await TenantUserManager().update_by_id(membership.id, role_id=manager.id)
             loaded = await _loaded(member)
@@ -373,7 +386,13 @@ async def test_member_role_decides_for_a_non_owner() -> None:
             token = CSRF_RE.search(tasks_page.text).group(1)
             resp = await m.post(
                 "/app/tasks",
-                data={"name": name, "job_type": "collect", "cron_custom": "@once", "start_date": "2026-09-01", "_csrf": token},
+                data={
+                    "name": name,
+                    "job_type": "collect",
+                    "cron_custom": "@once",
+                    "start_date": "2026-09-01",
+                    "_csrf": token,
+                },
             )
             assert DENIED in resp.text
             with tenant_scope(bypass=True):
@@ -399,7 +418,7 @@ async def test_pages_stay_browsable_for_a_read_only_member(path: str) -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "BrowsOwner")
-            member = await _invitee("RightsBrowser", UserRoleType.VIEWER, tenant_id, "secret-password-1")
+            member = await _invitee("RightsBrowser", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
 
         async with await _client() as m:
             await _login(m, member.username)

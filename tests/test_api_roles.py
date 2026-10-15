@@ -13,9 +13,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import Permission, Role
+from app.models import Permission, PlatformRole
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from app.utils.token import create_access_token
 
 pytestmark = pytest.mark.tenancy
@@ -30,7 +30,7 @@ def _uniq(prefix: str) -> str:
 async def _user_with_role(codename: str) -> str:
     """Register a user with the given platform role and a workspace; return a token."""
     username = _uniq("roles")
-    role = await Role.objects.get(codename=UserRoleType[codename].name)
+    role = await PlatformRole.objects.get(codename=PlatformRoleType[codename].value)
     from app.models import User
 
     user = await User.objects.create_user(
@@ -56,7 +56,7 @@ async def test_roles_list_requires_authentication():
 
 async def test_roles_list_includes_permissions():
     """A m2m needs prefetch_related: select_related returns empty collections."""
-    token = await _user_with_role("VIEWER")
+    token = await _user_with_role("OPERATOR")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/", headers={"Authorization": f"Bearer {token}"})
 
@@ -67,17 +67,18 @@ async def test_roles_list_includes_permissions():
 
 
 async def test_get_role_returns_its_permissions():
-    token = await _user_with_role("VIEWER")
+    token = await _user_with_role("OPERATOR")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/admin", headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["name"] == "admin"
+    assert resp.json()["codename"] == "admin"
+    assert resp.json()["label"] == "Администратор платформы"
     assert len(resp.json()["permissions"]) > 0
 
 
 async def test_get_unknown_role_is_404():
-    token = await _user_with_role("VIEWER")
+    token = await _user_with_role("OPERATOR")
     async with await _client() as client:
         resp = await client.get(f"{ROLES_URL}/nope", headers={"Authorization": f"Bearer {token}"})
 
@@ -85,7 +86,7 @@ async def test_get_unknown_role_is_404():
 
 
 async def test_permission_update_requires_admin():
-    token = await _user_with_role("VIEWER")
+    token = await _user_with_role("OPERATOR")
     payload = {"permissions": ["social.Source.view"], "strategy": "replace"}
 
     async with await _client() as client:
@@ -105,16 +106,15 @@ async def test_admin_can_update_role_permissions():
     assert len(perms) >= 2, "the database has too few permissions for this test"
     first, second = perms[0].codename, perms[1].codename
 
-    name = _uniq("api-role-")
-    with tenant_scope(bypass=True):
-        role = await Role.objects.create(name=name, codename=UserRoleType.VIEWER.name, description="test")
+    role = await PlatformRole.objects.get_by_codename(PlatformRoleType.OPERATOR)
+    original = await RolePermissionService.get_role_permissions(role.id)
     await RolePermissionService._set_role_permissions(role.id, [perms[0].id, perms[1].id])
 
     token = await _user_with_role("ADMIN")
     try:
         async with await _client() as client:
             resp = await client.put(
-                f"{ROLES_URL}/{name}/permissions",
+                f"{ROLES_URL}/operator/permissions",
                 json={"permissions": [first], "strategy": "replace"},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -122,15 +122,14 @@ async def test_admin_can_update_role_permissions():
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["changes"]["removed"] == [second]
-        assert body["role"]["name"] == name
+        assert body["role"]["codename"] == "operator"
+        assert body["role"]["label"] == "Оператор"
         assert [p["codename"] for p in body["role"]["permissions"]] == [first]
 
         stored = await RolePermissionService.get_role_permissions(role.id)
         assert [p.codename for p in stored] == [first]
     finally:
-        await RolePermissionService._set_role_permissions(role.id, [])
-        with tenant_scope(bypass=True):
-            await Role.objects.delete_by_id(role.id)
+        await RolePermissionService._set_role_permissions(role.id, [p.id for p in original])
 
 
 async def test_permission_update_reports_unknown_role():

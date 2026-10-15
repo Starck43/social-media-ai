@@ -39,8 +39,11 @@ Codex subagent, each in a separate worktree/branch; request a compact summary
 and changed paths, not investigation traces. Parallelize only independent
 lanes. The parent integrates and reviews evidence, updates the ledger, and
 commits completed items one at a time. Run dependent work in dependency order.
-Mark a checkbox [x] only after acceptance evidence is verified. Tests remain
-serialized through Kilo under .agent/rules.md R8/R10.
+Mark a checkbox [x] only after acceptance evidence is verified. Pytest uses the
+primary OpenCode route under .agent/rules.md R10; proven independent no-DB scopes
+may run in parallel, while shared-PostgreSQL checks remain sequential under R8.
+The coordinator reviews and stages the scoped diff; OpenCode performs every
+local `git commit`.
 
 Start or resume a long-running implementation with /goal pointing at the
 specific ROADMAP.md and naming completion evidence and constraints. /goal is

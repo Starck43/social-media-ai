@@ -14,7 +14,7 @@ from urllib.parse import unquote
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager
 from app.services.tenancy import member_roles
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from tests.test_web_settings import (
     DENIED,
     PASSWORD,
@@ -37,7 +37,7 @@ CODE_RE = re.compile(r"/app/invite\?code=([A-Z0-9-]+)")
 def test_the_owner_level_is_not_invitable_and_legacy_member_reads_as_viewer() -> None:
     assert "owner" not in {level.key for level in member_roles.INVITABLE}
     assert member_roles.resolve("owner", invitable_only=True) is None
-    assert member_roles.resolve("owner").codename == "SUPERUSER"
+    assert member_roles.resolve("owner").codename == "owner"
     assert member_roles.resolve(" Member ").key == "viewer"
     assert member_roles.resolve("root") is None
     assert member_roles.resolve(None) is None
@@ -54,7 +54,7 @@ def test_key_of_reads_the_membership_role() -> None:
             self.role_id, self.role = role_id, role
 
     assert member_roles.key_of(_M(None, None)) is None
-    assert member_roles.key_of(_M(3, _Role(UserRoleType.ANALYST))) == "analyst"
+    assert member_roles.key_of(_M(3, _Role(WorkspaceRoleType.ANALYST))) == "analyst"
     assert member_roles.key_of(_M(3, _Role("MANAGER"))) == "manager"
     assert member_roles.key_of(_M(3, None)) is None
 
@@ -99,15 +99,14 @@ async def test_owner_issues_a_link_that_binds_the_chosen_level() -> None:
 
         async with await _client() as c:
             username = _name("InvGuest")
-            from app.models.role import Role
+            from app.models import PlatformRole
 
-            viewer_role = await Role.objects.get(codename="VIEWER")
+            viewer_role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
             guest = await User.objects.create_user(
                 username=username,
                 email=f"{username}@example.com",
                 password=PASSWORD,
                 role_id=viewer_role.id,
-                is_superuser=False,
             )
             # The link opened while signed out leads to login and back to it.
             first = await c.get(f"/app/invite?code={code}", follow_redirects=False)
@@ -157,7 +156,7 @@ async def test_a_member_who_does_not_manage_the_workspace_cannot_invite() -> Non
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "InvRoOwn")
-            viewer = await _invitee("InvRoViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("InvRoViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
             await _login(c, viewer.username)
@@ -180,7 +179,7 @@ async def test_team_tab_shows_and_changes_the_member_level() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "InvTeam")
-            member = await _invitee("InvTeamMember", UserRoleType.VIEWER, tenant_id)
+            member = await _invitee("InvTeamMember", WorkspaceRoleType.VIEWER, tenant_id)
             row = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.user_id == member.id][0]
 
             page = await c.get("/app/settings?tab=team")

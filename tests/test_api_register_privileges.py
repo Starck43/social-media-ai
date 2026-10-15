@@ -1,7 +1,7 @@
 """Public API registration cannot grant platform rights or account state.
 
-`POST /api/v1/auth/register` is reachable without a token, so every field that
-decides authority (`is_superuser`, `is_active`, `role_id`) must be server-set.
+`POST /api/v1/auth/register` is reachable without a token, so the platform role
+and account state must be server-set.
 The ORM managers are stubbed: these tests need no database.
 """
 
@@ -15,9 +15,9 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import auth
 from app.schemas.user import UserCreate
-from app.types import UserRoleType
+from app.types import PlatformRoleType
 
-VIEWER = SimpleNamespace(id=7, codename=UserRoleType.VIEWER.name)
+VIEWER = SimpleNamespace(id=7, codename=PlatformRoleType.USER.value)
 PAYLOAD = {"username": "newcomer", "email": "newcomer@example.com", "password": "strongpassword123"}
 HOSTILE = {**PAYLOAD, "is_superuser": True, "is_active": False, "role_id": 1}
 
@@ -39,7 +39,7 @@ def stubs(monkeypatch):
     monkeypatch.setattr(auth.User.objects, "get_by_username_or_email", AsyncMock(return_value=None))
     monkeypatch.setattr(auth.User.objects, "exists", AsyncMock(return_value=False))
     monkeypatch.setattr(auth.User.objects, "create_user", create_user)
-    monkeypatch.setattr(auth.Role.objects, "get", role_get)
+    monkeypatch.setattr(auth.PlatformRole.objects, "get_by_codename", role_get)
     monkeypatch.setattr(auth, "create_tokens_pair", _tokens)
     return SimpleNamespace(create_user=create_user, role_get=role_get)
 
@@ -53,14 +53,13 @@ async def test_register_ignores_privilege_fields(stubs):
     result = await auth.create_user(UserCreate(**HOSTILE))
 
     assert result["access_token"] == "access-42"
-    stubs.role_get.assert_awaited_once_with(codename=UserRoleType.VIEWER.name)
+    stubs.role_get.assert_awaited_once_with(PlatformRoleType.USER)
     stubs.create_user.assert_awaited_once_with(
         username="newcomer",
         email="newcomer@example.com",
         password="strongpassword123",
         role_id=VIEWER.id,
         is_active=True,
-        is_superuser=False,
     )
 
 
@@ -82,6 +81,5 @@ def test_register_http_body_cannot_grant_superuser(stubs):
 
     assert response.status_code == 200
     kwargs = stubs.create_user.await_args.kwargs
-    assert kwargs["is_superuser"] is False
     assert kwargs["is_active"] is True
     assert kwargs["role_id"] == VIEWER.id

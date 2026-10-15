@@ -1,79 +1,67 @@
-# app/api/v1/endpoints/roles.py
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_pagination import Page, paginate
 
-from app.api.deps import require_platform_role
-from app.models import Role
-from app.schemas.role import RoleResponse, PermissionsRequest
+from app.api.deps import require_model_perm, require_platform_role
+from app.models import PlatformRole
+from app.schemas.role import PermissionsRequest, RoleResponse
 from app.services.user.permissions import RolePermissionService
-from app.types import UserRoleType
+from app.types import ActionType, PlatformRoleType
 
 router = APIRouter(tags=["users"])
 
+_LEGACY_ROLE_ALIASES = {"viewer": "user", "superuser": "admin"}
+
+
+def _canonical_role_code(role_name: str) -> str:
+    code = role_name.strip().lower()
+    return _LEGACY_ROLE_ALIASES.get(code, code)
+
 
 @router.get("/", response_model=Page[RoleResponse])
-async def list_roles() -> Page[RoleResponse]:
-	"""Get paginated list of all roles with their permissions"""
-	# `permissions` is a m2m: select_related silently returns empty collections,
-	# so the roles would serialise with no permissions at all.
-	roles = await Role.objects.prefetch_related("permissions").order_by(Role.id)
-	return paginate(roles)
+async def list_roles(
+    _current_user=Depends(require_model_perm("identity.platform_role", ActionType.VIEW)),
+) -> Page[RoleResponse]:
+    """List the fixed platform roles for authorized operators."""
+    roles = await PlatformRole.objects.prefetch_related("permissions").order_by(PlatformRole.id)
+    return paginate(roles)
 
 
 @router.get("/{role_name}", response_model=RoleResponse)
-async def get_role(role_name: str) -> RoleResponse:
-	"""Get a specific role with its permissions by name"""
-	role = await Role.objects.get_by_name_with_permissions(role_name)
-	if not role:
-		raise HTTPException(404, "Role not found")
-	return RoleResponse.model_validate(role)
+async def get_role(
+    role_name: str,
+    _current_user=Depends(require_model_perm("identity.platform_role", ActionType.VIEW)),
+) -> RoleResponse:
+    role = await PlatformRole.objects.get_by_codename(_canonical_role_code(role_name))
+    if not role:
+        raise HTTPException(404, "Role not found")
+    role = await PlatformRole.objects.get_with_permissions(role.id)
+    return RoleResponse.model_validate(role)
 
 
 @router.put("/{role_name}/permissions", response_model=dict)
 async def update_role_permissions(
-		role_name: str,
-		permissions_request: PermissionsRequest,
-	_current_user=Depends(require_platform_role(UserRoleType.ADMIN)),
+    role_name: str,
+    permissions_request: PermissionsRequest,
+    _current_user=Depends(require_platform_role(PlatformRoleType.ADMIN)),
 ) -> dict:
-	"""
-	Update permissions for a role using the specified strategy.
-
-	Platform role ADMIN or higher: this rewrites what every account of that role
-	may do, so it is deliberately above workspace owners.
-
-	Available strategies:
-	— 'replace' (default): Replace all permissions with the new list
-	— 'merge': Add new permissions without removing existing ones
-	— 'synchronize': Add new permissions and remove those not in the new list
-	— 'update_actions': Update actions for the same tables
-	"""
-	try:
-		# Use RolePermissionService to handle the update
-		result = await RolePermissionService.update_role_permissions(
-			role_codename=role_name.lower(),
-			permission_codenames=permissions_request.permissions,
-			strategy=permissions_request.strategy
-		)
-
-		if not any(result.values()):
-			return {"message": "No changes were made to the role permissions"}
-
-		# Get the updated role to return
-		role = await Role.objects.get_by_name_with_permissions(role_name)
-
-		return {
-			"message": "Permissions updated successfully",
-			"role": RoleResponse.model_validate(role),
-			"changes": {
-				"added": result["added"],
-				"removed": result["removed"],
-				"updated": result["updated"],
-				"unchanged": result["unchanged"]
-			}
-		}
-
-	except ValueError as e:
-		raise HTTPException(400, str(e))
-	except Exception as e:
-		# The service owns its session, so a failure there is already rolled back.
-		raise HTTPException(500, f"Internal server error: {str(e)}")
+    """Change operator grants. Fixed roles and user grants cannot be edited."""
+    role_code = _canonical_role_code(role_name)
+    if role_code != PlatformRoleType.OPERATOR.value:
+        raise HTTPException(400, "Only operator grants can be changed")
+    try:
+        result = await RolePermissionService.update_role_permissions(
+            role_codename=role_code,
+            permission_codenames=permissions_request.permissions,
+            strategy=permissions_request.strategy,
+        )
+        updated_role = await PlatformRole.objects.get_by_codename(role_code)
+        if updated_role is None:
+            raise HTTPException(404, "Role not found")
+        role = await PlatformRole.objects.get_with_permissions(updated_role.id)
+        return {
+            "message": "Permissions updated successfully",
+            "role": RoleResponse.model_validate(role),
+            "changes": result,
+        }
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

@@ -16,7 +16,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Role, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 
 PASSWORD = "secret-password-1"
 
@@ -79,7 +79,7 @@ async def test_web_memberships_skip_inactive_workspaces() -> None:
     async with await _client() as c:
         host, host_tenant = await _register(c, "InactHost")
     try:
-        viewer = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+        viewer = await Role.objects.get(codename=PlatformRoleType.USER.value)
         await TenantUserManager().add_web_member(tenant_id=host_tenant, user_id=member.id, role_id=viewer.id)
         assert {m.tenant_id for m in await TenantUserManager().web_memberships(member.id)} == {own_tenant, host_tenant}
 
@@ -115,7 +115,7 @@ async def test_api_tenant_header_cannot_select_a_deactivated_workspace() -> None
     async with await _client() as c:
         host, host_tenant = await _register(c, "InactHdrHost")
     try:
-        viewer = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+        viewer = await Role.objects.get(codename=PlatformRoleType.USER.value)
         await TenantUserManager().add_web_member(tenant_id=host_tenant, user_id=member.id, role_id=viewer.id)
         await tenants.update_by_id(host_tenant, is_active=False)
 

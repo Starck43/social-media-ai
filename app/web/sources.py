@@ -133,6 +133,7 @@ def _connection_banners(sources, statuses: dict) -> list[dict]:
     cost one pass of queries between them rather than two.
     """
     from app.services.social.connections import CONNECTIONS_BY_PLATFORM
+
     blocked: dict[str, dict] = {}
     for source in sources:
         status = statuses.get(source.id)
@@ -165,7 +166,7 @@ def _connection_banners(sources, statuses: dict) -> list[dict]:
 @router.get("/")
 async def sources_list(request: Request):
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
     from app.core.tenant_context import tenant_scope
@@ -456,13 +457,11 @@ async def source_detail(request: Request, source_id: int):
     from app.models.ai_analytics import AIAnalytics
 
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
 
     with tenant_scope(bypass=True) if is_superuser else nullcontext():
-        source = (
-            await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
-        )
+        source = await Source.objects.filter(id=source_id).select_related("platform", "tenant").first()
         # A superuser browsing all workspaces may open any source; anyone else is
         # confined to the workspace the middleware opened.
         if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
@@ -601,6 +600,8 @@ async def source_detail(request: Request, source_id: int):
         source_types=source_types_list,
         running=running,
     )
+
+
 async def _source_has_running_job(source_id: int) -> dict:
     """Whether a collect or analyze job is queued or running for this source.
 
@@ -939,13 +940,12 @@ async def source_analyze_now(
 
         window = await _resolve_source_window(source)
         cli_dates = window.get("cli_dates") or {}
-        bounds = {
-            key: AgentTaskManager.parse_date(cli_dates.get(key))
-            for key in ("start_date", "end_date")
-        }
+        bounds = {key: AgentTaskManager.parse_date(cli_dates.get(key)) for key in ("start_date", "end_date")}
         staged = await CollectedItem.objects.for_source(source_id, limit=1, include_exhausted=True, **bounds)
         if not staged:
-            add_flash(request, "info", "В настроенном периоде нет сырых материалов для анализа. Проверьте период и сбор.")
+            add_flash(
+                request, "info", "В настроенном периоде нет сырых материалов для анализа. Проверьте период и сбор."
+            )
             return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
         session = new_session()
@@ -967,7 +967,11 @@ async def source_analyze_now(
 
     name = source.name
     if reset_count:
-        add_flash(request, "info", f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново")
+        add_flash(
+            request,
+            "info",
+            f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново",
+        )
     add_flash(request, "success", f"Задача анализа по источнику «{name}» поставлена в очередь")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 

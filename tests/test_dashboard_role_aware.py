@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.models import User
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from app.web.dashboard import _offers
 from tests.test_web_settings import _cleanup, _client, _drop_workspaces, _invitee, _login, _register
 
@@ -56,7 +56,7 @@ async def test_owner_and_viewer_get_only_permitted_overview_content() -> None:
             assert "run-now" not in page.text
             assert "роль: Владелец" not in page.text
             assert "data-home-results" in page.text
-            viewer = await _invitee("DashViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("DashViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
             await _login(c, viewer.username)

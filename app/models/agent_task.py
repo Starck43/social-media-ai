@@ -1,4 +1,4 @@
-"""Legacy AgentTask imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, relationship
 
 from ..core.config import settings
-from ..types import AgentActionType, BotTriggerType
 from ..core.decorators import app_label
+from ..types import AgentActionType, BotTriggerType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
@@ -40,5 +40,3 @@ from .scheduling.agent_task import AgentTask, agent_task_sources
 
 # isort: split
 from .managers.agent_task_manager import AgentTaskManager  # noqa: E402
-
-AgentTask.objects = AgentTaskManager()

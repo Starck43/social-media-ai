@@ -429,7 +429,7 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
 
     from app.core.permissions import service_permission_scope
     from app.models import Role
-    from app.types import UserRoleType
+    from app.types import PlatformRoleType
 
     class TaskCellParser(HTMLParser):
         def __init__(self):
@@ -475,15 +475,14 @@ async def test_task_list_escapes_stored_names_for_owner_and_read_only_member(cli
                 tenant_id=tenant_id,
             )
         if read_only:
-            role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
-            assert role is not None, "VIEWER reference role must be seeded"
+            role = await Role.objects.filter(codename=PlatformRoleType.USER.value).first()
+            assert role is not None, "USER reference role must be seeded"
             username = _name("nameviewer")
             member = await User.objects.create_user(
                 username=username,
                 email=f"{username}@example.com",
                 password="secret-password-1",
                 role_id=role.id,
-                is_superuser=False,
             )
             await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
             async with AsyncClient(

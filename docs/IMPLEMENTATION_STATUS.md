@@ -73,3 +73,16 @@ Open ownership, blocked items and next actions live in [design/README.md](design
 Add or update one area row only when a merge changes a durable project boundary.
 Link the PR and state the remaining boundary. Keep command output, individual test
 counts, patch hashes and abandoned approaches in the PR rather than this file.
+
+## Access-model restructuring — implementation in working tree
+
+Accepted owner plan: independent platform/workspace catalogs, stable domain
+resource permissions, operator-only admin, membership-only workspace UI/API,
+transactional team delegation and private AI memory. Migration 0096 is applied
+to the local development PostgreSQL `social_manager/public` schema; this is not
+a production deployment. Original historical evidence above remains tied to its
+original revisions and does not validate the new schema. Current OpenCode and
+redacted migration evidence, plus remaining acceptance boundaries, are recorded
+in ROADMAP.md. Shared-test-schema behavior, concurrent PostgreSQL application
+acceptance, and real ASGI acceptance remain pending; `alembic check` also reports
+existing model/schema drift.

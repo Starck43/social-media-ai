@@ -18,10 +18,8 @@ dispatcher updating a row that no longer exists. Everything else is history (or
 scheduled work the operator is cancelling on purpose) and may go — which is
 what the per-row trash button and «Очистить всё» do.
 
-The whole section is gated to a platform role above ADMIN (`UserRoleType.SUPERUSER`):
-the queue exposes every workspace's internals, so a workspace owner sees it only
-when their platform role says so. `guard_superuser` runs on every route after the
-CSRF check; the sidebar drops the item for everyone else — which is not the check.
+The page is restricted to the active workspace and its explicit job permissions.
+Platform operator status never widens its rows or actions.
 """
 
 from __future__ import annotations
@@ -31,10 +29,18 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from app.models.job import Job
 from app.jobs.recovery_policy import outcome_unconfirmed
+from app.models.job import Job
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_superuser, guard_web, plural, render, tenant_filter_context
+from .deps import (
+    action_tenant_id,
+    add_flash,
+    ensure_csrf,
+    guard_web,
+    plural,
+    render,
+    tenant_filter_context,
+)
 
 router = APIRouter(prefix="/jobs")
 
@@ -126,11 +132,7 @@ async def _job_sources(jobs: list[Job]) -> dict[int, list[dict[str, Any]]]:
     wanted: set[int] = set()
     for job in jobs:
         per = (job.result or {}).get("per_source") or []
-        entries = [
-            {"source_id": p.get("source_id"), "name": p.get("name")}
-            for p in per
-            if p.get("source_id")
-        ]
+        entries = [{"source_id": p.get("source_id"), "name": p.get("name")} for p in per if p.get("source_id")]
         by_job[job.id] = entries
         wanted.update(e["source_id"] for e in entries)
         wanted.update(int(sid) for sid in ((job.payload or {}).get("source_ids") or []) if str(sid).isdigit())
@@ -143,7 +145,7 @@ async def _job_sources(jobs: list[Job]) -> dict[int, list[dict[str, Any]]]:
     for job in jobs:
         entries = by_job[job.id]
         seen = {e["source_id"] for e in entries}
-        for sid in ((job.payload or {}).get("source_ids") or []):
+        for sid in (job.payload or {}).get("source_ids") or []:
             if not str(sid).isdigit():
                 continue
             sid = int(sid)
@@ -176,12 +178,12 @@ async def _queue_overview(tenant_id: int | None) -> tuple[dict[str, int], dict[s
 @router.get("/")
 async def jobs_list(request: Request):
     """Job history for the active workspace, with the queue's health on top."""
-    gated = guard_superuser(request, back="/app/")
+    gated = guard_web(request, "job", "view", back="/app/")
     if gated is not None:
         return gated
 
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
     tenant_id = getattr(request.state, "tenant_id", None)
 
@@ -256,7 +258,7 @@ async def jobs_clear(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
 
-    gated = guard_superuser(request, back="/app/")
+    gated = guard_web(request, "job", "delete", back="/app/")
     if gated is not None:
         return gated
 
@@ -310,7 +312,7 @@ async def job_delete(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
 
-    gated = guard_superuser(request, back="/app/")
+    gated = guard_web(request, "job", "delete", back="/app/")
     if gated is not None:
         return gated
 
@@ -372,7 +374,7 @@ async def job_run(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
 
-    gated = guard_superuser(request, back="/app/")
+    gated = guard_web(request, "job", "update", back="/app/")
     if gated is not None:
         return gated
 
@@ -442,7 +444,7 @@ async def job_cancel(
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
 
-    gated = guard_superuser(request, back="/app/")
+    gated = guard_web(request, "job", "update", back="/app/")
     if gated is not None:
         return gated
 

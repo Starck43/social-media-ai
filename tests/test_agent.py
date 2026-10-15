@@ -30,20 +30,26 @@ async def _clean_sessions():
     returns a welcome line instead of reaching the model. Binding chat 7 here
     keeps the tests independent of whatever a previous run left behind.
     """
+    from uuid import uuid4
+
     from app.core.config import settings
     from app.core.tenant_context import tenant_scope
     from app.models import Role, User
     from app.models.managers.tenant_manager import tenant_channels, tenant_users, tenants
-    from uuid import uuid4
 
     await AgentSession.objects.delete()
     tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
-    role = await Role.objects.get(codename="ADMIN")
+    from app.types import PlatformRoleType
+
+    role = await Role.objects.get_by_codename(PlatformRoleType.ADMIN)
     assert role is not None
     name = f"agent-test-{uuid4().hex}"
     user = await User.objects.create_user(
-        username=name, email=f"{name}@example.com", password="test-only-agent-password",
-        role_id=role.id, is_active=True, is_superuser=False,
+        username=name,
+        email=f"{name}@example.com",
+        password="test-only-agent-password",
+        role_id=role.id,
+        is_active=True,
     )
     try:
         with tenant_scope(bypass=True):

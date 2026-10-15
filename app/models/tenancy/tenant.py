@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..managers.tenant_manager import TenantManager
 
 
-@app_label("account")
+@app_label("tenancy")
 class Tenant(Base, TimestampMixin):
     """A client workspace (or your own "owner" workspace).
 

@@ -11,11 +11,12 @@ from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
 from .views import (
+    AgentScenarioAdmin,
+    AgentTaskAdmin,
     AIAnalyticsAdmin,
     BotActionAdmin,
     CollectedItemAdmin,
-    AgentScenarioAdmin,
-    AgentTaskAdmin,
+    JobAdmin,
     LLMModelAdmin,
     LLMProviderAdmin,
     NotificationAdmin,
@@ -103,6 +104,7 @@ def setup_admin(app):
         AgentTaskAdmin,
         BotActionAdmin,
         AIAnalyticsAdmin,
+        JobAdmin,
         NotificationAdmin,
         LLMProviderAdmin,
         LLMModelAdmin,

@@ -29,16 +29,16 @@ from app.admin.authorization import (
     _custom_action_types,
 )
 from app.admin.views import (
-    AIAnalyticsAdmin,
     AgentScenarioAdmin,
     AgentTaskAdmin,
+    AIAnalyticsAdmin,
     LLMProviderAdmin,
     NotificationAdmin,
     SourceAdmin,
     UserAdmin,
 )
 from app.models import Role, User
-from app.types import ActionType, UserRoleType
+from app.types import ActionType, PlatformRoleType
 
 # The views the derivation is exercised against: the ones with a custom action,
 # plus a plain CRUD one and a read-only one.
@@ -140,9 +140,7 @@ async def test_an_import_is_a_create():
 async def test_a_custom_action_needs_the_right_its_view_declares():
     """Running a task is a mutation and probing a provider is configuration —
     neither may ride in on a plain `view`."""
-    viewer, request = await _loaded(
-        _StubUser({"agenttask": {ActionType.VIEW}, "llmprovider": {ActionType.VIEW}})
-    )
+    viewer, request = await _loaded(_StubUser({"agenttask": {ActionType.VIEW}, "llmprovider": {ActionType.VIEW}}))
     assert not viewer.has_permission(request, "agent-task", custom_action("run-now"))
     assert not viewer.has_permission(request, "llm-provider", custom_action("test-connection"))
 
@@ -227,7 +225,7 @@ async def _operator(role: Role) -> str:
 
 
 async def _role(codename: str) -> Role:
-    return await Role.objects.get(codename=UserRoleType[codename].name)
+    return await Role.objects.get(codename=PlatformRoleType[codename].value)
 
 
 @asynccontextmanager
@@ -235,9 +233,7 @@ async def _signed_in(username: str) -> AsyncIterator[AsyncClient]:
     """An ASGI client whose session cookie belongs to `username`."""
     from app.main import create_application
 
-    async with AsyncClient(
-        transport=ASGITransport(app=create_application()), base_url="http://testserver"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=create_application()), base_url="http://testserver") as client:
         page = await client.get("/admin/login")
         token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', page.text).group(1)
         await client.post(
@@ -276,7 +272,7 @@ async def test_a_viewer_cannot_write_and_cannot_run_a_task():
 
 
 async def test_a_superuser_sees_every_model():
-    async with _signed_in(await _operator(await _role("SUPERUSER"))) as client:
+    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
         for url in ("/admin/user/list", "/admin/role/list", "/admin/tenant/list", "/admin/agent-task/list"):
             assert (await client.get(url)).status_code == 200, url
 
@@ -334,4 +330,3 @@ async def test_the_dashboard_outside_the_console_asks_the_same_question():
 
     assert analytics.status_code == 403
     assert dashboard.status_code == 403
-

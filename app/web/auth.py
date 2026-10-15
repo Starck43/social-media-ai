@@ -22,7 +22,7 @@ from app.models.managers.tenant_manager import (
     tenants,
 )
 from app.services.user.auth import authenticate
-from app.types import UserRoleType
+from app.types import PlatformRoleType
 from app.utils.token import create_tokens_pair
 
 from .deps import add_flash, ensure_csrf, render, safe_next
@@ -46,16 +46,16 @@ async def _unique_slug(base: str) -> str:
 
 async def _create_workspace(user: User, name: str) -> int:
     """New tenant owned by `user` (web membership, role=owner). Returns tenant_id."""
-    from app.core.database import async_session_maker
+    from app.models import WorkspaceRole
 
+    owner_role = await WorkspaceRole.objects.get(codename="owner")
+    if owner_role is None:
+        raise RuntimeError("Workspace roles are not configured")
     tenant = await tenants.create(
         name=name.strip()[:100] or f"{user.username}'s workspace",
         slug=await _unique_slug(_slugify(name or user.username)),
     )
-    # Resolve SUPERUSER role id for the workspace owner
-    super_role = await Role.objects.filter(codename="SUPERUSER").first()
-    role_id = super_role.id if super_role is not None else None
-    await TenantUserManager().add_web_member(tenant_id=tenant.id, user_id=user.id, role_id=role_id)
+    await TenantUserManager().add_web_member(tenant_id=tenant.id, user_id=user.id, role_id=owner_role.id)
     return tenant.id
 
 
@@ -141,12 +141,10 @@ async def register_submit(
             form={"username": username, "email": email, "workspace": workspace},
         )
 
-    viewer = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    viewer = await Role.objects.get(codename=PlatformRoleType.USER.value)
     if viewer is None:
         return render(request, "web/register.html", status_code=500, error="Не настроены роли — обратитесь к оператору")
-    user = await User.objects.create_user(
-        username=username, email=email, password=password, role_id=viewer.id, is_superuser=False
-    )
+    user = await User.objects.create_user(username=username, email=email, password=password, role_id=viewer.id)
     tenant_id = await _create_workspace(user, workspace or username)
     tokens = create_tokens_pair(subject=str(user.id))
     request.session["token"] = tokens["access_token"]

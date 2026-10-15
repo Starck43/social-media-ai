@@ -10,3 +10,5 @@ from .tenant_invite import TenantInvite
 from .tenant_user import TenantUser
 
 __all__ = ["Tenant", "TenantUser", "TenantInvite", "TenantChannel"]
+
+from .workspace_role import WorkspaceRole

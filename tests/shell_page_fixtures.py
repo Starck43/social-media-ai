@@ -20,10 +20,10 @@ common.update(
     tenant=home["base"]["tenant"],
     user=home["base"]["user"],
     csrf=home["base"]["csrf"],
-    is_superuser=False,
+    is_superuser=False,  # Legacy template context; platform admins have no web bypass.
     filter_tenant_id=None,
     perms=SimpleNamespace(
-        can=lambda *args: True, can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="MANAGER"
+        can=lambda *args: True, can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="owner"
     ),
     perms_can=lambda *args: True,
     is_owner=True,

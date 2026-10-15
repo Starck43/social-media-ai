@@ -14,9 +14,10 @@ from tests.test_web_permissions import (  # noqa: F401 — shared web harness
     CSRF_RE,
     DENIED,
     AsyncClient,
+    PlatformRoleType,
     Role,
     User,
-    UserRoleType,
+    WorkspaceRoleType,
     _client,
     _csrf,
     _drop,
@@ -67,23 +68,22 @@ async def test_wizard_is_three_steps_below_the_admin_role() -> None:
             await _drop(user, tenant_id)
 
 
-async def test_wizard_keeps_the_preview_step_above_the_admin_role() -> None:
-    """The SUPERUSER role (above ADMIN) keeps all four steps, preview included."""
+async def test_platform_admin_does_not_gain_workspace_wizard_access() -> None:
+    """Platform privilege does not replace a workspace membership grant."""
+    member = None
     async with await _client() as client:
         user, tenant_id = await _register(client, "WizSuper")
         try:
-            role = await Role.objects.get(codename=UserRoleType.SUPERUSER.name)
-            assert role is not None, "the SUPERUSER platform role is seeded"
-            await User.objects.filter(id=user.id).update(role_id=role.id)
+            member = await _invitee("WizAdminViewer", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
+            role = await Role.objects.get_by_codename(PlatformRoleType.ADMIN)
+            assert role is not None, "the ADMIN platform role is seeded"
+            await User.objects.filter(id=member.id).update(role_id=role.id)
+            await _login(client, member.username)
 
             page = await client.get("/app/scenarios/new")
-            assert page.status_code == 200
-            for label in ("Интерес", "Промпт", "Модели", "Предпросмотр"):
-                assert label in page.text
-            assert 'id="preview-btn"' in page.text, "the preview panel must be reachable"
-            assert 'id="preview-panel"' in page.text
-            assert 'x-show="step === 4"' in page.text, "save waits on the last step"
+            assert page.status_code == 302
         finally:
+            await _drop(member, None)
             await _drop(user, tenant_id)
 
 
@@ -190,7 +190,7 @@ async def test_wizard_requires_create_permission() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "WizOwner")
-            member = await _invitee("WizViewer", UserRoleType.VIEWER, tenant_id, "secret-password-1")
+            member = await _invitee("WizViewer", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
 
         async with await _client() as m:
             await _login(m, member.username)

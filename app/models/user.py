@@ -1,16 +1,17 @@
-"""Legacy User imports with unchanged runtime binding semantics."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.types import UserRoleType, ActionType
-from .base import Base, TimestampMixin
+from app.types import ActionType, PlatformRoleType
+
 from ..core.config import settings
 from ..core.decorators import app_label
+from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from . import Role
@@ -20,5 +21,3 @@ from .identity.user import User
 
 # isort: split
 from .managers.user_manager import UserManager  # noqa: E402
-
-User.objects = UserManager()

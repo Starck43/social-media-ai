@@ -1,22 +1,12 @@
-"""API scope: authentication + workspace isolation for the HTTP API.
+"""Authenticate API requests and bind their authorization scope.
 
-Two HTTP surfaces exist and they must not be confused:
+Workspace endpoints require a current active web membership. Tenant headers
+select among those memberships and never expand access. Account self-service
+requires authentication without a workspace. Platform catalog/account endpoints
+require an operator identity and retain their per-action permission checks.
 
-- `/api/*` is the **client-facing API**. Every request is authenticated (bearer
-  JWT) and runs inside the tenant scope of a workspace the caller is an *active
-  member of*. `BaseManager` then filters every tenant-scoped model, so a user
-  can only ever reach their own workspace rows — never anybody else's.
-- `/admin/*` (sqladmin) and the **CLI** are the operator/developer console.
-  They run with `tenant_scope(bypass=True)` and deliberately see everything.
-
-This middleware owns `/api/*`: it authenticates once, resolves the workspace
-once, and hands the rest of the stack a ready `tenant_scope`. Endpoints then
-never have to remember to filter by tenant — and can never forget to.
-
-The workspace is picked from the caller's `tenant_users` web memberships (the
-same source `/app/*` uses, not JWT claims). Callers with several workspaces may
-select one with the `X-Tenant-Id` / `X-Tenant-Slug` header; a workspace the
-caller is not a member of is refused — the headers never widen access.
+The middleware establishes tenant and permission contexts; managers and endpoint
+checks enforce the corresponding resource boundaries.
 """
 
 from __future__ import annotations
@@ -31,7 +21,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
-from app.core.permissions import permission_scope
+from app.core.permissions import permission_scope, platform_request_scope
 from app.core.tenant_context import tenant_scope
 
 logger = logging.getLogger(__name__)
@@ -76,6 +66,28 @@ class ApiScopeMiddleware:
         user = await self._authenticate(request)
         if user is None or not user.is_active:
             await self._unauthorized(scope, receive, send)
+            return
+
+        if path.rstrip("/") in {"/api/v1/users/me", "/api/v1/auth/change-password"}:
+            request.state.api_user = user
+            with tenant_scope(), permission_scope(user):
+                await self.app(scope, receive, send)
+            return
+
+        operator_path = (
+            path.startswith("/api/v1/llm")
+            or path.startswith("/api/v1/users/roles")
+            or (path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me")
+        )
+        if operator_path:
+            if not user.has_admin_access():
+                await JSONResponse({"detail": "Operator access required"}, status_code=403)(scope, receive, send)
+                return
+            request.state.api_user = user
+            request.state.operator_context = True
+            # Endpoints retain per-action checks; no workspace membership is implied.
+            with tenant_scope(bypass=True), platform_request_scope(), permission_scope(user):
+                await self.app(scope, receive, send)
             return
 
         tenant_id, error, grants = await self._resolve_tenant(request, user)

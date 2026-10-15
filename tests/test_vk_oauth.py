@@ -28,7 +28,7 @@ from app.services.social.vk_oauth import (
     generate_code_verifier,
     generate_state,
 )
-from app.types.enums.user_types import UserRoleType
+from app.types.enums.user_types import PlatformRoleType, WorkspaceRoleType
 
 _PENDING_KIND = "oauth_pending"
 
@@ -61,7 +61,7 @@ async def bootstrap_tenant_id():
 async def owner_user(bootstrap_tenant_id):
     """A web user who is an active member of the bootstrap workspace."""
     username = _uniq("vkuser")
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ..role import Role
 
 
-@app_label("account")
+@app_label("tenancy")
 class TenantUser(Base, TimestampMixin):
     """Membership: a messenger identity (channel+external id) or a web user."""
 
@@ -46,13 +46,16 @@ class TenantUser(Base, TimestampMixin):
         Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"), nullable=True
     )
     role_id: Mapped[int | None] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id", ondelete="SET NULL"), nullable=True,
-        comment="Platform role for this workspace membership (NULL = legacy/unresolved)",
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.workspace_roles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Workspace role for this workspace membership (NULL = legacy/unresolved)",
     )
+    ai_chat_enabled: Mapped[bool] = Column(Boolean, nullable=False, default=False, server_default="false")
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
 
-    # Relationship to the platform role assigned to this workspace membership
-    role: Mapped["Role | None"] = relationship("Role", lazy="selectin")
+    # Relationship to the workspace role assigned to this workspace membership
+    role: Mapped["Role | None"] = relationship("WorkspaceRole", lazy="selectin")
 
     if TYPE_CHECKING:
         objects: ClassVar[TenantUserManager | BaseManager]
@@ -61,9 +64,9 @@ class TenantUser(Base, TimestampMixin):
 
     @property
     def is_owner(self) -> bool:
-        """Only an explicitly resolved SUPERUSER membership grants ownership."""
+        """Only an explicitly resolved owner workspace role grants ownership."""
         if self.role_id is None or self.role is None:
             return False
         codename = self.role.codename
-        name = codename.name if hasattr(codename, "name") else str(codename)
-        return name == "SUPERUSER"
+        name = str(codename)
+        return name == "owner"

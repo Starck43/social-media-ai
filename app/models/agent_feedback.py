@@ -1,4 +1,4 @@
-"""Legacy AgentFeedback imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -19,5 +19,3 @@ from .agent.agent_feedback import AgentFeedback
 
 # isort: split
 from .managers.agent_feedback_manager import AgentFeedbackManager  # noqa: E402
-
-AgentFeedback.objects = AgentFeedbackManager()

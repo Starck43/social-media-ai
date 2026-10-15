@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .. import Source
 
 
-@app_label("dashboard")
+@app_label("analysis")
 class AIAnalytics(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "ai_analytics"
     __table_args__ = (

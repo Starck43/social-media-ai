@@ -3,7 +3,7 @@
 ## Agent entry points and continuity
 - Before work read `.agent/rules.md` (worktree/DB constraints) and `.agent/workflow.md` (session handoff); instructions here supersede older procedural rules on conflict.
 - Docs: `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/design/README.md` (tasks/ownership), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/DOCS_INDEX.md` (index).
-- Subagents: `.codex/agents/` (Codex: `test-runner` primary, `opencode-test-runner` fallback when Kilo is BLOCKED), `.kilo/agents/` (Kilo). `.agent/test-report.md` is human-audit evidence only — never main-context input.
+- Subagents: `.codex/agents/test-runner.toml` is the primary pytest delegation route (OpenCode `QwenPlan/deepseek-v4-flash-0731`); `.codex/agents/kilo-test-runner.toml` is the Kilo secondary. `.agent/test-report.md` is human-audit evidence only — never main-context input.
 - Local IDE/CLI: `$local`; remote GitHub: `$remote`; same task board and PR handoff.
 - Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 
@@ -15,8 +15,8 @@
   For a broad audit, use the fewest Codex subagents needed, give each one
   bounded area, and ask for concise findings. Implementation lanes need
   separate worktrees and file ownership. Shared-DB tests always stay sequential.
-- On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
-- Tests: every pytest run follows `.agent/rules.md` R10 and is delegated through Kilo. Neither Codex coordinator nor Codex subagents run pytest directly.
+- On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. Prepare and review a scoped staged diff, then delegate every local `git commit` to OpenCode; the coordinating Codex does not commit directly. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
+- Tests: every pytest run follows `.agent/rules.md` R10 and is delegated through the primary OpenCode `test-runner`. Proven independent no-DB scopes may run in parallel; checks using the shared PostgreSQL test schema stay sequential. Neither Codex coordinator nor Codex subagents run pytest directly.
 
 ## Understand common requests
 - “Audit completed work”, “check what is done”, or “find gaps in completed
@@ -33,8 +33,8 @@
   when useful. Verify each before marking it done; make per-item commits when
   the request or active Goal asks for them.
 - Run focused checks appropriate to changed behavior. Request broad suites only
-  when warranted; all pytest commands go through Kilo. Docs-only edits do not
-  need pytest.
+  when warranted; all pytest commands go through the primary OpenCode test route.
+  Docs-only edits do not need pytest.
 
 ## Project rules
 - Extensible assistant on the existing modular monolith: read `README.md`, `docs/DOCS_INDEX.md`, then relevant `docs/*.md` before changing behavior.

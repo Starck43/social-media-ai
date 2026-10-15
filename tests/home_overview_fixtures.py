@@ -40,24 +40,24 @@ nav_data = [
 ]
 base = {
     "tenant": {"id": 7, "name": "Мониторинг рынка"},
-    "user": {"id": 101, "username": "test-member", "is_superuser": False},
+    "user": {"id": 101, "username": "test-member"},
     "workspaces": [
         {
             "tenant": {"id": 7, "name": "Мониторинг рынка"},
             "active": True,
-            "role": "SUPERUSER",
+            "role": "owner",
             "role_label": "Владелец",
         },
         {
             "tenant": {"id": 8, "name": "Команда аналитики"},
             "active": False,
-            "role": "MANAGER",
+            "role": "manager",
             "role_label": "Менеджер",
         },
         {
             "tenant": {"id": 9, "name": "ДлинноеНазваниеДругогоПространстваБезПробелов" * 3},
             "active": False,
-            "role": "VIEWER",
+            "role": "viewer",
             "role_label": "Наблюдатель",
         },
     ],
@@ -121,7 +121,7 @@ base = {
     "effective_active": {1, 2},
     "_tz": "Europe/Moscow",
     "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
-    "perms": SimpleNamespace(can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="MANAGER"),
+    "perms": SimpleNamespace(can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="owner"),
     "member_level": None,
 }
 states = {
@@ -140,10 +140,10 @@ states = {
     },
     "long": {
         "tenant": {"id": 7, "name": "ОченьДлинноеНазваниеРабочегоПространстваБезПробелов" * 5},
-        "is_superuser": True,
-        "user": {"username": "operator", "is_superuser": True},
-        "tenants": [{"id": 7, "name": "НазваниеПространстваБезПробелов" * 9}],
-        "filter_tenant_id": 7,
+        "is_superuser": False,
+        "user": {"username": "operator"},
+        "tenants": [],
+        "filter_tenant_id": None,
         "connection_alerts": [{"detail": "Тестовое подключение требует обновления", "label": "VK"}],
         "flashes": [{"kind": "error", "text": "Проверочный текст ошибки: соединение требует обновления."}],
         "recent_results": [

@@ -36,18 +36,37 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         class DatabaseEnum(Enum):
             pass
 
-        with patch.dict(sys.modules, {
-            "app.utils.db_enums": module_with(DatabaseEnum=DatabaseEnum, database_enum=lambda cls: cls),
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "app.utils.db_enums": module_with(DatabaseEnum=DatabaseEnum, database_enum=lambda cls: cls),
+            },
+        ):
             enums = load_source("_boundary_user_types", "app/types/enums/user_types.py")
         self.action = enums.ActionType
-        self.role = enums.UserRoleType
+        self.platform_role = enums.PlatformRoleType
+        self.workspace_role = enums.WorkspaceRoleType
+        enum_types = module_with(
+            ActionType=self.action,
+            PlatformRoleType=self.platform_role,
+            WorkspaceRoleType=self.workspace_role,
+        )
+        with patch.dict(sys.modules, {"app.types": enum_types}):
+            catalog = load_source("_boundary_access_catalog", "app/core/access_catalog.py")
+        self.catalog = catalog
+        catalog_patch = patch.dict(sys.modules, {"app.core.access_catalog": catalog})
+        catalog_patch.start()
+        self.addCleanup(catalog_patch.stop)
         # Starlette is only a typing dependency of tenant_context.
         modules = {"starlette.types": module_with(ASGIApp=object, Receive=object, Scope=object, Send=object)}
         with patch.dict(sys.modules, modules):
             self.tenant = load_source("_boundary_tenant_context", "app/core/tenant_context.py")
         modules = {
-            "app.types": module_with(ActionType=self.action, UserRoleType=self.role),
+            "app.types": module_with(
+                ActionType=self.action,
+                PlatformRoleType=self.platform_role,
+                WorkspaceRoleType=self.workspace_role,
+            ),
             "app.core.tenant_context": self.tenant,
         }
         with patch.dict(sys.modules, modules):
@@ -55,8 +74,11 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(sys.modules, {**modules, "app.core.permissions": self.perms}):
             self.web = load_source("_boundary_web_perms", "app/web/perms.py")
         self.user = SimpleNamespace(
-            is_active=True, is_superuser=False, has_perm_for=lambda *args: False,
-            _is_superuser_role=lambda: False, role=None,
+            id=1,
+            is_active=True,
+            has_perm_for=lambda *args: False,
+            has_admin_access=lambda: False,
+            role=None,
         )
 
     def test_anonymous_denied_with_and_without_owner_scope(self):
@@ -64,7 +86,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(p.has_permission(None, "source", "delete"))
         with self.tenant.tenant_scope(31), p.permission_scope(None, is_owner=True):
             self.assertFalse(p.has_permission(None, "source", "delete"))
-            self.assertFalse(p.has_permission_by_codename(None, "llmmodel.create"))
+            self.assertFalse(p.has_permission_by_codename(None, "llm.model.create"))
             self.assertFalse(p.has_role(None, "ADMIN"))
 
     def test_owner_configures_only_three_workspace_models(self):
@@ -72,8 +94,10 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         with self.tenant.tenant_scope(31), p.permission_scope(self.user, is_owner=True):
             for model in ("source", "agenttask", "agentscenario"):
                 self.assertTrue(p.has_permission(self.user, model, "create"))
-            for model in ("llmmodel", "llmprovider", "user", "role", "permission", "job", "tenant", "unknown"):
+            for model in ("llmmodel", "llmprovider", "user", "role", "permission", "unknown"):
                 self.assertFalse(p.has_permission(self.user, model, "delete"), model)
+            self.assertTrue(p.has_permission(self.user, "job", "delete"))
+            self.assertTrue(p.has_permission(self.user, "tenant", "update"))
             self.assertFalse(p.has_role(self.user, "ADMIN"))
 
     def test_owner_grant_does_not_follow_tenant_or_subject_switch(self):
@@ -97,7 +121,16 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         p = self.perms
         for bypass in (False, True):
             with self.tenant.tenant_scope(31, bypass=bypass), p.permission_scope(self.user, is_owner=True):
-                for codename in (None, {}, "", "source.", ".create", "source.unknown", "a.source.create"):
+                for codename in (
+                    None,
+                    {},
+                    "",
+                    "collection.source.",
+                    ".create",
+                    "collection.source.unknown",
+                    "a.source.create",
+                    "source.create",
+                ):
                     self.assertFalse(p.has_permission_by_codename(self.user, codename))
                 self.assertFalse(p.has_permission(self.user, "source", "unknown"))
                 self.assertFalse(p.has_role(self.user, "UNKNOWN"))
@@ -184,6 +217,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         def response(body, status_code=200, **kwargs):
             async def send_response(scope, receive, send):
                 responses.append(status_code)
+
             return send_response
 
         modules = {
@@ -200,7 +234,11 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
 
         async def downstream(scope, receive, send):
             observations.append((self.perms.get_current_user(), self.tenant.current_tenant_id()))
-            self.assertFalse(self.perms.has_permission_by_codename(self.perms.get_current_user(), "source.delete"))
+            self.assertFalse(
+                self.perms.has_permission_by_codename(
+                    self.perms.get_current_user(), "collection.source.delete"
+                )
+            )
 
         middleware = api.ApiScopeMiddleware(downstream)
         middleware._authenticate = AsyncMock(return_value=self.user)
@@ -215,35 +253,80 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(observations), 1)
 
     def test_web_owner_has_same_global_boundary(self):
-        membership = SimpleNamespace(tenant_id=31, is_owner=True)
-        w = self.web.WebPerms(self.user, [membership], 31)
+        membership = SimpleNamespace(
+            tenant_id=31,
+            user_id=self.user.id,
+            channel="web",
+            is_active=True,
+            role_id=3,
+            role=SimpleNamespace(codename="owner"),
+            is_owner=True,
+        )
+        w = self.web.WebPerms(
+            self.user,
+            [membership],
+            31,
+            member_grants=frozenset({("agenttask", self.action.CREATE)}),
+        )
         self.assertTrue(w.can("agenttask", "create"))
         for model in ("llmmodel", "llmprovider", "user", "role", "job", "unknown"):
             self.assertFalse(w.can(model, "delete"))
         self.assertFalse(w.can("source", "unknown"))
         self.assertFalse(self.web.WebPerms(None, [membership], 31).can("source", "create"))
-        self.assertFalse(self.web.WebPerms(self.user, [membership], 32).can("source", "create"))
-
+        self.assertFalse(
+            self.web.WebPerms(self.user, [membership], 32, member_grants=frozenset()).can("source", "create")
+        )
 
     def _settings_membership(self, **changes):
-        values = dict(tenant_id=31, user_id=42, channel="web", is_active=True, is_owner=True)
+        values = dict(
+            tenant_id=31,
+            user_id=42,
+            channel="web",
+            is_active=True,
+            is_owner=True,
+            role_id=3,
+            role=SimpleNamespace(codename="owner"),
+        )
         values.update(changes)
+        if "role" not in changes and not values["is_owner"]:
+            values["role"] = SimpleNamespace(codename="viewer")
         self.user.id = 42
         return SimpleNamespace(**values)
 
     def test_web_settings_owner_capability_does_not_grant_global_rights(self):
         membership = self._settings_membership()
-        w = self.web.WebPerms(self.user, [membership], 31)
+        w = self.web.WebPerms(
+            self.user,
+            [membership],
+            31,
+            member_grants=self.catalog.workspace_grants("owner"),
+        )
         self.assertTrue(w.can_manage_workspace(31))
-        for model in ("tenant", "user", "role", "permission", "job", "llmmodel", "llmprovider"):
+        self.assertTrue(w.can("tenant", "update"))
+        self.assertTrue(w.can("job", "update"))
+        for model in ("user", "role", "permission", "llmmodel", "llmprovider"):
             self.assertFalse(w.can(model, "update"), model)
         with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
-            self.assertFalse(self.perms.has_permission(self.user, "tenant", "update"))
+            self.assertTrue(self.perms.has_permission(self.user, "tenant", "update"))
+            with self.tenant.tenant_scope(32):
+                self.assertFalse(self.perms.has_permission(self.user, "tenant", "update"))
+        self.assertFalse(
+            self.web.WebPerms(
+                self.user,
+                [membership],
+                32,
+                member_grants=self.catalog.workspace_grants("owner"),
+            ).can("tenant", "update")
+        )
 
     def test_web_settings_requires_active_bound_web_membership(self):
         for changes in (
-            {"user_id": 43}, {"user_id": None}, {"channel": "telegram"},
-            {"is_active": False}, {"tenant_id": 32}, {"is_owner": False},
+            {"user_id": 43},
+            {"user_id": None},
+            {"channel": "telegram"},
+            {"is_active": False},
+            {"tenant_id": 32},
+            {"is_owner": False},
         ):
             with self.subTest(changes=changes):
                 membership = self._settings_membership(**changes)
@@ -267,19 +350,21 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.user.id = None
         self.assertFalse(self.web.WebPerms(self.user, [membership], 31).can_manage_workspace(31))
 
-    def test_web_settings_member_keeps_actual_role_right_for_bound_workspace(self):
-        membership = self._settings_membership(is_owner=False)
+    def test_workspace_admin_can_manage_but_viewer_cannot_manage_settings(self):
+        admin_membership = self._settings_membership(is_owner=False, role=SimpleNamespace(codename="admin"))
+        viewer_membership = self._settings_membership(is_owner=False, role=SimpleNamespace(codename="viewer"))
         self.user.has_perm_for = lambda model, action: model == "tenant" and action == self.action.UPDATE
-        w = self.web.WebPerms(self.user, [membership], 31)
+        w = self.web.WebPerms(self.user, [admin_membership], 31)
         self.assertTrue(w.can_manage_workspace(31))
         self.assertFalse(w.can_manage_workspace(32))
+        self.assertFalse(self.web.WebPerms(self.user, [viewer_membership], 31).can_manage_workspace(31))
         self.user.has_perm_for = lambda *args: (_ for _ in ()).throw(RuntimeError("detached"))
-        self.assertFalse(w.can_manage_workspace(31))
+        self.assertTrue(w.can_manage_workspace(31))
 
-    def test_web_settings_superuser_still_needs_active_identity_and_concrete_target(self):
-        self.user.is_superuser = True
+    def test_platform_admin_still_needs_workspace_membership_and_concrete_target(self):
+        self.user.has_admin_access = lambda: True
         w = self.web.WebPerms(self.user)
-        self.assertTrue(w.can_manage_workspace(32))
+        self.assertFalse(w.can_manage_workspace(32))
         for target in (None, 0, -1, True, "32"):
             self.assertFalse(w.can_manage_workspace(target), target)
         self.user.is_active = False

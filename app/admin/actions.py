@@ -24,10 +24,13 @@ class LLMModelActions:
                 url=request.url_for("admin:list", identity=admin_identity), status_code=status.HTTP_303_SEE_OTHER
             )
         try:
+            from app.services.ai.model_probe import probe_status
+
             prompt = request.query_params.get("prompt", "")
             test_type = request.query_params.get("test_type", "mock")
             model_id = pks.split(",")[0]
             model = await LLMModel.objects.select_related("provider").get(id=int(model_id))
+            verdict = probe_status(model)
 
             if not prompt:
                 template_name = "llm_model/test_results.html"
@@ -60,6 +63,8 @@ class LLMModelActions:
                         "is_real_response": False,
                         "cost_info": {},
                         "price_updated": False,
+                        "status_checks": verdict["checks"],
+                        "status_hint": verdict["hint"],
                     },
                 )
 
@@ -176,87 +181,80 @@ class LLMModelActions:
 
     @classmethod
     async def test_model_real(cls, admin_view, request: Request, pks: str, prompt: str, image_file: str = None):
+        """Real test — one minimal capped probe, not a full chat answer.
+
+        Previously the user's full prompt went through ``client.chat`` with the
+        model's full ``max_tokens``; now the reachability probe uses a fixed
+        one-word prompt (``max_tokens=8``) so a check costs a fraction of a
+        cent. The free-form prompt box stays for the mock path.
+        """
+        from app.services.ai.model_probe import PROBE_PROMPT, probe_real_capped, probe_status
+
         model_id = pks.split(",")[0] if pks else None
         model = await LLMModel.objects.select_related("provider").get(id=int(model_id))
+        verdict = probe_status(model)
+        if not verdict["ok"]:
+            return await admin_view.templates.TemplateResponse(
+                request,
+                "llm_model/test_error.html",
+                {
+                    "request": request,
+                    "model": model,
+                    "provider": model.provider,
+                    "error_message": verdict["hint"],
+                    "prompt": prompt,
+                    "error_time": datetime.now(),
+                },
+            )
         try:
-            client = LLMClientFactory.create(model)
-            media_urls = [image_file] if image_file and image_file.startswith("data:image/") else None
-            request_payload, messages = cls._build_chat_payload(client, prompt, media_urls)
-            request_payload_json = json.dumps(request_payload, indent=2, ensure_ascii=False)
-
-            client_info = {
-                "provider": client.provider.name,
-                "base_url": client.base_url,
-                "api_key_configured": bool(client.api_key),
-                "api_format": client.provider.api_format,
-                "model_name": model.name,
-                "model_id": model.model_id,
-                "max_tokens": model.max_tokens,
-                "default_temperature": model.default_temperature,
-            }
-
             start_time = datetime.now()
-            # Единый путь к модели: промпт пользователя передаётся as-is (как в агенте/сервисах).
-            # Если промпт просит JSON — модель вернёт JSON; если свободный диалог — обычный текст.
-            response_data = await client.chat(messages)
+            probe = await probe_real_capped(model, PROBE_PROMPT)
             end_time = datetime.now()
+            if not probe.get("ok"):
+                return await admin_view.templates.TemplateResponse(
+                    request,
+                    "llm_model/test_error.html",
+                    {
+                        "request": request,
+                        "model": model,
+                        "provider": model.provider,
+                        "error_message": probe.get("error", "Проба не удалась"),
+                        "prompt": prompt,
+                        "error_time": end_time,
+                    },
+                )
             duration = (end_time - start_time).total_seconds()
-
-            full_api_response = response_data.get("raw") or {}
-            raw_content = response_data.get("content") or ""
-            if isinstance(raw_content, dict):
-                raw_content = json.dumps(raw_content, indent=2, ensure_ascii=False)
-            parsed_fields = _try_parse_json(raw_content)
-
-            response_content = raw_content or json.dumps(full_api_response, indent=2, ensure_ascii=False)
-
-            cost_info = extract_cost_info(full_api_response)
-
-            price_updated = False
-            in_price = cost_info.get("price_per_1k", {}).get("input")
-            out_price = cost_info.get("price_per_1k", {}).get("output")
-
-            if in_price is not None and out_price is not None:
+            usage = probe.get("usage", {})
+            tokens = {
+                "input": usage.get("prompt_tokens", 0),
+                "output": usage.get("completion_tokens", 0),
+                "total": usage.get("total_tokens", 0),
+            }
+            estimated = (
+                tokens["input"] / 1000 * model.input_cost_per_1k
+                + tokens["output"] / 1000 * model.output_cost_per_1k
+            )
+            cost_info = {"tokens": tokens, "estimated_cost": round(estimated, 8), "has_cost_report": False}
+            if tokens["total"] > 0:
                 await LLMModel.objects.update_by_id(
                     model.id,
-                    input_cost_per_1k=in_price,
-                    output_cost_per_1k=out_price,
+                    last_request_cost=round(estimated, 8),
+                    last_request_cost_at=end_time,
                 )
-                model.input_cost_per_1k = in_price
-                model.output_cost_per_1k = out_price
-                price_updated = True
-                logger.info(f"Model {model.name} prices updated from response: in=${in_price}, out=${out_price}")
-
-            tokens = cost_info.get("tokens", {})
-            if not cost_info.get("has_cost_report"):
-                estimated = (
-                    tokens.get("input", 0) / 1000 * model.input_cost_per_1k
-                    + tokens.get("output", 0) / 1000 * model.output_cost_per_1k
-                )
-                cost_info["estimated_cost"] = round(estimated, 8)
-                if tokens.get("total", 0) > 0:
-                    await LLMModel.objects.update_by_id(
-                        model.id,
-                        last_request_cost=round(estimated, 8),
-                        last_request_cost_at=end_time,
-                    )
-                    model.last_request_cost = round(estimated, 8)
-                    model.last_request_cost_at = end_time
-                    logger.info(f"Model {model.name} last_request_cost saved: ${estimated:.6f}")
-            else:
-                cost_info["estimated_cost"] = None
-
+                model.last_request_cost = round(estimated, 8)
+                model.last_request_cost_at = end_time
             raw_response = {
-                "client_info": client_info,
-                "request_payload": request_payload,
+                "client_info": {
+                    "provider": model.provider.name,
+                    "model_name": model.name,
+                    "model_id": model.model_id,
+                    "probe": f"Фикс-проба «{PROBE_PROMPT}» (max_tokens=8)",
+                },
                 "response_received": {
                     "status": "success",
-                    "content": response_content,
-                    "raw_content": raw_content,
-                    "parsed_fields": parsed_fields,
+                    "content": probe.get("content", ""),
                     "timestamp": end_time.isoformat(),
                     "duration_seconds": duration,
-                    "full_api_response": full_api_response,
                 },
             }
             full_response_json = json.dumps(raw_response, indent=2, ensure_ascii=False)
@@ -269,14 +267,18 @@ class LLMModelActions:
                     "model": model,
                     "provider": model.provider,
                     "prompt": prompt,
-                    "request_payload": request_payload_json,
+                    "request_payload": json.dumps(
+                        {"probe": PROBE_PROMPT, "max_tokens": 8}, indent=2, ensure_ascii=False
+                    ),
                     "raw_response": raw_response,
                     "full_response_json": full_response_json,
                     "request_time": end_time,
                     "error": None,
                     "is_real_response": True,
                     "cost_info": cost_info,
-                    "price_updated": price_updated,
+                    "price_updated": False,
+                    "status_checks": verdict["checks"],
+                    "status_hint": verdict["hint"],
                 },
             )
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:

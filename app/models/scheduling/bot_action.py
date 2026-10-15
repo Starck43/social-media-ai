@@ -9,11 +9,11 @@ from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
 from ...core.decorators import app_label
-from ...types import BotActionStatus, AgentActionType
+from ...types import AgentActionType, BotActionStatus
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 
-@app_label("social")
+@app_label("scheduling")
 class BotAction(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "bot_actions"
     __table_args__ = (

@@ -1,4 +1,4 @@
-"""Legacy Job imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -19,5 +19,3 @@ from .scheduling.job import Job
 
 # isort: split
 from .managers.job_manager import JobManager  # noqa: E402
-
-Job.objects = JobManager()

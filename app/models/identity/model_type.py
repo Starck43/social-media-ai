@@ -1,10 +1,10 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String, Text, Boolean
+from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..base import Base, TimestampMixin
 from ...core.config import settings
+from ..base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from .. import Permission
@@ -15,7 +15,7 @@ class ModelType(Base, TimestampMixin):
     __table_args__ = {"schema": settings.DB_SCHEMA}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    app_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     table_name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
@@ -30,4 +30,4 @@ class ModelType(Base, TimestampMixin):
     )
 
     def __str__(self) -> str:
-        return f"{self.app_name}.{self.model_name}"
+        return self.resource_key

@@ -25,13 +25,13 @@ from fastapi import HTTPException
 
 from app.api.deps import require_model_perm, require_platform_role
 from app.models import Role, User
-from app.types import ActionType, UserRoleType
+from app.types import ActionType, PlatformRoleType
 
 UNKNOWN_MODEL_RIGHT = "Missing permission: source.delete"
 
 
 async def _role(codename: str) -> Role:
-    return await Role.objects.get(codename=UserRoleType[codename].name)
+    return await Role.objects.get(codename=PlatformRoleType(codename.lower()).value)
 
 
 @asynccontextmanager
@@ -59,7 +59,7 @@ def _on_model(model_name: str):
     return keep
 
 
-async def _user(role: Role, *, superuser: bool = False) -> User:
+async def _user(role: Role) -> User:
     import secrets
 
     username = f"perms{secrets.token_hex(4)}"
@@ -68,7 +68,6 @@ async def _user(role: Role, *, superuser: bool = False) -> User:
         email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
-        is_superuser=superuser,
     )
 
 
@@ -81,54 +80,39 @@ async def _loaded(user: User) -> User:
 
 
 async def test_model_permissions_cover_one_model_at_a_time():
-    loaded = await _loaded(await _user(await _role("VIEWER")))
-
-    assert ActionType.VIEW in loaded.model_permissions("source")
-    assert ActionType.UPDATE not in loaded.model_permissions("source")
-    # A right on another model is not a right on this one.
+    loaded = await _loaded(await _user(await _role("USER")))
+    assert loaded.model_permissions("source") == set()
     assert loaded.model_permissions("permission") == set()
 
 
 async def test_has_perm_for_is_case_insensitive_and_model_scoped():
-    loaded = await _loaded(await _user(await _role("VIEWER")))
+    loaded = await _loaded(await _user(await _role("USER")))
 
     # The console passes the lowercased class name, the API a table name.
-    assert loaded.has_perm_for("Source", ActionType.VIEW)
-    assert loaded.has_perm_for("source", ActionType.VIEW)
+    assert not loaded.has_perm_for("Source", ActionType.VIEW)
+    assert not loaded.has_perm_for("source", ActionType.VIEW)
     assert not loaded.has_perm_for("source", ActionType.DELETE)
     # The same action on a model the role never mentions.
     assert not loaded.has_perm_for("permission", ActionType.VIEW)
 
 
-async def test_a_superuser_role_grants_every_action_on_every_model():
-    loaded = await _loaded(await _user(await _role("SUPERUSER")))
+async def test_platform_admin_grants_every_registered_action():
+    loaded = await _loaded(await _user(await _role("ADMIN")))
 
     assert loaded.model_permissions("source") == set(ActionType)
-    assert loaded.has_perm_for("model-that-does-not-exist", ActionType.MODERATE)
+    assert not loaded.has_perm_for("model-that-does-not-exist", ActionType.MODERATE)
     assert loaded.has_admin_access()
 
 
 async def test_a_stripped_role_grants_nothing():
     """No permission rows means no model access; authenticated entry stays open."""
-    role = await _role("VIEWER")
+    role = await _role("USER")
     async with _role_with(role, lambda permission: False):
         stripped = await _loaded(await _user(role))
 
     assert stripped.model_permissions("source") == set()
-    assert stripped.has_admin_access()  # Entry is allowed; model grants remain empty.
+    assert not stripped.has_admin_access()
     assert stripped.has_perm_for("source", ActionType.VIEW) is False
-
-
-async def test_the_is_superuser_flag_needs_no_permission_rows():
-    """The developer flag is checked before the role's rights, so it survives an
-    unseeded (or emptied) matrix — otherwise a broken seed locks the owner out."""
-    role = await _role("VIEWER")
-    async with _role_with(role, lambda permission: False):
-        developer = await _loaded(await _user(role, superuser=True))
-
-    assert developer.model_permissions("source") == set(ActionType)
-    assert developer.has_perm_for("source", ActionType.DELETE)
-    assert developer.has_admin_access()
 
 
 # --- the dependencies ------------------------------------------------------
@@ -137,7 +121,7 @@ async def test_the_is_superuser_flag_needs_no_permission_rows():
 async def test_require_model_perm_passes_and_returns_a_user_safe_to_use():
     """The returned user must not be the detached one `get_authenticated_user`
     hands over: touching `.role` on it would raise DetachedInstanceError."""
-    viewer = await _user(await _role("VIEWER"))
+    viewer = await _user(await _role("ADMIN"))
 
     granted = await require_model_perm("source", ActionType.VIEW)(viewer)
 
@@ -147,7 +131,7 @@ async def test_require_model_perm_passes_and_returns_a_user_safe_to_use():
 
 
 async def test_require_model_perm_refuses_a_right_the_role_does_not_have():
-    viewer = await _user(await _role("VIEWER"))
+    viewer = await _user(await _role("USER"))
 
     with pytest.raises(HTTPException) as refusal:
         await require_model_perm("source", ActionType.DELETE)(viewer)
@@ -158,7 +142,7 @@ async def test_require_model_perm_refuses_a_right_the_role_does_not_have():
 
 async def test_require_model_perm_refuses_a_model_the_role_never_mentions():
     """Having `source.view` is not having `permission.view`."""
-    viewer = await _user(await _role("VIEWER"))
+    viewer = await _user(await _role("USER"))
 
     with pytest.raises(HTTPException) as refusal:
         await require_model_perm("permission", ActionType.VIEW)(viewer)
@@ -166,16 +150,13 @@ async def test_require_model_perm_refuses_a_model_the_role_never_mentions():
     assert refusal.value.status_code == 403
 
 
-async def test_require_platform_role_follows_the_ladder_and_the_flag():
-    admin = await require_platform_role(UserRoleType.ADMIN)(await _user(await _role("ADMIN")))
+async def test_require_platform_role_requires_platform_admin():
+    admin = await require_platform_role(PlatformRoleType.ADMIN)(await _user(await _role("ADMIN")))
     assert admin.role is not None
 
     with pytest.raises(HTTPException) as refusal:
-        await require_platform_role(UserRoleType.ADMIN)(await _user(await _role("VIEWER")))
+        await require_platform_role(PlatformRoleType.ADMIN)(await _user(await _role("USER")))
     assert refusal.value.status_code == 403
-
-    developer = await require_platform_role(UserRoleType.ADMIN)(await _user(await _role("VIEWER"), superuser=True))
-    assert developer.id
 
 
 # --- the surfaces share one predicate --------------------------------------
@@ -192,7 +173,7 @@ async def test_the_console_grants_exactly_what_the_predicate_says():
     from app.admin.authorization import AdminAuthorizationBackend
     from app.admin.views import SourceAdmin
 
-    loaded = await _loaded(await _user(await _role("VIEWER")))
+    loaded = await _loaded(await _user(await _role("USER")))
     views = [SourceAdmin()]
     backend = AdminAuthorizationBackend()
     backend.setup(SimpleNamespace(_views=views))
@@ -207,7 +188,7 @@ async def test_the_console_grants_exactly_what_the_predicate_says():
         assert backend.has_permission(request, "source", action) is loaded.has_perm_for("source", right), action
 
     # ...and the concrete expectation, so the two cannot drift together.
-    assert backend.has_permission(request, "source", Action.LIST) is True
+    assert backend.has_permission(request, "source", Action.LIST) is False
     assert backend.has_permission(request, "source", Action.DELETE) is False
 
 

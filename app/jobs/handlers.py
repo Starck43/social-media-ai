@@ -2,7 +2,7 @@
 
 import logging
 import math
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.services.social.credentials import AuthorizationRequired
 
@@ -108,7 +108,11 @@ def _resolve_content_window(task_payload: dict[str, Any], payload: dict[str, Any
     """
     from app.models.managers.agent_task_manager import AgentTaskManager
 
-    cli_dates = (payload or {}).get("cli_dates") or (task_payload or {}).get("cli_dates") or (getattr(source, "params", None) or {}).get("cli_dates")
+    cli_dates = (
+        (payload or {}).get("cli_dates")
+        or (task_payload or {}).get("cli_dates")
+        or (getattr(source, "params", None) or {}).get("cli_dates")
+    )
     if not cli_dates:
         return {}
     start = AgentTaskManager.parse_date(cli_dates.get("start_date"))
@@ -861,12 +865,31 @@ async def handle_learn(payload: dict[str, Any]) -> dict[str, Any]:
         min_messages: int — new user turns required before an LLM call (default 8)
         window: int — max messages to scan per run (default 200)
     """
+    from app.agent.identity import memory_actor_scope
     from app.agent.learning import run_learn
+    from app.models import User
+    from app.models.managers.tenant_manager import tenant_users
 
-    return await run_learn(
-        min_messages=int(payload.get("min_messages", 8)),
-        window=int(payload.get("window", 200)),
-    )
+    memberships = await tenant_users.filter(tenant_id=current_tenant_id(), is_active=True).exclude(user_id=None)
+    results = []
+    seen: set[int] = set()
+    for membership in memberships:
+        if membership.user_id in seen:
+            continue
+        if not membership.is_owner and not getattr(membership, "ai_chat_enabled", False):
+            continue
+        user = await User.objects.get(id=membership.user_id, is_active=True)
+        if user is None:
+            continue
+        seen.add(user.id)
+        with memory_actor_scope(user.id, membership.is_owner):
+            results.append(
+                await run_learn(
+                    min_messages=int(payload.get("min_messages", 8)),
+                    window=int(payload.get("window", 200)),
+                )
+            )
+    return _aggregate_memory_job_results(results)
 
 
 async def handle_reflect(payload: dict[str, Any]) -> dict[str, Any]:
@@ -875,9 +898,47 @@ async def handle_reflect(payload: dict[str, Any]) -> dict[str, Any]:
     Payload:
         dedup: bool — apply delete/update ops proposed by the LLM (default True)
     """
+    from app.agent.identity import memory_actor_scope
     from app.agent.learning import run_reflect
+    from app.models import User
+    from app.models.managers.tenant_manager import tenant_users
 
-    return await run_reflect(dedup=bool(payload.get("dedup", True)))
+    memberships = await tenant_users.filter(tenant_id=current_tenant_id(), is_active=True).exclude(user_id=None)
+    results = []
+    seen: set[int] = set()
+    for membership in memberships:
+        if membership.user_id in seen:
+            continue
+        if not membership.is_owner and not getattr(membership, "ai_chat_enabled", False):
+            continue
+        user = await User.objects.get(id=membership.user_id, is_active=True)
+        if user is None:
+            continue
+        seen.add(user.id)
+        with memory_actor_scope(user.id, membership.is_owner):
+            results.append(await run_reflect(dedup=bool(payload.get("dedup", True))))
+    return _aggregate_memory_job_results(results)
+
+
+def _aggregate_memory_job_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Bounded summary for per-actor learning/reflection executions."""
+    if not results:
+        return {"status": "skipped", "reason": "no eligible personal chats", "actors": 0}
+    failed = sum(result.get("status") == "failed" for result in results)
+    ok = sum(result.get("status") == "ok" for result in results)
+    skipped = len(results) - failed - ok
+    costs = [result.get("llm_cost") for result in results]
+    known_cost = (
+        None if any(not isinstance(cost, (int, float)) or isinstance(cost, bool) for cost in costs) else sum(costs)
+    )
+    return {
+        "status": "failed" if failed else "ok" if ok else "skipped",
+        "actors": len(results),
+        "succeeded": ok,
+        "skipped": skipped,
+        "failed": failed,
+        "llm_cost": known_cost,
+    }
 
 
 HANDLERS = {

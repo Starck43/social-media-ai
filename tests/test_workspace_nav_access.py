@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 from app.models import User
-from app.types import UserRoleType
+from app.types import WorkspaceRoleType
 from app.web.nav import NAV_ITEMS, allows, section_of
 from tests.test_web_settings import _cleanup, _client, _drop_workspaces, _invitee, _login, _register
 
@@ -33,11 +33,11 @@ class _Perms:
 
 def test_each_gated_section_names_its_view_right() -> None:
     required = {item.key: item.required_permission for item in NAV_ITEMS}
-    assert required["sources"] == "source.view"
-    assert required["scenarios"] == "agentscenario.view"
-    assert required["tasks"] == "agenttask.view"
-    assert required["analytics"] == "aianalytics.view"
-    assert required["digests"] == "digestrun.view"
+    assert required["sources"] == "collection.source.view"
+    assert required["scenarios"] == "analysis.scenario.view"
+    assert required["tasks"] == "scheduling.task.view"
+    assert required["analytics"] == "analysis.result.view"
+    assert required["digests"] == "notifications.digest_run.view"
     # Always reachable once signed in: the dashboard and personal settings.
     assert required["dashboard"] is None and required["settings"] is None
 
@@ -56,8 +56,8 @@ def test_allows_fails_closed_without_perms() -> None:
     dashboard = next(item for item in NAV_ITEMS if item.key == "dashboard")
     assert not allows(tasks, None)
     assert allows(dashboard, None)
-    assert allows(tasks, _Perms({("agenttask", "view")}))
-    assert not allows(tasks, _Perms({("source", "view")}))
+    assert allows(tasks, _Perms({("scheduling.task", "view")}))
+    assert not allows(tasks, _Perms({("collection.source", "view")}))
 
 
 # ── flows ──────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ async def test_viewer_sees_only_viewable_sections_and_a_reason_on_direct_access(
             for href in ("/app/sources", "/app/scenarios", "/app/tasks", "/app/analytics", "/app/digests"):
                 assert _sidebar_link(href).search(page.text), f"owner misses {href}"
             assert (await c.get("/app/scenarios")).status_code == 200
-            viewer = await _invitee("NavViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("NavViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
             await _login(c, viewer.username)
@@ -97,7 +97,7 @@ async def test_viewer_sees_only_viewable_sections_and_a_reason_on_direct_access(
 
 async def test_a_role_change_opens_the_section() -> None:
     from app.models.managers.tenant_manager import tenant_users
-    from app.models.role import Role
+    from app.models.tenancy.workspace_role import WorkspaceRole
 
     owner: User | None = None
     member: User | None = None
@@ -105,13 +105,13 @@ async def test_a_role_change_opens_the_section() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "NavPromo")
-            member = await _invitee("NavPromoMember", UserRoleType.VIEWER, tenant_id)
+            member = await _invitee("NavPromoMember", WorkspaceRoleType.VIEWER, tenant_id)
         row = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.user_id == member.id][0]
 
         async with await _client() as c:
             await _login(c, member.username)
             assert (await c.get("/app/tasks")).status_code == 403
-            admin = await Role.objects.get(codename="ADMIN")
+            admin = await WorkspaceRole.objects.get(codename=WorkspaceRoleType.ADMIN.value)
             await tenant_users.update_by_id(row.id, role_id=admin.id)
             resp = await c.get("/app/tasks")
             assert resp.status_code == 200

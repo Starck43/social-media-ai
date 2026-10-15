@@ -24,7 +24,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AIAnalytics, Job, Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from app.web.sources import COLLECTION_MODES
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
@@ -74,18 +74,17 @@ async def _login(client: AsyncClient, username: str, password: str = "secret-pas
     assert resp.status_code == 200
 
 
-async def _invitee(prefix: str, role_type: UserRoleType, tenant_id: int) -> User:
-    """A real user with the given platform role, added as a web member."""
-    role = await Role.objects.get(codename=role_type.name)
+async def _invitee(prefix: str, role_type: WorkspaceRoleType, tenant_id: int) -> User:
+    """A standard platform user with the supplied workspace membership role."""
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
     username = _name(prefix)
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=role_type.value)
     return user
 
 

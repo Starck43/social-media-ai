@@ -25,7 +25,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import DigestRun, Job, User
 from app.models.managers.tenant_manager import TenantUserManager
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from app.web.digests import valid_period
 from app.web.jobs import RETRYABLE
 
@@ -101,21 +101,18 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
     return user, memberships[0].tenant_id
 
 
-async def _invitee(username: str, role: UserRoleType, tenant_id: int, password: str = PASSWORD) -> User:
+async def _invitee(username: str, role: WorkspaceRoleType, tenant_id: int, password: str = PASSWORD) -> User:
     """Create a user and attach them to `tenant_id` with a platform role."""
-    from app.models.role import Role
+    from app.models import PlatformRole
 
-    # `codename` is the enum column (stored as the member name); `name` is the
-    # human label, so filtering on `name` would hand the enum to asyncpg.
-    role_row = await Role.objects.get(codename=role.name)
+    role_row = await PlatformRole.objects.get(codename=PlatformRoleType.USER.value)
     user = await User.objects.create_user(
         username=_name(username),
         email=f"{_name(username)}@example.com",
         password=password,
         role_id=role_row.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=role.value)
     return user
 
 
@@ -199,12 +196,11 @@ async def _seed_digest_run(tenant_id: int, status: str, channel: str = "telegram
 
 
 async def _as_admin_plus(user: User) -> User:
-    """`/app/jobs` is gated to a platform role above ADMIN — the queue tests act as one.
+    """Assign platform ADMIN without granting web access across workspace scope."""
+    from app.models import PlatformRole
 
-    The account stays the workspace owner it was; only the platform flag moves,
-    which is exactly the half `User._is_superuser_role` checks first.
-    """
-    await User.objects.filter(id=user.id).update(is_superuser=True)
+    role = await PlatformRole.objects.get_by_codename(PlatformRoleType.ADMIN)
+    await User.objects.update_by_id(user.id, role_id=role.id)
     return user
 
 
@@ -283,7 +279,7 @@ async def test_read_only_member_cannot_send_a_digest() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "DigROwner")
-            viewer = await _invitee("DigRViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("DigRViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as client:
             await _login(client, viewer.username)
@@ -306,26 +302,15 @@ async def test_read_only_member_cannot_send_a_digest() -> None:
 # ── /app/jobs ──────────────────────────────────────────────────────────────
 
 
-async def test_queue_is_closed_below_the_admin_role() -> None:
-    """Operator-only: the sidebar never offers the queue, the route refuses it."""
+async def test_workspace_owner_can_open_queue() -> None:
     owner: User | None = None
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobGate")
-            await _seed_job(tenant_id, "failed", error="hidden")
-
-            refused = await client.get("/app/jobs", follow_redirects=False)
-            assert refused.status_code == 302
-            assert refused.headers["location"] == "/app/"
-            dash = await client.get("/app/")
-            assert DENIED in dash.text, "the refusal says why"
-            assert "Очередь задач" not in dash.text, "the sidebar must not offer the queue"
-
-            # A platform role above ADMIN opens both — same account, no re-login.
-            await _as_admin_plus(owner)
+            await _seed_job(tenant_id, "failed", error="visible")
             page = await client.get("/app/jobs")
             assert page.status_code == 200
-            assert "hidden" in page.text
+            assert "visible" in page.text
             assert "Очередь задач" in page.text
     finally:
         await _cleanup(owner)
@@ -336,7 +321,6 @@ async def test_jobs_page_lists_queue_health_and_failures() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobOwner")
-            await _as_admin_plus(owner)
             await _seed_job(tenant_id, "pending")
             await _seed_job(tenant_id, "failed", error="connection reset by peer")
 
@@ -346,7 +330,7 @@ async def test_jobs_page_lists_queue_health_and_failures() -> None:
             # The error text is the whole point of the page.
             assert "connection reset by peer" in page.text
             # The workspace column wears the product word — shown because this
-            # owner now holds a role above ADMIN (the gate's own proof).
+            # workspace owner role grants access to this queue.
             assert ">Пространство<" in page.text
     finally:
         await _cleanup(owner)
@@ -358,7 +342,6 @@ async def test_jobs_page_does_not_leak_another_workspace() -> None:
     try:
         async with await _client() as mine, await _client() as theirs:
             owner, _my_tenant = await _register(mine, "JobMine")
-            await _as_admin_plus(owner)
             other, their_tenant = await _register(theirs, "JobTheirs")
             await _seed_job(their_tenant, "failed", error="СОСЕДНИЙ-ВОРКСПЕЙС")
 
@@ -374,7 +357,6 @@ async def test_only_failed_jobs_offer_a_rerun_button() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobBtn")
-            await _as_admin_plus(owner)
             failed = await _seed_job(tenant_id, "failed", error="boom")
             done = await _seed_job(tenant_id, "done")
 
@@ -391,7 +373,6 @@ async def test_rerun_refuses_a_job_that_is_not_failed() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobNoRun")
-            await _as_admin_plus(owner)
             done = await _seed_job(tenant_id, "done")
 
             token = await _csrf(client, "/app/jobs")
@@ -405,8 +386,33 @@ async def test_rerun_refuses_a_job_that_is_not_failed() -> None:
         await _cleanup(owner)
 
 
+async def test_platform_admin_as_workspace_viewer_cannot_open_queue() -> None:
+    owner: User | None = None
+    viewer: User | None = None
+    try:
+        async with await _client() as client:
+            owner, tenant_id = await _register(client, "JobPlatformViewer")
+            viewer = await _invitee("JobPlatformViewer", WorkspaceRoleType.VIEWER, tenant_id)
+            await _as_admin_plus(viewer)
+            job = await _seed_job(tenant_id, "failed", error="workspace-only")
+
+        async with await _client() as client:
+            await _login(client, viewer.username)
+            refused = await client.get("/app/jobs", follow_redirects=False)
+            assert refused.status_code == 302
+            dash = await client.get("/app/")
+            assert "Очередь задач" not in dash.text
+            token = CSRF_RE.search(dash.text).group(1)
+            resp = await client.post(f"/app/jobs/{job.id}/delete", data={"_csrf": token})
+            assert DENIED in resp.text
+            with tenant_scope(bypass=True):
+                assert await Job.objects.get(id=job.id) is not None
+    finally:
+        await _cleanup(viewer, owner)
+
+
 async def test_read_only_member_cannot_rerun_a_job() -> None:
-    """Below the admin role the queue is closed: no page, no nav item, no POST."""
+    """A workspace viewer cannot access the queue or rerun jobs."""
     owner: User | None = None
     viewer: User | None = None
     tenant_id = None
@@ -414,7 +420,7 @@ async def test_read_only_member_cannot_rerun_a_job() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobROwner")
-            viewer = await _invitee("JobRViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("JobRViewer", WorkspaceRoleType.VIEWER, tenant_id)
             job = await _seed_job(tenant_id, "failed", error="boom")
             job_id = job.id
 
@@ -444,7 +450,6 @@ async def test_row_delete_button_on_every_row_but_a_running_one() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDel")
-            await _as_admin_plus(owner)
             pending = await _seed_job(tenant_id, "pending")
             failed = await _seed_job(tenant_id, "failed", error="boom")
             done = await _seed_job(tenant_id, "done")
@@ -466,7 +471,6 @@ async def test_row_delete_removes_only_that_job() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDelOne")
-            await _as_admin_plus(owner)
             target = await _seed_job(tenant_id, "done")
             neighbour = await _seed_job(tenant_id, "done")
 
@@ -487,7 +491,6 @@ async def test_row_delete_refuses_a_running_job() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDelRun")
-            await _as_admin_plus(owner)
             job = await _seed_job(tenant_id, "running")
 
             token = await _csrf(client, "/app/jobs")
@@ -506,7 +509,6 @@ async def test_clear_empties_the_queue_but_keeps_running_jobs() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobClear")
-            await _as_admin_plus(owner)
             await _seed_job(tenant_id, "done")
             await _seed_job(tenant_id, "failed", error="boom")
             await _seed_job(tenant_id, "pending")
@@ -533,7 +535,6 @@ async def test_clear_does_not_reach_another_workspace() -> None:
     try:
         async with await _client() as mine, await _client() as theirs:
             owner, _my_tenant = await _register(mine, "JobClearMine")
-            await _as_admin_plus(owner)
             other, their_tenant = await _register(theirs, "JobClearTheirs")
             await _seed_job(their_tenant, "done")
 
@@ -553,7 +554,6 @@ async def test_clear_button_is_hidden_on_an_empty_queue() -> None:
     try:
         async with await _client() as client:
             owner, _tenant_id = await _register(client, "JobClearEmpty")
-            await _as_admin_plus(owner)
 
             page = await client.get("/app/jobs")
             assert page.status_code == 200
@@ -571,13 +571,13 @@ async def test_read_only_member_can_neither_delete_rows_nor_clear() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobDelOwner")
-            viewer = await _invitee("JobDelViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("JobDelViewer", WorkspaceRoleType.VIEWER, tenant_id)
             job = await _seed_job(tenant_id, "done")
             job_id = job.id
 
         async with await _client() as client:
             await _login(client, viewer.username)
-            # The queue page itself is closed below the admin role...
+            # The queue page refuses below the required workspace grant...
             refused = await client.get("/app/jobs", follow_redirects=False)
             assert refused.status_code == 302
 
@@ -621,7 +621,6 @@ async def test_row_delete_does_not_reach_another_workspace() -> None:
     try:
         async with await _client() as mine, await _client() as theirs:
             owner, _my_tenant = await _register(mine, "JobDelMine")
-            await _as_admin_plus(owner)
             other, their_tenant = await _register(theirs, "JobDelTheirs")
             theirs_job = await _seed_job(their_tenant, "done")
 
@@ -644,7 +643,6 @@ async def test_queue_row_links_to_that_task_not_to_the_task_list() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobLink")
-            await _as_admin_plus(owner)
             task = await _seed_task(tenant_id)
             await _seed_job(tenant_id, "done", agent_task_id=task.id)
 
@@ -663,7 +661,6 @@ async def test_a_one_off_job_says_so_instead_of_a_broken_link() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobOneOff")
-            await _as_admin_plus(owner)
             await _seed_job(tenant_id, "done")
 
             page = await client.get("/app/jobs")
@@ -680,7 +677,6 @@ async def test_task_card_opens_and_sends_you_back_to_the_queue() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobCard")
-            await _as_admin_plus(owner)
             task = await _seed_task(tenant_id)
             await _seed_job(tenant_id, "done", agent_task_id=task.id)
 

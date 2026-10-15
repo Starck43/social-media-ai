@@ -25,7 +25,7 @@ from httpx import ASGITransport, AsyncClient
 from app.main import create_application
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 DENIED = "Недостаточно прав"
@@ -112,20 +112,19 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
     return user, memberships[0].tenant_id
 
 
-async def _invitee(prefix: str, role: UserRoleType, tenant_id: int, password: str = PASSWORD) -> User:
-    """Create a user and attach them to `tenant_id` with a platform role."""
-    from app.models.role import Role
+async def _invitee(prefix: str, role: WorkspaceRoleType, tenant_id: int, password: str = PASSWORD) -> User:
+    """Create a standard platform user with the supplied workspace role."""
+    from app.models import PlatformRole
 
-    role_row = await Role.objects.get(codename=role.name)
+    role_row = await PlatformRole.objects.get(codename=PlatformRoleType.USER.value)
     username = _name(prefix)
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password=password,
         role_id=role_row.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=role.value)
     return user
 
 
@@ -308,7 +307,7 @@ async def test_a_user_sees_only_their_own_personal_keys() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "SetVault")
-            member = await _invitee("SetMate", UserRoleType.MANAGER, tenant_id)
+            member = await _invitee("SetMate", WorkspaceRoleType.MANAGER, tenant_id)
 
         await user_credentials.store(user_id=owner.id, platform="vk", kind="user_token", secret="owner-token")
         await user_credentials.store(user_id=member.id, platform="vk", kind="user_token", secret="member-token")
@@ -341,7 +340,7 @@ async def test_a_member_can_store_their_own_key_but_not_a_bot_token() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "SetStore")
-            member = await _invitee("SetWriter", UserRoleType.MANAGER, tenant_id)
+            member = await _invitee("SetWriter", WorkspaceRoleType.MANAGER, tenant_id)
 
         async with await _client() as c:
             await _login(c, member.username)
@@ -375,7 +374,7 @@ async def test_another_members_key_cannot_be_disabled_by_id() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "SetOwn")
-            member = await _invitee("SetOther", UserRoleType.MANAGER, tenant_id)
+            member = await _invitee("SetOther", WorkspaceRoleType.MANAGER, tenant_id)
 
         await user_credentials.store(user_id=owner.id, platform="vk", kind="user_token", secret="owner-token")
         rows = await user_credentials.filter(user_id=owner.id, kind="user_token")
@@ -418,7 +417,7 @@ async def test_the_last_owner_cannot_be_demoted() -> None:
 
             # Promote a second member to owner, then the same demotion is allowed:
             # the guard counts owners, not the row being edited.
-            second = await _invitee("SetCo", UserRoleType.MANAGER, tenant_id)
+            second = await _invitee("SetCo", WorkspaceRoleType.MANAGER, tenant_id)
             try:
                 second_membership = [
                     m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.user_id == second.id
@@ -451,7 +450,7 @@ async def test_a_read_only_member_gets_no_workspace_form() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "SetRoOwn")
-            viewer = await _invitee("SetRoViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("SetRoViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
             await _login(c, viewer.username)
@@ -492,15 +491,22 @@ async def test_owner_settings_resolve_posted_tenant_to_own_workspace_and_reject_
         foreign = await tenants.get(id=other_tenant_id)
         foreign_member = (await TenantUserManager().web_memberships(other.id))[0]
         foreign_channel = await TenantChannelManager().bind(
-            tenant_id=other_tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+            tenant_id=other_tenant_id,
+            channel="telegram",
+            chat_id=_name("fake-settings-"),
         )
         async with await _client() as client:
             await _login(client, owner.username)
             token = await _csrf(client, "/app/settings")
             response = await client.post(
                 "/app/settings/workspace",
-                data={"_csrf": token, "tenant_id": str(other_tenant_id), "name": "Bound own settings",
-                      "timezone": "Europe/Kirov", "daily_cost_limit": "7"},
+                data={
+                    "_csrf": token,
+                    "tenant_id": str(other_tenant_id),
+                    "name": "Bound own settings",
+                    "timezone": "Europe/Kirov",
+                    "daily_cost_limit": "7",
+                },
             )
             assert "Настройки воркспейса сохранены" in response.text
             own = await tenants.get(id=tenant_id)
@@ -525,7 +531,10 @@ async def test_owner_settings_resolve_posted_tenant_to_own_workspace_and_reject_
             assert "Канал не найден" in response.text
         after = await tenants.get(id=other_tenant_id)
         assert (after.name, after.timezone, after.daily_cost_limit, after.agent_system_prompt) == (
-            foreign.name, foreign.timezone, foreign.daily_cost_limit, foreign.agent_system_prompt,
+            foreign.name,
+            foreign.timezone,
+            foreign.daily_cost_limit,
+            foreign.agent_system_prompt,
         )
         assert (await tenant_users.get(id=foreign_member.id)).role_id == foreign_member.role_id
         assert not (await TenantChannelManager().get(id=foreign_channel.id)).is_digest_target
@@ -542,10 +551,12 @@ async def test_read_only_member_cannot_mutate_agent_team_or_channels() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "SetGate")
-            viewer = await _invitee("SetDenied", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("SetDenied", WorkspaceRoleType.VIEWER, tenant_id)
         member = (await TenantUserManager().web_memberships(owner.id))[0]
         channel = await TenantChannelManager().bind(
-            tenant_id=tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+            tenant_id=tenant_id,
+            channel="telegram",
+            chat_id=_name("fake-settings-"),
         )
         before = await tenants.get(id=tenant_id)
         async with await _client() as client:
@@ -576,7 +587,9 @@ async def test_owner_channel_settings_require_csrf_before_updating_digest_flag()
         async with await _client() as client:
             owner, tenant_id = await _register(client, "SetChannel")
             channel = await TenantChannelManager().bind(
-                tenant_id=tenant_id, channel="telegram", chat_id=_name("fake-settings-"),
+                tenant_id=tenant_id,
+                channel="telegram",
+                chat_id=_name("fake-settings-"),
             )
             response = await client.post(
                 f"/app/settings/channels/{channel.id}",

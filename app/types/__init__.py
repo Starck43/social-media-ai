@@ -1,8 +1,8 @@
 # Import all enums for backward compatibility
 from .enums import (  # User & Permissions; Platform & Sources; Content; Analysis; Bot; LLM; Notifications
     ActionType,
-    AnalysisType,
     AgentActionType,
+    AnalysisType,
     BotActionStatus,
     BotTriggerType,
     ContentType,
@@ -12,14 +12,16 @@ from .enums import (  # User & Permissions; Platform & Sources; Content; Analysi
     MonitoringStatus,
     NotificationType,
     PeriodType,
+    PlatformRoleType,
     PlatformType,
     SentimentLabel,
     SourceType,
-    UserRoleType,
+    WorkspaceRoleType,
 )
 
 __all__ = [
-    "UserRoleType",
+    "PlatformRoleType",
+    "WorkspaceRoleType",
     "ActionType",
     "PlatformType",
     "SourceType",

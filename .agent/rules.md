@@ -34,14 +34,16 @@
   worktree. Check `git worktree list` before creating anything; reuse existing
   folders. `/private/tmp/smai-head` is stale/prunable — do not use it.
 - **R8 — Shared test schema, sequential only.** Every worktree resolves the same
-  `test_schema` on `localhost:5432/social_manager`, so at most one pytest may run
-  at a time; parallel PR checks are code-review-only until separate schemas are
-  prepared. Never create, reset, drop, stamp or migrate schemas automatically —
+  `test_schema` on `localhost:5432/social_manager`, so checks that use it must
+  remain sequential; do not overlap DB-backed tests or separate execution routes
+  against that target. Independently proven no-DB scopes may run in parallel.
+  Parallel PR checks that use the shared schema remain code-review-only until
+  separate schemas are prepared. Never create, reset, drop, stamp or migrate
+  schemas automatically —
   `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
   column fix require an explicit owner instruction. These restrictions override
-  any older automatic-reset advice. Delegation through Kilo's `test-orchestrator`
-  to its local `test-runner` child is authorized; it must execute requested tests
-  sequentially with these restrictions.
+  any older automatic-reset advice. Test delegation follows R10 and these
+  restrictions.
   The resolved target itself is pre-approved for real ASGI/DB test execution
   (including `httpx` `ASGITransport` tests that create and clean up their own
   data); never ask the owner to reconfirm the target for such runs. This
@@ -49,27 +51,26 @@
   — and an uncertain or interrupted state still stops under R4.
   Preserve the private environment.
 
-- **R10 — Kilo owns test execution.** Start Kilo's `test-orchestrator` with
-  `kilo run "<message>" --dir <worktree> --agent test-orchestrator --format json --file <task-file>`;
-  it delegates to the project's `test-runner` child using Kilo's `task` tool.
-  For Kilo 7.8.8 the message is required and must precede the flags: `--file`
-  accepts an array and consumes a trailing message as another filename.
-  The agent configuration is selected from `--dir`; verify that its orchestrator
-  can read the assigned task file. Internal placement alone does not fix
-  `read: deny`; external files also require permitted external-directory access.
-  A read denial is BLOCKED, never permission to use an IDE/shell fallback.
-  The child must use the connected `pare-test` MCP `run` tool, passing the project
-  `.venv/bin/python`, the worktree root, the assigned test paths as **positional
-  arguments**, and the pytest args `--noconftest -o addopts= -q --tb=short --no-header`.
-  Never run pytest in the coordinating Codex process or fall back to shell pytest
-  in Kilo. Kilo's global config is `~/.config/kilo/kilo.jsonc`; the active server is
-  `mcp.pare-test`. Runs remain sequential under R8.
-  See `.kilo/agents/test-runner.md` for the verified `pare-test` argument rules
-  (separate array elements; `--noconftest` is mandatory for isolated scopes; paths
-  are positional, never `filter`).
-  Fallback when Kilo is BLOCKED (never parallel — R8 sequential): Codex subagent
-  `.codex/agents/opencode-test-runner.toml` via OpenCode `build` pinned to
-  `kilo/stepfun/step-5-preview-free`; same guards, flags and `TEST RUN …` contract.
+- **R10 — OpenCode owns primary test execution.** Delegate every assigned pytest
+  scope through `.codex/agents/test-runner.toml`, using OpenCode `build` pinned to
+  `QwenPlan/deepseek-v4-flash-0731` with that exact model name (no `opencode/`
+  prefix). The primary invocation is
+  `opencode run --dir <worktree> -m QwenPlan/deepseek-v4-flash-0731 --auto "<message>" --file <task-file>`.
+  Verify the task file is attached and readable. Collect before execution after
+  enum/import changes. Use `.venv/bin/python -m pytest`, assigned paths as
+  positional arguments, and isolated flags `--noconftest -o addopts= -q --tb=short --no-header`.
+  Independent scopes may run in parallel only after proving they do not touch the
+  shared DB/schema or other shared mutable state; shared PostgreSQL checks remain
+  sequential under R8. Neither the coordinating Codex process nor Codex subagents
+  execute pytest directly. OpenCode executes assigned pytest commands through
+  its tools; there is no direct Codex shell fallback. Never reset/drop/stamp/
+  migrate/seed, call live providers, or run external writes as part of test
+  delegation. Record exact collection and execution results in
+  `.agent/test-report.md`.
+  Kilo's configured `test-orchestrator` → `test-runner` route is secondary and may
+  be used only when the primary OpenCode route is BLOCKED; preserve the same scope,
+  DB, evidence, and no-destructive-action safeguards. Do not use the obsolete
+  OpenCode step5 fallback configuration.
 - **R9 — Delegated routine Ready/merge, safeguards retained.** The owner gives
   standing authorization to perform routine Ready/merge of agreed bounded
   packages after verifying fresh PR/dev heads, compatibility, required checks

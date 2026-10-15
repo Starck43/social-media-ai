@@ -17,12 +17,13 @@ def _get_job_types() -> tuple[str, ...]:
     name="task_list",
     description="Показать все задачи (cron): имя, выражение, тип задачи, активность, время следующего запуска.",
     parameters={"type": "object", "properties": {}, "required": []},
-    required_permission="agenttask.view",
+    required_permission="scheduling.task.view",
 )
 async def task_list() -> list[dict[str, Any]]:
-    from app.core.config import settings
     from datetime import timezone
     from zoneinfo import ZoneInfo
+
+    from app.core.config import settings
 
     rows = await AgentTask.objects.order_by(AgentTask.id)
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
@@ -61,12 +62,15 @@ async def task_list() -> list[dict[str, Any]]:
         "конкретика. Если сценарий требует цель, а она не задана, результат вернёт warnings."
     ),
     confirm=True,
-    required_permission="agenttask.create",
+    required_permission="scheduling.task.create",
     parameters={
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Уникальное имя задачи"},
-            "cron": {"type": "string", "description": "Cron-выражение из 5 полей (мин час день месяц день-недели) или @once"},
+            "cron": {
+                "type": "string",
+                "description": "Cron-выражение из 5 полей (мин час день месяц день-недели) или @once",
+            },
             "job_type": {"type": "string", "enum": list(_get_job_types()), "description": "Что запускать"},
             "source_ids": {
                 "type": "array",
@@ -152,11 +156,12 @@ async def task_add(
     keywords_list: list[str] | None = None,
     topic_list: list[str] | None = None,
 ) -> dict[str, Any]:
+    from zoneinfo import ZoneInfo
+
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
-    from zoneinfo import ZoneInfo
 
     job_types = _get_job_types()
     if job_type not in job_types:
@@ -263,7 +268,7 @@ async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
     name="task_remove",
     description="Удалить задачу по имени.",
     confirm=True,
-    required_permission="agenttask.delete",
+    required_permission="scheduling.task.delete",
     parameters={
         "type": "object",
         "properties": {"name": {"type": "string", "description": "Имя задачи"}},
@@ -286,7 +291,7 @@ async def task_remove(name: str) -> dict[str, Any]:
         "Неизменные поля остаются текущими. job_type можно сменить полностью."
     ),
     confirm=True,
-    required_permission="agenttask.update",
+    required_permission="scheduling.task.update",
     parameters={
         "type": "object",
         "properties": {
@@ -478,7 +483,7 @@ async def task_update(
     name="task_pause",
     description="Поставить задачу на паузу или возобновить её.",
     confirm=True,
-    required_permission="agenttask.update",
+    required_permission="scheduling.task.update",
     parameters={
         "type": "object",
         "properties": {

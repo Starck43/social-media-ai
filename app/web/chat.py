@@ -125,22 +125,20 @@ def _enrich_message(msg) -> dict:
 def _display_transcript(messages) -> list[dict]:
     """Presentation only: tool-call placeholders stay in storage, not in bubbles."""
     return [
-        _enrich_message(msg)
-        for msg in messages
-        if msg.role in ("user", "assistant") and (msg.content or "").strip()
+        _enrich_message(msg) for msg in messages if msg.role in ("user", "assistant") and (msg.content or "").strip()
     ]
 
 
 def _membership_role(request: Request) -> str | None:
-    """The codename of the caller's platform role in the active workspace."""
+    """The caller's workspace role codename."""
     tenant_id = getattr(request.state, "tenant_id", None)
     for membership in getattr(request.state, "memberships", []) or []:
         if membership.tenant_id == tenant_id:
             if membership.role is None:
                 return None
             codename = membership.role.codename
-            name = codename.name if hasattr(codename, "name") else str(codename)
-            return name
+            value = getattr(codename, "value", None) or getattr(codename, "name", codename)
+            return str(value).lower()
     return None
 
 
@@ -167,7 +165,7 @@ def _chat_denied(request: Request, is_ajax: bool):
     perms = getattr(request.state, "web_perms", None)
     if perms is not None and getattr(perms, "can_open_chat", False):
         return None
-    message = "Чат доступен только владельцу текущего пространства"
+    message = "Чат недоступен для текущего участника рабочего пространства"
     if is_ajax:
         return JSONResponse({"error": message}, status_code=403)
     return render_section_denied(request, section_of("/app/chat"))
@@ -180,9 +178,8 @@ async def chat_page(request: Request):
 
     For AJAX requests returns JSON so the client can update the DOM.
     """
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
 
     denied = _chat_denied(request, is_ajax)
@@ -209,9 +206,7 @@ async def chat_page(request: Request):
     enriched = _display_transcript(messages)
 
     if is_ajax:
-        return JSONResponse(
-            {"messages": enriched, "is_owner": _is_owner(request)}
-        )
+        return JSONResponse({"messages": enriched, "is_owner": _is_owner(request)})
 
     return render(
         request,
@@ -234,9 +229,8 @@ async def chat_send(
     JSON with the enriched transcript so the browser can append messages
     without a full page reload.
     """
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
 
     denied = _chat_denied(request, is_ajax)
@@ -245,9 +239,7 @@ async def chat_send(
 
     if not ensure_csrf(request, token):
         if is_ajax:
-            return JSONResponse(
-                {"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403
-            )
+            return JSONResponse({"error": "Сессия истекла, попробуйте ещё раз"}, status_code=403)
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/chat", status_code=302)
 
@@ -291,9 +283,10 @@ async def chat_send(
                     "warning": (
                         "Агент завершил обработку без текстового ответа. "
                         "Проверьте результат действия или уточните запрос."
-                        if not (reply or "").strip() else None
+                        if not (reply or "").strip()
+                        else None
                     ),
-                    "is_owner": _membership_role(request) == "owner",
+                    "is_owner": _is_owner(request),
                 }
             )
 
@@ -302,7 +295,7 @@ async def chat_send(
             "web/chat.html",
             section="chat",
             messages=enriched,
-            is_owner=_membership_role(request) == "owner",
+            is_owner=_is_owner(request),
         )
     except PermissionError:
         if is_ajax:
@@ -338,9 +331,8 @@ async def chat_message_delete(
     token: str = Form("", alias="_csrf"),
 ):
     """Delete a single message from the transcript."""
-    is_ajax = (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
 
     denied = _chat_denied(request, is_ajax)
@@ -374,8 +366,8 @@ async def chat_message_delete(
         add_flash(request, "error", "Сообщение не найдено")
         return RedirectResponse("/app/chat", status_code=302)
 
-    # Allow deleting own messages; anyone in workspace can delete assistant messages
-    if msg.role == "user" and msg.session_id != await web_session_id(user.id):
+    # A transcript and all its messages belong to one member's private chat.
+    if msg.session_id != await web_session_id(user.id):
         if is_ajax:
             return JSONResponse({"error": "Можно удалять только свои сообщения"}, status_code=403)
         add_flash(request, "error", "Можно удалять только свои сообщения")

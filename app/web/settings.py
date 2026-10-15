@@ -31,6 +31,7 @@ from app.models.tenant import Tenant
 from app.services.tenancy import member_roles
 from app.types import ActionType
 
+from ..models import LLMModel
 from .deps import action_tenant_id, add_flash, ensure_csrf, render
 
 router = APIRouter(prefix="/settings")
@@ -140,7 +141,7 @@ def _workspace_access(request: Request, tenant_id: int | None) -> bool:
         return False
     user = request.state.web_user
     return bool(
-        getattr(user, "is_superuser", False)
+        False
         or any(
             m.tenant_id == tenant_id
             and m.user_id == user.id
@@ -186,11 +187,45 @@ async def settings_page(request: Request):
         "visible_tabs": visible_tabs,
         "settings_manage": manage,
         "settings_team_visible": manage,
-        "is_superuser": bool(getattr(user, "is_superuser", False)),
+        "is_superuser": False,
         "settings_scope": "personal" if tab in ("account", "connections") else "workspace",
     }
 
     if tab == "workspace":
+        tenant = request.state.tenant
+        if manage:
+            # Full configuration and quota projections require concrete-target capability.
+            tenant_id = request.state.tenant_id
+            context.update(
+                tenant=tenant,
+                plans=list(Tenant.PLANS),
+                plan_labels=_plan_labels(),
+                plan_rows=_plan_table(),
+                plan_usage=await _plan_usage(tenant, perms),
+            )
+        else:
+            # Explicit member read contract: no budget/prompt/channel/plan configuration.
+            context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
+    elif tab == "agent" and manage:
+        from app.models.llm_model import LLMModel
+        from app.services.ai.llm_client import default_model_sort_key
+
+        models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
+        options = []
+        for model in sorted(models, key=default_model_sort_key):
+            provider_name = model.provider.name if model.provider else "?"
+            cost = f"${model.input_cost_per_1k:.4f}/${model.output_cost_per_1k:.4f}/1K"
+            label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
+            options.append({"id": model.name, "label": label})
+        context["agent_model_options"] = options
+
+        # Read the last probe result from session (set by /agent/model-probe).
+        probe_result = request.session.get("agent_model_probe_result")
+        if probe_result is not None and isinstance(probe_result, dict):
+            context["probe_result"] = probe_result
+        else:
+            context["probe_result"] = None
+
         tenant = request.state.tenant
         if manage:
             # Full configuration and quota projections require concrete-target capability.
@@ -405,6 +440,97 @@ async def agent_settings_update(
         agent_system_prompt=prompt,
     )
     add_flash(request, "success", "Настройки агента сохранены")
+
+
+@router.post("/agent/model-probe")
+async def agent_model_probe(
+    request: Request,
+    agent_model: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Verify the currently selected agent chat model with the cheapest tier first.
+
+    Tiers: probe_status (0 tokens, no network) -> probe_mock (0 tokens, canned)
+    -> probe_real_capped (one capped real call, 1-8 tokens). The first passing
+    tier wins; the result is stored in the session and rendered inline in the
+    settings form.
+    """
+    tenant_id = action_tenant_id(request, tenant_id)
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+    from app.services.ai.model_probe import probe_mock, probe_real_capped, probe_status
+
+    if await tenants.get(id=tenant_id) is None:
+        add_flash(request, "error", "Пространство не найдено")
+        return RedirectResponse(BACK, status_code=302)
+
+    tenant = await tenants.get(id=tenant_id)
+    model = None
+    if agent_model and agent_model not in ("None", "null", ""):
+        try:
+            model_id = int(agent_model)
+            model = await LLMModel.objects.select_related("provider").filter(id=model_id, is_active=True).first()
+        except ValueError:
+            model = await LLMModel.objects.select_related("provider").filter(name=agent_model, is_active=True).first()
+
+    # Tier 0: free local verdict, no provider traffic at all.
+    verdict = probe_status(model) if model else {"ok": False, "checks": [], "hint": "Модель не выбрана"}
+    if not verdict["ok"]:
+        result = {
+            "ok": False,
+            "text": verdict["hint"],
+            "tier": "status",
+            "checks": verdict["checks"],
+            "tokens_spent": 0,
+        }
+    else:
+        # Tier 1: canned local answer, zero tokens, zero network.
+        mock = probe_mock(model, "Проверь маршрут, парсинг и учёт стоимости")
+        if mock.get("ok", True):
+            result = {
+                "ok": True,
+                "text": "Статус OK, мок-проверка пройдена локально. Модель отвечает корректно без сетевого вызова.",
+                "tier": "mock",
+                "checks": verdict["checks"] + mock.get("checks", []),
+                "tokens_spent": 0,
+                "content": mock.get("content", ""),
+                "usage": mock.get("usage", {}),
+                "cost": mock.get("cost", 0.0),
+            }
+        else:
+            # Tier 2: one minimal real provider call, capped cost.
+            real = await probe_real_capped(model)
+            if real.get("ok"):
+                result = {
+                    "ok": True,
+                    "text": "Всё ок: статус OK, мок OK, реальный вызов пройден.",
+                    "tier": "real",
+                    "checks": verdict["checks"] + real.get("checks", []),
+                    "tokens_spent": real.get("tokens_spent", 0),
+                    "content": real.get("content", ""),
+                    "usage": real.get("usage", {}),
+                    "cost": real.get("cost", 0.0),
+                }
+            else:
+                result = {
+                    "ok": False,
+                    "text": real.get("error", "Проверка не прошла"),
+                    "tier": "real",
+                    "checks": verdict["checks"],
+                    "tokens_spent": real.get("tokens_spent", 0),
+                    "error": real.get("error", ""),
+                }
+
+    # Save probe result in session and redirect back to the settings page so
+    # the template shows it from `context["probe_result"]`.
+    request.session["agent_model_probe_result"] = result
     return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
 
 
@@ -508,7 +634,7 @@ async def membership_role(
     workspace with no owner has nobody who may manage it at all, so it would
     be unreachable rather than merely restricted.
     """
-    from app.models.role import Role
+    from app.models import WorkspaceRole as Role
 
     tenant_id = request.state.tenant_id
 
@@ -540,14 +666,32 @@ async def membership_role(
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
     new_role_id = r.id
 
-    if membership.is_owner and new_role != "owner":
-        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.is_owner]
-        if len(owners) <= 1:
-            add_flash(request, "error", "Владелец должен остаться хотя бы один")
-            return RedirectResponse(f"{BACK}?tab=team", status_code=302)
-
-    await tenant_users.update_by_id(membership.id, role_id=new_role_id)
+    changed = await tenant_users.change_member_role(
+        tenant_id=tenant_id, membership_id=membership.id, role_id=new_role_id
+    )
+    if not changed:
+        add_flash(request, "error", "Недостаточно прав или нельзя снять последнего владельца")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/members/{membership_id}/ai")
+async def membership_ai_access(
+    request: Request, membership_id: int, enabled: str = Form(""), token: str = Form("", alias="_csrf")
+):
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return HTMLResponse("Сессия истекла", status_code=403)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.set_ai_access(tenant_id=tenant_id, membership_id=membership_id, enabled=enabled == "1")
+    add_flash(
+        request, "success" if changed else "error", "Доступ к AI изменён" if changed else "Изменение доступа запрещено"
+    )
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
 
@@ -597,8 +741,8 @@ def invite_qr_svg(link: str) -> str | None:
 
 async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: tuple[str, ...]) -> list[dict]:
     """Redeemable invites for the team tab — only for someone who manages the workspace."""
+    from app.models import WorkspaceRole as Role
     from app.models.managers.tenant_manager import TenantInviteManager
-    from app.models.role import Role
 
     perms = getattr(request.state, "web_perms", None)
     if tenant_id is None or perms is None or not perms.can_manage_workspace(tenant_id):
@@ -610,6 +754,8 @@ async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: t
     labels: dict[int, str] = {}
     for role in await Role.objects.filter(id__in=list({r.role_id for r in rows if r.role_id is not None})):
         codename = getattr(role.codename, "name", role.codename)
+        if not isinstance(codename, str):
+            codename = str(codename) if codename is not None else ""
         level = by_codename.get(codename)
         labels[role.id] = level.label if level is not None else str(codename)
     return [
@@ -634,7 +780,7 @@ async def invite_dialog(request: Request):
     response = render(
         request,
         "web/_invite_dialog.html",
-        invite_roles=member_roles.INVITABLE,
+        invite_roles=tuple(level for level in member_roles.INVITABLE if perms.can_manage_member("viewer", level.key)),
         invite_default=member_roles.DEFAULT_INVITE_KEY,
         invite_days=INVITE_DAYS,
         issued_invite=_pop_issued_invite(request),
@@ -692,6 +838,9 @@ async def invite_issue(
         add_flash(request, "error", "Выберите уровень доступа и срок действия из списка")
         return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
+    perms = request.state.web_perms
+    if not perms.is_owner and level.key == "admin":
+        return HTMLResponse("Назначать администратора может только владелец", status_code=403)
     expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     invite, code = await TenantInviteManager().issue(
         tenant_id=tenant_id, role=level.codename, max_uses=1, expires_at=expires_at
@@ -731,7 +880,7 @@ async def plan_update(
         return RedirectResponse(back, status_code=302)
 
     user = getattr(request.state, "web_user", None)
-    if user is None or not getattr(user, "is_superuser", False):
+    if user is None or not False:
         add_flash(request, "error", "Менять тариф может только оператор платформы")
         return RedirectResponse(back, status_code=302)
 

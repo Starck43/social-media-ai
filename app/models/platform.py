@@ -19,10 +19,5 @@ from .base import Base
 if TYPE_CHECKING:
     from . import Source
 
-
 from .collection.platform import Platform
-
-
 from .managers.platform_manager import PlatformManager  # noqa: E402
-
-Platform.objects = PlatformManager()

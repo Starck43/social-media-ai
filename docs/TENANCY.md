@@ -10,15 +10,12 @@ client workspace. A chat is bound to exactly one tenant, and every data row
    (legacy) rows. The platform owner's chat is onboarded here on first contact.
 2. **Invite codes** bring client chats into their own workspaces (`/start
    <code>`). Codes are SHA-256 hashed in the DB; the plaintext is shown once.
-3. **Membership** is `(tenant_id, channel, external_user_id)` — a chat
-   participant with a platform role assigned via `role_id` (FK to `roles.id`).
-   Roles are defined by `Role.codename` (enum `user_role_type`): `VIEWER`,
-   `AI_BOT`, `MANAGER`, `ANALYST`, `MODERATOR`, `ADMIN`, `SUPERUSER`.
-   Only an explicitly resolved `SUPERUSER` membership grants ownership. A legacy
-   row with `role_id = NULL` has no workspace grants and is not an owner in the
-   web UI, API or runtime; its role must be explicitly assigned before access
-   is restored. Runtime owner authority also requires an active bound User.
-   No migration, automatic role repair or identity linking is included.
+3. **Membership** binds a user or messenger identity to one workspace and an
+   independent `WorkspaceRole` (`owner`, `admin`, `manager`, `analyst`, `viewer`).
+   Platform authority belongs to the account's `PlatformRole` (`user`, `operator`,
+   `admin`) and never widens workspace rights in web or client APIs. Unresolved
+   memberships fail closed. AI chat is separately enabled per member; owners have
+   effective access by default. Runtime authority requires an active bound User.
 4. **Enforcement** lives in `BaseManager`/`QuerySet`, not in models:
    `TenantScopedMixin` just marks the model. Every SELECT is filtered to
    `current_tenant_id()`, every `create()` stamps `tenant_id`; `update_by_id`
@@ -130,82 +127,61 @@ a foreign one is refused with 403, never honoured.
 | --- | --- | --- | --- |
 | `/api/*` | bearer JWT (required, 401 otherwise) | caller's membership; headers select, never widen | `member_decision()` for non-owner workspace models; platform predicate otherwise; declared per endpoint (see `docs/API.md`) |
 | `/app/*` | web session | caller's membership (`TenantUIMiddleware`) | `WebPerms.can()` — effective membership/platform rights and bounded owner exceptions; `guard_web()` enforces routes |
-| `/admin/*` (sqladmin) | admin backend | bypass — operator console | per-model rights via `User.has_perm_for()` (see `docs/ADMIN.md`) |
+| `/admin/*` (sqladmin) | admin backend | bypass — operator console | active operator/admin entry, then platform model/action rights (see `docs/ADMIN.md`) |
 | CLI | none (developer tool) | bypass; `--tenant` opts into one workspace | developer surface, no rights check |
 | worker / scheduler | — | from `job.tenant_id` / `task.tenant_id` | jobs run as the workspace they belong to |
 | agent chat (Telegram/MAX/web) | inbound resolution | `resolve_inbound()` → tenant | tools check `required_permission` via `has_permission()` in `permission_scope()`; writes require confirmation |
 
-Non-owner workspace-model rights come from the active membership role via
-`member_decision()` in its tenant/user-bound scope. Global model/admin rights use
-the platform role and `User.has_perm_for(model_name, action)`; both use structured
-`role_permission` → `permissions.model_type_id` + `action_type`. Core owner
-overrides cover source/agenttask/agentscenario only; web settings use their own
-concrete-target management capability, not a platform privilege grant. The check
-uses structured columns (`model_type_id` + `action_type`), not codename strings,
-so changing a role's codename never breaks permission logic.
-
-### Current bounded fail-closed permission foundation
-
-The integrated identity/permission foundation enforces anonymous denial and a tenant-bound
-owner override only for source/agenttask/agentscenario. Global fleet/role/queue
-rights require platform permissions. Web settings use a separate active-User /
-web-membership / concrete-target capability for the current workspace; this
-does not grant tenant.update in core/model checks. API identity reaches manager
-gates; exact service grants cover default task creation, one-shot disarming and collection
-watermarks. Trusted CLI authority is explicit. Merged foundations and their original evidence are recorded in
-[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); complete
-[business readiness gates](BUSINESS_PRODUCTION_READINESS.md) remain open.
-The later `fdb6c18` follow-up removes NULL-role ownership inference without data
-repair; D separately adds fresh web-chat ownership checks. Do not treat confirmation as authorization.
-
 ## Roles and permissions
 
-Platform roles are stored in the `roles` table (`settings.DB_SCHEMA.roles`).
-Each role has a `codename` (enum `user_role_type`) and a set of permissions
-(many-to-many via `role_permission` → `permissions`).
+Current source implements independent fixed catalogs. Migration **0096 is
+prepared, not automatically applied**; see [cutover instructions](ACCESS_MIGRATION.md).
+Earlier migration/commit evidence below describes historical foundations.
 
-### Role codenames
+| Context | Roles | Authority |
+|---|---|---|
+| Account/platform | `user`, `operator`, `admin` | Ordinary account; configured operator grants; full platform administration |
+| Each workspace membership | `owner`, `admin`, `manager`, `analyst`, `viewer` | Explicit workspace presets, independent of the account role |
 
-| Codename | Purpose |
-|---|---|
-| `SUPERUSER` | Membership: explicit workspace owner; User platform role: operator. A membership does not grant global platform rights |
-| `ADMIN` | Workspace administrator |
-| `MODERATOR` | Content moderation |
-| `ANALYST` | Read-only analytics access |
-| `MANAGER` | Content management (sources, tasks, scenarios) |
-| `AI_BOT` | Automated agent identity |
-| `VIEWER` | Read-only workspace member |
+There is no role ordering, `UserRoleType`, account `is_superuser` field or
+editable role-name synonym in the target schema. Codenames are checked strings;
+labels come from one presentation catalog. Role descriptions are plain text.
+Only platform admins assign platform roles or configure operator grants.
+Workspace role creation/editing is not exposed.
 
-### Structured permissions
+Workspace owners/admins manage settings and the team. An admin may manage only
+manager/analyst/viewer members and invitations; only owners assign admins/owners.
+Team changes lock the workspace row and reload the active actor/membership.
+The final active bound owner cannot be demoted. Owner disabling is refused.
+Unknown roles have no access and require explicit assignment by an owner.
 
-Permissions are stored as pairs:
-- `permissions.model_type_id` → `model_types.model_name` (e.g., `source`, `agenttask`, `tenant`)
-- `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
+Permissions use registered `domain.resource.action` keys, such as
+`analysis.result.view`, `collection.source.update`, `llm.provider.configure`.
+`ModelType.resource_key` plus `Permission.action_type` is the unique authority
+identity; `Permission.codename` is derived for display/API. ORM class names and
+UI pages do not define domains. Exact legacy three-part aliases are accepted for
+one release; wildcards and guessed domains are rejected. A model does not
+implicitly receive every action when registered.
 
-`User.has_perm_for(model_name, action)` checks the platform role's pair;
-`member_decision()` substitutes active membership grants for ordinary workspace
-models. Entry/target capabilities and owner exceptions are enforced separately:
+The shared core policy checks active workspace grants with a user/tenant-bound
+context. Web and client API never inherit platform privileges, including for a
+platform admin. Admin and explicit operator API paths require active operator
+entry and platform action grants; a global data scope alone grants no action.
+Personal credential endpoints additionally constrain `user_id` to their caller.
+The web queue is scoped to the current membership and requires job permissions;
+platform status does not open it. Global queue inspection is a read-only admin
+view with explicit `scheduling.job.view` rights and no payload/error projection.
+Trusted CLI/worker service contexts remain explicit and are cleared by nested
+interactive permission scopes.
 
-- `/api/*` — `app/api/deps.py`
-- `/app/*` — `app/web/perms.py` (`WebPerms.can()`)
-- `/admin/*` — `app/admin/authorization.py`
-- Agent tools — `app/agent/runtime.py` (`has_permission_by_codename()` in `permission_scope()`)
-- CLI/worker — `app/core/permissions.py` (`is_bypass()` skips checks)
-
-### Legacy compatibility
-
-Before migration 0080, `tenant_users.role` was a string column (`"owner"` / `"member"`).
-Migration 0080 replaced it with `tenant_users.role_id` (FK to `roles.id`).
-Historical NULL-role owner inference was removed in `fdb6c18`: unresolved rows
-are not owners and receive no workspace grants. Explicit role assignment is
-required to restore access; no automatic data repair or migration is performed.
-The later `2dd3161` follow-up also makes `member_roles.key_of()` return no level
-for a NULL role, removing the legacy owner-label inference. This aligns role
-labels with fail-closed authorization without changing stored memberships.
-
-Role string resolution helpers:
-- `_resolve_role_codename("owner")` → `"SUPERUSER"`
-- `_resolve_role_codename("member")` → `"VIEWER"`
+AI chat requires effective membership AI access. Every tool retains the member's
+ordinary rights and confirmation controls. Fresh identity binds the workspace
+role and AI grant to pending consent; revocation invalidates it. Conversations,
+facts, preferences, reflection feedback and learning watermarks are personal to
+user plus workspace. Only the current workspace's owners may read the NULL-user
+legacy memory bucket. Jobs learn from the user's own web or explicitly bound
+private messenger sessions; group transcripts are excluded. Existing cost and
+plan limits remain workspace-wide.
 
 ## Config
 
@@ -306,12 +282,10 @@ resources from another workspace. Ordinary member model rights come from the
 role assigned to that membership, not from object authorship or a new allowlist.
 Platform-operator overrides remain separate from ordinary member access.
 
-Web chat is owner-only in the active workspace. Non-owner members, including
-platform operators visiting as a non-owner, have no chat navigation or home
-entry; direct transcript, send and delete routes refuse them. Runtime admission
-reloads the existing RuntimeIdentity and refuses non-owner/revoked web identities
-before starting the authorized turn. Messenger policy is unchanged. Web and
-runtime ownership both require an explicitly resolved membership owner role.
+Web chat is available to active owners and members with `ai_chat_enabled`.
+Navigation, transcript/send/delete routes and runtime admission enforce the same
+boundary. Platform operator status alone never opens a workspace conversation.
+History and message deletion are confined to the actor's own session.
 
 Settings Team exposes `POST /app/settings/members/{id}/disable` only with the
 existing concrete workspace-management capability. CSRF is required. The manager
@@ -326,6 +300,6 @@ resolution excludes the disabled row. Existing sessions and unrelated workspace
 memberships are not deleted. Invite/session races, in-flight requests and real
 role/revocation/tenant acceptance remain environment-dependent verification.
 
-Admin entry is open to active authenticated accounts, independently of workspace
-membership. Per-model/action **platform** permissions remain authoritative there;
-the console is not the tenant-scoped dashboard. See [ADMIN](ADMIN.md).
+Admin entry requires an active platform operator/admin account, independently of
+workspace membership. Model/action grants remain authoritative in the global
+console. See [ADMIN](ADMIN.md).

@@ -38,7 +38,7 @@ from ...core.decorators import app_label
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 
-@app_label("social")
+@app_label("collection")
 class CollectedItem(Base, TenantScopedMixin, TimestampMixin):
     """One fetched item, written raw before analysis and removed once it saved."""
 

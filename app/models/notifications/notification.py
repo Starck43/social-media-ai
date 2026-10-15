@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Index
+from sqlalchemy import Boolean, Column, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped
 
-from ..base import Base, TenantScopedMixin, TimestampMixin
 from ...core.config import settings
 from ...core.decorators import app_label
 from ...types import NotificationType
+from ..base import Base, TenantScopedMixin, TimestampMixin
 
 
-@app_label("social")
+@app_label("notifications")
 class Notification(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "notifications"
     __table_args__ = (Index("ix_notifications_tenant_id", "tenant_id"), {"schema": settings.DB_SCHEMA})

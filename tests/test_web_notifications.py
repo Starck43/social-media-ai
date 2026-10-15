@@ -1,31 +1,43 @@
 """Tests for web notifications bell endpoints + tenant filtering UI.
 
 Covers:
-- GET /app/notifications returns unread notifications as JSON (by title presence);
+- GET /app/notifications returns typed, redacted unread events;
 - POST /app/notifications/read-all marks them read (and drops them from the list);
 - POST /app/notifications/read/{id} marks a single one read;
 - the notifications bell modal (base.html) is present and the dashboard block is gone;
 - /app/sources page renders for a regular user with no tenant dropdown.
 
-Note: the suite runs with `is_bypass` monkeypatched to True (see conftest), so
-cross-tenant isolation is exercised by the framework's tenancy tests, not these
-UI tests — these verify the endpoint wiring and rendering.
+Uses real membership permissions and owned data on the approved existing target,
+without conftest bootstrap. Cross-workspace cases live in the acceptance module.
 """
 
 from __future__ import annotations
 
 import re
 import secrets
+import sys
+from pathlib import Path
+
+# isort: off
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+# Resolve the approved target before any application imports.
+from tests.test_merged_home_acceptance import actor, existing_target, home
+from tests.test_merged_notifications_acceptance import notification_target
+from tests.test_web_settings import _login
+
+from app.core.permissions import operator_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import Notification, User
-from app.models.managers.tenant_manager import TenantUserManager
+from app.models import Notification
+
+# isort: on
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
+pytestmark = pytest.mark.tenancy
 
 
 def _name(prefix: str) -> str:
@@ -43,31 +55,26 @@ async def client():
         yield c
 
 
-async def _register(client: AsyncClient) -> int:
-    """Register a fresh user via the UI and return their tenant id."""
-    page = await client.get("/app/register")
-    csrf = CSRF_RE.search(page.text).group(1)
-    username = _name("notifuser")
-    resp = await client.post(
-        "/app/register",
-        data={"username": username, "email": f"{username}@example.com", "password": "password123", "_csrf": csrf},
-    )
-    assert resp.status_code == 200
-    with tenant_scope(bypass=True):
-        user = await User.objects.get(username=username)
-        memberships = await TenantUserManager().web_memberships(user.id)
-        return memberships[0].tenant_id
-
-
 @pytest.fixture
-async def logged_in(client):
-    """A registered (authenticated) user's tenant id."""
-    return await _register(client)
+async def logged_in(client, home):
+    """A real member with notification.view/update; no permission bypass on HTTP."""
+    user = await actor(home, "manager")
+    await _login(client, user.username)
+    return home[1][0]
+
+
+@pytest.fixture(autouse=True)
+async def owned_notifications(logged_in):
+    try:
+        yield
+    finally:
+        with tenant_scope(logged_in), operator_permission_scope():
+            await Notification.objects.filter(tenant_id=logged_in).delete()
 
 
 async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: int) -> None:
     tenant_id = logged_in
-    with tenant_scope(tenant_id):
+    with tenant_scope(tenant_id), operator_permission_scope():
         n1 = await Notification.objects.create_notification(
             title=_name("n1"), message="hello", notification_type="REPORT_READY"
         )
@@ -77,25 +84,24 @@ async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: i
 
     resp = await client.get("/app/notifications")
     assert resp.status_code == 200
-    titles = [n["title"] for n in resp.json()["notifications"]]
-    assert n1.title in titles and n2.title in titles
+    items = resp.json()["notifications"]
+    assert {n1.id, n2.id} <= {n.get("id") for n in items}
+    assert {"Результат готов", "Сообщение об ошибке"} <= {n["title"] for n in items}
+    assert n1.title not in resp.text and n2.title not in resp.text
 
-    read = await client.post("/app/notifications/read-all")
+    page = await client.get("/app/")
+    csrf = CSRF_RE.search(page.text).group(1)
+    read = await client.post("/app/notifications/read-all", data={"_csrf": csrf, "workspace_id": str(tenant_id)})
     assert read.status_code == 200
 
     # Read notifications drop out of the list entirely (no longer resurface).
     after = await client.get("/app/notifications")
-    assert n1.title not in [n["title"] for n in after.json()["notifications"]]
-    assert n2.title not in [n["title"] for n in after.json()["notifications"]]
-
-    with tenant_scope(bypass=True):
-        await Notification.objects.delete_by_id(n1.id)
-        await Notification.objects.delete_by_id(n2.id)
+    assert not {n1.id, n2.id} & {n.get("id") for n in after.json()["notifications"]}
 
 
 async def test_notification_read_one_marks_single(client: AsyncClient, logged_in: int) -> None:
     tenant_id = logged_in
-    with tenant_scope(tenant_id):
+    with tenant_scope(tenant_id), operator_permission_scope():
         n1 = await Notification.objects.create_notification(
             title=_name("n1"), message="hello", notification_type="REPORT_READY"
         )
@@ -103,18 +109,17 @@ async def test_notification_read_one_marks_single(client: AsyncClient, logged_in
             title=_name("n2"), message="world", notification_type="REPORT_READY"
         )
 
-    resp = await client.post(f"/app/notifications/read/{n1.id}")
+    page = await client.get("/app/")
+    csrf = CSRF_RE.search(page.text).group(1)
+    rejected = await client.post(f"/app/notifications/read/{n1.id}")
+    assert rejected.status_code == 403
+    resp = await client.post(f"/app/notifications/read/{n1.id}", data={"_csrf": csrf, "workspace_id": str(tenant_id)})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
     after = await client.get("/app/notifications")
-    titles = [n["title"] for n in after.json()["notifications"]]
-    assert n1.title not in titles
-    assert n2.title in titles
-
-    with tenant_scope(bypass=True):
-        await Notification.objects.delete_by_id(n1.id)
-        await Notification.objects.delete_by_id(n2.id)
+    ids = {n.get("id") for n in after.json()["notifications"]}
+    assert n1.id not in ids and n2.id in ids
 
 
 async def test_notifications_bell_modal_in_base(client: AsyncClient, logged_in: int) -> None:
@@ -122,8 +127,8 @@ async def test_notifications_bell_modal_in_base(client: AsyncClient, logged_in: 
     assert page.status_code == 200
     # Bell modal component present and the endpoint wired in; the dashboard's
     # standalone notifications block is gone.
-    assert "notificationsBell()" in page.text
-    assert "/app/notifications" in page.text
+    assert "notificationsBell(" in page.text
+    assert "js/shell.js" in page.text
     assert "Уведомления" in page.text
     assert "Нет новых уведомлений" not in page.text
 

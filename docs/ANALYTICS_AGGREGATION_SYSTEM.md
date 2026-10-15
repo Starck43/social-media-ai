@@ -114,6 +114,52 @@ show an "incomplete" badge. A row without the marker is unknown coverage and get
 no badge — it is never labelled complete. Digests are unchanged; API responses that
 return raw `summary_data` only gain the additive `coverage_limits` key.
 
+### Operator retry of remaining inputs
+
+The analysis detail offers `POST /app/analytics/{id}/retry` when remaining staged
+inputs exist in its stored content time range. The form uses the existing violet
+analysis button and shared confirmation dialog, CSRF, `aianalytics.view` plus
+`source.analyze`, and an explicit owning workspace for operator POSTs. The server
+rechecks the row/source workspace and available inputs before enqueueing. A
+missing summary or legacy metric provenance offers investigation, not an
+assertion that analysis never ran or that every absent field should exist.
+
+- A retry queues one ordinary `analyze` batch (currently up to 100 staged inputs)
+  with the current tenant-default scenario. It does not reconstruct the original
+  scenario/task payload or rebuild/close the historical row. Check new results
+  and remaining inputs after execution; another batch may be needed.
+- `staged_window` is an internal analyze-job payload with required ISO
+  `start_date`/`end_date` timestamps. Preview, attempt reset and the worker use
+  identical inclusive timestamp bounds, not CLI day truncation. Invalid bounds
+  fail closed; they never become an unbounded run. No forced hash bypass,
+  source configuration mutation, collection, send or publish is introduced.
+- Missing/reversed bounds or no remaining raw inputs show an explanation instead
+  of a retry button. To rebuild a historical result, configure the desired
+  period and explicit full-cycle refresh on a collection task; staged inputs
+  are not a permanent archive. A retry cannot manufacture unavailable metrics.
+- Pending/running collect/analyze jobs suppress another explicit run, including
+  sources resolved from task links or all active workspace sources. The shared
+  manager admission gate serializes check-and-insert across explicit task/source
+  starts; the read-only page hint is not the enforcement boundary. See
+  [source-aware admission](AGENT_TASKS.md#source-aware-run-admission) for lock order,
+  busy-task bookkeeping and the distinct new-input wakeup boundary.
+- Attempt reset and enqueue share a transaction. Reset failure is not swallowed,
+  and enqueue failure cannot commit the reset or report successful admission.
+
+The source detail shows remaining and exhausted inputs separately, uses the
+shared stored-data sentiment projection (no dashboard-private imports), and
+marks explicitly incomplete recent rows with the existing badge. Its general
+analysis action keeps the configured task/source date window, resets only that
+window, and does not enqueue an empty staged batch. The exhausted-input action
+is hidden without `source.analyze`. Dashboard, chronology and group badges already
+link to the detail; they remain read-only. Missing summary/sentiment/topics,
+legacy metrics, missing timestamps and unknown coverage are not reclassified as
+complete or failed. Digest and sqladmin presentation are unchanged.
+
+Validation for this slice is remote pure/mocked/template evidence only. Real
+ASGI/DB permissions, transaction rollback, worker execution and owner localhost
+records require local sequential Kilo validation; no schema migration is needed.
+
 ## Validation focus
 
 For grouping changes, test row membership, duplicate normalization, empty fields,

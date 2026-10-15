@@ -4,8 +4,10 @@
     {% if value is none %}—{% elif decimals %}{{ "%.1f"|format(value) }}{% else %}{{ "%.0f"|format(value) }}{% endif %}
 {%- endmacro %}
 {% block title %}{{ display.display_title|e }} — AI Monitor{% endblock %}
+{% block page_heading %}{{ display.display_title }}{% endblock %}
+{% block page_context %}{{ super() }} · {{ analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id) }}{% endblock %}
 {% block content %}
-    {{ page_title(display.display_title|e, (analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id))|e) }}
+
     <nav aria-label="Навигация анализа" class="mb-5 flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
         <a href="{{ back_url|e }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-cyan-700 dark:text-cyan-400 hover:border-cyan-500">← {{ back_label|e }}</a>
         {% if analysis.source %}<a href="/app/sources/{{ analysis.source_id }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">Карточка источника</a>{% endif %}
@@ -44,6 +46,27 @@
     </div>
     {% endif %}
     {% if display.metrics_legacy %}<p class="mt-1 text-xs text-amber-700 dark:text-amber-300">Полнота сбора для этой записи не сохранена. Сохранённые ненулевые значения показаны как есть; неподтверждённые нули скрыты.</p>{% endif %}
+    {% if retry_needed and can_retry %}
+    <div data-analysis-retry class="mt-3 rounded-lg border border-slate-300 dark:border-slate-700 p-3 text-sm text-slate-600 dark:text-slate-400">
+        <p>Отсутствие полей не доказывает, что анализ не выполнялся. Повторная попытка обрабатывает только оставшиеся сырые материалы за сохранённый период текущим сценарием по умолчанию — не пересобирает эту запись целиком и не гарантирует заполнение всех метрик. Обрабатывается одна партия; если материалы останутся, запуск можно повторить.</p>
+        {% if retry_running %}
+            <p class="mt-2 text-amber-700 dark:text-amber-300">Сбор или анализ источника уже в очереди либо выполняется. Проверьте результат после завершения.</p>
+        {% elif retry_available %}
+            <form method="post" action="/app/analytics/{{ analysis.id }}/retry" class="mt-3"
+                  data-confirm="Будут обработаны оставшиеся материалы этого источника за сохранённый период. Возможны расходы на модель. Старый отчёт не пересобирается целиком."
+                  data-confirm-title="Повторить анализ?" data-confirm-label="Повторить анализ">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ analysis.tenant_id }}">{% endif %}
+                <button type="submit" class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400">Повторить анализ оставшихся материалов</button>
+            </form>
+        {% elif not retry_window_known %}
+            <p class="mt-2">Период исходных материалов не сохранён. Проверьте и задайте период сбора в карточке источника.</p>
+        {% else %}
+            <p class="mt-2">В этом периоде нет оставшихся сырых материалов. Они могли быть обработаны или удалены по сроку хранения. Для пересборки нужен повторный сбор за нужный период в настройках задачи.</p>
+        {% endif %}
+        {% if perms and perms.can('source', 'view') %}<a href="/app/sources/{{ analysis.source_id }}" class="mt-2 inline-block text-cyan-700 dark:text-cyan-400 hover:underline">Проверить источник →</a>{% endif %}
+    </div>
+    {% endif %}
     {% if vk_reactions %}<p class="mt-1 text-xs text-slate-600 dark:text-slate-400">В сохранённой метрике реакций VK учитываются лайки, комментарии и репосты. Комментарии отдельно показаны для детализации; эти показатели не складываются.</p>{% endif %}
     <div class="mt-6 grid gap-4 lg:grid-cols-2">
         {% call card() %}

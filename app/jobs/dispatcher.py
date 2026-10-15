@@ -600,9 +600,12 @@ async def run_task_directly(task: Any) -> Optional[dict]:
 
 async def run_job_inline(job_type: str, payload: dict | None = None, **enqueue_kwargs: Any) -> Optional[dict]:
     """Execute a one-off job immediately; enqueue kwargs require tenant scope."""
+    from app.jobs.source_activity import SOURCE_JOB_TYPES
     from app.models.managers.job_manager import JobManager
 
-    job = await JobManager().enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
+    jobs = JobManager()
+    enqueue = jobs.admit_source_job if job_type in SOURCE_JOB_TYPES else jobs.enqueue
+    job = await enqueue(job_type=job_type, payload=payload or {}, **enqueue_kwargs)
     claimed = await JobManager.claim_job(job.id)
     if claimed is None:
         raise JobNotAcquiredError(job.id, job.tenant_id) from None

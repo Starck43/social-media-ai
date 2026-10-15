@@ -26,13 +26,69 @@ is never blocked behind a long collection.
   job's LLM call — `learn`/`reflect`, NULL when none), plus `agent_task_id` when
   the job came from a task.
 
+### Source-aware run admission
+
+Explicit `collect`/`analyze` starts use `JobManager.admit_source_job`, not a
+page-local check followed by low-level enqueue. Task starts (web, API, CLI/admin
+and cron), one-off inline source collection, source analysis and detail retries
+share this boundary. Active jobs are `pending` or `running` in the same workspace;
+occupancy includes both job types, regardless of scenario/date-window differences.
+
+Membership matches worker precedence: a present task's linked sources win over
+payload source IDs; a task without links means all currently active workspace
+sources. For taskless/deleted-task jobs use payload source IDs, or all active
+sources when absent. Job/task/source queries are tenant-filtered and task links
+are loaded in a batch, never once per active job. The source page's busy hint uses
+the same manager projection; hiding a button is not the enforcement boundary.
+
+Admission locks the existing owning Tenant row `FOR NO KEY UPDATE` and rechecks
+occupancy before inserting in that same transaction. No table/column/migration,
+Redis or process-local production mutex is introduced. The lock is short-lived,
+not held through handler/LLM execution, and does not serialize work in different
+workspaces. Lock order is workspace admission gate before task/staged-row locks;
+task admission takes the gate before its existing Task lock, and manual retries
+before resetting attempts. Reset/enqueue rollback together on a busy conflict.
+Admission explicitly requires PostgreSQL READ COMMITTED isolation and fails
+closed for transaction-wide snapshots that could miss a winner's inserted Job.
+Real concurrent-connection validation on the owner's database remains required.
+
+A collision raises `SourceJobBusy` with the existing Job, never a newly admitted
+run. The web task modal can show that job with an informational message; API
+explicit task runs return HTTP 409 (`source_busy`, `job_id`); direct/inline callers
+do not claim or execute another task's job. A busy task does not change
+`last_run_at`, `last_status`, `last_error`, `next_run_at` or `@once` activity. Cron
+keeps its occurrence due and does not count a collision as an enqueue, so a
+different scenario/task is not silently discarded or marked executed.
+
+This is explicit-run deduplication, not a universal execution lock or a content
+idempotency ledger. Low-level `JobManager.enqueue` remains available for durable
+new-input wakeups (e.g. Telegram staging): coalescing new content into a running
+batch that already selected its inputs could strand it. Already committed wakeup
+jobs block an explicit repeat, but autonomous new-input admission is not serialized
+by this explicit-run gate. No historical duplicate is cancelled/removed, no claim,
+recovery/cancellation policy is weakened, and source/task configuration edits while
+a job is running are not frozen. Existing ordinary result/hash dedup still applies.
+Use the guarded method for new explicit source-run surfaces; never use a raw
+insert or a page-level busy check as their only protection.
+
+Remote checks exercise actual manager code with isolated dependencies, in-memory
+transaction/lock doubles and PostgreSQL SQL compilation. They do not prove real
+PostgreSQL locking, ASGI authorization, worker execution or database rollback.
+
 ### Clearing the queue (`/app/jobs`)
 
 The page shows the last 50 rows and can delete them: a trash icon per row
 (`POST /app/jobs/{id}/delete`) and «Очистить всё» (`POST /app/jobs/clear`).
 Both are gated on `agenttask.delete` — the same right as the task delete on
 `/app/tasks`, since the rows are the tasks' run history — plus CSRF and a
-`confirm()`.
+shared in-app confirmation dialog (no native browser `confirm()`).
+The same component confirms queue cancellation and source/task deletion.
+`web/base.html` includes `web/_confirm.html` once; `js/ui-confirm.js` intercepts
+forms or submit buttons marked `data-confirm`, with optional
+`data-confirm-title` and `data-confirm-label`. It resumes via `requestSubmit`
+only after acceptance, preserving CSRF, workspace fields, validation and the
+original submit button (including `formaction`/`formnovalidate`). Cancel, Escape
+and backdrop dismissal do not submit; the dialog restores focus and scroll.
 
 Two limits are deliberate:
 

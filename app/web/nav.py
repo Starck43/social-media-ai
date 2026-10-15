@@ -2,7 +2,7 @@
 
 Section labels and routes live here, not in the template, so a page cannot
 appear and leave a dead link behind. `render()` puts `nav` into the context and
-the sidebar and the mobile bar both iterate it, marking the active entry by
+the sidebar and mobile drawer both iterate it, marking the active entry by
 `section`.
 
 `ready=False` means the section has a plan but no page yet: it renders as a
@@ -21,20 +21,20 @@ class NavItem(NamedTuple):
     label: str
     ready: bool = True
     required_permission: str | None = None  # e.g., "source.view", "agenttask.create"
+    icon: str = "circle"
 
 
-# The desktop sidebar shows everything (including the roadmap); the mobile bar
-# shows only `ready` items, so it never dead-ends on a placeholder.
+# The shell and mobile drawer consume the same permission-filtered daily sections.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    NavItem("dashboard", "/app/", "Дашборд"),
-    NavItem("sources", "/app/sources", "Источники", required_permission="source.view"),
-    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view"),
-    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view"),
-    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view"),
-    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view"),
-    NavItem("jobs", "/app/jobs", "Очередь задач"),
-    NavItem("chat", "/app/chat", "Чат с агентом"),
-    NavItem("settings", "/app/settings", "Настройки"),
+    NavItem("dashboard", "/app/", "Обзор", icon="home"),
+    NavItem("sources", "/app/sources", "Источники", required_permission="source.view", icon="database"),
+    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view", icon="layers"),
+    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view", icon="calendar"),
+    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view", icon="chart"),
+    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view", icon="document"),
+    NavItem("jobs", "/app/jobs", "Очередь задач", icon="list"),
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="message"),
+    NavItem("settings", "/app/settings", "Настройки", icon="settings"),
 )
 
 # Sections that fit the fixed mobile bar. Capped deliberately: seven full labels
@@ -47,6 +47,8 @@ MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(item for item in NAV_ITEMS if item
 
 def allows(item: NavItem, perms: Any) -> bool:
     """True when the caller may open the section (no requirement = everyone signed in)."""
+    if item.key == "chat":
+        return bool(perms is not None and getattr(perms, "can_open_chat", False))
     if item.required_permission is None:
         return True
     model_name, _, action = item.required_permission.rpartition(".")
@@ -56,6 +58,8 @@ def allows(item: NavItem, perms: Any) -> bool:
 def section_of(path: str) -> NavItem | None:
     """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
     for item in NAV_ITEMS:
-        if item.required_permission is not None and (path == item.href or path.startswith(item.href + "/")):
+        if (item.required_permission is not None or item.key == "chat") and (
+            path == item.href or path.startswith(item.href + "/")
+        ):
             return item
     return None

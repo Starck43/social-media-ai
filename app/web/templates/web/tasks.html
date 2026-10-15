@@ -1,10 +1,11 @@
 {% from "web/_macros.html" import control, task_dates, task_fields, task_trigger_actions, tenant_field, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
+{% block page_heading %}Задачи{% endblock %}
 {% block content %}
 <div x-data="tasksPage()">
     <div class="mb-6 flex items-center justify-between">
-        <h1 class="text-2xl font-semibold tracking-tight">Задачи</h1>
+
         <div class="flex items-center gap-3">
             {% if is_superuser and tenants %}
             <form method="get" class="flex items-center gap-2">
@@ -18,10 +19,10 @@
             </form>
             {% endif %}
             {% if perms and perms.can('agenttask', 'create') %}
-            <button @click="openAdd = true"
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button @click="openAdd = true"
                     class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
                 Создать задачу
-            </button>
+            </button></div></template>
             {% endif %}
         </div>
     </div>
@@ -323,7 +324,7 @@
                             content=source_label,
                             checked=false,
                             cls="content-cb",
-                            attrs=':checked="task.source_ids.includes(' ~ source.id ~ ')"'
+                            attrs={':checked': 'task.source_ids.includes(' ~ source.id ~ ')'}
                         ) }}
                         {% endfor %}
                     </ul>
@@ -395,7 +396,7 @@
                                 </select>
                             </div>
                         </div>
-                        {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs='x-model="task.digest_time_breakdown"') }}
+                        {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs={'x-model': 'task.digest_time_breakdown'}) }}
                     </div>
                 </template>
 

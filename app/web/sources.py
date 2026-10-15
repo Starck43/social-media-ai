@@ -562,17 +562,20 @@ async def source_detail(request: Request, source_id: int):
     # failing is retried until it burns `give_up_after_attempts` and then stops
     # being offered. Without surfacing the count, that day simply vanishes from
     # the source with no trace — the ceiling is doing its job, but silently.
-    given_up = await CollectedItem.objects.exhausted_count(source.id)
+    with tenant_scope(source.tenant_id):
+        pending_count = await (
+            CollectedItem.objects.filter(source_id=source.id).values(func.count(CollectedItem.id)).scalar(0)
+        )
+        given_up = await CollectedItem.objects.exhausted_count(source.id)
+        running = await _source_has_running_job(source.id)
     given_up_label = plural(given_up, "запись", "записи", "записей")
-
-    # Check whether a collect or analyze job is currently running for this source.
-    running = await _source_has_running_job(source.id)
 
     return render(
         request,
         "web/source_detail.html",
         section="sources",
         source=source,
+        pending_count=pending_count,
         given_up=given_up,
         given_up_label=given_up_label,
         filter_tenant_id=filter_tenant_id,
@@ -599,24 +602,14 @@ async def source_detail(request: Request, source_id: int):
         running=running,
     )
 async def _source_has_running_job(source_id: int) -> dict:
-    """Whether a collect or analyze job is currently running for this source.
+    """Whether a collect or analyze job is queued or running for this source.
 
     Returns ``{"collect": bool, "analyze": bool}`` so the template can show
     the right label — "Сбор…" vs "Анализ…" — instead of a generic "Выполняется".
     """
-    from app.models.job import Job
+    from app.models.managers.job_manager import JobManager
 
-    result = {"collect": False, "analyze": False}
-    running = await Job.objects.filter(status="running")
-    for job in running:
-        payload = job.payload or {}
-        source_ids = payload.get("source_ids", [])
-        if source_id in source_ids:
-            if job.job_type == "collect":
-                result["collect"] = True
-            elif job.job_type == "analyze":
-                result["analyze"] = True
-    return result
+    return await JobManager().source_activity(source_id)
 
 
 def _mode_view(mode_key: str) -> dict:
@@ -632,14 +625,16 @@ def _mode_view(mode_key: str) -> dict:
 
 def _analysis_row(a) -> dict:
     """One analysis row, pre-formatted for the table."""
-    from app.web.dashboard import _extract_sentiment_score
+    from app.services.ai.analysis_render import render_analysis
 
+    display = render_analysis(a.summary_data)
     cost = a.estimated_cost
     return {
         "id": a.id,
         "analysis_date": a.analysis_date.strftime("%d.%m.%Y") if a.analysis_date else "—",
         "main_topics": a.main_topics or [],
-        "sentiment": _extract_sentiment_score(a.summary_data),
+        "sentiment": display["sentiment"]["score"],
+        "analysis_incomplete": display["coverage"]["incomplete"],
         "llm_model": a.llm_model,
         "cost_usd": float(cost) / 100 if cost is not None else None,
     }
@@ -875,7 +870,13 @@ async def source_collect_now(
         # instead of draining the whole history. Priority: linked task payload
         # cli_dates → source params cli_dates.
         window = await _resolve_source_window(source)
-        outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+        from app.jobs.source_activity import SourceJobBusy
+
+        try:
+            outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
     name = source.name
     if not outcome:
@@ -917,6 +918,7 @@ async def source_analyze_now(
 
     from app.core.database import new_session
     from app.core.tenant_context import tenant_scope
+    from app.jobs.source_activity import SourceJobBusy
     from app.models.managers.job_manager import JobManager
 
     with tenant_scope(tenant_id):
@@ -925,27 +927,43 @@ async def source_analyze_now(
             add_flash(request, "error", "Источник не найден")
             return RedirectResponse("/app/sources", status_code=302)
 
-        # Reset attempts on exhausted rows so they are offered again.
-        reset_count = 0
+        running = await _source_has_running_job(source_id)
+        if running["collect"] or running["analyze"]:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+        # Preview, reset and worker execution must use the same configured
+        # window. Do not reset unrelated historical rows or report an empty
+        # queue as a successfully requested analysis.
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        window = await _resolve_source_window(source)
+        cli_dates = window.get("cli_dates") or {}
+        bounds = {
+            key: AgentTaskManager.parse_date(cli_dates.get(key))
+            for key in ("start_date", "end_date")
+        }
+        staged = await CollectedItem.objects.for_source(source_id, limit=1, include_exhausted=True, **bounds)
+        if not staged:
+            add_flash(request, "info", "В настроенном периоде нет сырых материалов для анализа. Проверьте период и сбор.")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
         session = new_session()
         try:
             async with session.begin():
-                reset_count = await CollectedItem.objects.reset_attempts(session, source_id)
-        except Exception:
-            pass
+                await JobManager.lock_source_admission(session, tenant_id)
+                reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
+                await JobManager().admit_source_job(
+                    job_type="analyze",
+                    payload={"source_ids": [source.id], **window},
+                    tenant_id=tenant_id,
+                    session=session,
+                )
+        except SourceJobBusy:
+            add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
         finally:
             await session.close()
-
-        # Enqueue — the worker loop picks it up; no HTTP timeout.
-        # Resolve the content window so a forced analyze honours the task's
-        # configured dates instead of draining every staged row. Priority:
-        # linked task payload cli_dates → source params cli_dates.
-        window = await _resolve_source_window(source)
-        await JobManager().enqueue(
-            job_type="analyze",
-            payload={"source_ids": [source.id], **window},
-            tenant_id=tenant_id,
-        )
 
     name = source.name
     if reset_count:

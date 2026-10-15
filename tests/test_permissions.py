@@ -109,13 +109,13 @@ async def test_a_superuser_role_grants_every_action_on_every_model():
 
 
 async def test_a_stripped_role_grants_nothing():
-    """The matrix is the only source: no permission rows, no access."""
+    """No permission rows means no model access; authenticated entry stays open."""
     role = await _role("VIEWER")
     async with _role_with(role, lambda permission: False):
         stripped = await _loaded(await _user(role))
 
     assert stripped.model_permissions("source") == set()
-    assert not stripped.has_admin_access()
+    assert stripped.has_admin_access()  # Entry is allowed; model grants remain empty.
     assert stripped.has_perm_for("source", ActionType.VIEW) is False
 
 

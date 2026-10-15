@@ -1,8 +1,9 @@
 # API Reference
 
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
-panel under `/admin`. All API endpoints (except health check) require
-authentication via Bearer JWT token.
+panel under `/admin`. Workspace data endpoints require an access Bearer JWT
+and an active web membership. Token acquisition, registration and the signed-state
+OAuth callback have the explicit exceptions listed below.
 
 ## Base URL
 
@@ -12,7 +13,11 @@ http://localhost:8000/api/v1
 
 ## Authentication
 
-All endpoints (except `GET /api/v1/health`) require a JWT access token.
+`ApiScopeMiddleware.PUBLIC_API_PATHS` exempts `/api/v1/auth/login`,
+`/api/v1/auth/register`, `/api/v1/auth/refresh-token`, `/api/v1/health` and
+`/api/v1/social/callback` from access-token/workspace middleware. Refresh still
+requires a valid **refresh** Bearer token; OAuth callback validates signed state.
+The root `/livez`, `/readyz` and `/health` probes are outside `/api/*`.
 
 ### Login
 
@@ -64,13 +69,16 @@ Content-Type: application/json
 {
   "username": "johndoe",
   "email": "johndoe@example.com",
-  "password": "strongpassword123",
-  "is_active": true,
-  "is_superuser": false
+  "password": "strongpassword123"
 }
 ```
 
-**Response** `201 Created`: same as login response.
+**Response** `200 OK`: same token-pair shape as login. Only username, email
+and password are accepted. Extra privilege/state keys (`role_id`, `is_superuser`,
+`is_active`) are ignored; the server assigns active, non-superuser and the Viewer
+platform role ([PR #165](https://github.com/Starck43/social-media-ai/pull/165)).
+Registration does not create a workspace/web membership, unlike `/app/register`;
+a new API-only account cannot use workspace data endpoints until a membership exists.
 
 **Errors:**
 - `400` — Username or email already registered.
@@ -85,7 +93,7 @@ do*. They are separate layers, and every surface uses the same two:
 | Surface | Authentication | Rights |
 |---|---|---|
 | `/api/*` | bearer JWT (`ApiScopeMiddleware`) | per-endpoint: `require_model_perm` (model rights) and `require_platform_role` (role ladder); most write endpoints and many read endpoints declare model rights |
-| `/app/*` | web session (`TenantUIMiddleware`) | workspace membership is the boundary; no per-model right in the client UI |
+| `/app/*` | web session (`TenantUIMiddleware`) | active membership plus effective model/action rights (`WebPerms`, `guard_web`); hidden controls do not replace server checks |
 | `/admin/*` | admin backend | per-model rights, Django-style (`docs/ADMIN.md`) |
 | CLI | none (developer tool) | runs with the tenant guard off; `--tenant` picks a workspace |
 
@@ -102,8 +110,10 @@ Every `/api/*` request runs inside one workspace, resolved from the caller's
 
 ### Rights
 
-The rights of a caller are the rights of their **platform role**
-(`users.role_id`), read from `role_permission` → `permissions`:
+For ordinary workspace-scoped models, a non-owner member uses the **active
+membership role**, not the account platform role. Global models/admin and the
+platform-role ladder use `users.role_id`; owner and operator overrides remain
+explicit and bounded. Both role matrices read `role_permission` → `permissions`:
 
 ```python
 require_model_perm("source", ActionType.CREATE)
@@ -112,10 +122,12 @@ require_model_perm("source", ActionType.CREATE)
 means "this role may create sources", checked against
 `permissions.model_type_id` + `action_type` — never against the `codename`
 column, because several seeded codenames are malformed. A superuser
-(`users.is_superuser` or the `SUPERUSER` role) passes everything.
+(`users.is_superuser` or the User platform `SUPERUSER` role) passes these model
+checks; this does not bypass the separate guest-workspace web-chat prohibition.
 
-`User.model_permissions()` is the canonical predicate for all three surfaces, so
-the API, the console and the role editor cannot drift apart. See
+`member_decision()` selects the workspace-role answer when applicable; otherwise
+`User.has_perm_for()` supplies platform model/action rights. SQLAdmin is a global
+platform console, not the active dashboard workspace. See
 `docs/ADMIN.md` for the console's mapping of these rights onto buttons, and
 `docs/TENANCY.md` for how the workspace itself is resolved.
 
@@ -152,11 +164,20 @@ GET /api/v1/health
 }
 ```
 
-No authentication required.
+No authentication required. This legacy probe has no bounded timeout and returns
+raw exception text with HTTP 500 on failure. Do not use it as the production
+readiness contract: root `/readyz` and `/health` return generic 200/503 responses
+with a two-second DB probe; `/livez` never queries the DB. Legacy-probe redaction
+is an open audit follow-up, not a code change made by this documentation update.
 
 ---
 
 ## Users
+
+**Current security limitation:** list, `/me` and update handlers declare
+`UserInDB`, which includes `hashed_password`; the abbreviated examples below
+are not a safe-response guarantee. Removing that field from public response
+models is an open audit task. Never copy real hashes into reports or logs.
 
 ### List Users
 
@@ -213,7 +234,13 @@ Content-Type: application/json
 
 **Permissions:** `user.update`
 
-Admins can update any user, users can update themselves.
+The endpoint and `UserManager.update_user` permit another target only when
+`current_user.is_superuser` is true; an ADMIN-role account without that flag is
+limited to itself despite `user.update`. `UserUpdate` still accepts `is_active`
+and `is_superuser`, and the self-update path forwards them without a separate
+privilege-field gate. This is an open escalation finding for an account holding
+`user.update`, not authority for an ordinary Viewer and not fixed by the
+registration-only protection in PR #165.
 
 ### Delete User
 
@@ -620,6 +647,26 @@ Deletes read notifications older than `days` (1–365).
 ---
 
 ## Dashboard
+
+### Web home overview
+
+`GET /app/` is a compact read-only overview, not the machine dashboard below.
+The merged cleanup removes KPI/aggregation cards, quick commands, analytical
+sidebar and inline task execution. It shows up to five permitted analysis cards,
+three recent task summaries, one conditional setup step and a chat entry.
+Analysis/task loading requires the effective aianalytics.view / agenttask.view;
+source labels additionally require source.view. The operator workspace filter
+is retained. The merged shell lets home use the available width: result/task cards share a
+row from 1200px and stack below it; results fill the width when tasks are denied.
+Metadata wraps with bounded title/summary previews. Guest-workspace chat entry
+and direct web chat endpoints are denied, including for visiting operators.
+No home-request KPI aggregation, new LLM call or migration.
+
+Attention is implemented in the unified bell, not a second home block (see
+[NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
+analysis/digest feed and truly upcoming schedules remain deferred in [the canonical task](design/README.md#prd-081--outcome-focused-home-overview).
+The current task preview is recent-by-creation, not a nearest-run claim. This
+source change is not evidence of deployment or completed runtime validation.
 
 ### Get Dashboard Stats
 
@@ -1450,7 +1497,6 @@ GET /dashboard/topic-chains
   "base_url": "https://api.openai.com/v1",
   "auth_header": "Bearer",
   "is_active": true,
-  "is_default": true,
   "created_at": "ISO datetime",
   "updated_at": "ISO datetime"
 }

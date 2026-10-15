@@ -38,7 +38,13 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [API](API.md), [CLI](CLI.md) and [Admin](ADMIN.md) — supported interfaces.
 - [Configuration](CONFIGURATION.md) and [Deployment](DEPLOYMENT.md) — setup and operation.
 - [Collaboration](COLLABORATION.md) — local and remote development handoff.
+- [Agent workflow](../AGENTS.md) and [workflow details](../.agent/workflow.md) — concise instructions, audit and delegation lifecycle.
 - [Current work](design/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
+
+## Pending source-audit follow-ups
+
+- [PR #196](https://github.com/Starck43/social-media-ai/pull/196) — ten source-verified TODO contracts and evidence; runtime
+  implementation remains open. Persistent allocation is in the current-work board.
 
 ## Maintenance rule
 

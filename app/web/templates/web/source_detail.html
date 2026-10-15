@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import connection_badge, empty_state, switch_toggle %}
+{% from "web/_macros.html" import connection_badge, empty_state, incomplete_analysis_badge, switch_toggle %}
 {% block title %}{% if source %}{{ source.name|e }}{% else %}Источник не найден{% endif %} — AI Monitor{% endblock %}
+{% block page_heading %}{{ source.name if source else 'Источник не найден' }}{% endblock %}
 {% block content %}
 {% if not source %}
     {{ empty_state("Источник не найден или принадлежит другому workspace.", height="h-64") }}
@@ -12,27 +13,31 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <a href="/app/sources" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">← Источники</a>
-            <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ source.name|e }}</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {{ source.platform.name }} · {{ source.source_type.display_name }} ·
                 <span class="font-mono text-xs">{{ source.external_id }}</span>
             </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+<template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
         {% if perms and perms.can('source', 'analyze') %}
             {% if running.collect or running.analyze %}
-                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
-                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                    <span class="ml-1">Анализ…</span>
-                </span>
+                {% if running.collect %}
                 <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Сбор выполняется">
                     <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                     </svg>
                     <span class="ml-1">Сбор…</span>
                 </span>
+                {% endif %}
+                {% if running.analyze %}
+                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
+                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <span class="ml-1">Анализ…</span>
+                </span>
+                {% endif %}
             {% else %}
                 <form method="post" action="/app/sources/{{ source.id }}/analyze">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -64,42 +69,15 @@
             </form>
         {% endif %}
         {% if can_delete %}
-            <div x-data="{ open: false }">
-                <button @click="open = true"
-                        class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                    Удалить
-                </button>
-                <div x-show="open" x-cloak
-                     class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
-                     @keydown.escape.window="open = false">
-                    <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
-                        <h2 class="text-lg font-semibold text-rose-700 dark:text-rose-300">Удалить источник?</h2>
-                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                            «{{ source.name|e }}» и вся собранная по нему аналитика ({{ analytics_count }} записей)
-                            будут удалены безвозвратно. Задачи останутся, но без этого источника.
-                        </p>
-                        {% if usage_count %}
-                            <p class="mt-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                                Источник используется в {{ usage_count }} задаче(ах) — сбор по ним перестанет работать.
-                            </p>
-                        {% endif %}
-                        <div class="mt-5 flex justify-end gap-2">
-                            <button @click="open = false"
-                                    class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
-                                Отмена
-                            </button>
-                            <form method="post" action="/app/sources/{{ source.id }}/delete">
-                                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                                <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500">
-                                    Удалить навсегда
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <form method="post" action="/app/sources/{{ source.id }}/delete"
+                  data-confirm="«{{ source.name|e }}» и вся собранная по нему аналитика ({{ analytics_count }} записей) будут удалены безвозвратно. Задачи останутся, но без этого источника.{% if usage_count %} Источник используется в {{ usage_count }} задаче(ах) — сбор по ним перестанет работать.{% endif %}"
+                  data-confirm-title="Удалить источник?" data-confirm-label="Удалить навсегда">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
+            </form>
         {% endif %}
+    </div></div></template>
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
@@ -271,6 +249,19 @@
        raw copy is never dropped) but are no longer offered once they burn
        `give_up_after_attempts`, so without this note the content would simply
        be missing and look like it was never collected. #}
+    {% if pending_count > given_up %}
+        <div data-analysis-backlog class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-4">
+            <p class="text-sm text-amber-800 dark:text-amber-300">Материалов в ожидании анализа: {{ pending_count - given_up }}. Они ещё не разобраны полностью; это не готовые результаты.</p>
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Запуск обработает оставшиеся материалы в периоде текущей задачи или источника. Для старого неполного результата откройте его дату в списке ниже — повторная попытка там ограничена сохранённым периодом.</p>
+            {% if perms and perms.can('source', 'analyze') and not running.collect and not running.analyze %}
+                <form method="post" action="/app/sources/{{ source.id }}/analyze" class="mt-3">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                    <button type="submit" class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400">Выполнить анализ</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
     {% if given_up %}
         <div class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-4">
             <div class="flex items-start justify-between gap-4">
@@ -279,19 +270,19 @@
                         {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
                     </p>
                     <p class="mt-1 text-xs text-amber-800 dark:text-amber-300/70">
-                        Сырые данные сохранены и ждут. Повторная попытка прекратится автоматически;
+                        Сырые данные сохранены и ждут. Автоматические попытки для них приостановлены;
                         чтобы разобраться, проверьте модель этого источника или поднимите лимит попыток
                         в <code>collected_items.give_up_after_attempts</code>.
                     </p>
                 </div>
-                {% if running.analyze %}
+                {% if running.collect or running.analyze %}
                     <span class="shrink-0 rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
                         <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
                         <span class="ml-1">Анализ…</span>
                     </span>
-                {% else %}
+                {% elif perms and perms.can('source', 'analyze') %}
                     <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                         {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
@@ -417,6 +408,7 @@
                             <tr class="border-b border-slate-200 dark:border-slate-800/60 last:border-0">
                                 <td class="py-2.5 pr-4 text-slate-700 dark:text-slate-300">
                                     <a href="/app/analytics/{{ a.id }}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}" class="text-cyan-700 dark:text-cyan-400 hover:underline">{{ a.analysis_date }}</a>
+                                    {% if a.analysis_incomplete %}<div class="mt-1">{{ incomplete_analysis_badge(true) }}</div>{% endif %}
                                 </td>
                                 <td class="py-2.5 pr-4 text-slate-600 dark:text-slate-400">
                                     {% if a.main_topics %}

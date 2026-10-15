@@ -53,7 +53,7 @@ def test_key_of_reads_the_membership_role() -> None:
         def __init__(self, role_id, role):
             self.role_id, self.role = role_id, role
 
-    assert member_roles.key_of(_M(None, None)) == "owner"
+    assert member_roles.key_of(_M(None, None)) is None
     assert member_roles.key_of(_M(3, _Role(UserRoleType.ANALYST))) == "analyst"
     assert member_roles.key_of(_M(3, _Role("MANAGER"))) == "manager"
     assert member_roles.key_of(_M(3, None)) is None
@@ -71,7 +71,13 @@ def test_the_qr_is_an_inline_svg_of_the_link() -> None:
 
 async def _issue(client, role: str, days: int = 7):
     token = await _csrf(client, "/app/settings?tab=team")
-    return await client.post("/app/settings/invites", data={"role": role, "days": str(days), "_csrf": token})
+    response = await client.post(
+        "/app/settings/invites",
+        data={"role": role, "days": str(days), "_csrf": token},
+        follow_redirects=False,
+    )
+    location = response.headers["location"]
+    return await client.get("/app/settings/invites" if "invite_dialog=1" in location else location)
 
 
 async def test_owner_issues_a_link_that_binds_the_chosen_level() -> None:
@@ -84,11 +90,11 @@ async def test_owner_issues_a_link_that_binds_the_chosen_level() -> None:
             resp = await _issue(c, "analyst")
             assert resp.status_code == 200
             match = CODE_RE.search(resp.text)
-            assert match, "the issued link is shown on the team tab"
+            assert match, "the issued link is shown in the on-demand invitation dialog"
             code = match.group(1)
             assert "Аналитик" in resp.text
             # Shown once: a reload no longer carries the plaintext code.
-            again = await c.get("/app/settings?tab=team")
+            again = await c.get("/app/settings/invites")
             assert code not in again.text
 
         async with await _client() as c:

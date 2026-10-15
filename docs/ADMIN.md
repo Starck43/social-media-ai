@@ -16,9 +16,18 @@ Session-based authentication. The admin panel requires a logged-in user session.
 
 ```
 GET  /admin/reset-password     → form (email + CSRF token)
-POST /admin/reset-password     → generates temp password, logs to console
+POST /admin/reset-password     → replaces password, logs a temporary password
 GET  /admin/login?message=password_reset → login with temp password
 ```
+
+**Unsafe legacy behavior — open audit finding:** this custom FastAPI route is
+registered outside SQLAdmin model/action guards. Its GET issues a CSRF token to
+an anonymous caller; POST looks up any supplied email, replaces that account
+password without proving account ownership and logs the generated six-character
+password. CSRF and request-rate limits do not authorize an account reset. Do not
+treat this as an approved production recovery procedure. A one-use, expiring,
+account-bound recovery proof (or authorized operator-only reset) and removal of
+password logging require a separate code fix. No reset was performed by this audit.
 
 ### Change Password (logged-in user)
 
@@ -48,12 +57,17 @@ The console is gated by the **platform role** of the signed-in operator, the
 same way Django gates a `ModelAdmin`. There is no separate admin permission
 model: the answer to "may this operator do this" comes from `role_permission` →
 `permissions.model_type_id` + `action_type`, read through
-`User.has_perm_for(model_name, action)` — one source of truth shared with `/api`,
-`/app`, the agent tools, and the CLI.
+`User.has_perm_for(model_name, action)`. Admin is a global/platform console,
+not an active-workspace dashboard. Ordinary workspace surfaces additionally
+select membership-role grants through `member_decision()`; workspace ownership
+is not a platform model permission.
 
-**Who may enter:** a superuser (`users.is_superuser` or the `SUPERUSER` role),
-or any user whose role carries at least one model `view`
-(`User.has_admin_access()`). Anyone else is sent back to the login form.
+**Who may enter:** every active authenticated user (`User.has_admin_access()`).
+Entry itself grants no model/action permission. The verified token identity is
+used for both console and external admin-route authorization; a stale session
+`user_id` cannot select another account. An account without model rights sees an
+explanation on the index, no model links, and 403 on forbidden model routes.
+Workspace ownership or a membership role does not grant platform model rights.
 
 **What they may do:** per model, the role's rights map onto the console actions
 one to one, and sqladmin asks about every one of them — hiding a button and
@@ -64,17 +78,9 @@ The permission check uses structured columns:
 - `permissions.action_type` → `ActionType` enum (`VIEW`, `CREATE`, `UPDATE`, `DELETE`, `EXPORT`, `CONFIGURE`)
 
 The single predicate `User.has_perm_for(model_name, action)` is the canonical
-check — it is used by `/api`, `/app`, `/admin`, agent tools, and CLI. Changing a
+platform check; workspace surfaces additionally apply membership context. Changing a
 role's codename never breaks permission logic because the check uses structured
 columns, not codename strings.
-
-**Who may enter:** a superuser (`users.is_superuser` or the `SUPERUSER` role),
-or any user whose role carries at least one model `view`
-(`User.has_admin_access()`). Anyone else is sent back to the login form.
-
-**What they may do:** per model, the role's rights map onto the console actions
-one to one, and sqladmin asks about every one of them — hiding a button and
-blocking the route behind it are the same check.
 
 | Console action | Required `ActionType` |
 |---|---|
@@ -321,17 +327,39 @@ All templates have access to:
 
 ## Security
 
+### Web template escaping (`/app`)
+
+The separate web Jinja environment (`app/web/deps.py`) autoescapes HTML/XML
+templates and string templates. Stored names, prompts, errors and form values
+are text; do not bypass escaping with `safe` or a template-wide autoescape block.
+Serialize script data with `tojson`, not string interpolation. Alpine macro
+attributes use mappings rendered through `xmlattr`; only template-authored
+expressions belong there. Dynamic confirmation messages use `data-confirm` and
+the shared text-only dialog, never interpolation inside executable handlers.
+
+Template macros and captured template blocks retain their own HTML markup while
+their variable values are escaped. The invite QR SVG is the one explicit `safe`
+exception: it is generated locally by `segno`, not supplied as stored/user HTML.
+This policy does not change sqladmin's separate template environment, authorize
+external actions or sanitize URL schemes.
+
 ### Session Authentication
 
-- Uses sqladmin's `AuthenticationBackend` with session storage
-- Token stored in browser session cookies
-- Configurable timeout via `LOGIN_TIMEOUT_MINUTES`
+- Uses SQLAdmin authentication plus Starlette signed browser session cookies,
+  not a server-side session store. Signed content is not encrypted.
+- Access JWT is stored in that cookie; the outer SessionMiddleware lifetime is
+  24 hours and access-token expiry follows environment-specific settings.
+- `LOGIN_TIMEOUT_MINUTES` controls the legacy admin lockout interval, not
+  cookie/session lifetime. Current ordinary bad-password failures do not call
+  `track_login_attempt`; counters are cookie-local, and API/web login have no
+  corresponding shared throttle. Login protection is an open audit task.
 
 ### Permission Checks
 
 - All admin operations run with `PlatformScopeMiddleware` (bypass tenancy)
 - The admin panel is the operator's console, not a client API
-- Password reset requires the user to exist and have admin-like permissions
+- The legacy password-reset route checks only email existence plus CSRF; it
+  does not check admin-like permissions. See the unsafe-flow warning above.
 
 ### Password Policy
 

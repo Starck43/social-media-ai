@@ -1,85 +1,62 @@
 # AGENTS.md — AI Assistant
 
 ## Agent entry points and continuity
-- Read `.agent/rules.md` and `.agent/workflow.md` before work; they define local worktree/test restrictions and session handoff.
-- Product direction: `docs/PRODUCT_PLAN.md`; engineering gates: `docs/BUSINESS_PRODUCTION_READINESS.md`; current tasks/ownership: `docs/design/README.md`; delivered foundations: `docs/IMPLEMENTATION_STATUS.md`.
-- Local IDE/CLI: use `$develop-social-media-ai-local`. Remote GitHub work: use `$develop-social-media-ai`. Both use the same task board and PR handoff.
-- Resume from the current PR handoff after verifying its SHA. Do not treat old `.agent/tasks.md` or `.agent/state.json` entries as fresh assignments.
+- Before work read `.agent/rules.md` (worktree/DB constraints) and `.agent/workflow.md` (session handoff); instructions here supersede older procedural rules on conflict.
+- Docs: `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/design/README.md` (tasks/ownership), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/DOCS_INDEX.md` (index).
+- Subagents: `.codex/agents/` (Codex: `test-runner` primary, `opencode-test-runner` fallback when Kilo is BLOCKED), `.kilo/agents/` (Kilo). `.agent/test-report.md` is human-audit evidence only — never main-context input.
+- Local IDE/CLI: `$local`; remote GitHub: `$remote`; same task board and PR handoff.
+- Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 
 ## Collaboration workflow
+- `dev` is the integration branch. Complete authorized tasks autonomously, without routine confirmations.
+- Default: work in the current `dev` checkout when one sequential task owns its changes; inspect status first, preserve unrelated edits. Separate branch/worktree only for parallel tasks, PR review, risky experiments, conflicts, or an explicit owner request — never as routine ceremony.
+- Delegate only when requested or when independent lanes materially help. One
+  concrete task, a short review, and dependent steps stay in the current agent.
+  For a broad audit, use the fewest Codex subagents needed, give each one
+  bounded area, and ask for concise findings. Implementation lanes need
+  separate worktrees and file ownership. Shared-DB tests always stay sequential.
+- On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
+- Tests: every pytest run follows `.agent/rules.md` R10 and is delegated through Kilo. Neither Codex coordinator nor Codex subagents run pytest directly.
 
-- The owner is the sole developer; development is local and `dev` is the integration branch.
-- Complete authorized tasks autonomously without repeated routine confirmations.
-  Work directly in the current `dev` checkout by default when one sequential task
-  owns its changes and no unrelated work would be mixed. Always inspect status and
-  preserve unrelated changes.
-- Use a separate branch/worktree for parallel tasks, PR review, risky experiments,
-  conflicting owner changes, or when the owner explicitly requests a PR. Do not
-  create one only as routine ceremony for each local task.
-- After a coherent task is complete and validated in `dev`, show the proposed
-  commit split/messages and offer to create those commits directly in `dev`.
-  A closeout phrase listed below is explicit authorization to create the appropriate
-  local commits without asking again. Do not require a PR for ordinary sequential
-  local work. Do not push `dev`, merge, force-push, deploy, or modify production
-  data without explicit authorization.
-- Run focused tests only when needed for new features or a concrete correctness concern.
-  Do not routinely run the full suite. Delegate broad testing to local OpenCode or Kilo;
-  this delegation is authorized. See `docs/COLLABORATION.md` for the handoff protocol.
-- Read `.agent/rules.md` for shared database and worktree constraints. New workflow
-  instructions here supersede older procedural rules where they conflict.
-- Report results briefly in Russian: outcome, checks actually completed, and remaining issues.
-- After each completed substantial task, offer a new chat and provide a compact copyable
-  handoff with directory, branch/commit/PR, completed work, validation, and next action.
-  Do not claim to close or create a chat automatically.
-- Treat the user's phrases `закрываю чат`, `чат закрываем`, `закрываем чат`, `завершаем чат`,
-  `задача завершена`, `задача с подзадачами завершена`, and `подготовь новый чат`
-  as an explicit closeout request. Before the final response, record the actual
-  state in the existing board/ledger/PR when it changed. Commit each completed,
-  validated and clearly scoped part of the current task locally in `dev`; do not
-  include unrelated, incomplete or unvalidated changes. Then provide a copyable
-  new-chat prompt with the project path, branch/revision, completed and unfinished
-  work, checks, blockers, and the first next action. If work is unfinished, label
-  it accurately; a closeout request is not permission to mark the task complete.
+## Understand common requests
+- “Audit completed work”, “check what is done”, or “find gaps in completed
+  tasks” means compare `docs/IMPLEMENTATION_STATUS.md` with current code and PR
+  evidence. Report verified findings and a prioritized fix plan; do not change
+  code unless asked to fix or implement.
+- For one named feature, task, or PR, inspect only that slice. Do not launch
+  subagents unless the review has independent parts or the user asks for them.
+- “Take the next active task” means select one unreserved item from
+  `docs/design/README.md`, verify current code and ownership, then implement
+  that item. It does not mean execute the whole board.
+- “Implement/fix the audit findings” means record accepted items in root
+  `ROADMAP.md`, then implement dependency-ready items with subagents only
+  when useful. Verify each before marking it done; make per-item commits when
+  the request or active Goal asks for them.
+- Run focused checks appropriate to changed behavior. Request broad suites only
+  when warranted; all pytest commands go through Kilo. Docs-only edits do not
+  need pytest.
 
 ## Project rules
-- The active product is an extensible assistant built on the existing modular monolith. Read `README.md` and `docs/DOCS_INDEX.md`, then the relevant `docs/*.md` before changing behavior.
-- Verify the current branch and code before acting on plans or task boards: documentation can describe proposed work. Do not assume a planned feature is implemented.
-- Active runtime: PostgreSQL-backed schedules/jobs, worker and Telegram/MAX long-poll listener. Do not add Celery/Redis dependencies to the active path or extend frozen legacy code (`app/celery/`, Streamlit) without an explicit task.
-- `python -m app.runtime` already runs the scheduler, worker and channel listener. Do not start duplicate scheduler/listener owners accidentally.
-
-## Python environment
-- Run Python tools from the repository root and always use the project virtualenv: `.venv/bin/python -m ...` or executables under `.venv/bin/`.
-- Do not use system Python, bare `pytest`, `pip`, or `alembic`; do not install dependencies globally.
-- Common commands:
-  - Runtime: `.venv/bin/python -m app.runtime`
-  - CLI: `.venv/bin/python -m cli.main ...`
-  - Migration: `.venv/bin/python -m alembic upgrade head`
-  - Focused test: `.venv/bin/python -m pytest -o addopts='' tests/path/to/test_file.py -q`
-  - One test: `.venv/bin/python -m pytest -o addopts='' tests/path/to/test_file.py::test_name -q`
-  - Full suite, when warranted: `.venv/bin/python -m pytest -q`
+- Extensible assistant on the existing modular monolith: read `README.md`, `docs/DOCS_INDEX.md`, then relevant `docs/*.md` before changing behavior.
+- Verify current branch/code before acting on plans or boards; docs may describe proposed work — never assume a planned feature exists.
+- Active runtime (PostgreSQL schedules/jobs, worker, Telegram/MAX long-poll listener) is one process: `.venv/bin/python -m app.runtime`; do not start duplicate owners. No Celery/Redis in the active path; `app/celery/` and Streamlit are frozen without an explicit task.
 
 ## Data access and migrations
-- Reuse existing SQLAlchemy ORM models, model managers, and service methods before adding database access. Check `app/models/` and `app/models/managers/` for an existing implementation.
-- Do not create an ad-hoc engine, `Session`/`AsyncSession`, or `sessionmaker`. Use the project's existing database/session lifecycle and transaction conventions. If a needed operation is missing, extend the relevant manager/service rather than duplicating queries across API, CLI, web, or agent tools.
-- Do not bypass workspace scoping, authorization, validation, or manager-level business rules with direct queries. Use `settings.DB_SCHEMA`; never hardcode a schema name.
-- Alembic is the only schema migration path. Do not create tables at runtime or edit old migrations to change their historical behavior. Review generated migrations before applying them; run `alembic check` when model/schema changes warrant it.
+- Reuse ORM models, managers (`app/models/managers/`), service methods before adding DB access; extend a manager/service instead of duplicating queries across API/CLI/web/agent tools.
+- No ad-hoc `engine`/`Session`/`AsyncSession`/`sessionmaker`; follow existing session and transaction conventions; respect workspace scoping, authorization, validation, manager-level rules; `settings.DB_SCHEMA` only, never hardcoded schemas.
+- Alembic is the only migration path: no runtime table creation, no edits to applied migrations; review generated migrations; `alembic check` when warranted.
 
 ## Architecture and safety
-- Keep changes small and consistent with nearby code; prefer reuse over new abstractions, dependencies, frameworks, or parallel implementations. Do not perform repo-wide formatting or unrelated refactors.
-- Keep these concepts separate: `AgentScenario` defines analysis methodology; `AgentTask` defines scheduled execution and its sources/targets; a multi-step business workflow is a separate concept.
-- All interactive access must fail closed: unknown identity, missing membership, missing permission, or revoked access must not grant access. Agent tools need explicit permissions and argument validation; re-check access when executing the operation.
-- External writes (send, publish, update, delete) must not be enabled as a side effect of unrelated work. Preserve dry-run/disabled defaults and required approval gates; scope recipients and credentials to the owning workspace. Never expose tokens, session strings, `.env` values, or raw secrets in logs, tests, prompts, or committed files.
-- Use the existing LLM clients and DB-managed provider/model configuration. Preserve usage/cost tracking and fallback semantics. Tests must mock external APIs/LLM calls; do not make real paid or destructive calls.
-- Optional integrations must not prevent startup when unconfigured. Keep source-specific access limits and capabilities explicit; do not imply that a delivery channel also supports collecting content.
+- Small changes consistent with nearby code; reuse over new abstractions/dependencies/frameworks; no repo-wide formatting or unrelated refactors.
+- Distinct concepts: `AgentScenario` = methodology; `AgentTask` = scheduled execution (sources/targets); multi-step business workflow = separate concept.
+- Interactive access fails closed (unknown identity, missing membership/permission, revoked ⇒ deny); agent tools need explicit permissions and argument validation, re-checked at execution.
+- External writes (send/publish/update/delete) are never a side effect of unrelated work; preserve dry-run defaults and approval gates; scope recipients/credentials to the owning workspace; never expose tokens, sessions, `.env` values, secrets in logs/tests/prompts/commits.
+- Existing LLM clients and DB-managed provider/model config only; preserve usage/cost tracking and fallbacks; tests mock external APIs/LLMs — no real paid or destructive calls.
+- Optional integrations must not block startup when unconfigured; per-source access limits stay explicit; a delivery channel does not imply content collection.
 
-## Tests and verification
-- Do not run the entire test suite after every small edit. First run the narrowest relevant test file or test case, disabling default coverage overhead with `-o addopts=''` while iterating.
-- Run broader tests for cross-cutting changes to tenancy/permissions, ORM models or migrations, jobs/retries, LLM accounting, delivery, runtime startup, or shared interfaces. Run the full suite before declaring a broad change complete when feasible.
-- Reuse existing fixtures, mocks, and test helpers. Add or update regression tests for changed behavior; prefer deterministic tests without network, live credentials, or real database side effects.
-- If a test cannot be run because an environment/service is unavailable, state that explicitly and report the exact commands and results. Never claim tests passed unless they were run.
-
-## Style and handoff
-- Follow `pyproject.toml`: Black + isort, line length 120. Format only changed/new files; preserve existing local style when editing legacy code.
-- Committed code and documentation are in English; user-facing agent responses are in Russian. Keep milestone/PRD numbering out of code comments, docstrings, model fields, admin labels, and filenames.
-- Never commit `.env*`, credentials, user sessions, generated data, or local database files.
-- At completion, summarize the behavior changed, important files, exact tests run, migration implications, and remaining risks. Do not silently expand scope or rewrite working modules without a demonstrated need.
+## Style and closeout triggers
+- `pyproject.toml`: Black + isort, line 120; format only changed/new files; preserve legacy style in old code.
+- Code/docs in English; user-facing responses in Russian, brief: outcome, checks actually completed, remaining issues. No milestone/PRD numbering in comments, docstrings, fields, labels, filenames.
+- Never commit `.env*`, credentials, sessions, generated data, local DB files.
+- Completion summary: behavior changed, key files, exact tests run, migration implications, remaining risks; no silent scope expansion.
+- Closeout phrases — explicit authorization to commit validated task-scoped work in `dev` and run the `docs/COLLABORATION.md` handoff protocol: `закрываю чат`, `чат закрываем`, `переходим в новый чат`, `завершаем чат`, `задача завершена`, `задача с подзадачами завершена`, `подготовь новый чат`. A closeout is not permission to mark unfinished work complete.

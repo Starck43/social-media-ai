@@ -155,7 +155,8 @@ LOG_LEVEL=INFO
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | Bind port |
 | `SECRET_KEY` | *(required)* | Pydantic JWT signing key |
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000` | CORS allowed origins (comma-separated) |
+| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000,http://localhost:8501` | Compatibility setting; not read by the active CORS middleware |
+| `BACKEND_CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:8000"]` | Active CORS allowlist; set as a JSON list in the environment |
 
 ### Database
 
@@ -177,8 +178,12 @@ LOG_LEVEL=INFO
 | `ALGORITHM` | `HS256` | JWT signing algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `43200` (30 days) | Overridden to `60` (1 hour) in production |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
-| `LOGIN_TIMEOUT_MINUTES` | `15` | Lockout duration after max failed attempts |
-| `MAX_LOGIN_ATTEMPTS` | `5` | Max failed login attempts before lockout |
+| `LOGIN_TIMEOUT_MINUTES` | `15` | Legacy admin cookie-local lockout interval, not session lifetime |
+| `MAX_LOGIN_ATTEMPTS` | `5` | Legacy admin threshold; ordinary wrong-password failures currently do not increment it |
+
+API and `/app/login` have no shared login throttle. These settings are not proof
+of brute-force protection; the audit tracks shared attempt accounting, ordinary
+failure tracking and cookie-independent limits as a separate implementation task.
 
 ### Password Policy
 

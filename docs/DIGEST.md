@@ -24,17 +24,27 @@ same payload for every channel; channels differ only in transport rules.
    The five core types (`sentiment`, `keywords`, `topics`, `trends`,
    `engagement`) are covered by the standard aggregations; the eight extended
    types use their specialized ones (see the table below).
-   No LLM call happens here — the brief is pure SQL + JSONB aggregation
-   over `summary_data`.
+   No LLM call happens here. Existing managers load ORM rows; Python reads
+   stored `summary_data` and groups them. This is not a SQL/JSONB-only pipeline.
+
+   **Current scope/date limitations:** the brief receives source/scenario filters,
+   but the top-level stats/sentiment/topics/content mix/engagement/LLM summaries
+   in `aggregate()` do not. The shared look-back query uses `today - days` with
+   no upper date or DAILY-only predicate, while the displayed inclusive window
+   starts at `today - (days - 1)`. Weekly/monthly aggregation also writes
+   workspace-wide rollups. These are open correctness/refactoring findings, not
+   cross-workspace leakage or repaired behavior.
 
 4. **Hybrid step 2 — the narrative.** `_summarize()` sends that brief to the
-   LLM for a 2–4 sentence Russian summary. Model choice: `AGENT_MODEL` by name
-   if set, otherwise the first active text-capable model. A broken LLM never
+   LLM for a 2–4 sentence Russian summary. Model choice:
+   `LLMModel.objects.resolve_default_model("text", strategy="quality")`; this
+   path does not consult `AGENT_MODEL`. A broken LLM never
    breaks the digest — the summary is simply omitted. The daily cost cap is
    checked *before* the call: past `AGENT_DAILY_COST_LIMIT` (or
    `tenant.daily_cost_limit`) the summary is skipped with the digest still
-   rendered. A successful call prices its usage from `llm_models` tariffs and
-   stores it on `digest_runs.llm_cost`, which is part of the cap's spend metric
+   rendered. Returned envelopes are journaled before output validation (PR #163);
+   the legacy `known_cost_usd` projection is stored on `digest_runs.llm_cost`,
+   which is part of the cap's spend metric
    (`tenancy.resolver.daily_cost_today()`).
    The owner-decided target pricing is three-state: provider-reported cost takes
    precedence; an explicit zero from the provider or tariff table is FREE; a

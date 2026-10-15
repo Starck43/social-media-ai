@@ -81,9 +81,8 @@ class AdminAuthBackend(AuthenticationBackend):
     async def authenticate(self, request: Request) -> bool:
         """Check if user is authenticated via session token.
 
-        Only superusers and roles with at least one model `view` permission may
-        enter the operator console; the role and its permissions are eager-
-        loaded so the check and the later per-model authorization can read them.
+        Every active authenticated user may enter. Model/action grants remain
+        independent, and use this verified identity rather than a stale user_id.
         """
         token = request.session.get("token")
         if not token:
@@ -97,6 +96,9 @@ class AdminAuthBackend(AuthenticationBackend):
             if loaded is None or not loaded.has_admin_access():
                 request.session.clear()
                 return False
+            request.state.admin_user = loaded
+            request.session["user_id"] = str(loaded.id)
+            request.session["username"] = loaded.username
             return True
         except HTTPException:
             request.session.clear()

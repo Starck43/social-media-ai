@@ -1,4 +1,4 @@
-"""Workspace membership model; role semantics are unchanged."""
+"""Workspace membership model with explicit role-based ownership."""
 
 from __future__ import annotations
 
@@ -61,15 +61,8 @@ class TenantUser(Base, TimestampMixin):
 
     @property
     def is_owner(self) -> bool:
-        """True when this membership's role grants full workspace access.
-
-        The platform SUPERUSER role is the canonical owner role; legacy rows
-        with ``role_id == NULL`` are treated as owners for backward compatibility
-        (pre-migration data where the string column was "owner").
-        """
-        if self.role_id is None:
-            return True
-        if self.role is None:
+        """Only an explicitly resolved SUPERUSER membership grants ownership."""
+        if self.role_id is None or self.role is None:
             return False
         codename = self.role.codename
         name = codename.name if hasattr(codename, "name") else str(codename)

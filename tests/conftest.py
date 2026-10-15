@@ -19,8 +19,10 @@ database *and* the working schema.
 ``scripts.setup_test_db`` then makes sure that database exists, carries the
 schema and holds the reference rows the suite reads (roles, permissions,
 platforms, the bootstrap workspace). It is idempotent, so the first `pytest`
-after a clone sets everything up on its own. Its ``--reset`` truncates every
-table, which is only needed when a run was interrupted mid-way.
+after a clone can initialize an explicitly approved empty target. Existing
+unknown tables, missing columns or UNIQUE drift stop bootstrap before schema,
+reset or seed writes. Its ``--reset`` is destructive and requires separate
+owner approval; an interrupted run is not automatic reset authorization.
 
 Two escape hatches remain and are deliberate:
 

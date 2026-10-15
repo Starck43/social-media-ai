@@ -1,16 +1,17 @@
 {% extends "web/base.html" %}
 {% block title %}Сценарии{% endblock %}
+{% block page_heading %}Сценарии{% endblock %}
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Сценарии</h1>
+
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Управление сценариями анализа и автоматизации</p>
     </div>
     {% if perms and perms.can('agentscenario', 'create') %}
-        <a href="/app/scenarios/new"
+        <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><a href="/app/scenarios/new"
            class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
             + Создать сценарий
-        </a>
+        </a></div></template>
     {% endif %}
 </div>
 

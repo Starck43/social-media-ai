@@ -185,7 +185,7 @@ def test_structured_user_permissions_and_cache_preserve_existing_behavior():
     from app.types import ActionType, UserRoleType
 
     grant = Permission(action_type=ActionType.VIEW, model_type=ModelType(model_name="AgentTask"))
-    user = User(is_superuser=False, role=Role(codename=UserRoleType.VIEWER, permissions=[grant]))
+    user = User(is_active=True, is_superuser=False, role=Role(codename=UserRoleType.VIEWER, permissions=[grant]))
     assert user._model_perms_cache is None
     assert user.model_permissions("agenttask") == {ActionType.VIEW}
     assert user.has_perm_for("AGENTTASK", ActionType.VIEW)

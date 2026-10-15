@@ -47,9 +47,14 @@ def resolve(key: Any, *, invitable_only: bool = False) -> MemberRole | None:
 
 
 def key_of(membership: Any) -> str | None:
-    """The level key of a membership (legacy NULL role is an owner), or None."""
+    """The level key of a membership, or None when no role is assigned.
+
+    A NULL role means "no role assigned" (fail-closed since fdb6c18):
+    it grants no ownership and maps to no level, so callers show
+    "Роль не назначена" and deny workspace rights.
+    """
     if getattr(membership, "role_id", None) is None:
-        return "owner"
+        return None
     role = getattr(membership, "role", None)
     codename = getattr(role, "codename", None)
     name = getattr(codename, "name", codename)

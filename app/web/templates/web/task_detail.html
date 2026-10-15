@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import empty_state, switch_toggle, check_card, check_mark %}
 {% block title %}{% if task %}{{ task.name }} — AI Monitor{% else %}Задача не найдена{% endif %}{% endblock %}
+{% block page_heading %}{{ task.name if task else 'Задача не найдена' }}{% endblock %}
 {% block content %}
 {% if not task %}
     {{ empty_state("Задача не найдена или принадлежит другому workspace.", height="h-64") }}
@@ -22,13 +23,13 @@
             {% else %}
                 <a href="/app/tasks" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">← Задачи</a>
             {% endif %}
-            <h1 class="mt-1 truncate text-2xl font-semibold tracking-tight">{{ task.name }}</h1>
+
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 {{ JOB_TYPE_TITLES.get(task.job_type, task.job_type) }} ·
                 {% if task.tenant %}{{ task.tenant.name }}{% else %}—{% endif %}
             </p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+<template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
             {% if perms_can(request, 'agenttask', 'update') %}
             <button @click="openEdit = true"
                     class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
@@ -43,37 +44,15 @@
             </form>
             {% endif %}
             {% if perms_can(request, 'agenttask', 'delete') %}
-            <div x-data="{ open: false }">
-                <button @click="open = true"
-                        class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                    Удалить
-                </button>
-                <div x-show="open" x-cloak
-                     class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 dark:bg-slate-950/80 p-4"
-                     @keydown.escape.window="open = false">
-                    <div class="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl">
-                        <h2 class="text-lg font-semibold text-rose-700 dark:text-rose-300">Удалить задачу?</h2>
-                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                            «{{ task.name }}» будет удалена безвозвратно. Задачи, использующие привязанные источники, останутся.
-                        </p>
-                        <div class="mt-5 flex justify-end gap-2">
-                            <button @click="open = false"
-                                    class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
-                                Отмена
-                            </button>
-                            <form method="post" action="/app/tasks/{{ task.id }}/delete">
-                                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
-                                <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500">
-                                    Удалить навсегда
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <form method="post" action="/app/tasks/{{ task.id }}/delete"
+                  data-confirm="«{{ task.name|e }}» будет удалена безвозвратно. Задачи, использующие привязанные источники, останутся."
+                  data-confirm-title="Удалить задачу?" data-confirm-label="Удалить навсегда">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id" value="{{ filter_tenant_id }}">{% endif %}
+                <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
+            </form>
             {% endif %}
-        </div>
+        </div></div></template>
     </div>
 
     <div class="mt-6 grid gap-4 lg:grid-cols-3">
@@ -286,7 +265,6 @@
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Запусков пока не было.</p>
         {% endif %}
     </div>
-</div>
 
 <!-- Edit modal ───────────────────────────────────────────────────────── -->
 {% if perms_can(request, 'agenttask', 'update') %}
@@ -378,7 +356,8 @@
                 {% if perms_can(request, 'agenttask', 'delete') %}
                 <button type="submit" formnovalidate
                         formaction="/app/tasks/{{ task.id }}/delete"
-                        @click="if (!confirm('Удалить задачу «' + '{{ task.name }}' + '»?')) $event.preventDefault()"
+                        data-confirm="Задача «{{ task.name|e }}» будет удалена безвозвратно."
+                        data-confirm-title="Удалить задачу?" data-confirm-label="Удалить навсегда"
                         class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                     Удалить
                 </button>
@@ -402,5 +381,6 @@
     </div>
 </div>
 {% endif %}
+</div>
 {% endif %}
 {% endblock %}

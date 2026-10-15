@@ -36,10 +36,13 @@ async def tick_tenant(tenant_id: int, now: datetime | None = None, tz: str | Non
 
     for task in due:
         receipt = await tasks._admit_task_run(
-            task.id, now=now, scheduled=True, expected_next_run_at=task.next_run_at,
+            task.id,
+            now=now,
+            scheduled=True,
+            expected_next_run_at=task.next_run_at,
             timezone_name=tz or settings.SCHEDULER_TIMEZONE,
         )
-        if receipt is None:
+        if receipt is None or receipt["status"] == "busy":
             continue
         if receipt["status"] == "invalid_schedule":
             logger.error("scheduled_task_invalid_cron task_id=%s", task.id)

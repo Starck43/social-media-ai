@@ -313,6 +313,94 @@ worker fence, old-day baseline, admission, terminal events, reconciliation,
 UTC-rollover liability handling, all-path cutover or migration/rollback proof
 is supplied by this storage-only package.
 
+### Immutable outcome-event storage foundation (not activated)
+
+Status: **Definition and standalone storage API only; caller wiring, PostgreSQL
+evidence and activation pending**. `outcome_events.py` builds one normalized
+observation against a frozen receipt. `LLMOutcomeEventManager.record_event`
+requires explicit trusted payer scope, reads that payer's persisted receipt,
+validates price/usage evidence, and acknowledges only an owned commit or an
+exact scoped replay. Only the named event-identity constraint suppresses an
+insert; differing/inaccessible evidence and other write/commit errors propagate.
+An uncertain commit is not a dispatch or settlement authorization.
+
+Only client-owned `accounting_usage`, `accounting_cost_reported` and
+`accounting_cost_usd` fields are read. Generated text, legacy projection zeros
+and current model tariffs are not monetary evidence. Structured provider price
+arbitrates; a reported but unresolved amount blocks tariff fallback. Explicit
+provider zero or both explicit frozen zero rates are FREE. Missing price/usage
+remains NULL/UNDEFINED. Zero observed usage at a nonzero tariff is priced zero,
+not explicit FREE. Not-dispatched evidence is a separate NULL-cost state.
+
+This new, unwired builder requires exact representability in Numeric(18,9);
+unrepresentable positive amounts are never rounded to zero/FREE. Safe normalized
+decimal provenance is retained when possible, not raw billing payloads or signed
+provider proof. This differs from the existing journal's rounding adapter and
+must be reconciled deliberately before activation, not by rewriting history.
+Tariff calculation uses the receipt snapshot, never a later model price.
+
+Timeout, cancellation and unknown observations remain uncertain even if cost
+is known. A later reconciliation uses another event UUID and never mutates
+the earlier event. Observed UTC time may cross midnight without changing the
+receipt's preparation day. No reducer/settlement is provided: multiple events
+for a receipt must not be summed as multiple paid attempts; this API cannot
+release a reservation or unresolved liability.
+
+Migration definition 0094 adds only the event table, RESTRICT foreign keys,
+constraints/index and schema-bound mutation/binding guards. It does not alter
+0093 or existing evidence. The manager requires both receipt and event guards;
+it never creates them. The insert guard checks payer/policy/time and explicit
+free/provider consistency; full tariff recomputation is manager validation, not
+a general direct-SQL authorization guarantee. Privileged DDL is outside this
+guard threat model.
+
+0094 is **NOT APPLIED**. Prior test-only permission for 0093 does not authorize
+0094 or pytest's metadata/bootstrap/permission registration. Before commit,
+rollback is transactional; after application, preserve events, receipts and
+guards. Ordinary downgrade is refused, even when empty. PostgreSQL definition/
+model/catalog parity, guard rollback, trusted-payer isolation, exact replay/
+collision, owned commit/ack faults and real two-session races remain required.
+Production migrator, cutover, runtime and full PRD-03 are not certified.
+
+### Unwired atomic reservation boundary — merged foundation
+
+The merged bounded boundary ([PR #180](https://github.com/Starck43/social-media-ai/pull/180),
+merge `df06b1e17d5d13d7f3e7171dff6d7a317c87cca2`) is `reserve_dispatch_receipt` /
+`LLMBudgetManager.reserve_receipt`; it is not called by any provider client.
+One owned transaction locks the active payer and the pre-provisioned UTC-day
+budget row, resolves the existing plan/override/global cap from that locked payer,
+and appends the receipt plus immutable reservation while changing the balance.
+Only a fresh acknowledged commit returns success; exact replay returns False
+and cannot authorize another HTTP request. Standalone receipts cannot be upgraded.
+
+Migration definition 0095 adds two tables and reservation binding/immutability
+guards. A real owner-local normal0094→0095 rehearsal passed on the approved
+legacy0092 clone advanced through actual0093/0094; this is not an application
+to the source/production database. No runtime baseline provisioning, bootstrap,
+backfill or production cutover is delivered by this API. A missing, frozen or unreviewed day baseline fails closed, including
+for unlimited payers. Reviewed-bound versions are trusted internal inputs,
+not estimates from character counts/max-output settings or HTTP arguments.
+Known paid attempts without a bound are allowed only for unlimited payers and
+are explicitly unbounded, never zero. FREE has an explicit zero tariff basis;
+UNDEFINED uses `owner-undefined-allow-v1`, a separate counter and zero cap ceiling
+that is not an actual cost. Undefined admissions bypass priced-cap arithmetic,
+not payer, schema, baseline or freeze checks. Amounts must be exact Decimal USD
+at 1e-9; unrepresentable legacy caps fail closed rather than being rounded.
+
+There is no release/settlement or expiry path. Outstanding known/free/unbounded
+older-day reservations conservatively block capped priced admissions; current-day
+unbounded liability also blocks them. Unlimited and owner-allowed undefined
+attempts keep their separate accounting states. Original cap/receipt/bound are
+preserved on replay. The reservation balance is not summed with analytics.
+Evidence now includes57 focused no-DB checks and one real isolated PostgreSQL
+node/all14 journaled scenarios at `d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71`,
+plus the separate owner-local normal migration report at
+`f4c14c4da0fc212591ca0f88c35db3f8a20d87d3`. Original test SHAs and retained-data
+manifests are not relabelled; [exact evidence and limitations](validation/llm-budget-pg-runner.md).
+This is not production-baseline or whole-gate acceptance. Durable day-baseline
+provisioning, reviewed bound production, client/caller wiring, cap-overrun
+settlement, release, all-path accounting and rollout stay OPEN.
+
 ### Proposed all-path accounting and admission contract
 
 Status: **Owner pricing decision recorded; admission implementation and evidence
@@ -320,8 +408,11 @@ still pending — not activated**. This is the full-gate contract, not a new bac
 or a release claim. Analyzer accounting certainty is integrated in PR #118;
 provider-reported analyzer pricing and the three-state monetary mapping are
 integrated in PR #125 (accepted head `08c53e1`, merge `d2b687d`); owner-local
-checks were accepted, while PostgreSQL and full suite were NOT RUN. All-path
-receipts, immutable report provenance and atomic admission remain to implement.
+checks were accepted, while PostgreSQL and full suite were NOT RUN at that original
+revision. Preparation receipts (#137/#154) and immutable outcome storage (#168)
+are now integrated but UNWIRED. The #180 atomic receipt/reservation manager is
+also merged but UNWIRED. All-path admission/activation, settlement and release
+remain open; do not relabel their original evidence.
 
 **Payer and coverage.** Every actual HTTP attempt in all three clients must pass
 one accounting/admission boundary, whether reached by analysis, digest, agent
@@ -352,11 +443,11 @@ References to jobs, messages and results must not cascade-delete evidence.
 - Monetary authority is Decimal USD at the documented precision. Legacy USD and
   USD-cent columns remain adapters, never summed again on top of ledger spend.
 - Owner-decided pricing truth (2026-10-12), replacing the earlier proposal that a
-  zero default tariff is unknown: FREE only on an explicit zero — the model itself
-  returned zero cost, or the tariff table explicitly holds 0. Otherwise the model's
-  own answer at first call arbitrates: a model-reported price is the cost, and a
-  non-zero table price is the known-price basis. No model price with an empty
-  table is UNDEFINED: never free, never zero, always registered in statistics and
+  zero default tariff is unknown: FREE only on an explicit zero in a structured
+  provider USD report or an explicit zero tariff. Structured provider price,
+  never generated model text, arbitrates actual cost; a non-zero tariff is the
+  known-price basis. Missing/unresolved price is UNDEFINED: never implicitly free
+  or zero, separately recorded in statistics and
   related accounting actions; dispatch is not blocked by it, but it is
   unreservable and outside cap-bounded spend by construction. Known token counts
   remain distinct from missing usage. Preserve the approved tariff snapshot for
@@ -402,7 +493,7 @@ start a second scheduler/listener/migration owner.
   tenants, cap changes, insert races, rollback and lost commit acknowledgements.
   No request starts without committed admission; reserve/settle/replay is atomic.
 - [ ] Failure matrix: missing/invalid tariffs (UNDEFINED, dispatch with recorded
-  state), explicit zero tariffs (FREE), model-reported prices, unknown/partial usage,
+  state), explicit zero tariffs (FREE), structured provider prices, unknown/partial usage,
   unexpected overrun, cancelled tasks, crash windows, DB outage and UTC rollover;
   unresolved liability cannot silently become free or admit further capped work.
 - [ ] Durable recovery and cleanup: repeated reconciliation adds no duplicate

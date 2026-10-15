@@ -1,0 +1,95 @@
+{
+  "tested_sha": "d10bde4c3e63a5308e5ae61b8f46b87e63cf3c71",
+  "preparation_sha": "251e4aeb1533dadc3cea5d004e9a914ec057b502",
+  "preparation_execution_sha": "943d14a70e32b1c870ee06e49c17853712165ec4",
+  "postgres_version": "15.18",
+  "python": "3.13",
+  "pytest_nodes_passed": 1,
+  "scenario_results": [
+    {
+      "name": "catalog",
+      "result": "PASS"
+    },
+    {
+      "name": "fresh",
+      "result": "PASS"
+    },
+    {
+      "name": "distinct_race",
+      "result": "PASS"
+    },
+    {
+      "name": "identical_race_replay",
+      "result": "PASS"
+    },
+    {
+      "name": "payer_isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "cap_serialization",
+      "result": "PASS"
+    },
+    {
+      "name": "baseline_refusals",
+      "result": "PASS"
+    },
+    {
+      "name": "historical_liability",
+      "result": "PASS"
+    },
+    {
+      "name": "tariff_states",
+      "result": "PASS"
+    },
+    {
+      "name": "rollback_after_receipt",
+      "result": "PASS"
+    },
+    {
+      "name": "rollback_before_commit",
+      "result": "PASS"
+    },
+    {
+      "name": "post_commit_ack_loss",
+      "result": "PASS"
+    },
+    {
+      "name": "guards",
+      "result": "PASS"
+    },
+    {
+      "name": "preservation",
+      "result": "PASS"
+    }
+  ],
+  "journal_sha256": "d2637a762268325d05c43764d870e7521b278a978a01811aec1a2660f13e1d2c",
+  "completed": {
+    "kind": "completed",
+    "at": "2026-10-14T14:58:25.114429+00:00",
+    "result": "PASS",
+    "limitation": "synthetic acknowledgement loss; no HTTP/settlement"
+  },
+  "normal_online_migration": "NOT VERIFIED",
+  "offline_alembic_range": "0094:0095 PASS",
+  "historical_31_and_6_rerun": false,
+  "no_db_passed": 57,
+  "no_db_failed": 0,
+  "no_db_skipped": 0,
+  "no_db_subtests": 20,
+  "no_db_warnings": 3,
+  "pg_warnings": 4,
+  "retained_receipts": 11,
+  "retained_reservations": 10,
+  "retained_days": 18,
+  "sequence_advancement": {
+    "llm_dispatch_receipts_id_seq": 19,
+    "llm_budget_reservations_id_seq": 15,
+    "llm_budget_days_id_seq": 18
+  },
+  "catalog_sha256": "f1e01af9bcda59eb0b3767778874f6b2293f3fcd98076a6bd5a1f22665a84c55",
+  "acl_sha256": "e7371625619ad83a2b464fecde7cb3931910ba9e073c12ce5ce061f58f6ea304",
+  "source_changes_vs_style_pin_app_migrations": false,
+  "other_clients_after": 0,
+  "provenance_note": "Original apply manifests retained; reader-only descendant verified with original preparation pin, actual historical source hashes, exact catalog-query equality and Git ancestry."
+}

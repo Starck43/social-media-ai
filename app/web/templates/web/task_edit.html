@@ -1,20 +1,21 @@
 {% from "web/_macros.html" import control, task_dates, task_trigger_actions, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задача — AI Monitor{% endblock %}
+{% block page_heading %}{{ task.name }}{% endblock %}
 {% block content %}
 {# The task editor as a full page, not a modal: the form already needed a
    scroll inside a modal bounded by the screen, so it lives at its own URI
    (/app/tasks/{id}/edit) and the row's name button links here. #}
-<div x-data="taskEditPage()" class="mx-auto max-w-4xl">
+<div x-data="taskEditPage()" x-effect="document.getElementById('page-heading').textContent = editing.name || 'Задача'" class="mx-auto max-w-4xl">
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
             <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Редактирование задачи</p>
-            <h1 class="text-2xl font-semibold tracking-tight" x-text="editing.name || 'Задача'"></h1>
+
         </div>
-        <a href="/app/tasks"
+        <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><a href="/app/tasks"
            class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
             ← К списку задач
-        </a>
+        </a></div></template>
     </div>
 
     <form method="post" :action="'/app/tasks/' + editing.id"
@@ -140,7 +141,7 @@
                     content=source.name,
                     checked=source.id in edit.source_ids,
                     cls="content-cb",
-                    attrs=':checked="editing.source_ids.includes(' ~ source.id ~ ')"'
+                    attrs={':checked': 'editing.source_ids.includes(' ~ source.id ~ ')'}
                 ) }}
                 {% endfor %}
             </ul>
@@ -209,7 +210,7 @@
                         </select>
                     </div>
                 </div>
-                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs='x-model="editing.digest_time_breakdown"') }}
+                {{ switch_toggle("digest_time_breakdown", "Разбивка по дням внутри групп", checked=False, attrs={'x-model': 'editing.digest_time_breakdown'}) }}
             </div>
         </template>
 
@@ -238,7 +239,7 @@
         </div>
 
         {{ task_trigger_actions("editing", "editing.job_type", trigger_types, action_types) }}
-        {{ switch_toggle("is_active", "Активна", checked=False, attrs='x-model="editing.is_active"') }}
+        {{ switch_toggle("is_active", "Активна", checked=False, attrs={'x-model': 'editing.is_active'}) }}
         <div class="flex flex-wrap items-center gap-2 pt-2">
             {# Delete lives with the edit form, not in the row: it is the one
                action that cannot be undone, and a bare trash icon next to
@@ -248,7 +249,8 @@
             {% if perms and perms.can('agenttask', 'delete') %}
             <button type="submit" formnovalidate
                     :formaction="'/app/tasks/' + editing.id + '/delete'"
-                    @click="if (!confirm('Удалить задачу «' + editing.name + '»?')) $event.preventDefault()"
+                    :data-confirm="'Задача «' + editing.name + '» будет удалена безвозвратно.'"
+                    data-confirm-title="Удалить задачу?" data-confirm-label="Удалить навсегда"
                     class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
                 Удалить
             </button>

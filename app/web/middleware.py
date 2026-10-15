@@ -16,7 +16,6 @@ The middleware stores `web_user`, `memberships`, `tenant` and `tenant_id` on
 
 from __future__ import annotations
 
-import logging
 from urllib.parse import quote
 
 import jwt
@@ -30,11 +29,10 @@ from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
+from app.services.tenancy import member_roles
 
 from .nav import allows, section_of
 from .perms import WebPerms
-
-logger = logging.getLogger(__name__)
 
 # Pages reachable without an authenticated session.
 PUBLIC_PATHS = frozenset({"/app/login", "/app/register"})
@@ -62,10 +60,8 @@ class TenantUIMiddleware:
         request.state.tenant = None
         request.state.tenant_id = None
         request.state.unread_notifications = 0
-        # Personal platform connections this person must act on (see
-        # `app/services/social/connections.py`). Empty in a healthy setup, and
-        # the navbar renders nothing at all for an empty list — a permanent
-        # "connected" badge is noise that trains people to ignore badges.
+        # Legacy template context stays empty. Personal connection metadata is
+        # loaded by the bounded attention endpoint, not every HTML request.
         request.state.connection_alerts = []
         # Built below once the active workspace is known; always set so
         # templates can call `perms.can(...)` unconditionally.
@@ -78,7 +74,12 @@ class TenantUIMiddleware:
             await self._redirect(scope, receive, send, f"/app/login?next={quote(target, safe='')}")
             return
 
-        if user is not None and not memberships and path not in NO_WORKSPACE_PATHS:
+        if (
+            user is not None
+            and not memberships
+            and path not in NO_WORKSPACE_PATHS
+            and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
+        ):
             await self._redirect(scope, receive, send, "/app/invite")
             return
 
@@ -100,16 +101,16 @@ class TenantUIMiddleware:
                     if membership.role is not None:
                         codename = membership.role.codename
                         role_codename = codename.name if hasattr(codename, "name") else str(codename)
+                    level = member_roles.resolve(member_roles.key_of(membership))
                     request.state.workspaces.append(
                         {
                             "tenant": workspace,
                             "role": role_codename,
+                            "is_owner": bool(membership.is_owner),
+                            "role_label": level.label if level is not None else "Роль не назначена",
                             "active": membership.tenant_id == tenant_id,
                         }
                     )
-
-        if user is not None:
-            request.state.connection_alerts = await self._connection_alerts(user.id)
 
         # Run inside both tenant_scope (data isolation) and permission_scope
         # (rights checks). permission_scope is only active when we have a user;
@@ -124,13 +125,6 @@ class TenantUIMiddleware:
             if perm_ctx is not None:
                 perm_ctx.__enter__()
             try:
-                if tenant_id is not None:
-                    try:
-                        from app.models import Notification
-
-                        request.state.unread_notifications = await Notification.objects.filter(is_read=False).count()
-                    except Exception:  # noqa: BLE001 — a badge must never break a page
-                        request.state.unread_notifications = 0
                 denied = self._denied_section(request, path)
                 if denied is not None:
                     from .deps import render_section_denied
@@ -155,17 +149,6 @@ class TenantUIMiddleware:
         if item is None or allows(item, getattr(request.state, "web_perms", None)):
             return None
         return item
-
-    @staticmethod
-    async def _connection_alerts(user_id: int) -> list:
-        """Connections this person must fix, or [] — a badge must never break a page."""
-        try:
-            from app.services.social.connections import statuses_needing_action
-
-            return await statuses_needing_action(user_id)
-        except Exception:  # noqa: BLE001
-            logger.warning("Could not resolve connection statuses for user %s", user_id, exc_info=True)
-            return []
 
     @staticmethod
     def _active_tenant_id(request: Request, memberships) -> int | None:

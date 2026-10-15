@@ -32,15 +32,19 @@ REVOKE_RE = re.compile(r'action="/app/settings/invites/(\d+)/revoke"')
 
 async def _issue(client, role: str, days: int = 7) -> str:
     token = await _csrf(client, "/app/settings?tab=team")
-    resp = await client.post("/app/settings/invites", data={"role": role, "days": str(days), "_csrf": token})
+    await client.post("/app/settings/invites", data={"role": role, "days": str(days), "_csrf": token})
+    resp = await client.get("/app/settings/invites")
     match = CODE_RE.search(resp.text)
-    assert match, "the issued link is shown on the team tab"
+    assert match, "the issued link is shown in the on-demand invitation dialog"
     return match.group(1)
 
 
 async def _revoke(client, invite_id: int):
     token = await _csrf(client, "/app/settings?tab=team")
-    return await client.post(f"/app/settings/invites/{invite_id}/revoke", data={"_csrf": token})
+    response = await client.post(f"/app/settings/invites/{invite_id}/revoke", data={"_csrf": token})
+    if "invite_dialog=1" in str(response.url):
+        return await client.get("/app/settings/invites")
+    return response
 
 
 async def _new_user(prefix: str) -> User:
@@ -69,7 +73,10 @@ async def test_owner_sees_open_invites_and_a_revoked_code_no_longer_joins() -> N
 
             code = await _issue(c, "analyst", days=1)
             await _issue(c, "manager")
-            page = await c.get("/app/settings?tab=team")
+            team = await c.get("/app/settings?tab=team")
+            assert "data-open-invites" not in team.text
+            assert 'action="/app/settings/invites"' not in team.text
+            page = await c.get("/app/settings/invites")
             assert "Активные приглашения" in page.text
             ids = [int(i) for i in REVOKE_RE.findall(page.text)]
             assert len(ids) == 2
@@ -160,6 +167,9 @@ async def test_a_member_who_does_not_manage_the_workspace_sees_no_list_and_canno
             page = await c.get("/app/settings?tab=team")
             assert "data-open-invites" not in page.text
             assert not REVOKE_RE.search(page.text)
+            partial = await c.get("/app/settings/invites")
+            assert partial.status_code == 403
+            assert not REVOKE_RE.search(partial.text)
             resp = await _revoke(c, invite_id)
             assert DENIED in resp.text
 

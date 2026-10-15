@@ -39,7 +39,7 @@ The remote agent (Starck43 on origin) prepares bounded packages with an "Owner h
 
 ## Logs and captured exits
 
-- Save every run to the perr dir: `/var/folders/kt/35hkcgs9253gdfq1n79259zh0000gn/T/kilo/perr/`.
+- Save every run log under `.agents/tmp/` (git-ignored); reference filenames in the report.
 - Capture exit codes inside the same file. Do not evaluate `$(date ...)` twice in one command (redirect and echo land in different files on a minute boundary) — assign the filename to a variable first.
 
 ## Formatting review (project config line-length 120)
@@ -78,7 +78,7 @@ Return to the owner/agent: verdict (approved / corrections pushed), exact tested
 
 ## Docs-ledger reconciliation (docs-only packages)
 
-- Update existing rows only; never add new handoff docs.
+- Update existing ROADMAP.md rows and docs/phases/ tasks only; never add new handoff docs.
 - Record factual merge SHAs, closed original PRs, per-merge tested SHAs and log sources.
-- Never carry a historical full suite onto a new baseline; keep OPEN gates and parallel-chat assignments (PR29 deferred; PR30/31/32 model-layout lanes) verbatim.
+- Never carry a historical full suite onto a new baseline; keep open phase tasks and their blocker notes verbatim.
 - Produce the compact diff first, uncommitted, for review; commit/push only on approval.

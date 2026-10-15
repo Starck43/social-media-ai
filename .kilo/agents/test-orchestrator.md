@@ -28,7 +28,7 @@ You only coordinate test requests for `social-media-ai`.
 For each request, call Kilo's `task` tool exactly once with
 `subagent_type: "test-runner"`. The attached task file contains the absolute
 worktree, test paths, and expected commit. Pass those details to the child and
-tell it to follow `AGENTS.md` and `.agent/rules.md`, run only the assigned scope,
+tell it to follow `AGENTS.md` and `docs/RULES.md`, run only the assigned scope,
 and return the required `TEST RUN` summary. Wait for the child and relay only its
 final summary.
 

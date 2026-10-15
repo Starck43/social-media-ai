@@ -55,6 +55,8 @@ class RoleManager(BaseManager["Role"]):
         Returns:
                 Role object or None
         """
+        from app.types import PlatformRoleType
+
         value = codename.value if isinstance(codename, PlatformRoleType) else str(codename)
         aliases = {"viewer": "user", "superuser": "admin"}
         return await self.filter(codename=aliases.get(value.strip().lower(), value.strip().lower())).first()
@@ -73,7 +75,7 @@ class RoleManager(BaseManager["Role"]):
 
     async def get_with_users(self, role_id: int) -> Optional["Role"]:
         """
-        Get role with prefetched users.
+        Get role with users loaded
 
         Args:
                 role_id: Role ID

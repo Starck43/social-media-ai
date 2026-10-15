@@ -401,6 +401,25 @@ This is not production-baseline or whole-gate acceptance. Durable day-baseline
 provisioning, reviewed bound production, client/caller wiring, cap-overrun
 settlement, release, all-path accounting and rollout stay OPEN.
 
+### Preparatory reviewed day-baseline API — UNWIRED, in review
+
+`LLMBudgetManager.provision_reviewed_day` prepares one explicit UTC-day snapshot
+with immutable review/fence provenance, not a baseline inferred from projections
+or a version string. [The bounded contract](design/reviewed-budget-baseline.md)
+defines retained evidence, old-worker/in-flight attestation and migration
+**definition** 0096 (NOT APPLIED). All newly provisioned days start frozen; this
+slice supplies no unfreeze/activation method. One owned transaction locks payer
+then day and inserts both initial balances and their provenance. Acknowledged
+fresh insertion returns True; exact original-packet replay returns False without
+rewriting balances/counters/freeze. Legacy days cannot be adopted; conflicting
+packets and rollback/commit uncertainty never report success.
+
+No HTTP route, provider client, admission implementation, existing evidence or
+settlement/release path changes. Admission continues to require a separately
+reviewed usable day, and is still UNWIRED. Packet syntax/digest checks are not
+operator authorization or proof of external worker fencing. Real PostgreSQL
+acceptance, schema application, liability reconciliation and rollout remain open.
+
 ### Proposed all-path accounting and admission contract
 
 Status: **Owner pricing decision recorded; admission implementation and evidence

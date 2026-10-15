@@ -27,6 +27,105 @@ class LLMBudgetManager(BaseManager):
 
         super().__init__(LLMBudgetReservation)
 
+    async def provision_reviewed_day(self, record: Mapping[str, Any]) -> bool:
+        """Insert a frozen reviewed snapshot once, acknowledging only owned commit.
+
+        False is exact immutable-packet replay, never activation or permission to
+        dispatch. Legacy/manual days cannot be adopted. No external session,
+        rollover, reconciliation, balance replacement or unfreeze is supplied.
+        """
+        from app.services.ai.budget_baselines import (
+            BASELINE_FIELDS,
+            DAY_FIELDS,
+            BudgetBaselineConflict,
+            BudgetBaselineUnavailable,
+            validate_baseline,
+        )
+
+        from ..analysis.llm_budget import LLMBudgetDay
+        from ..analysis.llm_budget_baseline import LLMBudgetBaseline
+        from ..tenancy.tenant import Tenant
+
+        payer = current_tenant_id()
+        if type(payer) is not int or not 0 < payer <= 2147483647:
+            raise TenantContextError("Baseline provisioning requires an explicit payer scope")
+        value = validate_baseline(record)
+        if value["tenant_id"] != payer:
+            raise TenantContextError("Baseline payer differs from trusted scope")
+        expected_guards = {
+            ("llm_budget_baselines_immutable", 27, "reject_llm_budget_baseline_mutation"),
+            ("llm_budget_baselines_no_truncate", 34, "reject_llm_budget_baseline_mutation"),
+            ("llm_budget_baselines_day_binding", 7, "check_llm_budget_baseline_day"),
+        }
+        created = False
+        async with self._get_owned_session() as session:
+            guards = (
+                await session.execute(
+                    text(
+                        "SELECT t.tgname, t.tgtype, p.proname FROM pg_catalog.pg_trigger t "
+                        "JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid "
+                        "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+                        "JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid "
+                        "JOIN pg_catalog.pg_namespace pn ON pn.oid=p.pronamespace "
+                        "WHERE n.nspname=:schema AND pn.nspname=:schema AND c.relname='llm_budget_baselines' "
+                        "AND NOT t.tgisinternal AND t.tgenabled IN ('O', 'A') "
+                        "AND t.tgqual IS NULL AND t.tgnargs=0 AND t.tgattr::text='' "
+                        "AND current_setting('session_replication_role') IN ('origin', 'local')"
+                    ),
+                    {"schema": LLMBudgetBaseline.__table__.schema},
+                )
+            ).all()
+            if not expected_guards.issubset(set(guards)):
+                raise BudgetBaselineUnavailable("Reviewed baseline guards are not installed")
+            tenant = (
+                await session.execute(select(Tenant).where(Tenant.id == payer).with_for_update())
+            ).scalar_one_or_none()
+            if tenant is None or not tenant.is_active:
+                raise TenantContextError("Baseline payer is absent or inactive")
+            day = (
+                await session.execute(
+                    select(LLMBudgetDay)
+                    .where(LLMBudgetDay.tenant_id == payer, LLMBudgetDay.utc_day == value["utc_day"])
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            baseline = (
+                await session.execute(
+                    select(LLMBudgetBaseline).where(
+                        LLMBudgetBaseline.tenant_id == payer, LLMBudgetBaseline.utc_day == value["utc_day"]
+                    )
+                )
+            ).scalar_one_or_none()
+            if baseline is not None:
+                if day is None or any(getattr(baseline, field) != value[field] for field in BASELINE_FIELDS):
+                    raise BudgetBaselineConflict("Day baseline conflicts with stored review evidence")
+                # Compare the immutable initial packet, never mutable balances.
+            elif day is not None:
+                raise BudgetBaselineConflict("Existing day has no reviewed provenance; adoption is prohibited")
+            else:
+                day_id = (
+                    await session.execute(
+                        insert(LLMBudgetDay.__table__)
+                        .values(**{field: value[field] for field in DAY_FIELDS})
+                        .on_conflict_do_nothing(constraint="uq_llm_budget_days_payer_day")
+                        .returning(LLMBudgetDay.id)
+                    )
+                ).scalar_one_or_none()
+                if day_id is None:
+                    raise BudgetBaselineConflict("Day was concurrently provisioned outside the owned protocol")
+                baseline_id = (
+                    await session.execute(
+                        insert(LLMBudgetBaseline.__table__)
+                        .values(**value)
+                        .on_conflict_do_nothing(constraint="uq_llm_budget_baselines_payer_day")
+                        .returning(LLMBudgetBaseline.id)
+                    )
+                ).scalar_one_or_none()
+                if baseline_id is None:
+                    raise BudgetBaselineConflict("Baseline conflicts with stored review evidence")
+                created = True
+        return created
+
     async def reserve_receipt(
         self, record: Mapping[str, Any], *, ceiling_usd: Decimal | None, bound_version: str | None = None
     ) -> bool:

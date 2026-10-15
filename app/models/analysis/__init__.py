@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
     from .ai_analytics import AIAnalytics
     from .llm_attempt import LLMAttempt
+    from .llm_budget_baseline import LLMBudgetBaseline
     from .llm_budget import LLMBudgetDay, LLMBudgetReservation
     from .llm_dispatch_receipt import LLMDispatchReceipt
     from .llm_model import LLMModel
@@ -23,6 +24,7 @@ __all__ = [
     "AgentScenario",
     "AIAnalytics",
     "LLMAttempt",
+    "LLMBudgetBaseline",
     "LLMBudgetDay",
     "LLMBudgetReservation",
     "LLMDispatchReceipt",
@@ -34,6 +36,7 @@ _MODULES = {
     "AgentScenario": "agent_scenario",
     "AIAnalytics": "ai_analytics",
     "LLMAttempt": "llm_attempt",
+    "LLMBudgetBaseline": "llm_budget_baseline",
     "LLMBudgetDay": "llm_budget",
     "LLMBudgetReservation": "llm_budget",
     "LLMDispatchReceipt": "llm_dispatch_receipt",

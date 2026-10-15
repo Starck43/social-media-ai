@@ -2,19 +2,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.types import UserRoleType, ActionType
-from ..base import Base, TimestampMixin
+from app.types import ActionType, PlatformRoleType
+
 from ...core.config import settings
 from ...core.decorators import app_label
+from ..base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from .. import Role
 
 
-@app_label("account")
+@app_label("identity")
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = {"schema": settings.DB_SCHEMA}
@@ -24,11 +25,10 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
 
     # Relationship to Role
     role_id: Mapped[int] = mapped_column(Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id"), nullable=False)
-    role: Mapped["Role"] = relationship("Role", back_populates="users")
+    role: Mapped["Role"] = relationship("PlatformRole", back_populates="users")
 
     # Manager will be set after class definition to avoid circular imports
     if TYPE_CHECKING:
@@ -47,34 +47,24 @@ class User(Base, TimestampMixin):
         super().__init__(**kwargs)
         self._model_perms_cache = None
 
-    def _is_superuser_role(self) -> bool:
-        """True for the user's own `is_superuser` flag or the SUPERUSER role.
+    @property
+    def is_platform_admin(self) -> bool:
+        return bool(self.is_active and self.role and self.role.codename == PlatformRoleType.ADMIN)
 
-        `Role.codename` comes back from the DB as its string value ("SUPERUSER")
-        rather than the enum member, so both shapes are normalised before the
-        lookup.
-        """
-        if self.is_superuser:
-            return True
-        codename = self.role.codename if self.role else None
-        if codename is None:
-            return False
-        name = codename.name if hasattr(codename, "name") else str(codename)
-        return name == UserRoleType.SUPERUSER.name
+    def _is_superuser_role(self) -> bool:
+        """Compatibility predicate for platform entrypoints only."""
+        return self.is_platform_admin
 
     def model_permissions(self, model_name: str) -> set[ActionType]:
-        """Every `ActionType` the user's role grants on one model.
+        """Registered actions granted to this platform operator for one resource.
 
-        Same source as `has_perm_for` — the structured columns
-        (`model_types.model_name` + `action_type`) rather than the codename,
-        for the reason documented there. Superusers (and the SUPERUSER role)
-        get the whole enum.
-
-        Callers that need more than a yes/no (the admin backend turns the role's
-        rights into the per-model grants of the console) read the set once
-        instead of asking the same question seven times.
+        Stable resource keys define authority; model names are lookup metadata.
+        Platform administrators receive all registered actions through the
+        caller's resource/action validation.
         """
-        if self._is_superuser_role():
+        if not self.has_admin_access():
+            return set()
+        if self.is_platform_admin:
             return set(ActionType)
 
         if self._model_perms_cache is None:
@@ -83,49 +73,30 @@ class User(Base, TimestampMixin):
                 model_type = permission.model_type
                 if model_type is None:
                     continue
-                cache.add((model_type.model_name.lower(), permission.action_type))
+                from app.core.access_catalog import resource_for
+
+                resource = resource_for(model_type.resource_key)
+                if resource is not None and permission.action_type in resource.actions:
+                    cache.add((resource.key, permission.action_type))
             self._model_perms_cache = cache
 
-        wanted = model_name.lower()
-        return {action for name, action in self._model_perms_cache if name == wanted}
+        from app.core.access_catalog import resource_for
+
+        resource = resource_for(model_name)
+        if resource is None:
+            return set()
+        return {action for key, action in self._model_perms_cache if key == resource.key}
 
     def has_perm_for(self, model_name: str, action: ActionType) -> bool:
-        """Check a permission by model + action instead of by codename.
+        from app.core.access_catalog import resource_for
 
-        The stored codenames are not reliably parseable:
-        ``generate_permission_codename`` interpolated ``action.value``, which for
-        these enums is the display tuple, so rows like
-        ``social.AgentTask.('view', 'Просмотр', '👀')`` exist in ``permissions``.
-        The structured columns — ``permissions.model_type_id`` and
-        ``action_type`` — are correct, so the check goes through
-        ``model_types.model_name`` plus the action enum.
-
-        Superusers (and the SUPERUSER role) always pass.
-        """
-        if self._is_superuser_role():
-            return True
-
-        return action in self.model_permissions(model_name)
+        resource = resource_for(model_name)
+        return bool(resource and action in resource.actions and action in self.model_permissions(resource.model_name))
 
     def has_admin_access(self) -> bool:
-        """Active users may enter; per-model/action rights still gate every view."""
-        return bool(self.is_active)
+        return bool(
+            self.is_active and self.role and self.role.codename in (PlatformRoleType.OPERATOR, PlatformRoleType.ADMIN)
+        )
 
     def __str__(self) -> str:
-        return f"{self.username}"
-
-    def has_minimum_role(self, min_role: UserRoleType) -> bool:
-        """Check if user has at least the specified role in hierarchy"""
-        role_hierarchy = list(UserRoleType)
-        try:
-            # `Role.codename` is mapped with the enum's sa_column, so it comes
-            # back from the DB as its string value ("ADMIN"), not as the enum
-            # member — normalise both shapes before the name lookup.
-            codename = self.role.codename
-            name = codename.name if hasattr(codename, "name") else str(codename)
-            min_name = min_role.name if hasattr(min_role, "name") else str(min_role)
-            user_level = role_hierarchy.index(UserRoleType[name])
-            min_level = role_hierarchy.index(UserRoleType[min_name])
-            return user_level >= min_level
-        except (ValueError, KeyError, AttributeError):
-            return False
+        return self.username

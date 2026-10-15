@@ -120,10 +120,12 @@ require_model_perm("source", ActionType.CREATE)
 ```
 
 means "this role may create sources", checked against
-`permissions.model_type_id` + `action_type` — never against the `codename`
-column, because several seeded codenames are malformed. A superuser
-(`users.is_superuser` or the User platform `SUPERUSER` role) passes these model
-checks; this does not bypass the separate guest-workspace web-chat prohibition.
+`permissions.model_type_id` + `action_type`; a permission's three-part codename
+is derived from its stable resource key. Workspace calls use explicit membership
+presets without platform fallback. Operator APIs (`/users` except `/users/me`,
+`/users/roles`, `/llm`) require active platform operator/admin entry plus their
+route-specific action checks. Personal `/users/me` and `/auth/change-password`
+require authentication without requiring workspace membership.
 
 `member_decision()` selects the workspace-role answer when applicable; otherwise
 `User.has_perm_for()` supplies platform model/action rights. SQLAdmin is a global
@@ -1505,3 +1507,22 @@ GET /dashboard/topic-chains
 Removed grouping values `sentiment` and `content_type` return 400, listing:
 themes, sources, entities, intent, topic_chains. Invalid sentiment/media filter
 values return 422. Filtering precedes grouping, counts and date breakdowns.
+
+### Split role catalogs and personal account operations
+
+The target schema requires migration 0096 (prepared, not automatically applied).
+Platform roles are `user`, `operator`, `admin`; workspace roles are independent
+`owner`, `admin`, `manager`, `analyst`, `viewer`. Role DTOs expose `codename`,
+`label`, text `description`, and a read-only `name` alias for one release.
+Only platform admins may update operator grants, using exact registered
+`domain.resource.action` keys. Role codenames are not freely editable.
+
+`PUT /api/v1/users/{id}/platform-role` accepts `{"role": "operator"}` (or another
+platform code) and reloads the platform admin before writing. Profile payloads
+accept only username/email and never change authority. HTTP profiles never expose
+password hashes. `POST /api/v1/auth/change-password` changes the caller's password
+using the current password and does not require a workspace.
+
+Workspace team AI access uses CSRF-protected
+`POST /app/settings/members/{id}/ai`, with `enabled=1` or `0`. It is limited to the
+current workspace and the same delegation restrictions as member-role changes.

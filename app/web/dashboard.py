@@ -131,9 +131,11 @@ async def _pipeline(tenant_id: int | None, is_superuser: bool, offer: dict) -> d
 
     staged = await CollectedItem.objects.filter(tenant_id=tenant_id).count()
     analyzed = await AIAnalytics.objects.filter(tenant_id=tenant_id).count()
-    active_jobs = await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"]).order_by(
-        Job.created_at.desc()
-    ).limit(3)
+    active_jobs = (
+        await Job.objects.filter(tenant_id=tenant_id, status__in=["pending", "running"])
+        .order_by(Job.created_at.desc())
+        .limit(3)
+    )
 
     running = [
         {"job_type": j.job_type, "collect": j.job_type == "collect"}
@@ -178,7 +180,7 @@ def _offers(perms) -> dict[str, bool]:
 async def dashboard(request: Request):
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
 
     filter_tenant_id = None
     tenants = []

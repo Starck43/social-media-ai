@@ -22,10 +22,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import AgentTask, Role, Source, User
+from app.models import AgentTask, Role, Source, User, WorkspaceRole
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import ActionType, UserRoleType
-
+from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -56,19 +55,14 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
     return user, memberships[0].tenant_id
 
 
-async def _register_superuser(client: AsyncClient, prefix: str) -> tuple[User, int]:
-    """Sign up and promote to SUPERUSER platform role for API tests."""
-    user, tenant_id = await _register(client, prefix)
-    # Promote to SUPERUSER platform role so API calls work
-    super_role = await Role.objects.get(codename="SUPERUSER")
-    await User.objects.update_by_id(user.id, role_id=super_role.id)
-    # Reload user with permissions
-    user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
-    return user, tenant_id
+async def _register_owner(client: AsyncClient, prefix: str) -> tuple[User, int]:
+    """Sign up as an ordinary platform user who owns the new workspace."""
+    return await _register(client, prefix)
 
 
 async def _csrf(client: AsyncClient, path: str) -> str:
     import re
+
     page = await client.get(path)
     assert page.status_code == 200
     match = re.search(r'name="_csrf" value="([^"]+)"', page.text)
@@ -81,19 +75,18 @@ async def _loaded(user: User) -> User:
     return await User.objects.prefetch_related("role.permissions").get(id=user.id)
 
 
-async def _invitee(prefix: str, platform_role: UserRoleType, tenant_id: int) -> User:
+async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: int) -> User:
     """A second web user in someone else's workspace."""
     username = f"{prefix}{secrets.token_hex(3)}"
-    role = await Role.objects.get(codename=platform_role.name)
-    assert role is not None, f"role {platform_role.name} is seeded"
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
+    assert role is not None, f"role {PlatformRoleType.USER.value} is seeded"
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password="secret-password-1",
         role_id=role.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role_id=role.id)
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=workspace_role.value)
     return user
 
 
@@ -107,6 +100,7 @@ async def _drop(user: User | None, tenant_id: int | None) -> None:
 
 async def _platform_value() -> int:
     from app.models import Platform
+
     platform = await Platform.objects.filter(platform_type="telegram").first()
     assert platform is not None, "telegram platform is seeded"
     return platform.id
@@ -117,7 +111,7 @@ async def _jwt_token(client: AsyncClient, username: str, password: str = "secret
     resp = await client.post(
         "/api/v1/auth/login",
         data={"username": username, "password": password},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     return resp.json()["access_token"]
@@ -133,12 +127,12 @@ async def _auth_headers(client: AsyncClient, username: str) -> dict[str, str]:
 
 
 async def test_require_model_perm_passes_for_user_with_permission() -> None:
-    """MANAGER has social.source.* — can create sources."""
+    """A workspace manager can create sources without platform grants."""
     async with await _client() as c:
-        owner, tenant_id = await _register_superuser(c, "PermOwner")
-        member = await _invitee("PermViewer", UserRoleType.MANAGER, tenant_id)
+        owner, tenant_id = await _register_owner(c, "PermOwner")
+        member = await _invitee("PermViewer", WorkspaceRoleType.MANAGER, tenant_id)
         loaded = await _loaded(member)
-        assert loaded.has_perm_for("source", ActionType.CREATE), "premise: MANAGER may create sources"
+        assert not loaded.has_perm_for("source", ActionType.CREATE), "platform USER has no global source grant"
 
         # Get JWT token for API calls
         headers = await _auth_headers(c, member.username)
@@ -171,7 +165,7 @@ async def test_require_model_perm_refuses_user_without_permission() -> None:
     """VIEWER cannot create sources."""
     async with await _client() as c:
         owner, tenant_id = await _register(c, "BlockedOwner")
-        member = await _invitee("BlockedViewer", UserRoleType.VIEWER, tenant_id)
+        member = await _invitee("BlockedViewer", WorkspaceRoleType.VIEWER, tenant_id)
         loaded = await _loaded(member)
         assert not loaded.has_perm_for("source", ActionType.CREATE), "premise: VIEWER may not create sources"
 
@@ -200,23 +194,14 @@ async def test_require_model_perm_refuses_user_without_permission() -> None:
         await _drop(owner, tenant_id)
 
 
-async def test_require_model_perm_passes_for_superuser() -> None:
-    """Superuser can create sources regardless of role permissions."""
+async def test_platform_admin_does_not_bypass_workspace_membership_role() -> None:
+    """A platform admin invited as a viewer cannot write in that workspace."""
     async with await _client() as c:
-        owner, tenant_id = await _register(c, "SuperOwner")
-        super_role = await Role.objects.get(codename="SUPERUSER")
-        superuser = await User.objects.create_user(
-            username=f"super{secrets.token_hex(3)}",
-            email=f"super{secrets.token_hex(3)}@example.com",
-            password="secret-password-1",
-            is_superuser=True,
-            role_id=super_role.id,
-        )
-        # Add superuser to the tenant workspace
-        await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=superuser.id, role_id=super_role.id)
-
-        # Get JWT token for API calls
-        headers = await _auth_headers(c, superuser.username)
+        owner, tenant_id = await _register(c, "AdminViewerOwner")
+        admin = await _invitee("AdminViewer", WorkspaceRoleType.VIEWER, tenant_id)
+        admin_role = await Role.objects.get(codename=PlatformRoleType.ADMIN.value)
+        await User.objects.update_by_id(admin.id, role_id=admin_role.id)
+        headers = await _auth_headers(c, admin.username)
 
         external_id = secrets.token_hex(6)
         resp = await c.post(
@@ -229,13 +214,12 @@ async def test_require_model_perm_passes_for_superuser() -> None:
             },
             headers=headers,
         )
-        assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
 
         with tenant_scope(bypass=True):
             source = await Source.objects.filter(external_id=external_id).first()
-        assert source is not None
-        await Source.objects.delete(id=source.id)
-        await _drop(superuser, None)
+        assert source is None
+        await _drop(admin, tenant_id)
         await _drop(owner, tenant_id)
 
 
@@ -246,7 +230,8 @@ async def test_require_platform_role_passes_for_sufficient_role() -> None:
     """ADMIN can list users (requires ADMIN role)."""
     async with await _client() as c:
         owner, tenant_id = await _register(c, "RoleOwner")
-        admin_role = await Role.objects.get(codename="ADMIN")
+        admin_role = await Role.objects.get(codename=PlatformRoleType.ADMIN.value)
+        member_role = await WorkspaceRole.objects.get(codename=WorkspaceRoleType.VIEWER.value)
         admin_user = await User.objects.create_user(
             username=f"admin{secrets.token_hex(3)}",
             email=f"admin{secrets.token_hex(3)}@example.com",
@@ -254,7 +239,7 @@ async def test_require_platform_role_passes_for_sufficient_role() -> None:
             role_id=admin_role.id,
         )
         # Add admin_user to the tenant workspace
-        await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=admin_user.id, role_id=admin_role.id)
+        await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=admin_user.id, role_id=member_role.id)
 
         # Get JWT token for API calls
         headers = await _auth_headers(c, admin_user.username)
@@ -270,7 +255,7 @@ async def test_require_platform_role_refuses_for_insufficient_role() -> None:
     """VIEWER cannot list users (requires ADMIN role)."""
     async with await _client() as c:
         owner, tenant_id = await _register(c, "RoleOwner2")
-        viewer = await _invitee("RoleViewer", UserRoleType.VIEWER, tenant_id)
+        viewer = await _invitee("RoleViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         # Get JWT token for API calls
         headers = await _auth_headers(c, viewer.username)
@@ -288,7 +273,7 @@ async def test_require_platform_role_refuses_for_insufficient_role() -> None:
 async def test_sources_crud() -> None:
     """Full CRUD cycle for sources."""
     async with await _client() as c:
-        owner, tenant_id = await _register_superuser(c, "SrcOwner")
+        owner, tenant_id = await _register_owner(c, "SrcOwner")
         headers = await _auth_headers(c, owner.username)
 
         external_id = secrets.token_hex(6)
@@ -338,7 +323,7 @@ async def test_sources_crud() -> None:
 async def test_tasks_crud() -> None:
     """Full CRUD cycle for tasks."""
     async with await _client() as c:
-        owner, tenant_id = await _register_superuser(c, "TaskOwner")
+        owner, tenant_id = await _register_owner(c, "TaskOwner")
         headers = await _auth_headers(c, owner.username)
 
         # CREATE
@@ -397,7 +382,7 @@ async def test_tasks_crud() -> None:
 async def test_credentials_list() -> None:
     """User can list their own credentials (empty list in test env)."""
     async with await _client() as c:
-        owner, tenant_id = await _register_superuser(c, "CredOwner")
+        owner, tenant_id = await _register_owner(c, "CredOwner")
         headers = await _auth_headers(c, owner.username)
 
         resp = await c.get("/api/v1/credentials", headers=headers)
@@ -414,7 +399,7 @@ async def test_scenarios_use_require_model_perm() -> None:
     """VIEWER cannot create/update/delete scenarios."""
     async with await _client() as c:
         owner, tenant_id = await _register(c, "ScnOwner")
-        viewer = await _invitee("ScnViewer", UserRoleType.VIEWER, tenant_id)
+        viewer = await _invitee("ScnViewer", WorkspaceRoleType.VIEWER, tenant_id)
         viewer_headers = await _auth_headers(c, viewer.username)
 
         # VIEWER cannot create
@@ -439,6 +424,7 @@ async def test_scenarios_use_require_model_perm() -> None:
 
 async def _platform_value() -> int:
     from app.models import Platform
+
     platform = await Platform.objects.filter(is_active=True).first()
     assert platform is not None, "the test database seeds platforms"
     return platform.id

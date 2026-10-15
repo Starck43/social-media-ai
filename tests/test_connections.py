@@ -30,6 +30,7 @@ from app.services.social.connections import (
     source_connection_spec,
     statuses_needing_action,
 )
+from app.types import PlatformRoleType
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ async def web_user(credentials_key):
     tenant = await tenants.filter(slug=settings.DEFAULT_TENANT_SLUG).first()
     assert tenant is not None, "bootstrap workspace is missing — run `alembic upgrade head`"
     username = f"conn{secrets.token_hex(4)}"
-    role = await Role.objects.get(codename="VIEWER")
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",

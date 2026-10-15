@@ -1,8 +1,21 @@
 # Data Model Reference
 
+Current access-model changes and domain moves require prepared migration 0096;
+this is a source contract, not a claim that a database has been migrated.
+`User.is_superuser` is removed; platform authority comes from the account role.
+`WorkspaceRole` is a separate checked catalog with its own permission association.
+Membership/invitation `role_id` references that catalog; membership also stores
+`ai_chat_enabled` (false by default, owner access effective regardless of flag).
+`AgentMemory.user_id` owns personal facts; NULL denotes the owner-only legacy
+bucket, with separate partial unique indexes for personal and legacy identities.
+Models use domain packages and one manager-binding stage in `app.models.bootstrap`.
+LLM canonicals live in `app.models.llm`; `DigestRun` in notifications. Legacy
+imports re-export the same mapped classes. See [TENANCY](TENANCY.md) and
+[ACCESS_MIGRATION](ACCESS_MIGRATION.md).
+
 Reconciled against dev `84ee16d284a6355006dd71c7157a0744ab203ddd` on 2026-10-12 by inspecting the canonical ORM model definitions, BaseManager and revisions through 0091. This is a source reference, not an inspection of a running database or a certification of every historical migration. Schema comes from `settings.DB_SCHEMA`; do not hardcode it in application code.
 
-All current model tables and both association tables are indexed below. Field inventories omit inherited fields where indicated. Exact SQLAlchemy declarations, defaults and nullability remain linked at each table; the critical mismatches in the previous reference are corrected explicitly. For deployment state use Alembic in the target environment. For retry activation and work in review use [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not this schema reference.
+All current model tables and association tables are indexed below. Field inventories omit inherited fields where indicated. Exact SQLAlchemy declarations, defaults and nullability remain linked at each table; the critical mismatches in the previous reference are corrected explicitly. For deployment state use Alembic in the target environment. For retry activation and work in review use [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not this schema reference.
 
 ## Base classes and isolation boundaries
 
@@ -24,31 +37,35 @@ Timestamp fields apply to every table in this section except `platforms` and `ro
 
 ### `roles`
 
-[Source](../app/models/identity/role.py). Fields: `id` PK; `name` String(100), unique/non-null; `codename` native `user_role_type` enum stored as names; `description` nullable Text. Relationships: one role → many users; permissions through **`role_permission`**, not `permissions_roles`.
+[Source](../app/models/identity/role.py). ORM `PlatformRole` (temporary import alias `Role`), physical table `roles`: `id` PK; unique checked string `codename` (`user`, `operator`, `admin`); nullable text `description`. No duplicate `name`. User assignments and `role_permission` remain platform-only.
 
 ### `role_permission`
 
 [Source](../app/models/identity/role.py). Composite PK (`role_id`, `permission_id`), both FK columns to roles/permissions. No timestamps or tenant column. Association updates are not tenant-scoped queryset operations.
 
+### `workspace_roles` and `workspace_role_permission`
+
+[Source](../app/models/tenancy/workspace_role.py). Independent role catalog: `id` PK; unique checked `codename` (`owner`, `admin`, `manager`, `analyst`, `viewer`); nullable text `description`. The association has composite PK (`role_id`, `permission_id`) referencing workspace roles and permissions. Effective workspace grants use the fixed catalog presets.
+
 ### `model_types`
 
-[Source](../app/models/identity/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; `app_name`, `model_name`, `table_name` String(100), non-null; `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
+[Source](../app/models/identity/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; unique `resource_key`, `model_name`, `table_name` String(100), non-null; `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
 
 ### `permissions`
 
-[Source](../app/models/identity/permission.py). Fields: `id` PK; `codename` String(100), non-null; `name` String(200), non-null; `action_type` native enum stored as names; `model_type_id` FK → model_types. `model_type` is an ORM relationship, not a String column. Unique (`codename`, `model_type_id`); model declaration also contains a codename-format CHECK. Python validation and historical stored codenames are not proof of deployed CHECK behavior; permission checks use structured model/action data.
+[Source](../app/models/identity/permission.py). Fields: `id` PK; `name` non-null text label; `action_type` native action enum; `model_type_id` FK to resource metadata. Unique (`model_type_id`, `action_type`). `codename` is a computed property (`resource_key.action`), not a stored column. Exact registered keys and explicit one-release legacy aliases resolve through the shared catalog.
 
 ### `users`
 
-[Source](../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; nullable `is_superuser` Boolean; non-null `role_id` FK → roles. No `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
+[Source](../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; non-null `role_id` FK → roles. No `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
 
 ### `llm_providers`
 
-[Source](../app/models/analysis/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
+[Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
 
 ### `llm_models`
 
-[Source](../app/models/analysis/llm_model.py).
+[Source](../app/models/llm/llm_model.py).
 
 | Column group | Declaration / meaning |
 | --- | --- |
@@ -77,11 +94,11 @@ Declared CHECK allows **starter/pro/business**; `personal` is historical, migrat
 
 ### `tenant_users`
 
-[Source](../app/models/tenancy/tenant_user.py). Fields: `id`; non-null `tenant_id` FK CASCADE; `channel` String(20) (includes web membership); `external_user_id` String(100); nullable `user_id` FK → users CASCADE; nullable `role_id` FK → roles SET NULL; `is_active`. Unique (`tenant_id`, `channel`, `external_user_id`); PostgreSQL partial unique index (`tenant_id`, `user_id`) where user_id IS NOT NULL. Current `is_owner` treats null role_id as legacy owner; describe this compatibility behavior without recommending it as the future fail-closed policy.
+[Source](../app/models/tenancy/tenant_user.py). Fields: `id`; non-null `tenant_id` FK CASCADE; `channel` String(20) (includes web membership); `external_user_id` String(100); nullable `user_id` FK → users CASCADE; nullable `role_id` FK → workspace_roles SET NULL; `is_active`; `ai_chat_enabled` Boolean, default false. Unique (`tenant_id`, `channel`, `external_user_id`); PostgreSQL partial unique index (`tenant_id`, `user_id`) where user_id IS NOT NULL. Only the explicit `owner` role grants ownership; NULL or unknown roles fail closed.
 
 ### `tenant_invites`
 
-[Source](../app/models/tenancy/tenant_invite.py). **Workspace-owned**, not an unowned global invite. Fields: `id`; non-null `tenant_id` FK CASCADE; unique `code_hash` String(64); nullable `role_id` FK SET NULL; nullable `expires_at` timezone-aware DateTime; `max_uses` Integer(default 1), `used_count` Integer(default 0), `is_active` Boolean(default true).
+[Source](../app/models/tenancy/tenant_invite.py). **Workspace-owned**, not an unowned global invite. Fields: `id`; non-null `tenant_id` FK CASCADE; unique `code_hash` String(64); nullable `role_id` FK → workspace_roles SET NULL; nullable `expires_at` timezone-aware DateTime; `max_uses` Integer(default 1), `used_count` Integer(default 0), `is_active` Boolean(default true).
 
 ### `tenant_channels`
 
@@ -121,7 +138,7 @@ Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does n
 
 ### `llm_dispatch_receipts` — definition only, not activated
 
-[Source](../app/models/analysis/llm_dispatch_receipt.py); migration
+[Source](../app/models/llm/llm_dispatch_receipt.py); migration
 definition 0093 follows 0092. This is preparation evidence, not a paid attempt,
 provider outcome, budget reservation or HTTP authorization. No client uses it.
 
@@ -143,7 +160,7 @@ need separate review/approval. See the
 
 ### `llm_outcome_events` — definition only, not activated
 
-[Source](../app/models/analysis/llm_outcome_event.py); migration definition 0094
+[Source](../app/models/llm/llm_outcome_event.py); migration definition 0094
 follows 0093. Append-only observations/reconciliations reference a preparation
 receipt; they are not a settlement, dispatch authorization or aggregate spend.
 Several events may describe one attempt: **never sum their costs as independent
@@ -189,7 +206,7 @@ Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through a
 
 ### `digest_runs`
 
-[Source](../app/models/scheduling/digest_run.py).
+[Source](../app/models/notifications/digest_run.py).
 
 | Column | Declaration |
 | --- | --- |
@@ -223,7 +240,7 @@ All tables here inherit tenant_id/timestamps.
 
 ### `agent_memory`
 
-[Source](../app/models/agent/agent_memory.py). Fields: `id`; `scope` **String(20)** default global; `key` String(100); nullable `value` Text; `source` String(20) default manual; `confidence` Float default 1; nullable `evidence_message_id` FK → messages SET NULL. Unique (tenant_id, scope, key). No declared CHECK bounds confidence to 0.1–1.0. Small durable preferences/facts, not a vector store or business-case ledger.
+[Source](../app/models/agent/agent_memory.py). Fields: `id`; `scope` **String(20)** default global; `key` String(100); nullable `value` Text; `source` String(20) default manual; `confidence` Float default 1; nullable `evidence_message_id` FK → messages SET NULL. Nullable `user_id` FK → users CASCADE. Separate partial unique indexes cover (`tenant_id`, `user_id`, `scope`, `key`) for personal rows and (`tenant_id`, `scope`, `key`) for legacy NULL-owner rows. No declared CHECK bounds confidence to 0.1–1.0. Small durable preferences/facts, not a vector store or business-case ledger.
 
 ### `agent_feedback`
 
@@ -247,9 +264,9 @@ erDiagram
     model_types ||--o{ permissions : model_type_id
     tenants ||--o{ tenant_users : tenant_id
     users o|--o{ tenant_users : user_id
-    roles o|--o{ tenant_users : role_id
+    workspace_roles o|--o{ tenant_users : role_id
     tenants ||--o{ tenant_invites : tenant_id
-    roles o|--o{ tenant_invites : role_id
+    workspace_roles o|--o{ tenant_invites : role_id
     tenants ||--o{ tenant_channels : tenant_id
     users ||--o{ user_credentials : user_id
 ```

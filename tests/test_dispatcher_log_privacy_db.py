@@ -16,7 +16,7 @@ from app.core.tenant_context import tenant_scope
 from app.jobs import dispatcher
 from app.models import AgentTask, Job, Notification, Role, Tenant, User
 from app.services.notifications import service
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 
 pytestmark = pytest.mark.tenancy
 SECRET = "PRIVATE-CUSTOMER-AND-FAKE-TOKEN"
@@ -26,7 +26,9 @@ SECRET = "PRIVATE-CUSTOMER-AND-FAKE-TOKEN"
 async def workspace(monkeypatch):
     # The dispatcher must never request messenger delivery for these notifications.
     if service.MESSENGER_AVAILABLE:
-        monkeypatch.setattr(service.messenger_service, "send_notification", AsyncMock(side_effect=AssertionError("No live sends")))
+        monkeypatch.setattr(
+            service.messenger_service, "send_notification", AsyncMock(side_effect=AssertionError("No live sends"))
+        )
     tenant = await Tenant.objects.create(slug=f"log-privacy-{uuid4().hex}", name="Log privacy test", plan="business")
     try:
         yield tenant
@@ -38,7 +40,7 @@ async def workspace(monkeypatch):
 async def arrange_user():
     """Create an isolated actor; never depend on an existing DB account."""
     # Get the VIEWER role that should exist due to seeding.
-    viewer_role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+    viewer_role = await Role.objects.filter(codename=PlatformRoleType.USER.value).first()
     assert viewer_role is not None, "VIEWER role should exist due to seeding"
     name = f"privacy-arrange-{uuid4().hex}"
     user = await User.objects.create_user(
@@ -46,13 +48,12 @@ async def arrange_user():
         email=f"{name}@example.com",
         password="test-only-privacy-password",
         is_active=True,
-        is_superuser=False,
         role_id=viewer_role.id,
     )
     try:
         loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
         assert loaded is not None and loaded.is_active
-        assert not loaded.is_superuser
+        assert not loaded.is_platform_admin
         assert loaded.role_id == viewer_role.id
         yield loaded
     finally:
@@ -70,9 +71,16 @@ async def test_exception_logs_and_notification_safe_without_changing_audit(works
         assert get_current_user() is None
         assert not has_permission(arrange_user, "agenttask", "create")
         job = await Job.objects.create(
-            job_type="learn", agent_task_id=task.id, payload={}, status="running", attempts=1,
-            max_attempts=3, started_at=datetime.now(timezone.utc), run_at=datetime.now(timezone.utc)
+            job_type="learn",
+            agent_task_id=task.id,
+            payload={},
+            status="running",
+            attempts=1,
+            max_attempts=3,
+            started_at=datetime.now(timezone.utc),
+            run_at=datetime.now(timezone.utc),
         )
+
     async def fail_without_owner_authority(payload):
         assert get_current_user() is None
         assert not has_permission(None, "agenttask", "create")

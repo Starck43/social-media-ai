@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent import learning
+from app.agent.identity import memory_actor_scope
 from app.agent.learning import extract_json, run_learn
 from app.agent.prompts import render_style_block
 from app.core.tenant_context import tenant_scope
@@ -48,42 +49,45 @@ def test_clamp_confidence():
 # --- learn job (watermark-gated, no LLM call below threshold) ----------------
 
 
-async def test_learn_skips_below_min_messages():
-    max_id = await AgentMessage.objects.filter().order_by(AgentMessage.id.desc()).first()
-    await learning.set_watermark(max_id.id if max_id else 0)
+async def test_learn_skips_below_min_messages(memory_actor):
+    from app.models.managers.tenant_manager import tenant_channels, tenant_users
 
-    session = await AgentSession.objects.create(channel="telegram", chat_id=f"t{_uniq()}", kind="private")
-    for _ in range(2):
-        await AgentMessage.objects.create(session_id=session.id, role="user", content="короткий вопрос")
-
-    with tenant_scope(session.tenant_id):
-        result = await run_learn(min_messages=5)
+    tenant, user = memory_actor
+    chat_id = f"t{_uniq()}"
+    with tenant_scope(tenant.id):
+        membership = await tenant_users.add_member(
+            tenant_id=tenant.id, channel="telegram", external_user_id=chat_id, role="owner"
+        )
+        await tenant_users.update_by_id(membership.id, user_id=user.id)
+        await tenant_channels.bind(tenant_id=tenant.id, channel="telegram", chat_id=chat_id)
+        session = await AgentSession.objects.create(channel="telegram", chat_id=chat_id, kind="private")
+        for _ in range(2):
+            await AgentMessage.objects.create(session_id=session.id, role="user", content="короткий вопрос")
+        with memory_actor_scope(user.id, True):
+            await learning.set_watermark(0)
+            result = await run_learn(min_messages=5)
     assert result["status"] == "skipped"
     assert result["new_user_messages"] == 2
-
-    await AgentMessage.objects.filter(session_id=session.id).delete()
-    await AgentSession.objects.delete_by_id(session.id)
 
 
 # --- memory provenance -------------------------------------------------------
 
 
-async def test_snapshot_and_clear_facts_keep_meta():
+async def test_snapshot_and_clear_facts_keep_meta(memory_actor):
+    tenant, user = memory_actor
     key = f"m9_pref_{_uniq()}"
-    await agent_memory.write(key, "отвечать списками", source="learn", confidence=0.9)
-    await learning.set_watermark(12345)
-
-    snapshot = await agent_memory.snapshot(limit=50)
-    assert all(f.scope != "meta" for f in snapshot)
-    mine = [f for f in snapshot if f.key == key]
-    assert mine and mine[0].source == "learn" and mine[0].confidence == 0.9
-
-    removed = await agent_memory.clear_facts()
-    assert removed >= 1
-    assert await agent_memory.read(key) is None
-    assert await learning.get_watermark() == 12345  # meta survives
-
-    await agent_memory.write(learning._WM_KEY, None, scope=learning._META_SCOPE)
+    with tenant_scope(tenant.id), memory_actor_scope(user.id, True):
+        await agent_memory.write(key, "отвечать списками", source="learn", confidence=0.9)
+        await learning.set_watermark(12345)
+        snapshot = await agent_memory.snapshot(limit=50)
+        assert all(f.scope != "meta" for f in snapshot)
+        mine = [f for f in snapshot if f.key == key]
+        assert mine and mine[0].source == "learn" and mine[0].confidence == 0.9
+        removed = await agent_memory.clear_facts()
+        assert removed >= 1
+        assert await agent_memory.read(key) is None
+        assert await learning.get_watermark() == 12345  # meta survives
+        await agent_memory.write(learning._WM_KEY, None, scope=learning._META_SCOPE)
 
 
 # --- feedback commands -------------------------------------------------------
@@ -132,20 +136,44 @@ async def workspace():
     await Tenant.objects.delete_by_id(tenant.id)
 
 
-async def test_build_system_prompt_includes_style_and_memory(workspace):
+@pytest.fixture
+async def memory_actor():
+    """Real user and workspace IDs for the actor-bound memory manager."""
+    from app.models import Role, User
+    from app.models.managers.tenant_manager import tenants
+    from app.types import PlatformRoleType
+
+    tenant = await Tenant.objects.create(name=f"Memory WS {_uniq()}", slug=f"memory-{_uniq()}", plan="pro")
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
+    user = await User.objects.create_user(
+        username=f"memory-{_uniq()}",
+        email=f"memory-{_uniq()}@example.com",
+        password="test-only-memory-password",
+        role_id=role.id,
+    )
+    try:
+        yield tenant, user
+    finally:
+        await User.objects.delete_user(user.id)
+        await tenants.delete_by_id(tenant.id)
+
+
+async def test_build_system_prompt_includes_style_and_memory(workspace, memory_actor):
     from app.agent.runtime import build_system_prompt
     from app.core.tenant_context import tenant_scope
     from app.models.managers.tenant_manager import tenants
 
     key = f"m9_style_{_uniq()}"
     await Tenant.objects.update_by_id(workspace.id, agent_style={"tone": "без эмодзи", "language": "ru"})
-    with tenant_scope(workspace.id):
+    _tenant, user = memory_actor
+    with tenant_scope(workspace.id), memory_actor_scope(user.id, True):
         await agent_memory.write(key, "дайджест — только негатив", source="learn", confidence=0.8)
         prompt = await build_system_prompt()
 
     assert "Тон: без эмодзи" in prompt
     assert key in prompt
 
-    await agent_memory.write(key, None)
+    with tenant_scope(workspace.id), memory_actor_scope(user.id, True):
+        await agent_memory.write(key, None)
     await Tenant.objects.update_by_id(workspace.id, agent_style=None)
     _ = tenants  # keep import meaningful for future refactors

@@ -100,7 +100,7 @@ class TenantUIMiddleware:
                     role_codename: str | None = None
                     if membership.role is not None:
                         codename = membership.role.codename
-                        role_codename = codename.name if hasattr(codename, "name") else str(codename)
+                        role_codename = str(codename)
                     level = member_roles.resolve(member_roles.key_of(membership))
                     request.state.workspaces.append(
                         {

@@ -137,13 +137,23 @@
                 ] %}
                     <div>
                         <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
-                        <select id="sc-{{ field }}" name="{{ field }}" {{ ro }}
-                                class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                            <option value="">Автовыбор</option>
-                            {% for m in llm_models if m.model_type == field.split('_')[0] %}
-                                <option value="{{ m.id }}" {% if current == m.id %}selected{% endif %}>{{ m.name }}</option>
-                            {% endfor %}
-                        </select>
+                        {% for field, current, label in [
+                            ('text_llm_model_id', scenario.text_llm_model_id, 'Текст'),
+                            ('image_llm_model_id', scenario.image_llm_model_id, 'Изображения'),
+                            ('video_llm_model_id', scenario.video_llm_model_id, 'Видео'),
+                        ] %}
+                            <div>
+                                <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
+                                {% set model_options = [] %}
+                                {% for m in llm_models if m.model_type == field.split('_')[0] %}
+                                    {% set provider = m.provider.name if m.provider else '?' %}
+                                    {% set status = 'активна' if m.is_active else 'неактивна' %}
+                                    {% set last_used = m.last_used_at.strftime('%d.%m %H:%M') if m.last_used_at else 'никогда' %}
+                                    {% do model_options.append((m.id, m.name ~ ' / ' ~ m.model_id, provider ~ ' · ' ~ m.model_type ~ ' · ' ~ status ~ ' · ' ~ last_used ~ ' · ' ~ m.use_count ~ '/' ~ m.fail_count ~ ' тестов')) %}
+                                {% endfor %}
+                                {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current|string, placeholder='Модель') }}
+                            </div>
+                        {% endfor %}
                     </div>
                 {% endfor %}
             </div>

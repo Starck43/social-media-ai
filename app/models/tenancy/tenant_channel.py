@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..managers.tenant_manager import TenantChannelManager
 
 
-@app_label("account")
+@app_label("tenancy")
 class TenantChannel(Base, TimestampMixin):
     """A messenger chat bound to exactly one tenant (unique channel+chat_id)."""
 

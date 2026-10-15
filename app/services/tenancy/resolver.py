@@ -46,16 +46,7 @@ class Resolution:
 
     @property
     def is_owner(self) -> bool:
-        """Writes that affect the whole workspace stay with its owner."""
-        if self.is_platform_owner:
-            return True
-        # role_id is None → legacy/unresolved row, treat as owner for compat
-        if self.role_id is None:
-            return True
-        # role_id resolves to a Role row: SUPERUSER is the canonical owner role
-        if self.role_codename is None:
-            return False
-        return self.role_codename == "SUPERUSER"
+        return self.role_id is not None and self.role_codename == "owner"
 
 
 def is_platform_owner(channel: str, user_id: str) -> bool:
@@ -147,18 +138,20 @@ def _role_codename(member: Any) -> str | None:
     if role is None:
         return None
     codename = role.codename
-    return codename.name if hasattr(codename, "name") else str(codename)
+    return str(codename)
 
 
 async def _bootstrap_owner(inbound: Any) -> Resolution:
     """Bind a platform owner's chat to the bootstrap workspace (first contact)."""
-    from app.models.role import Role
+    from app.models import WorkspaceRole
 
     tenant = await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
     channel = inbound.channel
 
-    # Resolve SUPERUSER role id
-    super_role = await Role.objects.filter(codename="SUPERUSER").first()
+    # Resolve only the explicit workspace owner role
+    super_role = await WorkspaceRole.objects.filter(codename="owner").first()
+    if super_role is None:
+        raise RuntimeError("Workspace roles are not configured")
     role_id = super_role.id if super_role is not None else None
 
     await tenant_users.add_member(
@@ -180,7 +173,7 @@ async def _bootstrap_owner(inbound: Any) -> Resolution:
         chat_id=str(inbound.chat_id),
         user_id=str(inbound.user_id),
         role_id=role_id,
-        role_codename="SUPERUSER" if super_role is not None else None,
+        role_codename="owner",
         onboarded=True,
         is_platform_owner=True,
     )

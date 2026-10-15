@@ -341,7 +341,7 @@ async def test_a_workspace_may_not_touch_another_workspaces_source() -> None:
     "stored_name",
     [
         'Source <img data-xss-probe=p onerror=alert(1)> & "quotes"',
-        'Source </title><img data-xss-probe=p onerror=alert(1)>',
+        "Source </title><img data-xss-probe=p onerror=alert(1)>",
         'Source" autofocus onfocus="alert(1)" data-xss-probe="p',
     ],
     ids=["text", "title-close", "quoted-value"],
@@ -351,7 +351,7 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
 
     from app.core.permissions import service_permission_scope
     from app.models import Job, Role
-    from app.types import SourceType, UserRoleType
+    from app.types import PlatformRoleType, SourceType
 
     class SourceNameParser(HTMLParser):
         def __init__(self, source_id):
@@ -391,16 +391,23 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
             assert platform is not None
             with tenant_scope(tenant_id), service_permission_scope("source", "create"):
                 source = await Source.objects.create(
-                    name=stored_name, platform_id=platform.id, external_id=_name("escape-ext"),
-                    source_type=SourceType.USER, is_active=True, params={}, tenant_id=tenant_id,
+                    name=stored_name,
+                    platform_id=platform.id,
+                    external_id=_name("escape-ext"),
+                    source_type=SourceType.USER,
+                    is_active=True,
+                    params={},
+                    tenant_id=tenant_id,
                 )
             if read_only:
-                role = await Role.objects.filter(codename=UserRoleType.VIEWER.name).first()
+                role = await Role.objects.filter(codename=PlatformRoleType.USER.value).first()
                 assert role is not None
                 username = _name("sourceviewer")
                 member = await User.objects.create_user(
-                    username=username, email=f"{username}@example.com", password="secret-password-1",
-                    role_id=role.id, is_superuser=False,
+                    username=username,
+                    email=f"{username}@example.com",
+                    password="secret-password-1",
+                    role_id=role.id,
                 )
                 await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=member.id, role="member")
                 async with await _client() as viewer_client:

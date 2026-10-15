@@ -19,10 +19,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.agent.confirmation import (
-    confirmed_dispatch_scope, make_pending_intent, pending_actor_matches, pending_rejection,
+    confirmed_dispatch_scope,
+    make_pending_intent,
+    pending_actor_matches,
+    pending_rejection,
 )
 from app.agent.identity import (
-    RuntimeIdentity, refresh_runtime_identity, resolve_runtime_identity, session_matches_identity,
+    RuntimeIdentity,
+    memory_actor_scope,
+    refresh_runtime_identity,
+    resolve_runtime_identity,
+    session_matches_identity,
 )
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
@@ -42,6 +49,19 @@ logger = logging.getLogger(__name__)
 # Chat surface for the browser UI. One session per user id, mirroring how a
 # private messenger chat maps to a conversation.
 WEB_CHANNEL = "web"
+
+
+def _canonical_permission_key(value: str | None) -> str | None:
+    """Resolve a declared tool right through the versioned resource catalog."""
+    if not isinstance(value, str):
+        return None
+    from app.core.access_catalog import resolve_permission_key
+
+    resolved = resolve_permission_key(value)
+    if resolved is None:
+        return None
+    resource, action = resolved
+    return f"{resource.key}.{action.db_value}"
 
 
 def is_owner(inbound: Any) -> bool:
@@ -187,15 +207,15 @@ def _human_confirmation(name: str, args: dict) -> str:
 
 def _check_prompt_injection(text: str) -> Optional[str]:
     """Check for prompt injection attempts and return error message if detected.
-    
+
     Blocks common prompt injection patterns like "ignore previous instructions",
     "disregard system prompt", etc.
     """
     if not text:
         return None
-    
+
     text_lower = text.lower()
-    
+
     injection_patterns = [
         r"ignore.*previous.*instruction",
         r"disregard.*system.*prompt",
@@ -237,15 +257,12 @@ def _check_prompt_injection(text: str) -> Optional[str]:
         r"override.*policy",
         r"bypass.*policy",
     ]
-    
+
     for pattern in injection_patterns:
         if re.search(pattern, text_lower):
             logger.warning("agent_prompt_injection_blocked")
-            return (
-                "Ваш запрос содержит попытку обхода безопасности. "
-                "Пожалуйста, задайте нормальный вопрос."
-            )
-    
+            return "Ваш запрос содержит попытку обхода безопасности. " "Пожалуйста, задайте нормальный вопрос."
+
     return None
 
 
@@ -366,16 +383,19 @@ async def _handle_in_tenant(inbound: Any, resolution: Any) -> Optional[str]:
     identity = await resolve_runtime_identity(resolution)
     if identity is None:
         if inbound.channel == WEB_CHANNEL:
-            raise PermissionError("Web chat requires active workspace ownership")
+            raise PermissionError("Web chat requires an active workspace identity")
         return "Чат не связан с активным пользователем рабочего пространства. Обратитесь к администратору."
-    if inbound.channel == WEB_CHANNEL and not identity.is_owner:
-        raise PermissionError("Web chat requires active workspace ownership")
     # The scope wraps the whole turn, not just the preamble: the tool loop's gate
     # reads `get_current_user()`, and a scope that closed early would leave it
     # None. Anonymous identities are fail-closed here; keep the admitted actor
     # available for every tool gate and confirmation throughout the turn.
+    if not identity.ai_chat_enabled:
+        if inbound.channel == WEB_CHANNEL:
+            raise PermissionError("Workspace membership does not allow AI chat")
+        return "Доступ к AI-чату не разрешён для текущего участника."
     with permission_scope(identity.user, is_owner=identity.is_owner, member_grants=identity.member_grants):
-        return await _handle_authorized_turn(inbound, resolution, identity)
+        with memory_actor_scope(identity.user_id, identity.is_owner):
+            return await _handle_authorized_turn(inbound, resolution, identity)
 
 
 async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: RuntimeIdentity) -> Optional[str]:
@@ -389,6 +409,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
     if injection_error:
         # Create a session for logging the injection attempt
         from app.models.managers.agent_session_manager import agent_sessions
+
         session = await agent_sessions.get_or_create(
             channel=inbound.channel,
             chat_id=str(inbound.chat_id),
@@ -406,7 +427,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
 
         tenant = await tenants.get(id=resolution.tenant_id)
         name = getattr(tenant, "name", "workspace")
-        role_label = "Суперпользователь" if identity.is_owner else "Участник"
+        role_label = "Владелец" if identity.is_owner else "Участник"
         return (
             f"Готово! Этот чат привязан к рабочему пространству «{name}». "
             f"Роль: {role_label}. Спросите что-нибудь или напишите /help."
@@ -429,14 +450,15 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         return "Не удалось открыть сессию агента."
 
     fresh = await refresh_runtime_identity(identity)
-    if fresh is None or not session_matches_identity(session, fresh):
+    if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
         return "Доступ к рабочему пространству изменился. Запрос остановлен."
     identity = fresh
 
     if text.split()[0].split("@")[0].lower() == "/stop":
         pending = _pending_confirmation(session)
         if (
-            pending is not None and isinstance(pending.get("authorization"), dict)
+            pending is not None
+            and isinstance(pending.get("authorization"), dict)
             and not pending_actor_matches(pending, identity)
         ):
             return "Это подтверждение относится к другому пользователю."
@@ -468,10 +490,15 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
             fresh = await refresh_runtime_identity(identity)
             spec = TOOL_REGISTRY.get(pending.get("name"))
-            rejection = "identity_revoked" if fresh is None else pending_rejection(pending, fresh, session, spec)
+            rejection = (
+                "identity_revoked"
+                if fresh is None or not fresh.ai_chat_enabled
+                else pending_rejection(pending, fresh, session, spec)
+            )
             if rejection is None:
                 with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
-                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                    permission_key = _canonical_permission_key(spec.required_permission)
+                    if permission_key is None or not has_permission_by_codename(fresh.user, permission_key):
                         rejection = "permission_revoked"
             if rejection is not None:
                 # Another group member cannot consume the rightful actor's intent.
@@ -493,14 +520,20 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             try:
                 # Consumption awaits storage; reload AFTER it, immediately before effects.
                 fresh = await refresh_runtime_identity(identity)
-                if fresh is None or pending_rejection(pending, fresh, session, TOOL_REGISTRY.get(pending["name"])):
+                if (
+                    fresh is None
+                    or not fresh.ai_chat_enabled
+                    or pending_rejection(pending, fresh, session, TOOL_REGISTRY.get(pending["name"]))
+                ):
                     return "Подтверждение отклонено. Попросите подготовить действие заново."
                 spec = TOOL_REGISTRY[pending["name"]]
                 with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
-                    if not has_permission_by_codename(fresh.user, spec.required_permission):
+                    permission_key = _canonical_permission_key(spec.required_permission)
+                    if permission_key is None or not has_permission_by_codename(fresh.user, permission_key):
                         return "Подтверждение отклонено: права изменились."
                     with confirmed_dispatch_scope(fresh, spec, pending["args"]):
-                        result = await call_tool(pending["name"], pending["args"])
+                        with memory_actor_scope(fresh.user_id, fresh.is_owner):
+                            result = await call_tool(pending["name"], pending["args"])
                 body = _format_tool_result(pending["name"], result)
                 seed = f"Выполнено: {pending['name']}\n{body[:3000]}"
             except Exception as e:  # noqa: BLE001
@@ -515,7 +548,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             # Resume the model loop: the owner's «да» completes one step of the
             # plan, and the agent keeps going (create source -> create task)
             # instead of waiting for the next message.
-            messages = await _build_messages(session)
+            messages = await _build_messages(session, identity)
             return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity, seed_reply=seed)
         if verdict in ("нет", "no", "n", "-", "отменяю"):
             if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
@@ -532,7 +565,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
 
     # 2) Model loop with tool calling
     await session.append("user", text)
-    messages = await _build_messages(session)
+    messages = await _build_messages(session, identity)
     return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity)
 
 
@@ -552,13 +585,21 @@ def tool_specs_for(identity: RuntimeIdentity | None) -> list[dict[str, Any]]:
             spec = TOOL_REGISTRY.get((schema.get("function") or {}).get("name"))
             if spec is None:
                 continue
-            if spec.required_permission is None or has_permission_by_codename(identity.user, spec.required_permission):
+            if spec.required_permission is None:
+                allowed.append(schema)
+                continue
+            permission_key = _canonical_permission_key(spec.required_permission)
+            if permission_key is not None and has_permission_by_codename(identity.user, permission_key):
                 allowed.append(schema)
     return allowed
 
 
 async def _dispatch_or_stage(
-    session: Any, name: str, args: Any, call_id: Any, identity: RuntimeIdentity,
+    session: Any,
+    name: str,
+    args: Any,
+    call_id: Any,
+    identity: RuntimeIdentity,
 ) -> tuple[str, bool]:
     """Fresh identity and declared rights for every tool, before any effect."""
     spec = TOOL_REGISTRY.get(name)
@@ -567,15 +608,18 @@ async def _dispatch_or_stage(
     if not isinstance(args, dict) or any(not isinstance(key, str) for key in args):
         return "Некорректные аргументы инструмента.", False
     fresh = await refresh_runtime_identity(identity)
-    if fresh is None or not session_matches_identity(session, fresh):
+    if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
         return "Доступ изменился. Инструмент не выполнен.", True
     with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
-        if spec.required_permission is not None and not has_permission_by_codename(fresh.user, spec.required_permission):
-            return "У вас нет прав для вызова этого инструмента.", False
+        if spec.required_permission is not None:
+            permission_key = _canonical_permission_key(spec.required_permission)
+            if permission_key is None or not has_permission_by_codename(fresh.user, permission_key):
+                return "У вас нет прав для вызова этого инструмента.", False
         if spec.confirm:
             existing = _pending_confirmation(session)
             if (
-                existing is not None and isinstance(existing.get("authorization"), dict)
+                existing is not None
+                and isinstance(existing.get("authorization"), dict)
                 and not pending_actor_matches(existing, fresh)
             ):
                 return "Ожидается подтверждение действия другого пользователя.", True
@@ -585,7 +629,8 @@ async def _dispatch_or_stage(
             await _set_pending(session, intent)
             return _human_confirmation(name, intent["args"]), True
         try:
-            result = await call_tool(name, args)
+            with memory_actor_scope(fresh.user_id, fresh.is_owner):
+                result = await call_tool(name, args)
             return _format_tool_result(name, result), False
         except Exception as e:  # existing handler-error semantics; global redaction is separate
             _log_runtime_failure(logging.WARNING, "agent_tool_failed", e)
@@ -610,7 +655,7 @@ async def _run_tool_loop(
     reply: Optional[str] = seed_reply
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
         fresh = await refresh_runtime_identity(identity)
-        if fresh is None or not session_matches_identity(session, fresh):
+        if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
             denied = "Доступ к рабочему пространству изменился. Запрос остановлен."
             await session.append("assistant", denied)
             return _join_replies(reply, denied)
@@ -739,17 +784,15 @@ async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) 
 
 
 async def _handle_memory_command(session: Any, resolution: Any, text: str) -> str:
-    """/memory clear — drop learned facts (owner only). Watermarks survive."""
+    """/memory clear — drop this actor's facts. Watermarks survive."""
     parts = text.split(None, 1)
     sub = parts[1].strip().lower() if len(parts) > 1 else ""
     if sub != "clear":
         return "Использование: /memory clear — стереть выученные факты о себе."
-    if not getattr(resolution, "is_owner", False):
-        return "Память может очищать только владелец рабочего пространства."
-
     from app.models.managers.agent_memory_manager import agent_memory
 
-    removed = await agent_memory.clear_facts()
+    with memory_actor_scope(resolution.user_id, resolution.is_owner):
+        removed = await agent_memory.clear_facts()
     await session.append("user", text)
     reply = f"Память очищена: удалено фактов — {removed}."
     await session.append("assistant", reply)
@@ -757,13 +800,20 @@ async def _handle_memory_command(session: Any, resolution: Any, text: str) -> st
     return reply
 
 
-async def _build_messages(session: Any) -> list[dict]:
+async def _build_messages(session: Any, identity: RuntimeIdentity) -> list[dict]:
     """System prompt (+ style and learned memory) and session history."""
     history = await session.history()
-    return [{"role": "system", "content": await build_system_prompt()}] + history
+    with memory_actor_scope(identity.user_id, identity.is_owner):
+        prompt = await build_system_prompt(actor_user_id=identity.user_id, is_owner=identity.is_owner)
+    return [
+        {
+            "role": "system",
+            "content": prompt,
+        }
+    ] + history
 
 
-async def build_system_prompt() -> str:
+async def build_system_prompt(*, actor_user_id: int | None = None, is_owner: bool = False) -> str:
     """System prompt (+ style and learned memory) and session history."""
     from app.agent.prompts import (
         ANALYTICS_SECTION,
@@ -793,10 +843,21 @@ async def build_system_prompt() -> str:
     if tenant and tenant.agent_system_prompt:
         sections.append(tenant.agent_system_prompt)
 
-    facts = await agent_memory.snapshot(limit=20)
+    if actor_user_id is None:
+        from app.agent.identity import current_memory_actor
+
+        actor = current_memory_actor()
+        if actor is not None:
+            actor_user_id, is_owner = actor
+    facts = await agent_memory.snapshot(limit=20, include_legacy=False) if actor_user_id is not None else []
     if facts:
         lines = "\n".join(f"- {f.key}: {f.value}" for f in facts)
-        sections.append(f"Что я знаю о владельце (выучено из общения, может устареть):\n{lines}")
+        sections.append(f"Личные факты участника (выучены из его общения, могут устареть):\n{lines}")
+    if actor_user_id is not None and is_owner:
+        legacy = await agent_memory.legacy_snapshot(limit=20)
+        if legacy:
+            lines = "\n".join(f"- {f.key}: {f.value}" for f in legacy)
+            sections.append(f"Унаследованные факты общей памяти для владельца (могут устареть):\n{lines}")
 
     return "\n\n".join(sections)
 

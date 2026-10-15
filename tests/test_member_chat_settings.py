@@ -13,7 +13,7 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 
 from app.models import User
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from tests.test_web_settings import _cleanup, _client, _drop_workspaces, _invitee, _login, _register
 
 
@@ -54,7 +54,7 @@ async def test_a_viewer_gets_their_part_of_settings_and_chat() -> None:
             page = await c.get("/app/settings")
             for tab in ("workspace", "team", "connections", "agent", "channels"):
                 assert f"/app/settings?tab={tab}" in page.text, tab
-            viewer = await _invitee("MbrViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("MbrViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
         async with await _client() as c:
             await _login(c, viewer.username)

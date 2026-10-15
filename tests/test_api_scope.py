@@ -18,8 +18,8 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
+from app.types import PlatformRoleType
 from app.types.enums.platform_types import SourceType
-from app.types.enums.user_types import UserRoleType
 from app.utils.token import create_access_token
 
 pytestmark = pytest.mark.tenancy  # no platform-owner bypass: the guard must work
@@ -38,7 +38,7 @@ async def _client() -> AsyncClient:
 async def _member() -> tuple[int, str]:
     """A workspace, an active web member of it, and a bearer token for them."""
     username = _uniq("api")
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
@@ -134,7 +134,7 @@ async def test_tenant_header_selects_another_membership():
 
 async def test_user_without_membership_is_forbidden():
     username = _uniq("lonely")
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
     user = await User.objects.create_user(
         username=username, email=f"{username}@example.com", password="secret-password-1", role_id=role.id
     )

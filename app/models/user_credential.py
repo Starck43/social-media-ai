@@ -41,5 +41,3 @@ from .identity.user_credential import UserCredential
 
 # isort: split
 from .managers.user_credential_manager import UserCredentialManager  # noqa: E402
-
-UserCredential.objects = UserCredentialManager()

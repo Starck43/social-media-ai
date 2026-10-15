@@ -276,7 +276,7 @@ def render_detail(**overrides):
 
 
 def test_retry_template_reuses_post_csrf_confirmation_and_existing_button_style():
-    html = render_detail(is_superuser=True, platform_name="<script>bad</script>")
+    html = render_detail(is_superuser=False, platform_name="<script>bad</script>")
     assert 'action="/app/analytics/1127/retry"' in html
     assert 'method="post"' in html and 'name="_csrf" value="fixture-only"' in html
     assert 'name="tenant_id" value="7"' in html

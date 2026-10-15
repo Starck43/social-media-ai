@@ -10,7 +10,7 @@ settings = runpy.run_path(str(ROOT / "tests/settings_scope_fixtures.py"))
 env, out = home["env"], home["OUT"]
 nav = runpy.run_path(str(ROOT / "app/web/nav.py"))
 workspace_list = [
-    dict(tenant=NS(id=7, name="Моё пространство"), active=True, is_owner=True, role="SUPERUSER", role_label="Владелец"),
+    dict(tenant=NS(id=7, name="Моё пространство"), active=True, is_owner=True, role="owner", role_label="Владелец"),
     dict(
         tenant=NS(id=8, name="Пространство другого владельца"),
         active=False,
@@ -42,7 +42,7 @@ for owner in [True, False]:
         can_manage_workspace=lambda target: owner and target == tid,
         is_owner=owner,
         can_open_chat=owner,
-        workspace_role="SUPERUSER" if owner else "VIEWER",
+        workspace_role="owner" if owner else "viewer",
     )
     workspaces = [{**w, "active": w["tenant"].id == tid} for w in workspace_list]
     common = {

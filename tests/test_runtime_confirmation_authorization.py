@@ -1,4 +1,4 @@
-"""Actor-bound confirmation and actual runtime/dispatch regressions; NOT RUN.
+"""Actor-bound confirmation and actual runtime/dispatch regressions.
 
 Run: python tests/test_runtime_confirmation_authorization.py; no DB/live sends.
 """
@@ -44,8 +44,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             user_role_id=2,
             is_owner=True,
             user=self.user,
+            ai_chat_enabled=True,
         )
-        self.spec = SimpleNamespace(name="test_write", confirm=True, required_permission="source.update", parameters={})
+        self.spec = SimpleNamespace(
+            name="test_write", confirm=True, required_permission="collection.source.update", parameters={}
+        )
+        self.member_grants = frozenset({("source", self.action.UPDATE)})
         self.session = SimpleNamespace(
             id=51,
             tenant_id=31,
@@ -142,7 +146,7 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
                 },
             ),
             self.tenant.tenant_scope(31),
-            self.perms.permission_scope(self.user, is_owner=True),
+            self.perms.permission_scope(self.user, member_grants=self.member_grants),
         ):
             return await runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor)
 
@@ -227,12 +231,12 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.confirmation.pending_rejection(changed, self.actor, self.session, self.spec),
             "arguments_changed",
         )
-        self.spec.required_permission = "source.delete"
+        self.spec.required_permission = "collection.source.delete"
         self.assertEqual(
             self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec),
             "tool_changed",
         )
-        self.spec.required_permission = "source.update"
+        self.spec.required_permission = "collection.source.update"
         self.spec.parameters = {"required": ["new"]}
         self.assertEqual(
             self.confirmation.pending_rejection(self.pending, self.actor, self.session, self.spec),
@@ -247,7 +251,11 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_direct_dispatch_without_approval_is_denied_in_both_paths(self):
         tools = self.tools()
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with (
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, member_grants=self.member_grants),
+            self.identity.memory_actor_scope(self.actor.user_id, self.actor.is_owner),
+        ):
             with self.assertRaises(tools.ToolConfirmationRequiredError):
                 await tools.call_tool("test_write", {"source_id": 9})
             result = json.loads(await tools.execute("test_write", {"source_id": 9}))
@@ -257,7 +265,11 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_grant_is_single_use_and_does_not_allow_different_arguments(self):
         tools = self.tools()
         args = {"source_id": 9}
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with (
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, member_grants=self.member_grants),
+            self.identity.memory_actor_scope(self.actor.user_id, self.actor.is_owner),
+        ):
             with self.confirmation.confirmed_dispatch_scope(self.actor, self.spec, args):
                 with self.assertRaises(tools.ToolConfirmationRequiredError):
                     await tools.call_tool("test_write", {"source_id": 10})
@@ -276,7 +288,11 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(tools.ToolConfirmationRequiredError):
                 await tools.call_tool("test_write", args)
 
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with (
+            self.tenant.tenant_scope(31),
+            self.perms.permission_scope(self.user, member_grants=self.member_grants),
+            self.identity.memory_actor_scope(self.actor.user_id, self.actor.is_owner),
+        ):
             with self.confirmation.confirmed_dispatch_scope(self.actor, self.spec, args):
                 child = asyncio.create_task(later_call())
                 try:
@@ -288,8 +304,10 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_approval_does_not_override_denied_rights(self):
         tools = self.tools()
-        self.spec.required_permission = "llmmodel.create"
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        self.spec.required_permission = "llm.model.create"
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=self.member_grants
+        ):
             with self.confirmation.confirmed_dispatch_scope(self.actor, self.spec, {}):
                 with self.assertRaises(self.perms.PermissionDeniedError):
                     await tools.call_tool("test_write", {})
@@ -340,19 +358,25 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.handler.assert_awaited_once_with(source_id=9)
         self.assertNotIn("pending_confirmation", self.session.state)
 
-    async def test_revoked_rights_or_identity_on_yes_never_invoke_handler(self):
-        for revoked in ("rights", "identity"):
+    async def test_revoked_rights_chat_access_or_identity_on_yes_never_invoke_handler(self):
+        for revoked in ("rights", "chat", "identity"):
             runtime = self.runtime()
             runtime.call_tool = AsyncMock()
             fields = dict(vars(self.actor))
             fields["is_owner"] = False
+            if revoked == "rights":
+                fields["workspace_role_codename"] = "viewer"
+                fields["member_grants"] = frozenset()
+            fields["ai_chat_enabled"] = revoked != "chat"
             fresh = self.identity.RuntimeIdentity(**fields)
             runtime.refresh_runtime_identity = AsyncMock(return_value=None if revoked == "identity" else fresh)
             result = await self.authorized_turn(runtime, copy.deepcopy(self.pending))
             if revoked == "identity":
                 self.assertIn("Запрос остановлен", result)
+            elif revoked == "chat":
+                self.assertIn("Доступ к рабочему пространству изменился", result)
             else:
-                self.assertIn("отклонено", result)
+                self.assertIn("Подтверждение отклонено", result)
             runtime.call_tool.assert_not_awaited()
 
     async def test_other_actor_yes_preserves_original_pending(self):
@@ -386,8 +410,23 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         fields["is_owner"] = False
         fresh = self.identity.RuntimeIdentity(**fields)
         runtime.refresh_runtime_identity = AsyncMock(return_value=fresh)
-        result = await self.authorized_turn(runtime, self.pending, text="/memory clear")
-        self.assertIn("только владелец", result)
+        self.resolution.is_owner = True
+
+        async def clear_facts():
+            self.assertEqual(self.identity.current_memory_actor(), (self.actor.user_id, False))
+            return 0
+
+        manager_patch = patch.dict(
+            sys.modules,
+            {
+                "app.models.managers.agent_memory_manager": HELPERS.HELPERS.module_with(
+                    agent_memory=SimpleNamespace(clear_facts=AsyncMock(side_effect=clear_facts))
+                )
+            },
+        )
+        with manager_patch:
+            result = await self.authorized_turn(runtime, self.pending, text="/memory clear")
+        self.assertIn("Память очищена: удалено фактов — 0", result)
         self.assertIn("pending_confirmation", self.session.state)
 
     async def test_second_identity_refresh_after_consumption_can_refuse(self):
@@ -430,7 +469,9 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.session_manager.get_or_create.side_effect = snapshots
         self.session_manager.consume_pending_confirmation.side_effect = consume
         self.inbound.text = "да"
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=self.member_grants
+        ):
             replies = await asyncio.wait_for(
                 asyncio.gather(
                     *[runtime._handle_authorized_turn(self.inbound, self.resolution, self.actor) for _ in range(2)]
@@ -497,7 +538,9 @@ class ConfirmationAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         runtime.call_tool = AsyncMock()
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=self.member_grants
+        ):
             reply = await runtime._run_tool_loop(self.session, [], [], 0, self.actor)
         self.assertIn("Подтвердите", reply)
         self.assertEqual(self.session.state["pending_confirmation"]["args"], {"source_id": 9})

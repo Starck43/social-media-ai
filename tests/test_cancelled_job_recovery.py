@@ -101,7 +101,7 @@ class QueueSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 id=7, status="failed", error=POLICY.OPERATOR_CANCELLED_ERROR, job_type="learn", result={}, payload={}
             )
         ]
-        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_superuser=False), tenant_id=31))
+        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_active=True), tenant_id=31))
         await self.source.jobs_list(request)
         rendered = self.deps.render.call_args.kwargs
         self.assertEqual(rendered["unconfirmed_jobs"], {7})

@@ -62,12 +62,13 @@ not an active-workspace dashboard. Ordinary workspace surfaces additionally
 select membership-role grants through `member_decision()`; workspace ownership
 is not a platform model permission.
 
-**Who may enter:** every active authenticated user (`User.has_admin_access()`).
-Entry itself grants no model/action permission. The verified token identity is
-used for both console and external admin-route authorization; a stale session
-`user_id` cannot select another account. An account without model rights sees an
-explanation on the index, no model links, and 403 on forbidden model routes.
-Workspace ownership or a membership role does not grant platform model rights.
+**Who may enter:** active platform `operator` and `admin` accounts, checked by
+`User.has_admin_access()` on login, authenticated requests and external admin
+routes. Workspace ownership grants no operator access. The token subject is the
+identity source; stale session user IDs never select another account. Platform
+admins have full platform authority; operators need explicit model/action grants.
+Only platform admins may assign platform roles or configure operator grants.
+The role and permission catalogs are read-only in SQLAdmin.
 
 **What they may do:** per model, the role's rights map onto the console actions
 one to one, and sqladmin asks about every one of them — hiding a button and
@@ -409,3 +410,12 @@ requires `recipient_id` and checks that its active binding belongs to the
 notification row's active workspace. A missing/foreign recipient or ownerless
 notification cannot fall back to the env admin chat. The existing SQLAdmin
 session/role gate is unchanged. See [notification boundaries](NOTIFICATIONS.md).
+
+## Access schema transition
+
+Migration 0096 separates role catalogs and derives `Permission.codename` from
+`ModelType.resource_key` plus action. See [ACCESS_MIGRATION](ACCESS_MIGRATION.md).
+It is prepared but not applied by development or startup verification in this task.
+The old public password-reset POST now returns 410 without changing a password.
+Authenticated cross-account password administration requires a platform admin;
+a verified self-service recovery delivery flow remains separate work.

@@ -46,12 +46,13 @@ from app.models import (  # noqa: E402
     Tenant,
     TenantUser,
     User,
+    WorkspaceRole,
 )
 from app.models.agent_task import agent_task_sources  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants  # noqa: E402
 from app.models.role import role_permission  # noqa: E402
-from app.types import ActionType, SourceType, UserRoleType  # noqa: E402
+from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
 from tests.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 
@@ -162,7 +163,10 @@ async def actor(home, level):
     users, tenant_ids, _ = home
     if level == "owner":
         return users[0]
-    viewer = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    user_role = await Role.objects.get(codename=PlatformRoleType.USER.value)
+    if level == "admin":
+        user_role = await Role.objects.get(codename=PlatformRoleType.ADMIN.value)
+    viewer = user_role
     assert viewer is not None, "Existing Viewer reference role is required; never seed here"
     username = _name("HomeActor")
     user = await User.objects.create_user(
@@ -170,16 +174,16 @@ async def actor(home, level):
         email=f"{username}@example.com",
         password=PASSWORD,
         role_id=viewer.id,
-        is_superuser=level == "operator",
     )
     users.append(user)
-    role = await Role.objects.get(codename=level.upper()) if level != "operator" else viewer
+    role_code = WorkspaceRoleType.VIEWER.value if level == "admin" else WorkspaceRoleType(level).value
+    role = await WorkspaceRole.objects.get(codename=role_code)
     assert role is not None, "Existing membership role is required; never seed here"
     await TenantUserManager().add_web_member(tenant_id=tenant_ids[0], user_id=user.id, role_id=role.id)
     return user
 
 
-@pytest.mark.parametrize("level", ["viewer", "manager", "owner", "operator"])
+@pytest.mark.parametrize("level", ["viewer", "manager", "owner", "admin"])
 async def test_real_home_role_matrix_and_bounded_private_results(home, level):
     user = await actor(home, level)
     _, tenant_ids, sources = home
@@ -193,7 +197,7 @@ async def test_real_home_role_matrix_and_bounded_private_results(home, level):
         assert "&lt;script&gt;homeStoredText()&lt;/script&gt;" in page.text
         assert "<script>homeStoredText()</script>" not in page.text
         assert 'data-coverage="incomplete"' in page.text
-        has_tasks = level in {"owner", "operator"}
+        has_tasks = level in {"owner", "manager"}
         assert ("data-home-tasks" in page.text) == has_tasks
         if has_tasks:
             assert page.text.count('class="ui-home-task ') == 3
@@ -210,14 +214,14 @@ async def test_non_operator_cannot_widen_home_with_foreign_workspace_filter(home
         assert sources[0].name in page.text and sources[1].name not in page.text
 
 
-async def test_operator_explicit_home_filter_selects_only_its_requested_workspace(home):
-    user = await actor(home, "operator")
+async def test_platform_admin_cannot_use_home_filter_to_cross_workspaces(home):
+    user = await actor(home, "admin")
     _, tenant_ids, sources = home
     async with await _client() as client:
         await _login(client, user.username)
         page = await client.get(f"/app/?tenant_id={tenant_ids[1]}")
         assert page.status_code == 200
-        assert sources[1].name in page.text and sources[0].name not in page.text
+        assert sources[0].name in page.text and sources[1].name not in page.text
 
 
 async def test_missing_membership_rights_hides_data_and_skips_home_queries(home, monkeypatch):
@@ -242,11 +246,10 @@ async def test_missing_membership_rights_hides_data_and_skips_home_queries(home,
 
 
 @pytest.mark.parametrize("show_sources", [False, True])
-async def test_task_view_does_not_imply_source_loading(home, show_sources):
+async def test_fixed_workspace_role_presets_bound_home_queries(home, show_sources):
     user = await actor(home, "viewer")
     membership = (await TenantUserManager().web_memberships(user.id))[0]
     original_role_id = membership.role_id
-    role = None
     source_reads = []
 
     def observe_sources(connection, cursor, statement, parameters, context, executemany):
@@ -255,17 +258,10 @@ async def test_task_view_does_not_imply_source_loading(home, show_sources):
             source_reads.append(True)
 
     try:
-        with tenant_scope(bypass=True), operator_permission_scope():
-            role = await Role.objects.create(name=_name("TaskViewOnly"), codename=UserRoleType.VIEWER.name)
-            permission_ids = []
-            for model in (["agenttask", "source"] if show_sources else ["agenttask"]):
-                permission = await Permission.objects.filter(
-                    Permission.model_type.has(model_name=model), action_type=ActionType.VIEW.name
-                ).first()
-                assert permission is not None, "Existing reference permission is required; never seed here"
-                permission_ids.append(permission.id)
-            await Role.objects.set_permissions(role.id, permission_ids)
-            await TenantUserManager().update_by_id(membership.id, role_id=role.id)
+        role_code = WorkspaceRoleType.MANAGER.value if show_sources else WorkspaceRoleType.VIEWER.value
+        role = await WorkspaceRole.objects.get(codename=role_code)
+        assert role is not None, "Fixed workspace role is seeded"
+        await TenantUserManager().update_by_id(membership.id, role_id=role.id)
         async with await _client() as client:
             await _login(client, user.username)
             event.listen(async_engine.sync_engine, "before_cursor_execute", observe_sources)
@@ -274,26 +270,22 @@ async def test_task_view_does_not_imply_source_loading(home, show_sources):
             finally:
                 event.remove(async_engine.sync_engine, "before_cursor_execute", observe_sources)
             assert page.status_code == 200
-            assert page.text.count('class="ui-home-task ') == 3
+            assert page.text.count('class="ui-home-task ') == (3 if show_sources else 0)
             assert bool(source_reads) is show_sources
             assert ("Статус расписания неизвестен" in page.text) is (not show_sources)
             assert ('href="/app/sources' in page.text) is show_sources
             assert (await client.get("/app/sources")).status_code == (200 if show_sources else 403)
     finally:
-        if role is not None:
-            with tenant_scope(bypass=True), operator_permission_scope():
-                await TenantUserManager().update_by_id(membership.id, role_id=original_role_id)
-                await Role.objects.set_permissions(role.id, [])
-                await Role.objects.delete_by_id(role.id)
+        await TenantUserManager().update_by_id(membership.id, role_id=original_role_id)
 
 
 @pytest.mark.parametrize(
     "role_id, role_name, owner",
-    [(None, None, False), (None, "SUPERUSER", False), (1, None, False), (1, "VIEWER", False), (1, "SUPERUSER", True)],
+    [(None, None, False), (None, "owner", False), (1, None, False), (1, "viewer", False), (1, "owner", True)],
 )
 def test_ownership_requires_an_explicit_resolved_membership_role(role_id, role_name, owner):
     membership = TenantUser(role_id=role_id)
-    membership.role = Role(id=role_id or 1, codename=role_name) if role_name is not None else None
+    membership.role = WorkspaceRole(id=role_id or 1, codename=role_name) if role_name is not None else None
     assert membership.is_owner is owner
 
 

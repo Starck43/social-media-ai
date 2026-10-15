@@ -12,14 +12,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model_type import ModelType
     from .permission import Permission
-    from .role import Role, role_permission
+    from .role import PlatformRole, Role, role_permission
     from .user import User
     from .user_credential import UserCredential
 
-__all__ = ["User", "Role", "Permission", "ModelType", "UserCredential", "role_permission"]
+__all__ = ["User", "PlatformRole", "Role", "Permission", "ModelType", "UserCredential", "role_permission"]
 _MODULES = {
     "User": "user",
     "Role": "role",
+    "PlatformRole": "role",
     "Permission": "permission",
     "ModelType": "model_type",
     "UserCredential": "user_credential",

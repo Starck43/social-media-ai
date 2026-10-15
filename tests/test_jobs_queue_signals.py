@@ -186,7 +186,7 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
         self.source.Job.created_at = SimpleNamespace(desc=lambda: None)
         for row in self.query.rows:
             row.id, row.job_type, row.result, row.payload = 1, "collect", {}, {}
-        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_superuser=False), tenant_id=31))
+        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_active=True), tenant_id=31))
         self.assertEqual(await self.source.jobs_list(request), "page")
         kwargs = self.deps.render.call_args.kwargs
         self.assertEqual(kwargs["signals"]["stale_running"], 1)

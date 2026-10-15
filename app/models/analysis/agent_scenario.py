@@ -11,7 +11,7 @@ from ...types import LLMStrategyType
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 
-@app_label("social")
+@app_label("analysis")
 class AgentScenario(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "agent_scenarios"
     __table_args__ = (Index("ix_agent_scenarios_tenant_id", "tenant_id"), {"schema": settings.DB_SCHEMA})

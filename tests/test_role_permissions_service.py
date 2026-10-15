@@ -1,126 +1,88 @@
-"""`RolePermissionService` on the async manager layer.
+"""Structured platform grants are configurable only for the operator role."""
 
-The service used to run on the legacy sync ORM: `Permission.objects.filter()`
-returned a coroutine and `role.save()` went through `SessionLocal`, so every
-update raised. These tests exercise the real write path against a throwaway role
-(permissions are global rows, roles are not tenant-scoped).
-"""
-
-import secrets
+from contextlib import asynccontextmanager
 
 import pytest
 
-from app.core.tenant_context import tenant_scope
-from app.models import Permission, Role
+from app.models import Permission, PlatformRole
 from app.services.user.permissions import RolePermissionService
+from app.types import PlatformRoleType
 
 pytestmark = pytest.mark.tenancy
 
 
-def _uniq(prefix: str) -> str:
-    return f"{prefix}{secrets.token_hex(4)}"
+async def _some_codenames(count: int = 3) -> list[str]:
+    permissions = await Permission.objects.order_by(Permission.id).all()
+    return [permission.codename for permission in permissions[:count]]
 
 
-async def _some_codenames(count: int = 2) -> list[str]:
-    with tenant_scope(bypass=True):
-        perms = list(await Permission.objects.order_by(Permission.id).all())
-    return [p.codename for p in perms[:count]]
+@asynccontextmanager
+async def _operator_with(codenames: list[str]):
+    role = await PlatformRole.objects.get_by_codename(PlatformRoleType.OPERATOR)
+    original = await RolePermissionService.get_role_permissions(role.id)
+    permissions = [await Permission.objects.get_by_codename(code) for code in codenames]
+    assert all(permissions), "requested permission keys are seeded"
+    await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in permissions])
+    try:
+        yield role
+    finally:
+        await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in original])
 
 
-async def _role_with(codenames: list[str]) -> Role:
-    name = _uniq("svc-role-")
-    with tenant_scope(bypass=True):
-        role = await Role.objects.create(name=name, codename="VIEWER", description="test")
-    await RolePermissionService._set_role_permissions(role.id, [p.id for p in await _permissions(codenames)])
-    return role
-
-
-async def _permissions(codenames: list[str]) -> list[Permission]:
-    with tenant_scope(bypass=True):
-        return list(await Permission.objects.filter(Permission.codename.in_(codenames)).all())
-
-
-async def _cleanup(role: Role) -> None:
-    await RolePermissionService._set_role_permissions(role.id, [])
-    with tenant_scope(bypass=True):
-        await Role.objects.delete_by_id(role.id)
-
-
-async def test_expand_permission_patterns_is_async_and_resolves():
-    first = (await _some_codenames(1))[0]
-    expanded = await RolePermissionService.expand_permission_patterns([first])
-    assert expanded == [first]
+async def test_expand_resolves_only_registered_permission_keys():
+    key = (await _some_codenames(1))[0]
+    assert await RolePermissionService.expand_permission_patterns([key]) == [key]
     assert await RolePermissionService.expand_permission_patterns([]) == []
+    with pytest.raises(ValueError, match="Unknown permission"):
+        await RolePermissionService.expand_permission_patterns(["*"])
 
 
-async def test_replace_writes_exactly_the_given_permissions():
-    codenames = await _some_codenames(2)
-    role = await _role_with(codenames)
-    try:
+async def test_replace_updates_only_operator_grants():
+    first, second = await _some_codenames(2)
+    async with _operator_with([first, second]) as operator:
         result = await RolePermissionService.update_role_permissions(
-            role_codename=role.name, permission_codenames=[codenames[0]], strategy="replace"
-        )
-        # The role already holds both, so narrowing removes one and adds nothing.
-        assert result["added"] == []
-        assert result["removed"] == [codenames[1]]
-        assert set(p.codename for p in await RolePermissionService.get_role_permissions(role.id)) == {codenames[0]}
-    finally:
-        await _cleanup(role)
-
-
-async def test_merge_keeps_existing_permissions():
-    codenames = await _some_codenames(2)
-    role = await _role_with(codenames)
-    try:
-        result = await RolePermissionService.update_role_permissions(
-            role_codename=role.name, permission_codenames=[_uniq("nothing-matches-")], strategy="merge"
+            role_codename=operator.codename, permission_codenames=[first], strategy="replace"
         )
         assert result["added"] == []
-        assert set(p.codename for p in await RolePermissionService.get_role_permissions(role.id)) == set(codenames)
-    finally:
-        await _cleanup(role)
+        assert result["removed"] == [second]
+        assert {p.codename for p in await RolePermissionService.get_role_permissions(operator.id)} == {first}
 
 
-async def test_synchronize_drops_what_is_missing():
-    codenames = await _some_codenames(2)
-    role = await _role_with(codenames)
-    try:
+async def test_merge_keeps_existing_operator_grants_and_adds_known_keys():
+    first, second, third = await _some_codenames(3)
+    async with _operator_with([first, second]) as operator:
         result = await RolePermissionService.update_role_permissions(
-            role_codename=role.name, permission_codenames=[codenames[0]], strategy="synchronize"
+            role_codename=operator.codename, permission_codenames=[third], strategy="merge"
         )
-        assert result["removed"] == [codenames[1]]
-        assert set(p.codename for p in await RolePermissionService.get_role_permissions(role.id)) == {codenames[0]}
-    finally:
-        await _cleanup(role)
+        assert result["added"] == [third]
+        assert {p.codename for p in await RolePermissionService.get_role_permissions(operator.id)} == {
+            first,
+            second,
+            third,
+        }
 
 
-async def test_update_actions_keeps_the_resource_and_swaps_the_action():
-    codenames = await _some_codenames(2)
-    role = await _role_with(codenames)
-    try:
+async def test_synchronize_replaces_operator_grants():
+    first, second = await _some_codenames(2)
+    async with _operator_with([first, second]) as operator:
+        result = await RolePermissionService.update_role_permissions(
+            role_codename=operator.codename, permission_codenames=[first], strategy="synchronize"
+        )
+        assert result["removed"] == [second]
+        assert {p.codename for p in await RolePermissionService.get_role_permissions(operator.id)} == {first}
+
+
+async def test_non_operator_roles_and_unknown_strategies_are_rejected():
+    with pytest.raises(ValueError, match="Only operator grants"):
         await RolePermissionService.update_role_permissions(
-            role_codename=role.name, permission_codenames=[codenames[0]], strategy="update_actions"
+            role_codename=PlatformRoleType.USER.value,
+            permission_codenames=["collection.source.view"],
+            strategy="replace",
         )
-        stored = {p.codename for p in await RolePermissionService.get_role_permissions(role.id)}
-        assert stored == {codenames[0]}
-    finally:
-        await _cleanup(role)
 
-
-async def test_unknown_role_raises_value_error():
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="Unknown update strategy"):
         await RolePermissionService.update_role_permissions(
-            role_codename="no-such-role", permission_codenames=["*"], strategy="replace"
+            role_codename=PlatformRoleType.OPERATOR.value,
+            permission_codenames=[],
+            strategy="update_actions",
         )
-
-
-async def test_unknown_strategy_raises_value_error():
-    codenames = await _some_codenames(1)
-    role = await _role_with(codenames)
-    try:
-        with pytest.raises(ValueError, match="Unknown update strategy"):
-            await RolePermissionService.update_role_permissions(
-                role_codename=role.name, permission_codenames=codenames, strategy="nonsense"
-            )
-    finally:
-        await _cleanup(role)

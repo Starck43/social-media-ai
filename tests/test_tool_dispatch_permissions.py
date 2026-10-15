@@ -11,6 +11,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,14 +38,17 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
             "app.agent": HELPERS.module_with(toolset=HELPERS.module_with()),
         }
         with patch.dict(sys.modules, modules):
-            identity = load_source("_dispatch_identity", "app/agent/identity.py")
-            with patch.dict(sys.modules, {"app.agent.identity": identity}):
+            self.identity = load_source("_dispatch_identity", "app/agent/identity.py")
+            with patch.dict(sys.modules, {"app.agent.identity": self.identity}):
                 self.confirmation = load_source("_dispatch_confirmation", "app/agent/confirmation.py")
             with patch.dict(sys.modules, {"app.agent.confirmation": self.confirmation}):
                 self.tools = load_source("_permission_dispatch_source", "app/agent/tools.py")
+        self.identity_patch = patch.dict(sys.modules, {"app.agent.identity": self.identity})
+        self.identity_patch.start()
+        self.addCleanup(self.identity_patch.stop)
         self.handler = AsyncMock(return_value={"ok": True})
 
-    def register(self, permission="source.update"):
+    def register(self, permission="collection.source.update"):
         spec = self.tools.Tool(
             name="test_write", description="Test-only handler", parameters={},
             handler=self.handler, required_permission=permission,
@@ -57,7 +61,7 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(sys.modules, {"app.agent.tools": self.tools}):
             load_source("_collect_permission_source", "app/agent/toolset/collect.py")
         spec = self.tools.get_tool("collect_now")
-        self.assertEqual(spec.required_permission, "source.analyze")
+        self.assertEqual(spec.required_permission, "collection.source.analyze")
         return spec
 
     async def assert_collect_denied(self):
@@ -76,23 +80,28 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_collect_view_only_actor_denied_before_job(self):
         self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.VIEW
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=frozenset({("source", self.action.VIEW)})
+        ):
             await self.assert_collect_denied()
 
     async def test_collect_inactive_actor_denied_before_job(self):
         self.user.is_active = False
         self.user.has_perm_for = lambda *args: True
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=frozenset({("source", self.action.ANALYZE)})
+        ):
             await self.assert_collect_denied()
 
     async def test_collect_analyze_right_preserves_inline_result(self):
         self.register_collect()
-        self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.ANALYZE
         inline = AsyncMock(return_value={
             "status": "done", "job_id": 901, "result": {"items": 2, "sources": 1, "collected": 1},
         })
         with patch.dict(sys.modules, {"app.jobs.dispatcher": HELPERS.module_with(run_job_inline=inline)}):
-            with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+            with self.tenant.tenant_scope(31), self.perms.permission_scope(
+                self.user, member_grants=frozenset({("source", self.action.ANALYZE)})
+            ):
                 direct = await self.tools.call_tool("collect_now", {"source_ids": [7]})
                 encoded = json.loads(await self.tools.execute("collect_now", {"source_ids": [7]}))
         self.assertEqual(direct, encoded)
@@ -105,12 +114,13 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_collect_removed_analyze_right_denied_on_next_dispatch(self):
         self.register_collect()
-        self.user.has_perm_for = lambda model, action: model == "source" and action == self.action.ANALYZE
         inline = AsyncMock(return_value={"status": "done", "result": {}})
         with patch.dict(sys.modules, {"app.jobs.dispatcher": HELPERS.module_with(run_job_inline=inline)}):
-            with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+            with self.tenant.tenant_scope(31), self.perms.permission_scope(
+                self.user, member_grants=frozenset({("source", self.action.ANALYZE)})
+            ):
                 await self.tools.call_tool("collect_now", {})
-                self.user.has_perm_for = lambda *args: False
+            with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, member_grants=frozenset()):
                 with self.assertRaises(self.perms.PermissionDeniedError):
                     await self.tools.call_tool("collect_now", {})
                 result = json.loads(await self.tools.execute("collect_now", {}))
@@ -134,7 +144,7 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.handler.assert_not_awaited()
 
     async def test_workspace_owner_cannot_reach_global_handler_in_either_path(self):
-        self.register("llmmodel.create")
+        self.register("llm.model.create")
         with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.tools.call_tool("test_write", {})
@@ -153,7 +163,7 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_malformed_declared_right_is_not_an_undeclared_tool(self):
         with self.tenant.tenant_scope(bypass=True):
-            for permission in ("", "source.unknown", "a.source.update"):
+            for permission in ("", "collection.source.unknown", "a.source.update", "source.create"):
                 self.register(permission)
                 with self.assertRaises(self.perms.PermissionDeniedError):
                     await self.tools.call_tool("test_write", {})
@@ -168,21 +178,25 @@ class DispatchPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.handler.await_count, 2)
 
     async def test_explicit_platform_right_can_call_global_tool(self):
-        self.register("llmmodel.view")
+        self.register("llm.model.view")
         self.user.has_perm_for = lambda model, action: model == "llmmodel" and action == self.action.VIEW
-        with self.perms.permission_scope(self.user):
+        self.user.has_admin_access = lambda: True
+        self.user.role = SimpleNamespace(codename="operator")
+        with self.tenant.tenant_scope(bypass=True), self.perms.permission_scope(self.user):
             self.assertEqual(await self.tools.call_tool("test_write", {}), {"ok": True})
         self.handler.assert_awaited_once_with()
 
     async def test_current_registry_right_and_current_subject_are_rechecked(self):
-        spec = self.register("llmmodel.view")
+        spec = self.register("llm.model.view")
         self.user.has_perm_for = lambda model, action: model == "llmmodel" and action == self.action.VIEW
-        with self.perms.permission_scope(self.user):
+        self.user.has_admin_access = lambda: True
+        self.user.role = SimpleNamespace(codename="operator")
+        with self.tenant.tenant_scope(bypass=True), self.perms.permission_scope(self.user):
             await self.tools.call_tool("test_write", {})
-            spec.required_permission = "llmmodel.delete"
+            spec.required_permission = "llm.model.delete"
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.tools.call_tool("test_write", {})
-            spec.required_permission = "llmmodel.view"
+            spec.required_permission = "llm.model.view"
             self.user.has_perm_for = lambda *args: False
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.tools.call_tool("test_write", {})
@@ -225,9 +239,19 @@ class BuiltinPermissionDeclarationTests(unittest.TestCase):
                         self.assertIsInstance(permission, ast.Constant)
                         self.assertIsInstance(permission.value, str)
                         parts = permission.value.split(".")
-                        self.assertEqual(len(parts), 2)
-                        self.assertTrue(parts[0].isidentifier())
-                        self.assertIn(parts[1], {
+                        self.assertEqual(len(parts), 3)
+                        self.assertTrue(parts[0].isidentifier() and parts[1].isidentifier())
+                        self.assertIn(".".join(parts[:2]), {
+                            "identity.user", "identity.platform_role", "identity.permission", "identity.model_type",
+                            "identity.credential", "tenancy.workspace", "tenancy.membership", "tenancy.workspace_role",
+                            "tenancy.invite", "tenancy.channel", "collection.source", "collection.platform",
+                            "collection.collected_item", "analysis.scenario", "analysis.result", "llm.provider",
+                            "llm.model", "llm.attempt", "llm.budget_day", "llm.budget_reservation",
+                            "llm.dispatch_receipt", "llm.outcome_event", "scheduling.task", "scheduling.job",
+                            "scheduling.action", "agent.session", "agent.message", "agent.memory", "agent.feedback",
+                            "notifications.notification", "notifications.digest_run",
+                        })
+                        self.assertIn(parts[2], {
                             "view", "create", "update", "delete", "analyze", "moderate", "export", "configure",
                         })
         self.assertTrue(declarations, "The tool declaration inventory must not be empty")

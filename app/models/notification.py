@@ -11,9 +11,6 @@ resolves the model by importing it back from this facade.
 
 from __future__ import annotations
 
-from .notifications.notification import Notification  # noqa: F401
-
 # Manager binding stays at this legacy entry point (import order preserved).
 from .managers.notification_manager import NotificationManager  # noqa: E402,F401
-
-Notification.objects = NotificationManager()
+from .notifications.notification import Notification  # noqa: F401

@@ -45,7 +45,7 @@ async def test_view_prompts_renders_the_shared_builder_prompt() -> None:
         base_prompt="Тональность из {platform}: {text}",
     )
 
-    async with _signed_in(await _operator(await _role("SUPERUSER"))) as client:
+    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
         page = await client.get(f"/admin/agent-scenario/action/view-prompts?pks={scenario_id}")
 
     assert page.status_code == 200
@@ -62,7 +62,7 @@ async def test_view_prompts_shows_scope_variables_split() -> None:
         scope={"sentiment": {"categories": ["Позитивный", "Негативный"]}, "brand_name": "VK"},
     )
 
-    async with _signed_in(await _operator(await _role("SUPERUSER"))) as client:
+    async with _signed_in(await _operator(await _role("ADMIN"))) as client:
         page = await client.get(f"/admin/agent-scenario/action/view-prompts?pks={scenario_id}")
 
     assert page.status_code == 200

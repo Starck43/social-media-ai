@@ -18,7 +18,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AIAnalytics, Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import PeriodType, SourceType, UserRoleType
+from app.types import PeriodType, PlatformRoleType, SourceType, WorkspaceRoleType
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
@@ -48,53 +48,6 @@ def _visible_text(html: str) -> str:
     parser = TextParser()
     parser.feed(html)
     return " ".join(" ".join(parser.parts).split())
-
-
-@pytest.fixture
-async def analytics_delete_actor():
-    """Grant only analytics view/delete on a throwaway role, never a seeded role.
-
-    Owning a workspace is not authorization to destroy analyses. The positive
-    deletion subjects carry real structured permissions; cleanup restores their
-    original User role (if still present), clears links and removes the role.
-    """
-    from app.models import Permission
-    from app.types import ActionType
-
-    roles = []
-    originals = []
-
-    async def grant(user):
-        permissions = await Permission.objects.prefetch_related("model_type").filter(
-            action_type__in=[ActionType.VIEW, ActionType.DELETE],
-        )
-        selected = {}
-        for permission in permissions:
-            if permission.model_type and permission.model_type.model_name.lower() == "aianalytics":
-                selected.setdefault(permission.action_type, permission.id)
-        assert set(selected) == {ActionType.VIEW, ActionType.DELETE}, "analytics rights must be seeded"
-        role = await Role.objects.create_role(name=_name("analytics-delete-"), codename=UserRoleType.VIEWER.name)
-        roles.append(role.id)
-        await Role.objects.set_permissions(role.id, list(selected.values()))
-        originals.append((user.id, user.role_id))
-        await User.objects.update_by_id(user.id, role_id=role.id)
-        loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
-        assert loaded.is_active and not loaded.is_superuser and not loaded._is_superuser_role()
-        assert len(loaded.role.permissions) == 2
-        assert loaded.has_perm_for("aianalytics", ActionType.VIEW)
-        assert loaded.has_perm_for("aianalytics", ActionType.DELETE)
-        for model in ("tenant", "role", "user", "job", "llmmodel", "llmprovider", "source"):
-            assert not loaded.has_perm_for(model, ActionType.DELETE), model
-        return loaded
-
-    try:
-        yield grant
-    finally:
-        for user_id, role_id in originals:
-            await User.objects.update_by_id(user_id, role_id=role_id)
-        for role_id in roles:
-            await Role.objects.set_permissions(role_id, [])
-            await Role.objects.delete_by_id(role_id)
 
 
 def _name(prefix: str) -> str:
@@ -162,19 +115,18 @@ async def _make_source(client: AsyncClient, tenant_id: int, name: str) -> int:
     return source.id
 
 
-async def _invitee(prefix: str, platform_role: UserRoleType, tenant_id: int, password: str) -> User:
+async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: int, password: str) -> User:
     """A web user in someone else's workspace with a *non*-owner membership."""
     username = _name(prefix)
-    role = await Role.objects.get(codename=platform_role.name)
-    assert role is not None, f"role {platform_role.name} is seeded"
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
+    assert role is not None, f"role {PlatformRoleType.USER.value} is seeded"
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password=password,
         role_id=role.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=workspace_role.value)
     return user
 
 
@@ -422,14 +374,13 @@ async def test_chains_sort_desc_by_default_and_asc_on_request(client: AsyncClien
         await _drop(user, tenant_id, source_id)
 
 
-async def test_owner_deletes_a_single_analysis(client: AsyncClient, analytics_delete_actor) -> None:
+async def test_owner_deletes_a_single_analysis(client: AsyncClient) -> None:
     """`POST /app/analytics/{id}/delete` removes one row and returns to its chain."""
     user, tenant_id = await _register(client, "cd")
     source_id = await _make_source(client, tenant_id, "Удаление источник")
     first_id = await _chain_analysis(tenant_id, source_id, "chain_del", "Первый анализ", 1)
     second_id = await _chain_analysis(tenant_id, source_id, "chain_del", "Второй анализ", 0)
     try:
-        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_del")
         resp = await client.post(
@@ -446,13 +397,12 @@ async def test_owner_deletes_a_single_analysis(client: AsyncClient, analytics_de
         await _drop(user, tenant_id, source_id)
 
 
-async def test_last_analysis_delete_leaves_no_404(client: AsyncClient, analytics_delete_actor) -> None:
+async def test_last_analysis_delete_leaves_no_404(client: AsyncClient) -> None:
     """Deleting the last analysis of a chain returns to the list, not a 404 page."""
     user, tenant_id = await _register(client, "ce")
     source_id = await _make_source(client, tenant_id, "Последний источник")
     only_id = await _chain_analysis(tenant_id, source_id, "chain_last", "Единственный анализ", 0)
     try:
-        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_last")
         resp = await client.post(
@@ -469,13 +419,12 @@ async def test_last_analysis_delete_leaves_no_404(client: AsyncClient, analytics
         await _drop(user, tenant_id, source_id)
 
 
-async def test_owner_deletes_a_whole_chain(client: AsyncClient, analytics_delete_actor) -> None:
+async def test_owner_deletes_a_whole_chain(client: AsyncClient) -> None:
     """`POST /app/analytics/chains/{chain_id}/delete` drops every row of the chain."""
     user, tenant_id = await _register(client, "ch")
     source_id = await _make_source(client, tenant_id, "Цепочка-удаление источник")
     ids = [await _chain_analysis(tenant_id, source_id, "chain_gone", f"Анализ {i}", i) for i in range(3)]
     try:
-        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, "/app/analytics/chains/chain_gone")
         resp = await client.post(
@@ -498,7 +447,7 @@ async def test_viewer_cannot_delete_chain(client: AsyncClient) -> None:
     owner, tenant_id = await _register(client, "cv")
     source_id = await _make_source(client, tenant_id, "Запрет источник")
     row_id = await _chain_analysis(tenant_id, source_id, "chain_keep", "Охраняемый анализ", 0)
-    member = await _invitee("cvViewer", UserRoleType.VIEWER, tenant_id, "secret-password-1")
+    member = await _invitee("cvViewer", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
     try:
         async with await _client() as m:
             await _login(m, member.username)
@@ -528,13 +477,27 @@ async def test_cross_filters_entities_work_in_web_and_api(client):
     source_id = await _make_source(client, tenant_id, "Cross-filter source")
     try:
         with tenant_scope(tenant_id):
-            for offset, (name, score) in enumerate([("Negative entity", .2), ("Positive entity", .8)]):
-                await AIAnalytics.objects.create(source_id=source_id, tenant_id=tenant_id, period_type=PeriodType.DAY,
-                    analysis_date=date.today() - timedelta(days=offset), media_types=["text", "image"], summary_data={"multi_llm_analysis": {"text_analysis": {
-                        "sentiment_score": score, "entities": [{"name": name, "type": "brand"}], "intent_type": "complaint",
-                    }}})
+            for offset, (name, score) in enumerate([("Negative entity", 0.2), ("Positive entity", 0.8)]):
+                await AIAnalytics.objects.create(
+                    source_id=source_id,
+                    tenant_id=tenant_id,
+                    period_type=PeriodType.DAY,
+                    analysis_date=date.today() - timedelta(days=offset),
+                    media_types=["text", "image"],
+                    summary_data={
+                        "multi_llm_analysis": {
+                            "text_analysis": {
+                                "sentiment_score": score,
+                                "entities": [{"name": name, "type": "brand"}],
+                                "intent_type": "complaint",
+                            }
+                        }
+                    },
+                )
         await _login(client, user.username)
-        response = await client.get("/app/analytics?group_by=entities&entity_type=brand&sentiment=negative&media=image&days=7")
+        response = await client.get(
+            "/app/analytics?group_by=entities&entity_type=brand&sentiment=negative&media=image&days=7"
+        )
         assert response.status_code == 200
         assert "Negative entity" in response.text
         assert 'aria-label="Тональность"' in response.text
@@ -543,22 +506,35 @@ async def test_cross_filters_entities_work_in_web_and_api(client):
         assert 'href="?group_by=content_type' not in response.text
         # Filter state survives switching axis/entity type/period.
         from html import unescape
-        navs = re.findall(r'<nav class="ui-segments" aria-label="(?:Группировать по|Тип упоминаний|Шаг хронологии)">(.*?)</nav>', response.text, re.S)
+
+        navs = re.findall(
+            r'<nav class="ui-segments" aria-label="(?:Группировать по|Тип упоминаний|Шаг хронологии)">(.*?)</nav>',
+            response.text,
+            re.S,
+        )
         links = [unescape(href) for href in re.findall(r'href="([^"]+)"', "".join(navs))]
         assert links
         from urllib.parse import parse_qs, urlparse
+
         for link in links:
             query = parse_qs(urlparse(link).query)
             assert query["sentiment"] == ["negative"] and query["media"] == ["image"]
             assert query["days"] == ["7"]
-        login = await client.post("/api/v1/auth/login", data={"username": user.username, "password": "secret-password-1"})
+        login = await client.post(
+            "/api/v1/auth/login", data={"username": user.username, "password": "secret-password-1"}
+        )
         assert login.status_code == 200
         headers = {"Authorization": "Bearer " + login.json()["access_token"]}
-        response = await client.get("/api/v1/dashboard/analytics/aggregate/grouped?group_by=entities&entity_type=brand&sentiment=negative&media=image", headers=headers)
+        response = await client.get(
+            "/api/v1/dashboard/analytics/aggregate/grouped?group_by=entities&entity_type=brand&sentiment=negative&media=image",
+            headers=headers,
+        )
         assert response.status_code == 200
-        assert response.json()["groups"] == [{"key": "Negative entity", "count": 1, "avg_sentiment": .2}]
+        assert response.json()["groups"] == [{"key": "Negative entity", "count": 1, "avg_sentiment": 0.2}]
         for axis in ["sentiment", "content_type"]:
-            response = await client.get(f"/api/v1/dashboard/analytics/aggregate/grouped?group_by={axis}", headers=headers)
+            response = await client.get(
+                f"/api/v1/dashboard/analytics/aggregate/grouped?group_by={axis}", headers=headers
+            )
             assert response.status_code == 400
             assert "Use: themes, sources, entities, intent, topic_chains" in response.json()["detail"]
             response = await client.get(f"/app/analytics?group_by={axis}")
@@ -863,7 +839,7 @@ async def test_theme_card_count_matches_drill_and_chain_navigation(client, drill
 
 async def test_drilldown_viewer_read_only_and_tenant_isolation(client, drill_records):
     data = drill_records
-    viewer = await _invitee("drillViewer", UserRoleType.VIEWER, data["tenant_id"], "secret-password-1")
+    viewer = await _invitee("drillViewer", WorkspaceRoleType.VIEWER, data["tenant_id"], "secret-password-1")
     other = None
     try:
         async with await _client() as other_client:
@@ -1147,7 +1123,7 @@ async def test_direct_historic_detail_has_reliable_source_fallback(client, drill
 
 async def test_single_analysis_viewer_and_foreign_tenant_are_read_only(client, drill_records):
     data = drill_records
-    viewer = await _invitee("detailViewer", UserRoleType.VIEWER, data["tenant_id"], "secret-password-1")
+    viewer = await _invitee("detailViewer", WorkspaceRoleType.VIEWER, data["tenant_id"], "secret-password-1")
     foreign_user = None
     try:
         async with await _client() as foreign_client:
@@ -1237,7 +1213,9 @@ async def test_titles_are_identical_in_group_chronology_detail_chain_and_dashboa
 async def test_common_title_is_escaped_in_group_and_chronology(client, drill_records):
     data = drill_records
     with tenant_scope(data["tenant_id"]):
-        await AIAnalytics.objects.filter(id=data["ids"][0]).update(summary_data={"topics": ["<script>alert(1)</script>"]})
+        await AIAnalytics.objects.filter(id=data["ids"][0]).update(
+            summary_data={"topics": ["<script>alert(1)</script>"]}
+        )
     for path in [
         f'/app/analytics/group?axis=sources&value={data["sources"][0]}&days=all',
         "/app/analytics?group_by=days&days=all",
@@ -1254,9 +1232,7 @@ async def test_summary_derived_title_is_shared_without_reanalysis_warning(client
     from app.services.ai.analysis_render import summary_display_heading
 
     data = drill_records
-    summary = (
-        "Обновлённый интерьер включает " + "современные материалы и удобную мебель " * 8 + ". Далее детали."
-    )
+    summary = "Обновлённый интерьер включает " + "современные материалы и удобную мебель " * 8 + ". Далее детали."
     heading = summary_display_heading(summary)
     assert len(heading) <= 120 and heading.endswith("…")
     with tenant_scope(data["tenant_id"]):
@@ -1300,8 +1276,7 @@ async def test_entities_label_is_mentions_and_query_contract_unchanged(client, d
     group_url = next(
         link
         for link in _analytics_links(response.text)
-        if urlparse(link).path == "/app/analytics/group"
-        and parse_qs(urlparse(link).query).get("axis") == ["entities"]
+        if urlparse(link).path == "/app/analytics/group" and parse_qs(urlparse(link).query).get("axis") == ["entities"]
     )
     assert parse_qs(urlparse(group_url).query)["entity_type"] == ["brand"]
     group = await client.get(group_url)
@@ -1321,9 +1296,9 @@ async def test_entities_label_is_mentions_and_query_contract_unchanged(client, d
 
 
 def test_visible_text_preserves_prose_contract_without_matching_assets_or_attributes():
-    assert _visible_text('<p>Сводка для этой записи не\n    сохранена.</p>') == "Сводка для этой записи не сохранена."
-    assert _visible_text('<a>По\n    <span>упоминаниям</span></a>') == "По упоминаниям"
-    assert _visible_text('<p>ACME &amp; Иван</p>') == "ACME & Иван"
+    assert _visible_text("<p>Сводка для этой записи не\n    сохранена.</p>") == "Сводка для этой записи не сохранена."
+    assert _visible_text("<a>По\n    <span>упоминаниям</span></a>") == "По упоминаниям"
+    assert _visible_text("<p>ACME &amp; Иван</p>") == "ACME & Иван"
     assert _visible_text('<script>По упоминаниям</script><style>.missing { content: "Сводка"; }</style>') == ""
     assert _visible_text('<p title="По упоминаниям">По сущностям</p>') == "По сущностям"
 
@@ -1364,7 +1339,7 @@ async def test_workspace_owner_without_structured_delete_right_cannot_delete_ana
 
 
 @pytest.mark.tenancy
-async def test_analytics_delete_role_cannot_cross_workspace_even_with_forged_target(client, analytics_delete_actor):
+async def test_workspace_owner_cannot_cross_workspace_even_with_forged_target(client):
     from app.core.permissions import service_permission_scope
 
     user = other = None
@@ -1380,7 +1355,6 @@ async def test_analytics_delete_role_cannot_cross_workspace_even_with_forged_tar
         chain_id = _name("shared-chain-")
         own_id = await _chain_analysis(tenant_id, source_id, chain_id, "Owned analysis", 0)
         foreign_id = await _chain_analysis(other_tenant_id, other_source_id, chain_id, "Foreign analysis", 0)
-        await analytics_delete_actor(user)
         await _login(client, user.username)
         token = await _csrf(client, f"/app/analytics/chains/{chain_id}")
         response = await client.post(

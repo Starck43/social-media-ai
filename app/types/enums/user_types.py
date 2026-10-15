@@ -1,57 +1,28 @@
-"""User-related enum types."""
+"""Stable role identifiers and structured permission actions."""
 
 from enum import Enum
 
 from app.utils.db_enums import DatabaseEnum, database_enum
 
 
-@database_enum
-class UserRoleType(DatabaseEnum, Enum):
-    """User roles in hierarchy order — DO NOT CHANGE THE ORDER!"""
+class PlatformRoleType(str, Enum):
+    USER = "user"
+    OPERATOR = "operator"
+    ADMIN = "admin"
 
-    # Format: NAME = (description, "Display Name", "Emoji")
-    VIEWER = ("Basic read-only access to view content", "Зритель", "👁️")
-    AI_BOT = ("AI assistant with limited access to specific features", "AI Бот", "🤖")
-    MANAGER = ("Can manage team members and basic content", "Менеджер", "👔")
-    ANALYST = ("Can view and analyze data and reports", "Аналитик", "📊")
-    MODERATOR = ("Can moderate content and manage users", "Модератор", "🛡️")
-    ADMIN = ("Administrator with almost full access", "Администратор", "⚙️")
-    SUPERUSER = ("Superuser with full system access", "Суперпользователь", "👑")
+    def __str__(self):
+        return self.value
 
-    def __init__(self, description, display_name, emoji):
-        self._description = description
-        self._display_name = display_name
-        self._emoji = emoji
 
-    @property
-    def description(self):
-        return self._description
+class WorkspaceRoleType(str, Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MANAGER = "manager"
+    ANALYST = "analyst"
+    VIEWER = "viewer"
 
-    @property
-    def display_name(self):
-        return self._display_name
-
-    @property
-    def emoji(self):
-        return self._emoji
-
-    @property
-    def label(self):
-        """Get label with emoji."""
-        return f"{self._emoji} {self._display_name}"
-
-    @classmethod
-    def choices(cls, use_db_value: bool = False):
-        """Get choices for form fields (store_as_name=True by default)."""
-        return [(role.name, role.label) for role in cls]
-
-    @classmethod
-    def get_by_name(cls, name: str):
-        """Get enum by name."""
-        try:
-            return cls[name]
-        except KeyError:
-            return None
+    def __str__(self):
+        return self.value
 
 
 @database_enum

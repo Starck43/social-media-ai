@@ -16,6 +16,11 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
+
+from app.core.access_catalog import workspace_grants
+from app.core.permissions import get_current_user
+from app.core.tenant_context import current_tenant_id, is_bypass
 
 from .base_manager import BaseManager
 
@@ -33,29 +38,28 @@ WEB_CHANNEL = "web"
 
 
 def _resolve_role_codename(role: str | None) -> str | None:
-    """Map a legacy workspace-role string to a platform ``Role.codename``.
+    from app.types import WorkspaceRoleType
 
-    Legacy strings "owner" → SUPERUSER, "member" → VIEWER.  If the string
-    already matches a codename it is passed through unchanged.
-    """
     if role is None:
         return None
-
-    legacy_map = {"owner": "SUPERUSER", "member": "VIEWER"}
-    return legacy_map.get(role, role)
+    value = {"member": "viewer", "superuser": "owner"}.get(str(role).lower(), str(role).lower())
+    try:
+        return WorkspaceRoleType(value).value
+    except ValueError:
+        return None
 
 
 async def _role_codename_by_id(role_id: int | None) -> str | None:
     """The codename of a role, or None when the role is unresolved."""
     if role_id is None:
         return None
-    from ..role import Role
+    from ..tenancy.workspace_role import WorkspaceRole as Role
 
     role = await Role.objects.get(id=role_id)
     if role is None:
         return None
     codename = role.codename
-    return codename.name if hasattr(codename, "name") else str(codename)
+    return str(codename)
 
 
 def generate_invite_code() -> str:
@@ -157,8 +161,8 @@ class TenantUserManager(BaseManager["TenantUser"]):
         tier unusable for the thing it exists for.
         """
         if role is not None and role_id is None:
-            # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
-            from app.models import Role
+            # Resolve legacy role string to role_id (owner->owner, member->viewer)
+            from app.models import WorkspaceRole as Role
 
             codename = _resolve_role_codename(role)
             role_obj = await Role.objects.filter(codename=codename).first()
@@ -174,37 +178,47 @@ class TenantUserManager(BaseManager["TenantUser"]):
             tenant_id=tenant_id, channel=channel, external_user_id=str(external_user_id), role_id=role_id
         )
 
-    async def add_web_member(
-        self, *, tenant_id: int, user_id: int, role_id: int | None = None, role: str | None = None
-    ) -> "TenantUser | None":
-        """Backward-compatible wrapper: accept either role_id or legacy role string.
+    async def add_web_member(self, *, tenant_id, user_id, role_id=None, role=None):
+        """Serialize seat admission; an active membership never changes role here."""
+        from ..tenancy.workspace_role import WorkspaceRole
+        from ..tenant import Tenant
 
-        Web membership: same row, but bound to the `users` table via user_id.
-
-        This is the path that consumes a team seat, so this is where the tier is
-        enforced — which is also the path invite redemption takes.
-        """
-        if role is not None and role_id is None:
-            # Resolve legacy role string to role_id (owner->SUPERUSER, member->VIEWER)
-            from app.models import Role
-
-            codename = _resolve_role_codename(role)
-            role_obj = await Role.objects.filter(codename=codename).first()
-            role_id = role_obj.id if role_obj else None
-
-        existing = await self.get(tenant_id=tenant_id, user_id=user_id)
-        if existing is not None:
-            if not existing.is_active or existing.role_id != role_id:
-                return await self.update_by_id(existing.id, is_active=True, role_id=role_id)
-            return existing
-
-        blocked = await _member_limit_reason(tenant_id)
-        if blocked:
-            raise PlanLimitError(blocked)
-
-        return await self.create(
-            tenant_id=tenant_id, channel=WEB_CHANNEL, external_user_id=str(user_id), user_id=user_id, role_id=role_id
-        )
+        if role_id is None and role is not None:
+            resolved = await WorkspaceRole.objects.get(codename=_resolve_role_codename(role))
+            role_id = resolved.id if resolved else None
+        async with self._get_owned_session() as session:
+            tenant = (
+                await session.execute(
+                    select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if tenant is None:
+                raise ValueError("Workspace unavailable")
+            existing = (
+                await session.execute(
+                    select(self.model)
+                    .where(self.model.tenant_id == tenant_id, self.model.user_id == user_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if existing is not None and existing.is_active:
+                return existing
+            blocked = await _member_limit_reason(tenant_id)
+            if blocked:
+                raise PlanLimitError(blocked)
+            if existing is not None:
+                existing.is_active = True
+                existing.role_id = role_id
+                existing.ai_chat_enabled = False
+                return existing
+            return await self.create(
+                session=session,
+                tenant_id=tenant_id,
+                channel=WEB_CHANNEL,
+                external_user_id=str(user_id),
+                user_id=user_id,
+                role_id=role_id,
+            )
 
     async def web_memberships(self, user_id: int) -> list["TenantUser"]:
         """Active web memberships in active workspaces only.
@@ -221,57 +235,115 @@ class TenantUserManager(BaseManager["TenantUser"]):
         )
         return sorted(rows, key=lambda m: m.id)
 
-    async def member_grants(self, membership: "TenantUser | None") -> frozenset | None:
-        """Workspace rights `(model_name, ActionType)` of a non-owner member.
+    async def member_grants(self, membership) -> frozenset:
+        if membership is None or not membership.is_active or membership.role_id is None:
+            return frozenset()
+        from ..tenancy.workspace_role import WorkspaceRole
 
-        None for an owner (owner rules apply). A member without a resolvable
-        role gets no workspace rights. The role is the existing `Role` row the
-        owner assigned to this membership, so the matrix is not duplicated.
-        """
-        if membership is None:
-            return frozenset()
-        if membership.is_owner:
-            return None
-        if membership.role_id is None:
-            return frozenset()
-        from ..role import Role
+        role = await WorkspaceRole.objects.get(id=membership.role_id)
+        return workspace_grants(role.codename) if role is not None else frozenset()
 
-        role = await Role.objects.prefetch_related("permissions.model_type").get(id=membership.role_id)
-        if role is None:
-            return frozenset()
-        return frozenset(
-            (permission.model_type.model_name.lower(), permission.action_type)
-            for permission in role.permissions
-            if permission.model_type is not None
-        )
+    async def _change_team(self, *, tenant_id, membership_id, role_id=None, disable=False, ai_chat_enabled=None):
+        """Serialize every privilege change on the workspace row, then recheck authority."""
+        from ..tenancy.workspace_role import WorkspaceRole
+        from ..tenant import Tenant
+        from ..user import User
+
+        actor = get_current_user()
+        if actor is None or current_tenant_id() != tenant_id or is_bypass():
+            return False
+        async with self._get_owned_session() as session:
+            workspace = (
+                await session.execute(
+                    select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if workspace is None:
+                return False
+            fresh_user = (
+                await session.execute(
+                    select(User).where(User.id == actor.id, User.is_active.is_(True)).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if fresh_user is None:
+                return False
+            members = list(
+                (
+                    await session.execute(
+                        select(self.model)
+                        .where(self.model.tenant_id == tenant_id)
+                        .options(selectinload(self.model.role))
+                    )
+                ).scalars()
+            )
+            caller = next(
+                (m for m in members if m.user_id == actor.id and m.channel == WEB_CHANNEL and m.is_active), None
+            )
+            target = next((m for m in members if m.id == membership_id and m.is_active), None)
+            if caller is None or caller.role is None or target is None:
+                return False
+            authority, existing = caller.role.codename, target.role.codename if target.role else None
+            new_role = (
+                None
+                if role_id is None
+                else (
+                    await session.execute(select(WorkspaceRole).where(WorkspaceRole.id == role_id))
+                ).scalar_one_or_none()
+            )
+            if role_id is not None and new_role is None:
+                return False
+            desired = new_role.codename if new_role else existing
+            if authority != "owner" and (
+                authority != "admin" or existing in ("owner", "admin", None) or desired in ("owner", "admin")
+            ):
+                return False
+            if disable and existing in ("owner", None):
+                return False
+            if new_role is not None and existing == "owner" and desired != "owner":
+                owners = [
+                    m
+                    for m in members
+                    if m.id != target.id
+                    and m.is_active
+                    and m.user_id is not None
+                    and m.role is not None
+                    and m.role.codename == "owner"
+                ]
+                active_owners = (
+                    (
+                        await session.execute(
+                            select(User.id).where(User.id.in_([m.user_id for m in owners]), User.is_active.is_(True))
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if not active_owners:
+                    return False
+            if new_role is not None:
+                target.role_id = new_role.id
+            if disable:
+                target.is_active = False
+            if ai_chat_enabled is not None:
+                if existing in ("owner", None):
+                    return False
+                target.ai_chat_enabled = bool(ai_chat_enabled)
+            logger.info(
+                "workspace_membership_changed tenant_id=%s actor_id=%s membership_id=%s",
+                tenant_id,
+                actor.id,
+                membership_id,
+            )
+            return True
+
+    async def change_member_role(self, *, tenant_id, membership_id, role_id):
+        return await self._change_team(tenant_id=tenant_id, membership_id=membership_id, role_id=role_id)
+
+    async def set_ai_access(self, *, tenant_id, membership_id, enabled):
+        return await self._change_team(tenant_id=tenant_id, membership_id=membership_id, ai_chat_enabled=enabled)
 
     async def disable_web_member(self, *, tenant_id: int, membership_id: int) -> bool:
-        """Atomically disable a non-owner web member of the concrete workspace.
-
-        Owners (including legacy NULL roles) cannot be disabled through this
-        action, so concurrent owner disables cannot remove the last owner.
-        The role condition is in the UPDATE, not a stale preflight read.
-        The route checks the concrete workspace capability and CSRF first.
-        """
-        from ..role import Role
-
-        owner_roles = select(Role.id).where(Role.codename == "SUPERUSER")
-        statement = (
-            update(self.model)
-            .where(
-                self.model.id == membership_id,
-                self.model.tenant_id == tenant_id,
-                self.model.channel == WEB_CHANNEL,
-                self.model.user_id.is_not(None),
-                self.model.is_active.is_(True),
-                self.model.role_id.is_not(None),
-                self.model.role_id.not_in(owner_roles),
-            )
-            .values(is_active=False)
-            .returning(self.model.id)
-        )
-        async with self._get_owned_session() as session:
-            return (await session.execute(statement)).scalar_one_or_none() is not None
+        return await self._change_team(tenant_id=tenant_id, membership_id=membership_id, disable=True)
 
     async def web_memberships_for_tenant(self, tenant_id: int) -> list["TenantUser"]:
         """Active web members of a workspace (with a `user_id` bound)."""
@@ -289,25 +361,35 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
         self,
         *,
         tenant_id: int,
-        role: str = "owner",
+        role: str = "viewer",
         max_uses: int = 1,
         expires_at: datetime | None = None,
     ) -> tuple["TenantInvite", str]:
         """Create an invitation; returns (row, plaintext code shown once)."""
-        from app.core.database import async_session_maker
+        from ..tenancy.workspace_role import WorkspaceRole as Role
 
-        from ..role import Role
-
+        codename = _resolve_role_codename(role)
+        if codename is None or codename == "owner":
+            raise ValueError("Invitations require a non-owner workspace role")
+        if not is_bypass():
+            actor = get_current_user()
+            if actor is None or current_tenant_id() != tenant_id:
+                raise PermissionError("Workspace invitation denied")
+            member = await tenant_users.prefetch_related("role").get(
+                tenant_id=tenant_id, user_id=actor.id, channel=WEB_CHANNEL, is_active=True
+            )
+            authority = member.role.codename if member and member.role else None
+            if authority != "owner" and (authority != "admin" or codename == "admin"):
+                raise PermissionError("Workspace invitation denied")
         code = generate_invite_code()
 
         # Resolve role string → role_id
         codename = _resolve_role_codename(role)
         role_id: int | None = None
         if codename is not None:
-            async with async_session_maker() as session:
-                r = await Role.objects.filter(codename=codename).first()
-                if r is not None:
-                    role_id = r.id
+            r = await Role.objects.filter(codename=codename).first()
+            if r is not None:
+                role_id = r.id
 
         row = await self.create(
             tenant_id=tenant_id,
@@ -353,7 +435,7 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
     async def redeem(self, *, code: str, channel: str, chat_id: str, external_user_id: str) -> dict[str, Any]:
         """Bind a chat+user to a tenant. Idempotent per (channel, chat_id)."""
         invite = await self._valid_invite(code)
-        if invite is None:
+        if invite is None or invite.role_id is None:
             return {"status": "invalid", "reason": "unknown, expired or exhausted code"}
 
         bound = await TenantChannelManager().get(channel=channel, chat_id=str(chat_id))
@@ -380,36 +462,75 @@ class TenantInviteManager(BaseManager["TenantInvite"]):
         }
 
     async def redeem_web(self, *, code: str, user_id: int) -> dict[str, Any]:
-        """Attach a logged-in web user to an invited tenant (no messenger chat).
+        """Atomically consume a live invitation and admit one workspace seat."""
+        from ..tenancy.workspace_role import WorkspaceRole
+        from ..tenant import Tenant, TenantUser
+        from ..user import User
 
-        Idempotent per membership: an existing (even re-activated) member does
-        not burn another use of the code.
-
-        A workspace at its tier's team limit answers `no_seat` rather than
-        raising: the invite is a *page* in the web flow, and turning a quota
-        breach into an exception here would surface as a 500 on a form the
-        person already filled in correctly.
-        """
-        invite = await self._valid_invite(code)
-        if invite is None:
-            return {"status": "invalid", "reason": "unknown, expired or exhausted code"}
-
-        member = await TenantUserManager().get(tenant_id=invite.tenant_id, user_id=user_id)
-        if member is not None and member.is_active:
-            return {"status": "already", "tenant_id": invite.tenant_id}
-
-        try:
-            await TenantUserManager().add_web_member(
-                tenant_id=invite.tenant_id, user_id=user_id, role_id=invite.role_id
-            )
-        except PlanLimitError as e:
-            # The code is not burned: the seat may free up, and this person
-            # should be able to redeem the same code once it does.
-            logger.info("Invite for tenant %s refused by tier: %s", invite.tenant_id, e)
-            return {"status": "no_seat", "reason": str(e)}
-
-        await self.update_by_id(invite.id, used_count=invite.used_count + 1)
-        return {"status": "bound", "tenant_id": invite.tenant_id, "role_id": invite.role_id}
+        candidate = await self.get(code_hash=hash_invite_code(code))
+        invalid = {"status": "invalid", "reason": "unknown, expired or exhausted code"}
+        if candidate is None:
+            return invalid
+        async with self._get_owned_session() as session:
+            tenant = (
+                await session.execute(
+                    select(Tenant).where(Tenant.id == candidate.tenant_id, Tenant.is_active.is_(True)).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if tenant is None:
+                return invalid
+            invite = (
+                await session.execute(
+                    select(self.model)
+                    .where(self.model.id == candidate.id, self.model.is_active.is_(True))
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if (
+                invite is None
+                or invite.role_id is None
+                or invite.used_count >= invite.max_uses
+                or (invite.expires_at is not None and invite.expires_at <= datetime.now(timezone.utc))
+            ):
+                return invalid
+            role = (
+                await session.execute(select(WorkspaceRole).where(WorkspaceRole.id == invite.role_id))
+            ).scalar_one_or_none()
+            if role is None or role.codename not in {"admin", "manager", "analyst", "viewer"}:
+                return invalid
+            user = (
+                await session.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
+            ).scalar_one_or_none()
+            if user is None:
+                return invalid
+            member = (
+                await session.execute(
+                    select(TenantUser)
+                    .where(TenantUser.tenant_id == tenant.id, TenantUser.user_id == user_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if member is not None and member.is_active:
+                return {"status": "already", "tenant_id": tenant.id}
+            blocked = await _member_limit_reason(tenant.id)
+            if blocked:
+                return {"status": "no_seat", "reason": blocked}
+            if member is None:
+                await TenantUserManager().create(
+                    session=session,
+                    tenant_id=tenant.id,
+                    user_id=user_id,
+                    channel=WEB_CHANNEL,
+                    external_user_id=str(user_id),
+                    role_id=role.id,
+                    ai_chat_enabled=False,
+                )
+            else:
+                member.is_active = True
+                member.role_id = role.id
+                member.ai_chat_enabled = False
+            invite.used_count += 1
+            return {"status": "bound", "tenant_id": tenant.id, "role_id": role.id}
 
 
 class TenantChannelManager(BaseManager["TenantChannel"]):

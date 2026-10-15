@@ -56,45 +56,33 @@ class BaseAdmin(ModelView):
     }
 
     column_formatters = {
-        "role": lambda m, a: m.role.name.upper() if m.role else "",
+        "role": lambda m, a: m.role.label if m.role else "",
     }
 
     form_overrides = {
-        'is_active': SelectField,
-        'is_default': SelectField,
+        "is_active": SelectField,
+        "is_default": SelectField,
     }
 
     form_args = {
-        'is_active': {
-            'choices': [(True, 'Да'), (False, 'Нет')],
-            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x),
-            'description': 'Выключенная запись не участвует в работе планировщика и сбора данных',
+        "is_active": {
+            "choices": [(True, "Да"), (False, "Нет")],
+            "coerce": lambda x: x == "True" if isinstance(x, str) else bool(x),
+            "description": "Выключенная запись не участвует в работе планировщика и сбора данных",
         },
-        'is_default': {
-            'choices': [(True, 'Да'), (False, 'Нет')],
-            'coerce': lambda x: x == 'True' if isinstance(x, str) else bool(x),
-            'description': 'Приоритетная запись: используется, когда явный выбор не задан',
-        }
+        "is_default": {
+            "choices": [(True, "Да"), (False, "Нет")],
+            "coerce": lambda x: x == "True" if isinstance(x, str) else bool(x),
+            "description": "Приоритетная запись: используется, когда явный выбор не задан",
+        },
     }
-    form_excluded_columns = ['created_at', 'updated_at']
+    form_excluded_columns = ["created_at", "updated_at"]
     form_include_relationships = True
 
-    async def on_model_change(
-            self,
-            data: dict,
-            model: Any,
-            is_created: bool,
-            request=None
-    ) -> None:
+    async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
         """Perform actions before model is created/updated."""
         await super().on_model_change(data, model, is_created, request)
 
-    async def after_model_change(
-            self,
-            data: dict,
-            model: Any,
-            is_created: bool,
-            request=None
-    ) -> None:
+    async def after_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
         """Perform actions after model is created/updated."""
         await super().after_model_change(data, model, is_created, request)

@@ -1,17 +1,14 @@
-from typing import TYPE_CHECKING, ClassVar
+"""Platform-only fixed role identities."""
 
-from sqlalchemy import String, Text, Integer, Table, Column, ForeignKey
+from typing import ClassVar
+
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .. import Base, TimestampMixin
+from ...core.access_catalog import role_label
 from ...core.config import settings
-from ...types import UserRoleType
+from ..base import Base, TimestampMixin
 
-if TYPE_CHECKING:
-    from .. import User, Permission
-
-
-# Table for many-to-many relationship between Role and Permission
 role_permission = Table(
     "role_permission",
     Base.metadata,
@@ -21,35 +18,25 @@ role_permission = Table(
 )
 
 
-class Role(Base, TimestampMixin):
+class PlatformRole(Base, TimestampMixin):
     __tablename__ = "roles"
-    __table_args__ = {"schema": settings.DB_SCHEMA}
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    codename: Mapped[UserRoleType] = UserRoleType.sa_column(
-        type_name="user_role_type",
-        default=UserRoleType.VIEWER,
-        store_as_name=True,  # Хранить как имена (VIEWER, AI_BOT, etc.)
+    __table_args__ = (
+        CheckConstraint("codename IN ('user', 'operator', 'admin')", name="ck_platform_role_codename"),
+        {"schema": settings.DB_SCHEMA},
     )
-    description: Mapped[str] = mapped_column(Text, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    codename: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    users = relationship("User", back_populates="role")
+    permissions = relationship("Permission", secondary=role_permission, backref="roles")
+    objects: ClassVar = None
 
-    # Relation one-to-many with User
-    users: Mapped[list["User"]] = relationship("User", back_populates="role")
-    # Relation many-to-many with Permission
-    permissions: Mapped[list["Permission"]] = relationship("Permission", secondary=role_permission, backref="roles")
+    @property
+    def label(self):
+        return role_label(self.codename)
 
-    # Manager will be set after class definition to avoid circular imports
-    if TYPE_CHECKING:
-        from ..managers.role_manager import RoleManager
-        from ..managers.base_manager import BaseManager
-
-        objects: ClassVar[RoleManager | BaseManager]
-    else:
-        objects: ClassVar = None
-
-    def __str__(self) -> str:
-        return f"{self.codename}"
+    def __str__(self):
+        return self.label
 
 
-# Attach the manager to the Role model
+Role = PlatformRole  # One-release Python import compatibility; not another mapper.

@@ -173,7 +173,7 @@ async def test_a_sent_message_becomes_the_transcript(monkeypatch: pytest.MonkeyP
             assert resp.status_code == 200
 
             # The turn ran as this workspace, with this user's platform role.
-            assert seen == [("Покажи дашборд", tenant_id, "SUPERUSER")]
+            assert seen == [("Покажи дашборд", tenant_id, "owner")]
 
             # The page answers inline — no redirect, no polling a job.
             assert "Первый ответ" in resp.text
@@ -278,7 +278,9 @@ async def test_a_bubble_renders_the_message_without_template_whitespace() -> Non
             user_bubbles = BUBBLE_RE.findall(page.text)
             assert user_bubbles == ["message.content || ''"], "user bubble binds x-text to the message"
 
-            assert "renderMarkdown(message.content || '')" in page.text, "assistant bubble binds x-html to renderMarkdown"
+            assert (
+                "renderMarkdown(message.content || '')" in page.text
+            ), "assistant bubble binds x-html to renderMarkdown"
         finally:
             if session_id is not None:
                 with tenant_scope(bypass=True):
@@ -384,14 +386,22 @@ async def test_a_stale_csrf_token_is_refused(client_free: None = None) -> None:
 
 
 def test_display_transcript_omits_tool_placeholders_without_mutating_storage():
-    from types import SimpleNamespace
     from datetime import datetime, timezone
+    from types import SimpleNamespace
+
     from app.web.chat import _display_transcript
 
-    rows = [SimpleNamespace(id=i, role=role, content=content, created_at=datetime.now(timezone.utc))
-            for i, (role, content) in enumerate([
-                ("user", "Вопрос"), ("assistant", "  "), ("assistant", None),
-                ("tool", "internal result"), ("assistant", "Ответ"),
-            ])]
+    rows = [
+        SimpleNamespace(id=i, role=role, content=content, created_at=datetime.now(timezone.utc))
+        for i, (role, content) in enumerate(
+            [
+                ("user", "Вопрос"),
+                ("assistant", "  "),
+                ("assistant", None),
+                ("tool", "internal result"),
+                ("assistant", "Ответ"),
+            ]
+        )
+    ]
     assert [m["content"] for m in _display_transcript(rows)] == ["Вопрос", "Ответ"]
     assert len(rows) == 5 and rows[1].content == "  "

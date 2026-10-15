@@ -10,14 +10,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import (
-	JSON,
-	Boolean,
-	DateTime,
-	ForeignKey,
-	Index,
-	Integer,
-	String,
-	UniqueConstraint,
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
@@ -27,13 +27,8 @@ from ..types import SourceType
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
-	from . import AIAnalytics, Platform, Tenant
-	from .managers.source_manager import SourceManager
-
+    from . import AIAnalytics, Platform, Tenant
+    from .managers.source_manager import SourceManager
 
 from .collection.source import Source
-
-
 from .managers.source_manager import SourceManager  # noqa: E402
-
-Source.objects = SourceManager()

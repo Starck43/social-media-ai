@@ -90,7 +90,7 @@ async def _page(
 ):
     """Shared render for both views — they differ only by the preview text."""
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
     tenant_id = getattr(request.state, "tenant_id", None)
 

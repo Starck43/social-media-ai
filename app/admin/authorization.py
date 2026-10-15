@@ -17,11 +17,10 @@ platform role, and every model in the console is treated the same way:
   in `BaseAdmin.action_permissions` (running a task, re-analysing, sending a
   notification are `update`; probing an LLM provider is `configure`).
 
-The source of truth is the same for the whole app: `role_permission` ->
-`permissions.model_type_id` + `action_type`, read through
-`User.model_permissions()`. Superusers — the `is_superuser` flag or the
-SUPERUSER role, the developer whose surface is this console and the CLI — are
-granted the wildcard pair and pass everything.
+Only active platform operators and administrators may enter. Operator grants
+come from `role_permission` -> `permissions.model_type_id` + `action_type`,
+read through `User.model_permissions()`. A platform administrator bypasses
+individual grants; workspace roles never grant console access.
 
 sqladmin asks `has_permission` many times while rendering one page (once per
 row), so it must not do I/O. Everything is read once per request in
@@ -96,13 +95,13 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
     async def get_grants(self, request: Request) -> set[tuple[str, str]]:
         """The `(identity, action)` pairs the signed-in operator may use.
 
-        Empty for an anonymous request, the wildcard pair for a superuser, and
+        Empty for an anonymous/non-operator request, the wildcard pair for a platform admin, and
         the role's rights translated into console actions otherwise.
         """
         user = await self.resolve_user(request)
-        if user is None:
+        if user is None or not user.has_admin_access():
             return set()
-        if user._is_superuser_role():
+        if user.is_platform_admin:
             return {(WILDCARD, WILDCARD)}
 
         model_by_identity, custom_rights = self._catalog(request)
@@ -147,7 +146,7 @@ class AdminAuthorizationBackend(GrantsAuthorizationBackend):
                 authenticated = await get_authenticated_user(token=token)
                 if authenticated is not None and authenticated.is_active:
                     user = await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
-                    if user is not None and not user.is_active:
+                    if user is not None and (not user.is_active or not user.has_admin_access()):
                         user = None
             except Exception:
                 # Revoked/invalid identity or unavailable DB must grant nothing.
@@ -225,10 +224,9 @@ async def require_admin_perm(request: Request, model_name: str, action: ActionTy
     which keeps one answer to "may this operator do this" instead of two.
     """
     user = await _console_backend(request).resolve_user(request)
-    if user is None or not user.has_perm_for(model_name, action):
+    if user is None or not user.has_admin_access() or not user.has_perm_for(model_name, action):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Missing permission: {model_name}.{action.db_value}",
         )
     return user
-

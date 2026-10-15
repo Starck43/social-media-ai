@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ..managers.job_manager import JobManager
 
 
-@app_label("social")
+@app_label("scheduling")
 class Job(Base, TenantScopedMixin, TimestampMixin):
     """Queued background job claimed by the worker (DB-backed queue, no Redis)."""
 

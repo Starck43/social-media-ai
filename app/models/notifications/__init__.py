@@ -9,4 +9,6 @@ from __future__ import annotations
 
 from .notification import Notification
 
-__all__ = ["Notification"]
+__all__ = ["Notification", "DigestRun"]
+
+from .digest_run import DigestRun

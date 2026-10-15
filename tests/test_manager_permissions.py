@@ -20,7 +20,7 @@ from app.models import Role, User
 from app.models.managers.agent_scenario_manager import AgentScenarioManager
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.models.managers.source_manager import SourceManager
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 
 TASK_WRITE_METHODS = ("create", "update_by_id", "delete_by_id", "set_sources", "add_sources")
 SCENARIO_WRITE_METHODS = ("create", "create_scenario", "update_by_id", "update_scenario_activity", "delete_by_id")
@@ -29,8 +29,9 @@ SOURCE_WRITE_METHODS = ("create", "create_source", "update_by_id", "delete_by_id
 
 pytestmark = pytest.mark.tenancy  # no implicit operator authority in rights tests
 
+
 async def _role(codename: str) -> Role:
-    return await Role.objects.get(codename=UserRoleType[codename].name)
+    return await Role.objects.get(codename=PlatformRoleType[codename].value)
 
 
 async def _user(role: Role) -> User:

@@ -75,7 +75,7 @@ class RoleManager(BaseManager["Role"]):
 
     async def get_with_users(self, role_id: int) -> Optional["Role"]:
         """
-        Get role with users loaded
+        Get role with prefetched users.
 
         Args:
                 role_id: Role ID

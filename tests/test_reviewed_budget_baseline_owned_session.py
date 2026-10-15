@@ -185,7 +185,7 @@ class OfflineDefinitionTests(unittest.TestCase):
         )
         module = load_isolated_source(
             "_baseline_offline_ddl",
-            harness.ROOT / "migrations/versions/0096_add_reviewed_budget_baselines.py",
+            harness.ROOT / "migrations/versions/0097_add_reviewed_budget_baselines.py",
             imports={
                 "alembic": SimpleNamespace(op=Operations(context)),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),

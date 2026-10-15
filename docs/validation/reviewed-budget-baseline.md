@@ -1,5 +1,10 @@
 # Reviewed day-baseline provisioning — sandbox evidence, UNWIRED
 
+**CURRENT UPDATE:** access-model dev `eb6cad6c56e78768b6482eba312082b849d24712`
+is authoritative. Baseline definition is now0097 after access0096. Prior0096
+baseline instructions and PG packets below are historical and MUST NOT be run.
+See the final compatibility section; original SHA/count attribution is retained.
+
 [Draft PR #197](https://github.com/Starck43/social-media-ai/pull/197).
 [Reviewed packet/fence and unapplied migration contract](../design/reviewed-budget-baseline.md).
 Implementation and tests: `b3cdc0fb2bded7a4ed67a235cf1823afffd2584d`.
@@ -172,3 +177,33 @@ Completion of this packet means **prepared**, not PG-tested or rollout-approved.
 Keep PR Draft until required real-environment evidence is reviewed at its own exact
 SHA; no Ready/merge, HTTP/client wiring, unfreeze, providers/runtime or deploy follows
 from this source review and the additional11 no-DB checks.
+
+
+## Access-model compatibility update — new validation required
+
+Dev access commit `eb6cad6c56e78768b6482eba312082b849d24712` is authoritative;
+owner-directed changes are not reverted. Baseline imports/model move to canonical
+LLM domain, public facade additions preserve the explicit manager bootstrap,
+and baseline definition is0097 parent0096. Access migration0096, access_catalog,
+permission/role managers and grants remain unchanged. The provenance table is
+internal uncatalogued storage: post-access registration does not create implicit
+ModelType/Permission/grant rows for it. No generic baseline CRUD manager is bound.
+
+This is a concrete changed import/migration risk; focused no-DB checks must be
+collected/executed at the new composed SHA. Old36/122 and11 results stay at their
+original pins and are NOT claims about this new tree. Real PG remains unperformed.
+
+Current local handoff: refresh HEAD and guides; OpenCode is the primary local
+pytest route, Kilo secondary only if BLOCKED. Selected database remains owner-
+reported social_manager_pr180_migration, previously0095/public/starck. Reinspect
+its actual revision/catalog/evidence read-only. It needs separately approved
+access0096 acceptance before baseline0097; do NOT auto-apply an access data migration
+as baseline setup. Capture the baseline before-manifest AFTER a reviewed access0096
+state; then separately approve normal0096→0097. For baseline0097 the expected
+role/permission/resource grants are unchanged; the static catalog excludes the
+new internal table. Registration may still reconcile existing known resources;
+measure all deltas and stop on unexpected changes. No reset/drop/stamp/create_all,
+fixture cleanup, guards weakening, live activation or production action.
+If old baseline0096 was applied anywhere, stop and preserve its catalog/rows/
+revision evidence; no automatic numbering repair or reapplication is authorized.
+The old PR180 preparation script/runner are not a PR197 harness and remain untouched.

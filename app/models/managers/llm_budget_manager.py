@@ -42,8 +42,8 @@ class LLMBudgetManager(BaseManager):
             validate_baseline,
         )
 
-        from ..analysis.llm_budget import LLMBudgetDay
-        from ..analysis.llm_budget_baseline import LLMBudgetBaseline
+        from ..llm.llm_budget import LLMBudgetDay
+        from ..llm.llm_budget_baseline import LLMBudgetBaseline
         from ..tenancy.tenant import Tenant
 
         payer = current_tenant_id()

@@ -68,7 +68,7 @@ uncertain commit is a separate same-packet replay, never a blind fresh write.
 
 ## Minimal migration definition — NOT APPLIED
 
-Revision `0096`, parent `0095`, adds only `llm_budget_baselines`: unique payer/day,
+Revision `0097`, parent `0096`, adds only `llm_budget_baselines`: unique payer/day,
 RESTRICT FK to the existing day, original snapshot and review/fence fields.
 Schema comes from `settings.DB_SCHEMA`; no old migration edits or backfill.
 Checks bound amounts/counts/IDs/UTC cutoff ordering and require initial freeze.
@@ -85,3 +85,30 @@ parity, rollback/commit ambiguity and two-session provisioning/admission races
 remain deferred for an explicitly approved target via sequential local R10.
 Mock tests are not real PG acceptance or production-baseline certification.
 Existing PR180/194 evidence remains at its original SHAs and is not rerun.
+
+
+## Access-model compatibility — current contract
+
+Authoritative dev `eb6cad6c56e78768b6482eba312082b849d24712` separates
+platform/workspace roles, canonical LLM models and explicit resource permissions.
+PR197 follows that contract; it does not restore legacy roles, implicit ownership,
+auto-permission registration or module-level manager binding. Canonical provenance
+model is `app.models.llm.llm_budget_baseline`; old analysis path is only an alias.
+Existing bootstrap bindings and platform/workspace authorization remain unchanged.
+The baseline is internal storage, intentionally NOT a resource in access_catalog;
+no ModelType, Permission or role grant is introduced for it. Public facades expose
+the class but no generic baseline manager; trusted provisioning remains on the
+existing budget manager. Tenant scope is still payer isolation, not user authority.
+
+The old unpublished-in-dev baseline0096 definition is superseded by baseline0097;
+access0096 belongs to dev and is untouched. Prior pins/evidence remain historical.
+Do not run any old PR1970095→0096 instruction. Baseline acceptance now requires an
+independently reviewed access0096 target and then separately approved0096→0097.
+A target reported at0095 is not sufficient. Access0096 migrates roles/permissions
+and needs its own target-specific preservation/cutover approval; this baseline
+package grants none. If any target applied the old baseline0096 or is ambiguous,
+STOP for catalog/version/evidence reconciliation, never stamp/reset/reapply.
+
+For local pytest follow current AGENTS.md/.agent/rules.md: primary OpenCode route,
+Kilo secondary only if primary BLOCKED, DB checks sequential. Historical Kilo
+instructions below/in old evidence are not the current routing authority.

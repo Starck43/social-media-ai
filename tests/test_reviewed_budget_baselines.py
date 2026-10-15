@@ -56,13 +56,13 @@ MODEL_IMPORTS = {
     "app.models.base": SimpleNamespace(Base=BaselineModelBase, TenantScopedMixin=type("Scoped", (), {})),
 }
 DAYS = load_isolated_source(
-    "app.models.analysis._baseline_days",
-    ROOT / "app/models/analysis/llm_budget.py",
+    "app.models.llm._baseline_days",
+    ROOT / "app/models/llm/llm_budget.py",
     imports=MODEL_IMPORTS,
 )
 MODELS = load_isolated_source(
-    "app.models.analysis._reviewed_baseline_model",
-    ROOT / "app/models/analysis/llm_budget_baseline.py",
+    "app.models.llm._reviewed_baseline_model",
+    ROOT / "app/models/llm/llm_budget_baseline.py",
     imports=MODEL_IMPORTS,
 )
 GUARDS = {
@@ -254,8 +254,8 @@ MANAGER = load_isolated_source(
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=OwnedDouble),
         "app.models.managers.llm_dispatch_receipt_manager": SimpleNamespace(LLMDispatchReceiptManager=None),
         "app.services.ai.budget_baselines": PACKET,
-        "app.models.analysis.llm_budget": DAYS,
-        "app.models.analysis.llm_budget_baseline": MODELS,
+        "app.models.llm.llm_budget": DAYS,
+        "app.models.llm.llm_budget_baseline": MODELS,
         "app.models.tenancy.tenant": SimpleNamespace(Tenant=Tenant),
     },
 )
@@ -449,7 +449,7 @@ class DefinitionTests(unittest.TestCase):
         )
         self.migration = load_isolated_source(
             "_baseline_migration_capture",
-            ROOT / "migrations/versions/0096_add_reviewed_budget_baselines.py",
+            ROOT / "migrations/versions/0097_add_reviewed_budget_baselines.py",
             imports={
                 "alembic": SimpleNamespace(op=op),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA="baseline_review")),
@@ -458,7 +458,7 @@ class DefinitionTests(unittest.TestCase):
         self.migration.upgrade()  # capture double only; no connection, no Alembic runner
 
     def test_one_additive_table_parent_and_no_baseline_dml(self):
-        self.assertEqual(self.migration.down_revision, "0095")
+        self.assertEqual(self.migration.down_revision, "0096")
         self.assertEqual([t[0] for t in self.tables], ["llm_budget_baselines"])
         self.assertEqual(self.tables[0][2], {"schema": "baseline_review"})
         self.assertFalse(any(sql.startswith(("INSERT", "UPDATE", "DELETE", "DROP", "ALTER")) for sql in self.ddl))

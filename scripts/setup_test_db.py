@@ -321,9 +321,9 @@ async def _seed_reference_rows() -> None:
     """Insert canonical reference rows the suite reads."""
     from app.core.tenant_context import tenant_scope
     from scripts.setup.assign_roles_permissions import assign_roles_permissions
-    from scripts.setup.roles import seed_roles
+    from scripts.setup.roles import seed_roles_async
 
-    seed_roles()
+    await seed_roles_async()
     with tenant_scope(bypass=True):
         await assign_roles_permissions()
 

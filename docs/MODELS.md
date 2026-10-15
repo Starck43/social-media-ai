@@ -18,7 +18,7 @@ mapper. See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 Field inventories omit inherited fields where indicated. Exact types, defaults,
 nullability and constraints remain in the linked declarations. Planned work and
 PR branches are not current schema: see [delivered evidence](IMPLEMENTATION_STATUS.md)
-and the [ownership board](design/README.md). Merge, migration application, runtime
+and the [phase board](phases/README.md). Merge, migration application, runtime
 activation and whole-gate acceptance are distinct states.
 
 ### Table inventory

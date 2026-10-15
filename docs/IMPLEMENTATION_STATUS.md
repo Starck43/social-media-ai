@@ -1,7 +1,7 @@
 # Implementation status
 
 This file is a compact index of delivered foundations. The current queue and
-ownership live in [design/README](design/README.md). Pull requests and Git history
+ownership live in [ROADMAP](../ROADMAP.md) and [phases](phases/README.md). Pull requests and Git history
 are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
@@ -64,7 +64,7 @@ fixes or release acceptance are implied; persistent task allocation is on the bo
 
 ## Current work
 
-Open ownership, blocked items and next actions live in [design/README.md](design/README.md). Exact decisions, hashes, test evidence and operational caveats remain in their source PRs.
+Open ownership, blocked items and next actions live in [ROADMAP.md](../ROADMAP.md) and [phases](phases/README.md). Exact decisions, hashes, test evidence and operational caveats remain in their source PRs.
 
 ## Recording future delivery
 
@@ -79,9 +79,8 @@ resource permissions, operator-only admin, membership-only workspace UI/API,
 transactional team delegation and private AI memory. Migration 0096 is applied
 to the local development PostgreSQL `social_manager/public` schema; this is not
 a production deployment. Original historical evidence above remains tied to its
-original revisions and does not validate the new schema. Current OpenCode and
-redacted migration evidence, plus remaining acceptance boundaries, are recorded
-in ROADMAP.md. The owner-authorized in-place update of the unversioned local
+original revisions and does not validate the new schema. Current OpenCode and redacted migration evidence, plus remaining acceptance
+boundaries, are recorded in the historical audit ledger (`git show edbe0fc:ROADMAP.md`). The owner-authorized in-place update of the unversioned local
 `test_schema` applied unchanged 0096 operations without stamping or replaying
 0093–0095; checked business counts and all LLM integrity guards were preserved.
 Pytest startup validates the existing target read-only. OpenCode passed 29

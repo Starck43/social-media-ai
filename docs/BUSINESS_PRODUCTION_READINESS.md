@@ -2,7 +2,7 @@
 
 This document owns the stable engineering and release gates. It does not claim
 that a deployment, database revision or security review has passed. Current
-priority and ownership live in [the work board](design/README.md); delivered
+priority and ownership live in [the work board](phases/README.md); delivered
 foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
 
 Recommended first release: a managed, invite-only B2B monitoring service with

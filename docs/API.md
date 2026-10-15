@@ -666,7 +666,7 @@ No home-request KPI aggregation, new LLM call or migration.
 
 Attention is implemented in the unified bell, not a second home block (see
 [NOTIFICATIONS](NOTIFICATIONS.md#current-web-bell-and-display-policy)). Mixed
-analysis/digest feed and truly upcoming schedules remain deferred in [the canonical task](design/README.md#prd-081--outcome-focused-home-overview).
+analysis/digest feed and truly upcoming schedules remain deferred in [the phase tasks](phases/p8-first-value-ui.md).
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
 

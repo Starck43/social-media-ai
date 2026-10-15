@@ -10,7 +10,7 @@ The assistant helps people turn information distributed across public sources an
 
 This is the **global product plan**, not a rolling session checklist. Follow the
 existing [engineering gates](BUSINESS_PRODUCTION_READINESS.md), then the
-[current-stage task board](design/README.md). The Foundation phase remains gated
+[current-stage phase board](phases/README.md). The Foundation phase remains gated
 by release safety; product expansion is not permission to start every proposal.
 
 ## Universal workflow
@@ -84,9 +84,9 @@ This table reflects product intent, not a fresh full-code review. Detailed opera
 
 ## Delivery sequence and acceptance
 
-Foundation has **9 major open readiness directions**; the only descending-priority numbered queue is [priorities 1–9](design/README.md#prioritized-open-work). PRD IDs are acceptance domains, not individual PR counts. The product phases below are future expansion and are not counted as additional current Foundation tasks.
+Foundation has **9 major open readiness directions**; the only descending-priority numbered queue is [phase priorities](phases/README.md). PRD IDs are acceptance domains, not individual PR counts. The product phases below are future expansion and are not counted as additional current Foundation tasks.
 
-Follow [BUSINESS_PRODUCTION_READINESS.md](BUSINESS_PRODUCTION_READINESS.md) and the [current work board](design/README.md) for release safety before expanding capabilities. The phases below describe product expansion, not calendar promises.
+Follow [BUSINESS_PRODUCTION_READINESS.md](BUSINESS_PRODUCTION_READINESS.md) and the [current work board](phases/README.md) for release safety before expanding capabilities. The phases below describe product expansion, not calendar promises.
 
 | Phase | Bounded outcome | Dependencies and exit evidence |
 | --- | --- | --- |

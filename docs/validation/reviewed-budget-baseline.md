@@ -207,3 +207,61 @@ fixture cleanup, guards weakening, live activation or production action.
 If old baseline0096 was applied anywhere, stop and preserve its catalog/rows/
 revision evidence; no automatic numbering repair or reapplication is authorized.
 The old PR180 preparation script/runner are not a PR197 harness and remain untouched.
+
+
+### Executed post-access compatibility checks
+
+Authoritative dev: `eb6cad6c56e78768b6482eba312082b849d24712`.
+Fresh composed tested SHA: `6f38406d545c3b3ccb37d6edb9409ac9ae914091`.
+Dev was included by normal merge `10a6fae408cede2d5ba7f1d499d1148c0fadc597`;
+old PR/source/test pins remain ancestors, without squash/rebase/force-push.
+Shared facade conflicts were resolved using dev as authority, then only additive
+baseline exports were restored. Both ownership rows remain on the append-only board.
+
+Same isolated sandbox venv/versions; clean test worktree. Explicit source imports/
+configuration/session/inspection doubles; no real settings/.env, DBAPI/engine,
+DB/provider or online migration. Changed imports and migration chain are the
+specific reason to recollect/retest the affected PR197 checks; accepted PR180
+checks were not rerun, relabelled or modified.
+
+```sh
+/data/baseline-venv/bin/python -m pytest tests/test_reviewed_budget_baselines.py tests/test_reviewed_budget_baseline_owned_session.py tests/test_reviewed_budget_access_compatibility.py --collect-only --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+/data/baseline-venv/bin/python -m pytest tests/test_reviewed_budget_baselines.py tests/test_reviewed_budget_baseline_owned_session.py tests/test_reviewed_budget_access_compatibility.py --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+```
+
+Collection exit0:56 tests (0.35s). Execution exit0: **56 passed, 135 subtests
+passed, failed0, skipped0, warnings0** (0.56s). This IS a combined affected
+no-DB run at this pin; it is not full application/authorization/ASGI/PG acceptance.
+
+New compatibility coverage checks: immutable authoritative policy/catalog/roles/
+registration/bootstrap/access0096; unique revision chain access0096→baseline0097;
+uncatalogued baseline denied by shared permission policy even with platform/
+workspace owner or bypass claims; no new workspace role grants; additive facades
+and no generic baseline manager; alias identity without ORM redeclaration;
+post-access registration with inspector/connection doubles does not register the
+internal table; unchanged admission method AST. Baseline monetary/atomic/replay/
+rollback/owned-helper and offline SQL checks now exercise canonical LLM models
+and baseline0097. No implementation of interactive baseline authorization is
+claimed: provisioning remains a trusted-internal unwired API.
+
+An intermediate run at `b76101dcd81e511453cdb001f2a7dbb26d55f1f2` collected56
+but failed25/passed31 (110 subtests passed, pytest exit1): the harness omitted the
+unchanged manager initializer's supported analysis compatibility import, leading
+to a missing-dotenv import error before settings execution. Corrected ONLY the
+test import double; no authoritative manager/permissions changed and no real
+settings/provider/DB was used to obtain PASS. Original assertion strength retained.
+Final successful pin above supersedes that failed attempt, not its historical record.
+
+Static preservation review: 220 paths changed by dev since9c7bf4d are byte-equal
+to the authoritative dev or retain its deletions. Five shared paths have only
+PR197 additive facade/document/ownership work; compatibility tests verify the
+facade preservation. Access0096, access_catalog, model bootstrap, permission/role
+code and model registration are untouched. Diff check exit0. This source review
+is implementing-agent review, not independent approval of the access overhaul.
+
+Remaining: independently reviewed access0096 target, separately approved
+baseline0096→0097 application, executable new PG harness and real PG acceptance.
+Owner-reported social_manager_pr180_migration0095 is historical; no new DB
+inspection/migration performed remotely. No unfreeze, HTTP/client wiring or rollout.
+Local tests follow current OpenCode primary / Kilo only if primary BLOCKED, not
+old historical runner instructions. Preserve old PR180 evidence and target data.

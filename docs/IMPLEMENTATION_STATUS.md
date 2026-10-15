@@ -16,7 +16,7 @@ PR #176 remains Draft/open despite the cherry-picked implementation. This
 audit preserves prior owner evidence and adds only static/offline contract
 checks; no application/DB/pytest/release acceptance is claimed.
 
-Standalone frozen reviewed baseline provisioning is in [Draft PR #197](https://github.com/Starck43/social-media-ai/pull/197), **not integrated or activated**. Sandbox-only checks and deferred PG acceptance are in [its evidence](validation/reviewed-budget-baseline.md); the current allocation remains on the canonical board. This does not change the original reservation/migration acceptance attribution.
+Standalone frozen reviewed baseline provisioning is in [Draft PR #197](https://github.com/Starck43/social-media-ai/pull/197), **not integrated or activated**. Sandbox-only checks and deferred PG acceptance are in [its evidence](validation/reviewed-budget-baseline.md); the current allocation remains on the canonical board. This does not change the original reservation/migration acceptance attribution. Access-dev compatibility uses canonical LLM models and baseline definition0097 after authoritative access0096, with no new resource permissions/grants; fresh affected mock evidence is recorded separately.
 
 ## Delivered foundations
 

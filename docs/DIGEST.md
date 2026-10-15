@@ -296,15 +296,27 @@ cycle narrates with cost-efficient routing. Publication still needs confirmation
 
 ### Interactive manual-send authorization
 
-The web manual-send action and the agent `digest_send_now` tool both require
-`digestrun.create`: sending creates a new run rather than editing an existing
-one. `digestrun.view` or `digestrun.update` alone cannot authorize a send. The
-agent still requires an actor-bound, single-use confirmation and rechecks the
-current right before dispatch. Pending confirmations recorded under the old
-`digestrun.update` tool contract are rejected; request and confirm the action
-again. The read-only `report_period` tool retains `digestrun.view`. This does
-not change scheduled/operator sends, channel scope, delivery safeguards or
-external-write activation policy.
+The agent `digest_send_now` tool requires
+`notifications.digest_run.create`; its read-only `report_period` preview uses
+`notifications.digest_run.view`. The web manual-send guard resolves the
+structured `digestrun` / `create` pair to the same versioned catalog resource.
+VIEW or UPDATE alone cannot authorize a send.
 
-PR #176's current mock results, integration limits and local follow-up are
-tracked in [manual-send acceptance](validation/pr176-digest-send-acceptance.md).
+Workspace membership grants, not platform roles, decide access. The current
+fixed presets permit sending for workspace `owner`, `admin` and `analyst`, but
+not `manager` or `viewer`. A platform administrator with viewer membership does
+not gain send permission. The agent additionally requires AI-chat admission
+(owner by default; other members explicitly enabled); that flag neither grants
+digest rights nor gates the separate web digest action.
+
+Agent sending still requires actor-bound single-use confirmation and fresh
+identity/rights checks immediately before dispatch. Pending authorization is
+version 3 and includes workspace-role and AI-admission bindings. Old permission
+contracts or authorization versions, role changes and revoked AI admission
+cannot reuse an earlier approval; request the action again. Scheduled/operator
+sends, channel scope, delivery safeguards and external-write activation policy
+are unchanged by this interactive contract.
+
+See [access cutover](ACCESS_MIGRATION.md) and
+[manual-send acceptance](validation/pr176-digest-send-acceptance.md) for current
+mock evidence and remaining ASGI/PostgreSQL limits.

@@ -1,95 +1,104 @@
-# PR #176: manual digest-send acceptance
+# Manual digest-send acceptance
 
-## Current status
+## Current source of truth
 
-The application change (`digest_send_now` requires `digestrun.create`, not
-`digestrun.update`) already exists in `dev` through commit
-`6d16436e3f3fb701d5dd8595e18bcc95bc430390`. Do not duplicate it or weaken
-confirmation, tenancy, CSRF or external-write safeguards.
+The owner's authorization redesign in `dev` at
+`eb6cad6c56e78768b6482eba312082b849d24712` supersedes the old policy and test
+fixtures. Preserve that implementation; this follow-up changes only the
+assistant's extra tests and documentation. The authoritative
+`tests/test_digest_send_permissions.py` is copied byte-for-byte from this dev
+revision, not replaced with the assistant's older loader. Its SHA-256 is
+`2c105d8d2cc88ce05ec513c3fd09350d829161a0ede0a6646af95d04ac2344fb`.
 
-The PR branch was updated from `dev` without force-pushing. Merge commit
-`0436c0ec7061d40171b519abbe63dc3b2c0d384a` has the same tree as the audited
-`dev` baseline `9c7bf4d146d8086d279ee9d1f80a950af9cdff43`, and preserves the
-original PR head `cb2bc6d4c72d77ed6920a64ceb9e20af91cf4847`.
-This follow-up changes tests and acceptance documentation only.
+Current contract:
 
-**Keep Draft:** mock coverage is complete for the scope below; real
-ASGI/membership/PostgreSQL acceptance is still pending. Historical evidence is
-preserved in the [original handoff archive](https://github.com/Starck43/social-media-ai/pull/176#issuecomment-6187394197).
-Old PASS counts and the old `exit 3 / collected 0` run are not current acceptance.
-PR #180 has merged; waiting for that PR is no longer the blocker.
+- Agent send declares `notifications.digest_run.create`; read-only preview
+  declares `notifications.digest_run.view`. The web handler's structured
+  `digestrun` / `create` check resolves to the same versioned catalog resource.
+- Platform roles (`user`, `operator`, `admin`) are separate from workspace roles.
+  Platform authority cannot replace missing workspace digest grants.
+- The real workspace presets allow digest creation for `owner`, `admin` and
+  `analyst`, not `manager` or `viewer`. Sending still needs valid membership,
+  current rights and the surface's existing safeguards.
+- Agent admission additionally requires AI chat access (implicit for an owner,
+  explicit for other members). Web digest permission is independent of that AI
+  flag. Neither a platform admin nor an AI grant is a digest permission.
+- Pending authorization is version 3, bound to the actor, workspace role and AI
+  admission. Role/AI changes and older contracts require a fresh request; the
+  runtime rechecks after storage consumption before invoking the publisher.
 
-## Sandbox validation, 2026-10-15
+See [access cutover and remaining DB/ASGI acceptance](../ACCESS_MIGRATION.md).
+This work does not run or modify migration `0096`, change presets, restore old
+role enums, or waive cutover safeguards. The development `public` migration
+record does not establish that the shared test schema is migrated.
 
-The owner explicitly authorized the assistant to execute its own mock tests.
-That is a narrow exception for this sandbox, not a change to project-wide
-Kilo/pare-test rules or approval for database/bootstrap operations.
+## Fresh sandbox checks
 
-Environment: Python 3.13; built-in `unittest`; real Jinja2 and
-`itsdangerous==2.2.0`. The interpreter was `/data/pr176-env/bin/python` in a
-separate review tree `/data/pr176-review`. No `.env` was loaded; no database,
-application bootstrap, provider or transport was used.
+The owner authorized assistant-run mock tests. This remains a narrow no-DB
+exception, not a modification of the new OpenCode-primary pytest policy in
+`AGENTS.md` / `.agent/rules.md` R10. Neither OpenCode nor Kilo is installed in the
+sandbox; no pytest fallback was attempted.
 
-### Actual failure found and fixed
-
-Before changing tests, all ten existing isolated digest tests errored during
-setup on the current baseline. Their inherited loader attempted the now-added
-`app.services.tenancy.web_access` import from `app/web/perms.py` outside its
-isolation boundary and raised `ModuleNotFoundError: No module named 'app'`.
-
-The digest suite now uses `tests/digest_permission_support.py` and the existing
-module-local `tests/source_import_isolation.py` loader. Actual policy, identity,
-confirmation, runtime, registry, web guard/handler and CSRF code remain loaded;
-storage, model-registry classification, HTTP plumbing, LLM and publisher are
-doubles. The ten original test methods are preserved.
-
-This new, reproduced loader failure does **not** establish the cause of the
-historical owner-local `exit 3` run; its first redacted exception is still needed.
-
-### Completed results
+The assistant's helper now loads the real `access_catalog`, enums, policy,
+identity, confirmation, runtime, registry, WebPerms, handler and CSRF code with
+module-local imports. Storage, HTTP plumbing, LLM and publisher are doubles;
+workspace catalog/classification and allow/deny predicates are not mocked.
+The ten dev-maintained tests remain unchanged; 37 assistant boundary tests
+include 12 new authorization-cutover methods. Loop subcases are not extra tests.
 
 ```sh
 /data/pr176-env/bin/python -m unittest discover -s tests -p 'test_digest_send*.py' -v
 ```
 
-**35 tests passed, exit 0**: ten existing regression tests plus 25 new boundary
-tests (17 runtime and eight web). Loop subcases are not counted as extra tests.
-The formatted combined run completed in 0.493 seconds.
+On the `eb6cad6` source baseline plus the adapted additions: **47 tests passed,
+exit 0** (0.572 seconds), Python 3.13, real Jinja2 and `itsdangerous==2.2.0`.
 
 Coverage includes:
 
-- membership CREATE versus VIEW/UPDATE, including a non-owner/non-superuser
-  caller with no platform permission;
-- real runtime staging, confirmation and registry dispatch; one-use intent,
-  actor binding, expiration and old permission-contract rejection;
-- permission revocation before confirmation and between mocked consume and
-  dispatch; inactive/missing membership, user, workspace and channel binding;
-- replaced pending intents, two concurrent yes turns against an in-memory CAS,
-  and an injected consume acknowledgement failure that must not dispatch;
-- real web guard and CSRF signing/validation, missing/invalid/tampered tokens,
-  foreign posted tenant rejection and tenant-context restoration;
-- private loaders leave global `app.*` imports unchanged.
+- actual fixed presets for all five workspace roles through runtime and web;
+- platform-admin-plus-workspace-viewer denial, even with a permissive platform
+  predicate, and foreign posted workspace rejection;
+- AI-disabled staging, AI revocation before yes and during mocked consumption;
+- workspace-role change before and during consumption, including a replacement
+  role that still has CREATE; unknown and unresolved role denial;
+- old version-2 approvals and old bare/UPDATE permission-contract rejection;
+- existing rights revocation, inactive/missing identity components, actor
+  binding, expiry, replaced intent, one-use confirmation and mocked CAS race;
+- real CSRF missing/invalid/tampered/wrong-key denial and global import isolation.
 
-A separate negative control loaded a temporary copy of `reports.py` with the
-old `digestrun.update` declaration. Declaration parity, VIEW/UPDATE denial and
-CREATE-positive runtime tests all failed as expected: **3 failures, 0 errors**.
-The application source was not edited. This is a regression-sensitivity check,
-not a failing application suite or three additional passing tests.
+During adaptation, three assertion failures exposed an incorrect assumption in
+new tests: the current runtime clears a rightful actor's rejected intent through
+CAS; it does not leave that intent unconsumed. The tests now assert clearance
+and zero publisher calls. Application code was not changed to fit those tests.
 
-Black and isort check-only runs (line length 120) and `git diff --check` passed
-for the changed/new test files.
+A temporary-source negative control changed only the canonical CREATE tool
+right to `notifications.digest_run.update`. Three selected runtime regressions
+all failed as expected, with zero errors. Source files were untouched. This is
+sensitivity evidence, not three additional passing tests.
 
-### Evidence limits
+Black/isort check-only runs (line length 120), whitespace checks and published
+byte verification are part of the follow-up closeout. The PR records the exact
+published test snapshot and result; a local run is not relabeled as that commit.
 
-- Mock managers do not prove ORM loading, detached relationships, SQL tenancy
-  filtering or durable membership revocation.
-- The CAS double does not prove PostgreSQL transaction/commit behavior,
-  database concurrency or acknowledgement recovery.
-- Web tests call the real handler with constructed `WebPerms`; they do not run
-  ASGI, session middleware or the middleware's fresh membership lookup.
-- No real digest delivery, scheduler, provider or production behavior was tested.
+## Limits and remaining work
 
-Do not mark these limits complete from the mock PASS count. The next bounded
-handoff is [local evidence intake](pr176-local-evidence-intake.md). After that
-intake, review the original bootstrap-free plugin/membership matrix before
-issuing an exact, sequential integration run.
+Mock managers do not prove ORM/schema compatibility or middleware membership
+refresh. In-memory CAS does not prove PostgreSQL locking, durable commits or
+acknowledgement recovery. Direct handler calls do not prove ASGI/session behavior.
+No `.env`, DB, bootstrap, migration, provider, transport or live send was used.
+
+Keep the PR Draft until current-model integration evidence is established.
+Use the [replacement local intake](pr176-local-evidence-intake.md), not the old
+pinned revision/task/plugin/matrix without review. Do not apply old test fixtures
+to the new schema or run the new app against an old schema.
+
+## Historical evidence — not current acceptance
+
+The original fix reached dev as `6d16436`. The previous assistant follow-up
+`f81cffe` had 35 mock tests passing on the pre-cutover source; that result does
+not validate `eb6cad6`. Its loader workaround is superseded where dev now
+maintains the same test file. Original local plugin/matrix hashes, old PASS
+counts, the unresolved `exit 3 / collected 0`, and previous delegation pauses
+remain in the [archived handoff](https://github.com/Starck43/social-media-ai/pull/176#issuecomment-6187394197).
+Recover historical failure details only if relevant to the current runner;
+fixing an obsolete run is not a prerequisite invented for the new architecture.

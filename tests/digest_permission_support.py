@@ -1,8 +1,8 @@
 """Private-source harness for digest permission tests: no app bootstrap or DB.
 
 Actual policy, identity, confirmation, runtime, web guards and CSRF are loaded
-with module-local dependency bindings. Only storage, HTTP plumbing, model
-registry classification, LLM and publisher are doubles. Never imports conftest.
+with module-local dependency bindings. Only storage, HTTP plumbing, LLM and
+publisher are doubles. Never imports conftest.
 """
 
 import asyncio
@@ -44,6 +44,7 @@ class DigestEnvironment:
             },
         )
         self.action = self.enums.ActionType
+        self.catalog = source("_digest_catalog", "app/core/access_catalog.py", {"app.types": self.enums})
         self.tenant = source(
             "_digest_tenant",
             "app/core/tenant_context.py",
@@ -56,19 +57,17 @@ class DigestEnvironment:
             "app/core/permissions.py",
             {
                 "app.types": self.enums,
+                "app.core.access_catalog": self.catalog,
                 "app.core.tenant_context": self.tenant,
             },
         )
-        # ORM registry classification only; actual allow/deny predicates stay real.
-        self.perms._workspace_model_names = lambda: frozenset({"source", "agenttask", "agentscenario", "digestrun"})
         self.user = SimpleNamespace(
             id=12,
             role_id=2,
-            role=SimpleNamespace(id=2, codename="VIEWER"),
+            role=SimpleNamespace(id=2, codename=self.enums.PlatformRoleType.USER),
             is_active=True,
-            is_superuser=False,
             has_perm_for=lambda *args: False,
-            _is_superuser_role=lambda: False,
+            has_admin_access=lambda: False,
         )
         self.grants = frozenset({("digestrun", self.action.CREATE)})
         self.membership = SimpleNamespace(
@@ -80,7 +79,8 @@ class DigestEnvironment:
             is_active=True,
             is_owner=False,
             role_id=3,
-            role=SimpleNamespace(id=3, codename="ANALYST"),
+            role=SimpleNamespace(id=3, codename=self.enums.WorkspaceRoleType.ANALYST),
+            ai_chat_enabled=True,
         )
         self.workspace = SimpleNamespace(id=31, is_active=True)
         self.binding = SimpleNamespace(tenant_id=31, channel="telegram", chat_id="7", is_active=True)
@@ -102,6 +102,7 @@ class DigestEnvironment:
             "app/agent/identity.py",
             {
                 "app.core.tenant_context": self.tenant,
+                "app.types": self.enums,
                 "app.models": self.models,
                 "app.models.managers.tenant_manager": self.members_module,
             },
@@ -120,6 +121,7 @@ class DigestEnvironment:
             "app/agent/tools.py",
             {
                 "app.agent.confirmation": self.confirmation,
+                "app.agent.identity": self.identity,
                 "app.core.permissions": self.perms,
                 "app.agent": module_with(toolset=module_with()),
             },
@@ -149,6 +151,9 @@ class DigestEnvironment:
             user_role_id=2,
             is_owner=False,
             user=self.user,
+            workspace_role_codename="analyst",
+            ai_chat_enabled=True,
+            member_grants=self.grants,
         )
         self.session = SimpleNamespace(
             id=51,
@@ -201,6 +206,7 @@ class DigestEnvironment:
             "_digest_runtime",
             "app/agent/runtime.py",
             {
+                "app.core.access_catalog": self.catalog,
                 "app.agent.confirmation": self.confirmation,
                 "app.agent.identity": self.identity,
                 "app.agent.prompts": module_with(DEFAULT_SYSTEM_PROMPT="test"),
@@ -233,6 +239,14 @@ class DigestEnvironment:
         with self.tenant.tenant_scope(31):
             return await runtime._handle_in_tenant(self.inbound, self.resolution)
 
+    def workspace_role(self, name):
+        """Use the real fixed preset, not an invented role-permission matrix."""
+        role = self.enums.WorkspaceRoleType(name)
+        self.membership.role_id = list(self.enums.WorkspaceRoleType).index(role) + 10
+        self.membership.role = SimpleNamespace(id=self.membership.role_id, codename=role)
+        self.membership.is_owner = role == self.enums.WorkspaceRoleType.OWNER
+        self.grants = self.catalog.workspace_grants(role)
+
     def web(self):
         """Actual web handler/WebPerms/guard/CSRF, mocked FastAPI/HTTP plumbing.
 
@@ -259,14 +273,13 @@ class DigestEnvironment:
             HTTPException=type("HTTPException", (Exception,), {}),
         )
         response_module = module_with(RedirectResponse=Response)
-        access = source("_digest_web_access", "app/services/tenancy/web_access.py")
         self.webperms = source(
             "_digest_web_perms",
             "app/web/perms.py",
             {
                 "app.core.permissions": self.perms,
                 "app.types": self.enums,
-                "app.services.tenancy.web_access": access,
+                "app.core.access_catalog": self.catalog,
             },
         )
         nav = source("_digest_web_nav", "app/web/nav.py")

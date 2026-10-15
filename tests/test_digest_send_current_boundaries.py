@@ -11,6 +11,7 @@ import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("_digest_current_support", ROOT / "tests/digest_permission_support.py")
@@ -125,14 +126,131 @@ class DigestRuntimeBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.env.session.state["pending_confirmation"], pending)
 
     async def test_old_update_contract_refuses_yes_even_with_current_create(self):
-        self.env.spec.required_permission = "digestrun.update"
+        self.env.spec.required_permission = "notifications.digest_run.update"
         actor = await self.env.resolve()
         pending = self.env.confirmation.make_pending_intent(actor, self.env.session, self.env.spec, {}, "old1")
         self.assertIsNotNone(pending)
         self.env.session.state["pending_confirmation"] = pending
-        self.env.spec.required_permission = "digestrun.create"
+        self.env.spec.required_permission = "notifications.digest_run.create"
         self.assertIn("отклонено", await self.env.turn(self.runtime))
         self.env.publisher.assert_not_awaited()
+
+    async def test_ai_chat_disabled_prevents_staging_even_with_digest_create(self):
+        env = self.env
+        env.membership.ai_chat_enabled = False
+        actor = await env.resolve()
+        self.assertIsNotNone(actor)
+        self.assertFalse(actor.ai_chat_enabled)
+        with env.tenant.tenant_scope(31):
+            reply, stop = await self.runtime._dispatch_or_stage(env.session, "digest_send_now", {}, "c1", actor)
+        self.assertTrue(stop)
+        self.assertIn("Доступ изменился", reply)
+        self.assertNotIn("pending_confirmation", env.session.state)
+        env.publisher.assert_not_awaited()
+
+    async def test_ai_chat_revoked_before_yes_never_consumes_pending(self):
+        pending = await self.stage()
+        self.env.membership.ai_chat_enabled = False
+        self.assertIn("AI-чату не разрешён", await self.env.turn(self.runtime))
+        self.env.session_manager.consume_pending_confirmation.assert_not_awaited()
+        self.env.publisher.assert_not_awaited()
+        self.assertEqual(self.env.session.state["pending_confirmation"], pending)
+
+    async def test_ai_chat_revoked_during_mock_consume_never_dispatches(self):
+        await self.stage()
+        self.env.after_consume = lambda: setattr(self.env.membership, "ai_chat_enabled", False)
+        self.assertIn("отклонено", await self.env.turn(self.runtime))
+        self.env.session_manager.consume_pending_confirmation.assert_awaited_once()
+        self.env.publisher.assert_not_awaited()
+
+    async def test_workspace_role_change_requires_new_confirmation_even_with_create(self):
+        await self.stage()
+        self.env.workspace_role("admin")
+        self.assertIn(("digestrun", self.env.action.CREATE), self.env.grants)
+        self.assertIn("отклонено", await self.env.turn(self.runtime))
+        # A rightful actor's rejected intent is cleared, not executed.
+        self.env.session_manager.consume_pending_confirmation.assert_awaited_once()
+        self.assertNotIn("pending_confirmation", self.env.session.state)
+        self.env.publisher.assert_not_awaited()
+
+    async def test_workspace_role_change_during_mock_consume_never_dispatches(self):
+        await self.stage()
+        self.env.after_consume = lambda: self.env.workspace_role("admin")
+        self.assertIn("отклонено", await self.env.turn(self.runtime))
+        self.env.session_manager.consume_pending_confirmation.assert_awaited_once()
+        self.env.publisher.assert_not_awaited()
+
+    async def test_unresolved_and_unknown_workspace_roles_cannot_resolve_identity(self):
+        for role_id, role in ((None, None), (3, SimpleNamespace(id=3, codename="legacy-superuser"))):
+            with self.subTest(role=role):
+                self.env.membership.role_id = role_id
+                self.env.membership.role = role
+                self.assertIsNone(await self.env.resolve())
+                await self.env.turn(self.runtime)
+                self.env.publisher.assert_not_awaited()
+
+    async def test_platform_admin_cannot_replace_viewer_workspace_digest_rights(self):
+        env = self.env
+        env.user.role.codename = env.enums.PlatformRoleType.ADMIN
+        env.user.has_admin_access = lambda: True
+        env.user.has_perm_for = lambda *args: True
+        env.workspace_role("viewer")
+        actor = await env.resolve()
+        self.assertFalse(actor.is_owner)
+        with env.tenant.tenant_scope(31):
+            reply, stop = await self.runtime._dispatch_or_stage(env.session, "digest_send_now", {}, "c1", actor)
+        self.assertFalse(stop)
+        self.assertIn("нет прав", reply)
+        self.assertNotIn("pending_confirmation", env.session.state)
+        env.publisher.assert_not_awaited()
+
+    async def test_current_workspace_presets_control_digest_staging_and_dispatch(self):
+        for role in ("owner", "admin", "manager", "analyst", "viewer"):
+            with self.subTest(role=role):
+                self.env = SUPPORT.DigestEnvironment()
+                self.runtime = self.env.runtime()
+                env = self.env
+                env.workspace_role(role)
+                # Owner's AI admission is implicit; other allowed roles opt in.
+                env.membership.ai_chat_enabled = role != "owner"
+                actor = await env.resolve()
+                self.assertTrue(actor.ai_chat_enabled)
+                self.assertEqual(actor.workspace_role_codename, role)
+                self.assertEqual(actor.is_owner, role == "owner")
+                self.assertEqual(actor.member_grants, env.catalog.workspace_grants(role))
+                if role in ("owner", "admin", "analyst"):
+                    await self.stage()
+                    await env.turn(self.runtime)
+                    env.publisher.assert_awaited_once()
+                else:
+                    with env.tenant.tenant_scope(31):
+                        reply, stop = await self.runtime._dispatch_or_stage(
+                            env.session, "digest_send_now", {}, "c1", actor
+                        )
+                    self.assertFalse(stop)
+                    self.assertIn("нет прав", reply)
+                    env.publisher.assert_not_awaited()
+
+    async def test_pre_cutover_authorization_and_permission_names_cannot_reuse_approval(self):
+        for legacy in ("version2", "bare-create"):
+            with self.subTest(legacy=legacy):
+                self.env = SUPPORT.DigestEnvironment()
+                self.runtime = self.env.runtime()
+                pending = await self.stage()
+                if legacy == "version2":
+                    pending["authorization"]["version"] = 2
+                else:
+                    actor = await self.env.resolve()
+                    self.env.spec.required_permission = "digestrun.create"
+                    pending = self.env.confirmation.make_pending_intent(
+                        actor, self.env.session, self.env.spec, {}, "old-bare"
+                    )
+                    self.env.spec.required_permission = "notifications.digest_run.create"
+                self.env.session.state["pending_confirmation"] = pending
+                self.assertIn("отклонено", await self.env.turn(self.runtime))
+                self.env.publisher.assert_not_awaited()
+                self.env.session_manager.consume_pending_confirmation.assert_awaited_once()
+                self.assertNotIn("pending_confirmation", self.env.session.state)
 
     async def test_expired_confirmation_refuses_yes(self):
         await self.stage()
@@ -216,6 +334,42 @@ class DigestWebBoundaryTests(unittest.IsolatedAsyncioTestCase):
         request = self.env.web_request(frozenset())
         await self.send(request)
         self.env.publisher.assert_not_awaited()
+
+    async def test_platform_admin_viewer_cannot_send_or_widen_posted_workspace(self):
+        env = self.env
+        env.user.role.codename = env.enums.PlatformRoleType.ADMIN
+        env.user.has_admin_access = lambda: True
+        env.user.has_perm_for = lambda *args: True
+        env.workspace_role("viewer")
+        request = env.web_request()
+        self.assertFalse(request.state.web_perms.is_superuser)
+        reply = await self.send(request, tenant_id=999)
+        self.assertEqual(reply.status_code, 302)
+        self.assertEqual(request.session["_flashes"][-1]["kind"], "error")
+        self.assertEqual(env.webdeps.action_tenant_id(request, 999), 31)
+        env.publisher.assert_not_awaited()
+
+    async def test_current_workspace_presets_control_web_digest_send(self):
+        for role in ("owner", "admin", "manager", "analyst", "viewer"):
+            with self.subTest(role=role):
+                self.env = SUPPORT.DigestEnvironment()
+                self.handler = self.env.web()
+                self.env.workspace_role(role)
+                request = self.env.web_request()
+                await self.send(request)
+                if role in ("owner", "admin", "analyst"):
+                    self.env.publisher.assert_awaited_once()
+                else:
+                    self.assertEqual(request.session["_flashes"][-1]["kind"], "error")
+                    self.env.publisher.assert_not_awaited()
+
+    async def test_ai_chat_flag_is_not_a_web_digest_permission(self):
+        self.env.workspace_role("analyst")
+        self.env.membership.ai_chat_enabled = False
+        request = self.env.web_request()
+        self.assertFalse(request.state.web_perms.can_open_chat)
+        await self.send(request)
+        self.env.publisher.assert_awaited_once()
 
     async def test_foreign_posted_tenant_cannot_widen_ordinary_caller_scope(self):
         seen = []

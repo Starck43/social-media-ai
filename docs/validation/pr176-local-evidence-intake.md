@@ -1,87 +1,79 @@
-# PR #176: local-agent evidence intake
+# Manual digest-send: current-model local intake
 
-## Assignment
+This assignment **replaces** the previous intake and old pinned DB task.
+Source of truth: dev `eb6cad6c56e78768b6482eba312082b849d24712` and the current
+PR #176 head. Do not restore old roles, platform fallback, bare tool codenames,
+authorization version 2 or Kilo-primary/step5 instructions.
 
-Read-only intake first; return the compact result below and stop. Do not run
-tests, bootstrap the app, import settings/models, modify files, switch branches,
-or repair the environment during this intake.
+## Read-only first; return and stop
 
-Read `AGENTS.md`, `.agent/rules.md`, `.agent/workflow.md` and the linked
-[current acceptance record](pr176-digest-send-acceptance.md).
-Inspect `git worktree list` before locating the existing review worktree.
-The historically assigned path is
-`/Users/admin/Projects/social-media-ai-pr176-verify`; it was previously pinned
-to `0c18bab557e70b4e2dbcd378f5e8f2a65aac5c7a`. Preserve its dirty files,
-private task, plugin and backups. Do not reuse a stale path without checking.
+Read current `AGENTS.md`, `.agent/rules.md`, `.agent/workflow.md`,
+`.codex/agents/test-runner.toml`, `docs/ACCESS_MIGRATION.md` and the
+[acceptance record](pr176-digest-send-acceptance.md).
 
-1. Return actual review root, HEAD, branch and dirty **paths**; do not return
-   secrets or unrelated file contents. Check whether any prior pytest/Kilo/
-   pare-test process is still active, reporting only relevant process IDs/state
-   without environment variables or full secret-bearing command lines.
-2. Locate these existing private candidates and return existence, SHA-256 and
-   tracked/untracked/modified status. Read their test/bootstrap behavior locally
-   without importing them; compare with the archived expected hashes:
-
-   | Candidate | Historical SHA-256 |
-   | --- | --- |
-   | `.agent/digest-db-validation-task.md` | `fbef42d5713322f40d55b417c6a1433bc351f8dc67671a31a032107c0fbbe7e1` |
-   | `tests/plugins/bootstrap_free.py` | `809d7880306d1b0dbb76a35afab94e5e446c6b9de6adeb7e52e1703829373be6` |
-   | `tests/test_digest_membership_matrix.py` | `f104d3f0bf23dabdde7d1db7847b5719f2f080d7e3f9e6331e879ba4b1a10771` |
-
-   A missing or changed candidate is a blocker to reusing that old task, not
-   permission to recreate or overwrite it. Return a sanitized relevant source
-   excerpt/diff if necessary for review; never embed DSNs, tokens or private data.
-3. From the existing failed web-suite evidence (`exit 3`, zero collected), extract
-   the **first** redacted exception: class, message, module/file and line,
-   invocation's interpreter/root/plugin arguments, and whether collection,
-   tests, database access or fixture cleanup actually started. Do not rerun to
-   obtain a nicer error. `.agent/test-report.md` is human-audit-only: do not load
-   or return the whole report; use permitted runner output or a human-provided
-   sanitized excerpt. Mark unavailable details unknown.
-4. Report what existing evidence establishes about interrupted-run cleanup and
-   preservation of shared data; distinguish evidence from assumptions. Do not
-   connect to or change the database during this intake. If state is uncertain,
-   retain the R4 stop and identify the reconciliation needed.
-5. Check availability/configuration of the prescribed Kilo → test-runner →
-   pare-test route, or the documented OpenCode fallback, without starting tests.
-   Read the local test-runner tool/config documentation before proposing exact
-   arguments. Report blockers, not global configuration changes.
-
-## Compact return format
+1. Inspect `git worktree list`; locate the existing verification worktree.
+   Historically it was `/Users/admin/Projects/social-media-ai-pr176-verify` at
+   `0c18bab`, but neither that revision nor its private files are current truth.
+   Return actual root/HEAD/branch/dirty paths; preserve all owner changes and
+   backups. Do not switch, repin, reset, overwrite or copy old files into dev.
+2. Check active pytest processes using the exact project preflight
+   `pgrep -fl pytest`, without operators. Return only relevant IDs/state, not
+   environment variables or secret-bearing command lines. Check for relevant
+   previous runner activity; do not kill processes.
+3. Report the current worktree interpreter and whether the new enum/catalog
+   imports and model locations are present by read-only source inspection.
+   Do not import settings/models or trigger application/test bootstrap.
+4. From already available count-only/catalog evidence, report the shared
+   `test_schema` migration/column/role-catalog state. Distinguish it from the
+   documented migration of development `public` to 0096. If the test schema's
+   state or previous cleanup is unknown, mark it BLOCKED; do not connect or run
+   tests to guess, and do not migrate/reset/reseed it. Identify the minimal
+   read-only reconciliation needed for the coordinator's next assignment.
+5. Locate the existing private `.agent/digest-db-validation-task.md`,
+   `tests/plugins/bootstrap_free.py` and `tests/test_digest_membership_matrix.py`.
+   Return existence, tracked/dirty state and hashes. Inspect locally for old
+   role/enum/import/schema assumptions, permission keys and approval version.
+   Treat them as historical candidates, not executable acceptance. Return only
+   relevant sanitized mismatches; never recreate/overwrite missing candidates.
+6. Confirm the current primary route: OpenCode `build`, model
+   `QwenPlan/deepseek-v4-flash-0731`, worktree interpreter/root and readable task
+   attachment. Kilo is secondary only when primary is BLOCKED. Do not change
+   global config, install tools, start agents or execute tests during intake.
+7. If existing permitted runner output contains the first old `exit 3` exception,
+   return its redacted class/message/file/line and actual interpreter/root/plugin
+   arguments. Do not rerun an obsolete revision to recover it. Never load or
+   return the full human-audit-only `.agent/test-report.md`; request a sanitized
+   human excerpt when no permitted runner output exists. Unknown stays unknown.
 
 ```text
-ROOT / HEAD / BRANCH:
-DIRTY PATHS:
-ACTIVE RELEVANT RUNNERS:
-CANDIDATE STATUS + HASHES:
-FIRST REDACTED EXCEPTION / SOURCE / LINE:
-PRIOR INTERPRETER + ROOT + PLUGIN ARGS:
-COLLECTION / TESTS / DB ACCESS / CLEANUP: known or unknown, with evidence
-DATA-PRESERVATION / RECONCILIATION:
-AVAILABLE APPROVED RUNNER ROUTE:
-SANITIZED RELEVANT SOURCE DIFF (only if needed):
-BLOCKERS:
+ROOT / HEAD / BRANCH / DIRTY PATHS:
+ACTIVE RUNNERS:
+INTERPRETER / CURRENT SOURCE COMPATIBILITY:
+TEST_SCHEMA 0096 EVIDENCE (not development public):
+PREVIOUS CLEANUP / REQUIRED READ-ONLY RECONCILIATION:
+PRIVATE CANDIDATES: status, hashes, relevant stale assumptions
+CURRENT OPENCODE ROUTE / BLOCKERS:
+HISTORICAL REDACTED EXCEPTION (only if available and relevant):
 ```
 
-## Boundaries and next phase
+## Next phase, not authorized by this intake
 
-The shared target is already approved for ordinary real ASGI/DB test execution:
-`localhost:5432/social_manager`, `test_schema`. Do not ask the owner to approve
-that same target again. This is **not** approval to reset, drop, create, stamp,
-migrate, reseed, run `conftest.py` bootstrap, restore backups, change permission
-catalogs/guards, or perform live digest/provider sends. Uncertain prior state
-still requires reconciliation, not a reset.
+After intake review, prepare exact current-model integration scope using the
+maintained dev tests, a reviewed bootstrap-free fixture strategy and any missing
+digest-specific matrix. Cover non-owner/non-superuser workspace grants; all five
+presets; platform-admin/workspace-viewer denial; AI and role revocation before
+and after pending consumption; real middleware refresh, CSRF and tenant binding;
+and database CAS/cleanup. Publisher, LLM and transports stay mocked.
 
-Once intake is reviewed and the state is safe, the remaining historical
-integration scope is sequential and bootstrap-free:
-`tests/test_web_digests_jobs.py`, `tests/test_agent_tool_registry.py`,
-`tests/test_permissions.py`, and the reviewed membership matrix. The last two
-require explicit preservation/cleanup checks; do not assume their fixtures are
-harmless. No simultaneous pytest/writers. Use the exact agreed PR head,
-worktree interpreter/root and positional paths through the documented runner.
-Do not silently substitute the old worktree revision for the published head.
+Existing `test_web_digests_jobs.py`, `test_agent_tool_registry.py` and
+`test_permissions.py` have changed in dev; old file names alone are not a valid
+run assignment. No blind reuse of the private matrix or old plugin. Preserve
+reference catalogs, other users' data, guards and journal evidence before/after.
+Run current enum/import collection before execution, through OpenCode-primary
+R10, with exact assigned positional paths, interpreter/root and isolated flags.
+No coordinator pytest fallback. Shared PostgreSQL tests stay sequential.
 
-Do not repeat the assistant's 35 completed mocks, old plugin-only checks or
-unrelated suites. No merge, Ready transition, or acceptance claim during intake.
-Return the evidence so the coordinator can diagnose the actual failure and
-prepare a bounded integration run without guessing.
+The existing shared target approval is not revoked or requested again. It does
+not authorize schema reset/drop/create/stamp/migrate/reseed, bootstrap, live
+providers/senders or deployment. Unknown prior state still stops under R4.
+Do not repeat the 47 completed mocks; do not mark Ready, merge or claim acceptance.

@@ -121,16 +121,11 @@ Setup details: [CONFIGURATION](docs/CONFIGURATION.md),
 ## Development
 
 Read [AGENTS.md](AGENTS.md), `docs/RULES.md` and `docs/COLLABORATION.md` before
-work. Use the project virtualenv and assign the narrowest relevant check through the
-primary OpenCode test-runner route (secondary: Kilo test-orchestrator → test-runner →
-pare-test) in
-[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree).
-Do not run pytest directly from the coordinating process. If that route is
-blocked, follow only the documented fallback; a blocked runner is not a green check.
-
-Database tests share the configured test schema and run sequentially. Schema
-create/reset/drop/stamp/migrate operations require explicit owner instruction.
-Do not run a broad suite merely for a documentation-only change.
+work. They define test delegation (primary OpenCode route, sequential shared
+test schema, explicit owner instruction for any schema operation) and
+handoff/closeout; see
+[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree)
+for the exact launch commands.
 
 Development reading order:
 

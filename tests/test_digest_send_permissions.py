@@ -1,6 +1,6 @@
 """Manual digest send rights and confirmation, without DB/providers/transports.
 
-Reuse the actual-source boundary loader; only infrastructure is stubbed.
+Use private module-local source bindings; only infrastructure is stubbed.
 Owner-local integration checks remain separate from this isolated regression.
 """
 
@@ -10,8 +10,6 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,45 +22,13 @@ def load_source(name, path):
     return module
 
 
-HELPERS = load_source("_digest_dispatch_helpers", "tests/test_tool_dispatch_permissions.py")
+SUPPORT = load_source("_digest_permission_support", "tests/digest_permission_support.py")
 
 
 class DigestSendPermissionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        HELPERS.DispatchPermissionTests.setUp(self)
-        self.user.id = 12
-        self.user.role_id = 2
-        self.actor = self.confirmation.RuntimeIdentity(
-            tenant_id=31,
-            user_id=12,
-            membership_id=41,
-            channel="telegram",
-            chat_id="7",
-            external_user_id="7",
-            membership_role_id=3,
-            user_role_id=2,
-            is_owner=False,
-            user=self.user,
-        )
-        self.session = SimpleNamespace(id=51, tenant_id=31, channel="telegram", chat_id="7", is_active=True)
-        with patch.dict(
-            sys.modules,
-            {
-                "app.agent.tools": self.tools,
-                "app.services.ai.reporting": HELPERS.HELPERS.module_with(ReportAggregator=object),
-            },
-        ):
-            load_source("_digest_reports_source", "app/agent/toolset/reports.py")
-        self.spec = self.tools.get_tool("digest_send_now")
-        self.publisher = AsyncMock(return_value={"status": "sent"})
-        builder_patch = patch.dict(
-            sys.modules,
-            {
-                "app.services.digest.builder": HELPERS.HELPERS.module_with(build_and_publish=self.publisher),
-            },
-        )
-        builder_patch.start()
-        self.addCleanup(builder_patch.stop)
+        environment = SUPPORT.DigestEnvironment()
+        self.__dict__.update(vars(environment))
 
     def grant(self, action):
         self.user.has_perm_for = lambda model, right: model == "digestrun" and right == action

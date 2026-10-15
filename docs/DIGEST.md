@@ -305,3 +305,6 @@ current right before dispatch. Pending confirmations recorded under the old
 again. The read-only `report_period` tool retains `digestrun.view`. This does
 not change scheduled/operator sends, channel scope, delivery safeguards or
 external-write activation policy.
+
+PR #176's current mock results, integration limits and local follow-up are
+tracked in [manual-send acceptance](validation/pr176-digest-send-acceptance.md).

@@ -254,6 +254,8 @@ MANAGER = load_isolated_source(
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=OwnedDouble),
         "app.models.managers.llm_dispatch_receipt_manager": SimpleNamespace(LLMDispatchReceiptManager=None),
         "app.services.ai.budget_baselines": PACKET,
+        # Existing manager initializer still uses dev's supported analysis alias.
+        "app.models.analysis.llm_budget": DAYS,
         "app.models.llm.llm_budget": DAYS,
         "app.models.llm.llm_budget_baseline": MODELS,
         "app.models.tenancy.tenant": SimpleNamespace(Tenant=Tenant),

@@ -407,7 +407,7 @@ settlement, release, all-path accounting and rollout stay OPEN.
 with immutable review/fence provenance, not a baseline inferred from projections
 or a version string. [The bounded contract](design/reviewed-budget-baseline.md)
 defines retained evidence, old-worker/in-flight attestation and migration
-**definition** 0096 (NOT APPLIED). All newly provisioned days start frozen; this
+**definition** 0097 after access0096 (NOT APPLIED). All newly provisioned days start frozen; this
 slice supplies no unfreeze/activation method. One owned transaction locks payer
 then day and inserts both initial balances and their provenance. Acknowledged
 fresh insertion returns True; exact original-packet replay returns False without
@@ -419,6 +419,12 @@ settlement/release path changes. Admission continues to require a separately
 reviewed usable day, and is still UNWIRED. Packet syntax/digest checks are not
 operator authorization or proof of external worker fencing. Real PostgreSQL
 acceptance, schema application, liability reconciliation and rollout remain open.
+
+Canonical baseline model follows `app.models.llm`; the internal provenance table
+is deliberately outside the explicit access catalog, with no new permissions or
+role grants. Authoritative access0096 and manager bootstrap remain unchanged.
+Old baseline0096 instructions are superseded; a target still at0095 requires
+separately reviewed access migration before baseline0097 acceptance.
 
 ### Proposed all-path accounting and admission contract
 

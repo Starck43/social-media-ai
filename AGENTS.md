@@ -6,7 +6,7 @@
 - Claim a task in ROADMAP.md and its phase file before work; on resolution update the phase file (status + evidence) and delete the ROADMAP row. New questions that need separate elaboration go to ROADMAP.md `## Questions` (Q-<n>) and are deleted when resolved.
 - Docs: `docs/DOCS_INDEX.md` (index), `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/design/assistant-shell.md` (shell contract).
 - Agent roles: Codex = main coordinator and approver (accepts READY tasks, closes phases; does not run pytest or commit directly). OpenCode = executor, primary pytest runner (`.agents/skills/test-runner/`), and the only local committer; also a subagent for simple bounded tasks — completes them fully and returns a ready answer or explicit blockers/questions. Kilo = secondary test route (only when OpenCode is BLOCKED). Remote agents = GitHub PR lanes (`.agents/skills/remote/`), local relay via `.agents/skills/remote-agent-helper/`.
-- Subagents: `.codex/agents/test-runner.toml` is the primary pytest delegation route (OpenCode `QwenPlan/deepseek-v4-flash-0731`); `.codex/agents/kilo-test-runner.toml` is the Kilo secondary. `.agents/tmp/` holds task files and test reports (human-audit evidence only — never main-context input).
+- Subagents/test delegation: `.codex/agents/test-runner.toml` (OpenCode `QwenPlan/deepseek-v4-flash-0731`, primary), `.codex/agents/kilo-test-runner.toml` (Kilo, secondary). Evidence in `.agents/tmp/` is human-audit only — never main-context input.
 - Local IDE/CLI: `$local`; remote GitHub: `$remote`; same registry, phases and PR handoff.
 - Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 
@@ -20,7 +20,7 @@
   lanes need separate worktrees and exclusive file ownership. Shared-DB tests
   always stay sequential.
 - On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. Prepare and review a scoped staged diff, then delegate every local `git commit` to OpenCode; the coordinating Codex does not commit directly. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
-- Tests: every pytest run follows `docs/RULES.md` R10 and is delegated through the primary OpenCode `test-runner`. Proven independent no-DB scopes may run in parallel; checks using the shared PostgreSQL test schema stay sequential. Neither Codex coordinator nor Codex subagents run pytest directly. Remote agents use the narrow no-database exception in `.agents/skills/remote/`.
+- Tests: assign every pytest scope per `docs/RULES.md` R10 — primary OpenCode `test-runner`, shared test schema sequential (R8), Codex never runs pytest; remote agents use the no-DB exception in `.agents/skills/remote/`.
 - Keep context small: lazy reads (rg, line ranges); read only the selected phase file, subsystem doc and call sites; reuse completed evidence at its exact revision; one bounded task per session/PR; summaries in chat, evidence in files/PRs.
 
 ## Understand common requests

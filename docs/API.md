@@ -1,8 +1,9 @@
 # API Reference
 
 FastAPI application exposes REST endpoints under `/api/v1` and the sqladmin
-panel under `/admin`. All API endpoints (except health check) require
-authentication via Bearer JWT token.
+panel under `/admin`. Workspace data endpoints require an access Bearer JWT
+and an active web membership. Token acquisition, registration and the signed-state
+OAuth callback have the explicit exceptions listed below.
 
 ## Base URL
 
@@ -12,7 +13,11 @@ http://localhost:8000/api/v1
 
 ## Authentication
 
-All endpoints (except `GET /api/v1/health`) require a JWT access token.
+`ApiScopeMiddleware.PUBLIC_API_PATHS` exempts `/api/v1/auth/login`,
+`/api/v1/auth/register`, `/api/v1/auth/refresh-token`, `/api/v1/health` and
+`/api/v1/social/callback` from access-token/workspace middleware. Refresh still
+requires a valid **refresh** Bearer token; OAuth callback validates signed state.
+The root `/livez`, `/readyz` and `/health` probes are outside `/api/*`.
 
 ### Login
 
@@ -64,13 +69,16 @@ Content-Type: application/json
 {
   "username": "johndoe",
   "email": "johndoe@example.com",
-  "password": "strongpassword123",
-  "is_active": true,
-  "is_superuser": false
+  "password": "strongpassword123"
 }
 ```
 
-**Response** `201 Created`: same as login response.
+**Response** `200 OK`: same token-pair shape as login. Only username, email
+and password are accepted. Extra privilege/state keys (`role_id`, `is_superuser`,
+`is_active`) are ignored; the server assigns active, non-superuser and the Viewer
+platform role ([PR #165](https://github.com/Starck43/social-media-ai/pull/165)).
+Registration does not create a workspace/web membership, unlike `/app/register`;
+a new API-only account cannot use workspace data endpoints until a membership exists.
 
 **Errors:**
 - `400` — Username or email already registered.
@@ -156,11 +164,20 @@ GET /api/v1/health
 }
 ```
 
-No authentication required.
+No authentication required. This legacy probe has no bounded timeout and returns
+raw exception text with HTTP 500 on failure. Do not use it as the production
+readiness contract: root `/readyz` and `/health` return generic 200/503 responses
+with a two-second DB probe; `/livez` never queries the DB. Legacy-probe redaction
+is an open audit follow-up, not a code change made by this documentation update.
 
 ---
 
 ## Users
+
+**Current security limitation:** list, `/me` and update handlers declare
+`UserInDB`, which includes `hashed_password`; the abbreviated examples below
+are not a safe-response guarantee. Removing that field from public response
+models is an open audit task. Never copy real hashes into reports or logs.
 
 ### List Users
 
@@ -217,7 +234,13 @@ Content-Type: application/json
 
 **Permissions:** `user.update`
 
-Admins can update any user, users can update themselves.
+The endpoint and `UserManager.update_user` permit another target only when
+`current_user.is_superuser` is true; an ADMIN-role account without that flag is
+limited to itself despite `user.update`. `UserUpdate` still accepts `is_active`
+and `is_superuser`, and the self-update path forwards them without a separate
+privilege-field gate. This is an open escalation finding for an account holding
+`user.update`, not authority for an ordinary Viewer and not fixed by the
+registration-only protection in PR #165.
 
 ### Delete User
 
@@ -1474,7 +1497,6 @@ GET /dashboard/topic-chains
   "base_url": "https://api.openai.com/v1",
   "auth_header": "Bearer",
   "is_active": true,
-  "is_default": true,
   "created_at": "ISO datetime",
   "updated_at": "ISO datetime"
 }

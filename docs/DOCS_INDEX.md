@@ -41,6 +41,11 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [Agent workflow](../AGENTS.md) and [workflow details](../.agent/workflow.md) — concise instructions, audit and delegation lifecycle.
 - [Current work](design/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
 
+## Pending source-audit follow-ups
+
+- [PR #196](https://github.com/Starck43/social-media-ai/pull/196) — ten source-verified TODO contracts and evidence; runtime
+  implementation remains open. Persistent allocation is in the current-work board.
+
 ## Maintenance rule
 
 Each fact has one owner: product direction in `PRODUCT_PLAN.md`, target boundaries

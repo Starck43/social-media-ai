@@ -16,9 +16,18 @@ Session-based authentication. The admin panel requires a logged-in user session.
 
 ```
 GET  /admin/reset-password     → form (email + CSRF token)
-POST /admin/reset-password     → generates temp password, logs to console
+POST /admin/reset-password     → replaces password, logs a temporary password
 GET  /admin/login?message=password_reset → login with temp password
 ```
+
+**Unsafe legacy behavior — open audit finding:** this custom FastAPI route is
+registered outside SQLAdmin model/action guards. Its GET issues a CSRF token to
+an anonymous caller; POST looks up any supplied email, replaces that account
+password without proving account ownership and logs the generated six-character
+password. CSRF and request-rate limits do not authorize an account reset. Do not
+treat this as an approved production recovery procedure. A one-use, expiring,
+account-bound recovery proof (or authorized operator-only reset) and removal of
+password logging require a separate code fix. No reset was performed by this audit.
 
 ### Change Password (logged-in user)
 
@@ -336,15 +345,21 @@ external actions or sanitize URL schemes.
 
 ### Session Authentication
 
-- Uses sqladmin's `AuthenticationBackend` with session storage
-- Token stored in browser session cookies
-- Configurable timeout via `LOGIN_TIMEOUT_MINUTES`
+- Uses SQLAdmin authentication plus Starlette signed browser session cookies,
+  not a server-side session store. Signed content is not encrypted.
+- Access JWT is stored in that cookie; the outer SessionMiddleware lifetime is
+  24 hours and access-token expiry follows environment-specific settings.
+- `LOGIN_TIMEOUT_MINUTES` controls the legacy admin lockout interval, not
+  cookie/session lifetime. Current ordinary bad-password failures do not call
+  `track_login_attempt`; counters are cookie-local, and API/web login have no
+  corresponding shared throttle. Login protection is an open audit task.
 
 ### Permission Checks
 
 - All admin operations run with `PlatformScopeMiddleware` (bypass tenancy)
 - The admin panel is the operator's console, not a client API
-- Password reset requires the user to exist and have admin-like permissions
+- The legacy password-reset route checks only email existence plus CSRF; it
+  does not check admin-like permissions. See the unsafe-flow warning above.
 
 ### Password Policy
 

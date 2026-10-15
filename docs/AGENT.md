@@ -40,7 +40,7 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
-### Permission gates (prepared in draft PR #22)
+### Permission gates (integrated foundation, PR #22)
 
 Runtime допускает только активного участника с привязанным активным User и
 согласованными tenant/channel/chat. Роли и права загружаются явно; authority
@@ -75,9 +75,10 @@ raw manager writes требуют отдельного аудита. Trusted ser
    refused: request the action again. Older runtimes reject version 2 rather than
    authorizing an action without atomic consumption.
 
-The prepared compare-and-consume boundary admits at most one handler invocation
-for the same stored intent across cooperating processes; PostgreSQL acceptance
-is pending local verification. This is not an external-effect transaction fence
+The integrated compare-and-consume boundary (PR #105) admits at most one handler
+invocation for the same stored intent across cooperating processes. Owner-local
+bounded acceptance is attributed in [implementation status](IMPLEMENTATION_STATUS.md);
+this documentation audit does not rerun or broaden that evidence. This is not an external-effect transaction fence
 or exactly-once delivery guarantee. A crash after consumption can leave an action
 unexecuted, and an uncertain commit is not automatically replayed. Privileged
 full-state replacement must not resurrect a consumed intent.
@@ -92,10 +93,10 @@ by this boundary. This package neither deploys nor authorizes a rollout.
 без approval/result/attempt writes и без отправки. Live request отклоняется.
 Другие publication paths этим пакетом глобально не перепроектированы.
 
-The atomic-consumption checks are prepared, not executed remotely: manager
-transaction doubles, actual runtime/registry race and rejection checks, and
-owner-only PostgreSQL serialization/rollback/acknowledgement probes.
-Use the current PR handoff for exact commands and revision; constraints are in
+Atomic-consumption verification and its historical limitations belong to
+[PR #105](https://github.com/Starck43/social-media-ai/pull/105), not the older
+PR #22 preparation status. Use that PR and the implementation index for the
+exact tested revision and evidence attribution; constraints are in
 [TENANCY](TENANCY.md) and [business readiness](BUSINESS_PRODUCTION_READINESS.md).
 PR #22 is integrated, while full durable approval lifecycle work remains open.
 
@@ -192,8 +193,11 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 ### Telegram/MAX users
 
 Для telegram/MAX users User разрешается через `tenant_users` → `user_id` → `User`.
-Если `user_id = NULL` (unmessenger user), permission checks пропускаются
-(`has_permission(None, ...) = True` via bypass for legacy rows).
+Missing `user_id`, inactive/unbound User, inactive membership/workspace or a
+missing active chat binding denies runtime access. `has_permission(None, ...)`
+is false outside an explicit trusted bypass. A NULL membership role grants no
+workspace rights and is not ownership; resolver/env owner flags cannot substitute
+for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 
 ## Задачи в чате
 
@@ -293,4 +297,8 @@ prompts. The existing chat loop selects the cost-efficient text model; no second
 narrative LLM call is introduced. `digest_send_now` remains confirmation-gated,
 uses the configured quality/default text model for narrative and honors caps.
 Quality is configuration, not a price-based estimate. Existing permission gates
-(`digestrun.view`, `aianalytics.view`, `digestrun.update`) remain unchanged.
+are `digestrun.view` for report previews, `aianalytics.view` for chain tools and
+`digestrun.create` for manual send. The manual-send change is present in dev via
+`6d16436`; [PR #176](https://github.com/Starck43/social-media-ai/pull/176) remains
+Draft/open with separate acceptance deferred. Code presence is not a merged-PR
+or whole-gate acceptance claim.

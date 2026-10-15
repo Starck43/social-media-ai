@@ -1,21 +1,40 @@
 # Data Model Reference
 
-Current access-model changes and domain moves require prepared migration 0096;
-this is a source contract, not a claim that a database has been migrated.
-`User.is_superuser` is removed; platform authority comes from the account role.
-`WorkspaceRole` is a separate checked catalog with its own permission association.
-Membership/invitation `role_id` references that catalog; membership also stores
-`ai_chat_enabled` (false by default, owner access effective regardless of flag).
-`AgentMemory.user_id` owns personal facts; NULL denotes the owner-only legacy
-bucket, with separate partial unique indexes for personal and legacy identities.
-Models use domain packages and one manager-binding stage in `app.models.bootstrap`.
-LLM canonicals live in `app.models.llm`; `DigestRun` in notifications. Legacy
-imports re-export the same mapped classes. See [TENANCY](TENANCY.md) and
-[ACCESS_MIGRATION](ACCESS_MIGRATION.md).
+Reconciled on 2026-10-15 against source `dev`
+`edbe0fc02e6ea2d78302129e51febfa0e87464ab` (the task reservation commit
+`916d2e18eeafdd86d4857587638b73a24bcd0891` changes only the ownership board).
+The source-declared Alembic head is **0096**. This reference describes ORM and
+migration definitions, not the revision or integrity of a running database.
+No application import, database inspection or migration was run for this update.
+Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
 
-Reconciled against dev `84ee16d284a6355006dd71c7157a0744ab203ddd` on 2026-10-12 by inspecting the canonical ORM model definitions, BaseManager and revisions through 0091. This is a source reference, not an inspection of a running database or a certification of every historical migration. Schema comes from `settings.DB_SCHEMA`; do not hardcode it in application code.
+The public facade is [app.models](../app/models/__init__.py); canonical definitions
+live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
+once after class registration. Root-level modules and the older `analysis.llm_*`
+/ `scheduling.digest_run` modules are compatibility re-exports of the same mapped
+classes, not additional tables. `Role` aliases `PlatformRole`; it is not another
+mapper. See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 
-All current model tables and association tables are indexed below. Field inventories omit inherited fields where indicated. Exact SQLAlchemy declarations, defaults and nullability remain linked at each table; the critical mismatches in the previous reference are corrected explicitly. For deployment state use Alembic in the target environment. For retry activation and work in review use [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md), not this schema reference.
+Field inventories omit inherited fields where indicated. Exact types, defaults,
+nullability and constraints remain in the linked declarations. Planned work and
+PR branches are not current schema: see [delivered evidence](IMPLEMENTATION_STATUS.md)
+and the [ownership board](design/README.md). Merge, migration application, runtime
+activation and whole-gate acceptance are distinct states.
+
+### Table inventory
+
+The source defines **31 mapped tables and 3 association tables**:
+
+| Domain | Mapped tables | Association tables |
+| --- | --- | --- |
+| Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials` | `role_permission` |
+| Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles` | `workspace_role_permission` |
+| Collection | `platforms`, `sources`, `collected_items` | — |
+| Analysis | `agent_scenarios`, `ai_analytics` | — |
+| LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
+| Scheduling | `agent_tasks`, `jobs`, `bot_actions` | `agent_task_sources` |
+| Notifications | `notifications`, `digest_runs` | — |
+| Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
 
 ## Base classes and isolation boundaries
 
@@ -29,7 +48,9 @@ All current model tables and association tables are indexed below. Field invento
 
 ## Global catalog and identity tables
 
-Timestamp fields apply to every table in this section except `platforms` and `role_permission`.
+Timestamp fields apply to the catalog/identity models below except `platforms`.
+Association tables have no timestamps. LLM evidence/budget timestamp exceptions
+are stated in their own section.
 
 ### `platforms`
 
@@ -45,23 +66,23 @@ Timestamp fields apply to every table in this section except `platforms` and `ro
 
 ### `workspace_roles` and `workspace_role_permission`
 
-[Source](../app/models/tenancy/workspace_role.py). Independent role catalog: `id` PK; unique checked `codename` (`owner`, `admin`, `manager`, `analyst`, `viewer`); nullable text `description`. The association has composite PK (`role_id`, `permission_id`) referencing workspace roles and permissions. Effective workspace grants use the fixed catalog presets.
+[Source](../app/models/tenancy/workspace_role.py). Independent role catalog with timestamps: `id` PK; unique checked `codename` (`owner`, `admin`, `manager`, `analyst`, `viewer`); nullable text `description`. The association has composite PK (`role_id`, `permission_id`) referencing workspace roles and permissions. Effective workspace grants use the fixed catalog presets.
 
 ### `model_types`
 
-[Source](../app/models/identity/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; unique `resource_key`, `model_name`, `table_name` String(100), non-null; `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
+[Source](../app/models/identity/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; unique/non-null `resource_key` String(100); non-null `model_name` and `table_name` String(100) (neither is declared unique in the ORM); `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
 
 ### `permissions`
 
-[Source](../app/models/identity/permission.py). Fields: `id` PK; `name` non-null text label; `action_type` native action enum; `model_type_id` FK to resource metadata. Unique (`model_type_id`, `action_type`). `codename` is a computed property (`resource_key.action`), not a stored column. Exact registered keys and explicit one-release legacy aliases resolve through the shared catalog.
+[Source](../app/models/identity/permission.py). Fields: `id` PK; `name` non-null text label; `action_type` native action enum; `model_type_id` FK to resource metadata. Unique (`model_type_id`, `action_type`). No stored `description` column. `codename` is a computed property (`resource_key.action`), not a stored column. Exact registered keys and explicit one-release legacy aliases resolve through the shared catalog.
 
 ### `users`
 
-[Source](../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; non-null `role_id` FK → roles. No `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
+[Source](../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; non-null `role_id` FK → roles. No `is_superuser` column or `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
 
 ### `llm_providers`
 
-[Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
+[Source](../app/models/llm/llm_provider.py). Fields: `id` PK; `name` String(255), unique/non-null; `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. No `is_default` column. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Global fleet; no tenant override or private-device route in this table.
 
 ### `llm_models`
 
@@ -110,7 +131,8 @@ Declared CHECK allows **starter/pro/business**; `personal` is historical, migrat
 
 ## Tenant-scoped collection and analysis
 
-Every table below inherits tenant_id and timestamps.
+Collection and analysis tables below inherit tenant_id and timestamps. LLM
+evidence/budget tables have the separate timestamp and deletion rules below.
 
 ### `sources`
 
@@ -136,16 +158,54 @@ Methodology belongs here; schedule, source selection, triggers and approval guar
 
 Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`); indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
 
-### `llm_dispatch_receipts` — definition only, not activated
+## Tenant-scoped LLM accounting and admission storage
+
+These five tables inherit the tenant-scoped marker, **not TimestampMixin**.
+`llm_attempts`, receipts and outcome events declare only server-created
+`created_at`; neither budget table declares timestamps. Receipts, outcome events
+and both budget tables override the inherited payer FK to **RESTRICT**.
+`llm_attempts` retains the inherited **CASCADE** payer FK. None of these tables
+has a registered SQLAdmin model view; ORM registration is not admin exposure.
+
+### `llm_attempts` — captured attempt journal
+
+[Source](../app/models/llm/llm_attempt.py),
+[manager](../app/models/managers/llm_attempt_manager.py),
+[migration 0092](../migrations/versions/0092_add_llm_attempt_journal.py).
+
+Fields: `id` PK; globally unique/non-null `attempt_key` String(64); non-null
+`purpose`, `stage`, `cost_certainty`, `outcome` String(32); nullable plain Integer
+`source_id`, `job_id`, `agent_task_id`, `llm_model_row_id`; nullable Date
+`analysis_date`; nullable `model_id`, `provider_name` String(200); nullable
+Numeric(18,8) tariff snapshots `input_cost_per_1k`, `output_cost_per_1k`; nullable
+Integer `prompt_tokens`, `completion_tokens`; nullable Numeric(18,9) **Decimal USD**
+`cost_usd`; timezone-aware non-null server `created_at`. Indexes: tenant,
+(source_id, analysis_date), job. No source/job/task/model FKs or `updated_at`.
+
+Captured analyzer stages, fallback chat attempts, digest summaries and the agent
+model-test tool use this journal. Admin connection/model probes are a separate
+unresolved payer/accounting boundary, not evidence of all-path capture. Unknown
+usage/tariff stays explicit; NULL cost is never silently free or zero. The
+specialized `record_attempt()` acknowledges an owned committed insert or an exact
+payer-bound replay; conflicting evidence raises. Its insert-only contract is
+**not a migration-installed immutability trigger**: 0092 installs none, and its
+downgrade drops the journal. Do not infer the stronger 0093–0095 storage guards
+or safe automatic rollback from this journal's name. See
+[accounting scope and evidence](IMPLEMENTATION_STATUS.md).
+
+### `llm_dispatch_receipts` — storage merged, runtime unwired
 
 [Source](../app/models/llm/llm_dispatch_receipt.py); migration
 definition 0093 follows 0092. This is preparation evidence, not a paid attempt,
-provider outcome, budget reservation or HTTP authorization. No client uses it.
+provider outcome or HTTP authorization. The reservation manager can persist a
+receipt atomically with a reservation, but paid clients are not wired to require
+that admission.
 
 Fields: `id`; explicit `tenant_id` FK **RESTRICT**; unique raw `dispatch_id`
 String(32); `purpose`/`stage` String(32); timezone-aware `prepared_at` and its UTC
-`utc_day`; model/provider row IDs plus historical names; nullable Decimal USD
-input/output rates Numeric(18,8); `tariff_state` (`known`, `free`, `undefined`)
+`utc_day`; non-null Integer `llm_model_row_id`, `llm_provider_row_id` plus non-null
+`model_id`, `provider_name` String(200); nullable Decimal USD
+`input_cost_per_1k`, `output_cost_per_1k` Numeric(18,8); `tariff_state` (`known`, `free`, `undefined`)
 and `pricing_policy_version`; nullable plain `source_id`, `job_id`,
 `agent_task_id`, `agent_session_id`; server-created timezone-aware `created_at`.
 Execution/model references have no foreign keys. No prompt, secrets, cost,
@@ -158,7 +218,7 @@ when empty. Schema application, offboarding and evidence-preserving rollback
 need separate review/approval. See the
 [storage boundary](AI_PIPELINE_AND_PROMPTS.md#preparation-receipt-storage-foundation-not-activated).
 
-### `llm_outcome_events` — definition only, not activated
+### `llm_outcome_events` — storage merged, runtime unwired
 
 [Source](../app/models/llm/llm_outcome_event.py); migration definition 0094
 follows 0093. Append-only observations/reconciliations reference a preparation
@@ -169,7 +229,7 @@ attempts**.
 Fields: `id`; explicit `tenant_id` FK RESTRICT; globally unique `event_id`
 String(32); `dispatch_id` FK to the receipt's unique identity, RESTRICT;
 `event_kind`, timezone-aware `observed_at`, `dispatch_state`, `outcome`; nullable
-Integer prompt/completion counts; `provider_price_state`, nullable decimal-only
+Integer `prompt_tokens`, `completion_tokens`; `provider_price_state`, nullable decimal-only
 `provider_cost_raw` String(128), nullable Decimal USD `cost_usd` Numeric(18,9);
 `cost_certainty`, `price_source`, `pricing_policy_version`; server `created_at`.
 No prompt, credentials, raw provider response or mutable model reference is kept.
@@ -181,10 +241,48 @@ zero. The manager also recomputes all pricing from the persisted receipt and
 requires the enabled receipt/event guards. Metadata bootstrap lacks those guards
 and is not approved. Direct SQL is not an alternative pricing API.
 
-Definition application, PostgreSQL validation, retention/offboarding and rollout
-require separate review/approval. Ordinary downgrade refuses deletion. Both the
+Existing isolated/owner-local validation is attributed in
+[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); this update did not repeat it.
+Application to another target, retention/offboarding and rollout require separate
+review/approval. Ordinary downgrade refuses deletion. Both the
 event and parent receipt block tenant deletion when retained. See the
 [outcome boundary](AI_PIPELINE_AND_PROMPTS.md#immutable-outcome-event-storage-foundation-not-activated).
+
+### `llm_budget_days` — reviewed balance foundation, runtime unwired
+
+[Source](../app/models/llm/llm_budget.py),
+[migration 0095](../migrations/versions/0095_add_llm_budget_reservations.py).
+Fields: `id` PK; explicit non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
+non-null Numeric(18,9) **Decimal USD** `settled_usd`, `reserved_usd`; non-null
+Integer `undefined_count`, `unbounded_count`; non-null Boolean `frozen`
+default/server default true; non-null `baseline_version` String(64). No timestamps.
+Unique (`tenant_id`, `utc_day`); CHECKs bound nonnegative amounts and counts.
+There are no zero defaults for balances/counts: a reviewed baseline is required.
+The merged manager does not provision daily baselines or refund at expiry/day
+rollover. Draft work such as PR #197 is not part of this source baseline.
+
+### `llm_budget_reservations` — receipt-bound storage, runtime unwired
+
+[Source](../app/models/llm/llm_budget.py),
+[manager](../app/models/managers/llm_budget_manager.py),
+[migration 0095](../migrations/versions/0095_add_llm_budget_reservations.py).
+Fields: `id` PK; non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
+globally unique/non-null `dispatch_id` String(32), FK to receipt identity RESTRICT;
+non-null `ceiling_state` String(16), `undefined_policy_version` String(32);
+nullable Numeric(18,9) **Decimal USD** `ceiling_usd`, `cap_usd`; nullable
+`bound_version` String(64). No timestamps. Composite FK (`tenant_id`, `utc_day`)
+references the payer/day unique key with RESTRICT. CHECKs enforce identity,
+`bounded`/`unbounded`/`undefined` state, amount/cap consistency and policy version.
+
+0095 defines UPDATE/DELETE/TRUNCATE rejection and receipt-binding INSERT guards.
+`reserve_receipt()` requires installed guards and an explicit active payer,
+locks payer/day, validates the current cap and reviewed unfrozen baseline, then
+commits receipt, reservation and balance changes in one owned transaction. Exact
+replay returns false: **not permission to dispatch again**. There is no terminal
+settlement/release, automatic baseline provisioning or all-client HTTP wiring in
+this merged slice. Baseline/bound production and activation remain open. See
+[delivered scope](IMPLEMENTATION_STATUS.md) and
+[budget validation attribution](validation/llm-budget-pg-runner.md).
 
 ## Tenant-scoped scheduling and delivery
 
@@ -220,7 +318,10 @@ Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through a
 | `delivery_state` | Nullable JSON, **JSONB on PostgreSQL**, migration 0087 |
 | `llm_cost` | Nullable Float, **USD**, none/unknown allowed |
 
-Unique (`agent_task_id`, `period_start`, `period_end`); nullable task FK means manual runs are not uniquely constrained as scheduled runs are. There is **no `results` JSON column**. Nullable checkpoint history must not be interpreted as definitely unsent. Merged storage/contract/store/parts/transport helpers do not mean the builder activates retry delivery; PR #12's atomic factory is in review at this baseline.
+Unique (`agent_task_id`, `period_start`, `period_end`); nullable task FK means manual runs are not uniquely constrained as scheduled runs are. There is **no `results` JSON column**. Nullable checkpoint history must not be interpreted as definitely unsent.
+Scheduled creation uses an atomic factory and delivery/re-entry fences; merged
+per-part helpers do not mean automatic recipient-level resume is active. Partial
+or ambiguous delivery stops for review; see [DIGEST](DIGEST.md).
 
 ### `notifications`
 
@@ -261,6 +362,8 @@ erDiagram
     roles ||--o{ users : role_id
     roles ||--o{ role_permission : role_id
     permissions ||--o{ role_permission : permission_id
+    workspace_roles ||--o{ workspace_role_permission : role_id
+    permissions ||--o{ workspace_role_permission : permission_id
     model_types ||--o{ permissions : model_type_id
     tenants ||--o{ tenant_users : tenant_id
     users o|--o{ tenant_users : user_id
@@ -306,7 +409,26 @@ erDiagram
     agent_sessions ||--o{ agent_feedback : session_id
     agent_messages o|--o{ agent_feedback : message_id
     agent_messages o|--o{ agent_memory : evidence_message_id
+    users o|--o{ agent_memory : user_id
 ```
+
+### LLM evidence and budget foreign keys
+
+```mermaid
+erDiagram
+    tenants ||--o{ llm_attempts : tenant_id_CASCADE
+    tenants ||--o{ llm_dispatch_receipts : tenant_id_RESTRICT
+    tenants ||--o{ llm_outcome_events : tenant_id_RESTRICT
+    tenants ||--o{ llm_budget_days : tenant_id_RESTRICT
+    tenants ||--o{ llm_budget_reservations : tenant_id_RESTRICT
+    llm_dispatch_receipts ||--o{ llm_outcome_events : dispatch_id_RESTRICT
+    llm_dispatch_receipts ||--o| llm_budget_reservations : dispatch_id_RESTRICT
+    llm_budget_days ||--o{ llm_budget_reservations : payer_day_RESTRICT
+```
+
+Receipt/event/reservation guards are installed by migrations, not merely by
+loading ORM metadata. Retained evidence may block payer deletion. Logical
+execution/model identifiers deliberately do not form cleanup-cascading FKs.
 
 ## Migration history and deployment
 
@@ -334,10 +456,28 @@ Selected milestones, not a complete replay audit:
 | 0088 | Remove unused agent_tasks.requires_approval |
 | 0089 | Nullable collected_items.attachments JSON snapshot |
 | 0090 | Scope agent session uniqueness to tenant/channel/chat |
-| **0091** | Remove llm_providers.is_default; model-only default selection |
+| 0091 | Remove llm_providers.is_default; model-only default selection |
+| 0092 | Captured LLM attempt journal, tariff snapshots and exact USD costs |
+| 0093 | Immutable preparation receipts and mutation guards |
+| 0094 | Immutable receipt-bound outcome observations and binding guards |
+| 0095 | Payer/day balances, immutable reservations and receipt-binding guards |
+| **0096** | Separate platform/workspace role catalogs; resource keys and derived permission codenames; membership AI flag; personal memory ownership/indexes |
 
-The source-declared migration chain is 0087 → 0088 → 0089 → 0090 → **0091**. [0091](../migrations/versions/0091_drop_llm_provider_default_flag.py) points to 0090. During the 2026-10-12 documentation reconciliation, `.venv/bin/python -m alembic heads` returned the single head `0091`, and all 27 ORM table names matched the 27 table sections above. Metadata drift (`alembic check`) and deployed version (`alembic current`) were not inspected because they require a verified target database/schema.
+Static inspection of `revision` / `down_revision` in the checked-in migration
+files gives the single source head **0096**, with recent chain
+0091 → 0092 → 0093 → 0094 → 0095 → 0096. This is not `alembic current`, an
+`alembic check`, a replay rehearsal or target-schema acceptance. The previous
+0091/27-table reconciliation was historical, not the current schema inventory.
 
-Before starting this ORM revision against a target database, verify that the target is migrated through 0091; repository merge is not deployment. Downgrades from 0091–0087 can restore obsolete flags/constraints or discard attachment/checkpoint evidence and therefore require a separate reviewed rollback decision. See [DIGEST](DIGEST.md) for delivery-state behavior.
+Before running this ORM against any target, verify its actual revision and
+catalog compatibility under the project's approval rules. Existing owner-local
+0096 application/validation and limited 0093–0095 storage evidence are separately
+attributed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); they are not a
+claim about every environment or a production deployment.
 
-Exact historical reconciliation is retained in Git and PR history.
+0093–0095 ordinary downgrades refuse evidence deletion; 0096 is forward-only
+without an owner-reviewed preservation plan. 0092's downgrade drops attempt
+history; older downgrades can restore obsolete flags/constraints or discard
+attachments/checkpoints. Never infer a safe automatic rollback from a repository
+merge or metadata-only bootstrap. No create/reset/drop/stamp/migrate operation is
+part of documentation synchronization.

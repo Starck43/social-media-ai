@@ -77,3 +77,98 @@ Keep ck_tenants_plan variance, reconstructed before0093, measured before0095,
 private evidence not remotely inspected, PR137 and old31/6 caveats. This new
 package neither reruns them nor certifies a production/universal baseline.
 PR180 remains merged, closed and UNWIRED; PR194 closeout is not reopened.
+
+
+## Source-review follow-up — completed; real PG remains deferred
+
+Fresh dev is still `9c7bf4d146d8086d279ee9d1f80a950af9cdff43`.
+Follow-up test SHA: `5fa6cfcfd9a2095d326aa979f2108d355a20291d`.
+Review performed by the implementing remote agent, not an independent reviewer
+or owner approval. No source-level blocker was found **within the frozen,
+trusted-internal, unwired preparatory slice**. This is not a production verdict.
+
+Reviewed: exact packet fields/Decimal/time/counters, payer isolation and active
+payer checks, payer→day lock order, no ambient session, one-time paired insert,
+legacy/orphan/conflict refusal, immutable-snapshot replay vs mutable current day,
+commit acknowledgement boundary, enabled guard probe, schema-qualified definition/
+model parity, RESTRICT retention, normal migration environment registration,
+initial freeze and old-worker/in-flight attestation limitations, and unwired calls.
+
+One coverage gap was identified and closed: the earlier transaction double did
+not execute the actual BaseManager owned-session helper. A new test extracts and
+compiles **that helper's exact AST** with only its session factory replaced,
+then exercises the real provisioning method through fake sessions. No BaseManager
+DB import graph is executed. The source helper itself is unchanged.
+
+```sh
+/data/baseline-venv/bin/python -m pytest tests/test_reviewed_budget_baseline_owned_session.py --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+```
+
+At clean published SHA `5fa6cfcfd9a2095d326aa979f2108d355a20291d`: exit0,
+**11 passed; failed0; skipped0; warnings0** (0.34s), same separate venv/versions.
+Checks: factory ownership/commit/resource exit; no success before delayed commit
+ack; second-insert rollback; pre/post-commit failure; exact replay after synthetic
+lost acknowledgement; replay commit error; rollback failure; cancellation without
+commit; rejection of a caller session; real Alembic offline Operations rendering
+and nondefault quoted schema across table/FK/functions/triggers.
+
+Offline rendering uses MigrationContext as_sql + StringIO, no DBAPI/engine,
+settings/env.py, version-table writes or online migration. It proves emitted SQL,
+not PostgreSQL parsing/execution, catalogs or applied trigger behavior. Fake
+session close after cancellation does not prove actual server rollback/lock release.
+Synthetic acknowledgement loss remains distinct from real network loss.
+
+Original36 checks/122 subtests stay attributed to b3cdc0f and were **not rerun**.
+The follow-up imports their harness, not their test collection. Original code,
+definition and harness were byte-compared and unchanged. There was no combined
+47-test run, full-suite claim or relabel of old evidence. Diff check passed.
+Real PG acceptance and operator-authorized activation remain the open blockers.
+
+## Prepared PG acceptance packet — NOT EXECUTED
+
+This is a review/approval packet, not a second backlog or an executable DB runner.
+Target database/schema, executor identity, allowed DDL and fixture write scope,
+existing revision/catalog manifests and private evidence location are **UNKNOWN
+until supplied/approved by the owner**. Never substitute social_manager or infer
+permission from permission to run own mock tests. Approval for tests is separate
+from approval for normal0095→0096 schema application and fixture preparation.
+
+1. Pin current PR and fresh dev; verify exclusive lane and a sequential local Kilo
+   R10 route. Stop on changed source, another test writer, dirty/uncertain state,
+   unknown target/privileges or unavailable runner. Never read test-report into
+   coordinator context. Do not repair/bootstrap/reset/drop/stamp/create_all.
+2. On a separately authorized target, retain before evidence for sole0095,
+   existing day/receipt/outcome/reservation rows, definitions, owners/ACLs,
+   enabled guards, permissions/model types and sequences. Existing historical
+   evidence must not be overwritten or relabelled. A target-specific rollback/
+   retention plan is a prerequisite to DDL approval, not destructive downgrade.
+3. Only after explicit DDL approval, normal repository0095→0096 once. Independently
+   read back the one new table, required checks/FK/unique/index/sequence, two new
+   functions/three enabled triggers, old object parity and env.py model/permission
+   registration deltas. Empty new table and no old business-row changes expected.
+   Do not ignore drift or retry a failed/uncertain upgrade automatically.
+4. Only after separately approved synthetic fixtures on that target, prepare and
+   run a bounded PG harness through Kilo. Keep all receipts/liabilities/evidence
+   retained unless the owner explicitly approves a preservation-safe cleanup.
+   The local executable PG harness is still to be prepared; this document does
+   not claim that it exists or has passed.
+
+| Scenario | Required observed acceptance |
+| --- | --- |
+| Fresh snapshot | One acknowledged owned commit contains exactly one day and one matching original packet; all values exact, day frozen. |
+| Same-payer same-day identical race | One fresh insertion and one exact replay after payer serialization; one durable pair, no counters rewritten. |
+| Same-payer same-day conflicting race | Only the winner persists; loser conflicts; winner evidence and current counters/freeze unchanged. |
+| Distinct payer / scope mismatch | Separate payer rows isolate values; injected/missing/inactive payer refuses without writes. |
+| Provision vs admission | Compatible payer→day ordering, no deadlock in compliant paths; fresh frozen day denies admission and creates no receipt/reservation. No HTTP. |
+| Missing/disabled/incorrect provenance guards | Provision and replay fail closed on a separately approved disposable fixture; never disable guards on retained evidence or auto-repair them. |
+| Direct packet mutation/binding | UPDATE/DELETE/TRUNCATE refused; mismatched day snapshot/FK/check constraints refused; statements roll back, evidence retained. |
+| Second insert failure / cancellation | Actual rollback and server lock release; no durable half-pair after a precommit failure. |
+| Commit/readback uncertainty | Never success on uncertain ack; independent readback distinguishes absent/durable pair; explicit same-packet replay only, no resend/activation. Any injected/synthetic fault is labelled as such. |
+| Replay after current-state change | Original packet replay leaves separately approved current balances/counters/freeze untouched. No unfreeze API added just to arrange this fixture. |
+| Legacy/manual day / history | Existing day without provenance refuses adoption; selected-day provisioning never resets, expires or refunds earlier liabilities. |
+| Retention / migration parity | RESTRICT preserves day-linked evidence; ordinary downgrade refuses; prior rows/guards/sequences retained with expected measured deltas. |
+
+Completion of this packet means **prepared**, not PG-tested or rollout-approved.
+Keep PR Draft until required real-environment evidence is reviewed at its own exact
+SHA; no Ready/merge, HTTP/client wiring, unfreeze, providers/runtime or deploy follows
+from this source review and the additional11 no-DB checks.

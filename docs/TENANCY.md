@@ -244,7 +244,7 @@ the revision of any running database. Check a target explicitly before upgrade o
 rollback, and use the schema resolved from `settings.DB_SCHEMA`.
 
 Tests default to the shared `DB_TEST_SCHEMA=test_schema` on the configured test
-database. Follow `.agent/rules.md`: run at most one database test owner at a time
+database. Follow `docs/RULES.md`: run at most one database test owner at a time
 and never create, reset, drop, stamp or migrate a schema without explicit owner
 authorization. A historical test count is not current evidence.
 

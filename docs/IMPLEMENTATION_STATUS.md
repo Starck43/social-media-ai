@@ -1,7 +1,7 @@
 # Implementation status
 
 This file is a compact index of delivered foundations. The current queue and
-ownership live in [design/README](design/README.md). Pull requests and Git history
+ownership live in [ROADMAP](../ROADMAP.md) and [phases](phases/README.md). Pull requests and Git history
 are the source for exact patches, review discussions and test transcripts.
 
 ## Integration checkpoint
@@ -50,46 +50,24 @@ checks; no application/DB/pytest/release acceptance is claimed.
 | Test-bootstrap evidence protection | Read-only catalog guards refuse unknown live tables, missing existing columns and UNIQUE drift before schema/reset/seed writes; automatic UNIQUE constraint repair removed. Fresh-table setup remains supported and checked before seeding. | [PR #179](https://github.com/Starck43/social-media-ai/pull/179), merge `75a5347`; original unit and isolated synthetic PostgreSQL evidence linked in the PR | Live evidence covers the unknown-table refusal only; missing-column/UNIQUE paths have unit coverage. No full-suite, original PR168-target preservation, writer-exclusion, production migration or whole release-gate certification. Explicit schema-operation approval and other lane safeguards remain required. |
 | Home overview cleanup | Compact permission-gated analysis/task overview, one setup step and permitted chat entry; removed KPI/aggregation and command panels. Home-only responsive wrapping and bounded previews. Real ASGI/DB acceptance covers Viewer/Manager/owner/operator, denied query loading, cross-workspace filters, escaping and incomplete results. Independent task/source VIEW grants gate linked-source loading and active-source queries; unavailable effective schedule status is explicit. An unresolved membership role no longer grants legacy owner authority; its workspace grants are empty. | [PR #185](https://github.com/Starck43/social-media-ai/pull/185), implementation `a9c35bd`, verified merge `628b021`; local follow-up `fdb6c18`, tested at `01f719d` plus reviewed working diff: Kilo/pare-test 69 passed across home acceptance, identity, tool permissions and tenancy layout on 2026-10-15; source-gate fix `2bfa273`, tested at `2dd3161` plus reviewed diff: Kilo 26 passed (15 real home / 11 isolated) | Mixed analysis/digest results and actual upcoming schedules remain open; shell/notification acceptance is separate. Legacy NULL-role memberships require explicit role assignment to restore access; no automatic repair, deployment, migration or whole PRD-08 acceptance. |
 | Shell and workspace attention | Real ASGI/DB acceptance for Viewer/Manager/owner/operator shell guards, workspace-bound count/list and read parity, hidden foreign/deleted/task entities, fresh role and membership revocation, CSRF/stale context, task-error deduplication and caller-only personal connection queries. Reading events leaves failed-task signals active. Partial responses retain cached rows only for failed sources, replace successfully refreshed sources, and prune resolved or no-longer-authorized signals. A coalesced unread task event survives a message outage only as a generic, actionless unknown row while fresh notification/task VIEW rights remain; it reconciles on recovery. | [A #188](https://github.com/Starck43/social-media-ai/pull/188), merge `2c017f3`; [B #189](https://github.com/Starck43/social-media-ai/pull/189), merge `42d0432`; reviewed acceptance at `807c0c7` plus working diff: Kilo/pare-test 77 passed (8 real acceptance cases plus isolated shell/attention regressions) on 2026-10-15; AUD-02 `78e2dce`, reviewed diff tested from `2bfa273` by the R10 OpenCode fallback: 86 passed, 0 failed, 0 skipped on approved `test_schema`; `tests/test_merged_notifications_acceptance.py` | Browser/layout acceptance, C/D settings/preferences acceptance and full-suite validation remain separate. No schema/data repair, deployment or whole release-gate certification. |
+| Access-model restructuring | Independent platform/workspace role catalogs, stable domain resource permissions, operator-only admin, membership-only workspace UI/API, transactional team delegation and private AI memory. Migration 0096 applied to the local development PostgreSQL `social_manager/public` (not a production deployment); owner-authorized in-place unchanged-0096 update of the unversioned local `test_schema` without stamping/replaying 0093–0095, preserving checked counts and all LLM integrity guards. | Local `dev` integration accepted at `edbe0fc`: 29 distinct real PostgreSQL/ASGI cases in sequential batches (21+4+4) and 327 isolated checks via OpenCode, covering workspace boundaries, operator grants, admin denial, scoped queue/digest access, concurrent last-owner preservation, fresh AI/membership revocation at dispatch and personal facts/transcripts/cursors. Evidence: `git show edbe0fc:ROADMAP.md`, [ACCESS_MIGRATION.md](ACCESS_MIGRATION.md), [P3 tasks](phases/p3-identity-access.md). | Not full-suite, browser or production acceptance; a real-DB pending-confirmation end-to-end run is not claimed; existing `alembic check` model/schema drift remains unrepaired. Earlier historical rows above stay tied to their original revisions and do not validate the new schema. |
 
 ### Settings and notification display integration
 
 | Area | Delivered behavior | Integration references | Remaining boundary |
 | --- | --- | --- | --- |
 | Notification display — C browser-local slice | Caller-keyed browser-only display preferences for optional connection/task signals, opt-in hint and device-local quiet hours. Counter/list share the filtered snapshot; persisted messages remain visible. Restore is reachable in Settings Account/Connections even with an empty bell. Shared event reads are unchanged. | [PR #190](https://github.com/Starck43/social-media-ai/pull/190), head `8186cac`, merge `734e479`; source-pinned sandbox checks and owner visual acceptance retained in the PR. [Functional contract](NOTIFICATIONS.md#current-web-bell-and-display-policy). | Durable storage/cross-device sync and personal acknowledgement are not implemented; real storage lifecycle and full accessibility acceptance remain separate. |
-| Settings/access contexts — D bounded slice | Selected permitted tabs load only their own data; members receive a limited workspace summary, management needs a concrete-target capability. Team can disable a non-owner bound web membership with confirmation/CSRF, retaining audit rows. Shell distinguishes owned/granted workspaces; all guest-workspace web chat endpoints are denied. At that revision, every active authenticated user could enter global SQLAdmin with platform model/action guards; the later access-model restructuring below supersedes entry with operator/admin-only access. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191), head `43608e6`, merge `ae77f55`; 226 isolated pytest checks and offline owner/guest 40 cases +8 interactions, Settings 80 cases at the final head. Original evidence/limitations retained in the PR. Local `2dd3161` additionally removes NULL-role owner-label inference without changing memberships. [Scopes](TENANCY.md#web-settings-and-ownedgranted-workspace-context); [admin](ADMIN.md). | Real SQLAdmin/ASGI/PG role, disable race/rollback and adjusted app-importing legacy tests are not certified by sandbox evidence. Later owner-local home/A/B acceptance above is not full C/D acceptance. No schema, runtime or deployment acceptance. |
+| Settings/access contexts — D bounded slice | Selected permitted tabs load only their own data; members receive a limited workspace summary, management needs a concrete-target capability. Team can disable a non-owner bound web membership with confirmation/CSRF, retaining audit rows. Shell distinguishes owned/granted workspaces; all guest-workspace web chat endpoints are denied. At that revision, every active authenticated user could enter global SQLAdmin with platform model/action guards; the later access-model restructuring row (Delivered foundations) supersedes entry with operator/admin-only access. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191), head `43608e6`, merge `ae77f55`; 226 isolated pytest checks and offline owner/guest 40 cases +8 interactions, Settings 80 cases at the final head. Original evidence/limitations retained in the PR. Local `2dd3161` additionally removes NULL-role owner-label inference without changing memberships. [Scopes](TENANCY.md#web-settings-and-ownedgranted-workspace-context); [admin](ADMIN.md). | Real SQLAdmin/ASGI/PG role, disable race/rollback and adjusted app-importing legacy tests are not certified by sandbox evidence. Later owner-local home/A/B acceptance above is not full C/D acceptance. No schema, runtime or deployment acceptance. |
 
 Audit follow-ups: [PR #196](https://github.com/Starck43/social-media-ai/pull/196) records ten TODO security/correctness/refactoring
 contracts and nine synthetic observations at the fixed snapshot. No application
-fixes or release acceptance are implied; persistent task allocation is on the board.
-
-## Current work
-
-Open ownership, blocked items and next actions live in [design/README.md](design/README.md). Exact decisions, hashes, test evidence and operational caveats remain in their source PRs.
+fixes or release acceptance are implied; persistent task allocation is in [phases P10](phases/p10-audit-hardening.md).
 
 ## Recording future delivery
 
-Add or update one area row only when a merge changes a durable project boundary.
-Link the PR and state the remaining boundary. Keep command output, individual test
-counts, patch hashes and abandoned approaches in the PR rather than this file.
-
-## Access-model restructuring — local integration accepted
-
-Accepted owner plan: independent platform/workspace catalogs, stable domain
-resource permissions, operator-only admin, membership-only workspace UI/API,
-transactional team delegation and private AI memory. Migration 0096 is applied
-to the local development PostgreSQL `social_manager/public` schema; this is not
-a production deployment. Original historical evidence above remains tied to its
-original revisions and does not validate the new schema. Current OpenCode and
-redacted migration evidence, plus remaining acceptance boundaries, are recorded
-in ROADMAP.md. The owner-authorized in-place update of the unversioned local
-`test_schema` applied unchanged 0096 operations without stamping or replaying
-0093–0095; checked business counts and all LLM integrity guards were preserved.
-Pytest startup validates the existing target read-only. OpenCode passed 29
-distinct real PostgreSQL/ASGI cases in sequential batches (21 + 4 + 4), covering
-workspace boundaries, explicit operator grants and ordinary-user admin denial,
-scoped queue/digest access, concurrent last-owner preservation, fresh AI and
-membership revocation at tool dispatch, and personal facts/transcripts/cursors.
-Isolated confirmation checks cover pending-approval authority changes; a real
-PostgreSQL pending-confirmation end-to-end run is not claimed. This accepts the
-bounded local implementation, not full-suite, browser or production acceptance.
-`alembic check` still reports existing model/schema drift.
+One row per delivery that changes a durable project boundary: what was
+delivered, PR/SHA attribution, remaining boundary. Statuses of open work are
+never duplicated here — they live in [ROADMAP.md](../ROADMAP.md) and
+[phases](phases/README.md). Keep command output, individual test counts, patch
+hashes, narratives and abandoned approaches in the PR/Git rather than this
+file.

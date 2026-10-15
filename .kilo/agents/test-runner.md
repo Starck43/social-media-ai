@@ -10,10 +10,10 @@ permission:
   lsp: deny
   edit:
     "*": deny
-    ".agent/test-report.md": allow
+    ".agents/tmp/test-report.md": allow
   write:
     "*": deny
-    ".agent/test-report.md": allow
+    ".agents/tmp/test-report.md": allow
   bash:
     "*": deny
     "git rev-parse HEAD": allow
@@ -47,10 +47,10 @@ Your goal is to execute tests and return a **highly compressed summary** to the 
 ### Reporting (Token Economy Rules)
 You must do TWO things:
 
-**1. Write the full evidence to `.agent/test-report.md`** (Include: commit hash, exact commands, full failure excerpts, pass/fail counts). This is for audit purposes only.
+**1. Write the full evidence to `.agents/tmp/test-report.md`** (Include: commit hash, exact commands, full failure excerpts, pass/fail counts). This is for audit purposes only.
 
 **2. Return a strictly formatted summary in your final chat response to the parent:**
-Do NOT include raw logs in your chat response. The parent model will NOT read the `.agent/test-report.md` file.
+Do NOT include raw logs in your chat response. The parent model will NOT read the `.agents/tmp/test-report.md` file.
 
 Respond ONLY with this exact format:
 

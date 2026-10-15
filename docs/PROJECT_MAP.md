@@ -1,6 +1,6 @@
 # Project map: current runtime and planned expansion
 
-Source baseline: dev `84ee16d284a6355006dd71c7157a0744ab203ddd`, inspected 2026-10-12. Diagrams are explanatory views, not deployed-state evidence or complete dependency/FK graphs. Current views and separately labeled planned views prevent a roadmap being mistaken for shipped features. For active work, read [business readiness](BUSINESS_PRODUCTION_READINESS.md) → [current tasks](design/README.md); delivered foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
+Source baseline: dev `84ee16d284a6355006dd71c7157a0744ab203ddd`, inspected 2026-10-12. Diagrams are explanatory views, not deployed-state evidence or complete dependency/FK graphs. Current views and separately labeled planned views prevent a roadmap being mistaken for shipped features. For active work, read [business readiness](BUSINESS_PRODUCTION_READINESS.md) → [current tasks](phases/README.md); delivered foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
 
 ## 1. Current system context
 

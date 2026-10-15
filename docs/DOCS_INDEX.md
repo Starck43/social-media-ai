@@ -7,7 +7,7 @@ own historical reviews, implementation narratives and full test transcripts.
 
 1. [Product plan](PRODUCT_PLAN.md) — product outcomes and delivery phases.
 2. [Business readiness](BUSINESS_PRODUCTION_READINESS.md) — stable engineering and release gates.
-3. [Current work](design/README.md) — the only prioritized queue and ownership board.
+3. [Open tasks](../ROADMAP.md) and [phases](phases/README.md) — the live registry and phase board.
 4. Open one subsystem document relevant to the selected task.
 
 Use [implementation status](IMPLEMENTATION_STATUS.md) only to identify delivered
@@ -38,18 +38,18 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [API](API.md), [CLI](CLI.md) and [Admin](ADMIN.md) — supported interfaces.
 - [Configuration](CONFIGURATION.md) and [Deployment](DEPLOYMENT.md) — setup and operation.
 - [Collaboration](COLLABORATION.md) — local and remote development handoff.
-- [Agent workflow](../AGENTS.md) and [workflow details](../.agent/workflow.md) — concise instructions, audit and delegation lifecycle.
-- [Current work](design/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
+- [Agent workflow](../AGENTS.md), [rules](RULES.md) and [collaboration](COLLABORATION.md) — instructions, environment constraints, delegation lifecycle.
+- [Phases](phases/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
 
 ## Pending source-audit follow-ups
 
 - [PR #196](https://github.com/Starck43/social-media-ai/pull/196) — ten source-verified TODO contracts and evidence; runtime
-  implementation remains open. Persistent allocation is in the current-work board.
+  implementation remains open. Persistent allocation is in [phases/P10](phases/p10-audit-hardening.md).
 
 ## Maintenance rule
 
 Each fact has one owner: product direction in `PRODUCT_PLAN.md`, target boundaries
 in `ASSISTANT_ARCHITECTURE.md`, readiness criteria in
-`BUSINESS_PRODUCTION_READINESS.md`, current allocation in `design/README.md`, and
+`BUSINESS_PRODUCTION_READINESS.md`, current allocation in `ROADMAP.md` / `phases/`, and
 subsystem behavior in its subsystem document. Link to the owner instead of copying
 its text. Keep detailed evidence in Git and PRs.

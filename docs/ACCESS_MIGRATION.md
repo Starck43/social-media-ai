@@ -88,8 +88,7 @@ metadata, and no unresolved user, membership or invite assignments. Platform
 and workspace role counts and business row counts matched the expected
 postflight; all 56 public foreign keys had zero orphans. The physical empty
 `oauth_pending` table remains intact. The complete redacted before/after counts
-and assignment summary are recorded in `ROADMAP.md` and
-`.agent/access-migration-task.md`.
+and assignment summary are recorded in Git history at the accepted revision.
 
 `alembic check` still reports metadata drift. Among task-owned objects, it
 reports schema qualification differences for foreign keys and the action enum,
@@ -109,8 +108,7 @@ API/workspace boundaries, explicit operator grants, ordinary-user admin denial,
 foreign queue/digest isolation, concurrent last-owner self-demotion, fresh AI
 and membership revocation at actual tool dispatch, and personal facts,
 transcript selection and learning cursors. Foreign learning evidence is refused
-without advancing the cursor. Exact scopes and tested revision/diff are in
-`ROADMAP.md`; these checks do not certify the full suite or production cutover.
+without advancing the cursor. Exact scopes and tested revision/diff are in the historical audit ledger (`git show edbe0fc:ROADMAP.md`); these checks do not certify the full suite or production cutover.
 
 The owner also authorized an exceptional in-place update of the existing local
 `social_manager/test_schema`. This schema had no Alembic version table and
@@ -128,7 +126,7 @@ The test catalog contains three platform roles, five workspace roles and 31
 resource identities, with no unmapped or retired resource metadata. Ordinary
 pytest startup now validates schema/reference completeness read-only and does
 not create, migrate or seed the shared target. Exceptional future schema changes
-follow the explicit authorization and backup requirements in `.agent/rules.md`.
+follow the explicit authorization and backup requirements in `docs/RULES.md`.
 
 ## Acceptance before cutover
 

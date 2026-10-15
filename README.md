@@ -120,22 +120,18 @@ Setup details: [CONFIGURATION](docs/CONFIGURATION.md),
 
 ## Development
 
-Read [AGENTS.md](AGENTS.md), `.agent/rules.md` and `.agent/workflow.md` before
-work. Use the project virtualenv and assign the narrowest relevant check through the
-Kilo test-orchestrator → test-runner → pare-test route in
-[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree).
-Do not run pytest directly from the coordinating process. If that route is
-blocked, follow only the documented fallback; a blocked runner is not a green check.
-
-Database tests share the configured test schema and run sequentially. Schema
-create/reset/drop/stamp/migrate operations require explicit owner instruction.
-Do not run a broad suite merely for a documentation-only change.
+Read [AGENTS.md](AGENTS.md), `docs/RULES.md` and `docs/COLLABORATION.md` before
+work. They define test delegation (primary OpenCode route, sequential shared
+test schema, explicit owner instruction for any schema operation) and
+handoff/closeout; see
+[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree)
+for the exact launch commands.
 
 Development reading order:
 
 1. [Product direction](docs/PRODUCT_PLAN.md)
 2. [Engineering and release gates](docs/BUSINESS_PRODUCTION_READINESS.md)
-3. [Current priorities and ownership](docs/design/README.md)
+3. [Open tasks](ROADMAP.md) and [phase board](docs/phases/README.md)
 4. The relevant subsystem document from [DOCS_INDEX](docs/DOCS_INDEX.md)
 
 Delivered foundations are indexed in

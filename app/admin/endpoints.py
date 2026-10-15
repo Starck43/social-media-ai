@@ -416,3 +416,24 @@ async def topic_chains_dashboard(request: Request):
         logger.error(f"Topic chains dashboard authentication error: {e}")
         request.session.clear()
         return RedirectResponse(url=f"/admin/login?next=/dashboard/topic-chains", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/admin/llm-model/test", response_class=HTMLResponse)
+async def submit_llm_model_test(request: Request):
+    """Explicit operator-only model test; GET action URLs remain read-only."""
+    await require_admin_perm(request, "llmmodel", ActionType.CONFIGURE)
+    form = await request.form()
+    token = form.get("csrf_token")
+    if not isinstance(token, str) or not get_csrf_manager(request).verify_token(token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    if form.get("test_type") == "real" and form.get("confirm_real") != "yes":
+        raise HTTPException(status_code=422, detail="Confirm the paid probe explicitly")
+    from app.admin.actions import LLMModelActions
+
+    return await LLMModelActions.submit_test(
+        request.app.state.admin,
+        request,
+        str(form.get("model_id", "")),
+        str(form.get("test_type", "")),
+        str(form.get("prompt", "")),
+    )

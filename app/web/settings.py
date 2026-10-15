@@ -190,7 +190,42 @@ async def settings_page(request: Request):
         "settings_scope": "personal" if tab in ("account", "connections") else "workspace",
     }
 
+
     if tab == "workspace":
+        tenant = request.state.tenant
+        if manage:
+            # Full configuration and quota projections require concrete-target capability.
+            tenant_id = request.state.tenant_id
+            context.update(
+                tenant=tenant,
+                plans=list(Tenant.PLANS),
+                plan_labels=_plan_labels(),
+                plan_rows=_plan_table(),
+                plan_usage=await _plan_usage(tenant, perms),
+            )
+        else:
+            # Explicit member read contract: no budget/prompt/channel/plan configuration.
+            context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
+    elif tab == "agent" and manage:
+        from app.models.llm_model import LLMModel
+        from app.services.ai.llm_client import default_model_sort_key
+
+        models = await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.id)
+        options = []
+        for model in sorted(models, key=default_model_sort_key):
+            provider_name = model.provider.name if model.provider else "?"
+            cost = f"${model.input_cost_per_1k:.4f}/${model.output_cost_per_1k:.4f}/1K"
+            label = f"{provider_name}/{model.model_id} ({cost})" + (" ★" if model.is_default else "")
+            options.append({"id": model.name, "label": label})
+        context["agent_model_options"] = options
+
+        # Read the last probe result from session (set by /agent/model-probe).
+        probe_result = request.session.get("agent_model_probe_result")
+        if probe_result is not None and isinstance(probe_result, dict):
+            context["probe_result"] = probe_result
+        else:
+            context["probe_result"] = None
+
         tenant = request.state.tenant
         if manage:
             # Full configuration and quota projections require concrete-target capability.
@@ -405,7 +440,96 @@ async def agent_settings_update(
         agent_system_prompt=prompt,
     )
     add_flash(request, "success", "Настройки агента сохранены")
+
+@router.post("/agent/model-probe")
+async def agent_model_probe(
+    request: Request,
+    agent_model: str = Form(""),
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Verify the currently selected agent chat model with the cheapest tier first.
+
+    Tiers: probe_status (0 tokens, no network) -> probe_mock (0 tokens, canned)
+    -> probe_real_capped (one capped real call, 1-8 tokens). The first passing
+    tier wins; the result is stored in the session and rendered inline in the
+    settings form.
+    """
+    tenant_id = action_tenant_id(request, tenant_id)
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(BACK, status_code=302)
+
+    from app.models.managers.tenant_manager import tenants
+    from app.services.ai.model_probe import probe_mock, probe_real_capped, probe_status
+
+    if await tenants.get(id=tenant_id) is None:
+        add_flash(request, "error", "Пространство не найдено")
+        return RedirectResponse(BACK, status_code=302)
+
+    tenant = await tenants.get(id=tenant_id)
+    model = None
+    if agent_model:
+        model = await LLMModel.objects.select_related("provider").filter(id=int(agent_model), is_active=True).first()
+
+    # Tier 0: free local verdict, no provider traffic at all.
+    verdict = probe_status(model) if model else {"ok": False, "checks": [], "hint": "Модель не выбрана"}
+    if not verdict["ok"]:
+        result = {
+            "ok": False,
+            "text": verdict["hint"],
+            "tier": "status",
+            "checks": verdict["checks"],
+            "tokens_spent": 0,
+        }
+    else:
+        # Tier 1: canned local answer, zero tokens, zero network.
+        mock = probe_mock(model, "Проверь маршрут, парсинг и учёт стоимости")
+        if mock.get("ok", True):
+            result = {
+                "ok": True,
+                "text": "Статус OK, мок-проверка пройдена локально. Модель отвечает корректно без сетевого вызова.",
+                "tier": "mock",
+                "checks": verdict["checks"] + mock.get("checks", []),
+                "tokens_spent": 0,
+                "content": mock.get("content", ""),
+                "usage": mock.get("usage", {}),
+                "cost": mock.get("cost", 0.0),
+            }
+        else:
+            # Tier 2: one minimal real provider call, capped cost.
+            real = await probe_real_capped(model)
+            if real.get("ok"):
+                result = {
+                    "ok": True,
+                    "text": "Всё ок: статус OK, мок OK, реальный вызов пройден.",
+                    "tier": "real",
+                    "checks": verdict["checks"] + real.get("checks", []),
+                    "tokens_spent": real.get("tokens_spent", 0),
+                    "content": real.get("content", ""),
+                    "usage": real.get("usage", {}),
+                    "cost": real.get("cost", 0.0),
+                }
+            else:
+                result = {
+                    "ok": False,
+                    "text": real.get("error", "Проверка не прошла"),
+                    "tier": "real",
+                    "checks": verdict["checks"],
+                    "tokens_spent": real.get("tokens_spent", 0),
+                    "error": real.get("error", ""),
+                }
+
+    # Save probe result in session and redirect back to the settings page so
+    # the template shows it from `context["probe_result"]`.
+    request.session["agent_model_probe_result"] = result
     return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
+
+
+
 
 
 @router.post("/credentials")

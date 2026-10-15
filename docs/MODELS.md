@@ -103,6 +103,13 @@ are stated in their own section.
 
 Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
 
+The SQLAdmin model editor exposes configuration fields only; cost/usage/history
+telemetry is read-only in details. The short model check is the shared local
+`probe_short()` service used by web settings and admin, not a provider-health or
+accounting acceptance test. See [admin testing modes and price display](ADMIN.md#llm-testing-and-prices)
+for the separate short/mock/explicit paid-probe contracts. This changes no ORM
+columns or migrations.
+
 ## Workspace and personal credential tables
 
 All tables in this section have TimestampMixin. The tables are not marked with TenantScopedMixin.

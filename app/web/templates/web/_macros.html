@@ -488,6 +488,34 @@
 {%- endmacro %}
 
 
+{# Popover-селект: та же механика, что у переключателя темы в сайдбаре
+   (`_shell_theme.html` + `shell.js [data-shell-popover]`): кнопка-триггер,
+   панель со списком, выбор через скрытый input. Нужен там, где классический
+   <select> неудобен — длинные списки моделей с ценами и статусами.
+   Параметры:
+     name — имя поля формы; id — базовый id; current — выбранное значение;
+     options — список (value, label, hint); placeholder — текст при пустом. #}
+{% macro popover_select(name, id, options, current='', placeholder='Автовыбор') -%}
+    {% set ns = namespace(current_label=placeholder) %}
+    {% for value, label, hint in options %}
+        {% if current|string == value|string %}{% set ns.current_label = label %}{% endif %}
+    {% endfor %}
+    <div class="shell-popover" data-shell-popover>
+        <input type="hidden" name="{{ name }}" value="{{ current }}" data-popover-value>
+        <button type="button" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-left outline-none focus:border-cyan-500 flex items-center justify-between gap-2" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover" aria-label="{{ placeholder }}">
+            <span data-popover-label>{{ ns.current_label }}</span>
+            <span aria-hidden="true" class="text-slate-600 dark:text-slate-400">▾</span>
+        </button>
+        <div id="{{ id }}-popover" class="shell-popover-panel" hidden role="listbox">
+            <button type="button" role="option" data-popover-option="" aria-selected="{{ 'true' if not current else 'false' }}"><span>{{ placeholder }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% for value, label, hint in options %}
+            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current|string == value|string else 'false' }}"><span>{{ label }}</span>{% if hint %}<span class="text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}<span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% endfor %}
+        </div>
+    </div>
+{%- endmacro %}
+
+
 {# Stroke SVGs match the existing 24px/1.5px outline icons used by web controls. #}
 {% macro icon(name, extra="") -%}
     {% set paths = {

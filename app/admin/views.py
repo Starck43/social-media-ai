@@ -574,8 +574,8 @@ class SourceAdmin(BaseAdmin, model=Source):
 
 
 class AgentScenarioAdmin(BaseAdmin, model=AgentScenario):
-    name = "Сценарий бота"
-    name_plural = "Сценарии ботов"
+    name = "Сценарий"
+    name_plural = "Сценарии"
     icon = "fa fa-robot"
 
     action_permissions = {

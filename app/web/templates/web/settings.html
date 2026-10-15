@@ -3,7 +3,7 @@
 {# `with context` because `plan_badge` reads `plan_labels` from the page context
    (see `app/web/deps.py::render`) rather than taking it per call — the tier
    names are the same on every page. #}
-{% from "web/_macros.html" import segment, connection_badge, control, plan_badge, plan_comparison_table, switch_toggle with context %}
+{% from "web/_macros.html" import segment, connection_badge, control, plan_badge, plan_comparison_table, popover_select, switch_toggle with context %}
 {% block title %}Настройки — AI Monitor{% endblock %}
 {% block page_heading %}Настройки{% endblock %}
 {% block extra_head %}
@@ -147,17 +147,22 @@
 
             <!-- Модель -->
             <div>
-                <label for="ag-model" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Модель LLM</label>
-                <select id="ag-model" name="agent_model" {% if not perms.can_manage_workspace(tenant.id if tenant else none) %}disabled{% endif %}
-                        class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500 disabled:opacity-50">
-                    <option value="">Автовыбор (первая активная)</option>
-                    {% for opt in agent_model_options %}
-                        <option value="{{ opt.id }}" {% if tenant and tenant.agent_model == opt.id %}selected{% endif %}>
-                            {{ opt.label }}
-                        </option>
-                    {% endfor %}
-                </select>
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Оставьте пустым для автовыбора первой активной модели. ★ — модель по умолчанию.</p>
+                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Модель LLM</label>
+                {% set chat_options = [] %}
+                {% for opt in agent_model_options %}
+                    {%- set _ = chat_options.append((opt.id, opt.label, '')) %}
+                {% endfor %}
+                {{ popover_select('agent_model', 'ag-model', chat_options, current=tenant.agent_model if tenant else '', placeholder='Автовыбор (первая активная)') }}
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Пусто — автовыбор первой активной. ★ — модель по умолчанию. Кнопка «Проверить» сначала смотрит статус (0 токенов), затем мок (0 токенов) и только потом — короткую реальную пробу.</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <button type="submit" formaction="/app/settings/agent/model-probe" formmethod="post"
+                            class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
+                        Проверить выбранную
+                    </button>
+                    {% if probe_result %}
+                    <span class="text-xs {{ 'text-emerald-700 dark:text-emerald-400' if probe_result.ok else 'text-rose-700 dark:text-rose-400' }}">{{ probe_result.text }}</span>
+                    {% endif %}
+                </div>
             </div>
 
             <!-- Max tokens -->

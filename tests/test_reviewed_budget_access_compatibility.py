@@ -16,7 +16,7 @@ import test_reviewed_budget_baselines as harness
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
-AUTHORITATIVE_DEV = "eb6cad6c56e78768b6482eba312082b849d24712"
+AUTHORITATIVE_DEV = "edbe0fc02e6ea2d78302129e51febfa0e87464ab"
 CONFIG = SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA="baseline_review"))
 DB_ENUMS = load_isolated_source(
     "_baseline_db_enums",
@@ -36,11 +36,7 @@ CATALOG = load_isolated_source(
 CONTEXT = load_isolated_source(
     "_baseline_real_tenant_context",
     ROOT / "app/core/tenant_context.py",
-    imports={
-        "starlette.types": SimpleNamespace(
-            ASGIApp=Any, Receive=Any, Scope=Any, Send=Any
-        )
-    },
+    imports={"starlette.types": SimpleNamespace(ASGIApp=Any, Receive=Any, Scope=Any, Send=Any)},
 )
 POLICY = load_isolated_source(
     "_baseline_current_access_policy",
@@ -66,6 +62,9 @@ class AccessCompatibilityTests(unittest.TestCase):
             "app/models/identity/role.py",
             "app/models/managers/role_manager.py",
             "app/models/managers/permission_manager.py",
+            "scripts/setup/roles.py",
+            "scripts/setup_test_db.py",
+            "tests/conftest.py",
             "scripts/migrations/register_model_types.py",
             "scripts/migrations/deps.py",
             "migrations/versions/0096_split_access_roles_and_resources.py",
@@ -76,8 +75,34 @@ class AccessCompatibilityTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(
                     (ROOT / path).read_bytes(),
-                    subprocess.check_output(
-                        ["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT
+                    subprocess.check_output(["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT),
+                )
+
+    def test_default_pytest_startup_validates_read_only_without_bootstrap_or_seed(self):
+        source = (ROOT / "tests/conftest.py").read_text()
+        tree = ast.parse(source)
+        fixture = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_test_database")
+        text = ast.get_source_segment(source, fixture)
+        self.assertIn("repeatable read, read only", text)
+        self.assertIn("require_all_tables=True", text)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self.assertNotEqual(node.name, "_seed_reference_data")
+            if isinstance(node, ast.Call):
+                name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+                )
+                self.assertNotIn(
+                    name,
+                    (
+                        "ensure_test_database",
+                        "seed_roles",
+                        "seed_roles_async",
+                        "assign_roles_permissions",
+                        "create_all",
+                        "drop_all",
                     ),
                 )
 
@@ -86,9 +111,7 @@ class AccessCompatibilityTests(unittest.TestCase):
         for path in (ROOT / "migrations/versions").glob("*.py"):
             values = {}
             for node in ast.parse(path.read_text()).body:
-                if isinstance(node, ast.Assign) and isinstance(
-                    node.value, ast.Constant
-                ):
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
                     for target in node.targets:
                         if isinstance(target, ast.Name) and target.id in (
                             "revision",
@@ -98,17 +121,9 @@ class AccessCompatibilityTests(unittest.TestCase):
             if "revision" in values:
                 self.assertNotIn(values["revision"], versions, str(path))
                 versions[values["revision"]] = (path.name, values.get("down_revision"))
-        self.assertEqual(
-            versions["0096"], ("0096_split_access_roles_and_resources.py", "0095")
-        )
-        self.assertEqual(
-            versions["0097"], ("0097_add_reviewed_budget_baselines.py", "0096")
-        )
-        self.assertFalse(
-            (
-                ROOT / "migrations/versions/0096_add_reviewed_budget_baselines.py"
-            ).exists()
-        )
+        self.assertEqual(versions["0096"], ("0096_split_access_roles_and_resources.py", "0095"))
+        self.assertEqual(versions["0097"], ("0097_add_reviewed_budget_baselines.py", "0096"))
+        self.assertFalse((ROOT / "migrations/versions/0096_add_reviewed_budget_baselines.py").exists())
 
     def test_internal_baseline_has_no_resource_or_implicit_permission_key(self):
         for name in (
@@ -120,23 +135,12 @@ class AccessCompatibilityTests(unittest.TestCase):
             self.assertIsNone(CATALOG.resource_for(name))
         self.assertIsNone(CATALOG.resource_for(harness.MODELS.LLMBudgetBaseline))
         for action in TYPES.ActionType:
-            self.assertIsNone(
-                CATALOG.resolve_permission_key("llm.budget_baseline." + action.db_value)
-            )
-            self.assertIsNone(
-                CATALOG.resolve_permission_key(
-                    "llm.llmbudgetbaseline." + action.db_value
-                )
-            )
+            self.assertIsNone(CATALOG.resolve_permission_key("llm.budget_baseline." + action.db_value))
+            self.assertIsNone(CATALOG.resolve_permission_key("llm.llmbudgetbaseline." + action.db_value))
 
     def test_no_workspace_role_gains_baseline_crud_or_provision_grants(self):
         for role in TYPES.WorkspaceRoleType:
-            self.assertFalse(
-                any(
-                    name == "llmbudgetbaseline"
-                    for name, _ in CATALOG.workspace_grants(role.value)
-                )
-            )
+            self.assertFalse(any(name == "llmbudgetbaseline" for name, _ in CATALOG.workspace_grants(role.value)))
         self.assertFalse(CATALOG.workspace_grants(None))
         self.assertFalse(CATALOG.workspace_grants("SUPERUSER"))
 
@@ -150,23 +154,20 @@ class AccessCompatibilityTests(unittest.TestCase):
             has_perm_for=lambda *args: True,
         )
         for role in TYPES.WorkspaceRoleType:
-            with CONTEXT.tenant_scope(7), POLICY.permission_scope(
-                actor,
-                is_owner=role.value == "owner",
-                member_grants=CATALOG.workspace_grants(role.value),
+            with (
+                CONTEXT.tenant_scope(7),
+                POLICY.permission_scope(
+                    actor,
+                    is_owner=role.value == "owner",
+                    member_grants=CATALOG.workspace_grants(role.value),
+                ),
             ):
                 for action in TYPES.ActionType:
-                    self.assertFalse(
-                        POLICY.has_permission(actor, "LLMBudgetBaseline", action)
-                    )
+                    self.assertFalse(POLICY.has_permission(actor, "LLMBudgetBaseline", action))
         with CONTEXT.tenant_scope(bypass=True):
-            self.assertFalse(
-                POLICY.has_permission(None, "llm_budget_baselines", "create")
-            )
+            self.assertFalse(POLICY.has_permission(None, "llm_budget_baselines", "create"))
             with POLICY.permission_scope(actor):
-                self.assertFalse(
-                    POLICY.has_permission(actor, "llm_budget_baselines", "view")
-                )
+                self.assertFalse(POLICY.has_permission(actor, "llm_budget_baselines", "view"))
 
     def test_baseline_facades_are_additive_no_old_manager_side_effect(self):
         paths = {
@@ -174,33 +175,19 @@ class AccessCompatibilityTests(unittest.TestCase):
             "app/models/llm/__init__.py": "from .llm_budget_baseline import LLMBudgetBaseline\n",
         }
         for path, added_import in paths.items():
-            source = (
-                (ROOT / path)
-                .read_text()
-                .replace(added_import, "")
-                .replace('    "LLMBudgetBaseline",\n', "")
-            )
+            source = (ROOT / path).read_text().replace(added_import, "").replace('    "LLMBudgetBaseline",\n', "")
             self.assertEqual(
                 source,
-                subprocess.check_output(
-                    ["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT, text=True
-                ),
+                subprocess.check_output(["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT, text=True),
             )
         source = (ROOT / "app/models/llm_budget.py").read_text()
         self.assertNotIn(".objects =", source)
         self.assertIsNone(harness.MODELS.LLMBudgetBaseline.objects)
-        self.assertNotIn(
-            "LLMBudgetBaseline", (ROOT / "app/models/bootstrap.py").read_text()
-        )
+        self.assertNotIn("LLMBudgetBaseline", (ROOT / "app/models/bootstrap.py").read_text())
 
     def test_compatibility_alias_does_not_redeclare_orm_model(self):
         path = ROOT / "app/models/analysis/llm_budget_baseline.py"
-        self.assertFalse(
-            any(
-                isinstance(node, ast.ClassDef)
-                for node in ast.parse(path.read_text()).body
-            )
-        )
+        self.assertFalse(any(isinstance(node, ast.ClassDef) for node in ast.parse(path.read_text()).body))
         alias = load_isolated_source(
             "app.models.analysis._baseline_compat",
             path,
@@ -233,9 +220,7 @@ class AccessCompatibilityTests(unittest.TestCase):
             "_baseline_post_access_registration",
             ROOT / "scripts/migrations/register_model_types.py",
             imports={
-                "sqlalchemy": SimpleNamespace(
-                    inspect=lambda *args: inspector, text=sa.text, select=sa.select
-                ),
+                "sqlalchemy": SimpleNamespace(inspect=lambda *args: inspector, text=sa.text, select=sa.select),
                 "app.core.config": CONFIG,
                 "app.core.access_catalog": CATALOG,
                 "app.models": SimpleNamespace(ModelType=model),
@@ -264,9 +249,5 @@ class AccessCompatibilityTests(unittest.TestCase):
         path = "app/models/managers/llm_budget_manager.py"
         self.assertEqual(
             admission((ROOT / path).read_text()),
-            admission(
-                subprocess.check_output(
-                    ["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT, text=True
-                )
-            ),
+            admission(subprocess.check_output(["git", "show", AUTHORITATIVE_DEV + ":" + path], cwd=ROOT, text=True)),
         )

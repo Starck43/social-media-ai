@@ -20,8 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
-from ...types import AgentActionType, BotTriggerType
 from ...core.decorators import app_label
+from ...types import AgentActionType, BotTriggerType
 from ..base import Base, TenantScopedMixin, TimestampMixin
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ agent_task_sources = Table(
 )
 
 
-@app_label("social")
+@app_label("scheduling")
 class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     """Cron-based task that enqueues background jobs (collect/prune/digest/analyze/learn/reflect)."""
 

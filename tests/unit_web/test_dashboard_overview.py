@@ -32,7 +32,13 @@ def _functions(*names):
             for child in node.body
             if not (
                 isinstance(child, ast.ImportFrom)
-                and child.module in ("app.services.ai.analysis_render", "app.models.ai_analytics", "app.models.collected_item", "app.models.job")
+                and child.module
+                in (
+                    "app.services.ai.analysis_render",
+                    "app.models.ai_analytics",
+                    "app.models.collected_item",
+                    "app.models.job",
+                )
             )
         ]
     module = ast.Module(
@@ -72,7 +78,7 @@ def _render(offer, *, real_base=False, **extra):
     env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
         "tenant": {"id": 7, "name": "Fixture workspace"},
-        "user": {"username": "fixture", "is_superuser": False},
+        "user": {"username": "fixture"},
         "section": "dashboard",
         "nav": [],
         "mobile_nav": [],
@@ -150,10 +156,10 @@ def test_digest_link_is_not_a_fake_digest_feed():
     assert 'href="/app/analytics"' not in markup
 
 
-def test_operator_filter_remains_available_without_task_preview():
-    markup = _render(_offer(), is_superuser=True, tenants=[{"id": 7, "name": "Workspace seven"}], filter_tenant_id=7)
-    assert 'name="tenant_id"' in markup
-    assert 'value="7" selected' in markup
+def test_platform_admin_does_not_get_workspace_filter_in_dashboard():
+    markup = _render(_offer(), is_superuser=False, tenants=[{"id": 7, "name": "Workspace seven"}], filter_tenant_id=7)
+    assert 'name="tenant_id"' not in markup
+    assert 'value="7" selected' not in markup
     assert "data-home-tasks" not in markup
 
 
@@ -233,7 +239,7 @@ async def test_handler_skips_unauthorized_queries():
     request = SimpleNamespace(
         state=SimpleNamespace(
             tenant_id=7,
-            web_user=SimpleNamespace(is_superuser=False),
+            web_user=SimpleNamespace(is_active=True, is_platform_admin=False),
             web_perms=None,
         )
     )
@@ -245,7 +251,7 @@ async def test_handler_skips_unauthorized_queries():
 
 
 @pytest.mark.asyncio
-async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
+async def test_handler_ignores_platform_admin_workspace_selection_and_uses_active_scope():
     scope = _functions("_offers", "dashboard")
     results = AsyncMock(return_value=[])
     tasks = AsyncMock(return_value=[SimpleNamespace(id=i) for i in range(7)])
@@ -261,13 +267,13 @@ async def test_handler_passes_operator_selected_workspace_and_caps_tasks():
     request = SimpleNamespace(
         state=SimpleNamespace(
             tenant_id=7,
-            web_user=SimpleNamespace(is_superuser=True),
+            web_user=SimpleNamespace(is_platform_admin=True),
             web_perms=SimpleNamespace(can=lambda model, action: (model, action) in rights),
         )
     )
     context = await scope["dashboard"](request)
-    results.assert_awaited_once_with(11, True, False)
-    tasks.assert_awaited_once_with(7, True, 11, show_sources=False)
+    results.assert_awaited_once_with(7, False, False)
+    tasks.assert_awaited_once_with(7, False, None, show_sources=False)
     assert len(context["recent_tasks"]) == 3
 
 

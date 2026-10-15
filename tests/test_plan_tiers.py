@@ -63,10 +63,10 @@ async def plan_arrange_user():
     import secrets
 
     from app.models import Role, User
-    from app.types import UserRoleType
+    from app.types import PlatformRoleType
 
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
-    assert role is not None, "VIEWER reference role must be seeded"
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
+    assert role is not None, "USER platform role must be seeded"
     name = f"plan-arrange-{secrets.token_hex(6)}"
     user = await User.objects.create_user(
         username=name,
@@ -74,11 +74,10 @@ async def plan_arrange_user():
         password="test-only-plan-password",
         role_id=role.id,
         is_active=True,
-        is_superuser=False,
     )
     try:
         loaded = await User.objects.prefetch_related("role.permissions").get(id=user.id)
-        assert loaded is not None and loaded.is_active and not loaded.is_superuser
+        assert loaded is not None and loaded.is_active
         assert loaded.role_id == role.id
         assert not has_permission(loaded, "source", "create")
         assert not has_permission(loaded, "agenttask", "create")
@@ -308,9 +307,7 @@ async def test_a_deactivated_source_still_holds_its_slot(plan_ws, plan_arrange_u
     platform = await _platform()
 
     async with plan_ws("starter") as tenant:
-        rows = [
-            await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user) for i in range(3)
-        ]
+        rows = [await _source(tenant.id, platform, str(i), arrange_user=plan_arrange_user) for i in range(3)]
         with tenant_scope(tenant.id):
             previous_user = get_current_user()
             with permission_scope(plan_arrange_user, is_owner=True):
@@ -346,10 +343,10 @@ async def _web_user():
     import secrets
 
     from app.models import Role, User
-    from app.types import UserRoleType
+    from app.types import PlatformRoleType
 
     name = f"planuser{secrets.token_hex(5)}"
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get_by_codename(PlatformRoleType.USER)
     return await User.objects.create_user(
         username=name,
         email=f"{name}@example.com",
@@ -377,9 +374,7 @@ async def test_the_team_ceiling_counts_web_memberships_only(plan_ws) -> None:
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
             for i in range(5):
-                await tenant_users.add_member(
-                    tenant_id=tenant.id, channel="telegram", external_user_id=str(i)
-                )
+                await tenant_users.add_member(tenant_id=tenant.id, channel="telegram", external_user_id=str(i))
             user = await _web_user()
             # Allowed: the single Starter seat is still unclaimed.
             await tenant_users.add_web_member(tenant_id=tenant.id, user_id=user.id, role="owner")
@@ -401,9 +396,7 @@ async def test_a_messenger_contact_is_not_charged_as_a_seat(plan_ws) -> None:
     async with plan_ws("starter") as tenant:
         with tenant_scope(tenant.id):
             for i in range(5):
-                await tenant_users.add_member(
-                    tenant_id=tenant.id, channel="telegram", external_user_id=str(i)
-                )
+                await tenant_users.add_member(tenant_id=tenant.id, channel="telegram", external_user_id=str(i))
             # No web membership at all, so the seat is untouched.
             assert await limits.check_member_limit(tenant) is None
 

@@ -36,11 +36,5 @@ from sqlalchemy.orm import Mapped
 from ..core.config import settings
 from ..core.decorators import app_label
 from .base import Base, TenantScopedMixin, TimestampMixin
-
-
 from .collection.collected_item import CollectedItem
-
-
 from .managers.collected_item_manager import CollectedItemManager  # noqa: E402
-
-CollectedItem.objects = CollectedItemManager()

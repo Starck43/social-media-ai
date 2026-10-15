@@ -50,21 +50,22 @@ for name, tab, manage, workspace, operator in [
     ("connections", "connections", False, True, False),
     ("operator", "workspace", True, True, True),
 ]:
+    manage = manage and not operator
     context = {
         **common,
         "section": "settings",
         "tab": tab,
         "tenant": tenant if workspace else None,
-        "user": dict(id=101, username="test-member", email="example@fixture.invalid", is_superuser=operator),
+        "user": dict(id=101, username="test-member", email="example@fixture.invalid", is_platform_admin=operator),
         "workspaces": common["workspaces"] if workspace else [],
-        "is_superuser": operator,
+        "is_superuser": False,
         "settings_manage": manage,
         "settings_team_visible": manage,
         "perms": NS(
             can=lambda *args: True,
             can_manage_workspace=lambda target, allowed=manage: allowed and target == 7,
             is_owner=manage,
-            workspace_role="VIEWER",
+            workspace_role="viewer",
         ),
         "member_level": (
             NS(label="Наблюдатель", hint="Просмотр разрешённых материалов") if not manage and workspace else None

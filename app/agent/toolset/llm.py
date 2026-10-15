@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
             "active_only": {"type": "boolean", "default": True, "description": "Filter only active providers"}
         },
     },
-    required_permission="llmmodel.view",
+    required_permission="llm.model.view",
 )
 async def llm_providers_list(active_only: bool = True) -> list[dict[str, Any]]:
     """List all LLM providers."""
@@ -62,7 +62,7 @@ async def llm_providers_list(active_only: bool = True) -> list[dict[str, Any]]:
             "active_only": {"type": "boolean", "default": True, "description": "Filter only active models"},
         },
     },
-    required_permission="llmmodel.view",
+    required_permission="llm.model.view",
 )
 async def llm_models_list(
     provider_id: int | None = None,
@@ -115,7 +115,7 @@ async def llm_models_list(
         },
         "required": ["model_id"],
     },
-    required_permission="llmmodel.view",
+    required_permission="llm.model.view",
 )
 async def llm_model_test(model_id: int, prompt: str = "Привет! Расскажи о себе кратко.") -> dict[str, Any]:
     """Test a model connection (reuses admin test logic, no secrets exposed)."""
@@ -157,7 +157,7 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
     name="llm_model_add",
     description="Create a new LLM model (requires confirmation)",
     confirm=True,
-    required_permission="llmmodel.create",
+    required_permission="llm.model.create",
     parameters={
         "type": "object",
         "properties": {
@@ -229,7 +229,7 @@ async def llm_model_add(
     name="llm_model_update",
     description="Update an LLM model (requires confirmation)",
     confirm=True,
-    required_permission="llmmodel.update",
+    required_permission="llm.model.update",
     parameters={
         "type": "object",
         "properties": {
@@ -313,7 +313,7 @@ async def llm_model_update(
     name="llm_model_delete",
     description="Delete an LLM model with default reassignment preview (requires confirmation)",
     confirm=True,
-    required_permission="llmmodel.delete",
+    required_permission="llm.model.delete",
     parameters={
         "type": "object",
         "properties": {

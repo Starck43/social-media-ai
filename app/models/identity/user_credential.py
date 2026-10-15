@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from ..managers.user_credential_manager import UserCredentialManager
 
 
-@app_label("account")
+@app_label("identity")
 class UserCredential(Base, TimestampMixin):
     """A personal platform credential (L2 user token / session) owned by a user."""
 

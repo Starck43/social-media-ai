@@ -23,8 +23,8 @@ from tests.test_web_permissions import (  # noqa: F401 — shared web harness
     CSRF_RE,
     DENIED,
     AsyncClient,
+    PlatformRoleType,
     User,
-    UserRoleType,
     _client,
     _csrf,
     _drop,
@@ -225,7 +225,7 @@ async def test_a_read_only_member_cannot_save_the_scenario() -> None:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "ScROwner")
             scenario_id = await _scenario(tenant_id, _name("guarded"))
-            member = await _invitee("ScRViewer", UserRoleType.VIEWER, tenant_id, "secret-password-1")
+            member = await _invitee("ScRViewer", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
 
         async with await _client() as m:
             await _login(m, member.username)

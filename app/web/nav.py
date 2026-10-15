@@ -27,12 +27,14 @@ class NavItem(NamedTuple):
 # The shell and mobile drawer consume the same permission-filtered daily sections.
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("dashboard", "/app/", "Обзор", icon="home"),
-    NavItem("sources", "/app/sources", "Источники", required_permission="source.view", icon="database"),
-    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="agentscenario.view", icon="layers"),
-    NavItem("tasks", "/app/tasks", "Задачи", required_permission="agenttask.view", icon="calendar"),
-    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="aianalytics.view", icon="chart"),
-    NavItem("digests", "/app/digests", "Дайджесты", required_permission="digestrun.view", icon="document"),
-    NavItem("jobs", "/app/jobs", "Очередь задач", icon="list"),
+    NavItem("sources", "/app/sources", "Источники", required_permission="collection.source.view", icon="database"),
+    NavItem("scenarios", "/app/scenarios", "Сценарии", required_permission="analysis.scenario.view", icon="layers"),
+    NavItem("tasks", "/app/tasks", "Задачи", required_permission="scheduling.task.view", icon="calendar"),
+    NavItem("analytics", "/app/analytics", "Аналитика", required_permission="analysis.result.view", icon="chart"),
+    NavItem(
+        "digests", "/app/digests", "Дайджесты", required_permission="notifications.digest_run.view", icon="document"
+    ),
+    NavItem("jobs", "/app/jobs", "Очередь задач", required_permission="scheduling.job.view", icon="list"),
     NavItem("chat", "/app/chat", "Чат с агентом", icon="message"),
     NavItem("settings", "/app/settings", "Настройки", icon="settings"),
 )

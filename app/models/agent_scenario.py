@@ -1,4 +1,4 @@
-"""Legacy AgentScenario imports and unchanged manager-binding entry point."""
+"""Legacy imports; canonical model and manager registration live in the domain facade."""
 
 from __future__ import annotations
 
@@ -10,10 +10,6 @@ from sqlalchemy.orm import Mapped, relationship
 from ..core.config import settings
 from ..core.decorators import app_label
 from ..types import LLMStrategyType
-from .base import Base, TenantScopedMixin, TimestampMixin
-
 from .analysis.agent_scenario import AgentScenario
-
+from .base import Base, TenantScopedMixin, TimestampMixin
 from .managers.agent_scenario_manager import AgentScenarioManager  # noqa: E402
-
-AgentScenario.objects = AgentScenarioManager()

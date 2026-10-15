@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ..managers.agent_feedback_manager import AgentFeedbackManager
 
 
-@app_label("social")
+@app_label("agent")
 class AgentFeedback(Base, TenantScopedMixin, TimestampMixin):
     """Owner's rating of an assistant reply (/good, /bad <note>).
 

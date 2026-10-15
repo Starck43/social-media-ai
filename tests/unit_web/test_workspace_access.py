@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, StrictUndefined, select_autoescape
-from sqlalchemy import Boolean, Column, Integer, MetaData, String, Table, select, update
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import registry
+from sqlalchemy.orm import registry, relationship, selectinload
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,7 +60,7 @@ nav = runpy.run_path(str(ROOT / "app/web/nav.py"))
 
 
 def user(**kw):
-    return NS(**dict(id=101, is_active=True, is_superuser=False, **kw))
+    return NS(**dict(id=101, is_active=True, is_platform_admin=False, has_admin_access=lambda: False, **kw))
 
 
 def member(**kw):
@@ -85,8 +85,8 @@ def test_chat_denies_invalid_or_foreign_selection(tid):
 @pytest.mark.parametrize("active", [True, False])
 @pytest.mark.parametrize("owner", [True, False])
 @pytest.mark.parametrize("operator", [True, False])
-def test_owner_guest_operator_matrix(active, owner, operator):
-    caller = NS(id=101, is_active=active, is_superuser=operator)
+def test_owner_guest_platform_admin_matrix(active, owner, operator):
+    caller = NS(id=101, is_active=active, is_platform_admin=operator)
     assert policy(caller, [member(is_owner=owner)], 7) is (active and owner)
 
 
@@ -142,9 +142,16 @@ async def test_guest_routes_refuse_before_runtime_import_or_query(endpoint, ajax
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("owner", [True, False, None])
-async def test_runtime_fresh_identity_denies_guest_or_revoked_before_turn(owner):
-    identity = None if owner is None else NS(is_owner=owner, user=user(), member_grants=None)
+@pytest.mark.parametrize(
+    "identity,admitted",
+    [
+        (NS(user_id=101, is_owner=True, ai_chat_enabled=True, user=user(), member_grants=frozenset()), True),
+        (NS(user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset()), True),
+        (NS(user_id=101, is_owner=False, ai_chat_enabled=False, user=user(), member_grants=frozenset()), False),
+        (None, False),
+    ],
+)
+async def test_runtime_requires_fresh_ai_chat_admission_before_turn(identity, admitted):
     ns = load_nodes(
         "app/agent/runtime.py",
         {"_handle_in_tenant"},
@@ -152,13 +159,14 @@ async def test_runtime_fresh_identity_denies_guest_or_revoked_before_turn(owner)
             WEB_CHANNEL="web",
             current_tenant_id=lambda: 7,
             resolve_runtime_identity=AsyncMock(return_value=identity),
+            memory_actor_scope=lambda *args: nullcontext(),
             permission_scope=lambda *a, **kw: nullcontext(),
             _handle_authorized_turn=AsyncMock(return_value="mock reply"),
         ),
     )
     inbound = NS(channel="web", chat_id="101", user_id="101")
     resolution = NS(tenant_id=7, channel="web", chat_id="101", user_id="101")
-    if owner:
+    if admitted:
         assert await ns["_handle_in_tenant"](inbound, resolution) == "mock reply"
         ns["_handle_authorized_turn"].assert_awaited_once()
     else:
@@ -168,28 +176,41 @@ async def test_runtime_fresh_identity_denies_guest_or_revoked_before_turn(owner)
 
 
 @pytest.mark.asyncio
-async def test_messenger_member_contract_is_unchanged():
+async def test_messenger_member_requires_ai_chat_grant():
     ns = load_nodes(
         "app/agent/runtime.py",
         {"_handle_in_tenant"},
         namespace=dict(
             WEB_CHANNEL="web",
             current_tenant_id=lambda: 7,
-            resolve_runtime_identity=AsyncMock(return_value=NS(is_owner=False, user=user(), member_grants=frozenset())),
+            resolve_runtime_identity=AsyncMock(
+                return_value=NS(user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset())
+            ),
+            memory_actor_scope=lambda *args: nullcontext(),
             permission_scope=lambda *a, **kw: nullcontext(),
             _handle_authorized_turn=AsyncMock(return_value="mock"),
         ),
     )
     data = NS(channel="telegram", chat_id="101", user_id="101")
     assert await ns["_handle_in_tenant"](data, NS(tenant_id=7, **data.__dict__)) == "mock"
+    ns["resolve_runtime_identity"].return_value.ai_chat_enabled = False
+    assert "AI-чату" in await ns["_handle_in_tenant"](data, NS(tenant_id=7, **data.__dict__))
 
 
 @pytest.mark.parametrize("active", [True, False])
-def test_admin_entry_does_not_require_model_grants(active):
-    cls = load_nodes("app/models/identity/user.py", {"User"}, methods={"has_admin_access"})["User"]
+@pytest.mark.parametrize("codename,expected", [("admin", True), ("operator", True), ("user", False)])
+def test_admin_entry_requires_active_platform_operator_or_admin(active, codename, expected):
+    enum = NS(ADMIN="admin", OPERATOR="operator")
+    cls = load_nodes(
+        "app/models/identity/user.py",
+        {"User"},
+        methods={"has_admin_access"},
+        namespace={"PlatformRoleType": enum},
+    )["User"]
     obj = cls()
     obj.is_active = active
-    assert obj.has_admin_access() is active
+    obj.role = NS(codename=codename)
+    assert obj.has_admin_access() is (active and expected)
 
 
 @pytest.mark.asyncio
@@ -267,7 +288,9 @@ async def test_admin_model_action_grants_remain_separate(grants):
     backend = cls()
     backend.resolve_user = AsyncMock(
         return_value=NS(
-            _is_superuser_role=lambda: False, model_permissions=lambda name: grants if name == "source" else set()
+            has_admin_access=lambda: True,
+            is_platform_admin=False,
+            model_permissions=lambda name: grants if name == "source" else set(),
         )
     )
     backend._catalog = lambda request: ({"source": "source", "user": "user"}, {"source": {"probe": "configure"}})
@@ -305,41 +328,94 @@ async def test_member_disable_checks_capability_and_csrf_before_manager(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_disable_sql_is_conditional_workspace_web_nonowner_update(monkeypatch):
+async def test_team_change_locks_workspace_and_updates_only_authorized_target(monkeypatch):
     metadata = MetaData(schema="offline_fixture")
-    table = Table(
+    tenant_table = Table(
+        "tenants",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("is_active", Boolean),
+    )
+    user_table = Table(
+        "users",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("is_active", Boolean),
+    )
+    role_table = Table(
+        "workspace_roles",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("codename", String),
+    )
+    member_table = Table(
         "tenant_users",
         metadata,
         Column("id", Integer, primary_key=True),
         Column("tenant_id", Integer),
         Column("channel", String),
         Column("user_id", Integer),
-        Column("role_id", Integer),
+        Column("role_id", ForeignKey("offline_fixture.workspace_roles.id")),
         Column("is_active", Boolean),
     )
-    role_table = Table("roles", metadata, Column("id", Integer, primary_key=True), Column("codename", String))
     mappings = registry()
 
     @mappings.mapped
-    class Member:
-        __table__ = table
+    class Tenant:
+        __table__ = tenant_table
 
     @mappings.mapped
-    class Role:
+    class User:
+        __table__ = user_table
+
+    @mappings.mapped
+    class WorkspaceRole:
         __table__ = role_table
 
-    module(monkeypatch, "app.models.role", Role=Role)
+    @mappings.mapped
+    class Member:
+        __table__ = member_table
+        role = relationship(WorkspaceRole)
+
+    actor = NS(id=101)
+    caller_role = WorkspaceRole(id=1, codename="owner")
+    target_role = WorkspaceRole(id=2, codename="viewer")
+    caller = Member(id=11, tenant_id=7, channel="web", user_id=101, role_id=1, is_active=True, role=caller_role)
+    target = Member(id=33, tenant_id=7, channel="web", user_id=202, role_id=2, is_active=True, role=target_role)
+    workspace = Tenant(id=7, is_active=True)
+    fresh_actor = User(id=101, is_active=True)
+
+    module(monkeypatch, "app", __path__=[])
+    module(monkeypatch, "app.models", __path__=[])
+    module(monkeypatch, "app.models.managers", __path__=[])
+    module(monkeypatch, "app.models.tenancy", __path__=[])
+    module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=WorkspaceRole)
+    module(monkeypatch, "app.models.tenant", Tenant=Tenant)
+    module(monkeypatch, "app.models.user", User=User)
     cls = load_nodes(
         "app/models/managers/tenant_manager.py",
         {"TenantUserManager"},
-        methods={"disable_web_member"},
-        namespace=dict(select=select, update=update, WEB_CHANNEL="web"),
+        methods={"_change_team", "disable_web_member"},
+        namespace=dict(
+            select=select,
+            selectinload=selectinload,
+            WEB_CHANNEL="web",
+            get_current_user=lambda: actor,
+            current_tenant_id=lambda: 7,
+            is_bypass=lambda: False,
+            logger=NS(info=lambda *a, **k: None),
+        ),
     )["TenantUserManager"]
     statements = []
 
     async def execute(statement):
         statements.append(statement)
-        return NS(scalar_one_or_none=lambda: 33)
+        entity = statement.column_descriptions[0]["entity"]
+        row = {Tenant: workspace, User: fresh_actor}.get(entity)
+        return NS(
+            scalar_one_or_none=lambda: row,
+            scalars=lambda: [caller, target],
+        )
 
     @asynccontextmanager
     async def session():
@@ -348,21 +424,15 @@ async def test_disable_sql_is_conditional_workspace_web_nonowner_update(monkeypa
     manager = cls()
     manager.model, manager._get_owned_session = Member, session
     assert await manager.disable_web_member(tenant_id=7, membership_id=33)
-    sql = str(statements[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    for clause in [
-        "tenant_users.id = 33",
-        "tenant_users.tenant_id = 7",
-        "tenant_users.channel = 'web'",
-        "tenant_users.user_id IS NOT NULL",
-        "tenant_users.is_active IS true",
-        "tenant_users.role_id IS NOT NULL",
-        "roles.codename = 'SUPERUSER'",
-        "NOT IN",
-        "RETURNING",
-    ]:
-        assert clause in sql
-    assert "SET is_active=false" in sql
-    assert "DELETE" not in sql
+    sql = [
+        str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        for statement in statements
+    ]
+    assert len(sql) == 3
+    assert all("FOR UPDATE" in statement for statement in sql[:2])
+    assert "tenant_users.tenant_id = 7" in sql[2]
+    assert target.is_active is False
+    assert caller.is_active is True
 
 
 def test_shell_context_labels_admin_entry_and_member_disable_markup():
@@ -370,13 +440,14 @@ def test_shell_context_labels_admin_entry_and_member_disable_markup():
 
     for owner in [True, False]:
         data = context(manager=owner)
+        data["user"].has_admin_access = lambda: True
         data["workspaces"] = [
             dict(
                 tenant=NS(id=7, name="<script>other</script>"),
                 active=True,
                 is_owner=owner,
                 role_label="Owner" if owner else "Viewer",
-                role="SUPERUSER" if owner else "VIEWER",
+                role="owner" if owner else "viewer",
             )
         ]
         html = environment().get_template("shell-fixture.html").render(**data)
@@ -398,16 +469,23 @@ def test_chat_has_no_additional_unprotected_attachment_route():
     assert "Reload membership instead of trusting" not in runtime  # No changes to messenger turn.
 
 
-@pytest.mark.parametrize("owner", [True, False])
-def test_webperms_reuses_bound_chat_policy_without_operator_override(owner):
+@pytest.mark.parametrize(
+    "owner,ai_chat_enabled,expected", [(True, False, True), (False, True, True), (False, False, False)]
+)
+def test_webperms_chat_requires_owner_or_explicit_membership_grant(owner, ai_chat_enabled, expected):
     cls = load_nodes(
-        "app/web/perms.py", {"WebPerms"}, methods={"can_open_chat"}, namespace={"owns_web_workspace": policy}
+        "app/web/perms.py",
+        {"WebPerms"},
+        methods={"can_open_chat", "_membership"},
+        namespace={"owns_web_workspace": policy},
     )["WebPerms"]
     perms = cls()
-    perms._user = NS(id=101, is_active=True, is_superuser=True)
+    perms._user = NS(id=101, is_active=True, is_platform_admin=True)
     perms._tenant_id = 7
-    perms._memberships = [member(is_owner=owner)]
-    assert perms.can_open_chat() is owner
+    perms._memberships = [
+        member(is_owner=owner, role=NS(codename="owner" if owner else "viewer"), ai_chat_enabled=ai_chat_enabled)
+    ]
+    assert perms.can_open_chat() is expected
     perms._memberships[0].is_active = False
     assert not perms.can_open_chat()
 

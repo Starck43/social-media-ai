@@ -153,10 +153,10 @@ def test_custom_prompt_payload_cannot_replace_system_text():
 @pytest.mark.parametrize(
     "name,permission,confirm",
     [
-        ("llm_model_add", "llmmodel.create", True),
-        ("llm_model_update", "llmmodel.update", True),
-        ("llm_model_delete", "llmmodel.delete", True),
-        ("llm_model_test", "llmmodel.view", False),
+        ("llm_model_add", "llm.model.create", True),
+        ("llm_model_update", "llm.model.update", True),
+        ("llm_model_delete", "llm.model.delete", True),
+        ("llm_model_test", "llm.model.view", False),
     ],
 )
 def test_existing_llm_tools_have_permission_and_confirmation(name, permission, confirm):

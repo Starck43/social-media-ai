@@ -14,7 +14,7 @@ from app.models.platform import Platform
 from app.models.role import Role
 from app.models.source import Source
 from app.models.user import User
-from app.types import PlatformType, SourceType, UserRoleType
+from app.types import PlatformRoleType, PlatformType, SourceType
 
 
 # Фикстура для создания тестовой БД в памяти
@@ -75,8 +75,8 @@ async def async_session():
 async def sample_data(async_session: AsyncSession):
     """Создание тестовых данных"""
     # Создаем роли
-    admin_role = Role(id=1, name="Admin", codename=UserRoleType.ADMIN.name)
-    user_role = Role(id=2, name="User", codename=UserRoleType.VIEWER.name)
+    admin_role = Role(id=1, codename=PlatformRoleType.ADMIN.value)
+    user_role = Role(id=2, codename=PlatformRoleType.USER.value)
     async_session.add_all([admin_role, user_role])
 
     # Создаем пользователей
@@ -88,7 +88,6 @@ async def sample_data(async_session: AsyncSession):
             hashed_password="hash",
             role_id=1,
             is_active=True,
-            is_superuser=True,
         ),
         User(id=2, username="user1", email="user1@test.com", hashed_password="hash", role_id=2, is_active=True),
         User(id=3, username="user2", email="user2@test.com", hashed_password="hash", role_id=2, is_active=False),

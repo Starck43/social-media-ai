@@ -29,7 +29,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AgentTask, Platform, Role, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
-from app.types import JobType, UserRoleType
+from app.types import JobType, PlatformRoleType, WorkspaceRoleType
 from app.web.nav import MOBILE_NAV_ITEMS, NAV_ITEMS
 from app.web.onboarding import SCHEDULE_PRESETS
 
@@ -243,19 +243,18 @@ async def _drop(user: User | None, tenant_id: int | None) -> None:
         await tenants.delete_by_id(tenant_id)
 
 
-async def _invitee(prefix: str, platform_role: UserRoleType, tenant_id: int, password: str) -> User:
+async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: int, password: str) -> User:
     """A web user in someone else's workspace with a *non*-owner membership."""
     username = _name(prefix)
-    role = await Role.objects.get(codename=platform_role.name)
-    assert role is not None, f"role {platform_role.name} is seeded"
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
+    assert role is not None, f"role {PlatformRoleType.USER.value} is seeded"
     user = await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password=password,
         role_id=role.id,
-        is_superuser=False,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role="member")
+    await TenantUserManager().add_web_member(tenant_id=tenant_id, user_id=user.id, role=workspace_role.value)
     return user
 
 
@@ -360,7 +359,7 @@ async def test_read_only_member_gets_no_wizard_form_and_cannot_create() -> None:
     try:
         async with await _client() as c:
             owner, tenant_id = await _register(c, "OnbROwner")
-            member = await _invitee("OnbRViewer", UserRoleType.VIEWER, tenant_id, "secret-password-1")
+            member = await _invitee("OnbRViewer", WorkspaceRoleType.VIEWER, tenant_id, "secret-password-1")
 
         async with await _client() as m:
             await _login(m, member.username)
@@ -515,7 +514,9 @@ def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
         # `plan_badge` reads this; the route gets it from `render()`.
         plan_labels={"free": "Free"},
         # An owner: every section the dashboard points at is open.
-        offer=dict.fromkeys(("sources", "add_source", "add_scenario", "tasks", "add_task", "digests", "analytics"), True),
+        offer=dict.fromkeys(
+            ("sources", "add_source", "add_scenario", "tasks", "add_task", "digests", "analytics"), True
+        ),
     )
 
 

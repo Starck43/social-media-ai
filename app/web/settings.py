@@ -31,8 +31,8 @@ from app.models.tenant import Tenant
 from app.services.tenancy import member_roles
 from app.types import ActionType
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, render
 from ..models import LLMModel
+from .deps import action_tenant_id, add_flash, ensure_csrf, render
 
 router = APIRouter(prefix="/settings")
 
@@ -141,7 +141,7 @@ def _workspace_access(request: Request, tenant_id: int | None) -> bool:
         return False
     user = request.state.web_user
     return bool(
-        getattr(user, "is_superuser", False)
+        False
         or any(
             m.tenant_id == tenant_id
             and m.user_id == user.id
@@ -187,10 +187,9 @@ async def settings_page(request: Request):
         "visible_tabs": visible_tabs,
         "settings_manage": manage,
         "settings_team_visible": manage,
-        "is_superuser": bool(getattr(user, "is_superuser", False)),
+        "is_superuser": False,
         "settings_scope": "personal" if tab in ("account", "connections") else "workspace",
     }
-
 
     if tab == "workspace":
         tenant = request.state.tenant
@@ -442,6 +441,7 @@ async def agent_settings_update(
     )
     add_flash(request, "success", "Настройки агента сохранены")
 
+
 @router.post("/agent/model-probe")
 async def agent_model_probe(
     request: Request,
@@ -532,9 +532,6 @@ async def agent_model_probe(
     # the template shows it from `context["probe_result"]`.
     request.session["agent_model_probe_result"] = result
     return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
-
-
-
 
 
 @router.post("/credentials")
@@ -637,7 +634,7 @@ async def membership_role(
     workspace with no owner has nobody who may manage it at all, so it would
     be unreachable rather than merely restricted.
     """
-    from app.models.role import Role
+    from app.models import WorkspaceRole as Role
 
     tenant_id = request.state.tenant_id
 
@@ -669,14 +666,32 @@ async def membership_role(
         return RedirectResponse(f"{BACK}?tab=team", status_code=302)
     new_role_id = r.id
 
-    if membership.is_owner and new_role != "owner":
-        owners = [m for m in await tenant_users.web_memberships_for_tenant(tenant_id) if m.is_owner]
-        if len(owners) <= 1:
-            add_flash(request, "error", "Владелец должен остаться хотя бы один")
-            return RedirectResponse(f"{BACK}?tab=team", status_code=302)
-
-    await tenant_users.update_by_id(membership.id, role_id=new_role_id)
+    changed = await tenant_users.change_member_role(
+        tenant_id=tenant_id, membership_id=membership.id, role_id=new_role_id
+    )
+    if not changed:
+        add_flash(request, "error", "Недостаточно прав или нельзя снять последнего владельца")
+        return RedirectResponse(f"{BACK}?tab=team", status_code=302)
     add_flash(request, "success", f"Роль изменена на «{ROLE_LABELS[new_role]}»")
+    return RedirectResponse(f"{BACK}?tab=team", status_code=302)
+
+
+@router.post("/members/{membership_id}/ai")
+async def membership_ai_access(
+    request: Request, membership_id: int, enabled: str = Form(""), token: str = Form("", alias="_csrf")
+):
+    tenant_id = request.state.tenant_id
+    denied = _guard_workspace_settings(request, tenant_id)
+    if denied is not None:
+        return denied
+    if not ensure_csrf(request, token):
+        return HTMLResponse("Сессия истекла", status_code=403)
+    from app.models.managers.tenant_manager import tenant_users
+
+    changed = await tenant_users.set_ai_access(tenant_id=tenant_id, membership_id=membership_id, enabled=enabled == "1")
+    add_flash(
+        request, "success" if changed else "error", "Доступ к AI изменён" if changed else "Изменение доступа запрещено"
+    )
     return RedirectResponse(f"{BACK}?tab=team", status_code=302)
 
 
@@ -726,8 +741,8 @@ def invite_qr_svg(link: str) -> str | None:
 
 async def _open_invites(request: Request, tenant_id: int | None, visible_tabs: tuple[str, ...]) -> list[dict]:
     """Redeemable invites for the team tab — only for someone who manages the workspace."""
+    from app.models import WorkspaceRole as Role
     from app.models.managers.tenant_manager import TenantInviteManager
-    from app.models.role import Role
 
     perms = getattr(request.state, "web_perms", None)
     if tenant_id is None or perms is None or not perms.can_manage_workspace(tenant_id):
@@ -765,7 +780,7 @@ async def invite_dialog(request: Request):
     response = render(
         request,
         "web/_invite_dialog.html",
-        invite_roles=member_roles.INVITABLE,
+        invite_roles=tuple(level for level in member_roles.INVITABLE if perms.can_manage_member("viewer", level.key)),
         invite_default=member_roles.DEFAULT_INVITE_KEY,
         invite_days=INVITE_DAYS,
         issued_invite=_pop_issued_invite(request),
@@ -823,6 +838,9 @@ async def invite_issue(
         add_flash(request, "error", "Выберите уровень доступа и срок действия из списка")
         return RedirectResponse(f"{BACK}?tab=team&invite_dialog=1", status_code=302)
 
+    perms = request.state.web_perms
+    if not perms.is_owner and level.key == "admin":
+        return HTMLResponse("Назначать администратора может только владелец", status_code=403)
     expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     invite, code = await TenantInviteManager().issue(
         tenant_id=tenant_id, role=level.codename, max_uses=1, expires_at=expires_at
@@ -862,7 +880,7 @@ async def plan_update(
         return RedirectResponse(back, status_code=302)
 
     user = getattr(request.state, "web_user", None)
-    if user is None or not getattr(user, "is_superuser", False):
+    if user is None or not False:
         add_flash(request, "error", "Менять тариф может только оператор платформы")
         return RedirectResponse(back, status_code=302)
 

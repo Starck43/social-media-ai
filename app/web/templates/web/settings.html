@@ -262,11 +262,19 @@
                             <td data-label="Роль" class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ role_labels.get(m_key, 'Роль не назначена') if m_key else 'Роль не назначена' }}</td>
                             {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
                                 <td data-label="Действия" class="px-5 py-3 text-right">
+                                    {% if perms.can_manage_member(m_key) %}
+                                    {% if m_key != 'owner' %}
+                                    <form method="post" action="/app/settings/members/{{ m.id }}/ai" class="inline-flex items-center gap-2">
+                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                        <input type="hidden" name="enabled" value="{{ '0' if m.ai_chat_enabled else '1' }}">
+                                        <button type="submit" class="btn btn-secondary">{{ 'Отключить AI' if m.ai_chat_enabled else 'Разрешить AI' }}</button>
+                                    </form>
+                                    {% endif %}
                                     <form method="post" action="/app/settings/members/{{ m.id }}/role"
                                           class="inline-flex items-center gap-2">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         <select name="role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs outline-none focus:border-cyan-500">
-                                            {% for value, label in role_labels.items() %}
+                                            {% for value, label in role_labels.items() if perms.can_manage_member(m_key, value) %}
                                                 <option value="{{ value }}" {% if value == m_key %}selected{% endif %}>{{ label }}</option>
                                             {% endfor %}
                                         </select>
@@ -279,6 +287,7 @@
                                         <button class="ui-control text-xs">Отключить доступ</button>
                                     </form>
                                     {% else %}<p class="mt-2 text-xs ui-muted">Владелец защищён от отключения. Сначала передайте владение и измените роль.</p>{% endif %}
+                                    {% endif %}
                                 </td>
                             {% endif %}
                         </tr>

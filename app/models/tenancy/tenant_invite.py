@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ..managers.tenant_manager import TenantInviteManager
 
 
-@app_label("account")
+@app_label("tenancy")
 class TenantInvite(Base, TimestampMixin):
     """Invite codes: the only way a new chat joins a tenant (`/start <code>`)."""
 
@@ -34,8 +34,10 @@ class TenantInvite(Base, TimestampMixin):
     )
     code_hash: Mapped[str] = Column(String(64), nullable=False)
     role_id: Mapped[int | None] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.roles.id", ondelete="SET NULL"), nullable=True,
-        comment="Platform role to assign on invite redemption",
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.workspace_roles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Workspace role to assign on invite redemption",
     )
     expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     max_uses: Mapped[int] = Column(Integer, nullable=False, default=1, server_default="1")

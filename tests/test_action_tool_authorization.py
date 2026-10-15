@@ -70,21 +70,19 @@ class ActionToolTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.import_patch.stop)
         self.actions = load_source("_action_tools_actual", "app/agent/toolset/actions.py")
         self.transport = self.actions._execute_action = AsyncMock(side_effect=AssertionError("No provider calls"))
-        self.user.has_perm_for = (
-            lambda model, action: model == "botaction" and action == self.perms._resolve_action("view")
-        )
-
     async def preview(self, **kwargs):
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=frozenset({("botaction", self.perms._resolve_action("view"))})
+        ):
             return await self.actions.action_send(action_id=9, **kwargs)
 
     async def test_registry_points_to_real_argument_handler_not_tier_helper(self):
         spec = self.tools.TOOL_REGISTRY["action_send"]
         self.assertIs(spec.handler, self.actions.action_send)
         self.assertIsNot(spec.handler, self.actions._auto_actions_forced_dry_run)
-        self.assertEqual(spec.required_permission, "botaction.view")
+        self.assertEqual(spec.required_permission, "scheduling.action.view")
         self.assertTrue(spec.confirm)
-        self.assertEqual(self.tools.TOOL_REGISTRY["actions_log"].required_permission, "botaction.view")
+        self.assertEqual(self.tools.TOOL_REGISTRY["actions_log"].required_permission, "scheduling.action.view")
 
     async def test_direct_unknown_subject_cannot_read_or_preview(self):
         with self.assertRaises(self.perms.PermissionDeniedError):
@@ -94,9 +92,8 @@ class ActionToolTests(unittest.IsolatedAsyncioTestCase):
         self.action_get.assert_not_awaited()
         self.limit_query.assert_not_awaited()
 
-    async def test_workspace_owner_without_botaction_view_is_denied(self):
-        self.user.has_perm_for = lambda *args: False
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, is_owner=True):
+    async def test_member_without_action_view_is_denied(self):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user, member_grants=frozenset()):
             with self.assertRaises(self.perms.PermissionDeniedError):
                 await self.actions.action_send(action_id=9)
         self.action_get.assert_not_awaited()
@@ -120,7 +117,9 @@ class ActionToolTests(unittest.IsolatedAsyncioTestCase):
         self.transport.assert_not_awaited()
 
     async def test_invalid_id_and_payload_are_refused_without_publication(self):
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=frozenset({("botaction", self.perms._resolve_action("view"))})
+        ):
             for value in (True, -1, 0, "9", 2**31):
                 result = await self.actions.action_send(action_id=value)
                 self.assertEqual(result["code"], "invalid_arguments")
@@ -150,7 +149,9 @@ class ActionToolTests(unittest.IsolatedAsyncioTestCase):
         self.transport.assert_not_awaited()
 
     async def test_log_limit_is_bounded_and_valid_log_contract_preserved(self):
-        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(
+            self.user, member_grants=frozenset({("botaction", self.perms._resolve_action("view"))})
+        ):
             for value in (True, -1, 0, 101, "10"):
                 result = await self.actions.actions_log(limit=value)
                 self.assertEqual(result["code"], "invalid_arguments")

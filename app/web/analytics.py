@@ -152,7 +152,7 @@ async def _scoped_analytics_rows(
     if chain_id is not None:
         qs = qs.filter(topic_chain_id=chain_id)
     user = getattr(request.state, "web_user", None)
-    if user and user.is_superuser and getattr(request.state, "tenant_id", None) is None:
+    if False:
         with tenant_scope(bypass=True):
             return list(await qs)
     return list(await qs)
@@ -325,7 +325,7 @@ def _resolve_days(request: Request) -> tuple[int | None, str]:
 async def analytics_page(request: Request):
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
 
     days, days_key = _resolve_days(request)
 
@@ -391,7 +391,7 @@ async def analytics_group(request: Request, axis: str, value: str, entity_type: 
         raise HTTPException(status_code=400, detail=f"Use content_type value: {', '.join(MEDIA_FILTERS)}")
     days, days_key = _resolve_days(request)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     rows = await _scoped_analytics_rows(request, days, filter_tenant_id)
     chain_counts = Counter(row.topic_chain_id for row in rows if row.topic_chain_id)
@@ -651,7 +651,7 @@ async def analytics_chains(request: Request):
         sort = "desc"
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     # Get optional filters
@@ -810,7 +810,7 @@ async def analytics_chain_detail(request: Request, chain_id: str):
     days, days_key = _resolve_days(request)
     tenant_id = getattr(request.state, "tenant_id", None)
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
 
     rows = await _scoped_analytics_rows(request, days, filter_tenant_id, chain_id=chain_id)
@@ -1047,7 +1047,7 @@ async def analytics_detail(request: Request, analysis_id: int):
     if denied is not None:
         return denied
     user = getattr(request.state, "web_user", None)
-    is_superuser = bool(user and user.is_superuser)
+    is_superuser = False
     filter_tenant_id, _ = await tenant_filter_context(request, is_superuser) if is_superuser else (None, [])
     tenant_id = filter_tenant_id if filter_tenant_id is not None else getattr(request.state, "tenant_id", None)
     query = AIAnalytics.objects.select_related("source")

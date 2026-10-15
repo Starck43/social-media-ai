@@ -428,7 +428,7 @@ async def queue_task_now(task: "AgentTask") -> dict[str, Any]:
 async def tasks_list(request: Request):
 	tenant_id = request.state.tenant_id
 	user = getattr(request.state, "web_user", None)
-	is_superuser = bool(user and user.is_superuser)
+	is_superuser = False
 	filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
 	if is_superuser:
@@ -739,7 +739,7 @@ async def task_detail(request: Request, task_id: int):
 	from app.models.source import Source
 
 	user = getattr(request.state, "web_user", None)
-	is_superuser = bool(user and user.is_superuser)
+	is_superuser = False
 	filter_tenant_id, _tenants = await tenant_filter_context(request, is_superuser)
 
 	source = None
@@ -828,7 +828,7 @@ async def task_edit_page(request: Request, task_id: int):
 	from app.core.tenant_context import tenant_scope
 
 	user = getattr(request.state, "web_user", None)
-	is_superuser = bool(user and user.is_superuser)
+	is_superuser = False
 	filter_tenant_id, _ = await tenant_filter_context(request, is_superuser)
 
 	denied = guard_web(request, "agenttask", "update", back="/app/tasks")

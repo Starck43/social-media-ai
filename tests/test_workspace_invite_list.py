@@ -12,7 +12,7 @@ import re
 
 from app.models import User
 from app.models.managers.tenant_manager import TenantInviteManager, TenantUserManager
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 from tests.test_web_settings import (
     DENIED,
     PASSWORD,
@@ -48,16 +48,15 @@ async def _revoke(client, invite_id: int):
 
 
 async def _new_user(prefix: str) -> User:
-    from app.models.role import Role
+    from app.models import PlatformRole
 
     username = _name(prefix)
-    viewer_role = await Role.objects.get(codename="VIEWER")
+    viewer_role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
     return await User.objects.create_user(
         username=username,
         email=f"{username}@example.com",
         password=PASSWORD,
         role_id=viewer_role.id,
-        is_superuser=False,
     )
 
 
@@ -159,7 +158,7 @@ async def test_a_member_who_does_not_manage_the_workspace_sees_no_list_and_canno
         async with await _client() as c:
             owner, tenant_id = await _register(c, "InvLsRoOwn")
             await _issue(c, "viewer")
-            viewer = await _invitee("InvLsRoViewer", UserRoleType.VIEWER, tenant_id)
+            viewer = await _invitee("InvLsRoViewer", WorkspaceRoleType.VIEWER, tenant_id)
         invite_id = (await TenantInviteManager().open_for_tenant(tenant_id))[0].id
 
         async with await _client() as c:

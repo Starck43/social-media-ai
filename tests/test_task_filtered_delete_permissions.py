@@ -22,9 +22,6 @@ pytestmark = pytest.mark.tenancy
 def actor(allowed):
     return SimpleNamespace(
         is_active=True,
-        is_superuser=False,
-        role=None,
-        _is_superuser_role=lambda: False,
         has_perm_for=lambda model, action: allowed and model == "agenttask" and action == ActionType.DELETE,
     )
 

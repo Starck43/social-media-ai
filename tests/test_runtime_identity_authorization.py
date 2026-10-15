@@ -1,4 +1,4 @@
-"""Actual identity/runtime source with infrastructure mocked; tests NOT RUN.
+"""Actual identity/runtime source with infrastructure mocked.
 
 Run: python tests/test_runtime_identity_authorization.py. No DB/live transports.
 Pytest still uses repository conftest and its isolated DB target.
@@ -31,10 +31,17 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         HELPERS.BoundaryTests.setUp(self)
         self.user.id = 12
         self.user.role_id = 2
-        self.user.role = SimpleNamespace(id=2, codename="VIEWER")
+        self.user.role = SimpleNamespace(id=2, codename="user")
         self.membership = SimpleNamespace(
-            id=41, tenant_id=31, channel="telegram", external_user_id="7", user_id=12,
-            role_id=3, role=SimpleNamespace(id=3, codename="SUPERUSER"), is_active=True,
+            id=41,
+            tenant_id=31,
+            channel="telegram",
+            external_user_id="7",
+            user_id=12,
+            role_id=3,
+            role=SimpleNamespace(id=3, codename="owner"),
+            is_active=True,
+            ai_chat_enabled=False,
         )
         self.tenant_row = SimpleNamespace(id=31, is_active=True)
         self.channel_row = SimpleNamespace(tenant_id=31, channel="telegram", chat_id="7", is_active=True)
@@ -42,21 +49,29 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.users.prefetch_related = Mock(return_value=self.users)
         self.members = SimpleNamespace(get=AsyncMock(return_value=self.membership))
         self.members.prefetch_related = Mock(return_value=self.members)
+        self.members.member_grants = AsyncMock(return_value=frozenset({("agenttask", self.action.CREATE)}))
         self.tenants = SimpleNamespace(get=AsyncMock(return_value=self.tenant_row))
         self.channels = SimpleNamespace(get=AsyncMock(return_value=self.channel_row))
         self.resolution = SimpleNamespace(
-            tenant_id=31, channel="telegram", chat_id="7", user_id="7", onboarded=False,
-            is_owner=True, is_platform_owner=True,
+            tenant_id=31,
+            channel="telegram",
+            chat_id="7",
+            user_id="7",
+            onboarded=False,
+            is_owner=False,
+            is_platform_owner=False,
         )
         self.inbound = SimpleNamespace(channel="telegram", chat_id="7", user_id="7", text="hello")
         self.modules = {
             "app.core.tenant_context": self.tenant,
             "app.core.permissions": self.perms,
             "app.models": HELPERS.module_with(
-                User=SimpleNamespace(objects=self.users), Tenant=SimpleNamespace(objects=self.tenants),
+                User=SimpleNamespace(objects=self.users),
+                Tenant=SimpleNamespace(objects=self.tenants),
             ),
             "app.models.managers.tenant_manager": HELPERS.module_with(
-                tenant_users=self.members, tenant_channels=self.channels,
+                tenant_users=self.members,
+                tenant_channels=self.channels,
                 tenants=self.tenants,
             ),
         }
@@ -64,6 +79,9 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.import_patch.start()
         self.addCleanup(self.import_patch.stop)
         self.identity = load_source("_runtime_identity_actual", "app/agent/identity.py")
+        self.identity_patch = patch.dict(sys.modules, {"app.agent.identity": self.identity})
+        self.identity_patch.start()
+        self.addCleanup(self.identity_patch.stop)
 
     async def resolve(self):
         with self.tenant.tenant_scope(31):
@@ -75,13 +93,18 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
             "app.agent.identity": self.identity,
             "app.agent.prompts": HELPERS.module_with(DEFAULT_SYSTEM_PROMPT="test", AGENT_HELP_TEXT="test-help"),
             "app.agent.tools": HELPERS.module_with(
-                TOOL_REGISTRY={}, call_tool=AsyncMock(), to_openai_call=lambda call: call, tool_specs=lambda: [],
+                TOOL_REGISTRY={},
+                call_tool=AsyncMock(),
+                to_openai_call=lambda call: call,
+                tool_specs=lambda: [],
             ),
             "app.channels.base": HELPERS.module_with(Inbound=SimpleNamespace),
             "app.core.config": HELPERS.module_with(settings=SimpleNamespace(AGENT_MAX_ITERATIONS=2)),
             "app.services.tenancy.resolver": HELPERS.module_with(
-                Resolution=SimpleNamespace, is_platform_owner=lambda *args: False,
-                resolve_inbound=AsyncMock(), tenant_daily_cost_limit=AsyncMock(return_value=0),
+                Resolution=SimpleNamespace,
+                is_platform_owner=lambda *args: False,
+                resolve_inbound=AsyncMock(),
+                tenant_daily_cost_limit=AsyncMock(return_value=0),
             ),
         }
         with patch.dict(sys.modules, modules):
@@ -94,9 +117,16 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(identity)
         self.assertIs(identity.user, self.user)
         self.assertTrue(identity.is_owner)
+        self.assertEqual(identity.workspace_role_codename, "owner")
+        self.assertTrue(identity.ai_chat_enabled)
         self.members.get.assert_awaited_once_with(
-            tenant_id=31, channel="telegram", external_user_id="7", is_active=True,
+            tenant_id=31,
+            channel="telegram",
+            external_user_id="7",
+            is_active=True,
         )
+        self.members.prefetch_related.assert_called_once_with("role")
+        self.members.member_grants.assert_awaited_once_with(self.membership)
         self.users.prefetch_related.assert_called_once_with("role.permissions.model_type")
         self.users.get.assert_awaited_once_with(id=12, is_active=True)
 
@@ -156,9 +186,9 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_or_inconsistent_platform_role_is_denied(self):
         self.user.role = None
         self.assertIsNone(await self.resolve())
-        self.user.role = SimpleNamespace(id=99, codename="VIEWER")
+        self.user.role = SimpleNamespace(id=99, codename="user")
         self.assertIsNone(await self.resolve())
-        self.user.role = SimpleNamespace(id=2, codename="VIEWER")
+        self.user.role = SimpleNamespace(id=2, codename="user")
         self.user.role_id = None
         self.assertIsNone(await self.resolve())
 
@@ -172,10 +202,12 @@ class RuntimeIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.membership.user_id = 13
         self.assertIsNone(await self.resolve())
 
-    async def test_null_membership_role_and_env_owner_flag_do_not_elevate(self):
+    async def test_null_membership_role_and_resolution_owner_flag_do_not_elevate(self):
         self.membership.role_id = None
         self.membership.role = None
-        self.assertFalse((await self.resolve()).is_owner)
+        self.resolution.is_owner = True
+        self.resolution.is_platform_owner = True
+        self.assertIsNone(await self.resolve())
 
     async def test_refresh_reloads_user_and_rejects_identity_rebinding(self):
         original = await self.resolve()

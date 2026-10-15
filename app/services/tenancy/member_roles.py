@@ -1,10 +1,4 @@
-"""Workspace access levels an owner gives a member, mapped onto existing roles.
-
-A level is not a new permission matrix: each one names a `Role` row whose
-seeded rights (`scripts/setup/assign_roles_permissions.py`) apply to the
-member inside this workspace only (see `app/core/permissions.py`). The owner
-level is the canonical owner role and is never handed out through an invite.
-"""
+"""Fixed workspace role choices, separate from platform operator roles."""
 
 from __future__ import annotations
 
@@ -21,11 +15,11 @@ class MemberRole:
 
 
 MEMBER_ROLES: tuple[MemberRole, ...] = (
-    MemberRole("owner", "SUPERUSER", "Владелец", "Всё, включая команду, тариф и каналы"),
-    MemberRole("admin", "ADMIN", "Соадминистратор", "Настройка сценариев, задач и источников, запуск"),
-    MemberRole("manager", "MANAGER", "Менеджер", "Источники и уведомления, просмотр аналитики"),
-    MemberRole("analyst", "ANALYST", "Аналитик", "Аналитика и дайджесты, экспорт"),
-    MemberRole("viewer", "VIEWER", "Наблюдатель", "Только просмотр источников, аналитики и дайджестов"),
+    MemberRole("owner", "owner", "Владелец", "Всё, включая команду, тариф и каналы"),
+    MemberRole("admin", "admin", "Соадминистратор", "Настройка сценариев, задач и источников, запуск"),
+    MemberRole("manager", "manager", "Менеджер", "Источники и уведомления, просмотр аналитики"),
+    MemberRole("analyst", "analyst", "Аналитик", "Аналитика и дайджесты, экспорт"),
+    MemberRole("viewer", "viewer", "Наблюдатель", "Только просмотр источников, аналитики и дайджестов"),
 )
 
 BY_KEY: dict[str, MemberRole] = {role.key: role for role in MEMBER_ROLES}
@@ -57,5 +51,5 @@ def key_of(membership: Any) -> str | None:
         return None
     role = getattr(membership, "role", None)
     codename = getattr(role, "codename", None)
-    name = getattr(codename, "name", codename)
+    name = getattr(codename, "value", codename)
     return next((level.key for level in MEMBER_ROLES if level.codename == name), None)

@@ -102,7 +102,12 @@ def request(
         timezone="Europe/Kirov",
         effective_limits=lambda: {"max_sources": 3, "max_channels": 5, "max_team_members": 5},
     )
-    user = NS(id=user_id, is_active=active, is_superuser=operator)
+    user = NS(
+        id=user_id,
+        is_active=active,
+        is_platform_admin=operator,
+        has_admin_access=lambda: bool(active and operator),
+    )
     member = NS(id=3, user_id=101, tenant_id=7, channel="web", is_active=True)
     return NS(
         state=NS(
@@ -113,6 +118,7 @@ def request(
             web_perms=Perms(manage, rights),
         ),
         query_params={"tab": tab},
+        session={},
     )
 
 
@@ -226,7 +232,7 @@ async def test_personal_connections_always_use_caller_id_metadata_only(gateway, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "tab,allowed",
-    [("account", set()), ("team", {"members", "users"}), ("agent", {"models"}), ("channels", {"channels"})],
+    [("account", set()), ("team", {"members", "users"}), ("agent", {"models", "channels", "members"}), ("channels", {"channels"})],
 )
 async def test_manager_selected_tab_only(gateway, tab, allowed):
     ns, calls = gateway
@@ -404,12 +410,13 @@ async def test_vault_ui_gateway_projects_only_bounded_caller_metadata(user_id, q
 
 
 @pytest.mark.asyncio
-async def test_platform_form_flag_comes_from_fresh_user_not_workspace_ownership(gateway):
+async def test_platform_admin_does_not_gain_web_bypass_or_settings_mutation(gateway):
     ns, calls = gateway
     owner = await ns["settings_page"](request("account", manage=True))
-    operator = await ns["settings_page"](request("account", manage=True, operator=True))
+    operator = await ns["settings_page"](request("account", manage=False, operator=True))
     assert owner.context["is_superuser"] is False
-    assert operator.context["is_superuser"] is True
+    assert operator.context["is_superuser"] is False
+    assert operator.context["settings_manage"] is False
     assert calls == []
 
 
@@ -418,6 +425,7 @@ def test_member_templates_have_no_hidden_budget_team_or_agent_fields():
 
     helpers = runpy.run_path(str(ROOT / "tests/unit_web/test_assistant_shell.py"))
     values = helpers["context"](manager=False)
+    values["user"].has_admin_access = lambda: False
     values.update(
         is_superuser=False,
         settings_manage=False,
@@ -440,6 +448,8 @@ def test_no_workspace_account_menu_keeps_personal_settings_reachable():
     import runpy
 
     helpers = runpy.run_path(str(ROOT / "tests/unit_web/test_assistant_shell.py"))
-    markup = helpers["environment"]().get_template("shell-fixture.html").render(**helpers["context"](tenant=False))
+    values = helpers["context"](tenant=False)
+    values["user"].has_admin_access = lambda: False
+    markup = helpers["environment"]().get_template("shell-fixture.html").render(**values)
     assert 'href="/app/settings?tab=account"' in markup
     assert "data-invite-open" not in markup

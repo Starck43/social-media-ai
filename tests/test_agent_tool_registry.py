@@ -13,8 +13,8 @@ runtime dispatches on), not by calling the handler directly, and drive the
 real loop for the permission gate.
 
 `action_send` is a *preview*-only tool in this runtime: it never publishes, so
-the right it declares is the read right (`botaction.view`), not
-`botaction.update`. Enabling live publishing is a separate contract; these
+the right it declares is the read right (`scheduling.action.view`), not
+`scheduling.action.update`. Enabling live publishing is a separate contract; these
 tests pin the current one and must not be relaxed when that lands.
 """
 
@@ -47,7 +47,7 @@ def test_the_forced_dry_run_helper_is_not_a_tool():
 def test_action_send_declares_permission_and_confirmation():
     """A preview is a read, but it is still gated and never auto-executed."""
     spec = get_tool("action_send")
-    assert spec.required_permission == "botaction.view"
+    assert spec.required_permission == "scheduling.action.view"
     assert spec.confirm is True
 
 
@@ -90,8 +90,11 @@ async def _unrelated_session():
     try:
         with tenant_scope(tenant.id):
             session = await AgentSession.objects.create(
-                channel="telegram", chat_id=f"registry-sentinel-{suffix}", kind="private",
-                is_active=True, state={"sentinel": suffix},
+                channel="telegram",
+                chat_id=f"registry-sentinel-{suffix}",
+                kind="private",
+                is_active=True,
+                state={"sentinel": suffix},
             )
         yield {"tenant_id": tenant.id, "session_id": session.id, "state": {"sentinel": suffix}}
         with tenant_scope(tenant.id):
@@ -107,35 +110,34 @@ async def _unrelated_session():
 async def _bound_chats(_unrelated_session):
     """Fresh tenant/chats/users and explicit roles: no-right member, view-only owner.
 
-    Ownership comes solely from the SUPERUSER membership. The owner's platform
-    User has only botaction.view, not a superuser role. Seeded roles are unchanged.
+    Ownership comes solely from the workspace OWNER membership. Both accounts
+    keep the least-privileged platform USER role and fixed presets are unchanged.
     Teardown touches only this fixture's tenant, users and throwaway roles.
     """
     from app.core.tenant_context import tenant_scope
-    from app.models import Permission, Role, User
+    from app.models import Permission, PlatformRole, User, WorkspaceRole
     from app.models.managers.tenant_manager import tenant_channels, tenant_users, tenants
-    from app.types import ActionType, UserRoleType
+    from app.types import ActionType, PlatformRoleType
 
     suffix = secrets.token_hex(6)
     tenant = None
     users = []
-    roles = []
     try:
         permissions = await Permission.objects.prefetch_related("model_type").filter(action_type=ActionType.VIEW)
-        permission = next((row for row in permissions if row.model_type
-                           and row.model_type.model_name.lower() == "botaction"), None)
-        assert permission is not None, "botaction.view must be seeded"
-        owner_membership_role = await Role.objects.get(codename=UserRoleType.SUPERUSER.name)
-        assert owner_membership_role is not None
-        for label, permission_ids in (("member", []), ("owner", [permission.id])):
-            role = await Role.objects.create_role(
-                name=f"registry-{label}-{suffix}", codename=UserRoleType.VIEWER.name,
-            )
-            roles.append(role)
-            await Role.objects.set_permissions(role.id, permission_ids)
+        permission = next(
+            (row for row in permissions if row.model_type and row.model_type.resource_key == "scheduling.action"), None
+        )
+        assert permission is not None, "scheduling.action.view must be seeded"
+        platform_role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+        viewer_role = await WorkspaceRole.objects.get(codename="viewer")
+        owner_membership_role = await WorkspaceRole.objects.get(codename="owner")
+        assert platform_role is not None and viewer_role is not None and owner_membership_role is not None
+        for label in ("member", "owner"):
             user = await User.objects.create_user(
-                username=f"registry-{label}-{suffix}", email=f"registry-{label}-{suffix}@example.com",
-                password="secret-password-1", role_id=role.id, is_superuser=False,
+                username=f"registry-{label}-{suffix}",
+                email=f"registry-{label}-{suffix}@example.com",
+                password="secret-password-1",
+                role_id=platform_role.id,
             )
             users.append(user)
         viewer, owner = users
@@ -143,26 +145,36 @@ async def _bound_chats(_unrelated_session):
         viewer_chat, owner_chat = f"registry-member-{suffix}", f"registry-owner-{suffix}"
         with tenant_scope(tenant.id):
             for user, chat, role_id in (
-                (viewer, viewer_chat, roles[0].id), (owner, owner_chat, owner_membership_role.id),
+                (viewer, viewer_chat, viewer_role.id),
+                (owner, owner_chat, owner_membership_role.id),
             ):
                 member = await tenant_users.add_member(
-                    tenant_id=tenant.id, channel="telegram", external_user_id=chat, role_id=role_id,
+                    tenant_id=tenant.id,
+                    channel="telegram",
+                    external_user_id=chat,
+                    role_id=role_id,
                 )
                 assert member is not None
                 await tenant_users.update_by_id(member.id, user_id=user.id)
                 binding = await tenant_channels.bind(
-                    tenant_id=tenant.id, channel="telegram", chat_id=chat, kind="private",
+                    tenant_id=tenant.id,
+                    channel="telegram",
+                    chat_id=chat,
+                    kind="private",
                 )
                 assert binding is not None and binding.tenant_id == tenant.id
             viewer_user = await User.objects.prefetch_related("role.permissions.model_type").get(id=viewer.id)
             owner_user = await User.objects.prefetch_related("role.permissions.model_type").get(id=owner.id)
-            assert not viewer_user.has_perm_for("botaction", ActionType.VIEW)
-            assert owner_user.has_perm_for("botaction", ActionType.VIEW)
-            assert not owner_user.has_perm_for("botaction", ActionType.UPDATE)
-            assert not owner_user.is_superuser and not owner_user._is_superuser_role()
+            assert not viewer_user.has_perm_for("scheduling.action", ActionType.VIEW)
+            assert not owner_user.has_perm_for("scheduling.action", ActionType.VIEW)
+            assert not owner_user.is_platform_admin and not owner_user.has_admin_access()
             yield {
-                "tenant_id": tenant.id, "viewer_id": viewer.id, "owner_id": owner.id,
-                "viewer_chat": viewer_chat, "owner_chat": owner_chat, "owner_user": owner_user,
+                "tenant_id": tenant.id,
+                "viewer_id": viewer.id,
+                "owner_id": owner.id,
+                "viewer_chat": viewer_chat,
+                "owner_chat": owner_chat,
+                "owner_user": owner_user,
                 "unrelated": _unrelated_session,
             }
     finally:
@@ -171,9 +183,6 @@ async def _bound_chats(_unrelated_session):
                 await tenants.delete_by_id(tenant.id)
         for user in reversed(users):
             await User.objects.delete_user(user.id)
-        for role in reversed(roles):
-            await Role.objects.set_permissions(role.id, [])
-            await Role.objects.delete_by_id(role.id)
 
 
 async def test_registry_fixture_keeps_other_workspace_session(_bound_chats):
@@ -276,7 +285,7 @@ async def test_owner_action_send_is_staged_for_confirmation(_bound_chats, monkey
     assert session is not None
     pending = (session.state or {}).get("pending_confirmation")
     assert pending is not None and pending["name"] == "action_send"
-    assert pending["required_permission"] == "botaction.view"
+    assert pending["required_permission"] == "scheduling.action.view"
     # A staged intent is actor-bound: another chat cannot consume it.
     assert pending["authorization"]["actor"]["chat_id"] == _bound_chats["owner_chat"]
 
@@ -302,12 +311,17 @@ async def test_expired_confirmation_is_refused(_bound_chats, monkeypatch):
     _stub_loop(monkeypatch, dispatched, repeat=False)
 
     session = await agent_sessions.get_or_create(
-        channel="telegram", chat_id=_bound_chats["owner_chat"], kind="private", is_owner=True,
+        channel="telegram",
+        chat_id=_bound_chats["owner_chat"],
+        kind="private",
+        is_owner=True,
     )
     with tenant_scope(session.tenant_id):
         identity = await resolve_runtime_identity(
             Resolution(
-                tenant_id=session.tenant_id, channel="telegram", chat_id=_bound_chats["owner_chat"],
+                tenant_id=session.tenant_id,
+                channel="telegram",
+                chat_id=_bound_chats["owner_chat"],
                 user_id=_bound_chats["owner_chat"],
             )
         )
@@ -315,7 +329,7 @@ async def test_expired_confirmation_is_refused(_bound_chats, monkeypatch):
     spec = agent_runtime.TOOL_REGISTRY["action_send"]
     intent = make_pending_intent(identity, session, spec, {"action_id": 1}, "call-1")
     assert intent is not None, "a confirm tool must be stageable"
-    assert intent["required_permission"] == "botaction.view"
+    assert intent["required_permission"] == "scheduling.action.view"
     assert pending_rejection(intent, identity, session, spec) is None
     intent["expires_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     assert pending_rejection(intent, identity, session, spec) == "expired_intent"

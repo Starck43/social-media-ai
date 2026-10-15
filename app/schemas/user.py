@@ -1,105 +1,102 @@
 from datetime import datetime
-from typing import Optional, ClassVar
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.types import PlatformRoleType
 
 
 class UserBase(BaseModel):
     """Base user schema with common fields."""
+
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     is_active: Optional[bool] = True
-    is_superuser: bool = False
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
     """Self-service registration payload.
 
-    Only identity fields are accepted. Account state and platform rights
-    (`is_active`, `is_superuser`, `role_id`) are server-decided, so any such key
-    in the request body is ignored rather than written to the new account.
+    Only identity fields are accepted. Account state and platform rights are
+    assigned by the server and are not accepted from the request body.
     """
+
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "username": "johndoe",
-                "email": "johndoe@example.com",
-                "password": "strongpassword123"
-            }
+            "example": {"username": "johndoe", "email": "johndoe@example.com", "password": "strongpassword123"}
         }
     )
 
 
 class UserUpdate(BaseModel):
-    """Schema for updating user data."""
+    """Self-service profile fields. Privileged fields use dedicated routes."""
+
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
-    password: Optional[str] = Field(None, min_length=8)
-    is_active: Optional[bool] = None
-    is_superuser: Optional[bool] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserInDBBase(UserBase):
     """Base schema for user data in the database."""
+
     id: int
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserInDB(UserInDBBase):
-    """Schema for user data in the database including hashed password."""
-    hashed_password: str
-    
-    model_config = ConfigDict(from_attributes=True)
+    """Compatibility response name; never exposes a password hash."""
+
+
+class PlatformRoleUpdate(BaseModel):
+    """Platform administrators assign only a known platform role."""
+
+    role: PlatformRoleType
 
 
 class User(UserInDBBase):
     """Schema for user response (excludes sensitive data like password)."""
+
     pass
 
 
 class UserPasswordChange(BaseModel):
     """Schema for changing a user's password."""
+
     current_password: str = Field(..., min_length=8, description="Current password")
     new_password: str = Field(..., min_length=8, description="New password")
-    
-    @field_validator('new_password')
+
+    @field_validator("new_password")
     @classmethod
     def password_strength(cls, v: str) -> str:
         """Validate password strength."""
         if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
+            raise ValueError("Password must be at least 8 characters long")
         if not any(char.isdigit() for char in v):
-            raise ValueError('Password must contain at least one number')
+            raise ValueError("Password must contain at least one number")
         if not any(char.isupper() for char in v):
-            raise ValueError('Password must contain at least one uppercase letter')
+            raise ValueError("Password must contain at least one uppercase letter")
         if not any(char.islower() for char in v):
-            raise ValueError('Password must contain at least one lowercase letter')
+            raise ValueError("Password must contain at least one lowercase letter")
         return v
-    
+
     model_config = ConfigDict(
         from_attributes=True,
-        json_schema_extra={
-            "example": {
-                "current_password": "oldPassword123",
-                "new_password": "newSecurePassword123"
-            }
-        }
+        json_schema_extra={"example": {"current_password": "oldPassword123", "new_password": "newSecurePassword123"}},
     )

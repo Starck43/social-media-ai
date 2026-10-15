@@ -214,7 +214,12 @@ async def scenario_new(request: Request):
     from app.services.ai import scenario_prefs
     from app.services.ai.scenario_builder import ScenarioDraft
 
-    draft = await scenario_prefs.apply_to_draft(ScenarioDraft(name="", is_active=True))
+    actor = _request_memory_actor(request)
+    draft = await scenario_prefs.apply_to_draft(
+        ScenarioDraft(name="", is_active=True),
+        actor_user_id=actor[0] if actor else None,
+        is_owner=actor[1] if actor else False,
+    )
     return await _wizard_page(request, draft=draft, create=True)
 
 
@@ -441,7 +446,24 @@ def _prompt_warnings(draft: "ScenarioDraft") -> list[str]:
     return messages
 
 
-async def _remember_preferences(scenario) -> None:
+def _request_memory_actor(request: Request) -> tuple[int, bool] | None:
+    """Return the active workspace member allowed to see personal preferences."""
+    user = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if user is None or not isinstance(getattr(user, "id", None), int) or tenant_id is None:
+        return None
+    for membership in getattr(request.state, "memberships", []) or []:
+        if (
+            membership.tenant_id == tenant_id
+            and membership.user_id == user.id
+            and membership.channel == "web"
+            and membership.is_active
+        ):
+            return user.id, bool(membership.is_owner)
+    return None
+
+
+async def _remember_preferences(request: Request, scenario) -> None:
     """Store what this scenario was saved with as defaults for the next one.
 
     Same source the chat tools write, so a scenario made in the browser and one
@@ -454,7 +476,10 @@ async def _remember_preferences(scenario) -> None:
 
     try:
         draft = ScenarioBuilder.draft_from_scenario(scenario)
+        actor = _request_memory_actor(request)
         await scenario_prefs.remember(
+            actor_user_id=actor[0] if actor else None,
+            is_owner=actor[1] if actor else False,
             brands=(draft.scope or {}).get("competitor", {}).get("competitor_list") or [],
         )
     except Exception:  # noqa: BLE001 — preferences are a convenience, not the work
@@ -550,7 +575,7 @@ async def scenario_create(
         return RedirectResponse(back, status_code=302)
 
     add_flash(request, "success", f"Сценарий «{scenario.name}» создан")
-    await _remember_preferences(scenario)
+    await _remember_preferences(request, scenario)
     return RedirectResponse(f"/app/scenarios/{scenario.id}", status_code=302)
 
 
@@ -598,8 +623,9 @@ async def scenario_save(
         add_flash(request, "warning", warning)
 
     try:
-        validate_scenario_values({"output_schema": scenario.output_schema,
-                                  "analysis_types": draft.analysis_types, "scope": draft.scope})
+        validate_scenario_values(
+            {"output_schema": scenario.output_schema, "analysis_types": draft.analysis_types, "scope": draft.scope}
+        )
     except ScenarioSchemaError as error:
         add_flash(request, "error", str(error))
         return RedirectResponse(back, status_code=302)
@@ -631,7 +657,7 @@ async def scenario_save(
         video_llm_model_id=scenario.video_llm_model_id,
     )
     add_flash(request, "success", f"Сценарий «{draft.name}» сохранён")
-    await _remember_preferences(scenario)
+    await _remember_preferences(request, scenario)
     return RedirectResponse(back, status_code=302)
 
 

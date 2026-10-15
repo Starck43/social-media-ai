@@ -54,7 +54,7 @@ def compact_groups(groups: list[dict], limit: int = 10, *, chain_keys: bool = Fa
         },
         "required": [],
     },
-    required_permission="digestrun.view",
+    required_permission="notifications.digest_run.view",
 )
 async def report_period(
     period: str = "day",
@@ -108,7 +108,7 @@ async def report_period(
     name="digest_send_now",
     description="Построить дайджест и отправить в настроенные каналы после подтверждения.",
     confirm=True,
-    required_permission="digestrun.create",
+    required_permission="notifications.digest_run.create",
     parameters={
         "type": "object",
         "properties": {
@@ -146,7 +146,7 @@ async def digest_send_now(
         },
         "required": [],
     },
-    required_permission="aianalytics.view",
+    required_permission="analysis.result.view",
 )
 async def analytics_chains(
     source_id: int | None = None,
@@ -173,7 +173,7 @@ async def analytics_chains(
         "properties": {"chain_id": {"type": "string"}, "limit": LIMIT_SCHEMA},
         "required": ["chain_id"],
     },
-    required_permission="aianalytics.view",
+    required_permission="analysis.result.view",
 )
 async def analytics_chain_detail(chain_id: str, limit: int = 10) -> dict[str, Any]:
     try:

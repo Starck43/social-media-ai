@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 	from ..managers.source_manager import SourceManager
 
 
-@app_label("social")
+@app_label("collection")
 class Source(Base, TenantScopedMixin, TimestampMixin):
 	__tablename__ = "sources"
 

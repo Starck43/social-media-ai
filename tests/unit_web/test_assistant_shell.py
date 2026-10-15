@@ -46,7 +46,7 @@ def environment():
 
 def context(*, manager=False, tenant=True, operator=False):
     return dict(
-        user=SimpleNamespace(username="<script>stored</script>", is_superuser=operator),
+        user=SimpleNamespace(username="<script>stored</script>", is_platform_admin=operator),
         tenant=SimpleNamespace(id=7, name='<img src=x onerror="bad()">') if tenant else None,
         request=SimpleNamespace(query_params={}),
         section="dashboard",
@@ -199,9 +199,7 @@ def test_workspace_switch_keeps_post_and_csrf():
 def test_workspace_group_has_explicit_switch_target_and_no_daily_join_for_members():
     values = context(manager=True)
     values["workspaces"] = [
-        SimpleNamespace(
-            active=True, tenant=SimpleNamespace(id=7, name="Current"), role="SUPERUSER", role_label="Владелец"
-        ),
+        SimpleNamespace(active=True, tenant=SimpleNamespace(id=7, name="Current"), role="owner", role_label="Владелец"),
         SimpleNamespace(
             active=False, tenant=SimpleNamespace(id=8, name="Other <script>"), role="MANAGER", role_label="Менеджер"
         ),
@@ -252,7 +250,7 @@ def test_theme_and_collapse_leave_navbar_and_keep_unique_control_targets():
 @pytest.mark.parametrize(
     "codename,role_id,expected",
     [
-        ("SUPERUSER", 1, "Владелец"),
+        ("owner", 1, "Владелец"),
         ("MANAGER", 1, "Менеджер"),
         ("UNKNOWN", 1, "Роль не назначена"),
         (None, None, "Роль не назначена"),

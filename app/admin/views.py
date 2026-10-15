@@ -13,6 +13,7 @@ from wtforms import validators, widgets
 
 from app.admin.actions import LLMModelActions
 from app.admin.formatters import format_date, format_usd, plan_badge
+from app.core.hashing import get_password_hash
 from app.models import (
     AgentScenario,
     AgentTask,
@@ -24,7 +25,7 @@ from app.models import (
     Notification,
     Permission,
     Platform,
-    Role,
+    PlatformRole,
     Source,
     Tenant,
     User,
@@ -40,9 +41,9 @@ from app.types import (
     LLMStrategyType,
     NotificationType,
     PeriodType,
+    PlatformRoleType,
     PlatformType,
     SourceType,
-    UserRoleType,
 )
 from app.types.enums.llm_types import APIFormatType
 
@@ -69,9 +70,8 @@ class UserAdmin(BaseAdmin, model=User):
             "id": "ID",
             "username": "Имя пользователя",
             "email": "Электронная почта",
-            "role": "Роль",
             "hashed_password": "Пароль",
-            "is_superuser": "Администратор",
+            "role": "Платформенная роль",
         },
         **BaseAdmin.column_labels,
     )
@@ -82,9 +82,11 @@ class UserAdmin(BaseAdmin, model=User):
         "social_accounts",
         "notifications",
         "role_id",
+        "hashed_password",
     ]
-    form_create_rules = ["username", "email", "hashed_password", "role", "is_active"]
-    form_edit_rules = ["username", "email", "role", "is_active"]
+    form_create_rules = ["username", "email", "hashed_password", "is_active"]
+    form_edit_rules = ["username", "email", "is_active"]
+    form_excluded_columns = ["role", "role_id"] + BaseAdmin.form_excluded_columns
 
     form_widget_args = {
         "hashed_password": {"type": "password"},
@@ -95,7 +97,7 @@ class UserAdmin(BaseAdmin, model=User):
     form_args = {
         "username": {
             "label": "Имя пользователя",
-            "description": "Логин для входа в /app и /admin",
+            "description": "Логин для входа в личный кабинет",
         },
         "email": {
             "label": "Электронная почта",
@@ -105,19 +107,20 @@ class UserAdmin(BaseAdmin, model=User):
             "label": "Пароль",
             "description": "Задаётся при создании пользователя; для смены используйте действие «Изменить пароль»",
         },
-        "role": {
-            "label": "Роль",
-            "description": "Определяет набор разрешений пользователя — см. раздел «Роли»",
-        },
-        "is_superuser": {
-            "label": "Администратор",
-            "description": "Полный доступ независимо от роли",
-        },
         **BaseAdmin.form_args,
     }
 
     async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions before model is created/updated."""
+        """New accounts always start with the ordinary platform role."""
+        if is_created and not getattr(model, "role_id", None):
+            role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+            if role is None:
+                raise HTTPException(status_code=500, detail="Platform role catalog is not configured")
+            model.role_id = role.id
+            data["role_id"] = role.id
+        if is_created and data.get("hashed_password"):
+            data["hashed_password"] = get_password_hash(data["hashed_password"])
+            model.hashed_password = data["hashed_password"]
         await super().on_model_change(data, model, is_created, request)
 
     async def insert_model(self, request, data: dict) -> Any:
@@ -145,16 +148,18 @@ class UserAdmin(BaseAdmin, model=User):
         )
 
 
-class RoleAdmin(BaseAdmin, model=Role):
+class RoleAdmin(BaseAdmin, model=PlatformRole):
     name = "Роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
-    column_list = ["id", "name", "description"]
-    column_searchable_list = ["name"]
+    can_create = False
+    can_edit = False
+    can_delete = False
+    column_list = ["id", "codename", "description"]
+    column_searchable_list = ["codename"]
     column_labels = dict(
         {
             "id": "ID",
-            "name": "Название",
             "codename": "Кодовое наименование",
             "description": "Описание",
             "users": "Пользователи",
@@ -163,38 +168,8 @@ class RoleAdmin(BaseAdmin, model=Role):
         **BaseAdmin.column_labels,
     )
 
-    form_overrides = {
-        # SelectField override keeps the choices from form_args below (the default
-        # enum converter would replace them with raw enum names)
-        "codename": SelectField,
-        **BaseAdmin.form_overrides,
-    }
-
-    form_args = {
-        "name": {
-            "label": "Название",
-            "description": "Отображаемое имя роли, например «Модератор сообщества»",
-        },
-        "codename": {
-            "label": "Кодовое наименование",
-            "description": "Системный уровень роли из общего enum; определяет место в иерархии прав",
-            "choices": UserRoleType.choices(),
-            "coerce": str,
-            "validators": [validators.AnyOf([value for value, _ in UserRoleType.choices()])],
-        },
-        "description": {
-            "label": "Описание",
-            "description": "Для справки: кто и зачем получает эту роль",
-        },
-        "permissions": {
-            "label": "Разрешения",
-            "description": "Набор прав роли; суперпользователь игнорирует этот список",
-        },
-        **BaseAdmin.form_args,
-    }
-
     column_formatters_detail = {
-        "codename": lambda m, a: m.codename.label if hasattr(m.codename, "label") else "—",
+        "codename": lambda m, a: m.label,
     }
 
 
@@ -202,13 +177,15 @@ class PermissionAdmin(BaseAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
+    can_create = False
+    can_edit = False
+    can_delete = False
     column_list = ["id", "codename", "name", "description"]
-    column_searchable_list = ["codename", "name"]
-    column_sortable_list = ["codename"]
+    column_searchable_list = ["name"]
     column_labels = dict(
         {
             "id": "ID",
-            "model_type": "Приложение.Таблица",
+            "model_type": "Доменный ресурс",
             "model_type_id": "ID типа модели",
             "action_type": "Вид разрешения",
             "codename": "Кодовое имя",
@@ -236,7 +213,7 @@ class PermissionAdmin(BaseAdmin, model=Permission):
         },
         "action_type": {
             "label": "Вид разрешения",
-            "description": "Какое действие разрешает право; кодовое имя строится как приложение.таблица.действие",
+            "description": "Какое действие разрешает право; кодовое имя строится как домен.ресурс.действие",
             "choices": ActionType.choices(),
             "coerce": str,
             "validators": [validators.AnyOf([value for value, _ in ActionType.choices()])],
@@ -1651,14 +1628,14 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     }
 
     def is_accessible(self, request: Request) -> bool:
-        """Workspaces are the owner console: platform superusers only.
+        """Workspace-wide administration is reserved for platform admins.
 
         A model permission would be the wrong gate even here — the list spans
         every workspace, and the owner of one of them has no business seeing or
         editing the others.
         """
         user = self.get_admin_user(request)
-        return user is not None and bool(user._is_superuser_role())
+        return user is not None and bool(user.is_platform_admin)
 
 
 class UserCredentialAdmin(BaseAdmin, model=UserCredential):
@@ -2140,3 +2117,22 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             else:
                 request.session["admin_message"] = {"type": "success", "message": f"Задача «{task.name}» выполнена"}
         return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
+
+
+from app.models import Job
+
+
+class JobAdmin(BaseAdmin, model=Job):
+    """Global operator inspection; mutations use the scoped queue workflow."""
+
+    name = "Выполнение"
+    name_plural = "Очередь выполнения"
+    icon = "fa fa-list"
+    can_create = False
+    can_edit = False
+    can_delete = False
+    can_export = False
+    column_list = ["id", "tenant_id", "agent_task_id", "job_type", "status", "run_at", "attempts"]
+    column_details_list = column_list + ["locked_at", "started_at", "finished_at", "created_at", "updated_at"]
+    column_sortable_list = ["id", "run_at", "status"]
+    column_searchable_list = ["job_type", "status"]

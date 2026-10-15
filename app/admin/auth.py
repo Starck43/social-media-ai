@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 from sqladmin.authentication import AuthenticationBackend
 
 from app.admin.csrf import CSRFTokenManager
@@ -49,12 +49,18 @@ class AdminAuthBackend(AuthenticationBackend):
 
             user = await User.objects.get_by_username_or_email(username)
             if user and verify_password(password, user.hashed_password) and user.is_active:
+                user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+                if user is None or not user.has_admin_access():
+                    request.session["login_error"] = "Нет доступа к панели управления"
+                    return False
                 access_token, _ = create_access_token(subject=str(user.id))
-                request.session.update({
-                    "token": access_token,
-                    "user_id": str(user.id),
-                    "username": user.username,
-                })
+                request.session.update(
+                    {
+                        "token": access_token,
+                        "user_id": str(user.id),
+                        "username": user.username,
+                    }
+                )
 
                 if "login_error" in request.session:
                     del request.session["login_error"]
@@ -81,8 +87,8 @@ class AdminAuthBackend(AuthenticationBackend):
     async def authenticate(self, request: Request) -> bool:
         """Check if user is authenticated via session token.
 
-        Every active authenticated user may enter. Model/action grants remain
-        independent, and use this verified identity rather than a stale user_id.
+        Only active platform operators and administrators may enter. Model and
+        action grants are checked separately against the verified identity.
         """
         token = request.session.get("token")
         if not token:

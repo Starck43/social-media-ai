@@ -44,9 +44,9 @@ def no_env_tokens(monkeypatch):
 async def owner_user():
     """A web user that hosts personal credentials (`user_credentials.user_id`)."""
     from app.models import Role, User
-    from app.types import UserRoleType
+    from app.types import PlatformRoleType, WorkspaceRoleType
 
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
     username = f"creduser{secrets.token_hex(4)}"
     user = await User.objects.create_user(
         username=username,

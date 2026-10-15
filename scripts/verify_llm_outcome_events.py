@@ -484,6 +484,7 @@ def main():
         frozen = [
             "migrations/versions/0094_add_llm_outcome_events.py",
             "app/models/analysis/llm_outcome_event.py",
+            "app/models/llm/llm_outcome_event.py",
             "app/models/managers/llm_outcome_event_manager.py",
             "app/services/ai/outcome_events.py",
             "scripts/apply_llm_outcome_definition.py",
@@ -495,7 +496,9 @@ def main():
                     "migrations/versions/0093_add_llm_dispatch_receipts.py",
                     "app/models/tenancy/tenant.py",
                     "app/models/analysis/llm_attempt.py",
+                    "app/models/llm/llm_attempt.py",
                     "app/models/analysis/llm_dispatch_receipt.py",
+                    "app/models/llm/llm_dispatch_receipt.py",
                     "app/models/base.py",
                     "app/services/ai/dispatch_receipts.py",
                     "scripts/verify_llm_dispatch_receipts.py",

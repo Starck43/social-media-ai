@@ -25,11 +25,12 @@ from .notification_types import NotificationType
 from .platform_types import MonitoringStatus, PlatformType, SourceType
 
 # User and permissions
-from .user_types import ActionType, UserRoleType
+from .user_types import ActionType, PlatformRoleType, WorkspaceRoleType
 
 __all__ = [
     # User
-    "UserRoleType",
+    "PlatformRoleType",
+    "WorkspaceRoleType",
     "ActionType",
     # Platform
     "PlatformType",

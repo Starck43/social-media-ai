@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ..managers.agent_session_manager import AgentSessionManager
 
 
-@app_label("social")
+@app_label("agent")
 class AgentSession(Base, TenantScopedMixin, TimestampMixin):
     """One conversation with the agent (a private chat or a channel feed).
 

@@ -14,7 +14,7 @@ import pytest
 from app.models import Role, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.services.social.owner import resolve_source_owner
-from app.types import UserRoleType
+from app.types import PlatformRoleType, WorkspaceRoleType
 
 
 def _source(tenant_id, params=None):
@@ -33,7 +33,7 @@ async def workspace():
 async def make_user():
     """Create web users and delete them (with their memberships) afterwards."""
     created = []
-    role = await Role.objects.get(codename=UserRoleType.VIEWER.name)
+    role = await Role.objects.get(codename=PlatformRoleType.USER.value)
 
     async def _make():
         username = f"srcowner{secrets.token_hex(4)}"

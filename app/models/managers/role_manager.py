@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+from app.types import PlatformRoleType
+
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from app.types import ActionType, PlatformRoleType
+    from app.types import ActionType
 
     from ..permission import Permission
     from ..role import Role

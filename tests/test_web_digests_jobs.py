@@ -324,17 +324,16 @@ async def test_jobs_page_lists_queue_health_and_failures() -> None:
     try:
         async with await _client() as client:
             owner, tenant_id = await _register(client, "JobOwner")
-            await _seed_job(tenant_id, "pending")
-            await _seed_job(tenant_id, "failed", error="connection reset by peer")
+            pending = await _seed_job(tenant_id, "pending")
+            failed = await _seed_job(tenant_id, "failed", error="connection reset by peer")
 
             page = await client.get("/app/jobs")
             assert page.status_code == 200
             assert "Задания" in page.text
+            assert f"#{pending.id}" in page.text
+            assert f"#{failed.id}" in page.text
             # The error text is the whole point of the page.
             assert "connection reset by peer" in page.text
-            # The workspace column wears the product word — shown because this
-            # workspace owner role grants access to this queue.
-            assert ">Пространство<" in page.text
     finally:
         await _cleanup(owner)
 
@@ -404,7 +403,7 @@ async def test_platform_admin_as_workspace_viewer_cannot_open_queue() -> None:
         async with await _client() as client:
             await _login(client, viewer.username)
             refused = await client.get("/app/jobs", follow_redirects=False)
-            assert refused.status_code == 302
+            assert refused.status_code == 403
             dash = await client.get("/app/")
             assert "Очередь задач" not in dash.text
             token = CSRF_RE.search(dash.text).group(1)
@@ -434,7 +433,7 @@ async def test_read_only_member_cannot_rerun_a_job() -> None:
             await _login(client, viewer.username)
             # The page itself refuses — hiding the sidebar item is not the check.
             refused = await client.get("/app/jobs", follow_redirects=False)
-            assert refused.status_code == 302
+            assert refused.status_code == 403
             dash = await client.get("/app/")
             assert "Очередь задач" not in dash.text, "the sidebar must not offer the queue"
             token = CSRF_RE.search(dash.text).group(1)

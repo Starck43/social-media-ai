@@ -336,7 +336,7 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
 
 @pytest.mark.tenancy
 async def test_member_role_decides_for_a_non_owner() -> None:
-    """A MANAGER membership's `social.source.*` opens sources; its missing `agenttask` rows close tasks."""
+    """A MANAGER can create workspace sources and tasks without owning the workspace."""
     owner: User | None = None
     member: User | None = None
     tenant_id = None
@@ -353,9 +353,9 @@ async def test_member_role_decides_for_a_non_owner() -> None:
             manager = await WorkspaceRole.objects.get(codename=WorkspaceRoleType.MANAGER.value)
             membership = await TenantUserManager().get(tenant_id=tenant_id, user_id=member.id)
             await TenantUserManager().update_by_id(membership.id, role_id=manager.id)
-            loaded = await _loaded(member)
-            assert loaded.has_perm_for("source", ActionType.CREATE), "premise: MANAGER may create sources"
-            assert not loaded.has_perm_for("agenttask", ActionType.CREATE), "premise: MANAGER may not create tasks"
+            grants = await TenantUserManager().member_grants(membership)
+            assert ("source", ActionType.CREATE) in grants, "premise: MANAGER may create sources"
+            assert ("agenttask", ActionType.CREATE) in grants, "premise: MANAGER may create tasks"
 
         async with await _client() as m:
             await _login(m, member.username)
@@ -384,7 +384,7 @@ async def test_member_role_decides_for_a_non_owner() -> None:
             source_id = source.id
 
             tasks_page = await m.get("/app/tasks")
-            assert CREATE_BUTTON not in tasks_page.text
+            assert CREATE_BUTTON in tasks_page.text, "MANAGER keeps the task create button"
             token = CSRF_RE.search(tasks_page.text).group(1)
             resp = await m.post(
                 "/app/tasks",
@@ -396,9 +396,11 @@ async def test_member_role_decides_for_a_non_owner() -> None:
                     "_csrf": token,
                 },
             )
-            assert DENIED in resp.text
+            assert resp.status_code == 200
+            assert DENIED not in resp.text
             with tenant_scope(bypass=True):
-                assert await AgentTask.objects.filter(name=name).first() is None
+                task = await AgentTask.objects.filter(name=name).first()
+            assert task is not None, "MANAGER-created task is persisted in the member workspace"
     finally:
         if source_id is not None:
             with tenant_scope(bypass=True):

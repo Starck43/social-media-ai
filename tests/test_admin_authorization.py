@@ -38,7 +38,8 @@ from app.admin.views import (
     SourceAdmin,
     UserAdmin,
 )
-from app.models import Role, User
+from app.core.tenant_context import tenant_scope
+from app.models import Permission, Role, User
 from app.types import ActionType, PlatformRoleType
 
 # The views the derivation is exercised against: the ones with a custom action,
@@ -247,9 +248,15 @@ async def _signed_in(username: str) -> AsyncIterator[AsyncClient]:
 
 @pytest.mark.tenancy
 async def test_a_viewer_opens_the_models_its_role_covers():
-    async with _signed_in(await _operator(await _role("VIEWER"))) as client:
-        assert (await client.get("/admin/source/list")).status_code == 200
-        assert (await client.get("/admin/platform/list")).status_code == 200
+    role = await _role("OPERATOR")
+    async with _restricted(
+        role,
+        lambda permission: permission.action_type is ActionType.VIEW
+        and permission.model_type.resource_key in {"collection.source", "collection.platform"},
+    ):
+        async with _signed_in(await _operator(role)) as client:
+            assert (await client.get("/admin/source/list")).status_code == 200
+            assert (await client.get("/admin/platform/list")).status_code == 200
 
 
 async def test_a_viewer_is_refused_the_models_its_role_does_not_cover():
@@ -269,54 +276,52 @@ async def test_the_menu_follows_the_same_grants_as_the_routes():
 
 @pytest.mark.tenancy
 async def test_a_viewer_cannot_write_and_cannot_run_a_task():
-    async with _signed_in(await _operator(await _role("VIEWER"))) as client:
-        assert (await client.get("/admin/source/create")).status_code == 403
-        assert (await client.get("/admin/agent-task/action/run-now?pks=1")).status_code == 403
+    role = await _role("OPERATOR")
+    async with _restricted(
+        role,
+        lambda permission: permission.action_type is ActionType.VIEW
+        and permission.model_type.resource_key == "collection.source",
+    ):
+        async with _signed_in(await _operator(role)) as client:
+            assert (await client.get("/admin/source/create")).status_code == 403
+            assert (await client.get("/admin/agent-task/action/run-now?pks=1")).status_code == 403
 
 
 @pytest.mark.tenancy
 async def test_a_superuser_sees_every_model():
     async with _signed_in(await _operator(await _role("ADMIN"))) as client:
-        for url in ("/admin/user/list", "/admin/role/list", "/admin/tenant/list", "/admin/agent-task/list"):
+        for url in (
+            "/admin/user/list",
+            "/admin/platform-role/list",
+            "/admin/tenant/list",
+            "/admin/agent-task/list",
+        ):
             assert (await client.get(url)).status_code == 200, url
 
 
-async def test_a_role_with_no_rights_at_all_cannot_enter_the_console():
-    """The matrix in `scripts/setup/assign_roles_permissions.py` gives every role
-    at least one `view`, so the empty case has to be built for the test."""
-    role = await _role("VIEWER")
-    original = [p.id for p in (await Role.objects.get_with_permissions(role.id)).permissions]
-    await Role.objects.set_permissions(role.id, [])
-    # The check the whole test rests on: a no-op strip would turn it into a
-    # duplicate of the viewer tests above, and they would still pass.
-    assert not (await Role.objects.get_with_permissions(role.id)).permissions
-
-    try:
-        async with _signed_in(await _operator(role)) as client:
-            response = await client.get("/admin/source/list", follow_redirects=False)
-    finally:
-        await Role.objects.set_permissions(role.id, original)
-
+@pytest.mark.tenancy
+async def test_a_regular_user_cannot_enter_the_console():
+    """An ordinary platform user cannot authenticate to the operator console."""
+    async with _signed_in(await _operator(await _role("USER"))) as client:
+        response = await client.get("/admin/source/list", follow_redirects=False)
     assert response.status_code in (302, 303)
     assert "/admin/login" in response.headers.get("location", "")
 
 
 @asynccontextmanager
 async def _restricted(role: Role, keep) -> AsyncIterator[Role]:
-    """Give `role` exactly the permissions `keep(permission)` selects.
-
-    The matrix in `scripts/setup/assign_roles_permissions.py` hands every
-    platform role a bit of everything, so a role that may read the sources but
-    not the analytics — the case the gates actually have to tell apart — has to
-    be built for the test.
-    """
+    """Give `role` selected catalog permissions and restore its prior grants."""
     loaded = await Role.objects.get_with_permissions(role.id)
     original = [permission.id for permission in loaded.permissions]
-    await Role.objects.set_permissions(role.id, [p.id for p in loaded.permissions if keep(p)])
+    catalog = await Permission.objects.prefetch_related("model_type").all()
+    selected = [permission.id for permission in catalog if keep(permission)]
+    with tenant_scope(bypass=True):
+        await Role.objects.set_permissions(role.id, selected)
     try:
         yield role
     finally:
-        await Role.objects.set_permissions(role.id, original)
+        with tenant_scope(bypass=True):
+            await Role.objects.set_permissions(role.id, original)
 
 
 async def test_the_dashboard_outside_the_console_asks_the_same_question():

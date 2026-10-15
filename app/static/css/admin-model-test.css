@@ -1,0 +1,55 @@
+/* Scoped operator components using the same slate/cyan tokens as /app. */
+.llm-test { --llm-accent: #0e7490; --llm-accent-text: #fff; --llm-focus: #0e7490; --llm-edge: #64748b;
+    --llm-success: #166534; --llm-danger: #9f1239; width: 100%; max-width: 1120px; min-width: 0;
+    margin: 0 auto; color: var(--color-text, #1e293b); font: 400 16px/1.5 system-ui, sans-serif; }
+html.dark .llm-test, [data-theme="dark"] .llm-test { --llm-accent: #22d3ee; --llm-accent-text: #020617;
+    --llm-focus: #22d3ee; --llm-edge: #94a3b8; --llm-success: #86efac; --llm-danger: #fda4af; }
+.llm-test *, .llm-test *::before, .llm-test *::after { box-sizing: border-box; }
+.llm-test h1, .llm-test h2, .llm-test h3 { color: inherit; font-weight: 650; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.llm-test h1 { font-size: 28px; } .llm-test h2 { font-size: 21px; } .llm-test h3 { font-size: 18px; }
+.llm-test p { margin: 12px 0; overflow-wrap: anywhere; }
+.llm-test .llm-muted, .llm-test dt { color: var(--color-text-secondary, #475569); font-size: 14px; }
+.llm-test-heading, .llm-section-heading, .llm-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.llm-test-heading { padding: 8px 0; } .llm-test .llm-eyebrow { margin: 0 0 8px; color: var(--color-text-secondary, #475569); font-size: 14px; }
+.llm-panel { border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 12px;
+    background: var(--color-surface, #fff); padding: 24px; margin-bottom: 24px; min-width: 0; }
+.llm-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; margin: 24px 0; }
+.llm-meta div { min-width: 0; } .llm-meta dt { margin-bottom: 4px; font-weight: 400; }
+.llm-meta dd { margin: 0; overflow-wrap: anywhere; } .llm-test code { font: inherit; color: inherit; overflow-wrap: anywhere; }
+.llm-tag { display: inline-block; border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 6px;
+    background: var(--color-surface-secondary, #f1f5f9); padding: 4px 8px; font-size: 14px; white-space: normal; }
+.llm-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.llm-mode { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--color-border-strong, #cbd5e1);
+    border-radius: 8px; padding: 20px; background: var(--color-surface-secondary, #f1f5f9); }
+.llm-mode p { font-size: 14px; color: var(--color-text-secondary, #475569); margin-bottom: 20px; flex: 1; }
+.llm-step { color: var(--color-text-secondary, #475569); font-size: 14px; margin-bottom: 12px; }
+.llm-button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px;
+    padding: 10px 16px; border: 1px solid var(--llm-edge); border-radius: 8px; color: inherit; cursor: pointer;
+    background: var(--color-surface, #fff); font: 600 14px/1.4 system-ui, sans-serif; text-align: center; text-decoration: none; }
+.llm-button:hover { color: inherit; background: var(--color-surface-tertiary, #e2e8f0); text-decoration: none; }
+.llm-primary, .llm-primary:hover { color: var(--llm-accent-text); background: var(--llm-accent); border-color: var(--llm-accent); }
+.llm-test :is(button, a, textarea, input, summary):focus-visible { outline: 3px solid var(--llm-focus); outline-offset: 3px; }
+.llm-prompt { margin-top: 24px; } .llm-prompt label { display: block; font-weight: 600; margin-bottom: 8px; }
+.llm-test textarea { display: block; width: 100%; min-height: 104px; resize: vertical; border: 1px solid var(--llm-edge);
+    background: var(--color-surface, #fff); color: inherit; border-radius: 8px; padding: 12px; font: inherit; }
+.llm-test textarea::placeholder { color: var(--color-text-secondary, #475569); opacity: 1; }
+.llm-consent { display: flex; align-items: flex-start; gap: 12px; padding: 12px; margin-top: 16px; font-size: 14px;
+    border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 8px; cursor: pointer; min-height: 44px; }
+.llm-consent input { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 2px; accent-color: var(--llm-accent); }
+.llm-test summary { cursor: pointer; padding: 12px 0; min-height: 44px; font-size: 14px; font-weight: 600; }
+.llm-checks { border-top: 1px solid var(--color-border-strong, #cbd5e1); } .llm-checks ul { list-style: none; padding: 0; }
+.llm-checks li { margin: 8px 0; } .llm-check { display: inline-block; min-width: 36px; font-weight: 600; }
+.llm-pass { color: var(--llm-success); } .llm-fail, .llm-warning { color: var(--llm-danger); }
+.llm-result { border-left: 4px solid var(--llm-success); } .llm-result-error { border-left-color: var(--llm-danger); }
+.llm-test pre { margin: 16px 0; padding: 16px; max-height: 360px; overflow: auto; white-space: pre-wrap;
+    overflow-wrap: anywhere; font: 14px/1.6 ui-monospace, Consolas, monospace;
+    color: inherit; background: var(--color-surface-secondary, #f1f5f9); border-radius: 8px; }
+.llm-result-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.llm-footer { height: auto; min-height: 0; overflow: visible; flex-wrap: wrap; padding: 0 0 24px; font-size: 14px; } .llm-footer a { color: var(--llm-accent); padding: 12px 0; }
+.llm-test form[data-busy="true"] button { cursor: wait; opacity: .65; }
+@media (max-width: 900px) { .llm-mode-grid { grid-template-columns: 1fr; } .llm-mode { padding: 16px; }
+    .llm-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .llm-test { padding-inline: 8px; } .llm-panel { padding: 16px; margin-bottom: 16px; } .llm-test h1 { font-size: 24px; }
+    .llm-test-heading, .llm-section-heading { align-items: flex-start; flex-direction: column; }
+    .llm-meta, .llm-result-meta { grid-template-columns: 1fr; gap: 12px; } .llm-button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .llm-test * { scroll-behavior: auto; transition: none; animation: none; } }

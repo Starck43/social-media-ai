@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -119,6 +120,31 @@ def feed(repo, perms=None, *, user=101, workspace=7):
     return attention.AttentionFeed(attention.AttentionContext(workspace, user), perms or Perms(), repo)
 
 
+def test_notification_controller_partial_snapshot_contracts():
+    result = subprocess.run(["node", "tests/web_shell_state.cjs"], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state,historical", [("failed", False), ("ok", False), ("failed", True)])
+async def test_partial_event_exposes_only_authorized_current_task_identity(state, historical):
+    row = event(when=NOW - timedelta(seconds=1) if historical else None)
+    target = task(state=state)
+    repo = Repository(events=[row], tasks=[target])
+    repo.broken.add("tasks")
+    service = feed(repo)
+    snapshot = await service.snapshot()
+    assert snapshot["complete"] is False and snapshot["unavailable"] == ["tasks"]
+    item = snapshot["notifications"][0]
+    assert item["kind"] == "notification" and item["task_id"] == target.id
+    key = service.task_item(target)["key"] if state == "failed" else None
+    assert item["current_task_key"] == key
+    assert item["failure_key"] == (key if state == "failed" and not historical else None)
+    assert "secret-token" not in json.dumps(snapshot) and repo.writes == []
+    denied = await feed(repo, Perms({("notification", "view")})).snapshot()
+    assert denied["notifications"] == []
+
+
 @pytest.mark.asyncio
 async def test_same_authorized_snapshot_dedups_current_failure_and_shared_events():
     repo = Repository(events=[event(1), event(2)], tasks=[task()], connections=[connection()])
@@ -130,7 +156,18 @@ async def test_same_authorized_snapshot_dedups_current_failure_and_shared_events
     assert snapshot["complete"] is True
     assert repo.writes == []  # GET/poll is a projection, never persistence
     assert snapshot["notifications"][1]["read_id"] == 1
+    assert snapshot["notifications"][1]["backing_event"] == {
+        "key": "notification:7:1",
+        "created_at": attention.timestamp(NOW + timedelta(seconds=1)),
+        "failure_key": snapshot["notifications"][1]["key"],
+    }
     assert "secret" not in json.dumps(snapshot) and "raw-provider-token" not in json.dumps(snapshot)
+    read_only = await feed(
+        repo,
+        Perms({("notification", "view"), ("agenttask", "view")}),
+    ).snapshot()
+    assert read_only["notifications"][1]["read_id"] is None
+    assert read_only["notifications"][1]["backing_event"]["key"] == "notification:7:1"
     assert await service.read_one(1)
     after = await service.snapshot()
     assert after["count"] == 2  # reading is not resolving

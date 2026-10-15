@@ -204,6 +204,22 @@ class AttentionFeed:
                 id=row.id,
                 read_id=row.id if can(self.perms, "notification", "update") else None,
             )
+            if model == "agenttask":
+                current = self.task_item(target)
+                run, emitted = moment(target.last_run_at), moment(row.created_at)
+                item.update(
+                    task_id=target.id,
+                    current_task_key=current["key"] if current else None,
+                    failure_key=(
+                        current["key"]
+                        if current
+                        and event_type(row) == "api_error"
+                        and run is not None
+                        and emitted is not None
+                        and emitted >= run
+                        else None
+                    ),
+                )
             result.append((row, model, target, item))
         return result
 
@@ -213,6 +229,7 @@ class AttentionFeed:
         return dict(
             key=f"task:{self.context.workspace_id}:{task.id}:failed:{timestamp(task.last_run_at)}",
             kind="task",
+            task_id=task.id,
             scope="workspace",
             workspace_id=self.context.workspace_id,
             title="Требует проверки: " + str(task.name)[:100],
@@ -284,6 +301,12 @@ class AttentionFeed:
             if signal is not None:
                 if signal["read_id"] is None and item["read_id"] is not None:
                     signal["read_id"] = item["read_id"]
+                if "backing_event" not in signal:
+                    signal["backing_event"] = {
+                        "key": item["key"],
+                        "created_at": item["created_at"],
+                        "failure_key": signal["key"],
+                    }
             else:
                 items.append(item)
         if can(self.perms, "agenttask"):
@@ -310,6 +333,7 @@ class AttentionFeed:
             has_more=len(deduped) > limit,
             complete=not errors,
             unavailable=errors,
+            task_events_authorized=can(self.perms, "notification") and can(self.perms, "agenttask"),
             windowed=True,
         )
 

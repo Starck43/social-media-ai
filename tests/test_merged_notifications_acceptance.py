@@ -23,6 +23,7 @@ from app.core.tenant_context import tenant_scope
 from app.models import AgentTask, Notification
 from app.models.managers.tenant_manager import TenantUserManager
 from app.services.social import connections
+from app.services.notifications.attention import AttentionRepository
 
 from tests.test_web_settings import _client, _csrf, _login
 
@@ -168,6 +169,37 @@ async def test_read_actions_share_visibility_and_do_not_resolve_failed_task(atte
         for row in (foreign, wrong, deleted):
             assert (await Notification.objects.get(id=row.id)).is_read is False
         assert (await AgentTask.objects.get(id=task.id)).last_status == "failed"
+
+
+async def test_partial_feed_reports_fresh_task_identity_and_recovery(attention, monkeypatch):
+    data, create_event, *_ = attention
+    user = await actor(data, "operator")
+    _, workspaces, _ = data
+    with tenant_scope(bypass=True), operator_permission_scope():
+        task = await AgentTask.objects.filter(tenant_id=workspaces[0]).first()
+        await AgentTask.objects.update_by_id(
+            task.id, last_status="failed", last_run_at=datetime.now(timezone.utc) - timedelta(minutes=1)
+        )
+    row = await create_event(workspaces[0], "task", task.id, "API_ERROR")
+    original = AttentionRepository.task_failures
+    monkeypatch.setattr(AttentionRepository, "task_failures", AsyncMock(side_effect=RuntimeError("fixture outage")))
+    async with await _client() as client:
+        await _login(client, user.username)
+        payload = (await client.get("/app/notifications")).json()
+        assert payload["complete"] is False and payload["unavailable"] == ["tasks"]
+        assert payload["count"] == len(payload["notifications"])
+        item = next(item for item in payload["notifications"] if item.get("id") == row.id)
+        assert item["task_id"] == task.id
+        assert item["failure_key"] == item["current_task_key"]
+        assert item["current_task_key"].startswith(f"task:{workspaces[0]}:{task.id}:failed:")
+        with tenant_scope(bypass=True), operator_permission_scope():
+            await AgentTask.objects.update_by_id(task.id, last_status="ok")
+        payload = (await client.get("/app/notifications")).json()
+        item = next(item for item in payload["notifications"] if item.get("id") == row.id)
+        assert item["current_task_key"] is None and item["failure_key"] is None
+        monkeypatch.setattr(AttentionRepository, "task_failures", original)
+        recovered = await snapshot(client)
+        assert row.id in event_ids(recovered)  # Resolution does not read the persisted event.
 
 
 async def test_stale_context_and_csrf_reject_writes(attention):

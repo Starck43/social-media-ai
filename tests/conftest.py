@@ -131,12 +131,6 @@ async def _test_database():
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _seed_reference_data(_test_database):
-    """Keep the ordinary test startup read-only; the approved bootstrap seeds once."""
-    yield
-
-
-@pytest.fixture(scope="session", autouse=True)
 def _local_vault_key():
     """Tests encrypt fake credentials without needing a deployment secret.
 

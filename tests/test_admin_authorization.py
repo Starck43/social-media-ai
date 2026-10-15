@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import AsyncIterator
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from sqladmin.authorization import Action, custom_action
 from sqladmin.models import ModelView
@@ -244,6 +245,7 @@ async def _signed_in(username: str) -> AsyncIterator[AsyncClient]:
         yield client
 
 
+@pytest.mark.tenancy
 async def test_a_viewer_opens_the_models_its_role_covers():
     async with _signed_in(await _operator(await _role("VIEWER"))) as client:
         assert (await client.get("/admin/source/list")).status_code == 200
@@ -265,12 +267,14 @@ async def test_the_menu_follows_the_same_grants_as_the_routes():
     assert "/admin/user/list" not in index.text
 
 
+@pytest.mark.tenancy
 async def test_a_viewer_cannot_write_and_cannot_run_a_task():
     async with _signed_in(await _operator(await _role("VIEWER"))) as client:
         assert (await client.get("/admin/source/create")).status_code == 403
         assert (await client.get("/admin/agent-task/action/run-now?pks=1")).status_code == 403
 
 
+@pytest.mark.tenancy
 async def test_a_superuser_sees_every_model():
     async with _signed_in(await _operator(await _role("ADMIN"))) as client:
         for url in ("/admin/user/list", "/admin/role/list", "/admin/tenant/list", "/admin/agent-task/list"):

@@ -289,6 +289,7 @@ async def test_owner_may_create_a_source() -> None:
             await _drop(user, tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_non_owner_without_rights_is_read_only_even_when_posting_directly() -> None:
     """The hidden button is not the check: a crafted POST is refused and writes nothing."""
     owner: User | None = None
@@ -333,6 +334,7 @@ async def test_non_owner_without_rights_is_read_only_even_when_posting_directly(
         await _drop(owner, tenant_id)
 
 
+@pytest.mark.tenancy
 async def test_member_role_decides_for_a_non_owner() -> None:
     """A MANAGER membership's `social.source.*` opens sources; its missing `agenttask` rows close tasks."""
     owner: User | None = None

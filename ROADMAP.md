@@ -13,22 +13,7 @@ canonical board.
 
 <!-- Accepted audit tasks are recorded below this line. -->
 
-
-## Suggested Goal
-
-```text
-/goal Проведи доказательный аудит завершенных пунктов в docs/IMPLEMENTATION_STATUS.md
-и связанных merged PR против текущего dev. Раздели независимые направления между
-небольшим числом Codex subagents; каждый возвращает только подтвержденные пробелы,
-ссылки на файлы/PR/SHA, риск и критерий приемки. Удали дубли и внеси в ROADMAP.md
-только подтвержденные задачи с зависимостями и непересекающимися файлами. Затем
-реализуй независимые задачи отдельными Codex subagents в отдельных worktree,
-интегрируй и проверь каждую; после приемки поставь [x] и сделай отдельный локальный
-commit. Тесты запускай только через Kilo по правилам AGENTS.md/.agent/rules.md и
-последовательно из-за общей БД. Сохраняй незавершенные задачи и блокеры; не
-объявляй их выполненными. Остановись, если доказательства или безопасность БД не
-позволяют продолжать.
-```
+- [ ] AUD-PR193 — prove source admission on PostgreSQL across concurrent connections, rollback, and ASGI workspace scope; accept: real two-session race admits exactly one job, aborted admission leaves no occupancy, and another workspace cannot run the task; depends: none; owns: `tests/test_task_run_now.py`; owner: Codex; status: BLOCKED — Kilo emitted `sysmon request failed: sysmond service not found`, never returned TEST RUN, and was interrupted; sandbox denied process inspection, so DB/test-process state is uncertain. Resume after read-only confirmation that no child/test process is active and test_schema is safe.
 
 - [ ] ACCESS-CATALOG — separate fixed platform/workspace roles and stable domain resources; accept: migration preserves assignments without elevation, registry and enum checks pass; depends: none; owns: types, role/permission models, migration, setup; owner: Codex; status: IN_PROGRESS.
 - [ ] ACCESS-POLICY — unify admin/API/web and transactional team controls; accept: cross-workspace, operator/member, revocation and last-owner cases; depends: ACCESS-CATALOG; owns: core/API/admin/web/tenant managers; owner: Codex; status: IN_PROGRESS.

@@ -38,12 +38,16 @@
   remain sequential; do not overlap DB-backed tests or separate execution routes
   against that target. Independently proven no-DB scopes may run in parallel.
   Parallel PR checks that use the shared schema remain code-review-only until
-  separate schemas are prepared. Never create, reset, drop, stamp or migrate
-  schemas automatically —
-  `setup_test_db --reset`, `DROP`, `alembic` and the owner's manual 0088-style
-  column fix require an explicit owner instruction. These restrictions override
-  any older automatic-reset advice. Test delegation follows R10 and these
-  restrictions.
+  separate schemas are prepared. The default pytest startup validates the
+  existing schema read-only. Never create, reset, drop, stamp or migrate schemas
+  automatically — `setup_test_db --reset`, `DROP`, `alembic` and the owner's
+  manual 0088-style column fix require an explicit owner instruction. A direct
+  owner authorization may permit a bounded exceptional change to the local
+  `test_schema` only after read-only target/writer checks and a verified private
+  backup; preserve other schemas and do not fake an Alembic baseline. That
+  authorization is limited to its stated test-schema scope and does not permit
+  public/business-schema changes. These restrictions override any older
+  automatic-reset advice. Test delegation follows R10 and these restrictions.
   The resolved target itself is pre-approved for real ASGI/DB test execution
   (including `httpx` `ASGITransport` tests that create and clean up their own
   data); never ask the owner to reconfirm the target for such runs. This

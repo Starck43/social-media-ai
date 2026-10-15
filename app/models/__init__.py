@@ -25,7 +25,6 @@ from .digest_run import DigestRun
 from .job import Job
 from .llm_attempt import LLMAttempt
 from .llm_budget import LLMBudgetDay, LLMBudgetReservation
-from .llm.llm_budget_baseline import LLMBudgetBaseline
 from .llm_dispatch_receipt import LLMDispatchReceipt
 from .llm_model import LLMModel
 from .llm_outcome_event import LLMOutcomeEvent
@@ -85,7 +84,6 @@ __all__ = [
     # Analytics models
     "AIAnalytics",
     "LLMAttempt",
-    "LLMBudgetBaseline",
     "LLMBudgetDay",
     "LLMBudgetReservation",
     "LLMDispatchReceipt",

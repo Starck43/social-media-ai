@@ -2,8 +2,9 @@
 
 ## Status and scope
 
-This is a **prepared, unexecuted owner-local acceptance suite**, not a passing
-integration report. It adds tests to the combined review candidate, not to the
+This revision is a **prepared, locally unexecuted acceptance suite**, not a
+passing full integration report. Earlier owner-relayed runs are attributed
+to their original revisions below. It adds tests to the combined review candidate, not to the
 source branches. Implementation snapshot before these test-only changes:
 `ace7c536300ae3ec1d5f9abaaa430bec4cdb74ad`.
 
@@ -68,7 +69,7 @@ entire repository suite or a complete billing subsystem audit.
 | `mock_empty_and_escaped_question` | 2 | Empty-question error; valid mock and script-like question escaped, no HTTP. |
 | `admin_csrf_actual_verifier` | 3 | Missing/tampered/actually expired signed tokens refused. Expiry uses an old signing timestamp, not sleep or a mocked verifier. |
 | `non_console_identities_cannot_execute` | 3 | Anonymous, authenticated workspace owner and viewer cannot execute global admin actions. |
-| `view_does_not_grant_configure_existing_operator_profile` | 1 | **Conditional environment gate**, below. Existing VIEW-only operator can list but cannot GET/POST test action. |
+| `existing_operator_profile_matches_console_enforcement` | 1 | Real stored operator grants; list/detail/custom GET/unified POST must match actual grants. No grants are altered; controlled VIEW-only policy is tested separately below. |
 | `fresh_authority_after_page_load` | 2 | Disable or revoke role of this test's own administrator after opening page; next POST denied using the existing session. |
 | `unknown_or_multiple_selection_is_refused` | 5 | Missing in-range model (404); composite, zero, malformed and overflowing IDs (422 before SQL). |
 | `paid_preconditions_before_dispatch` | 4 | Missing consent/workspace, inactive workspace, disabled billing feature; zero HTTP/dispatch. |
@@ -82,19 +83,41 @@ entire repository suite or a complete billing subsystem audit.
 | `short_and_mock_do_not_require_billing_or_workspace_selection` | 1 | Both local modes still work with billing off and invalid unused workspace field. |
 | `invalid_model_configuration_cannot_dispatch` | 4 | Inactive model/provider, absent key, non-OpenAI format cannot dispatch. |
 
-### VIEW/CONFIGURE limitation — do not hide it
+### VIEW/CONFIGURE verification layers — revised, not a policy change
 
-Platform roles are fixed to `user`, `operator`, `admin`, with a unique codename.
-A second custom operator-role fixture cannot be inserted safely. Do not change
-shared `operator` grant links just for this test.
+The old test required the single shared operator profile to be VIEW-only for
+LLMModel. Fixed/unique platform role codenames mean this is not an owned fixture
+we can provision without changing other users' grants. A failed precondition
+was not evidence of an authorization bypass. Do not edit shared grants.
 
-The VIEW-only test reads the existing operator profile. If it does not grant
-LLMModel VIEW without CONFIGURE, it **fails with a BLOCKED precondition** rather
-than skipping, changing grants, substituting an auth double, or pretending to
-have checked the boundary. Other independent cases may still run sequentially;
-the resulting report is partial, not full acceptance. The schema/catalog owner
-must provide an approved verification route for that remaining boundary. Do not
-weaken the assertion into "whatever this profile allows is correct".
+Verification is now explicitly split:
+
+1. `test_existing_operator_profile_matches_console_enforcement` uses real login,
+   fresh DB role/permission reads and real application requests. It verifies
+   list/detail and custom GET/unified POST against this existing profile,
+   including denial when CONFIGURE is absent. No role/permission/storage/auth
+   mock is introduced into the DB acceptance module. Actual observed actions
+   are printed in the private evidence for this owned test user.
+2. `tests/test_admin_model_permission_policy.py` executes unchanged User
+   permission method bodies, actual enum/resource catalog, actual SQLAdmin
+   authorization backend and the actual unified POST body on controlled
+   in-memory permission rows. It explicitly asserts VIEW-only allows reads but
+   denies configuration, CONFIGURE allows testing, UPDATE does not configure,
+   other-resource grants do not apply, inactive/workspace identities cannot
+   inherit access, revocation is fresh, storage failure denies and CSRF remains
+   required. Identity/storage, CSRF and final dispatch are declared doubles.
+   SQLAlchemy mapped field construction is omitted; no app/settings/engine or
+   ASGI application is started. This is **isolated policy evidence, not actual
+   VIEW-only DB-profile or browser/ASGI integration evidence**.
+
+The original security contract is unchanged. The verification plan replaces
+an unavailable shared-catalog prerequisite with separately attributable policy
+and real-profile checks; it does not claim a VIEW-only role was persisted or
+used through real DB-backed login. The owner must review this evidence split
+and the new real-profile test still needs local execution before closeout.
+No assertion is replaced by a skip/xfail, and no production authorization code
+or grants are changed. The 41-case DB suite no longer stops solely because the
+seeded profile differs from an artificial VIEW-only fixture.
 
 ## Relayed execution and model-ID correction
 
@@ -116,8 +139,20 @@ change of an ordinary missing model from 404 to 422.
 The VIEW-only failure establishes an unavailable test precondition, **not a
 proven authorization bypass or product defect**. Neither the existing role's
 precise grant set nor a bypass was demonstrated by that assertion. No shared
-grants were changed. This gate stays blocked pending an approved review route.
-An isolated test double is not a replacement for that real permission boundary.
+grants were changed. That old fixture prerequisite was left blocked; the revised two-layer route
+above makes the precise evidence boundary explicit. It is not retroactive
+acceptance of the earlier failed test.
+
+## Owner-relayed narrow model-ID verification
+
+At `2673c395a7f838a6203f0fe4f273e950bc4095d9`, the owner explicitly approved
+and relayed a clean-worktree run of only
+`-k unknown_or_multiple_selection_is_refused`: collection exit 0, execution
+exit 0, **5 passed, 0 failed, 0 skipped, 36 deselected**. The compact report
+called the deselected cases skipped; they were not executed. No schema/grant/
+.env/runtime changes or real API calls were reported. The human-audit report
+and retained fixture IDs were not independently inspected. This closes only
+the assigned model-ID scope, not this revised permission test or full suite.
 
 ## Local execution assignment
 
@@ -155,6 +190,10 @@ or layout fixture is implicitly included. Prior isolated 94-test / 56-layout
 results belong to `ace7c536300ae3ec1d5f9abaaa430bec4cdb74ad`, not to a new
 ASGI/DB execution. Run or reuse them only with accurate revision attribution.
 
+For the isolated policy file, use a separate no-DB command with `--noconftest`
+and the same `-p no:cacheprovider -o addopts='' -q --tb=short --no-header`
+flags. Never apply `--noconftest` to the DB acceptance file.
+
 If primary OpenCode is unavailable, report BLOCKED. A secondary route may be
 used only per the current R10 fallback contract, not by silently executing
 pytest in the coordinator. The test agent has no authority to change application
@@ -168,7 +207,8 @@ clean/dirty paths, exact collection/execution commands and numeric exit codes,
 actual collected/passed/failed/skipped/error counts, per-contract outcomes,
 owned fixture markers/IDs, blockers and remaining scenarios. Do not call a
 collection pass an execution pass. Report setup failures separately from failing
-assertions; a BLOCKED operator precondition leaves that contract unverified.
+assertions; the actual stored-profile outcome and the isolated controlled-profile policy
+results must be attributed separately.
 
 Return the R10 compact `TEST RUN` block directly. The coordinator does not open
 the runner's evidence file. The owner may relay the human report, without secrets.

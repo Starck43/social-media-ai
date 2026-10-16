@@ -107,9 +107,11 @@ Coverage evidence vs PRD-08 (state/refs → task):
   owner: remote Notion agent (`review/admin-llm-billing-integration`);
   status: IN_PROGRESS — code-review-only candidate from pinned source lanes;
   owner relayed 40-case acceptance at `4f290aee` with two failures;
-  corrected model-ID overflow guard; updated suite declares 41 cases, not rerun;
-  see `docs/validation/admin-llm-billing-acceptance.md`; VIEW-only catalog gate
-  remains explicit and shared grants/financial evidence must not be rewritten;
+  model-ID overflow fixed; owner relayed five targeted cases PASS at `2673c395`;
+  revised permission verification: controlled no-DB policy plus actual DB profile;
+  updated 41-case DB suite remains pending local execution on this revision;
+  see `docs/validation/admin-llm-billing-acceptance.md`; shared grants and
+  financial evidence must not be rewritten; no acceptance/completion inferred;
   historical P8-T06 in the admin UI lane collided with the accepted inventory ID;
   that inventory and all other lane evidence are preserved, not re-accepted here.
   No DB/runtime/provider execution or dev merge is authorized for this candidate.

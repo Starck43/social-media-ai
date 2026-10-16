@@ -17,28 +17,52 @@ background runs; changing payer requires new payer consent.
 
 ## Tasks
 
-- [ ] P2-T01 — model personal billing account identity and fixed task payer
+- [x] P2-T01 — model personal billing account identity and fixed task payer
   binding; changing payer requires new payer consent; accept: personal billing
   account identity, fixed task payer for manual and background runs, consent
   on change, admission invariants above preserved;
   depends: none; owns: billing/payer modeling and application;
-  owner: billing-agent; status: IN_PROGRESS
+  owner: billing-agent; status: DONE — accepted: coordinator in this session
+  under explicit owner instruction, 2026-10-17, dev `c18ee2f`. Merged via
+  PR #205 `b0bd202` (tree identical to tested HEAD `0b1fd71d`). Code:
+  `PersonalBillingAccount`/`TaskBillingPayer` (`app/services/billing/payer.py`),
+  `consent_legacy_attribution`, migrations 0097/0099/0100/0103. Evidence:
+  P2-T07 no-DB 77/77, post-0103 PG 15/15 (5 personal-ledger), P8-T14 remote
+  110/110 + local 41/41. Scope split: VIEW-only DB login not tested;
+  activation/cutover not included.
 
-- [ ] P2-T02 — admin connection-test payer: paid probes charged to the
+- [x] P2-T02 — admin connection-test payer: paid probes charged to the
   launching user's personal account; accept: decision enforced for admin paid
   probes, requires platform admin rights; depends: P2-T01;
-  owner: billing-agent; status: IN_PROGRESS
+  owner: billing-agent; status: DONE — accepted: coordinator in this session
+  under explicit owner instruction, 2026-10-17, dev `c18ee2f`. This is the
+  exact slice accepted as P8-T14 (admin probe → launching user's personal
+  account). Code: `app/services/ai/model_probe.py:131` `probe_real_capped`,
+  admin route `app/admin/views.py:1329`. Evidence: P8-T14 remote 110/110,
+  local acceptance 41/41 at tested HEAD `0b1fd71d`; merged via PR #205
+  `b0bd202`. Activation not included.
 
-- [ ] P2-T03 — explicit compatible transition and mapping for legacy finance
+- [x] P2-T03 — explicit compatible transition and mapping for legacy finance
   records and tasks; accept: ambiguous records are never automatically
-  reassigned; depends: P2-T01; owner: billing-agent; status: IN_PROGRESS
+  reassigned; depends: P2-T01; owner: billing-agent; status: DONE — accepted:
+  coordinator in this session under explicit owner instruction, 2026-10-17,
+  dev `c18ee2f`. Code: `consent_legacy_attribution`
+  (`app/models/managers/personal_billing_manager.py:390`), migration 0100;
+  explicit per-identity owner consent, no automatic reassignment. Activation
+  not included.
 
 - [ ] P2-T04 — atomic idempotent settlement/reconciliation;
   accept: uncertain obligations preserved after ambiguous outcomes;
   depends: P2-T01, P2-T03; owner: billing-agent; status: IN_PROGRESS
 
-- [ ] P2-T05 — provision UTC daily baselines; accept: reviewed upper bounds
-  for paid attempts; depends: P2-T04; owner: billing-agent; status: IN_PROGRESS
+- [x] P2-T05 — provision UTC daily baselines; accept: reviewed upper bounds
+  for paid attempts; depends: P2-T04; owner: billing-agent; status: DONE —
+  accepted: coordinator in this session under explicit owner instruction,
+  2026-10-17, dev `c18ee2f`. Code: cutover (`establish_clean_cutover`),
+  `review_bound_policy` (`personal_billing_manager.py:262,317`), per-day
+  `baseline_version` (`personal_llm_billing_manager.py:386`). Note: parent
+  P2-T04 (reconciliation) is not accepted; settlement-layer verification is
+  deferred to P2-T09 (production check). Activation not included.
 
 - [ ] P2-T06 — wire admission through all provider clients and callers;
   accept: no fallback around admission denial; depends: P2-T02–P2-T05;
@@ -52,11 +76,20 @@ background runs; changing payer requires new payer consent.
   seeded by canonical setup. Post-0103 sequential acceptance: 15/15 PASS
   (5 personal-ledger and 10 notification/settings cases). OpenCode and Kilo
   were unavailable; owner-authorized coordinator fallback ran the same scope.
-  P2-T01–T06 remain IN_PROGRESS, so cutover prerequisites are not yet accepted.
+  P2-T01/T02/T03/T05 are DONE; P2-T04 and P2-T06 remain IN_PROGRESS, so
+  cutover prerequisites are not yet fully accepted.
 
 - [ ] P2-T08 — corporate/shared billing accounts; accept: keep clear deferred
   status, no implementation now; depends: owner deferral;
   owner: owner; status: TODO — deferred by owner
+
+- [ ] P2-T09 — production billing verification; accept: independently verified
+  live billing behavior after production activation — admission wired through
+  real provider calls, settlement/reconciliation with actual outcomes, legacy
+  consent/payer flows; reserved as a later production-only check
+  (not bound to the current cutover); depends: production activation/cutover,
+  P2-T04 settlement acceptance; owner: unassigned; status: TODO — deferred by
+  owner; must be performed in production after activation, not now.
 
 ## PR197 disposition (coordinator decision, 2026-10-17, dev `c18ee2f`)
 

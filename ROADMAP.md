@@ -20,14 +20,11 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P1-T01 — prove source admission on PostgreSQL (race/rollback/ASGI scope) → [p1](docs/phases/p1-queue-execution.md) — owner: codex — BLOCKED
 - [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
-- [ ] P2-T01 — personal billing account identity + fixed task payer via consent on change → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
-- [ ] P2-T02 — admin paid probes charged to launching user's account → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
-- [ ] P2-T03 — legacy finance records/tasks explicit transition mapping → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
 - [ ] P2-T04 — atomic idempotent settlement/reconciliation → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
-- [ ] P2-T05 — UTC daily baselines + reviewed upper paid-attempt bounds → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
 - [ ] P2-T06 — admission wiring through all provider clients/callers → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
 - [ ] P2-T07 — focused PG/ASGI acceptance and cutover → [p2](docs/phases/p2-usage-spend.md) — codex — IN_PROGRESS
 - [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — owner — TODO
+- [ ] P2-T09 — production billing verification (post-activation, owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
 - [ ] P3-T01 — digest send permission parity acceptance (PR #176 Draft) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
 - [ ] P3-T02 — close one actor/workspace/tool/write gap → [p3](docs/phases/p3-identity-access.md) — unassigned — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — TODO

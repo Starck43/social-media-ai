@@ -26,6 +26,7 @@ _STATES = frozenset({"done", "running", "waiting", "skipped"})
 _OUTCOMES = frozenset({"collected", "empty", "error", "auth_required", "rate_limited"})
 # Only bounded counters/flags; never content hashes, hints, messages or payloads.
 _INT_KEYS = ("items", "new_items", "analyzed", "actions")
+_RAW_KEYS = ("raw_total", "raw_selected", "raw_processed")
 
 
 class ProgressStopped(RuntimeError):
@@ -53,9 +54,9 @@ def _item(source: Any, state: str, entry: dict | None) -> dict[str, Any]:
     }
     if entry:
         outcome = entry.get("outcome")
-        if outcome in _OUTCOMES:
+        if type(outcome) is str and outcome in _OUTCOMES:
             item["outcome"] = outcome
-        for key in _INT_KEYS:
+        for key in (*_INT_KEYS, *_RAW_KEYS):
             count = _count(entry.get(key))
             if count is not None:
                 item[key] = count
@@ -150,6 +151,31 @@ class ProgressSession:
             self.lost = True
             raise ProgressStopped()
 
+    async def update_current(self, sources: Sequence[Any], per_source: Sequence[dict], current: dict) -> None:
+        """Refresh current-source counters without advancing source position."""
+        if self.lost:
+            raise ProgressStopped()
+        if not self.tracked:
+            return
+        snapshot = build_snapshot(sources, max(0, self.calls - 1), per_source)
+        item = next((entry for entry in snapshot["items"] if entry.get("source_id") == current.get("source_id")), None)
+        if item is not None:
+            item["state"] = "running"
+            for key in _RAW_KEYS:
+                count = _count(current.get(key))
+                if count is not None:
+                    item[key] = count
+        try:
+            written = await self._writer(self.claim, snapshot)
+        except ProgressStopped:
+            raise
+        except Exception as error:  # noqa: BLE001 — progress must never fail a run
+            logger.warning("job_progress_write_failed job_id=%s error_kind=%s", getattr(self.claim, "job_id", None), type(error).__name__[:40])
+            return
+        if written is False:
+            self.lost = True
+            raise ProgressStopped()
+
     async def settle(self) -> None:
         """After a stopped collect run: finish an operator's discard choice."""
         if getattr(self.claim, "job_type", None) != "collect":
@@ -182,6 +208,12 @@ async def step(sources: Sequence[Any], per_source: Sequence[dict]) -> None:
         await session.step(sources, per_source)
 
 
+async def update_current(sources: Sequence[Any], per_source: Sequence[dict], current: dict) -> None:
+    session = _current.get()
+    if session is not None:
+        await session.update_current(sources, per_source, current)
+
+
 def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
     """Validated progress of the current attempt, or None (web side, pure)."""
     if not isinstance(result, dict):
@@ -196,14 +228,18 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
         return None
     items = []
     for raw in raw_items[:MAX_ITEMS]:
-        if not isinstance(raw, dict) or raw.get("state") not in _STATES:
+        if not isinstance(raw, dict) or type(raw.get("state")) is not str or raw["state"] not in _STATES:
             continue
         item: dict[str, Any] = {"name": _name(raw.get("name"), "Источник"), "state": raw["state"]}
         if type(raw.get("source_id")) is int and raw["source_id"] > 0:
             item["source_id"] = raw["source_id"]
-        if raw.get("outcome") in _OUTCOMES:
+        if type(raw.get("outcome")) is str and raw["outcome"] in _OUTCOMES:
             item["outcome"] = raw["outcome"]
         for key in _INT_KEYS:
+            count = _count(raw.get(key))
+            if count is not None:
+                item[key] = count
+        for key in _RAW_KEYS:
             count = _count(raw.get(key))
             if count is not None:
                 item[key] = count

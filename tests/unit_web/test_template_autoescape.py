@@ -184,6 +184,8 @@ def context(name):
         "schedules": [],
         "collections": [],
         "recent": [],
+        "latest_progress": None,
+        "latest_diagnostics": None,
     }
 
 

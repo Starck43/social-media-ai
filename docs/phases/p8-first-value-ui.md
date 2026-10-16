@@ -60,8 +60,8 @@ Attention feed lives in the floating bell (B), not a home card.
   views updated; workspace authorization preserved; focused checks assigned
   separately through test-runner; no unrelated UI overhaul; depends: none;
   owns: source detail/task modal incl. progress + diagnostics; owner:
-  codex-analysis-progress; status: IN_PROGRESS — evidence: branch
-  `feat/analysis-progress`, planned PR pending (implementation not started)
+  codex-analysis-progress; status: IN_PROGRESS — evidence:
+  [Draft PR #203](https://github.com/Starck43/social-media-ai/pull/203)
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

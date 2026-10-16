@@ -23,8 +23,15 @@ STAGED_LABEL = "ошибок обработки накопленных данн�
 def load_summary_functions():
     path = ROOT / "app/web/tasks.py"
     tree = ast.parse(path.read_text())
-    functions = {"_plural", "_stat", "_as_int", "_run_outcome", "_job_summary"}
-    constants = {"JOB_TYPE_TITLES", "OUTCOME_HEADLINES", "_OUTCOME_LABELS", "_OUTCOME_NOTES"}
+    functions = {
+        "_plural", "_stat", "_as_int", "_run_outcome", "_job_summary", "_cancel_info",
+        "_progress_view", "_cancelled_summary", "_snapshot_coverage_rows", "_raw_coverage",
+    }
+    constants = {
+        "JOB_TYPE_TITLES", "OUTCOME_HEADLINES", "_OUTCOME_LABELS", "_OUTCOME_NOTES",
+        "_ACTIVITY", "_PENDING_ACTIVITY", "_CANCEL_STOP_NOTE", "_CANCEL_UNCONFIRMED_NOTE",
+        "_CANCEL_TYPE_NOTES", "_CONTENT_CHOICES", "_STEP_NOTES",
+    }
     selected = []
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name in functions:
@@ -35,6 +42,19 @@ def load_summary_functions():
             selected.append(node)
     if {node.name for node in selected if isinstance(node, ast.FunctionDef)} != functions:
         raise RuntimeError("Required UI summary definitions absent")
+    progress_path = ROOT / "app/jobs/progress.py"
+    progress_tree = ast.parse(progress_path.read_text())
+    progress_functions = {"_count", "_name", "read_snapshot"}
+    progress_constants = {"MAX_ITEMS", "_STATES", "_OUTCOMES", "_INT_KEYS", "_RAW_KEYS"}
+    for node in progress_tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in progress_functions:
+            selected.append(node)
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id in progress_constants for target in node.targets
+        ):
+            selected.append(node)
+    if not progress_functions <= {node.name for node in selected if isinstance(node, ast.FunctionDef)}:
+        raise RuntimeError("Required pure progress snapshot definitions absent")
     module = ast.Module(
         body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *selected],
         type_ignores=[],
@@ -42,6 +62,9 @@ def load_summary_functions():
     namespace = {
         "Any": Any, "datetime": datetime, "timedelta": timedelta, "timezone": timezone,
         "plural": lambda number, one, few, many: one if number == 1 else many,
+        "CANCELLED_BEFORE_START_ERROR": "Cancelled before start",
+        "OPERATOR_CANCELLED_ERROR": "Cancelled by operator",
+        "project_job": lambda job, source_id: {},
     }
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
     return namespace["_run_outcome"], namespace["_job_summary"]

@@ -567,6 +567,17 @@ async def source_detail(request: Request, source_id: int):
         )
         given_up = await CollectedItem.objects.exhausted_count(source.id)
         running = await _source_has_running_job(source.id)
+        from app.models.managers.job_manager import JobManager
+        from app.web.analysis_progress import project_job
+
+        progress_jobs = await JobManager().source_progress_jobs(source.id, limit=1)
+        latest_progress = project_job(progress_jobs[0], source.id) if progress_jobs else None
+        latest_diagnostics = None
+        if latest_progress is not None:
+            from .tasks import _diagnostics_admin, _diagnostics_view
+
+            if _diagnostics_admin(request):
+                latest_diagnostics = _diagnostics_view(progress_jobs[0], source_id=source.id)
     given_up_label = plural(given_up, "запись", "записи", "записей")
 
     return render(
@@ -599,6 +610,42 @@ async def source_detail(request: Request, source_id: int):
         platforms=platforms,
         source_types=source_types_list,
         running=running,
+        latest_progress=latest_progress,
+        latest_diagnostics=latest_diagnostics,
+    )
+
+
+@router.get("/{source_id}/analysis-progress")
+async def source_analysis_progress(request: Request, source_id: int):
+    """Small polling fragment for the existing recent-analyses table."""
+    from fastapi.responses import HTMLResponse
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.job_manager import JobManager
+
+    if not perms_can(request, "source", "view"):
+        return HTMLResponse("", status_code=403)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    source = await Source.objects.filter(id=source_id, tenant_id=tenant_id).first()
+    if source is None:
+        return HTMLResponse("", status_code=404)
+    with tenant_scope(tenant_id):
+        jobs = await JobManager().source_progress_jobs(source_id, limit=1)
+    from .analysis_progress import project_job
+    from .deps import templates
+
+    latest_progress = project_job(jobs[0], source_id) if jobs else None
+    # Admin-only allowlisted diagnostics are rendered only for a valid workspace
+    # admin membership or a platform admin; normal fragments carry nothing.
+    diagnostics = None
+    if latest_progress is not None:
+        from .tasks import _diagnostics_admin, _diagnostics_view
+
+        if _diagnostics_admin(request):
+            diagnostics = _diagnostics_view(jobs[0], source_id=source_id)
+    return HTMLResponse(
+        templates.env.get_template("web/source_analysis_progress.html").render(
+            latest_progress=latest_progress, diagnostics=diagnostics
+        )
     )
 
 

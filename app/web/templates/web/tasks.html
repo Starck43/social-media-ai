@@ -483,7 +483,7 @@
             <template x-if="runModal.loading">
                 <div class="mt-5">
                     <div class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
-                        <svg class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                        <svg x-show="!runModal.networkError && !runModal.data.heartbeat_unconfirmed && !(runModal.data.progress && runModal.data.progress.raw_progress && runModal.data.progress.raw_progress.status === 'unconfirmed')" class="h-5 w-5 animate-spin text-cyan-700 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none"
                              viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
                                     stroke-width="4"></circle>
@@ -492,7 +492,8 @@
                         </svg>
                         {# "Queued" and "running" are different facts: a pending
                            job has not been claimed by any worker yet. #}
-                        <span x-text="runModal.data.status === 'pending' ? 'Задача в очереди…' : 'Задача выполняется…'"></span>
+                        <template x-if="runModal.networkError || runModal.data.heartbeat_unconfirmed || (runModal.data.progress && runModal.data.progress.raw_progress && runModal.data.progress.raw_progress.status === 'unconfirmed')"><span class="text-amber-700 dark:text-amber-300" x-text="runModal.networkError ? 'Нет связи — проверяем снова…' : 'Статус не подтверждён, проверяем связь…'"></span></template>
+                        <template x-if="!(runModal.networkError || runModal.data.heartbeat_unconfirmed || (runModal.data.progress && runModal.data.progress.raw_progress && runModal.data.progress.raw_progress.status === 'unconfirmed'))"><span x-text="runModal.data.status === 'pending' ? 'Задача в очереди…' : 'Задача выполняется…'"></span></template>
                         <span class="ml-auto shrink-0 text-xs text-slate-600 dark:text-slate-400"
                               x-text="runModal.elapsedLabel"></span>
                     </div>
@@ -506,6 +507,18 @@
                     {# Real per-source progress of long collect/analyze runs. #}
                     <template x-if="runModal.data.progress">
                         <div class="mt-4">
+                        <template x-if="runModal.data.progress.raw_progress">
+                            <div class="mb-3 rounded-lg bg-slate-50 dark:bg-slate-950/60 p-3">
+                                <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                                    <span x-text="runModal.data.progress.raw_progress.label === 'Выполняется' ? 'Сырой контент текущего источника' : runModal.data.progress.raw_progress.label"></span>
+                                    <span x-text="runModal.data.progress.raw_progress.percent === null ? '—' : `${runModal.data.progress.raw_progress.percent}%`"></span>
+                                </div>
+                                <template x-if="runModal.data.progress.raw_progress.percent !== null">
+                                    <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div class="h-full bg-emerald-600 dark:bg-emerald-500" :style="`width: ${runModal.data.progress.raw_progress.percent}%`"></div></div>
+                                </template>
+                                <p class="mt-1 text-xs text-slate-500" x-text="runModal.data.progress.raw_progress.total === null ? 'Объём данных пока неизвестен' : `${runModal.data.progress.raw_progress.processed === null ? '—' : runModal.data.progress.raw_progress.processed} из ${runModal.data.progress.raw_progress.total} записей`"></p>
+                            </div>
+                        </template>
                         <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
                             <span x-text="`Источников обработано: ${runModal.data.progress.completed} из ${runModal.data.progress.total}`"></span>
                             <span x-text="`${runModal.data.progress.percent}%`"></span>
@@ -612,6 +625,24 @@
                 </div>
             </template>
 
+            <template x-if="runModal.data.diagnostics">
+                <div class="mt-4">
+                    <details :open="runModal.diagOpen" @toggle="runModal.diagOpen = $event.target.open"
+                             class="rounded-lg border border-slate-200 dark:border-slate-800">
+                        <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400">Диагностика</summary>
+                        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 pb-3 text-xs text-slate-500 dark:text-slate-400">
+                            <dt>Job</dt><dd>#<span x-text="runModal.data.diagnostics.job_id"></span></dd>
+                            <dt>Попытка</dt><dd x-text="runModal.data.diagnostics.attempt || '—'"></dd>
+                            <dt>Сердцебиение</dt><dd x-text="runModal.data.diagnostics.heartbeat_at || '—'"></dd>
+                            <dt>Обновлено</dt><dd x-text="runModal.data.diagnostics.progress_updated_at || '—'"></dd>
+                            <dt>Выбрано</dt><dd x-text="runModal.data.diagnostics.selected === null ? '—' : runModal.data.diagnostics.selected"></dd>
+                            <dt>Осталось</dt><dd x-text="runModal.data.diagnostics.remaining === null ? '—' : runModal.data.diagnostics.remaining"></dd>
+                            <dt>Код</dt><dd x-text="runModal.data.diagnostics.error_code || '—'"></dd>
+                        </dl>
+                    </details>
+                </div>
+            </template>
+
             <template x-if="!runModal.loading">
                 <div class="mt-5">
                     <template x-if="runModal.data.status === 'done'">
@@ -643,6 +674,21 @@
                             <template x-if="runModal.data.outcome_note">
                                 <p class="mt-2 text-xs" :class="runModal.outcomeTone.faint"
                                    x-text="runModal.data.outcome_note"></p>
+                            </template>
+
+                            <template x-if="(runModal.data.raw_coverage || []).length">
+                                <div class="mt-3 border-t pt-3" :class="runModal.outcomeTone.line">
+                                    <p class="text-xs" :class="runModal.outcomeTone.faint">Сырой контент</p>
+                                    <div class="mt-2 space-y-2">
+                                        <template x-for="item in runModal.data.raw_coverage" :key="item.source_id">
+                                            <div>
+                                                <div class="flex justify-between gap-3 text-xs"><span class="truncate" x-text="item.name"></span><span x-text="item.percent === null ? '—' : `${item.percent}%`"></span></div>
+                                                <div class="mt-1 h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div class="h-full bg-emerald-600 dark:bg-emerald-500" :style="`width: ${item.percent === null ? 0 : item.percent}%`"></div></div>
+                                                <p class="mt-0.5 text-xs opacity-70" x-text="item.total === null ? 'Объём данных неизвестен' : `${item.processed === null ? '—' : item.processed} из ${item.total} записей`"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
                             </template>
 
                             <!-- Supporting stats: every number keeps its own noun -->
@@ -684,6 +730,8 @@
                     <template x-if="runModal.data.status === 'failed'">
                         <div class="rounded-lg border border-rose-700 bg-rose-50 dark:bg-rose-950 p-4 text-sm text-rose-200">
                             <p x-text="runModal.data.error || 'Ошибка выполнения'"></p>
+                            <template x-if="runModal.data.progress && runModal.data.progress.raw_progress"><p class="mt-3 text-xs" x-text="`Сырой контент: ${runModal.data.progress.raw_progress.processed === null ? '—' : runModal.data.progress.raw_progress.processed} из ${runModal.data.progress.raw_progress.total === null ? '—' : runModal.data.progress.raw_progress.total} записей · ${runModal.data.progress.raw_progress.percent === null ? '—' : `${runModal.data.progress.raw_progress.percent}%`}`"></p></template>
+                            <template x-if="(runModal.data.raw_coverage || []).length"><div class="mt-3 space-y-2"><template x-for="item in runModal.data.raw_coverage" :key="item.source_id"><div><div class="flex justify-between text-xs"><span x-text="item.name"></span><span x-text="item.percent === null ? '—' : `${item.percent}%`"></span></div><div class="mt-1 h-1 overflow-hidden rounded-full bg-slate-800"><div class="h-full bg-emerald-500" :style="`width: ${item.percent === null ? 0 : item.percent}%`"></div></div></div></template></div></template>
                         </div>
                     </template>
                     <template x-if="runModal.data.status === 'cancelled'">
@@ -693,6 +741,8 @@
                                     <li x-text="note"></li>
                                 </template>
                             </ul>
+                            <template x-if="runModal.data.progress && runModal.data.progress.raw_progress"><p class="mt-3 text-xs text-amber-800 dark:text-amber-300" x-text="`Сырой контент текущего источника: ${runModal.data.progress.raw_progress.processed === null ? '—' : runModal.data.progress.raw_progress.processed} из ${runModal.data.progress.raw_progress.total === null ? '—' : runModal.data.progress.raw_progress.total} записей · ${runModal.data.progress.raw_progress.percent === null ? '—' : `${runModal.data.progress.raw_progress.percent}%`}`"></p></template>
+                            <template x-if="(runModal.data.raw_coverage || []).length"><div class="mt-3 space-y-2"><template x-for="item in runModal.data.raw_coverage" :key="item.source_id"><div><div class="flex justify-between text-xs"><span x-text="item.name"></span><span x-text="item.percent === null ? '—' : `${item.percent}%`"></span></div><div class="mt-1 h-1 overflow-hidden rounded-full bg-slate-800"><div class="h-full bg-emerald-500" :style="`width: ${item.percent === null ? 0 : item.percent}%`"></div></div></div></template></div></template>
                             <template x-if="runModal.data.progress">
                                 <div class="mt-3">
                                     <p class="text-xs text-amber-800 dark:text-amber-300"
@@ -822,6 +872,10 @@
                 finished: false,
                 confirming: false,
                 cancelling: false,
+                networkError: false,
+                fetchInFlight: false,
+                fetchSequence: 0,
+                diagOpen: false,
                 cancelError: "",
                 content: "keep",
                 size: (() => { try { return localStorage.getItem("tasks.runModal.size") || "md" } catch (e) { return "md" } })(),
@@ -971,9 +1025,16 @@
             },
             pollOnce() {
                 {
-                    fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { "Accept": "application/json" } })
-                        .then(r => r.json())
+                    if (this.runModal.fetchInFlight) return
+                    this.runModal.fetchInFlight = true
+                    const requestSeq = ++this.runModal.fetchSequence
+                    const controller = new AbortController()
+                    const requestTimeout = setTimeout(() => controller.abort(), 10000)
+                    fetch(`/app/tasks/job/${RUN_JOB_ID}/status`, { headers: { "Accept": "application/json" }, signal: controller.signal })
+                        .then(r => { if (!r.ok) throw new Error(`http_${r.status}`); return r.json() })
                         .then((data) => {
+                            if (requestSeq !== this.runModal.fetchSequence) return
+                            this.runModal.networkError = false
                             this.runModal.data = data
                             if (RUN_TERMINAL.includes(data.status)) {
                                 this.runModal.loading = false
@@ -981,8 +1042,9 @@
                                 if (this.runModal.pollTimer) clearInterval(this.runModal.pollTimer)
                             }
                         })
-                        .catch(() => { /* transient — keep polling */
+                        .catch(() => { if (requestSeq === this.runModal.fetchSequence) this.runModal.networkError = true
                         })
+                        .finally(() => { clearTimeout(requestTimeout); if (requestSeq === this.runModal.fetchSequence) this.runModal.fetchInFlight = false })
                 }
             },
             watchRunningJobs() {

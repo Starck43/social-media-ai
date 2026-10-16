@@ -188,6 +188,26 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(self.analyzer.reported_errors, 0)
 
+    async def test_successful_media_does_not_certify_unprocessed_text_rows(self):
+        text_item = {"id": "text", "text": "retry this text"}
+        image_item = {"id": "image", "media_url": "https://example.invalid/image"}
+        self.module.ContentClassifier.classify_content = Mock(return_value={
+            "text": [text_item], "image": [image_item], "video": [],
+        })
+        self.module.item_hash = lambda item: item["id"]
+        self.analyzer._analyze_text.return_value = None
+        self.analyzer._analyze_images.return_value = self.good
+
+        result = await self.analyzer.base_analyze_content(
+            [text_item, image_item], self.source, force_reanalyze=True, agent_scenario=self.scenario,
+        )
+
+        self.assertIs(result, self.saved)
+        saved = self.analyzer._save_analysis.call_args.kwargs
+        self.assertEqual(saved["content_hashes"], ["image"])
+        self.assertTrue(saved["coverage_limited"])
+        self.assertTrue(saved["text_coverage_limited"])
+
     async def test_real_image_and_video_helpers_report_caught_failures(self):
         self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(name="model"))
         self.module.ContentClassifier.get_media_urls = Mock(return_value=["media"])
@@ -235,10 +255,14 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         self.analyzer = SimpleNamespace(reported_errors=1, analyze_content=AsyncMock(return_value=self.fresh))
         self.factory = Mock(return_value=self.analyzer)
         self.row = SimpleNamespace(id=4, summary_data={"summary": "content"}, response_payload={})
+        dedup = load_isolated_source("_staged_signal_dedup", ROOT / "app/services/ai/dedup.py")
         self.analytics = Mock(return_value=Query([self.row]))
         self.models = SimpleNamespace(
             AgentScenario=SimpleNamespace(objects=SimpleNamespace(get_default_scenario=AsyncMock(return_value=scenario))),
-            CollectedItem=SimpleNamespace(objects=SimpleNamespace(for_source=AsyncMock(return_value=self.staged))),
+            CollectedItem=SimpleNamespace(objects=SimpleNamespace(
+                for_source=AsyncMock(return_value=self.staged),
+                count_for_source=AsyncMock(return_value=len(self.staged)),
+            )),
             AIAnalytics=SimpleNamespace(objects=SimpleNamespace(filter=self.analytics),
                                         created_at=SimpleNamespace(desc=lambda: None)),
             BotAction=SimpleNamespace(objects=Mock()),
@@ -248,6 +272,7 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
             {
                 "app.services.social.credentials": SimpleNamespace(AuthorizationRequired=type("Auth", (Exception,), {})),
                 "app.models": self.models,
+                "app.services.ai.dedup": SimpleNamespace(analysed_hashes=dedup.analysed_hashes),
                 "app.services.ai.trigger_evaluator": SimpleNamespace(trigger_evaluator=SimpleNamespace(
                     should_analyze=AsyncMock(side_effect=lambda content, task: content))),
                 "app.services.social.guards": SimpleNamespace(extract_target_user=Mock(), guards_checker=Mock()),
@@ -342,6 +367,33 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_handler()
         self.assertEqual((result["error"], result["staged_errors"]), (0, 0))
         self.factory.assert_not_called()
+
+    async def test_duplicate_hashes_count_each_covered_staged_row(self):
+        self.staged = [
+            SimpleNamespace(content_hash="same-hash", as_agent_item=Mock(return_value={"text": "same"})),
+            SimpleNamespace(content_hash="same-hash", as_agent_item=Mock(return_value={"text": "same"})),
+        ]
+        self.models.CollectedItem.objects.for_source.return_value = self.staged
+        self.models.CollectedItem.objects.count_for_source.return_value = 2
+        self.analyzer.reported_errors = 0
+        self.analyzer.analyze_content.return_value = [
+            SimpleNamespace(summary_data={"content_hashes": ["same-hash"]})
+        ]
+        self.module._retire_staged.return_value = 2
+
+        result = await self.run_handler()
+
+        per = result["per_source"][0]
+        self.assertEqual((per["raw_selected"], per["raw_total"], per["raw_processed"]), (2, 2, 2))
+
+    async def test_optional_count_failure_keeps_running_staged_analysis(self):
+        self.models.CollectedItem.objects.count_for_source.side_effect = RuntimeError(PRIVATE)
+
+        result = await self.run_handler()
+
+        self.models.CollectedItem.objects.for_source.assert_awaited()
+        self.analyzer.analyze_content.assert_awaited()
+        self.assertIsNone(result["per_source"][0]["raw_total"])
 
     async def test_real_analyzer_partial_signal_reaches_handler(self):
         # Reuse analyzer call fixtures, not the analyzer/handler implementations.

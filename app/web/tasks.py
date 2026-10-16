@@ -1478,8 +1478,13 @@ def _progress_view(job: "Job", *, stopped: bool = False) -> dict[str, Any] | Non
 	if snapshot is None or not snapshot["total"]:
 		return None
 	steps = []
+	raw_progress = None
 	for item in snapshot["items"]:
 		state = item["state"]
+		if state == "running" and item.get("source_id"):
+			from app.web.analysis_progress import project_job
+
+			raw_progress = project_job(job, item["source_id"])
 		if stopped and state == "running":
 			state = "stopped"
 		error = item.get("error") is True or item.get("outcome") == "error"
@@ -1503,6 +1508,7 @@ def _progress_view(job: "Job", *, stopped: bool = False) -> dict[str, Any] | Non
 		"steps": steps,
 		"hidden_before": snapshot["first"],
 		"hidden_after": max(0, total - snapshot["first"] - len(steps)),
+		"raw_progress": raw_progress,
 	}
 
 
@@ -1541,6 +1547,11 @@ def _cancelled_summary(job: "Job", title: str, task_name: str | None) -> dict[st
 		summary["progress"] = progress
 	if task_name:
 		summary["task_name"] = task_name
+	# A run cancelled before it started wrote nothing, so there is no raw
+	# coverage to report; an operator-cancelled or failed run keeps the
+	# attempt-matched snapshot the handler persisted while it ran.
+	if job.job_type == "analyze" and not before_start:
+		summary["raw_coverage"] = _raw_coverage(job)
 	return summary
 
 
@@ -1567,6 +1578,13 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			"cancel": _cancel_info(job),
 		}
 		if status == "running":
+			heartbeat = getattr(job, "locked_at", None)
+			if heartbeat is None:
+				summary["heartbeat_unconfirmed"] = True
+			else:
+				heartbeat = heartbeat if heartbeat.tzinfo else heartbeat.replace(tzinfo=timezone.utc)
+				summary["heartbeat_unconfirmed"] = datetime.now(timezone.utc) - heartbeat.astimezone(timezone.utc) > timedelta(seconds=90)
+		if status == "running":
 			progress = _progress_view(job)
 			if progress is not None:
 				summary["progress"] = progress
@@ -1584,12 +1602,18 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 	if status == "failed" and job.error in (OPERATOR_CANCELLED_ERROR, CANCELLED_BEFORE_START_ERROR):
 		return _cancelled_summary(job, JOB_TYPE_TITLES.get(job_type, job_type), task_name)
 	if status == "failed":
-		return {
+		summary = {
 			"status": "failed",
 			"label": "Ошибка",
 			"title": JOB_TYPE_TITLES.get(job_type, job_type),
 			"error": (job.error or "Неизвестная ошибка")[:300],
 		}
+		if job_type == "analyze":
+			summary["raw_coverage"] = _raw_coverage(job)
+			progress = _progress_view(job, stopped=True)
+			if progress is not None:
+				summary["progress"] = progress
+		return summary
 
 	result = job.result or {}
 	title = JOB_TYPE_TITLES.get(job_type, job_type)
@@ -1658,11 +1682,70 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 		)
 	if note:
 		summary["outcome_note"] = note
+	if job_type == "analyze":
+		summary["raw_coverage"] = _raw_coverage(job)
 	if headline is not None:
 		summary["headline"] = headline
 	if task_name:
 		summary["task_name"] = task_name
 	return summary
+
+
+def _snapshot_coverage_rows(result: dict, attempts: Any) -> list[dict]:
+	"""Attempt-matched persisted items as coverage rows.
+
+	An operator-cancelled or failed mid-run `analyze` job never finalized its
+	handler stats, so its `result` carries no `per_source` — only the attempt-
+	matched progress snapshot it wrote while running. Those raw counters are
+	what the modal should keep showing. `read_snapshot` already rejects a stale
+	attempt and malformed items, so nothing here can leak a foreign generation.
+	"""
+	snapshot = read_snapshot(result, attempts)
+	rows = []
+	for item in (snapshot or {}).get("items") or []:
+		if not item.get("source_id"):
+			continue
+		rows.append({
+			"source_id": item["source_id"],
+			"name": item.get("name"),
+			"raw_total": item.get("raw_total"),
+			"raw_processed": item.get("raw_processed"),
+			"raw_selected": item.get("raw_selected"),
+		})
+	return rows
+
+
+def _raw_coverage(job: "Job") -> list[dict[str, Any]]:
+	"""Per-source persisted raw coverage; malformed or missing values stay unknown."""
+	result = job.result if isinstance(job.result, dict) else {}
+	if getattr(job, "error", None) == CANCELLED_BEFORE_START_ERROR:
+		return []
+	status = getattr(job, "status", None)
+	if status == "pending":
+		return []
+	if status == "done":
+		per_source = result.get("per_source")
+		rows = per_source if isinstance(per_source, list) else []
+	elif status in ("running", "failed", "cancelled"):
+		rows = _snapshot_coverage_rows(result, getattr(job, "attempts", None))
+	else:
+		return []
+	coverage = []
+	for row in rows[:50]:
+		if not isinstance(row, dict) or type(row.get("source_id")) is not int:
+			continue
+		total, processed = row.get("raw_total"), row.get("raw_processed")
+		if type(total) is not int or not 0 <= total <= 10**9:
+			total = None
+		if type(processed) is not int or not 0 <= processed <= 10**9 or (total is not None and processed > total):
+			processed = None
+		percent = int(processed * 100 / total) if total and processed is not None else None
+		name = row.get("name") if type(row.get("name")) is str else "Источник"
+		coverage.append({
+			"source_id": row["source_id"], "name": name[:80],
+			"total": total, "processed": processed, "percent": percent,
+		})
+	return coverage
 
 
 def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, Any]]:
@@ -1698,12 +1781,134 @@ def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, An
 	return links
 
 
+def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any]:
+	"""Allowlisted admin-only diagnostics of the live attempt; safe for HTML/JSON.
+
+	Only bounded correlations and timestamps, never raw provider text: the job id,
+	attempt, heartbeat and progress timestamps, the selected/remaining raw counts,
+	and one allowlisted error code. `job.error` is truncated and only surfaced
+	when it is exactly an allowed code — never verbatim error text.
+	"""
+	result = job.result if isinstance(job.result, dict) else {}
+	status = getattr(job, "status", None)
+	before_start = getattr(job, "error", None) == CANCELLED_BEFORE_START_ERROR
+	progress = None if status == "pending" or before_start else read_snapshot(result, getattr(job, "attempts", None))
+	per_source = result.get("per_source") if isinstance(result.get("per_source"), list) else []
+	snapshot_rows = [] if before_start else _snapshot_coverage_rows(result, getattr(job, "attempts", None))
+	if status == "done":
+		if source_id is not None:
+			current = next((row for row in per_source if isinstance(row, dict) and row.get("source_id") == source_id), {})
+			if not current:
+				current = next((row for row in snapshot_rows if row.get("source_id") == source_id), {})
+		else:
+			current = {}
+			if per_source:
+				final_rows = [row for row in per_source if isinstance(row, dict)]
+				selected_rows = [row.get("raw_selected") for row in final_rows]
+				remaining_rows = [
+					row.get("raw_total") - row.get("raw_processed")
+					for row in final_rows
+					if type(row.get("raw_total")) is int and type(row.get("raw_processed")) is int
+					and 0 <= row["raw_processed"] <= row["raw_total"] <= 10**9
+				]
+				current = {
+					"raw_selected": sum(selected_rows) if selected_rows and all(type(v) is int and 0 <= v <= 10**9 for v in selected_rows) else None,
+					"remaining": sum(remaining_rows) if len(final_rows) == len(per_source) and len(remaining_rows) == len(final_rows) else None,
+				}
+	elif status == "pending":
+		# A retry remains at the prior attempt number until claimed. Its saved
+		# snapshot is therefore not current progress even if attempt numbers match.
+		current = {}
+	elif source_id is not None:
+		current = next((row for row in snapshot_rows if row.get("source_id") == source_id), {})
+	else:
+		items = (progress or {}).get("items", [])
+		current = next((row for row in items if row.get("state") == "running"), {})
+		if not current:
+			current = next((row for row in reversed(items) if row.get("raw_selected") is not None), {})
+	allowed_codes = {"storage_operation_failed", "provider_failed", "timeout", "cancelled", "unknown"}
+	error = str(getattr(job, "error", "") or "")[:80]
+	code = error if error in allowed_codes else ("unknown" if error else None)
+	selected = current.get("raw_selected")
+	if type(selected) is not int or not 0 <= selected <= 10**9:
+		selected = None
+	updated_at = (progress or {}).get("updated_at")
+	try:
+		updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+		if updated_at.tzinfo is None:
+			updated_at = updated_at.replace(tzinfo=timezone.utc)
+		updated_at = updated_at.astimezone(timezone.utc).isoformat()
+	except (AttributeError, TypeError, ValueError):
+		updated_at = None
+	total, processed = current.get("raw_total"), current.get("raw_processed")
+	remaining = current.get("remaining")
+	if remaining is None and type(total) is int and type(processed) is int and 0 <= total <= 10**9 and 0 <= processed <= total:
+		remaining = total - processed
+	if type(remaining) is not int or not 0 <= remaining <= 10**9:
+		remaining = None
+	locked_at = getattr(job, "locked_at", None)
+	if isinstance(locked_at, datetime):
+		locked_at = locked_at if locked_at.tzinfo else locked_at.replace(tzinfo=timezone.utc)
+		heartbeat_at = locked_at.astimezone(timezone.utc).isoformat()
+	else:
+		heartbeat_at = None
+	job_id = getattr(job, "id", None)
+	if type(job_id) is not int or not 0 < job_id <= 10**9:
+		job_id = None
+	attempt = getattr(job, "attempts", None)
+	if type(attempt) is not int or not 0 <= attempt <= 10**9:
+		attempt = None
+	return {
+		"job_id": job_id, "attempt": attempt,
+		"heartbeat_at": heartbeat_at,
+		"progress_updated_at": updated_at,
+		"selected": selected, "remaining": remaining,
+		"error_code": code,
+	}
+
+
+def _diagnostics_admin(request: Request) -> bool:
+	"""Diagnostics need a valid workspace membership with the admin role, or a platform admin.
+
+	Workspace *owner alone* is insufficient: the owner is not necessarily an
+	admin, and analytics detail is an explicit role grant, not an implicit
+	side effect of ownership. The membership list is the middleware-resolved
+	`tenant_users` web memberships, so `channel`/`is_active` already hold; the
+	role still has to be checked per-membership, never via a generic grant.
+	"""
+	user = getattr(request.state, "web_user", None)
+	if user is None or not getattr(user, "is_active", False):
+		return False
+	tenant_id = getattr(request.state, "tenant_id", None)
+	if type(tenant_id) is not int or tenant_id <= 0:
+		return False
+	user_id = getattr(user, "id", None)
+	if type(user_id) is not int or user_id <= 0:
+		return False
+	valid_membership = False
+	workspace_admin = False
+	for membership in getattr(request.state, "memberships", None) or []:
+		if (
+			getattr(membership, "tenant_id", None) == tenant_id
+			and getattr(membership, "user_id", None) == user_id
+			and getattr(membership, "channel", None) == "web"
+			and getattr(membership, "is_active", None) is True
+			and getattr(membership, "role", None) is not None
+		):
+			valid_membership = True
+			workspace_admin = str(getattr(membership.role, "codename", "")) == "admin"
+			break
+	return valid_membership and (workspace_admin or bool(getattr(user, "is_platform_admin", False)))
+
+
 @router.get("/job/{job_id}/status")
 async def job_status(request: Request, job_id: int):
 	"""Poll job status (run-now modal). Returns JSON; tenant-scoped."""
 	from fastapi.responses import JSONResponse
 
 	tenant_id = request.state.tenant_id
+	if not (perms_can(request, "agenttask", "view") or perms_can(request, "source", "view")):
+		return JSONResponse({"status": "not_found", "label": "Задача не найдена"}, status_code=404)
 	job = await Job.objects.filter(id=job_id, tenant_id=tenant_id).first()
 	if job is None:
 		return JSONResponse({"status": "not_found", "label": "Задача не найдена"})
@@ -1712,10 +1917,29 @@ async def job_status(request: Request, job_id: int):
 	if job.agent_task_id is not None:
 		task = await AgentTask.objects.get(id=job.agent_task_id, tenant_id=tenant_id)
 		task_name = task.name if task else None
+		if task is not None and job.job_type == "collect":
+			payload = task.payload if isinstance(task.payload, dict) else {}
+			job._analysis_inline = bool(payload.get("analyze_inline", False))
 	summary = _job_summary(job, task_name)
+	summary.pop("hint", None)
+	if summary.get("status") == "failed":
+		summary["error"] = "Задача завершилась с ошибкой. Повторите запуск позже."
+	# Normal JSON never carries diagnostics: the allowlisted detail is added
+	# only for a workspace admin role or a platform admin.
+	if _diagnostics_admin(request):
+		summary["diagnostics"] = _diagnostics_view(job)
+	else:
+		summary.pop("stats", None)
 	# Mini-links to the sources this run touched; they need the DB, so they are
 	# resolved here rather than in the pure `_job_summary`.
-	summary["sources"] = _source_links(job)
+	can_view_sources = perms_can(request, "source", "view")
+	summary["sources"] = _source_links(job) if can_view_sources else []
+	if not can_view_sources:
+		summary.pop("raw_coverage", None)
+		summary.pop("progress", None)
+		if isinstance(summary.get("diagnostics"), dict):
+			summary["diagnostics"].pop("selected", None)
+			summary["diagnostics"].pop("remaining", None)
 	if summary.get("status") in ("pending", "running"):
 		summary["can_cancel"] = bool(perms_can(request, "agenttask", "update"))
 	return JSONResponse(summary)

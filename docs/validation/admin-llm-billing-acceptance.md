@@ -12,7 +12,7 @@ has a different name from the owner's unpublished
 `tests/test_admin_model_probe_local_acceptance.py`; do not replace or import
 that file, nor delete `test-results/`.
 
-The module declares 19 test functions / 40 parametrized cases. This count is
+The module declares 19 test functions / 41 parametrized cases. This count is
 from static AST enumeration, **not pytest collection**. Local collection may
 fail before any test, and actual execution is still required. It is not the
 entire repository suite or a complete billing subsystem audit.
@@ -70,7 +70,7 @@ entire repository suite or a complete billing subsystem audit.
 | `non_console_identities_cannot_execute` | 3 | Anonymous, authenticated workspace owner and viewer cannot execute global admin actions. |
 | `view_does_not_grant_configure_existing_operator_profile` | 1 | **Conditional environment gate**, below. Existing VIEW-only operator can list but cannot GET/POST test action. |
 | `fresh_authority_after_page_load` | 2 | Disable or revoke role of this test's own administrator after opening page; next POST denied using the existing session. |
-| `unknown_or_multiple_selection_is_refused` | 4 | Missing model, composite selection, zero and malformed ID. |
+| `unknown_or_multiple_selection_is_refused` | 5 | Missing in-range model (404); composite, zero, malformed and overflowing IDs (422 before SQL). |
 | `paid_preconditions_before_dispatch` | 4 | Missing consent/workspace, inactive workspace, disabled billing feature; zero HTTP/dispatch. |
 | `real_admission_cannot_bypass_personal_safeguards` | 4 | Missing personal account/cutover/reviewed bound and insufficient cap fail before HTTP, using the real admission manager. |
 | `real_fixed_probe_initiator_payer_durable_settlement` | 1 | Admission/immutable reserve must exist **inside the transport handler before response**. Trusted initiating admin, not submitted payer or workspace owner; fixed prompt, 8 output tokens, 20-second client timeout, escaped answer, exact tariff settlement and telemetry; one HTTP. |
@@ -95,6 +95,29 @@ have checked the boundary. Other independent cases may still run sequentially;
 the resulting report is partial, not full acceptance. The schema/catalog owner
 must provide an approved verification route for that remaining boundary. Do not
 weaken the assertion into "whatever this profile allows is correct".
+
+## Relayed execution and model-ID correction
+
+The owner relayed collection/execution of 40 cases at
+`4f290aee981977ec5c950740bedd17a38d0b22a6`, with two failures: the explicit
+VIEW-only operator-profile precondition and missing-model 500 versus 404.
+Exact numeric command exit codes, complete counts and a database exception trace
+were not supplied; do not reconstruct them or call the suite accepted.
+
+The missing-model fixture supplied `2**63 - 1`, but `LLMModel.id` is PostgreSQL
+INTEGER, not BIGINT. The asyncpg SQL dialect binds that predicate as INTEGER;
+the out-of-range value is consistent with the reported 500 rather than an
+ordinary absent-row result. The exact local exception remains unverified.
+The test now distinguishes an absent in-range ID (`2**31 - 1`, expected 404)
+from an overflowing ID (expected 422). The application rejects positive IDs
+above INTEGER maximum before querying; this is not exception swallowing or a
+change of an ordinary missing model from 404 to 422.
+
+The VIEW-only failure establishes an unavailable test precondition, **not a
+proven authorization bypass or product defect**. Neither the existing role's
+precise grant set nor a bypass was demonstrated by that assertion. No shared
+grants were changed. This gate stays blocked pending an approved review route.
+An isolated test double is not a replacement for that real permission boundary.
 
 ## Local execution assignment
 

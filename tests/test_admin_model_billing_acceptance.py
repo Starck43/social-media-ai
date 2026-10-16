@@ -508,6 +508,7 @@ async def test_view_does_not_grant_configure_existing_operator_profile(case):
     grants = loaded.model_permissions("llmmodel")
     assert ActionType.VIEW in grants and ActionType.CONFIGURE not in grants, (
         "BLOCKED: existing operator profile is not VIEW-only for llmmodel; never edit shared seeded grants. "
+        f"Observed VIEW={ActionType.VIEW in grants}, CONFIGURE={ActionType.CONFIGURE in grants}. "
         "This permission boundary remains unverified until the schema/catalog owner supplies an approved route."
     )
     async with case.client(operator) as client:
@@ -545,10 +546,12 @@ async def test_fresh_authority_after_page_load(case, change):
     await case.no_dispatch()
 
 
-@pytest.mark.parametrize("model_key,status", [("missing", 404), ("multiple", 422), ("0", 422), ("bad", 422)])
+@pytest.mark.parametrize(
+    "model_key,status", [("missing", 404), ("multiple", 422), ("0", 422), ("bad", 422), ("9223372036854775807", 422)]
+)
 async def test_unknown_or_multiple_selection_is_refused(case, model_key, status):
     key = (
-        str(2**63 - 1)
+        str(2**31 - 1)
         if model_key == "missing"
         else f"{case.model.id},{case.model.id}" if model_key == "multiple" else model_key
     )

@@ -20,7 +20,8 @@ class LLMModelActions:
             model_id = int(pk)
         except (ValueError, TypeError):
             raise HTTPException(422, "Select exactly one model") from None
-        if model_id <= 0:
+        # LLMModel.id is PostgreSQL INTEGER; reject overflow before binding SQL.
+        if not 1 <= model_id <= 2_147_483_647:
             raise HTTPException(422, "Select exactly one model")
         model = await LLMModel.objects.select_related("provider").get(id=model_id)
         if model is None or model.provider is None:

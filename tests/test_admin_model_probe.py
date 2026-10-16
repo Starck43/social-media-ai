@@ -175,12 +175,23 @@ async def test_invalid_mode_or_oversize_is_rejected_before_model_lookup(mode, pr
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pk", ["7,8", "oops", "0", "-1"])
+@pytest.mark.parametrize("pk", ["7,8", "oops", "0", "-1", "2147483648", "9223372036854775807"])
 async def test_bad_selection_is_not_a_lookup(pk):
     actions, manager, view = action_module()
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as error:
         await actions.LLMModelActions.test_model(view, NS(), pk, "llm-model")
+    assert error.value.status_code == 422
     manager.get.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maximum_integer_model_id_can_be_missing_without_overflow():
+    actions, manager, view = action_module()
+    manager.get.return_value = None
+    with pytest.raises(HTTPException) as error:
+        await actions.LLMModelActions.submit_test(view, NS(), "2147483647", "short", "")
+    assert error.value.status_code == 404
+    manager.get.assert_awaited_once_with(id=2147483647)
 
 
 @pytest.mark.asyncio

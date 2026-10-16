@@ -75,9 +75,15 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
   `opencode/` prefix). The primary invocation is
   `opencode run --dir <worktree> -m QwenPlan/deepseek-v4-flash-0731 --auto "<message>" --file <task-file>`.
   Verify the task file is attached and readable. Collect before execution
-  after enum/import changes. Use `.venv/bin/python -m pytest`, assigned paths
-  as positional arguments, and isolated flags
-  `--noconftest -o addopts= -q --tb=short --no-header`. Independent scopes may
+  after enum/import changes. Use `.venv/bin/python -m pytest` and assigned paths
+  as positional arguments. Proven no-DB scopes use isolated flags
+  `--noconftest -o addopts= -q --tb=short --no-header`. Explicitly assigned
+  real DB/ASGI scopes use current root conftest with `DB_TEST_SCHEMA=test_schema`
+  and `-o addopts= -q --tb=short --no-header`; do not add `--noconftest` or an
+  obsolete bootstrap plugin. Root conftest validates the existing schema/catalog
+  read-only; missing or incompatible state blocks the run, never authorizes
+  create/reset/seed/repair. Use exact positional modules/node IDs, never broad
+  discovery of standalone DB scripts. Independent scopes may
   run in parallel only after proving they do not touch the shared DB/schema or
   other shared mutable state; shared PostgreSQL checks remain sequential under
   R8. Neither the coordinating Codex process nor Codex subagents execute

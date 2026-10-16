@@ -12,11 +12,17 @@ Follow routing and safeguards in AGENTS.md and docs/RULES.md (R8/R10). Task file
 1. Verify: `git rev-parse HEAD` == expected HEAD; `pgrep -fl pytest` (exact
    command, no operators; exit 1 = free). Mismatch or an active/unknown pytest
    process ⇒ reply `TEST RUN BLOCKED reason=<one line>` and stop.
-2. Run only the assigned scope: `<worktree>/.venv/bin/python -m pytest <paths>
-   --noconftest -o addopts= -q --tb=short --no-header` (paths positional;
-   collect-only first after enum/import changes or when the task asks).
-   Shared-DB scopes strictly sequential; no-DB scopes may parallelize only if
-   the task file proves independence.
+2. Run only the assigned scope with `<worktree>/.venv/bin/python -m pytest`
+   and exact positional paths/node IDs (collect-only first after enum/import
+   changes or when the task asks). Select the mode explicitly from the task:
+   - Proven no-DB: `--noconftest -o addopts= -q --tb=short --no-header`.
+   - Real DB/ASGI: `DB_TEST_SCHEMA=test_schema`, current root conftest ENABLED,
+     `-o addopts= -q --tb=short --no-header`; never append `--noconftest` or an
+     old bootstrap plugin. Existing schema/catalog preflight is read-only;
+     missing/incompatible state blocks, never triggers creation/reset/seeding.
+   - Unclear mode/fixture contract: return the specific blocker; do not guess.
+   Never broad-discover standalone DB scripts. Shared-DB scopes strictly
+   sequential; no-DB scopes may parallelize only if the task proves independence.
 3. Never: reset/drop/create/stamp/migrate/seed schemas, call live providers,
    senders, workers, listeners, deploy, touch Git state or unrelated files.
 4. Routine fixes allowed only inside file ownership explicitly assigned in the

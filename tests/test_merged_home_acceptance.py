@@ -6,6 +6,7 @@ application imports; create and remove only this module's own synthetic rows.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -19,16 +20,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 from sqlalchemy import event, text
 
-from scripts.setup_test_db import check_existing_schema, resolve_and_redirect
+from scripts.setup_test_db import (
+    check_existing_schema,
+    resolve_and_redirect,
+    resolve_test_schema,
+    resolve_test_url,
+)
 
-_, _target, _schema = resolve_and_redirect()
+_APPROVED_TARGET = ("localhost", 5432, "/social_manager", "test_schema")
+
+
+def _resolve_approved_target() -> tuple[str, str]:
+    """Return the approved (target_url, test_schema), redirecting only once.
+
+    The standalone no-conftest run resolves and redirects here. Under pytest the
+    conftest module already redirected the process to the same approved target,
+    so a second resolve_and_redirect would reject it as the working schema.
+    Detect that exact redirected state and reuse it instead.
+    """
+
+    def _identity(url: str) -> tuple:
+        endpoint = urlsplit(url)
+        return endpoint.hostname, endpoint.port or 5432, endpoint.path
+
+    test_url = resolve_test_url()
+    working_url = os.environ.get("POSTGRES_URL", "").strip()
+    test_schema = resolve_test_schema()
+    redirect_already_applied = (
+        bool(test_url)
+        and bool(working_url)
+        and test_schema == _APPROVED_TARGET[3]
+        and _identity(test_url) == _APPROVED_TARGET[:3]
+        and _identity(working_url) == _APPROVED_TARGET[:3]
+        and os.environ.get("DB_SCHEMA", "").strip() == _APPROVED_TARGET[3]
+    )
+    if redirect_already_applied:
+        return test_url, test_schema
+    _, redirected_test_url, redirected_schema = resolve_and_redirect()
+    return redirected_test_url, redirected_schema
+
+
+_target, _schema = _resolve_approved_target()
 _endpoint = urlsplit(_target)
-if (_endpoint.hostname, _endpoint.port or 5432, _endpoint.path, _schema) != (
-    "localhost",
-    5432,
-    "/social_manager",
-    "test_schema",
-):
+if (_endpoint.hostname, _endpoint.port or 5432, _endpoint.path, _schema) != _APPROVED_TARGET:
     raise RuntimeError("Home acceptance requires the owner-approved existing test target")
 
 from app.core.config import settings  # noqa: E402

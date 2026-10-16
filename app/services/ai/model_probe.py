@@ -111,6 +111,43 @@ async def probe_real_capped(model, prompt: str = PROBE_PROMPT) -> dict[str, Any]
     if not client.api_key:
         return {"ok": False, "error": "API-ключ провайдера не настроен", "tokens_spent": 0}
 
+    from app.core.config import settings
+
+    if settings.PERSONAL_BILLING_ENABLED:
+        try:
+            from app.services.ai.llm_client import journal_chat_attempt
+
+            response = await client.chat(
+                [{"role": "user", "content": prompt}],
+                max_tokens=PROBE_MAX_TOKENS,
+                temperature=0.0,
+                timeout=PROBE_TIMEOUT,
+                personal_billing_purpose="admin_probe",
+            )
+            dispatch_id = response.pop("_personal_dispatch_id", None)
+            await journal_chat_attempt(client, "admin_probe", response, dispatch_id=dispatch_id)
+            raw = response.get("raw") if isinstance(response, dict) else None
+            usage = response.get("usage") if isinstance(response, dict) else None
+            usage = usage if isinstance(usage, dict) else {}
+            return {
+                "ok": True,
+                "content": response.get("content", ""),
+                "usage": {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                },
+                "tokens_spent": usage.get("total_tokens", 0),
+                "is_real_response": True,
+                "raw": raw,
+            }
+        except Exception as exc:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(exc)
+            logger.warning("Personal admin probe failed model_id=%s", getattr(model, "id", "?"))
+            return {"ok": False, "error": str(exc), "tokens_spent": 0}
+
     payload: dict[str, Any] = {
         "model": client.model_name,
         "messages": [{"role": "user", "content": prompt}],

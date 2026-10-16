@@ -45,13 +45,17 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
   code-review-only until separate schemas are prepared. The default pytest
   startup validates the existing schema read-only. Never create, reset, drop,
   stamp or migrate schemas automatically — `setup_test_db --reset`, `DROP`,
-  `alembic` and manual column fixes require an explicit owner instruction. A
-  direct owner authorization may permit a bounded exceptional change to the
-  local `test_schema` only after read-only target/writer checks and a verified
-  private backup; preserve other schemas and do not fake an Alembic baseline.
-  That authorization is limited to its stated test-schema scope and does not
-  permit public/business-schema changes. These restrictions override any older
-  automatic-reset advice. Test delegation follows R10 and these restrictions.
+  `alembic` and manual column fixes require an explicit owner instruction. The
+  owner deems the local `test_schema` disposable, so it may be recreated during
+  such an authorized reset without a private backup; read-only target/writer
+  preflight still applies and every other schema stays protected. Fresh
+  bootstrap may use current model metadata without fabricating or stamping an
+  Alembic baseline; where migration-only objects are required, a verified
+  migrated schema snapshot may be cloned with its truthful Alembic revision
+  preserved, then only the disposable clone is reconciled to current metadata.
+  These restrictions do not permit public/business-schema changes and override
+  any older automatic-reset advice.
+  Test delegation follows R10 and these restrictions.
   The resolved target itself is pre-approved for real ASGI/DB test execution
   (including `httpx` `ASGITransport` tests that create and clean up their own
   data); never ask the owner to reconfirm the target for such runs. This

@@ -702,6 +702,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                         # Task-specific TARGET parameters: brands, competitors, hashtags.
                         # These are injected into the prompt instruction, not the response schema.
                         task_payload=task_payload,
+                        billing_execution={
+                            "source_id": source.id,
+                            "job_id": payload.get("job_id"),
+                            "agent_task_id": task.id if task is not None else None,
+                            "initiated_by_user_id": payload.get("_trusted_initiated_by_user_id"),
+                        },
                     )
                     # A client can report a failure without raising, including
                     # a failed sibling alongside useful saved analysis. Keep

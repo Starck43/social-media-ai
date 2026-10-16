@@ -20,8 +20,14 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P1-T01 — prove source admission on PostgreSQL (race/rollback/ASGI scope) → [p1](docs/phases/p1-queue-execution.md) — owner: codex — BLOCKED
 - [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
-- [ ] P2-T01 — one admission activation prerequisite (PR #180 unwired) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
-- [ ] P2-T02 — operator-payer decision for admin connection tests → [p2](docs/phases/p2-usage-spend.md) — owner — BLOCKED
+- [ ] P2-T01 — personal billing account identity + fixed task payer via consent on change → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T02 — admin paid probes charged to launching user's account → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T03 — legacy finance records/tasks explicit transition mapping → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T04 — atomic idempotent settlement/reconciliation → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T05 — UTC daily baselines + reviewed upper paid-attempt bounds → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T06 — admission wiring through all provider clients/callers → [p2](docs/phases/p2-usage-spend.md) — billing-agent — IN_PROGRESS
+- [ ] P2-T07 — focused PG/ASGI acceptance and cutover → [p2](docs/phases/p2-usage-spend.md) — codex — IN_PROGRESS
+- [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — owner — TODO
 - [ ] P3-T01 — digest send permission parity acceptance (PR #176 Draft) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
 - [ ] P3-T02 — close one actor/workspace/tool/write gap → [p3](docs/phases/p3-identity-access.md) — unassigned — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — TODO
@@ -30,11 +36,13 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P6-T02 — one bounded retention/export/offboarding contract → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
 - [ ] P7-T02 — one staging-backed operation proof → [p7](docs/phases/p7-operations.md) — unassigned — TODO
-- [ ] P8-T01 — home mixed latest-results feed → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T02 — home upcoming schedules → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T03 — shell closeout: durable preferences + real C/D acceptance → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — TODO
-- [ ] P8-T04 — add-task form `source_ids` Alpine init bug → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T05 — mobile 375px page-width overflow → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T08 — credential expiry/near-expiry signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T09 — queue backlog/age/quarantine operator signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T10 — scheduler/worker/listener freshness identity → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T11 — incomplete-delivery aggregate signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T12 — unknown-price/spend exposure signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
+- [ ] P8-T13 — named support/escalation ownership + pilot measures → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO

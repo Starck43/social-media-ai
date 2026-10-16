@@ -483,6 +483,7 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     payload = dict(job.payload or {})
     payload["agent_task_id"] = job.agent_task_id
     payload["job_id"] = job.id
+    payload["_trusted_initiated_by_user_id"] = job.initiated_by_user_id
     with tenant_scope(job.tenant_id):
         checkpoint_mode = False
         if job.job_type == "digest":

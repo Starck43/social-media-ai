@@ -27,6 +27,9 @@ def bind_managers(models):
     ).LLMDispatchReceiptManager()
     models.DigestRun.objects = import_module("app.models.managers.digest_run_manager").DigestRunManager()
     models.Notification.objects = import_module("app.models.managers.notification_manager").NotificationManager()
+    models.NotificationPreference.objects = import_module(
+        "app.models.managers.notification_preference_manager"
+    ).NotificationPreferenceManager()
     models.Job.objects = import_module("app.models.managers.job_manager").JobManager()
     models.CollectedItem.objects = import_module("app.models.managers.collected_item_manager").CollectedItemManager()
     models.AgentMemory.objects = import_module("app.models.managers.agent_memory_manager").AgentMemoryManager()
@@ -36,6 +39,22 @@ def bind_managers(models):
     models.LLMAttempt.objects = import_module("app.models.managers.llm_attempt_manager").LLMAttemptManager()
     models.AIAnalytics.objects = import_module("app.models.managers.ai_analytics_manager").AIAnalyticsManager()
     models.LLMBudgetReservation.objects = import_module("app.models.managers.llm_budget_manager").LLMBudgetManager()
+    personal_billing = import_module("app.models.managers.personal_billing_manager")
+    models.PersonalBillingAccount.objects = personal_billing.PersonalBillingManager()
+    models.TaskBillingPayer.objects = BaseManager(models.TaskBillingPayer)
+    models.PersonalLLMDispatch.objects = BaseManager(models.PersonalLLMDispatch)
+    models.PersonalBillingCutover.objects = BaseManager(models.PersonalBillingCutover)
+    models.PersonalLLMBoundPolicy.objects = BaseManager(models.PersonalLLMBoundPolicy)
+    models.PersonalLLMBudgetDay.objects = BaseManager(models.PersonalLLMBudgetDay)
+    models.PersonalLLMReservation.objects = BaseManager(models.PersonalLLMReservation)
+    models.PersonalLLMReservationState.objects = BaseManager(models.PersonalLLMReservationState)
+    models.PersonalLLMLedgerEntry.objects = BaseManager(models.PersonalLLMLedgerEntry)
+    models.PersonalLegacyAttributionConsent.objects = BaseManager(models.PersonalLegacyAttributionConsent)
+    models.PersonalLegacyAttribution.objects = BaseManager(models.PersonalLegacyAttribution)
+    models.PersonalLLMBudgetDay.objects = import_module(
+        "app.models.managers.personal_llm_billing_manager"
+    ).PersonalLLMBillingManager()
+    models.PersonalLLMBillingIncident.objects = BaseManager(models.PersonalLLMBillingIncident)
     models.LLMProvider.objects = import_module("app.models.managers.llm_provider_manager").LLMProviderManager()
     models.BotAction.objects = import_module("app.models.managers.bot_action_manager").BotActionManager()
     models.Source.objects = import_module("app.models.managers.source_manager").SourceManager()

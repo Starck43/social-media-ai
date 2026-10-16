@@ -16,6 +16,7 @@ from app.admin.csrf import get_csrf_manager
 from app.core.config import settings
 from app.core.hashing import generate_temporary_password, get_password_hash, verify_password
 from app.models import User
+from app.models import Tenant
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
 
@@ -40,6 +41,46 @@ template_dirs = [str(Path(__file__).parent.parent / "templates"), str(sqladmin_p
 templates = Jinja2Templates(directory=template_dirs)
 
 router = APIRouter(tags=["admin"])
+
+
+@router.post("/admin/llm-model/test-real", name="llm_model_test_real")
+async def llm_model_test_real(
+    request: Request,
+    pks: str = Form(...),
+    prompt: str = Form(""),
+    tenant_id: int = Form(...),
+    csrf_token: str = Form(""),
+):
+    """Run an explicit paid probe only from an authenticated admin POST."""
+    if not get_csrf_manager(request).verify_token(csrf_token):
+        raise HTTPException(status_code=403, detail="Недействительный CSRF токен")
+    if not settings.PERSONAL_BILLING_ENABLED:
+        raise HTTPException(status_code=409, detail="Личный учёт расходов ещё не включён")
+    token = request.session.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Требуется вход в панель")
+    user = await get_authenticated_user(token=token, token_type="access")
+    if user is not None:
+        user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+    if user is None or not user.is_active or not user.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Нужны активные права администратора платформы")
+    tenant = await Tenant.objects.get(id=tenant_id)
+    if tenant is None or not tenant.is_active:
+        raise HTTPException(status_code=422, detail="Выберите активное рабочее пространство")
+
+    from app.core.permissions import permission_scope
+    from app.core.tenant_context import tenant_scope
+
+    with tenant_scope(tenant.id), permission_scope(user):
+        from app.admin.actions import LLMModelActions
+
+        return await LLMModelActions.test_model_real(
+            request.app.state.admin,
+            request,
+            pks,
+            prompt,
+            None,
+        )
 
 
 @router.get("/admin/reset-password", name="reset_password_page")

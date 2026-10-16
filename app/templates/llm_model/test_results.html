@@ -71,8 +71,15 @@
                 <div class="card-body">
                     <form method="get" action="/admin/llm-model/action/test-model/" id="test_form">
                         <input type="hidden" name="pks" value="{{ model.id }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="test_type" id="test_type_field" value="mock">
                         <input type="hidden" id="image_data_hidden" name="image_data" value="">
+                        <div class="mb-3">
+                            <label for="billing_tenant_id" class="form-label">Рабочее пространство выполнения</label>
+                            <select class="form-select" id="billing_tenant_id" name="tenant_id" required>
+                                {% for tenant in billing_tenants %}<option value="{{ tenant.id }}" {% if tenant.id == billing_tenant_id %}selected{% endif %}>{{ tenant.name }} ({{ tenant.id }})</option>{% endfor %}
+                            </select>
+                        </div>
 
                         <div class="row">
                             <div class="col-12 col-md-8">
@@ -235,7 +242,9 @@
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="d-flex gap-2 flex-wrap">
-                        <form method="get" action="/admin/llm-model/action/test-model/">
+                        <form method="post" action="/admin/llm-model/test-real">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="tenant_id" value="{{ billing_tenant_id or (billing_tenants[0].id if billing_tenants else '') }}">
                             <input type="hidden" name="pks" value="{{ model.id }}">
                             <input type="hidden" name="prompt" value="{{ prompt }}">
                             <button type="submit" class="btn btn-info">
@@ -336,6 +345,31 @@
         let skipRealConfirm = false
 
         testForm.addEventListener("submit", function (e) {
+            const testType = document.getElementById("test_type_field").value
+            if (testType === "real") {
+                e.preventDefault()
+                const realForm = document.createElement("form")
+                realForm.method = "post"
+                realForm.action = "/admin/llm-model/test-real"
+                for (const name of ["csrf_token", "tenant_id", "pks"]) {
+                    const field = testForm.querySelector(`[name="${name}"]`)
+                    if (field) realForm.appendChild(field.cloneNode(true))
+                }
+                const promptField = document.createElement("input")
+                promptField.type = "hidden"
+                promptField.name = "prompt"
+                promptField.value = document.getElementById("real_prompt").value
+                realForm.appendChild(promptField)
+                document.body.appendChild(realForm)
+                const prompt = document.getElementById("real_prompt").value
+                if (!prompt.trim()) { uiNotice("Введите запрос для тестирования"); realForm.remove(); return }
+                if (!skipRealConfirm && bsModal) {
+                    if (document.getElementById("image_data_hidden").value !== "") realModalImageNote.style.display = "block"
+                    else realModalImageNote.style.display = "none"
+                    realModalConfirm.onclick = function () { bsModal.hide(); realForm.submit() }
+                } else realForm.submit()
+                return
+            }
             const prompt = document.getElementById("real_prompt").value
             if (!prompt.trim()) {
                 uiNotice("Введите запрос для тестирования")
@@ -343,29 +377,11 @@
                 return
             }
 
-            const testType = document.getElementById("test_type_field").value
             const hasImage = document.getElementById("image_data_hidden").value !== ""
-
-            if (testType === "real" && !skipRealConfirm && bsModal) {
-                e.preventDefault()
-                if (hasImage) {
-                    realModalImageNote.style.display = "block"
-                } else {
-                    realModalImageNote.style.display = "none"
-                }
-                bsModal.show()
-            }
 
             skipRealConfirm = false
         })
 
-        if (realModalConfirm && bsModal) {
-            realModalConfirm.addEventListener("click", function () {
-                bsModal.hide()
-                skipRealConfirm = true
-                testForm.requestSubmit()
-            })
-        }
     })
 
     function handleImageSelect(event) {

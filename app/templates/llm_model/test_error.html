@@ -140,7 +140,9 @@
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="d-flex gap-2 flex-wrap">
-                        <form method="get" action="/admin/llm-model/action/test-model/">
+                        <form method="post" action="/admin/llm-model/test-real">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="tenant_id" value="{{ billing_tenant_id or (billing_tenants[0].id if billing_tenants else '') }}">
                             <input type="hidden" name="pks" value="{{ model.id }}">
                             {% if prompt %}
                             <input type="hidden" name="prompt" value="{{ prompt }}">

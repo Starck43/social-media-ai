@@ -299,6 +299,7 @@ class AgentTaskManager(BaseManager):
         now: datetime,
         expected_next_run_at: Optional[datetime] = None,
         scheduled: bool = False,
+        initiated_by_user_id: Optional[int] = None,
         timezone_name: Optional[str] = None,
         extra_payload: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
@@ -324,6 +325,15 @@ class AgentTaskManager(BaseManager):
         tenant_id = current_tenant_id()
         if type(tenant_id) is not int or tenant_id <= 0 or is_bypass():
             raise TenantContextError("Task admission requires a concrete normal tenant scope")
+        from app.core.permissions import get_current_user
+
+        trusted_actor_id = getattr(get_current_user(), "id", None)
+        if scheduled:
+            initiated_by_user_id = None
+        elif initiated_by_user_id is not None and initiated_by_user_id != trusted_actor_id:
+            raise ValueError("Manual task initiator must match the authenticated actor")
+        elif type(trusted_actor_id) is int and trusted_actor_id > 0:
+            initiated_by_user_id = trusted_actor_id
         if type(task_id) is not int or task_id <= 0:
             raise ValueError("Task admission requires a persisted task ID")
         if not isinstance(now, datetime) or now.utcoffset() is None:
@@ -337,6 +347,7 @@ class AgentTaskManager(BaseManager):
                 await JobManager.lock_source_admission(session, tenant_id)
                 query = select(AgentTask).where(AgentTask.id == task_id, AgentTask.tenant_id == tenant_id)
                 if scheduled:
+                    initiated_by_user_id = None
                     query = query.where(
                         AgentTask.is_active.is_(True),
                         AgentTask.next_run_at == expected_next_run_at,
@@ -388,6 +399,7 @@ class AgentTaskManager(BaseManager):
                             payload=payload,
                             agent_task_id=row.id,
                             tenant_id=tenant_id,
+                            initiated_by_user_id=initiated_by_user_id,
                             run_at=now,
                             session=session,
                         )

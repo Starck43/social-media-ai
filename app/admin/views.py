@@ -2103,12 +2103,25 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
             return RedirectResponse(request.url_for("admin:list", identity=self.identity), status_code=303)
         task_id = int(pks.split(",")[0])
 
+        # The manual Job admission boundary (`_admit_task_run`) credits the
+        # actor from the ambient permission_scope user into the Job row
+        # (`initiated_by_user_id`). That identity comes only from the session
+        # the admin authorization backend put on `request.state.admin_user` —
+        # never from query/path/body or the task payload. Fail closed when the
+        # trusted operator is absent or inactive.
+        admin_user = self.get_admin_user(request)
+        if admin_user is None or not getattr(admin_user, "is_active", False):
+            raise HTTPException(status_code=403, detail="Доступ запрещён: оператор не аутентифицирован")
+
         # Operator console: read the task across workspaces (bypass), then act
         # inside the task's own workspace — the shared helper does the scoping.
         with tenant_scope(bypass=True):
             task = await AgentTask.objects.get(id=task_id)
         if task:
-            outcome = await run_task_directly(task)
+            from app.core.permissions import permission_scope
+
+            with permission_scope(admin_user):
+                outcome = await run_task_directly(task)
             if outcome and outcome.get("status") == "failed":
                 request.session["admin_message"] = {
                     "type": "error",

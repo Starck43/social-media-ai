@@ -27,12 +27,14 @@ class LLMModelActions:
             from app.services.ai.model_probe import probe_status
 
             prompt = request.query_params.get("prompt", "")
-            test_type = request.query_params.get("test_type", "mock")
             model_id = pks.split(",")[0]
             model = await LLMModel.objects.select_related("provider").get(id=int(model_id))
             verdict = probe_status(model)
 
             if not prompt:
+                from app.models import Tenant
+
+                billing_tenants = list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name))
                 template_name = "llm_model/test_results.html"
                 return await admin_view.templates.TemplateResponse(
                     request,
@@ -65,13 +67,13 @@ class LLMModelActions:
                         "price_updated": False,
                         "status_checks": verdict["checks"],
                         "status_hint": verdict["hint"],
+                        "billing_tenants": billing_tenants,
+                        "billing_tenant_id": getattr(request.state, "tenant_id", None),
                     },
                 )
 
-            if test_type == "real":
-                return await cls.test_model_real(admin_view, request, pks, prompt, None)
-            else:
-                return await cls.test_model_mock(admin_view, request, pks, prompt, None)
+            # GET actions are always side-effect-free mock probes.
+            return await cls.test_model_mock(admin_view, request, pks, prompt, None)
         except Exception as e:
             logger.error(f"Error in test_model: {e}", exc_info=True)
             request.session["admin_message"] = {"type": "error", "message": f"Error testing model: {e}"}
@@ -81,6 +83,14 @@ class LLMModelActions:
 
     @classmethod
     async def test_model_mock(cls, admin_view, request: Request, pks: str, prompt: str, image_file: str = ""):
+        from app.models import Tenant
+
+        billing_tenants = list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name))
+        template_context = {
+            "billing_tenants": billing_tenants,
+            "billing_tenant_id": getattr(request.state, "tenant_id", None),
+        }
+
         model_id = pks.split(",")[0] if pks else None
         model = await LLMModel.objects.select_related("provider").get(id=int(model_id))
         try:
@@ -162,6 +172,7 @@ class LLMModelActions:
                     "is_real_response": False,
                     "cost_info": {},
                     "price_updated": False,
+                    **template_context,
                 },
             )
         except Exception as e:
@@ -176,6 +187,7 @@ class LLMModelActions:
                     "error_message": str(e),
                     "prompt": prompt,
                     "error_time": datetime.now(),
+                    **template_context,
                 },
             )
 
@@ -189,6 +201,11 @@ class LLMModelActions:
         cent. The free-form prompt box stays for the mock path.
         """
         from app.services.ai.model_probe import PROBE_PROMPT, probe_real_capped, probe_status
+        from app.models import Tenant
+
+        billing_tenants = list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name))
+        billing_tenant_id = getattr(request.state, "tenant_id", None)
+        template_context = {"billing_tenants": billing_tenants, "billing_tenant_id": billing_tenant_id}
 
         model_id = pks.split(",")[0] if pks else None
         model = await LLMModel.objects.select_related("provider").get(id=int(model_id))
@@ -204,6 +221,7 @@ class LLMModelActions:
                     "error_message": verdict["hint"],
                     "prompt": prompt,
                     "error_time": datetime.now(),
+                    **template_context,
                 },
             )
         try:
@@ -221,6 +239,7 @@ class LLMModelActions:
                         "error_message": probe.get("error", "Проба не удалась"),
                         "prompt": prompt,
                         "error_time": end_time,
+                        **template_context,
                     },
                 )
             duration = (end_time - start_time).total_seconds()
@@ -279,6 +298,7 @@ class LLMModelActions:
                     "price_updated": False,
                     "status_checks": verdict["checks"],
                     "status_hint": verdict["hint"],
+                    **template_context,
                 },
             )
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
@@ -294,6 +314,7 @@ class LLMModelActions:
                     "error_details": error_details,
                     "prompt": prompt,
                     "error_time": datetime.now(),
+                    **template_context,
                 },
             )
         except Exception as e:
@@ -318,6 +339,7 @@ class LLMModelActions:
                     "error_details": error_details,
                     "prompt": prompt,
                     "error_time": datetime.now(),
+                    **template_context,
                 },
             )
 

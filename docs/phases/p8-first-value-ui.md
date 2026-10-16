@@ -60,48 +60,29 @@ Attention feed lives in the floating bell (B), not a home card.
   views updated; workspace authorization preserved; focused checks assigned
   separately through test-runner; no unrelated UI overhaul; depends: none;
   owns: source detail/task modal incl. progress + diagnostics; owner:
-  codex-analysis-progress; status: BLOCKED — evidence:
-  [Draft PR #203](https://github.com/Starck43/social-media-ai/pull/203)
-  - Implementation b720b985; focused regression/fixture revision
-    2f91a675 (application and pipeline docs unchanged; fixture edits only in tests).
-  - Primary OpenCode test-runner (exact QwenPlan/deepseek-v4-flash-0731):
-    focused no-DB scopes 222 passed, 0 failed, 0 skipped; one unchanged
-    baseline all-template compilation check explicitly deselected
-    (scenario_wizard.html:252 uses `do` without configured extension;
-    wizard/deps unchanged from dev).
-  - Shared DB acceptance BLOCKED by read-only preflight: 13 tables absent
-    from branch metadata, 33 setup errors/0 executed tests; no reset/schema
-    repair attempted.
-  - Python compilation, Jinja parsing (changed templates), diff checks,
-    browser harness build and Node JS syntax all pass.
-  - Browser behavioral result: INCOMPLETE — Chromium DOM confirms running
-    0% pulse → unconfirmed 50% no pulse → done 100%, one live row, no login
-    HTML insertion, ordinary-user diagnostics absent, admin counters update;
-    browser exit code 2, opened-details preservation not exercised, so not a
-    fully passing browser acceptance run.
-  - Safari validation PASS at `ca282f79` via native AppleScript and a stable
-    window ID, without SafariDriver or browser preference changes. Primary
-    OpenCode exact QwenPlan/deepseek-v4-flash-0731: 5 passed, 0 failed, 0
-    skipped; no
-    JavaScript errors/unhandled rejections; owned local server/window cleaned,
-    original user tabs preserved. DOM: running 0% pulse → unconfirmed 50% no
-    pulse → done 100%, one live row; login redirect yields safe no-status and
-    no login injection; admin diagnostics stay present and initially open
-    details stays open across 60→70%; ordinary diagnostics absent as 40%
-    running updates. Authenticated source detail: table present, one live row,
-    failed lifecycle with unknown percentage for legacy run; source progress
-    fragment GET 200 text/html with matching state/diagnostic visibility. No
-    source content or credentials logged, no analysis/provider/action calls.
-    Local web-only preview served the PR revision; localhost/app/sources
-    restored from 502 to 302 login and opened in Safari; no worker/runtime/
-    scheduler or schema initialization started. The earlier SafariDriver
-    session-timeout limitation at `25ac852` is historical — resolved for
-    acceptance through AppleScript; Safari browser acceptance now passes,
-    including the previously unverified opened-details preservation.
-  - Next: the sole remaining BLOCKED cause is the separate shared DB
-    acceptance preflight — 13 tables absent from branch metadata. Verify DB
-    scope against compatible existing test schema/metadata without reset; keep
-    PR Draft pending that environment-dependent evidence.
+  codex-analysis-progress; status: DONE — accepted by Codex 2026-10-17 at
+  commit `dd36e7b`; evidence:
+  [PR #203](https://github.com/Starck43/social-media-ai/pull/203).
+  - Primary OpenCode test-runner (exact QwenPlan/deepseek-v4-flash-0731)
+    no-DB result: 222 passed, 0 failed, 0 skipped; one unrelated known
+    `{% do %}` wizard compile node deselected.
+  - Same exact model, DB/ASGI scope at the same SHA: 33 passed, 0 failed,
+    0 skipped.
+  - `test_schema` aligned to branch metadata after a verified private backup;
+    final read-only preflight passed with 34 tables. The schema was reset and
+    rebuilt from Base metadata under the owner's authorization; no Alembic
+    baseline was stamped. Original state remains in a private mode-0600 dump;
+    DB credentials were never printed.
+  - Safari browser acceptance remains PASS at `ca282f7`: 5 passed, 0 failed,
+    0 skipped; actual authenticated source page and progress fragment
+    GET 200. DOM covered running 0% pulse → unconfirmed 50% without pulse →
+    done 100%, safe login redirect, administrator diagnostics staying open
+    across updates, and ordinary-user diagnostics absent.
+  - Narrow SQLAlchemy 2.1 compatibility fix and updated stale data-confirm
+    parser assertion are in `dd36e7b`; application behavior otherwise
+    unchanged.
+  - No migrations or dependency changes. Review at the exact tested SHA found
+    no remaining task acceptance gaps.
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

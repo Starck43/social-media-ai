@@ -35,7 +35,6 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T03 — shell closeout: durable preferences + real C/D acceptance → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — TODO
 - [ ] P8-T04 — add-task form `source_ids` Alpine init bug → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T05 — mobile 375px page-width overflow → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T06 — truthful analysis progress in source detail / task Run now → [p8](docs/phases/p8-first-value-ui.md) — codex-analysis-progress — BLOCKED
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO

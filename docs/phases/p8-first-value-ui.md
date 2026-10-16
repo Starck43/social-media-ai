@@ -98,19 +98,27 @@ Coverage evidence vs PRD-08 (state/refs → task):
   latency/freshness/usefulness measures for the managed pilot, written and owner-signed; depends:
   P8-T10, P8-T11; owns: support contract lane; owner: unassigned; status: TODO
 
-- [ ] P8-T14 — integrate the shared local LLM check/admin UI with personal billing;
+- [x] P8-T14 — integrate the shared local LLM check/admin UI with personal billing;
   accept: owner-reviewed combined candidate preserves CONFIGURE/CSRF/paid consent,
   trusted initiating-user payer, explicit workspace, fixed 8-token/20-second probe,
   unknown-usage semantics and no automatic paid retry; short/mock remain local;
   depends: P2 billing review and separately authorized local acceptance;
   owns: isolated integration branch only; source lanes remain unchanged;
   owner: remote Notion agent (`review/admin-llm-billing-integration`);
-  status: READY — implementation and bounded acceptance complete; awaiting only
-  coordinating Codex closeout review (not another implementation/test run).
+  status: DONE — accepted: coordinator review in OpenCode session under explicit
+  owner instruction, 2026-10-17, at dev `c18ee2f`. Closeout review re-verified:
+  PR #205 state MERGED at `b0bd202b`, tested HEAD `0b1fd71d` and merge trees are
+  byte-identical (`d9e1a3c9a331e9d06d6ce22d91b39b39c6fbf48d` both); PR #206
+  (`c27b9468`) is a docs-only two-file evidence sync (ROADMAP.md + this file);
+  GitHub confirms both merges. All evidence caveats below are preserved as
+  accepted limitations: warning details of the 41-case local run were not
+  supplied, Mac-local audit files were not independently inspected remotely,
+  a genuine VIEW-only DB login was not tested, and the 56-case offline browser
+  QA belongs to `ace7c536`, not the final HEAD.
   [PR #205](https://github.com/Starck43/social-media-ai/pull/205) merged into dev
-  with explicit owner approval; tested HEAD
+  with explicit owner approval; full tested/merge SHAs: HEAD
   `0b1fd71d08a332e668d25eeb585fc27bb01127af`, merge commit
-  `b0bd202bccb04cdbcad009ddd6a8bd5664221a8c`; their Git trees are identical.
+  `b0bd202bccb04cdbcad009ddd6a8bd5664221a8c`.
   Evidence at the tested HEAD: 110/110 remote isolated tests; owner-relayed
   local `tests/test_admin_model_billing_acceptance.py`: 41 collected / 41 passed,
   0 failed/skipped/deselected/errors, collection/execution exits 0;
@@ -127,10 +135,12 @@ Coverage evidence vs PRD-08 (state/refs → task):
   Their branches and owner-local artifacts remain preserved; closing these PRs
   requires separate owner authorization. The historical admin P8-T06 collision
   remains mapped to T14; accepted inventory T06 is unchanged.
-  Only coordinating Codex may mark this row DONE and remove its ROADMAP row
-  after exact-SHA review. This is not broader P2/billing acceptance or P8 phase
-  approval. No repeated tests, schema/grant/.env operations, fixture cleanup,
-  runtime activation, deployment or live/paid calls are authorized by closeout.
+  DONE marking and ROADMAP-row removal were reserved to the coordinating Codex
+  after exact-SHA review; executed here by the owner's explicit in-session
+  instruction with the same exact-SHA review recorded above. This is not broader
+  P2/billing acceptance or P8 phase approval. No repeated tests, schema/grant/
+  .env operations, fixture cleanup, runtime activation, deployment or live/paid
+  calls are authorized by closeout.
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

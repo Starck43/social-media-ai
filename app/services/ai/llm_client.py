@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 from uuid import uuid4
@@ -21,6 +21,146 @@ MINUTE = 60
 # AgentMessage.cost / DigestRun.llm_cost are plain USD floats; quantise to 1e-9
 # so sub-cent calls from cheap models never round to "free".
 _COST_SCALE = Decimal("0.000000001")
+
+
+def _payload_has_media(value: Any) -> bool:
+    if isinstance(value, dict):
+        if any(key in value for key in ("image_url", "input_image", "media_url", "media_urls")):
+            return True
+        return any(_payload_has_media(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_payload_has_media(item) for item in value)
+    return False
+
+
+async def _personal_admission(
+    client: Any,
+    payload: dict[str, Any],
+    *,
+    purpose: str,
+    stage: str,
+    execution: dict[str, Any] | None = None,
+    has_media: bool = False,
+    uses_tools: bool = False,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    if not settings.PERSONAL_BILLING_ENABLED:
+        return None, None
+    api_format = getattr(client.provider, "api_format", None)
+    adapter = {
+        "openai": "openai_chat_completions",
+        "anthropic": "anthropic_messages",
+    }.get(api_format)
+    request_shape = {
+        "adapter": adapter,
+        "provider_name": client.provider.name,
+        "model_id": client.model_name,
+        "has_media": has_media or _payload_has_media(payload),
+        "uses_tools": uses_tools or bool(payload.get("tools")),
+        "requested_output_tokens": payload.get("max_tokens"),
+    }
+    from app.services.billing.personal_ledger import reserve_personal_dispatch
+
+    admission = dict(
+        await reserve_personal_dispatch(
+            client.model,
+            purpose=purpose,
+            stage=stage,
+            execution=execution,
+            request_shape=request_shape,
+        )
+    )
+    max_output = admission.pop("__personal_max_output_tokens", None)
+    if type(max_output) is int:
+        from app.services.ai.budget_admission import BudgetAdmissionUnavailable
+
+        if type(payload.get("max_tokens")) is not int or payload["max_tokens"] <= 0:
+            raise BudgetAdmissionUnavailable("Request output token limit is invalid")
+        payload["max_tokens"] = min(payload["max_tokens"], max_output)
+    dispatch_id = admission["dispatch_id"]
+    return admission, dispatch_id
+
+
+async def _verify_personal_dispatch_day(receipt: dict[str, Any] | None) -> None:
+    """Refuse a reservation acknowledged on a prior UTC day before HTTP.
+
+    A proven no-dispatch release is recorded before the refusal, so the held
+    reservation cannot leak past a UTC rollover.
+    """
+    if receipt is None:
+        return
+    from datetime import datetime, timezone
+
+    from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+
+    if receipt["utc_day"] != datetime.now(timezone.utc).date():
+        try:
+            await _observe_personal_failure(receipt, not_dispatched=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Failed to record not_dispatched release for prior-day reservation", exc_info=True)
+        raise PersonalBillingUnavailable("UTC billing day changed after reservation; retry under the new day")
+
+
+async def _observe_personal_outcome(
+    receipt: dict[str, Any] | None,
+    *,
+    dispatch_state: str,
+    outcome: str,
+    accounting_envelope: dict[str, Any] | None = None,
+) -> None:
+    """Persist and settle one immutable event; unknown outcomes retain liability."""
+    if receipt is None:
+        return
+    from app.models import LLMOutcomeEvent
+    from app.services.ai.outcome_events import build_outcome_event
+    from app.services.billing.personal_ledger import observe_personal_outcome
+
+    try:
+        event = build_outcome_event(
+            receipt,
+            event_id=uuid4().hex,
+            observed_at=datetime.now(timezone.utc),
+            dispatch_state=dispatch_state,
+            outcome=outcome,
+            accounting_envelope=accounting_envelope,
+        )
+        created = await LLMOutcomeEvent.objects.record_event(event)
+        if created:
+            await observe_personal_outcome(tenant_id=receipt["tenant_id"], event_id=event["event_id"])
+    except asyncio.CancelledError:
+        # Cancellation cannot prove non-dispatch. Best-effort durable unknown
+        # observation in a shielded task; the reservation remains held either way.
+        try:
+            await asyncio.shield(asyncio.create_task(_observe_personal_failure(receipt)))
+        except BaseException:
+            pass
+        raise
+    except Exception as exc:
+        from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+
+        raise PersonalBillingUnavailable("Outcome accounting failed; the reservation remains held") from exc
+
+
+async def _observe_personal_failure(receipt: dict[str, Any] | None, *, not_dispatched: bool = False) -> None:
+    await _observe_personal_outcome(
+        receipt,
+        dispatch_state="not_dispatched" if not_dispatched else "possible",
+        outcome="not_dispatched" if not_dispatched else "unknown",
+    )
+
+
+async def _observe_cancelled_personal(receipt: dict[str, Any] | None) -> None:
+    """Persist an ambiguous cancellation without releasing its reservation."""
+    if receipt is None:
+        return
+    task = asyncio.create_task(_observe_personal_failure(receipt))
+    try:
+        await asyncio.shield(task)
+    except BaseException:
+        # Preserve the original cancellation; the reservation remains durable.
+        pass
 
 
 async def _record_llm_usage(model: LLMModel, success: bool, usage: dict | None = None) -> None:
@@ -239,9 +379,17 @@ class OpenAICompatibleClient(LLMClient):
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
 
+        execution = kwargs.pop("personal_billing_execution", None)
+        stage = kwargs.pop("personal_billing_stage", "text_analysis")
         payload = self._prepare_analyze(prompt, media_urls, **kwargs)
         timeout = min(self.timeout, 60.0)
         request_meta = self._analysis_request_meta(prompt)
+        receipt, reserved_dispatch_id = await _personal_admission(
+            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+        )
+        await _verify_personal_dispatch_day(receipt)
+        if receipt is not None:
+            request_meta["dispatch_id"] = reserved_dispatch_id
 
         try:
             async with httpx.AsyncClient() as c:
@@ -254,7 +402,11 @@ class OpenAICompatibleClient(LLMClient):
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
         except httpx.TimeoutException:
+            await _observe_personal_failure(receipt)
             logger.error(f"Timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
             return {
@@ -263,6 +415,7 @@ class OpenAICompatibleClient(LLMClient):
                 "parsed": {"analysis": "Timeout"},
             }
         except Exception as e:
+            await _observe_personal_failure(receipt)
             logger.error(f"Unexpected error for {self.provider.name}: {e}")
             await _record_llm_usage(self.model, success=False)
             return {
@@ -271,7 +424,13 @@ class OpenAICompatibleClient(LLMClient):
                 "parsed": {"analysis": f"Error: {e}"},
             }
 
-        parsed = self._parse_response(data)
+        accounting_usage = self._accounting_usage(data)
+        accounting_cost = self._accounting_cost(data)
+        parse_error = False
+        try:
+            parsed = self._parse_response(data)
+        except Exception:
+            parsed, parse_error = {}, True
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
@@ -280,17 +439,22 @@ class OpenAICompatibleClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
-        accounting_usage = self._accounting_usage(data)
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            **self._accounting_cost(data),
+            **accounting_cost,
             "usage": self._analyze_usage_projection(
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
             ),
         }
+        await _observe_personal_outcome(
+            receipt,
+            dispatch_state="response_received",
+            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            accounting_envelope=response,
+        )
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
 
@@ -311,9 +475,20 @@ class OpenAICompatibleClient(LLMClient):
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = kwargs.pop("tool_choice", "auto")
+        execution = kwargs.pop("personal_billing_execution", None)
+        personal_purpose = kwargs.pop("personal_billing_purpose", "agent_chat")
         payload.update(kwargs)
 
         timeout = min(float(payload.get("timeout", self.timeout)), 60.0)
+        receipt, dispatch_id = await _personal_admission(
+            self,
+            payload,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            uses_tools=bool(tools),
+        )
+        await _verify_personal_dispatch_day(receipt)
 
         try:
             async with httpx.AsyncClient() as c:
@@ -324,11 +499,40 @@ class OpenAICompatibleClient(LLMClient):
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
 
-            response = self._parse_chat(data)
+            accounting = {
+                "accounting_usage": self._accounting_usage(data),
+                **self._accounting_cost(data),
+            }
+            parse_error = False
+            try:
+                response = self._parse_chat(data)
+            except Exception:
+                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+            response["_personal_dispatch_id"] = dispatch_id
+            await _observe_personal_outcome(
+                receipt,
+                dispatch_state="response_received",
+                outcome="failed_output" if parse_error else "succeeded",
+                accounting_envelope=accounting,
+            )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
-        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
+            await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
+            setattr(error, "personal_dispatch_id", dispatch_id)
+            raise
+        except Exception as error:
+            from app.services.billing.errors import is_personal_billing_block
+
+            if is_personal_billing_block(error):
+                setattr(error, "personal_dispatch_id", dispatch_id)
+                raise
+            await _observe_personal_failure(receipt)
+            setattr(error, "personal_dispatch_id", dispatch_id)
             raise
 
     # ── internal helpers ─────────────────────────────────────
@@ -434,23 +638,42 @@ class AnthropicClient(LLMClient):
         }
         timeout = min(self.timeout, 60.0)
         request_meta = self._analysis_request_meta(prompt)
+        execution = kwargs.pop("personal_billing_execution", None)
+        stage = kwargs.pop("personal_billing_stage", "text_analysis")
+        receipt, reserved_dispatch_id = await _personal_admission(
+            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+        )
+        await _verify_personal_dispatch_day(receipt)
+        if receipt is not None:
+            request_meta["dispatch_id"] = reserved_dispatch_id
         try:
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
         except httpx.TimeoutException:
+            await _observe_personal_failure(receipt)
             logger.error(f"Anthropic timeout after {timeout}s")
             await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
         except Exception as e:
+            await _observe_personal_failure(receipt)
             logger.error(f"Anthropic error: {e}")
             await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
-        text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
-        parsed = _try_json(text)
+        accounting_usage = self._accounting_usage(data, "input_tokens", "output_tokens")
+        accounting_cost = self._accounting_cost(data)
+        parse_error = False
+        try:
+            text = "\n".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+            parsed = _try_json(text)
+        except Exception:
+            parsed, parse_error = {}, True
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
@@ -459,17 +682,22 @@ class AnthropicClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
-        accounting_usage = self._accounting_usage(data, "input_tokens", "output_tokens")
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            **self._accounting_cost(data),
+            **accounting_cost,
             "usage": self._analyze_usage_projection(
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"]
             ),
         }
+        await _observe_personal_outcome(
+            receipt,
+            dispatch_state="response_received",
+            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            accounting_envelope=response,
+        )
         await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
         return response
 
@@ -503,6 +731,17 @@ class AnthropicClient(LLMClient):
             ]
 
         timeout = min(self.timeout, 60.0)
+        execution = kwargs.pop("personal_billing_execution", None)
+        personal_purpose = kwargs.pop("personal_billing_purpose", "agent_chat")
+        receipt, dispatch_id = await _personal_admission(
+            self,
+            payload,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            uses_tools=bool(tools),
+        )
+        await _verify_personal_dispatch_day(receipt)
         try:
             async with httpx.AsyncClient() as c:
                 r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
@@ -510,11 +749,40 @@ class AnthropicClient(LLMClient):
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
 
-            response = self._parse_chat(data)
+            accounting = {
+                "accounting_usage": self._accounting_usage(data, "input_tokens", "output_tokens"),
+                **self._accounting_cost(data),
+            }
+            parse_error = False
+            try:
+                response = self._parse_chat(data)
+            except Exception:
+                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+            response["_personal_dispatch_id"] = dispatch_id
+            await _observe_personal_outcome(
+                receipt,
+                dispatch_state="response_received",
+                outcome="failed_output" if parse_error else "succeeded",
+                accounting_envelope=accounting,
+            )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
-        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
+            await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
+            setattr(error, "personal_dispatch_id", dispatch_id)
+            raise
+        except Exception as error:
+            from app.services.billing.errors import is_personal_billing_block
+
+            if is_personal_billing_block(error):
+                setattr(error, "personal_dispatch_id", dispatch_id)
+                raise
+            await _observe_personal_failure(receipt)
+            setattr(error, "personal_dispatch_id", dispatch_id)
             raise
 
     def _parse_chat(self, data: dict) -> dict[str, Any]:
@@ -555,10 +823,18 @@ class CustomClient(LLMClient):
         payload: dict[str, Any] = {"model": self.model_name, "prompt": prompt}
         if media_urls:
             payload["media_urls"] = media_urls
+        execution = kwargs.pop("personal_billing_execution", None)
+        stage = kwargs.pop("personal_billing_stage", "text_analysis")
         payload.update(kwargs)
 
         timeout = min(self.timeout, 60.0)
         request_meta = {**self._analysis_request_meta(prompt), "endpoint": endpoint}
+        receipt, reserved_dispatch_id = await _personal_admission(
+            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+        )
+        await _verify_personal_dispatch_day(receipt)
+        if receipt is not None:
+            request_meta["dispatch_id"] = reserved_dispatch_id
 
         try:
             async with httpx.AsyncClient() as c:
@@ -566,17 +842,28 @@ class CustomClient(LLMClient):
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
         except httpx.TimeoutException:
+            await _observe_personal_failure(receipt)
             logger.error(f"Custom endpoint timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
         except Exception as e:
+            await _observe_personal_failure(receipt)
             logger.error(f"Custom endpoint error for {self.provider.name}: {e}")
             await _record_llm_usage(self.model, success=False)
             return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
 
-        content = _extract_custom_content(data)
-        parsed = _try_json(content) if isinstance(content, str) else content
+        accounting_usage = self._accounting_usage(data)
+        accounting_cost = self._accounting_cost(data)
+        parse_error = False
+        try:
+            content = _extract_custom_content(data)
+            parsed = _try_json(content) if isinstance(content, str) else content
+        except Exception:
+            parsed, parse_error = {}, True
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
@@ -585,15 +872,20 @@ class CustomClient(LLMClient):
                 data["error"] = "invalid_structured_output"
                 parsed = {}
 
-        accounting_usage = self._accounting_usage(data)
         response = {
             "request": request_meta,
             "response": data,
             "parsed": parsed,
             "accounting_usage": accounting_usage,
-            **self._accounting_cost(data),
+            **accounting_cost,
             "usage": self._analyze_usage_projection(0, 0),
         }
+        await _observe_personal_outcome(
+            receipt,
+            dispatch_state="response_received",
+            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            accounting_envelope=response,
+        )
         await _record_llm_usage(self.model, success=not bool(data.get("error")))
         return response
 
@@ -610,10 +902,21 @@ class CustomClient(LLMClient):
         payload: dict[str, Any] = {"model": self.model_name, "messages": messages}
         if tools:
             payload["tools"] = tools
+        execution = kwargs.pop("personal_billing_execution", None)
+        personal_purpose = kwargs.pop("personal_billing_purpose", "agent_chat")
         payload.update(kwargs)
 
         timeout = min(self.timeout, 60.0)
         request_meta = {"model": self.model_name, "provider": self.provider.name.lower(), "endpoint": endpoint}
+        receipt, dispatch_id = await _personal_admission(
+            self,
+            payload,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            uses_tools=bool(tools),
+        )
+        await _verify_personal_dispatch_day(receipt)
 
         try:
             async with httpx.AsyncClient() as c:
@@ -621,18 +924,49 @@ class CustomClient(LLMClient):
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
-        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError):
-            await _record_llm_usage(self.model, success=False)
-            raise
 
-        content = _extract_custom_content(data)
-        return {
-            "content": content,
-            "tool_calls": [],
-            "usage": self._usage_block(0, 0),
-            "finish_reason": None,
-            "raw": data,
-        }
+            accounting = {
+                "accounting_usage": self._accounting_usage(data),
+                **self._accounting_cost(data),
+            }
+            parse_error = False
+            try:
+                content = _extract_custom_content(data)
+                response = {
+                    "content": content,
+                    "tool_calls": [],
+                    "usage": self._usage_block(0, 0),
+                    "finish_reason": None,
+                    "raw": data,
+                }
+            except Exception:
+                response, parse_error = {"content": "", "tool_calls": [], "usage": self._usage_block(0, 0)}, True
+            response["_personal_dispatch_id"] = dispatch_id
+            await _observe_personal_outcome(
+                receipt,
+                dispatch_state="response_received",
+                outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+                accounting_envelope=accounting,
+            )
+            await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+            return response
+        except asyncio.CancelledError:
+            await _observe_cancelled_personal(receipt)
+            raise
+        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
+            await _observe_personal_failure(receipt)
+            await _record_llm_usage(self.model, success=False)
+            setattr(error, "personal_dispatch_id", dispatch_id)
+            raise
+        except Exception as error:
+            from app.services.billing.errors import is_personal_billing_block
+
+            if is_personal_billing_block(error):
+                setattr(error, "personal_dispatch_id", dispatch_id)
+                raise
+            await _observe_personal_failure(receipt)
+            setattr(error, "personal_dispatch_id", dispatch_id)
+            raise
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
@@ -693,7 +1027,9 @@ async def _llm_models(query) -> list[LLMModel]:
     return list(await query.prefetch_related("provider"))
 
 
-async def journal_chat_attempt(client: Any, purpose: str, response: Optional[dict[str, Any]]) -> None:
+async def journal_chat_attempt(
+    client: Any, purpose: str, response: Optional[dict[str, Any]], dispatch_id: str | None = None
+) -> None:
     """Journal one chat HTTP try in the ambient tenant scope; never breaks the call.
 
     Every provider try is its own attempt with a fresh local identity,
@@ -712,7 +1048,7 @@ async def journal_chat_attempt(client: Any, purpose: str, response: Optional[dic
         envelope = chat_attempt_envelope(
             model_id=client.model_name,
             provider_name=client.provider.name.lower(),
-            dispatch_id=uuid4().hex,
+            dispatch_id=dispatch_id or uuid4().hex,
             raw=response.get("raw") if isinstance(response, dict) else None,
             failed=response is None,
             **({"usage_fields": fields} if fields else {}),
@@ -728,6 +1064,7 @@ async def chat_with_fallback(
 ) -> dict[str, Any]:
     # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
+    kwargs.setdefault("personal_billing_purpose", accounting_purpose)
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
 
     allowed_types = await _allowed_model_types()
@@ -752,10 +1089,20 @@ async def chat_with_fallback(
             # Each try, failed or not, is journaled as its own attempt.
             try:
                 response = await client.chat(messages, tools=tools, **kwargs)
-            except Exception:
-                await journal_chat_attempt(client, accounting_purpose, None)
+            except Exception as error:
+                from app.services.billing.errors import raise_personal_billing_block
+
+                raise_personal_billing_block(error)
+                # Personal reservation attempts already own a durable dispatch identity.
+                await journal_chat_attempt(
+                    client,
+                    accounting_purpose,
+                    None,
+                    dispatch_id=getattr(error, "personal_dispatch_id", None),
+                )
                 raise
-            await journal_chat_attempt(client, accounting_purpose, response)
+            dispatch_id = response.pop("_personal_dispatch_id", None)
+            await journal_chat_attempt(client, accounting_purpose, response, dispatch_id=dispatch_id)
             return response
         except httpx.HTTPStatusError as e:
             code = e.response.status_code

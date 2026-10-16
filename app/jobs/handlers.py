@@ -651,6 +651,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         # the source page can show what the agent analysed *here*. `analyzed` and
         # `actions_created` below stay run-wide; these are this source's share.
         per: dict[str, Any] = {"source_id": source.id, "name": source.name, "analyzed": 0, "actions": 0}
+        progress_attempted = False
         try:
             stats["sources"] += 1
 
@@ -680,12 +681,25 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             # every one of them for the next attempt — the only copy of the
             # content must never be the thing we drop.
             try:
+                try:
+                    raw_total = await CollectedItem.objects.count_for_source(
+                        source.id, start_date=window.get("start_date"), end_date=window.get("end_date")
+                    )
+                except Exception as count_error:  # noqa: BLE001 — optional progress read
+                    raw_total = None
+                    logger.warning(
+                        "analyze_staged_count_failed source_id=%s error_code=%s",
+                        _log_id(source.id), _error_kind(count_error),
+                    )
                 staged = await CollectedItem.objects.for_source(
                     source.id,
                     limit=ANALYZE_STAGE_BATCH,
                     start_date=window.get("start_date"),
                     end_date=window.get("end_date"),
                 )
+                per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
+                await job_progress.update_current(sources, stats["per_source"], per)
+                progress_attempted = True
                 if staged:
                     from app.services.ai.analyzer import AIAnalyzer
 
@@ -719,6 +733,17 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.
                     deleted = await _retire_staged(fresh, source.id)
+                    # Only rows from this exact batch can count as processed.
+                    # `fresh` is persisted coverage; intersect its hashes with
+                    # the selected batch to avoid crediting unrelated rows.
+                    from app.services.ai.dedup import analysed_hashes
+
+                    covered = analysed_hashes(fresh)
+                    covered_selected_rows = sum(
+                        1 for row in staged if getattr(row, "content_hash", None) in covered
+                    )
+                    per["raw_processed"] = min(deleted, covered_selected_rows)
+                    await job_progress.update_current(sources, stats["per_source"], per)
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
                     else:
@@ -739,6 +764,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                             "counting the attempt so they stop being retried eventually"
                         )
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
+                from app.jobs.progress import ProgressStopped
+
+                if isinstance(e, ProgressStopped):
+                    raise
                 record_error(per, staged=True)
                 logger.warning(
                     "analyze_staged_processing_failed source_id=%s error_code=%s",
@@ -848,6 +877,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 logger.info(f"Created BotAction#{action.id} for source {source.id}")
 
         except Exception as e:
+            from app.jobs.progress import ProgressStopped
+
+            if isinstance(e, ProgressStopped):
+                raise
             logger.error(
                 "analyze_source_failed source_id=%s error_code=%s",
                 _log_id(source.id),
@@ -860,6 +893,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             # analyse) and every one of them is still an outcome the user should
             # be able to reach from the modal.
             stats["per_source"].append(per)
+            if not progress_attempted and "raw_total" not in per:
+                # Unknown is retained as unknown; inline collection or an
+                # earlier scenario failure cannot claim a staged denominator.
+                per["raw_total"] = None
+            await job_progress.update_current(sources, stats["per_source"], per)
 
     return stats
 

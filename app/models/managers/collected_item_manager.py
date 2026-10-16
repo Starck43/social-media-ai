@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import JSON, bindparam, text as sa_text
+from sqlalchemy import JSON, bindparam, func, text as sa_text
 
 from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
@@ -240,6 +240,17 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             .rows()
         )
         return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
+
+    async def count_for_source(self, source_id: int, *, start_date: Any = None, end_date: Any = None) -> int:
+        """Count the fixed staged window, including exhausted rows."""
+        from app.models.collected_item import CollectedItem
+
+        query = self.filter(source_id=source_id)
+        if start_date is not None:
+            query = query.filter(CollectedItem.published_at >= start_date)
+        if end_date is not None:
+            query = query.filter(CollectedItem.published_at <= end_date)
+        return int(await query.values(func.count(CollectedItem.id)).scalar(0) or 0)
 
     async def record_attempts(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
         """Count one failed analysis attempt against the given staged rows.

@@ -391,7 +391,6 @@
     <!-- Recent analyses ──────────────────────────────────────────────── -->
     <div class="mt-6 ui-card">
         <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние анализы</h2>
-        {% if recent %}
             <div class="mt-3 overflow-x-auto">
                 <table class="w-full min-w-[34rem] text-left text-sm">
                     <thead>
@@ -403,7 +402,9 @@
                             <th class="py-2 font-normal">Стоимость</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="source-analysis-progress" data-source-id="{{ source.id }}">
+                        {% with latest_progress=latest_progress, diagnostics=latest_diagnostics %}{% include "web/source_analysis_progress.html" %}{% endwith %}
+                        {% if not recent and not latest_progress %}<tr id="source-analysis-empty"><td colspan="5" class="py-3 text-sm text-slate-500">Анализов пока нет — новые запуски появятся здесь.</td></tr>{% endif %}
                         {% for a in recent %}
                             <tr class="border-b border-slate-200 dark:border-slate-800/60 last:border-0">
                                 <td class="py-2.5 pr-4 text-slate-700 dark:text-slate-300">
@@ -435,10 +436,114 @@
                     </tbody>
                 </table>
             </div>
-        {% else %}
-            <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Анализов пока нет — они появятся после первых сборов.</p>
-        {% endif %}
     </div>
+    <script>
+        (() => {
+            const body = document.getElementById("source-analysis-progress");
+            if (!body) return;
+            const sourceId = body.dataset.sourceId;
+            const ACTIVE = ["pending", "running", "unconfirmed"];
+            const clearStale = () => {
+                const row = body.querySelector("#source-analysis-progress-row");
+                if (row && ACTIVE.includes(row.dataset.progressStatus)) row.remove();
+            };
+            const wasExpanded = (row) => {
+                const details = row && row.querySelector("#source-analysis-progress-details");
+                return Boolean(details && details.open);
+            };
+            const focusedKey = (row) => {
+                const active = document.activeElement;
+                return row && active && row.contains(active) ? active.dataset.progressFocusKey : null;
+            };
+            let timer = null;
+            let stopped = false;
+            let inFlight = false;
+            let sequence = 0;
+            let activeController = null;
+            const showConnectionHint = () => {
+                clearStale();
+                let row = body.querySelector("#source-analysis-connection-row");
+                if (!row) {
+                    row = document.createElement("tr"); row.id = "source-analysis-connection-row";
+                    const cell = document.createElement("td"); cell.colSpan = 5;
+                    cell.className = "py-2.5 text-sm text-slate-500";
+                    cell.textContent = "Статус временно недоступен. Проверяем снова…";
+                    row.appendChild(cell); body.prepend(row);
+                }
+            };
+            // Permanent auth/identity failures are not retried: the row is cleared
+            // to a generic no-status so the table never shows a stale running
+            // progress, and polling stops for good instead of hammering a 403/404.
+            const stopPermanent = () => {
+                stopped = true;
+                if (timer) { clearTimeout(timer); timer = null; }
+                clearStale();
+                const hint = body.querySelector("#source-analysis-connection-row");
+                if (hint) hint.remove();
+                if (!body.querySelector("#source-analysis-no-status")) {
+                    const row = document.createElement("tr"); row.id = "source-analysis-no-status";
+                    const cell = document.createElement("td"); cell.colSpan = 5;
+                    cell.className = "py-2.5 text-sm text-slate-500";
+                    cell.textContent = "Статус временно недоступен";
+                    row.appendChild(cell); body.prepend(row);
+                }
+            };
+            const poll = async () => {
+                if (inFlight || stopped) return;
+                inFlight = true;
+                const requestSeq = ++sequence;
+                const controller = new AbortController();
+                activeController = controller;
+                const requestTimeout = setTimeout(() => controller.abort(), 10000);
+                let delay = 10000;
+                try {
+                    const response = await fetch(`/app/sources/${sourceId}/analysis-progress`, { credentials: "same-origin", signal: controller.signal });
+                    if (response.redirected || response.status === 403 || response.status === 404) { stopPermanent(); return; }
+                    const contentType = response.headers.get("content-type") || "";
+                    const fragment = await response.text();
+                    if (!response.ok || !contentType.includes("text/html")) { showConnectionHint(); return; }
+                    if (requestSeq !== sequence) return;
+                    const holder = document.createElement("tbody"); holder.innerHTML = fragment.trim();
+                    if (holder.children.length > 1 || (holder.firstElementChild && holder.firstElementChild.id !== "source-analysis-progress-row") || (!holder.firstElementChild && fragment.trim())) { showConnectionHint(); return; }
+                    const hint = body.querySelector("#source-analysis-connection-row"); if (hint) hint.remove();
+                    const oldRow = body.querySelector("#source-analysis-progress-row");
+                    const emptyRow = body.querySelector("#source-analysis-empty");
+                    const newRow = holder.firstElementChild;
+                    const keepExpanded = oldRow !== null ? wasExpanded(oldRow) : false;
+                    const restoreFocus = oldRow !== null ? focusedKey(oldRow) : null;
+                    if (oldRow && newRow) oldRow.replaceWith(newRow);
+                    else if (!oldRow && newRow) { body.prepend(newRow); if (emptyRow) emptyRow.remove(); }
+                    else if (oldRow && !newRow) oldRow.remove();
+                    if (keepExpanded && newRow) {
+                        const details = newRow.querySelector("#source-analysis-progress-details");
+                        if (details) details.open = true;
+                    }
+                    if (restoreFocus && newRow) {
+                        newRow.querySelector(`[data-progress-focus-key="${restoreFocus}"]`)?.focus({ preventScroll: true });
+                    }
+                    delay = newRow && ACTIVE.includes(newRow.dataset.progressStatus) ? 3000 : 10000;
+                } catch (_) { if (!stopped) showConnectionHint(); }
+                finally {
+                    clearTimeout(requestTimeout);
+                    if (activeController === controller) activeController = null;
+                    inFlight = false;
+                    if (!stopped) schedule(delay);
+                }
+            };
+            const schedule = (delay) => { if (!stopped) { clearTimeout(timer); timer = setTimeout(poll, delay); } };
+            window.addEventListener("pagehide", () => {
+                stopped = true;
+                clearTimeout(timer);
+                activeController?.abort();
+            }, { once: true });
+            window.addEventListener("pageshow", (event) => {
+                if (!event.persisted) return;
+                stopped = false;
+                poll();
+            });
+            poll();
+        })();
+    </script>
 </div>
 {% endif %}
 {% endblock %}

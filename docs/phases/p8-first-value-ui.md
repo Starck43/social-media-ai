@@ -137,6 +137,15 @@ points) are covered by merged B/D slices; future kinds enter attention only
 when their contracts exist — no fake rows or Soon cards. NULL-role membership
 labels are DELIVERED (`2dd3161`).
 
+## Analysis progress delivery
+
+PR #203 adds persisted source analysis progress to the source table and
+"Выполнить сейчас" dialog, with role-gated diagnostics. Acceptance at
+`dd36e7b` and Safari check at `ca282f7`: noDB 222 passed, DB/ASGI 33 passed;
+authenticated Safari view and progress endpoint returned HTTP 200. No
+migrations or dependency changes. This delivery is separate from inventory
+P8-T06 and does not alter its task record.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

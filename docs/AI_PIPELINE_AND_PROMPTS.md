@@ -102,6 +102,38 @@ availability are tracked separately from output validity:
 - a partial result cannot overwrite a stronger existing daily result merely to
   retain usage data.
 
+## Staged raw-data progress contract
+
+Progress surfaces in the source detail "Последние анализы" table and the task
+"Выполнить сейчас" modal describe staged raw-data coverage, not the analysis
+itself. The following invariants hold (`app/jobs/progress.py`,
+`app/web/analysis_progress.py`, `app/models/managers/collected_item_manager.py`):
+
+- The denominator (`raw_total`) is the fixed staged window for the source inside
+  the task's content window (`count_for_source` with `start_date`/`end_date`). It
+  includes rows that exhausted `give_up_after_attempts` and content beyond the
+  per-run batch cap; it is stable across the run and never a live queue count.
+- The numerator (`raw_processed`) counts only persisted, matched coverage:
+  the number of selected **rows** (duplicates count) whose stored hash is in
+  the set the analysis actually saved, capped by the rows actually deleted
+  (`min(deleted, covered_selected_rows)` — the count is rows, not unique
+  hashes). Unanalysed rows stay staged and are not counted; a partial result
+  never implies the rest is done.
+- `raw_selected` is how many rows fit in the batch this run, not a processed
+  count. No in-flight percentage is invented: a percentage renders only when
+  processed and total are known integers and `total > 0`; otherwise the UI shows
+  "—" or "прогресс пока неизвестен". An empty window is "Нет данных", never 0%.
+- An unknown heartbeat is distinct from stopped: a missing or stale (> 90 s)
+  lock on a running job is "Статус не подтверждён" (`unconfirmed`), while
+  "Остановлено" (`cancelled`) means explicit operator cancellation. Loss of the
+  progress claim stops the handler at the next source boundary but is not shown
+  as an unknown heartbeat. Progress is a display hint, not an outcome: the
+  final `result` replaces it, and a failed progress write never fails the run.
+- Privacy-safe diagnostics only: ordinary users see the source's own aggregate
+  counts and the simple running/stopped state; per-object or cross-workspace
+  failure detail stays on admin/superuser surfaces. This contract adds no
+  migrations or batching changes.
+
 ## Scenario creation
 
 Scenarios can be created through the existing admin, web/API or agent tools. Reuse

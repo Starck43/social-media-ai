@@ -279,6 +279,16 @@ class AIAnalyzer:
                     # Preserve request/response usage for existing accounting;
                     # provider failure text is not a semantic analysis result.
                     text_result = {**text_result, "parsed": {}}
+                if not isinstance(text_result, dict) or not text_result:
+                    # No text model, an exception, or an empty envelope: there is
+                    # no text coverage to certify. The local empty marker means
+                    # a successful image sibling can never retire the unanalysed
+                    # text rows as complete.
+                    text_result = {"parsed": {}, "_submitted_text_hashes": []}
+                elif not isinstance(text_result.get("parsed"), dict) or not text_result.get("parsed"):
+                    # Failed or empty parsed output keeps the usage envelope but
+                    # still certifies no text rows; never trust a provider marker.
+                    text_result = {**text_result, "parsed": {}, "_submitted_text_hashes": []}
                 if text_result:
                     analysis_results["text_analysis"] = text_result
 

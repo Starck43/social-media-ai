@@ -195,6 +195,14 @@ class JobManager(BaseManager["Job"]):
         task_sources = {
             task.id: {source.id for source in task.sources if source.tenant_id == tenant_id} for task in tasks
         }
+        task_payloads = {
+            task.id: task.payload if isinstance(task.payload, dict) else {} for task in tasks
+        }
+        for job in jobs:
+            if job.job_type == "collect":
+                payload = job.payload if isinstance(job.payload, dict) else {}
+                task_payload = task_payloads.get(job.agent_task_id, {})
+                job._analysis_inline = bool(task_payload.get("analyze_inline", payload.get("analyze_inline", False)))
         active = set(
             (
                 await session.execute(
@@ -225,6 +233,55 @@ class JobManager(BaseManager["Job"]):
             if source_id in job_source_ids(job.payload, job.agent_task_id, task_sources, active):
                 result[job.job_type] = True
         return result
+
+    async def source_progress_jobs(self, source_id: int, limit: int = 10) -> list:
+        """Recent jobs relevant to this source, without retroactive history matching."""
+        from sqlalchemy import String, and_, cast, func, or_, select
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.source_activity import job_source_ids
+        from app.models.job import Job
+
+        tenant_id = current_tenant_id()
+        if type(tenant_id) is not int or tenant_id <= 0 or is_bypass():
+            raise TenantContextError("Source progress requires a concrete workspace")
+        async with async_session_maker() as session:
+            jobs, task_sources, active = await self._source_activity_context(session, tenant_id)
+            recorded_source = cast(Job.result, JSONB)
+            history = list((await session.execute(
+                select(Job).where(
+                    Job.tenant_id == tenant_id,
+                    Job.job_type.in_(("collect", "analyze")),
+                    Job.status.not_in(("pending", "running")),
+                    or_(
+                        and_(
+                            Job.status == "done",
+                            recorded_source.contains({"per_source": [{"source_id": source_id}]}),
+                        ),
+                        and_(
+                            recorded_source.contains({"progress": {"items": [{"source_id": source_id}]}}),
+                            recorded_source["progress"]["attempt"].astext == cast(Job.attempts, String),
+                        ),
+                    ),
+                ).order_by(Job.created_at.desc()).limit(max(1, min(limit, 20)))
+            )).scalars().all())
+        matched = []
+        for job in jobs:
+            if job.status in ("pending", "running"):
+                relevant = source_id in job_source_ids(job.payload, job.agent_task_id, task_sources, active)
+            if relevant:
+                matched.append(job)
+        active_ids = {job.id for job in matched}
+        for job in history:
+            if job.id not in active_ids:
+                matched.append(job)
+        return sorted(
+            matched,
+            key=lambda job: (job.status in ("pending", "running"), job.created_at or datetime.min.replace(tzinfo=timezone.utc), job.id),
+            reverse=True,
+        )[:max(1, min(limit, 20))]
 
     @staticmethod
     async def _claim(where_clause, now: Optional[datetime] = None) -> Optional["Job"]:

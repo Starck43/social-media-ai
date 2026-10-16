@@ -357,21 +357,29 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
         def __init__(self, source_id):
             super().__init__()
             self.source_href = f"/app/sources/{source_id}"
+            self.delete_action = f"/app/sources/{source_id}/delete"
             self.active = {}
-            self.texts = {"title": [], "h1": [], "p": [], "source-link": []}
+            self.texts = {"title": [], "h1": [], "source-link": []}
             self.values = []
             self.unsafe = []
+            self.confirms = []
 
         def handle_starttag(self, tag, attrs):
             attributes = dict(attrs)
             if any(key in attributes for key in ("data-xss-probe", "onerror", "onfocus")):
                 self.unsafe.append((tag, attributes))
-            if tag in {"title", "h1", "p"}:
+            if tag in {"title", "h1"}:
                 self.active[tag] = []
             if tag == "a" and attributes.get("href") == self.source_href:
                 self.active["source-link"] = []
             if tag == "input" and attributes.get("name") == "name":
                 self.values.append(attributes.get("value"))
+            if (
+                tag == "form"
+                and attributes.get("action") == self.delete_action
+                and attributes.get("data-confirm")
+            ):
+                self.confirms.append(attributes["data-confirm"])
 
         def handle_endtag(self, tag):
             key = "source-link" if tag == "a" else tag
@@ -433,7 +441,8 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
             assert delete_action not in detail.text
         else:
             assert delete_action in detail.text
-            assert any(f"«{stored_name}»" in text for text in detail_parser.texts["p"])
+            assert detail_parser.confirms, "the delete form must carry a data-confirm prompt"
+            assert any(f"«{stored_name}»" in confirm for confirm in detail_parser.confirms)
         with tenant_scope(tenant_id):
             unchanged = await Source.objects.get(id=source.id)
             assert unchanged.name == stored_name and unchanged.is_active

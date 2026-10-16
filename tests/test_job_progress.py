@@ -84,6 +84,33 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(job_progress.ProgressStopped):
             await session.step(_sources("A"), [])
 
+    async def test_current_counter_refresh_does_not_advance_source_position(self):
+        writes = []
+
+        async def writer(claim, snap):
+            writes.append(snap)
+            return True
+
+        session = job_progress.ProgressSession(_claim("analyze"), writer=writer)
+        sources = _sources("A", "B")
+        await session.step(sources, [])
+        await session.update_current(
+            sources, [], {"source_id": 1, "raw_total": 12, "raw_selected": 5, "raw_processed": 3}
+        )
+        self.assertEqual([snap["completed"] for snap in writes], [0, 0])
+        self.assertEqual(writes[-1]["items"][0]["raw_processed"], 3)
+
+    async def test_claim_loss_on_current_counter_refresh_stops_generation(self):
+        async def writer(claim, snap):
+            return False
+
+        session = job_progress.ProgressSession(_claim("analyze"), writer=writer)
+        with self.assertRaises(job_progress.ProgressStopped):
+            await session.update_current(
+                _sources("A"), [], {"source_id": 1, "raw_total": 1, "raw_selected": 1, "raw_processed": 0}
+            )
+        self.assertTrue(session.lost)
+
     async def test_write_error_never_fails_the_run(self):
         async def writer(claim, snap):
             raise ConnectionError("PRIVATE-SQL")

@@ -58,6 +58,57 @@ background runs; changing payer requires new payer consent.
   status, no implementation now; depends: owner deferral;
   owner: owner; status: TODO — deferred by owner
 
+## PR197 disposition (coordinator decision, 2026-10-17, dev `c18ee2f`)
+
+Decision: PR #197 (`feat/reviewed-budget-baseline`, tenant-scoped frozen
+`provision_reviewed_day` + `llm_budget_baselines` + its own conflicting 0097)
+is SUPERSEDED for the active billing lane by the merged personal billing
+foundation (0097 personal foundation, 0099 ledger, 0100 legacy attribution,
+PR #205). A separate tenant-based `provision_reviewed_day` is NOT needed now;
+it is deferred to P2-T08 (corporate/shared accounts, owner-deferred). PR #197
+stays Draft/CONFLICTING; no renumber, migration edit, merge or closure is
+authorized by this note. Owner: coordinator (acceptance), billing-agent
+(P2-T05/P2-T08 follow-through).
+
+Requirement mapping vs the current personal API:
+
+- Immutable reviewed provenance — NOT EQUIVALENT. Personal API records a
+  one-time account-level reviewed boundary (`PersonalBillingCutover`,
+  `establish_clean_cutover` in `app/models/managers/personal_billing_manager.py:262`)
+  plus immutable reviewed request envelopes (`review_bound_policy`, same file
+  :317). There is no per-UTC-day frozen snapshot with reviewer/evidence-SHA/
+  fence attestation as in PR197 (`app/models/managers/llm_budget_manager.py:30`
+  and `app/services/ai/budget_baselines.py:42` at `ad912d4`). Per-day reviewed
+  provenance becomes separate work only with P2-T08.
+- Exact replay without touching balances/counters/freeze — NOT EQUIVALENT
+  (deliberately absent). `reserve_dispatch` mints a server-side `dispatch_id`
+  (`app/models/managers/personal_llm_billing_manager.py:133`), so caller replay
+  cannot occur; duplicate receipt identity fails closed with
+  `PersonalDispatchConflict` (:432). The tenant-lane replay-comparison in dev's
+  `reserve_receipt` is unreachable because nothing in dev creates tenant
+  `LLMBudgetDay` baselines (no creator merged; admission fails closed at
+  `app/models/managers/llm_budget_manager.py` "baseline is unavailable or
+  frozen"). Requires separate work only if the tenant lane is revived.
+- Acknowledged commit — IMPLEMENTED (convention-equivalent). Both lanes use the
+  same owned-session commit convention (`_get_owned_session`,
+  `app/models/managers/base_manager.py`); PR197's created-vs-replay boolean has
+  no personal counterpart because replay does not exist, and ambiguity still
+  fails closed via exceptions.
+- Legacy/orphan refusal — IMPLEMENTED (different mechanism). Pre-boundary days
+  are refused (`personal_llm_billing_manager.py:331,367`), and legacy finance
+  records are never silently adopted — only explicit per-identity owner consent
+  (`consent_legacy_attribution`, `personal_billing_manager.py:390`, migration
+  0100, P2-T03 lane). PR197's "day without baseline → conflict" case cannot
+  arise: personal days are admission-created only after the cutover.
+
+Follow-ups (bounded, no action taken in this note): dev-local PR197 acceptance
+assets from `08dc61a` (`scripts/pr197_normal_migration_launcher.py`,
+`tests/acceptance/test_pr197_reviewed_baseline_pg.py`,
+`tests/test_pr197_offline_gates.py`) target PR197's conflicting 0097 and are
+inert on the merged chain; their retention/removal and PR #197 closure need
+separate owner authorization. Next step: none for the personal lane; revisit
+under P2-T05/P2-T08 if tenant baselines are re-scoped.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

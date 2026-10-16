@@ -60,8 +60,27 @@ Attention feed lives in the floating bell (B), not a home card.
   views updated; workspace authorization preserved; focused checks assigned
   separately through test-runner; no unrelated UI overhaul; depends: none;
   owns: source detail/task modal incl. progress + diagnostics; owner:
-  codex-analysis-progress; status: IN_PROGRESS — evidence:
+  codex-analysis-progress; status: BLOCKED — evidence:
   [Draft PR #203](https://github.com/Starck43/social-media-ai/pull/203)
+  - Implementation b720b985; focused regression/fixture revision
+    2f91a675 (application and pipeline docs unchanged; fixture edits only in tests).
+  - Primary OpenCode test-runner (exact QwenPlan/deepseek-v4-flash-0731):
+    focused no-DB scopes 222 passed, 0 failed, 0 skipped; one unchanged
+    baseline all-template compilation check explicitly deselected
+    (scenario_wizard.html:252 uses `do` without configured extension;
+    wizard/deps unchanged from dev).
+  - Shared DB acceptance BLOCKED by read-only preflight: 13 tables absent
+    from branch metadata, 33 setup errors/0 executed tests; no reset/schema
+    repair attempted.
+  - Python compilation, Jinja parsing (changed templates), diff checks,
+    browser harness build and Node JS syntax all pass.
+  - Browser behavioral result: INCOMPLETE — Chromium DOM confirms running
+    0% pulse → unconfirmed 50% no pulse → done 100%, one live row, no login
+    HTML insertion, ordinary-user diagnostics absent, admin counters update;
+    browser exit code 2, opened-details preservation not exercised, so not a
+    fully passing browser acceptance run.
+  - Next: verify DB scope against compatible existing test schema/metadata
+    without reset; keep PR Draft pending environment-dependent evidence.
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

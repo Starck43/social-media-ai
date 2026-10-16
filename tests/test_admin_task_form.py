@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.admin.views import AgentTaskAdmin
-from app.models import Source
+from app.models import AgentScenario, Source
 
 
 class _TenantRow:
@@ -149,3 +149,38 @@ async def test_an_active_collect_task_saves_through_the_real_form(monkeypatch):
                 await AgentTask.objects.delete_by_id(task_id)
                 await Source.objects.delete_by_id(source.id)
                 await Tenant.objects.delete_by_id(tenant.id)
+
+
+@pytest.mark.asyncio
+async def test_missing_target_params_reach_the_admin_toast(monkeypatch):
+    """Saving a task whose scenario wants targets must not crash the form.
+
+    Regression: the hint called `request.session.flash(...)`, but Starlette's
+    Session is dict-like and has no `flash` (that is Flask), so the save died
+    with `AttributeError: 'Session' object has no attribute 'flash'`. The hint
+    now lands in the session key the admin layout renders as a toast.
+    """
+
+    class _ScenarioQuery:
+        def filter(self, *_a, **_kw):
+            return self
+
+        async def first(self):
+            return SimpleNamespace(name="Brand scenario", analysis_types=["brand_mentions"])
+
+    monkeypatch.setattr(AgentScenario.objects, "filter", lambda *_a, **_kw: _ScenarioQuery())
+
+    session: dict = {}
+    request = SimpleNamespace(session=session)
+    admin = AgentTaskAdmin()
+    model = SimpleNamespace(is_active=False, job_type="analyze", cron_expr="", next_run_at=None)
+
+    await admin.on_model_change(
+        {"is_active": False, "job_type": "analyze", "agent_scenario": 7, "payload": {}},
+        model,
+        is_created=False,
+        request=request,
+    )
+
+    assert session["admin_message"]["type"] == "warning"
+    assert "укажите в параметрах задачи" in session["admin_message"]["message"]

@@ -2098,8 +2098,12 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
                             + "» укажите в параметрах задачи: "
                             + ", ".join(missing)
                         )
-                        if hasattr(request, "session") and request.session:
-                            request.session.flash(msg, "warning")
+                        # Starlette's Session is dict-like and has no `flash()`
+                        # (that is Flask) — the save used to die here with
+                        # AttributeError. The admin layout renders this key as a toast.
+                        session = getattr(request, "session", None)
+                        if session is not None:
+                            session["admin_message"] = {"type": "warning", "message": msg}
 
         cron_expr = (data.get("cron_expr") or getattr(model, "cron_expr", "") or "").strip()
         if cron_expr and getattr(model, "next_run_at", None) is None:

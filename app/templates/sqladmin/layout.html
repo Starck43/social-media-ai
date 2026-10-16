@@ -82,12 +82,13 @@
 
             {% with admin_msg = request.session.pop('admin_message', None) %}
             {% if admin_msg %}
+            {% set toast_kind = 'danger' if admin_msg.type == 'error' else ('warning' if admin_msg.type == 'warning' else 'success') %}
             <div class="toast-container position-fixed bottom-0 end-0 p-3">
-                <div class="toast admin-toast text-bg-{{ 'danger' if admin_msg.type == 'error' else 'success' }}"
+                <div class="toast admin-toast text-bg-{{ toast_kind }}"
                      role="alert" aria-live="assertive" aria-atomic="true" data-bs-toggle="toast">
                     <div class="d-flex">
                         <div class="toast-body">{{ admin_msg.message }}</div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                        <button type="button" class="btn-close {{ 'btn-close-white' if admin_msg.type == 'error' else '' }} me-2 m-auto" data-bs-dismiss="toast"
                                 aria-label="Close"></button>
                     </div>
                 </div>

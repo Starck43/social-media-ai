@@ -1,8 +1,4 @@
-"""Agent persistence models with lazy exports and stable legacy bindings.
-
-This is app.models.agent, not the separate app.agent runtime package.
-No queue, memory-concurrency, uniqueness, cost-unit or role-enum change here.
-"""
+"""Agent persistence models with lazy exports. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 

@@ -2,58 +2,27 @@
 
 from __future__ import annotations
 
-# Agent runtime (import after Base: these modules do `from . import Base`)
-from .agent_feedback import AgentFeedback
-from .agent_memory import AgentMemory
-from .agent_message import AgentMessage
-from .agent_scenario import AgentScenario
-from .agent_session import AgentSession
-
-# Task runner / jobs
-from .agent_task import AgentTask
-
-# Analytics models
-from .ai_analytics import AIAnalytics
-
-# Core models
+# Base must exist before domain modules that import it through this facade.
 from .base import Base, TenantScopedMixin, TimestampMixin
-from .bot_action import BotAction
 
-# Raw collected content (staged until an analysis consumes it)
-from .collected_item import CollectedItem
-from .digest_run import DigestRun
-from .job import Job
-from .llm_attempt import LLMAttempt
-from .llm_budget import LLMBudgetDay, LLMBudgetReservation
-from .llm_dispatch_receipt import LLMDispatchReceipt
-from .llm_model import LLMModel
-from .llm_outcome_event import LLMOutcomeEvent
-
-# AI models
-from .llm_provider import LLMProvider
-from .model_type import ModelType
-
-# Notification models
-from .notification import Notification
-
-# Import all models to ensure they are registered with SQLAlchemy
-from .permission import Permission
-
-# Social monitoring models
-from .platform import Platform
-from .role import PlatformRole, Role
-from .source import Source
-from .tenancy.workspace_role import WorkspaceRole
-
-# Multi-tenant core
-from .tenant import (
-    Tenant,
-    TenantChannel,
-    TenantInvite,
-    TenantUser,
+# isort: split
+from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
+from .analysis.agent_scenario import AgentScenario
+from .analysis.ai_analytics import AIAnalytics
+from .collection import CollectedItem, Platform, Source
+from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .llm import (
+    LLMAttempt,
+    LLMBudgetDay,
+    LLMBudgetReservation,
+    LLMDispatchReceipt,
+    LLMModel,
+    LLMOutcomeEvent,
+    LLMProvider,
 )
-from .user import User
-from .user_credential import UserCredential
+from .notifications import DigestRun, Notification
+from .scheduling import AgentTask, BotAction, Job
+from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
 __all__ = [
     # Base classes

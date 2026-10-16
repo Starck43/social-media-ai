@@ -143,6 +143,60 @@ class AgentTaskManager(BaseManager):
         """All active tasks."""
         return await self.filter(is_active=True)
 
+    async def upcoming_effective(
+        self, *, now: datetime, include_source_based: bool, limit: int = 3
+    ) -> list["AgentTask"]:
+        """Return the earliest schedules that the scheduler could actually run.
+
+        Eligibility is evaluated in SQL before limiting, so inactive scenarios,
+        paused tasks and source based tasks without an active source cannot crowd
+        permitted schedules out of the home preview. Callers without source.view
+        must pass ``include_source_based=False``; that path issues no source query.
+        """
+        from sqlalchemy import and_, exists, literal, not_, or_, select
+
+        from ..agent_scenario import AgentScenario
+        from ..agent_task import AgentTask, agent_task_sources
+        from ..source import Source
+
+        active_scenario = exists(
+            select(literal(1)).where(
+                AgentScenario.id == AgentTask.agent_scenario_id,
+                AgentScenario.tenant_id == AgentTask.tenant_id,
+                AgentScenario.is_active.is_(True),
+            )
+        )
+        eligibility = [
+            AgentTask.is_active.is_(True),
+            AgentTask.next_run_at.is_not(None),
+            or_(AgentTask.agent_scenario_id.is_(None), active_scenario),
+        ]
+
+        source_types = tuple(sorted(SOURCE_BASED_JOB_TYPES))
+        if include_source_based:
+            linked_source = exists(
+                select(literal(1))
+                .select_from(agent_task_sources.join(Source, Source.id == agent_task_sources.c.source_id))
+                .where(
+                    agent_task_sources.c.agent_task_id == AgentTask.id,
+                    Source.tenant_id == AgentTask.tenant_id,
+                    Source.is_active.is_(True),
+                )
+            )
+            any_link = exists(select(literal(1)).where(agent_task_sources.c.agent_task_id == AgentTask.id))
+            workspace_source = exists(
+                select(literal(1)).where(
+                    Source.tenant_id == AgentTask.tenant_id,
+                    Source.is_active.is_(True),
+                )
+            )
+            source_task_eligible = or_(linked_source, and_(not_(any_link), workspace_source))
+            eligibility.append(or_(AgentTask.job_type.not_in(source_types), source_task_eligible))
+        else:
+            eligibility.append(AgentTask.job_type.not_in(source_types))
+
+        return await self.filter(*eligibility).order_by(AgentTask.next_run_at.asc(), AgentTask.id.asc()).limit(limit)
+
     async def get_sources(self, task_id: int) -> list[int]:
         """Source ids linked to the task through the m2m table."""
         return (await self._linked_source_ids([task_id])).get(task_id, [])

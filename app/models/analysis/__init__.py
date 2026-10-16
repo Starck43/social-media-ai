@@ -1,8 +1,4 @@
-"""Analysis-domain exports without changing legacy registration/binding order.
-
-Canonical leaves declare models. Legacy modules retain manager bindings;
-lazy exports avoid importing this entire domain at the first root-model import.
-"""
+"""Analysis exports, including legacy LLM aliases. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 

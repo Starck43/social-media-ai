@@ -1,12 +1,13 @@
-"""Read-only workspace overview: permitted results and compact task summaries.
+"""Read-only workspace overview: permitted results and upcoming schedules.
 
 The pipeline strip shows data state only (staged items waiting, stored
 analyses, job activity) — never KPI/aggregations or LLM calls on the home
-request. Future attention and mixed-result projections are specified in the
-canonical development board.
+request.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
@@ -37,7 +38,7 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
         query = query.filter(tenant_id=tenant_id)
     if show_sources:
         query = query.select_related("source")
-    rows = await query.order_by(AIAnalytics.created_at.desc()).limit(5)
+    rows = await query.order_by(AIAnalytics.created_at.desc(), AIAnalytics.id.desc()).limit(5)
     recent = []
     for analysis in rows:
         source_name = analysis.source.name if show_sources and analysis.source else None
@@ -45,14 +46,99 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
         recent.append(
             {
                 "id": analysis.id,
+                "kind": "analysis",
+                "href": f"/app/analytics/{analysis.id}",
                 "source_name": source_name,
                 "created_at": analysis.created_at,
                 "title": display["display_title"],
                 "summary": (display["analysis_summary"] or "")[:220],
                 "analysis_incomplete": display["coverage"]["incomplete"],
+                "period_label": None,
+                "delivery_status": None,
             }
         )
     return recent
+
+
+def _digest_delivery_status(run) -> str:
+    """Return a safe summary of delivery evidence without exposing destinations."""
+    error = getattr(run, "error", None) or ""
+    state = getattr(run, "delivery_state", None)
+    if isinstance(state, dict):
+        try:
+            from app.services.digest.checkpoints import validate_checkpoint
+            from app.services.digest.delivery_outcomes import summarize_delivery
+
+            checkpoint = validate_checkpoint(state)
+            if checkpoint["run_id"] != getattr(run, "id", None) or checkpoint["tenant_id"] != getattr(
+                run, "tenant_id", None
+            ):
+                return "unknown"
+            if "partial_delivery_requires_review" in error:
+                return "partial"
+            outcome = summarize_delivery(checkpoint)
+            if outcome["pending_parts"] == outcome["total_parts"] and getattr(run, "status", None) == "pending":
+                return "pending"
+            return outcome["status"]
+        except (KeyError, TypeError, ValueError):
+            return "unknown"
+
+    if "partial_delivery_requires_review" in error:
+        return "partial"
+    status = getattr(run, "status", None)
+    return status if status in {"sent", "failed", "skipped", "pending"} else "unknown"
+
+
+async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
+    from app.models.digest_run import DigestRun
+
+    query = DigestRun.objects.filter()
+    if tenant_id is not None:
+        query = query.filter(tenant_id=tenant_id)
+    rows = await query.order_by(DigestRun.created_at.desc(), DigestRun.id.desc()).limit(5)
+    labels = {
+        "sent": "Доставлен",
+        "partial": "Доставлен частично",
+        "uncertain": "Доставка не подтверждена",
+        "blocked": "Доставка заблокирована",
+        "failed": "Ошибка доставки",
+        "skipped": "Пропущен",
+        "pending": "Ожидает доставки",
+        "unknown": "Статус доставки неизвестен",
+    }
+    return [
+        {
+            "id": run.id,
+            "kind": "digest",
+            "href": "/app/digests",
+            "source_name": None,
+            "created_at": run.created_at,
+            "title": f"Дайджест за период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+            "summary": (run.content or "")[:220],
+            "analysis_incomplete": False,
+            "period_label": f"Период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+            "delivery_status": labels[_digest_delivery_status(run)],
+        }
+        for run in rows
+    ]
+
+
+async def _recent_digests(tenant_id: int | None, is_superuser: bool = False) -> list[dict]:
+    if is_superuser:
+        from app.core.tenant_context import tenant_scope
+
+        with tenant_scope(bypass=True):
+            return await _recent_digests_in_scope(tenant_id)
+    return await _recent_digests_in_scope(tenant_id)
+
+
+def _merge_result_feed(analyses: list[dict], digests: list[dict]) -> list[dict]:
+    """Merge independently authorized, bounded result sets into one stable feed."""
+    return sorted(
+        (*analyses, *digests),
+        key=lambda row: (row["created_at"], row["kind"], row["id"]),
+        reverse=True,
+    )[:5]
 
 
 async def _recent_tasks(
@@ -62,26 +148,32 @@ async def _recent_tasks(
     *,
     show_sources: bool = True,
 ):
-    """Fetch few most recent tasks.
+    """Fetch the next three schedules that remain effectively runnable.
 
-    Superuser sees all tasks (optionally narrowed to one tenant via
-    `filter_tenant_id`); regular users see their own tenant's tasks.
+    Source based schedules are excluded before querying source state when the
+    caller lacks source.view. The manager applies all other effective activity
+    rules in SQL before its limit, so paused or stale rows cannot crowd out the
+    actual next runs.
     """
-    if is_superuser:
-        from app.core.tenant_context import tenant_scope
+    if tenant_id is None:
+        return []
 
-        with tenant_scope(bypass=True):
-            query = AgentTask.objects.prefetch_related("tenant", "sources", "agent_scenario")
-            if filter_tenant_id is not None:
-                query = query.filter(tenant_id=filter_tenant_id)
-            return await query.order_by(AgentTask.created_at.desc()).limit(3)
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
-    return await (
-        AgentTask.objects.filter(tenant_id=tenant_id)
-        .prefetch_related(*(("sources", "agent_scenario") if show_sources else ("agent_scenario",)))
-        .order_by(AgentTask.created_at.desc())
-        .limit(3)
-    )
+    now = datetime.now(timezone.utc)
+    with tenant_scope(tenant_id):
+        tasks = await AgentTaskManager().upcoming_effective(now=now, include_source_based=show_sources, limit=3)
+    return [
+        {
+            "id": task.id,
+            "name": task.name,
+            "next_run_at": task.next_run_at,
+            "is_due": task.next_run_at <= now,
+            "last_status": task.last_status,
+        }
+        for task in tasks
+    ]
 
 
 async def _effective_active_ids(recent_tasks) -> set[int]:
@@ -188,19 +280,20 @@ async def dashboard(request: Request):
         filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
 
     offer = _offers(getattr(request.state, "web_perms", None))
-    recent_results = (
+    analyses = (
         await _recent_results(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer["sources"])
         if offer["analytics"]
         else []
     )
+    digests = (
+        await _recent_digests(filter_tenant_id if is_superuser else tenant_id, is_superuser) if offer["digests"] else []
+    )
+    recent_results = _merge_result_feed(analyses, digests)
     recent_tasks = (
         await _recent_tasks(tenant_id, is_superuser, filter_tenant_id, show_sources=offer["sources"])
         if offer["tasks"]
         else []
-    )[:3]
-    # Effective activity depends on source state. Missing access is unknown,
-    # never evidence that a permitted task is inactive.
-    effective_active = await _effective_active_ids(recent_tasks) if offer["sources"] else None
+    )
 
     pipeline = await _pipeline(filter_tenant_id if is_superuser else tenant_id, is_superuser, offer)
 
@@ -219,7 +312,7 @@ async def dashboard(request: Request):
         section="dashboard",
         recent_results=recent_results,
         recent_tasks=recent_tasks,
-        effective_active=effective_active,
+        source_schedule_status_unknown=bool(offer["tasks"] and not offer["sources"]),
         pipeline=pipeline,
         is_superuser=is_superuser,
         tenants=tenants,

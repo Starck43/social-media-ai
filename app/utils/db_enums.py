@@ -94,7 +94,7 @@ def database_enum(enum_class: Type[E]) -> Type[E]:
                     *cls.get_db_values(store_as_name),
                     name=type_name or cls.__name__.lower(),
                     schema=schema,
-                    inherit_schema=True,
+                    inherit_schema=schema is None,
                 )
                 cache_ok = True
 
@@ -140,7 +140,7 @@ def database_enum(enum_class: Type[E]) -> Type[E]:
                 *cls.get_db_values(store_as_name),
                 name=type_name or cls.__name__.lower(),
                 schema=schema,
-                inherit_schema=True,
+                inherit_schema=schema is None,
             )
 
     def sa_column(cls, default=None, nullable=False, type_name: str = None, store_as_name: bool = False, **kwargs):

@@ -35,9 +35,14 @@ def _functions(*names):
                 and child.module
                 in (
                     "app.services.ai.analysis_render",
+                    "app.services.digest.checkpoints",
+                    "app.services.digest.delivery_outcomes",
                     "app.models.ai_analytics",
                     "app.models.collected_item",
+                    "app.models.digest_run",
                     "app.models.job",
+                    "app.models.managers.agent_task_manager",
+                    "app.core.tenant_context",
                 )
             )
         ]
@@ -78,7 +83,7 @@ def _render(offer, *, real_base=False, **extra):
     env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
         "tenant": {"id": 7, "name": "Fixture workspace"},
-        "user": {"username": "fixture"},
+        "user": SimpleNamespace(username="fixture", has_admin_access=lambda: False),
         "section": "dashboard",
         "nav": [],
         "mobile_nav": [],
@@ -95,7 +100,7 @@ def _render(offer, *, real_base=False, **extra):
         "offer": offer,
         "recent_results": [],
         "recent_tasks": [],
-        "effective_active": set(),
+        "source_schedule_status_unknown": False,
         "pipeline": None,
         "_tz": "Europe/Moscow",
         "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
@@ -132,6 +137,8 @@ def test_results_are_bounded_escaped_and_have_no_metric_sidebar():
         }
         for i in range(7)
     ]
+    for result in results:
+        result.update(kind="analysis", href=f"/app/analytics/{result['id']}", period_label=None, delivery_status=None)
     markup = _render(_offer(("aianalytics", "view")), recent_results=results)
     assert "result-4" in markup and "result-5" not in markup
     assert "<script>" not in markup and "&lt;script&gt;" in markup
@@ -141,18 +148,35 @@ def test_results_are_bounded_escaped_and_have_no_metric_sidebar():
 
 
 def test_task_preview_is_bounded_read_only_and_honestly_named():
-    tasks = [{"id": i, "name": f"task-{i}", "next_run_at": None, "last_status": None} for i in range(5)]
-    markup = _render(_offer(("agenttask", "view")), recent_tasks=tasks, effective_active={0})
+    tasks = [
+        {"id": i, "name": f"task-{i}", "next_run_at": "fixture-time", "is_due": i == 0, "last_status": None}
+        for i in range(5)
+    ]
+    markup = _render(_offer(("agenttask", "view")), recent_tasks=tasks)
     assert "task-2" in markup and "task-3" not in markup
-    assert "Недавно созданные" in markup
-    assert "Время следующего запуска не определено" in markup
+    assert "Ближайшие запуски" in markup
+    assert "Ожидает запуска" in markup and "Следующий запуск: fixture-time" in markup
     assert "run-now" not in markup and "<table" not in markup
 
 
 def test_digest_link_is_not_a_fake_digest_feed():
-    markup = _render(_offer(("digestrun", "view")))
+    results = [
+        {
+            "id": 4,
+            "kind": "digest",
+            "href": "/app/digests",
+            "created_at": "created",
+            "title": "Дайджест за период",
+            "summary": "summary",
+            "source_name": None,
+            "analysis_incomplete": False,
+            "period_label": "Период 01.10 — 02.10",
+            "delivery_status": "Доставлен частично",
+        }
+    ]
+    markup = _render(_offer(("digestrun", "view")), recent_results=results)
     assert 'href="/app/digests"' in markup
-    assert "Дайджесты доступны в отдельном разделе" in markup
+    assert "Доставлен частично" in markup and "Период 01.10 — 02.10" in markup
     assert 'href="/app/analytics"' not in markup
 
 
@@ -182,11 +206,7 @@ async def test_result_query_only_loads_source_metadata_with_view_right(show_sour
     scope = _functions("_recent_results_in_scope")
     calls = []
 
-    class Analysis:
-        id = 9
-        created_at = "fixture-time"
-        summary_data = {}
-
+    class Analysis(SimpleNamespace):
         @property
         def source(self):
             assert show_sources, "source metadata accessed without source.view"
@@ -201,15 +221,19 @@ async def test_result_query_only_loads_source_metadata_with_view_right(show_sour
             calls.append(("relation", value))
             return self
 
-        def order_by(self, value):
+        def order_by(self, *values):
             return self
 
         async def limit(self, value):
             assert value == 5
-            return [Analysis()]
+            return [Analysis(id=9, created_at="fixture-time", summary_data={})]
 
     scope.update(
-        AIAnalytics=SimpleNamespace(objects=Query(), created_at=SimpleNamespace(desc=lambda: "created-desc")),
+        AIAnalytics=SimpleNamespace(
+            objects=Query(),
+            created_at=SimpleNamespace(desc=lambda: "created-desc"),
+            id=SimpleNamespace(desc=lambda: "id-desc"),
+        ),
         render_analysis=lambda data, source_name: {
             "display_title": "Fixture result",
             "analysis_summary": "x" * 300,
@@ -224,15 +248,83 @@ async def test_result_query_only_loads_source_metadata_with_view_right(show_sour
     assert results[0]["analysis_incomplete"]
 
 
+def test_mixed_feed_is_newest_first_stable_and_limited_after_merge():
+    from datetime import datetime, timezone
+
+    scope = _functions("_merge_result_feed")
+    now = datetime(2026, 10, 16, tzinfo=timezone.utc)
+    analyses = [{"id": i, "kind": "analysis", "created_at": now} for i in range(1, 5)]
+    digests = [{"id": i, "kind": "digest", "created_at": now} for i in range(1, 4)]
+
+    merged = scope["_merge_result_feed"](analyses, digests)
+
+    assert len(merged) == 5
+    assert [(row["kind"], row["id"]) for row in merged] == [
+        ("digest", 3),
+        ("digest", 2),
+        ("digest", 1),
+        ("analysis", 4),
+        ("analysis", 3),
+    ]
+
+
+def test_digest_delivery_status_uses_ledger_and_reports_missing_evidence_as_unknown():
+    from app.services.digest.checkpoints import new_checkpoint, transition, validate_checkpoint
+    from app.services.digest.delivery_outcomes import summarize_delivery
+
+    scope = _functions("_digest_delivery_status")
+    scope["validate_checkpoint"] = validate_checkpoint
+    scope["summarize_delivery"] = summarize_delivery
+    checkpoint = new_checkpoint(
+        run_id=1,
+        tenant_id=7,
+        generation="fixture-generation",
+        content="fixture digest",
+        splitter="fixture-splitter",
+        targets=[
+            {"binding_id": 1, "channel": "telegram", "destination_id": "1", "parts": ["first"]},
+            {"binding_id": 2, "channel": "max", "destination_id": "2", "parts": ["second"]},
+        ],
+    )
+    pending_run = SimpleNamespace(id=1, tenant_id=7, delivery_state=checkpoint, status="pending", error="")
+    assert scope["_digest_delivery_status"](pending_run) == "pending"
+
+    checkpoint = transition(checkpoint, 0, 0, "in_flight")
+    checkpoint = transition(checkpoint, 0, 0, "sent", message_id="message-1")
+    checkpoint = transition(checkpoint, 1, 0, "in_flight")
+    checkpoint = transition(checkpoint, 1, 0, "rejected")
+    run = SimpleNamespace(id=1, tenant_id=7, delivery_state=checkpoint, status="failed", error="")
+    assert scope["_digest_delivery_status"](run) == "partial"
+
+    run.id = 2
+    assert scope["_digest_delivery_status"](run) == "unknown"
+    run.id = 1
+    run.tenant_id = 8
+    assert scope["_digest_delivery_status"](run) == "unknown"
+    run.tenant_id = 7
+
+    run.delivery_state = {"broken": True}
+    assert scope["_digest_delivery_status"](run) == "unknown"
+
+    run.delivery_state = None
+    run.status = "failed"
+    run.error = "other failure"
+    assert scope["_digest_delivery_status"](run) == "failed"
+    run.status = "unrecognized"
+    assert scope["_digest_delivery_status"](run) == "unknown"
+
+
 @pytest.mark.asyncio
 async def test_handler_skips_unauthorized_queries():
     scope = _functions("_offers", "dashboard")
     results = AsyncMock(side_effect=AssertionError("unauthorized analysis query"))
+    digests = AsyncMock(side_effect=AssertionError("unauthorized digest query"))
     tasks = AsyncMock(side_effect=AssertionError("unauthorized task query"))
     scope.update(
         _recent_results=results,
+        _recent_digests=digests,
+        _merge_result_feed=lambda analyses, digest_rows: [*analyses, *digest_rows],
         _recent_tasks=tasks,
-        _effective_active_ids=AsyncMock(return_value=set()),
         _pipeline=AsyncMock(return_value=None),
         render=lambda request, template, **context: context,
     )
@@ -247,6 +339,7 @@ async def test_handler_skips_unauthorized_queries():
     assert context["recent_results"] == context["recent_tasks"] == []
     assert context["next_step"] is None
     results.assert_not_awaited()
+    digests.assert_not_awaited()
     tasks.assert_not_awaited()
 
 
@@ -254,12 +347,14 @@ async def test_handler_skips_unauthorized_queries():
 async def test_handler_ignores_platform_admin_workspace_selection_and_uses_active_scope():
     scope = _functions("_offers", "dashboard")
     results = AsyncMock(return_value=[])
-    tasks = AsyncMock(return_value=[SimpleNamespace(id=i) for i in range(7)])
+    digests = AsyncMock(return_value=[])
+    tasks = AsyncMock(return_value=[SimpleNamespace(id=i) for i in range(3)])
     scope.update(
         tenant_filter_context=AsyncMock(return_value=(11, [])),
         _recent_results=results,
+        _recent_digests=digests,
+        _merge_result_feed=lambda analyses, digest_rows: [*analyses, *digest_rows],
         _recent_tasks=tasks,
-        _effective_active_ids=AsyncMock(return_value=set()),
         _pipeline=AsyncMock(return_value=None),
         render=lambda request, template, **context: context,
     )
@@ -273,8 +368,44 @@ async def test_handler_ignores_platform_admin_workspace_selection_and_uses_activ
     )
     context = await scope["dashboard"](request)
     results.assert_awaited_once_with(7, False, False)
+    digests.assert_not_awaited()
     tasks.assert_awaited_once_with(7, False, None, show_sources=False)
     assert len(context["recent_tasks"]) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rights", "expect_analyses", "expect_digests"),
+    [
+        ({("aianalytics", "view")}, True, False),
+        ({("digestrun", "view")}, False, True),
+        ({("aianalytics", "view"), ("digestrun", "view")}, True, True),
+    ],
+)
+async def test_analysis_and_digest_reads_have_independent_view_gates(rights, expect_analyses, expect_digests):
+    scope = _functions("_offers", "dashboard")
+    analyses = AsyncMock(return_value=[])
+    digests = AsyncMock(return_value=[])
+    scope.update(
+        _recent_results=analyses,
+        _recent_digests=digests,
+        _merge_result_feed=lambda analysis_rows, digest_rows: [*analysis_rows, *digest_rows],
+        _recent_tasks=AsyncMock(return_value=[]),
+        _pipeline=AsyncMock(return_value=None),
+        render=lambda request, template, **context: context,
+    )
+    request = SimpleNamespace(
+        state=SimpleNamespace(
+            tenant_id=7,
+            web_user=SimpleNamespace(is_platform_admin=False),
+            web_perms=SimpleNamespace(can=lambda model, action: (model, action) in rights),
+        )
+    )
+
+    await scope["dashboard"](request)
+
+    assert analyses.await_count == int(expect_analyses)
+    assert digests.await_count == int(expect_digests)
 
 
 class _CountQuery:

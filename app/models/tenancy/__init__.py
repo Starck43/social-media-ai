@@ -1,8 +1,4 @@
-"""Canonical tenancy models; the legacy module completes manager binding.
-
-Do not create managers in these leaf modules: tenant_manager imports all four
-models back through app.models.tenant while its own module initializes.
-"""
+"""Workspace persistence models. Managers bind in app.models.bootstrap."""
 
 from .tenant import Tenant
 from .tenant_channel import TenantChannel

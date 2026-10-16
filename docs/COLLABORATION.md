@@ -20,6 +20,10 @@ rules: [AGENTS.md](../AGENTS.md); environment/DB/test-delegation constraints:
 
 ## Audits, Goals and subagents
 
+Follow routine and test routing in [AGENTS.md](../AGENTS.md) and
+[docs/RULES.md](RULES.md) (R10). Codex owns architecture, review and acceptance;
+preserve HEAD, permission and ownership blockers.
+
 Use subagents for independent read-heavy audit lanes and bounded implementation
 tasks; reserve them for parallelizable work. Give each agent one question or
 task, a file/claim boundary, relevant SHA, expected evidence and a compact
@@ -31,9 +35,11 @@ to the matching phase file (`P<n>-T<nn>` rows with acceptance, dependencies,
 exclusive ownership) and mirror ID+link rows in ROADMAP.md. Independent write
 tasks get separate agents in separate worktrees/branches. Integrate one
 finished task at a time, then update its status and commit with matching
-evidence. Never mark a task DONE because an agent merely reports completion;
-inspect the diff and verification at the exact tested SHA. After integration,
-delete the ROADMAP row; phase closure requires Codex approval in the phase file.
+evidence. Executors report completed work as READY and may update evidence, but only
+the coordinating Codex reviews the diff/evidence at the exact SHA, marks tasks
+DONE and deletes resolved ROADMAP rows — no subagent self-accepts as DONE or
+removes resolved ROADMAP rows. Phase closure still requires Codex approval in
+the phase file.
 
 Start /goal only when the work has a measurable finish line; point it at the
 active ROADMAP.md rows. Goals persist within a thread and do not replace the
@@ -63,7 +69,7 @@ push/merge/deploy/DB reset.
 
 ## Headless delegation launches (from a task worktree)
 
-Primary route (R10): Codex subagent `.codex/agents/test-runner.toml` delegates
+Primary test route (R10): Codex subagent `.codex/agents/test-runner.toml` delegates
 to OpenCode:
 
 ```sh

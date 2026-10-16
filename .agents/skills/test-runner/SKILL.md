@@ -1,11 +1,11 @@
 ---
 name: test-runner
-description: OpenCode's contract as the primary pytest executor and simple-task subagent for social-media-ai — invoked by Codex/Kilo coordinators via `opencode run --file <task-file>` or directly by the owner. Use for any delegated TEST RUN task file or bounded subagent task.
+description: OpenCode's contract as the primary pytest executor for social-media-ai — invoked by Codex/Kilo coordinators via `opencode run --file <task-file>` or directly by the owner. Use for any delegated TEST RUN task.
 ---
 
-# OpenCode test-runner / subagent contract
+# OpenCode test-runner contract
 
-Rules: AGENTS.md + docs/RULES.md (R8/R10). Task files and evidence: `.agents/tmp/`.
+Follow routing and safeguards in AGENTS.md and docs/RULES.md (R8/R10). Task files and evidence: `.agents/tmp/`.
 
 ## Test execution (task file attached)
 
@@ -34,10 +34,6 @@ Rules: AGENTS.md + docs/RULES.md (R8/R10). Task files and evidence: `.agents/tmp
    - <test_id>: <one-line failure reason>   (only when FAIL)
    ```
 
-## Simple bounded task (no tests)
+## Routing boundary
 
-Complete it fully inside the assigned scope; return a compact ready answer:
-verdict, changed paths, key refs, remaining risks — or explicit blockers and
-questions if stuck. No logs, no file dumps, no scope expansion. Local commits
-only when the task/owner authorizes them (Codex coordinators delegate commits
-here; AGENTS.md closeout rules apply).
+Routine work uses `routine-worker`; this agent runs pytest.

@@ -18,7 +18,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = None) -> Any:
+async def enqueue_task_run(
+    task: Any,
+    extra_payload: dict[str, Any] | None = None,
+    *,
+    initiated_by_user_id: int | None = None,
+) -> Any:
     """Enqueue a job for an existing task and mark the task as triggered.
 
     `extra_payload` merges one-off overrides (e.g. a manual `--force-refresh`)
@@ -33,7 +38,10 @@ async def enqueue_task_run(task: Any, extra_payload: dict[str, Any] | None = Non
 
     with tenant_scope(task.tenant_id):
         receipt = await AgentTaskManager()._admit_task_run(
-            task.id, now=datetime.now(timezone.utc), extra_payload=extra_payload
+            task.id,
+            now=datetime.now(timezone.utc),
+            extra_payload=extra_payload,
+            initiated_by_user_id=initiated_by_user_id,
         )
         if receipt is None:
             raise ValueError("Task run was not admitted for this workspace")

@@ -9,6 +9,20 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
 from .analysis.ai_analytics import AIAnalytics
+from .billing import (
+    PersonalBillingAccount,
+    PersonalBillingCutover,
+    PersonalLegacyAttribution,
+    PersonalLegacyAttributionConsent,
+    PersonalLLMBillingIncident,
+    PersonalLLMBoundPolicy,
+    PersonalLLMBudgetDay,
+    PersonalLLMDispatch,
+    PersonalLLMLedgerEntry,
+    PersonalLLMReservation,
+    PersonalLLMReservationState,
+    TaskBillingPayer,
+)
 from .collection import CollectedItem, Platform, Source
 from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
 from .llm import (
@@ -20,7 +34,7 @@ from .llm import (
     LLMOutcomeEvent,
     LLMProvider,
 )
-from .notifications import DigestRun, Notification
+from .notifications import DigestRun, Notification, NotificationPreference
 from .scheduling import AgentTask, BotAction, Job
 from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
 
@@ -42,6 +56,18 @@ __all__ = [
     "TenantInvite",
     "TenantChannel",
     "UserCredential",
+    "PersonalBillingAccount",
+    "TaskBillingPayer",
+    "PersonalLLMDispatch",
+    "PersonalBillingCutover",
+    "PersonalLLMBoundPolicy",
+    "PersonalLLMBudgetDay",
+    "PersonalLLMBillingIncident",
+    "PersonalLLMReservation",
+    "PersonalLLMReservationState",
+    "PersonalLLMLedgerEntry",
+    "PersonalLegacyAttributionConsent",
+    "PersonalLegacyAttribution",
     # Social monitoring models
     "Platform",
     "Source",
@@ -68,6 +94,7 @@ __all__ = [
     "AgentFeedback",
     # Notification models
     "Notification",
+    "NotificationPreference",
     # Raw collected content
     "CollectedItem",
 ]

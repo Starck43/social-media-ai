@@ -4,15 +4,17 @@ Package containing all query managers for the application.
 This package provides query managers that handle database operations for models.
 """
 
+from .agent_scenario_manager import AgentScenarioManager
+from .agent_task_manager import AgentTaskManager
+
 # Analytics managers
 from .ai_analytics_manager import AIAnalyticsManager
 
 # Base manager
 from .base_manager import BaseManager, Prefetch, prefetch
-from .agent_scenario_manager import AgentScenarioManager
-from .agent_task_manager import AgentTaskManager
 from .bot_action_manager import BotActionManager
 from .notification_manager import NotificationManager
+from .notification_preference_manager import NotificationPreferenceManager
 from .permission_manager import PermissionManager
 
 # Social monitoring managers
@@ -31,6 +33,7 @@ __all__ = [
     "RoleManager",
     "PermissionManager",
     "NotificationManager",
+    "NotificationPreferenceManager",
     # Social monitoring managers
     "PlatformManager",
     "SourceManager",

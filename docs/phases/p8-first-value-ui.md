@@ -106,6 +106,9 @@ Coverage evidence vs PRD-08 (state/refs → task):
   owns: isolated integration branch only; source lanes remain unchanged;
   owner: remote Notion agent (`review/admin-llm-billing-integration`);
   status: IN_PROGRESS — code-review-only candidate from pinned source lanes;
+  prepared owner-local ASGI/DB acceptance: 40 declared cases, not executed;
+  see `docs/validation/admin-llm-billing-acceptance.md`; VIEW-only catalog gate
+  remains explicit and shared grants/financial evidence must not be rewritten;
   historical P8-T06 in the admin UI lane collided with the accepted inventory ID;
   that inventory and all other lane evidence are preserved, not re-accepted here.
   No DB/runtime/provider execution or dev merge is authorized for this candidate.

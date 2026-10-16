@@ -105,16 +105,32 @@ Coverage evidence vs PRD-08 (state/refs → task):
   depends: P2 billing review and separately authorized local acceptance;
   owns: isolated integration branch only; source lanes remain unchanged;
   owner: remote Notion agent (`review/admin-llm-billing-integration`);
-  status: IN_PROGRESS — code-review-only candidate from pinned source lanes;
-  owner relayed 40-case acceptance at `4f290aee` with two failures;
-  model-ID overflow fixed; owner relayed five targeted cases PASS at `2673c395`;
-  revised permission verification: controlled no-DB policy plus actual DB profile;
-  updated 41-case DB suite remains pending local execution on this revision;
-  see `docs/validation/admin-llm-billing-acceptance.md`; shared grants and
-  financial evidence must not be rewritten; no acceptance/completion inferred;
-  historical P8-T06 in the admin UI lane collided with the accepted inventory ID;
-  that inventory and all other lane evidence are preserved, not re-accepted here.
-  No DB/runtime/provider execution or dev merge is authorized for this candidate.
+  status: READY — implementation and bounded acceptance complete; awaiting only
+  coordinating Codex closeout review (not another implementation/test run).
+  [PR #205](https://github.com/Starck43/social-media-ai/pull/205) merged into dev
+  with explicit owner approval; tested HEAD
+  `0b1fd71d08a332e668d25eeb585fc27bb01127af`, merge commit
+  `b0bd202bccb04cdbcad009ddd6a8bd5664221a8c`; their Git trees are identical.
+  Evidence at the tested HEAD: 110/110 remote isolated tests; owner-relayed
+  local `tests/test_admin_model_billing_acceptance.py`: 41 collected / 41 passed,
+  0 failed/skipped/deselected/errors, collection/execution exits 0;
+  execution reported 12 warnings in 62.08s (warning details not supplied).
+  Mac-local audit files were not independently inspected remotely.
+  `OBSERVED_OPERATOR_MODEL_GRANTS []`; actual DB-profile enforcement passed.
+  A genuine VIEW-only DB login was not tested; VIEW/UPDATE do not imply
+  CONFIGURE in separate controlled isolated tests. The owner explicitly
+  accepted this evidence split. Historical 56-case offline browser QA belongs
+  to `ace7c536300ae3ec1d5f9abaaa430bec4cdb74ad`, not a rerun at the final HEAD.
+  See PR #205 and `docs/validation/admin-llm-billing-acceptance.md` for scope.
+  Source PRs #200/#201 are snapshot-integrated, not ancestry-merged; closeout
+  content review found no outstanding source changes requiring another merge.
+  Their branches and owner-local artifacts remain preserved; closing these PRs
+  requires separate owner authorization. The historical admin P8-T06 collision
+  remains mapped to T14; accepted inventory T06 is unchanged.
+  Only coordinating Codex may mark this row DONE and remove its ROADMAP row
+  after exact-SHA review. This is not broader P2/billing acceptance or P8 phase
+  approval. No repeated tests, schema/grant/.env operations, fixture cleanup,
+  runtime activation, deployment or live/paid calls are authorized by closeout.
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

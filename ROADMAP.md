@@ -43,7 +43,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P8-T11 — incomplete-delivery aggregate signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T12 — unknown-price/spend exposure signal → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 - [ ] P8-T13 — named support/escalation ownership + pilot measures → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
-- [ ] P8-T14 — shared short LLM/admin UI and billing integration review → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — IN_PROGRESS
+- [ ] P8-T14 — shared short LLM/admin UI and billing integration review → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent; coordinator review pending — READY
 - [ ] P9-T01 — one capability-specific activation contract → [p9](docs/phases/p9-safe-activation.md) — unassigned — TODO
 - [ ] P10-T01 — authorized password recovery (AUD-01, P0) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO

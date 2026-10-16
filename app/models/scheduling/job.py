@@ -31,6 +31,13 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
         ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Trusted actor captured by the authenticated manual enqueue boundary.
+    # Scheduled jobs intentionally keep NULL; never read an actor ID from payload.
+    initiated_by_user_id: Mapped[int | None] = Column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     # 'collect' | 'digest' | 'prune'
     job_type: Mapped[str] = Column(String(20), nullable=False)
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))

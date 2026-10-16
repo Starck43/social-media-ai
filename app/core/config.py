@@ -58,6 +58,7 @@ class Settings(BaseSettings):
         if value not in ("HS256", "HS384", "HS512"):
             raise ValueError("ALGORITHM must be HS256, HS384 or HS512")
         return value
+
     # Токен доступа истекает через 30 дней в development и 1 час в production
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
     # Refresh токен истекает через 30 дней
@@ -128,6 +129,8 @@ class Settings(BaseSettings):
     # --- Task runner ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30
+    # Personal budget admission is opt-in until schema and real acceptance pass.
+    PERSONAL_BILLING_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"
 
     # --- Agent ---

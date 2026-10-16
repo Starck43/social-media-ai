@@ -152,7 +152,7 @@
 })();
 
 /* One authorized, context-bound snapshot drives both the bell and its rows. */
-// Browser-local display preferences, never authorization or durable acknowledgement.
+// User-owned display preferences, never authorization or durable acknowledgement.
 const AttentionPreferences = {
     defaults() { return { version: 1, connections: true, tasks: true, popup: false, quiet: false, start: '22:00', end: '08:00' }; },
     key(userId) { return Number.isSafeInteger(userId) && userId > 0 ? 'app:attention:display:v1:user:' + userId : null; },
@@ -164,9 +164,17 @@ const AttentionPreferences = {
         if (value.quiet && value.start === value.end) return defaults;
         return Object.fromEntries(Object.keys(defaults).map(key => [key, value[key]]));
     },
-    read(userId) {
-        try { const key = this.key(userId); return key ? this.normalize(JSON.parse(localStorage.getItem(key))) : this.defaults(); }
-        catch (_) { return this.defaults(); }
+    readLocal(userId) {
+        return this.readStoredLocal(userId) || this.defaults();
+    },
+    readStoredLocal(userId) {
+        try {
+            const key = this.key(userId), raw = key ? localStorage.getItem(key) : null;
+            if (!raw) return null;
+            const value = JSON.parse(raw), normalized = this.normalize(value);
+            return JSON.stringify(normalized) === JSON.stringify(value) ? normalized : null;
+        }
+        catch (_) { return null; }
     },
     visible(item, preferences) {
         // Persisted messages cannot be suppressed until mandatory notice kinds have a contract.
@@ -180,20 +188,98 @@ const AttentionPreferences = {
     }
 };
 
-function notificationPreferences(userId) {
+function notificationPreferences(userId, csrf) {
     return {
-        value: AttentionPreferences.read(userId), message: '',
-        save() {
-            if (!AttentionPreferences.key(userId)) { this.message = 'Не удалось подтвердить пользователя.'; return; }
-            if (this.value.quiet && this.value.start === this.value.end) { this.message = 'Начало и конец тихих часов должны различаться.'; return; }
-            const value = AttentionPreferences.normalize(this.value);
-            if (JSON.stringify(value) !== JSON.stringify(this.value)) { this.message = 'Проверьте значения времени.'; return; }
-            let persisted = false;
-            try { localStorage.setItem(AttentionPreferences.key(userId), JSON.stringify(value)); persisted = true; } catch (_) { /* memory-only fallback */ }
-            window.dispatchEvent(new CustomEvent('app:attention-preferences', { detail: { userId, value } }));
-            this.message = persisted ? 'Сохранено только для вас в этом браузере.' : 'Применено на этой странице. Браузер не разрешил сохранение.';
+        value: AttentionPreferences.defaults(), serverValue: null, message: '', loading: true, saving: false, requestId: 0,
+        init() {
+            this.load();
+            const refresh = () => { if (!document.hidden) this.load(false); };
+            const poll = window.setInterval(refresh, 30000);
+            document.addEventListener('visibilitychange', refresh);
+            window.addEventListener('pagehide', () => {
+                window.clearInterval(poll);
+                document.removeEventListener('visibilitychange', refresh);
+                this.requestId++;
+            }, { once: true });
         },
-        restore() { this.value = AttentionPreferences.defaults(); this.save(); }
+        validValue(value) {
+            return !!AttentionPreferences.key(userId) && JSON.stringify(AttentionPreferences.normalize(value)) === JSON.stringify(value);
+        },
+        async post(path, value) {
+            const body = { _csrf: csrf };
+            if (value) body.preferences = value;
+            const response = await fetch('/app/notifications/preferences' + path, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-App-User': String(userId) },
+                body: JSON.stringify(body), cache: 'no-store'
+            });
+            if (!response.ok || response.redirected) throw new Error('save');
+            const data = await response.json();
+            if (data.user_id !== userId || !this.validValue(data.preferences)) throw new Error('identity');
+            return data.preferences;
+        },
+        async load(force = true) {
+            if (!force && (this.loading || this.saving)) return;
+            if (!AttentionPreferences.key(userId)) { this.loading = false; this.message = 'Не удалось подтвердить пользователя.'; return; }
+            const requestId = ++this.requestId;
+            this.loading = true;
+            try {
+                const response = await fetch('/app/notifications/preferences', {
+                    headers: { Accept: 'application/json', 'X-App-User': String(userId) }, cache: 'no-store'
+                });
+                if (!response.ok || response.redirected) throw new Error('load');
+                const data = await response.json();
+                if (requestId !== this.requestId) return;
+                if (data.user_id !== userId || !this.validValue(data.preferences)) throw new Error('identity');
+                if (!force && this.serverValue !== null && JSON.stringify(this.serverValue) !== JSON.stringify(this.value)) return;
+                this.value = { ...data.preferences };
+                this.serverValue = { ...data.preferences };
+                this.message = '';
+                window.dispatchEvent(new CustomEvent('app:attention-preferences', { detail: { userId, value: this.value } }));
+            } catch (_) {
+                if (requestId === this.requestId) {
+                    if (this.serverValue === null) this.serverValue = { ...this.value };
+                    this.message = 'Не удалось загрузить настройки. Повторите попытку.';
+                }
+            }
+            finally { if (requestId === this.requestId) this.loading = false; }
+        },
+        async save() {
+            if (this.loading || this.saving) return;
+            if (!AttentionPreferences.key(userId)) { this.message = 'Не удалось подтвердить пользователя.'; return; }
+            if (!this.validValue(this.value)) { this.message = 'Проверьте значения настроек и времени.'; return; }
+            const requestId = ++this.requestId;
+            this.saving = true; this.message = '';
+            try {
+                const value = await this.post('', this.value);
+                if (requestId !== this.requestId) return;
+                this.value = { ...value };
+                this.serverValue = { ...value };
+                window.dispatchEvent(new CustomEvent('app:attention-preferences', { detail: { userId, value } }));
+                this.message = 'Настройки сохранены для вашего аккаунта.';
+            } catch (_) { if (requestId === this.requestId) this.message = 'Не удалось сохранить настройки.'; }
+            finally { if (requestId === this.requestId) this.saving = false; }
+        },
+        async restore() {
+            if (this.loading || this.saving) return;
+            const requestId = ++this.requestId;
+            this.saving = true; this.message = '';
+            try {
+                const value = await this.post('/reset', null);
+                if (requestId !== this.requestId) return;
+                this.value = { ...value };
+                this.serverValue = { ...value };
+                window.dispatchEvent(new CustomEvent('app:attention-preferences', { detail: { userId, value } }));
+                this.message = 'Настройки восстановлены.';
+            } catch (_) { if (requestId === this.requestId) this.message = 'Не удалось восстановить настройки.'; }
+            finally { if (requestId === this.requestId) this.saving = false; }
+        },
+        async importLocal() {
+            if (this.loading || this.saving) return;
+            const local = AttentionPreferences.readStoredLocal(userId);
+            if (!local) { this.message = 'В этом браузере нет сохранённых настроек для импорта.'; return; }
+            this.value = local;
+            await this.save();
+        }
     };
 }
 
@@ -203,37 +289,62 @@ function notificationsBell(csrf, workspaceId, userId) {
         openModal: false, loading: false, items: [], error: '', pending: false,
         hasMore: false, complete: false, contextChanged: false, generation: 0,
         backingTaskEvents: new Map(),
-        preferences: AttentionPreferences.read(userId), preferencesOpen: false, popupVisible: false, popupKeys: new Set(), primed: false,
+        preferences: AttentionPreferences.defaults(), preferencesOpen: false, popupVisible: false, popupKeys: new Set(), primed: false,
+        preferenceRequestId: 0,
         init() {
             this.$watch('items', () => this.updateDockSpace());
             const preferencesChanged = event => {
-                if (event.type === 'storage' && event.key !== AttentionPreferences.key(userId) && event.key !== null) return;
                 if (event.type !== 'storage' && event.detail?.userId !== userId) return;
-                this.preferences = event.type === 'storage' ? AttentionPreferences.read(userId) : AttentionPreferences.normalize(event.detail.value);
+                this.preferenceRequestId++;
+                this.preferences = AttentionPreferences.normalize(event.detail.value);
                 this.popupVisible = false; this.updateDockSpace();
             };
-            window.addEventListener('storage', preferencesChanged);
             window.addEventListener('app:attention-preferences', preferencesChanged);
             this.$watch('openModal', () => this.updateDockSpace());
             this.$watch('error', () => this.updateDockSpace());
             this.load();
-            const poll = window.setInterval(() => { if (!document.hidden) this.load(); }, 30000);
+            this.loadPreferences();
+            const poll = window.setInterval(() => { if (!document.hidden) { this.load(); this.loadPreferences(); } }, 30000);
+            const foreground = () => { if (!document.hidden) this.loadPreferences(); };
+            document.addEventListener('visibilitychange', foreground);
             const changed = () => this.reset('Контекст изменился. Перезагрузите страницу.');
             window.addEventListener('app:context-changed', changed);
             window.addEventListener('pagehide', () => {
                 window.clearInterval(poll);
                 window.removeEventListener('app:context-changed', changed);
-                window.removeEventListener('storage', preferencesChanged);
                 window.removeEventListener('app:attention-preferences', preferencesChanged);
+                document.removeEventListener('visibilitychange', foreground);
                 this.generation++;
+                this.preferenceRequestId++;
+                this.contextChanged = true;
                 this.items = [];
                 this.backingTaskEvents.clear();
             }, { once: true });
         },
         headers() { return { Accept: 'application/json', 'X-App-Workspace': String(workspaceId), 'X-App-User': String(userId) }; },
+        async loadPreferences() {
+            if (this.contextChanged) return;
+            const requestId = ++this.preferenceRequestId;
+            try {
+                const response = await fetch('/app/notifications/preferences', {
+                    headers: { Accept: 'application/json', 'X-App-User': String(userId) }, cache: 'no-store'
+                });
+                if (requestId !== this.preferenceRequestId) return;
+                if (!response.ok || response.redirected) throw new Error('preferences');
+                const data = await response.json();
+                if (requestId !== this.preferenceRequestId || this.contextChanged || data.user_id !== userId) return;
+                if (JSON.stringify(AttentionPreferences.normalize(data.preferences)) !== JSON.stringify(data.preferences)) throw new Error('shape');
+                const changed = JSON.stringify(this.preferences) !== JSON.stringify(data.preferences);
+                this.preferences = data.preferences;
+                if (changed) this.popupVisible = false;
+                this.updateDockSpace();
+            } catch (_) {
+                if (requestId === this.preferenceRequestId) this.popupVisible = false;
+            }
+        },
         matches(data) { return data?.context?.workspace_id === workspaceId && data?.context?.user_id === userId; },
         reset(message) {
-            this.generation++; this.items = []; this.hasMore = false; this.complete = false;
+            this.generation++; this.preferenceRequestId++; this.items = []; this.hasMore = false; this.complete = false;
             this.backingTaskEvents.clear();
             this.loading = false; this.pending = false; this.contextChanged = true; this.error = message;
             this.popupVisible = false; this.popupKeys.clear();

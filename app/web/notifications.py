@@ -5,7 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
 
+from app.models import NotificationPreference
+from app.models.managers.notification_preference_manager import NotificationPreferenceUserInactive
 from app.services.notifications.attention import AttentionContext, AttentionFeed, positive_id
+from app.services.notifications.preferences import DEFAULTS as PREFERENCE_DEFAULTS
+from app.services.notifications.preferences import validate as validate_preferences
 
 from .deps import ensure_csrf
 
@@ -34,6 +38,95 @@ def _context(request):
 
 def _unavailable(status=409):
     return JSONResponse({"ok": False, "reset": True}, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def _active_user(request: Request):
+    user = getattr(request.state, "web_user", None)
+    if user is None or not user.is_active or not positive_id(user.id):
+        return None
+    expected = request.headers.get("X-App-User")
+    if expected is not None and expected != str(user.id):
+        return None
+    return user
+
+
+def _preferences_response(user_id: int, value: dict, status_code: int = 200):
+    return JSONResponse(
+        {"user_id": user_id, "preferences": value},
+        status_code=status_code,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/preferences")
+async def notification_preferences_get(request: Request):
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    try:
+        value = await NotificationPreference.objects.get_for_user(user.id)
+    except NotificationPreferenceUserInactive:
+        return _unavailable(401)
+    except Exception:
+        return _unavailable(503)
+    return _preferences_response(user.id, value or PREFERENCE_DEFAULTS)
+
+
+@router.post("/preferences")
+async def notification_preferences_save(request: Request):
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    token = body.get("_csrf") if isinstance(body, dict) else None
+    if (
+        not isinstance(body, dict)
+        or set(body) != {"_csrf", "preferences"}
+        or not isinstance(token, str)
+        or not ensure_csrf(request, token)
+    ):
+        return _unavailable(403)
+    value = validate_preferences(body.get("preferences"))
+    if value is None:
+        return JSONResponse(
+            {"ok": False, "error": "invalid_preferences"}, status_code=422, headers={"Cache-Control": "no-store"}
+        )
+    try:
+        stored = await NotificationPreference.objects.save_for_user(user.id, value)
+    except NotificationPreferenceUserInactive:
+        return _unavailable(401)
+    except Exception:
+        return _unavailable(503)
+    return _preferences_response(user.id, stored)
+
+
+@router.post("/preferences/reset")
+async def notification_preferences_reset(request: Request):
+    user = _active_user(request)
+    if user is None:
+        return _unavailable(401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    token = body.get("_csrf") if isinstance(body, dict) else None
+    if (
+        not isinstance(body, dict)
+        or set(body) != {"_csrf"}
+        or not isinstance(token, str)
+        or not ensure_csrf(request, token)
+    ):
+        return _unavailable(403)
+    try:
+        stored = await NotificationPreference.objects.save_for_user(user.id, PREFERENCE_DEFAULTS)
+    except NotificationPreferenceUserInactive:
+        return _unavailable(401)
+    except Exception:
+        return _unavailable(503)
+    return _preferences_response(user.id, stored)
 
 
 @router.get("")

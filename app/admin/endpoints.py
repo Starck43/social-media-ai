@@ -15,7 +15,7 @@ from app.admin.authorization import require_admin_perm
 from app.admin.csrf import get_csrf_manager
 from app.core.config import settings
 from app.core.hashing import generate_temporary_password, get_password_hash, verify_password
-from app.models import User
+from app.models import Tenant, User
 from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
 
@@ -40,6 +40,28 @@ template_dirs = [str(Path(__file__).parent.parent / "templates"), str(sqladmin_p
 templates = Jinja2Templates(directory=template_dirs)
 
 router = APIRouter(tags=["admin"])
+
+
+@router.post("/admin/llm-model/test-real", name="llm_model_test_real")
+async def llm_model_test_real(
+    request: Request,
+    pks: str = Form(...),
+    prompt: str = Form(""),
+    tenant_id: int = Form(...),
+    csrf_token: str = Form(""),
+):
+    """Retire the old paid route without silently translating or replaying it."""
+    if not get_csrf_manager(request).verify_token(csrf_token):
+        raise HTTPException(status_code=403, detail="Недействительный CSRF токен")
+    token = request.session.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Требуется вход в панель")
+    user = await get_authenticated_user(token=token, token_type="access")
+    if user is not None:
+        user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+    if user is None or not user.is_active or not user.is_platform_admin:
+        raise HTTPException(status_code=403, detail="Нужны активные права администратора платформы")
+    raise HTTPException(status_code=410, detail="Open the model test page and confirm a new probe explicitly")
 
 
 @router.get("/admin/reset-password", name="reset_password_page")
@@ -416,3 +438,49 @@ async def topic_chains_dashboard(request: Request):
         logger.error(f"Topic chains dashboard authentication error: {e}")
         request.session.clear()
         return RedirectResponse(url=f"/admin/login?next=/dashboard/topic-chains", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/admin/llm-model/test", response_class=HTMLResponse)
+async def submit_llm_model_test(request: Request):
+    """Explicit operator-only model test; GET action URLs remain read-only."""
+    user = await require_admin_perm(request, "llmmodel", ActionType.CONFIGURE)
+    form = await request.form()
+    token = form.get("csrf_token")
+    if not isinstance(token, str) or not get_csrf_manager(request).verify_token(token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    if form.get("test_type") == "real" and form.get("confirm_real") != "yes":
+        raise HTTPException(status_code=422, detail="Confirm the paid probe explicitly")
+    from app.admin.actions import LLMModelActions
+
+    if form.get("test_type") == "real":
+        if not settings.PERSONAL_BILLING_ENABLED:
+            raise HTTPException(status_code=409, detail="Личный учёт расходов ещё не включён")
+        if not user.is_platform_admin:
+            raise HTTPException(status_code=403, detail="Personal admin probes require a platform administrator")
+        try:
+            tenant_id = int(str(form.get("tenant_id", "")))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Select an active execution workspace") from None
+        if tenant_id <= 0:
+            raise HTTPException(status_code=422, detail="Select an active execution workspace")
+        tenant = await Tenant.objects.get(id=tenant_id)
+        if tenant is None or not tenant.is_active:
+            raise HTTPException(status_code=422, detail="Select an active execution workspace")
+
+        from app.core.permissions import permission_scope
+        from app.core.tenant_context import tenant_scope
+
+        # Workspace is explicit; payer identity is never accepted from the form.
+        request.state.probe_tenant_id = tenant.id
+        with tenant_scope(tenant.id), permission_scope(user):
+            return await LLMModelActions.submit_test(
+                request.app.state.admin, request, str(form.get("model_id", "")), "real", ""
+            )
+
+    return await LLMModelActions.submit_test(
+        request.app.state.admin,
+        request,
+        str(form.get("model_id", "")),
+        str(form.get("test_type", "")),
+        str(form.get("prompt", "")),
+    )

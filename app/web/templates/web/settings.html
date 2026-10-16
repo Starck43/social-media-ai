@@ -153,7 +153,7 @@
                     {%- set _ = chat_options.append((opt.id, opt.label, '')) %}
                 {% endfor %}
                 {{ popover_select('agent_model', 'ag-model', chat_options, current=tenant.agent_model if tenant else '', placeholder='Автовыбор (первая активная)') }}
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Пусто — автовыбор первой активной. ★ — модель по умолчанию. Кнопка «Проверить» сначала смотрит статус (0 токенов), затем мок (0 токенов) и только потом — короткую реальную пробу.</p>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Пусто — автовыбор первой активной. ★ — модель по умолчанию. Кнопка «Проверить» проверяет статус и локальный mock без вопроса и сетевого вызова. Ответ провайдера проверяется отдельно в админке.</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                     <button type="submit" formaction="/app/settings/agent/model-probe" formmethod="post"
                             class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">

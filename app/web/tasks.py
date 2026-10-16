@@ -395,7 +395,7 @@ async def run_task_now(task: "AgentTask") -> dict | None:
 	return await run_task_directly(task)
 
 
-async def queue_task_now(task: "AgentTask") -> dict[str, Any]:
+async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = None) -> dict[str, Any]:
 	"""Queue the task's job for the worker instead of running it in this request.
 
 	"Сохранить и выполнить" used to call `run_task_now`, which executes the
@@ -415,9 +415,13 @@ async def queue_task_now(task: "AgentTask") -> dict[str, Any]:
 	"""
 	from app.jobs.enqueue import enqueue_task_run
 	from app.jobs.source_activity import SourceJobBusy
+	if initiated_by_user_id is None:
+		from app.core.permissions import get_current_user
+		actor = get_current_user()
+		initiated_by_user_id = getattr(actor, "id", None)
 
 	try:
-		job = await enqueue_task_run(task)
+		job = await enqueue_task_run(task, initiated_by_user_id=initiated_by_user_id)
 	except SourceJobBusy as busy:
 		return {"job_id": busy.job.id, "status": busy.job.status, "already_running": True}
 	return {"job_id": job.id, "status": job.status}
@@ -712,7 +716,7 @@ async def task_create(
 	# collided with the row the first click had written. The run-status modal
 	# follows the queued job instead.
 	if run_now:
-		outcome = await queue_task_now(task)
+		outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
 		if outcome.get("already_running"):
 			add_flash(request, "info", f"Задача «{name}» создана, но источник уже занят. Новый запуск не создан")
 		else:
@@ -1006,7 +1010,7 @@ async def task_run_now(
 		)
 		return RedirectResponse(f"/app/tasks?job_id={existing.id}", status_code=302)
 
-	outcome = await queue_task_now(task)
+	outcome = await queue_task_now(task, getattr(request.state.web_user, "id", None))
 	if outcome.get("already_running"):
 		add_flash(request, "info", "Источник уже занят сбором или анализом. Новый запуск не создан")
 	else:
@@ -1218,7 +1222,7 @@ async def task_update(
 	# job froze the page and invited the second click that hit the unique name.
 	if run_now:
 		updated = await AgentTask.objects.get(id=task.id, tenant_id=tenant_id)
-		outcome = await queue_task_now(updated)
+		outcome = await queue_task_now(updated, getattr(request.state.web_user, "id", None))
 		if outcome.get("already_running"):
 			add_flash(request, "info", f"Задача «{name}» обновлена, но источник уже занят. Новый запуск не создан")
 		else:

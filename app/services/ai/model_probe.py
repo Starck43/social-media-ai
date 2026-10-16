@@ -1,14 +1,14 @@
-"""Economical model probes: status (free) → mock (free, no network) → real capped.
+"""Local model checks and explicitly requested, capped provider probes.
 
-Tiered testing for LLM models. The cheapest conclusive level wins:
+Tiered testing for LLM models. Local checks and explicitly requested provider probes are distinct:
 
 * Level 0 — ``probe_status``: no provider traffic at all. Local config +
-  history verdicts. Stops ~80% of wasted calls before any token is spent.
+  history verdicts; not proof of remote reachability.
 * Level 1 — ``probe_mock``: canned local answer, no network. Verifies the
-  app-side pipeline (routing, parsing, cost plumbing) for 0 tokens.
+  response/usage display shape for 0 tokens; not an end-to-end routing check.
 * Level 2 — ``probe_real_capped``: one minimal provider call with a fixed
   one-word prompt (``max_tokens=8``, timeout 20s). Proves the key/route
-  works for a fraction of a cent instead of a full chat answer.
+  returned a response; actual provider charges depend on its pricing.
 
 The admin ``test_model`` action, ``/app/settings`` chat-model check and the
 scenario model check all share this module, so the economy rule lives in one
@@ -76,8 +76,7 @@ def probe_mock(model, prompt: str) -> dict[str, Any]:
 
     prompt_tokens, completion_tokens = 8, 12
     content = (
-        f"[МОК-ПРОБА] Модель {model.name} ({model.model_id}): маршрут, парсинг и "
-        f"учёт стоимости проверены локально, провайдер не вызывался."
+        f"[МОК-ПРОБА] Модель {model.name} ({model.model_id}): локальная имитация ответа. " "Провайдер не вызывался."
     )
     cost = price_usage_usd(model, prompt_tokens, completion_tokens)
     return {
@@ -94,65 +93,110 @@ def probe_mock(model, prompt: str) -> dict[str, Any]:
     }
 
 
-async def probe_real_capped(model, prompt: str = PROBE_PROMPT) -> dict[str, Any]:
-    """Level 2 — one minimal provider call, capped cost.
+def probe_short(model) -> dict[str, Any]:
+    """Prompt-free local status/mock check shared by web and operator UI.
 
-    Fixed one-word prompt, ``max_tokens=8``, 20s timeout. Small model answers
-    cost a fraction of a cent; the point is reachability, not quality.
+    Never dispatch a provider call or silently escalate to a paid tier. Success
+    means local configuration/mock checks passed, not remote reachability.
     """
-    import httpx
+    verdict = probe_status(model) if model is not None else {"ok": False, "checks": [], "hint": "Модель не выбрана"}
+    result = {
+        "ok": False,
+        "tier": "status",
+        "text": verdict["hint"],
+        "checks": verdict["checks"],
+        "tokens_spent": 0,
+    }
+    if not verdict["ok"]:
+        return result
+    try:
+        mock = probe_mock(model, "Локальная проверка конфигурации")
+    except Exception:
+        result["text"] = "Локальная мок-проверка не пройдена. Проверьте настройки модели."
+        result["tier"] = "mock"
+        return result
+    result.update(
+        ok=bool(mock.get("ok", True)),
+        tier="mock",
+        text=(
+            "Статус и локальный mock: OK. Провайдер не вызывался."
+            if mock.get("ok", True)
+            else "Локальная мок-проверка не пройдена."
+        ),
+        content=mock.get("content", ""),
+    )
+    return result
 
-    from app.services.ai.llm_client import LLMClientFactory
 
+async def probe_real_capped(model) -> dict[str, Any]:
+    """One billed fixed probe; never fall back to an unaccounted HTTP path.
+
+    The selected client owns admission, durable dispatch/outcome accounting and
+    transport. A failure after dispatch is ambiguous and must not trigger retry.
+    """
+    from app.core.config import settings
+    from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
+
+    if not settings.PERSONAL_BILLING_ENABLED:
+        return {"ok": False, "error": "Личный учёт расходов ещё не включён", "tokens_spent": 0}
+    if getattr(getattr(model, "provider", None), "api_format", None) != "openai":
+        return {"ok": False, "error": "Нужен OpenAI-совместимый API", "tokens_spent": 0}
     try:
         client = LLMClientFactory.create(model)
-    except Exception as exc:  # noqa: BLE001 — factory errors are probe failures
-        return {"ok": False, "error": f"Не удалось создать клиент: {exc}", "tokens_spent": 0}
+    except Exception:
+        return {"ok": False, "error": "Не удалось создать клиент. Проверьте конфигурацию.", "tokens_spent": 0}
     if not client.api_key:
         return {"ok": False, "error": "API-ключ провайдера не настроен", "tokens_spent": 0}
 
-    payload: dict[str, Any] = {
-        "model": client.model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.0,
-        "max_tokens": PROBE_MAX_TOKENS,
-        "stream": False,
-    }
+    # This is a newly created client, not a shared setting. Transport controls
+    # stay out of provider JSON; chat() reads its timeout from the client.
+    client.timeout = PROBE_TIMEOUT
     try:
-        async with httpx.AsyncClient() as http:
-            response = await http.post(
-                f"{client.base_url}/chat/completions",
-                headers=client._headers(),
-                json=payload,
-                timeout=PROBE_TIMEOUT,
-            )
-            if response.status_code != 200:
-                return {
-                    "ok": False,
-                    "error": f"Провайдер ответил {response.status_code}: {response.text[:300]}",
-                    "tokens_spent": 0,
-                }
-            data = response.json()
-    except Exception as exc:  # noqa: BLE001 — network/timeout are probe failures
-        logger.warning("Real probe failed for model %s: %s", getattr(model, "id", "?"), exc)
-        return {"ok": False, "error": f"Сеть/таймаут: {exc}", "tokens_spent": 0}
+        response = await client.chat(
+            [{"role": "user", "content": PROBE_PROMPT}],
+            max_tokens=PROBE_MAX_TOKENS,
+            temperature=0.0,
+            personal_billing_purpose="admin_probe",
+        )
+    except Exception:
+        logger.warning("Billed probe response/accounting unconfirmed for model %s", getattr(model, "id", "?"))
+        return {
+            "ok": False,
+            "error": "Ответ или учёт расходов не подтверждены. Не повторяйте вызов автоматически.",
+            "tokens_spent": None,
+        }
+    if not isinstance(response, dict):
+        return {"ok": False, "error": "Ответ не подтверждён. Не повторяйте автоматически.", "tokens_spent": None}
 
+    dispatch_id = response.pop("_personal_dispatch_id", None)
+    journal_warning = False
     try:
-        text = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        return {"ok": False, "error": "Провайдер вернул пустой ответ", "tokens_spent": 0}
-    usage = data.get("usage") or {}
-    prompt_tokens = int(usage.get("prompt_tokens") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or 0)
-    return {
+        await journal_chat_attempt(client, "admin_probe", response, dispatch_id=dispatch_id)
+    except Exception:
+        # A secondary journal failure must not re-dispatch or erase an answer.
+        journal_warning = True
+    raw = response.get("raw")
+    # The chat compatibility shape fills missing usage with zeros. Read only
+    # provider evidence so unknown usage is never mislabeled as free.
+    usage = raw.get("usage") if isinstance(raw, dict) else None
+    usage = usage if isinstance(usage, dict) else {}
+
+    def count(key):
+        value = usage.get(key)
+        return value if type(value) is int and value >= 0 else None
+
+    incoming, outgoing = count("prompt_tokens"), count("completion_tokens")
+    total = incoming + outgoing if incoming is not None and outgoing is not None else None
+    text = response.get("content")
+    if not isinstance(text, str) or not text.strip():
+        return {"ok": False, "error": "Провайдер вернул пустой ответ", "tokens_spent": total}
+    result = {
         "ok": True,
         "content": text,
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-        "tokens_spent": prompt_tokens + completion_tokens,
+        "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
+        "tokens_spent": total,
         "is_real_response": True,
     }
-
+    if journal_warning:
+        result["save_warning"] = "Ответ получен, но журнал не подтверждён. Не повторяйте вызов автоматически."
+    return result

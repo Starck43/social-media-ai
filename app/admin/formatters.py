@@ -116,3 +116,16 @@ def format_usd(cents: Optional[Union[int, float, Decimal]]) -> str:
     if cents is None:
         return EMPTY
     return f"${cents / 100:.4f}"
+
+
+def model_price(value):
+    """Preserve small configured tariffs instead of displaying a false $0.0000."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        number = Decimal(str(value))
+        if not number.is_finite() or number < 0:
+            return "—"
+        return "$" + format(number.normalize(), "f")
+    except (InvalidOperation, TypeError, ValueError):
+        return "—"

@@ -15,7 +15,10 @@ args = parser.parse_args()
 ROOT = Path(__file__).resolve().parents[1]
 OUT = args.out.resolve()
 env = Environment(
-    loader=FileSystemLoader(ROOT / "app/web/templates"), autoescape=select_autoescape(), undefined=StrictUndefined
+    loader=FileSystemLoader(ROOT / "app/web/templates"),
+    autoescape=select_autoescape(),
+    undefined=StrictUndefined,
+    extensions=["jinja2.ext.do"],
 )
 env.filters["ui_label"] = str
 env.filters["human_dt"] = lambda value, **kwargs: str(value or "")
@@ -149,7 +152,7 @@ states = {
     "long": {
         "tenant": {"id": 7, "name": "ОченьДлинноеНазваниеРабочегоПространстваБезПробелов" * 5},
         "is_superuser": False,
-        "user": {"username": "operator"},
+        "user": SimpleNamespace(username="operator", has_admin_access=lambda: False),
         "tenants": [],
         "filter_tenant_id": None,
         "connection_alerts": [{"detail": "Тестовое подключение требует обновления", "label": "VK"}],

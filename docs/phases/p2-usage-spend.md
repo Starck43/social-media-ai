@@ -53,7 +53,13 @@ background runs; changing payer requires new payer consent.
 
 - [ ] P2-T04 — atomic idempotent settlement/reconciliation;
   accept: uncertain obligations preserved after ambiguous outcomes;
-  depends: P2-T01, P2-T03; owner: billing-agent; status: IN_PROGRESS
+  depends: P2-T01, P2-T03; owner: billing-agent; status: IN_PROGRESS —
+  blocked on test_schema state at dev `7e5b4f1`: alembic_version 0103
+  stamped, but migration-0093 receipt immutability guards
+  (`reject_llm_receipt_mutation` triggers) are absent; receipt-backed PG
+  acceptance fails closed with `ReceiptStorageUnavailable`. Schema
+  reconciliation/reset requires owner authorization under R8; no schema
+  action taken by the executor.
 
 - [x] P2-T05 — provision UTC daily baselines; accept: reviewed upper bounds
   for paid attempts; depends: P2-T04; owner: billing-agent; status: DONE —
@@ -64,20 +70,28 @@ background runs; changing payer requires new payer consent.
   P2-T04 (reconciliation) is not accepted; settlement-layer verification is
   deferred to P2-T09 (production check). Activation not included.
 
-- [ ] P2-T06 — wire admission through all provider clients and callers;
+- [x] P2-T06 — wire admission through all provider clients and callers;
   accept: no fallback around admission denial; depends: P2-T02–P2-T05;
-  owner: billing-agent; status: IN_PROGRESS
+  owner: billing-agent; status: DONE — accepted: coordinator in this session
+  under explicit owner instruction, 2026-10-17, dev `7e5b4f1`. Evidence:
+  focused no-DB run `tests/test_personal_billing_foundation.py` +
+  `tests/test_personal_billing_transport.py` 17/17 PASS, including
+  `test_denied_admission_sends_no_provider_request` and
+  `test_fallback_does_not_try_next_model_after_billing_denial`; combined with
+  previously accepted P8-T14 evidence (remote 110/110, local 41/41 at
+  `0b1fd71d`). Code: `_personal_admission`/`_observe_personal_outcome` in all
+  clients (`llm_client.py`), `raise_personal_billing_block` guards the
+  fallback chain (`app/services/billing/errors.py:26`). Activation not
+  included.
 
-- [ ] P2-T07 — focused PG/ASGI acceptance and cutover;
+- [x] P2-T07 — focused PG/ASGI acceptance and cutover;
   accept: per acceptance recorded via R10; depends: P2-T01–P2-T06
-  prerequisites; owner: codex; status: IN_PROGRESS; evidence: integrated no-DB
-  pytest 77/77 PASS; Alembic 0103 current in `public` and `test_schema`.
-  Owner-authorized disposable `test_schema` recreated without backup and
-  seeded by canonical setup. Post-0103 sequential acceptance: 15/15 PASS
-  (5 personal-ledger and 10 notification/settings cases). OpenCode and Kilo
-  were unavailable; owner-authorized coordinator fallback ran the same scope.
-  P2-T01/T02/T03/T05 are DONE; P2-T04 and P2-T06 remain IN_PROGRESS, so
-  cutover prerequisites are not yet fully accepted.
+  prerequisites; owner: codex; status: DROPPED — superseded by owner deferral
+  2026-10-17: acceptance evidence is already recorded (integrated no-DB
+  77/77; post-0103 PG 15/15 on a previously consistent schema), and the
+  remaining production activation/verification is moved to P2-T09 (owner
+  deferred). Dropped in this session under explicit owner instruction at dev
+  `7e5b4f1`; not replaced by a new local acceptance task.
 
 - [ ] P2-T08 — corporate/shared billing accounts; accept: keep clear deferred
   status, no implementation now; depends: owner deferral;

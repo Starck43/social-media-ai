@@ -79,6 +79,13 @@ Attention feed lives in the floating bell (B), not a home card.
     HTML insertion, ordinary-user diagnostics absent, admin counters update;
     browser exit code 2, opened-details preservation not exercised, so not a
     fully passing browser acceptance run.
+  - Safari (user-selected stand) BLOCKED at `25ac852`: SafariDriver 27
+    responds to status but session creation times out connecting to a Safari
+    instance, including an escalated probe and an explicit Safari GUI launch.
+    No Safari page smoke executed; exact remote-automation/OS cause
+    unconfirmed. No browser preferences changed; owned driver and localhost
+    port cleaned. Browser acceptance not claimed; Chromium not substituted for
+    Safari.
   - Next: verify DB scope against compatible existing test schema/metadata
     without reset; keep PR Draft pending environment-dependent evidence.
 

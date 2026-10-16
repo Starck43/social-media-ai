@@ -1,5 +1,6 @@
 """Progress endpoint privacy with mocked storage and no database/provider calls."""
 
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -112,12 +113,12 @@ async def test_job_without_source_permission_hides_source_coverage_and_progress(
 
     response = await tasks.job_status(_request(memberships=[_membership()]), 88)
 
-    data = response.body.decode()
-    assert SECRET not in data
-    assert '"diagnostics"' in data
-    assert '"selected":null' in data and '"remaining":null' in data
-    assert '"raw_coverage"' not in data and '"progress"' not in data
-    assert "Private source" not in data
+    body = json.loads(response.body)
+    assert SECRET not in response.body.decode()
+    diagnostics = body["diagnostics"]
+    assert "selected" not in diagnostics and "remaining" not in diagnostics
+    assert "raw_coverage" not in body and "progress" not in body
+    assert "Private source" not in response.body.decode()
 
 
 def test_pending_retry_diagnostics_do_not_reuse_prior_snapshot_counters_or_time():

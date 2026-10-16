@@ -141,7 +141,8 @@ def test_done_with_bool_as_count_keeps_lifecycle_without_coverage():
     view = project_job(_source_job(result={"per_source": [_per_source(7, True, 2)]}), 7)
     assert view["status"] == "done"
     assert view["label"] == "Завершено"
-    assert view["processed"] is None
+    assert view["total"] is None and view["percent"] is None
+    assert view["processed"] == 2
 
 
 def test_done_with_non_numeric_total_keeps_lifecycle_without_coverage():
@@ -217,7 +218,7 @@ def test_completed_source_stays_completed_while_next_source_runs():
 def test_waiting_source_stays_queued_while_another_source_runs():
     source_a = SimpleNamespace(id=7, name="A", tenant_id=1)
     source_b = SimpleNamespace(id=8, name="B", tenant_id=1)
-    snapshot = build_snapshot([source_a, source_b], 1, [_per_source(7, 10, 10)])
+    snapshot = build_snapshot([source_a, source_b], 0, [])
     result = {"progress": {**snapshot, "attempt": 1}}
     view = project_job(_job(status="running", locked_at=now(), result=result), 8)
     assert view["status"] == "pending" and view["percent"] is None

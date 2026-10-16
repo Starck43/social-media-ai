@@ -229,7 +229,13 @@ def test_stored_names_and_edit_values_are_inert_on_real_detail_templates(page_en
     rendered = page_env.get_template("web/" + template).render(**context(payload))
     parsed = Document(rendered)
     assert_inert(parsed)
-    assert not parsed.elements("script")
+    if template == "source_detail.html":
+        scripts = re.findall(r"<script>(.*?)</script>", rendered, re.S)
+        assert len(scripts) == 1
+        clean = page_env.get_template("web/" + template).render(**context("safe static name"))
+        assert re.findall(r"<script>(.*?)</script>", clean, re.S) == scripts
+    else:
+        assert not parsed.elements("script")
     assert payload in "".join(parsed.text)
     assert next(attrs["value"] for attrs in parsed.elements("input") if attrs.get("name") == "name") == payload
     messages = [attrs["data-confirm"] for _, attrs in parsed.tags if "data-confirm" in attrs]
@@ -263,12 +269,14 @@ def test_chain_names_are_data_not_alpine_code(page_env, template, payload):
 
 @pytest.mark.parametrize("payload", PAYLOADS)
 def test_task_editor_json_roundtrips_without_script_breakout(page_env, payload):
-    rendered = page_env.get_template("web/task_edit.html").render(**context(payload))
+    ctx = context(payload)
+    ctx.update(is_superuser=True, filter_tenant_id=9)
+    rendered = page_env.get_template("web/task_edit.html").render(**ctx)
     parsed = Document(rendered)
     assert_inert(parsed)
     assert len(parsed.elements("script")) == 1
     data = re.search(r"const TASK_EDIT = (.*);", rendered).group(1)
-    assert json.loads(data) == context(payload)["edit"]
+    assert json.loads(data) == ctx["edit"]
     inputs = parsed.elements("input")
     assert any(attrs.get("x-model") == "editing.is_active" for attrs in inputs)
     assert any(attrs.get("x-model") == "editing.force_refresh" for attrs in inputs)

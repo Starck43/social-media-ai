@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
@@ -36,8 +36,10 @@ from app.core.database import async_engine  # noqa: E402
 from app.core.permissions import operator_permission_scope  # noqa: E402
 from app.core.tenant_context import tenant_scope  # noqa: E402
 from app.models import (  # noqa: E402
+    AgentScenario,
     AgentTask,
     AIAnalytics,
+    DigestRun,
     ModelType,
     Permission,
     Platform,
@@ -50,6 +52,7 @@ from app.models import (  # noqa: E402
 )
 from app.models.agent_task import agent_task_sources  # noqa: E402
 from app.models.base import Base  # noqa: E402
+from app.models.managers.agent_task_manager import AgentTaskManager  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants  # noqa: E402
 from app.models.role import role_permission  # noqa: E402
 from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
@@ -89,6 +92,7 @@ async def existing_target():
                         Platform,
                         Source,
                         AIAnalytics,
+                        DigestRun,
                         AgentTask,
                     )
                 } | {role_permission.name, agent_task_sources.name}
@@ -101,7 +105,7 @@ async def existing_target():
 @pytest.fixture
 async def home():
     """Two private workspaces, an owner and owned cleanup even on assertions."""
-    users, tenant_ids, sources, tasks = [], [], [], []
+    users, tenant_ids, sources, inactive_sources, tasks, digests, scenarios = [], [], [], [], [], [], []
     platform = None
     try:
         for prefix in ("HomeAccept", "HomeForeign"):
@@ -114,15 +118,25 @@ async def home():
         )
         with tenant_scope(bypass=True), operator_permission_scope():
             for index, tenant_id in enumerate(tenant_ids):
+                next_run = datetime.now(timezone.utc) + timedelta(hours=1)
                 source = await Source.objects.create(
                     tenant_id=tenant_id,
                     platform_id=platform.id,
                     name=_name(f"HomeSource{index}"),
                     source_type=SourceType.CHANNEL.name,
                     external_id=_name("home-source"),
-                    is_active=False,
+                    is_active=True,
                 )
                 sources.append(source)
+                inactive_source = await Source.objects.create(
+                    tenant_id=tenant_id,
+                    platform_id=platform.id,
+                    name=_name(f"InactiveHomeSource{index}"),
+                    source_type=SourceType.CHANNEL.name,
+                    external_id=_name("inactive-home-source"),
+                    is_active=False,
+                )
+                inactive_sources.append(inactive_source)
                 for offset in range(6):
                     await AIAnalytics.objects.create(
                         tenant_id=tenant_id,
@@ -134,22 +148,86 @@ async def home():
                             "analysis_metadata": {"analysis_complete": False},
                         },
                     )
+                digests.append(
+                    await DigestRun.objects.create(
+                        tenant_id=tenant_id,
+                        period="week",
+                        period_start=date.today() - timedelta(days=7),
+                        period_end=date.today(),
+                        channel="telegram",
+                        status="failed",
+                        error="partial_delivery_requires_review",
+                        content=f"{source.name}-digest-content",
+                        created_at=datetime.now(timezone.utc) + timedelta(seconds=1),
+                    )
+                )
                 for offset in range(4):
                     task = await AgentTask.objects.create(
                         tenant_id=tenant_id,
                         name=f"{source.name}-task-{offset}",
                         job_type="collect",
                         cron_expr="0 9 * * *",
-                        is_active=False,
+                        is_active=True,
+                        next_run_at=next_run,
                     )
                     tasks.append(task)
+                paused = await AgentTask.objects.create(
+                    tenant_id=tenant_id,
+                    name=f"{source.name}-paused",
+                    job_type="collect",
+                    cron_expr="0 9 * * *",
+                    is_active=False,
+                    next_run_at=next_run - timedelta(minutes=10),
+                )
+                tasks.append(paused)
+                once = await AgentTask.objects.create(
+                    tenant_id=tenant_id,
+                    name=f"{source.name}-completed-once",
+                    job_type="digest",
+                    cron_expr="@once",
+                    is_active=False,
+                    next_run_at=None,
+                )
+                tasks.append(once)
+                inactive_scenario = await AgentScenario.objects.create(
+                    tenant_id=tenant_id,
+                    name=_name("InactiveScenario"),
+                    is_active=False,
+                )
+                scenarios.append(inactive_scenario)
+                scenario_task = await AgentTask.objects.create(
+                    tenant_id=tenant_id,
+                    name=f"{source.name}-inactive-scenario",
+                    job_type="digest",
+                    cron_expr="0 9 * * *",
+                    is_active=True,
+                    next_run_at=next_run - timedelta(minutes=5),
+                    agent_scenario_id=inactive_scenario.id,
+                )
+                tasks.append(scenario_task)
+                linked_task = await AgentTask.objects.create(
+                    tenant_id=tenant_id,
+                    name=f"{source.name}-inactive-linked-source",
+                    job_type="collect",
+                    cron_expr="0 9 * * *",
+                    is_active=True,
+                    next_run_at=next_run - timedelta(minutes=2),
+                )
+                tasks.append(linked_task)
+                await AgentTaskManager().set_sources(linked_task.id, [inactive_source.id])
         yield users, tenant_ids, sources
     finally:
         with tenant_scope(bypass=True), operator_permission_scope():
             for task in tasks:
                 await AgentTask.objects.delete_by_id(task.id)
+            for scenario in scenarios:
+                await AgentScenario.objects.delete_by_id(scenario.id)
+            for digest in digests:
+                await DigestRun.objects.delete_by_id(digest.id)
             for source in sources:
                 await AIAnalytics.objects.filter(source_id=source.id).delete()
+                await Source.objects.delete_by_id(source.id)
+            for source in inactive_sources:
                 await Source.objects.delete_by_id(source.id)
             for user in users:
                 await User.objects.delete_user(user.id)
@@ -194,6 +272,8 @@ async def test_real_home_role_matrix_and_bounded_private_results(home, level):
         assert sources[0].name in page.text
         assert sources[1].name not in page.text
         assert page.text.count('class="ui-home-result ') == 5
+        assert f"{sources[0].name}-digest-content" in page.text
+        assert "Доставка: Доставлен частично" in page.text
         assert "&lt;script&gt;homeStoredText()&lt;/script&gt;" in page.text
         assert "<script>homeStoredText()</script>" not in page.text
         assert 'data-coverage="incomplete"' in page.text
@@ -201,6 +281,13 @@ async def test_real_home_role_matrix_and_bounded_private_results(home, level):
         assert ("data-home-tasks" in page.text) == has_tasks
         if has_tasks:
             assert page.text.count('class="ui-home-task ') == 3
+            assert "Ближайшие запуски" in page.text
+            assert f"{sources[0].name}-task-0" in page.text
+            assert f"{sources[0].name}-task-3" not in page.text
+            assert f"{sources[0].name}-paused" not in page.text
+            assert f"{sources[0].name}-inactive-scenario" not in page.text
+            assert f"{sources[0].name}-inactive-linked-source" not in page.text
+            assert f"{sources[0].name}-completed-once" not in page.text
         assert "run-now" not in page.text and "data-home-next-step" not in page.text
 
 
@@ -245,8 +332,11 @@ async def test_missing_membership_rights_hides_data_and_skips_home_queries(home,
         assert (await client.get("/app/sources")).status_code == 403
 
 
-@pytest.mark.parametrize("show_sources", [False, True])
-async def test_fixed_workspace_role_presets_bound_home_queries(home, show_sources):
+@pytest.mark.parametrize(
+    "role_code, expected_tasks",
+    [(WorkspaceRoleType.VIEWER.value, 0), (WorkspaceRoleType.MANAGER.value, 3)],
+)
+async def test_fixed_workspace_role_presets_bound_home_queries(home, role_code, expected_tasks):
     user = await actor(home, "viewer")
     membership = (await TenantUserManager().web_memberships(user.id))[0]
     original_role_id = membership.role_id
@@ -258,7 +348,6 @@ async def test_fixed_workspace_role_presets_bound_home_queries(home, show_source
             source_reads.append(True)
 
     try:
-        role_code = WorkspaceRoleType.MANAGER.value if show_sources else WorkspaceRoleType.VIEWER.value
         role = await WorkspaceRole.objects.get(codename=role_code)
         assert role is not None, "Fixed workspace role is seeded"
         await TenantUserManager().update_by_id(membership.id, role_id=role.id)
@@ -270,11 +359,11 @@ async def test_fixed_workspace_role_presets_bound_home_queries(home, show_source
             finally:
                 event.remove(async_engine.sync_engine, "before_cursor_execute", observe_sources)
             assert page.status_code == 200
-            assert page.text.count('class="ui-home-task ') == (3 if show_sources else 0)
-            assert bool(source_reads) is show_sources
-            assert ("Статус расписания неизвестен" in page.text) is (not show_sources)
-            assert ('href="/app/sources' in page.text) is show_sources
-            assert (await client.get("/app/sources")).status_code == (200 if show_sources else 403)
+            assert page.text.count('class="ui-home-task ') == expected_tasks
+            assert source_reads
+            assert "Статус расписаний с источниками неизвестен" not in page.text
+            assert 'href="/app/sources' in page.text
+            assert (await client.get("/app/sources")).status_code == 200
     finally:
         await TenantUserManager().update_by_id(membership.id, role_id=original_role_id)
 
@@ -293,12 +382,13 @@ async def test_empty_owner_home_has_one_permitted_setup_step(home):
     users, _, sources = home
     with tenant_scope(bypass=True), operator_permission_scope():
         await AIAnalytics.objects.filter(source_id=sources[0].id).delete()
+        await DigestRun.objects.filter(tenant_id=sources[0].tenant_id).delete()
         await AgentTask.objects.filter(tenant_id=sources[0].tenant_id).delete()
-        await Source.objects.delete_by_id(sources[0].id)
+        await Source.objects.filter(tenant_id=sources[0].tenant_id).delete()
     async with await _client() as client:
         await _login(client, users[0].username)
         page = await client.get("/app/")
         assert page.status_code == 200
-        assert "Результатов анализа пока нет" in page.text
+        assert "Результатов пока нет" in page.text
         assert page.text.count("data-home-next-step") == 1
         assert "Подключите первый источник" in page.text

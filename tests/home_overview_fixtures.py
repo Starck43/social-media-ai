@@ -40,7 +40,7 @@ nav_data = [
 ]
 base = {
     "tenant": {"id": 7, "name": "Мониторинг рынка"},
-    "user": {"id": 101, "username": "test-member"},
+    "user": SimpleNamespace(id=101, username="test-member", has_admin_access=lambda: False),
     "workspaces": [
         {
             "tenant": {"id": 7, "name": "Мониторинг рынка"},
@@ -81,11 +81,15 @@ base = {
     "recent_results": [
         {
             "id": i,
+            "kind": "analysis",
+            "href": f"/app/analytics/{i}",
             "source_name": "VK · Сообщество бренда",
             "created_at": "сегодня, 10:30",
             "title": title,
             "summary": "Обсуждение новых предложений и обратная связь покупателей. В результате выделены основные темы и вопросы, требующие внимания.",
             "analysis_incomplete": i == 1,
+            "period_label": None,
+            "delivery_status": None,
         }
         for i, title in enumerate(
             [
@@ -100,6 +104,7 @@ base = {
             "id": 1,
             "name": "Ежедневный обзор конкурентов",
             "next_run_at": "завтра, 09:00",
+            "is_due": False,
             "last_status": None,
             "tenant": {"name": "Мониторинг рынка"},
         },
@@ -107,6 +112,7 @@ base = {
             "id": 2,
             "name": "Сбор упоминаний бренда",
             "next_run_at": "сегодня, 18:00",
+            "is_due": False,
             "last_status": "failed",
             "tenant": {"name": "Мониторинг рынка"},
         },
@@ -114,11 +120,13 @@ base = {
             "id": 3,
             "name": "Разовый анализ кампании",
             "next_run_at": None,
+            "is_due": False,
             "last_status": None,
             "tenant": {"name": "Мониторинг рынка"},
         },
     ],
     "effective_active": {1, 2},
+    "source_schedule_status_unknown": False,
     "_tz": "Europe/Moscow",
     "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
     "perms": SimpleNamespace(can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="owner"),
@@ -149,11 +157,15 @@ states = {
         "recent_results": [
             {
                 "id": 1,
+                "kind": "analysis",
+                "href": "/app/analytics/1",
                 "source_name": "ИсточникБезПробелов" * 12,
                 "created_at": "сегодня, 10:30",
                 "title": "ЗаголовокБезПробелов" * 14,
                 "summary": "ДлинноеСодержимоеБезПробелов" * 14,
                 "analysis_incomplete": True,
+                "period_label": None,
+                "delivery_status": None,
             }
         ],
         "recent_tasks": [
@@ -161,6 +173,7 @@ states = {
                 "id": 1,
                 "name": "НазваниеЗадачиБезПробелов" * 12,
                 "next_run_at": None,
+                "is_due": False,
                 "last_status": "failed",
                 "tenant": {"name": "ПространствоБезПробелов" * 9},
             }

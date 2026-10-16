@@ -138,6 +138,7 @@ class AIAnalyzer:
         agent_scenario=None,
         trigger_config=None,
         task_payload: Optional[dict[str, Any]] = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content as theme clusters; report grouping is a read-path concern.
@@ -161,6 +162,7 @@ class AIAnalyzer:
             agent_scenario=agent_scenario,
             trigger_config=trigger_config,
             task_payload=task_payload,
+            billing_execution=billing_execution,
         )
 
     async def base_analyze_content(
@@ -175,6 +177,7 @@ class AIAnalyzer:
         agent_scenario: Optional["AgentScenario"] = None,
         trigger_config: Optional[dict[str, Any]] = None,
         task_payload: Optional[dict[str, Any]] = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[AIAnalytics]:
         """
         Comprehensive analysis of collected content using multiple LLM providers.
@@ -205,6 +208,8 @@ class AIAnalyzer:
         if not content:
             logger.warning(f"No content to analyze for source {source.id}")
             return None
+
+        billing_execution = {"source_id": source.id, **(billing_execution or {})}
 
         # Dedup before anything expensive: items already covered by an earlier
         # analysis must never reach the LLM again (fail-open, see dedup.py).
@@ -268,6 +273,7 @@ class AIAnalyzer:
                     trigger_config,
                     task_payload,
                     output_contract=output_contract,
+                    billing_execution=billing_execution,
                 )
                 if self._record_result_error(text_result):
                     # Preserve request/response usage for existing accounting;
@@ -281,6 +287,7 @@ class AIAnalyzer:
                 image_result = await self._analyze_images(
                     classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
                     output_contract=output_contract,
+                    billing_execution=billing_execution,
                 )
                 if self._record_result_error(image_result):
                     # Preserve request/response usage for existing accounting;
@@ -297,6 +304,7 @@ class AIAnalyzer:
                 video_result = await self._analyze_videos(
                     classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
                     output_contract=output_contract,
+                    billing_execution=billing_execution,
                 )
                 if self._record_result_error(video_result):
                     # Preserve request/response usage for existing accounting;
@@ -319,7 +327,9 @@ class AIAnalyzer:
                 return None
 
             # Create unified summary if multiple analyses
-            unified_summary = await self._create_unified_summary(analysis_results, agent_scenario)
+            unified_summary = await self._create_unified_summary(
+                analysis_results, agent_scenario, billing_execution=billing_execution
+            )
             if self._record_result_error(unified_summary):
                 unified_summary = {**unified_summary, "parsed": {}}
 
@@ -400,6 +410,9 @@ class AIAnalyzer:
             return analysis
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=base error_kind=%s", _analysis_error_kind(e))
             return None
@@ -412,6 +425,7 @@ class AIAnalyzer:
         agent_scenario: "AgentScenario" = None,
         trigger_config: "dict | None" = None,
         task_payload: "dict | None" = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> list[AIAnalytics]:
         """
         Analyze content with automatic theme detection and linking.
@@ -436,6 +450,7 @@ class AIAnalyzer:
             agent_scenario=agent_scenario,
             trigger_config=trigger_config,
             task_payload=task_payload,
+            billing_execution=billing_execution,
         )
         if not analysis:
             return []
@@ -518,6 +533,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze text content using text LLM provider."""
         try:
@@ -559,6 +575,9 @@ class AIAnalyzer:
             pydantic_model = output_contract.model if output_contract is not None else None
             if output_contract is not None:
                 prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(output_contract.schema, ensure_ascii=False)
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "text_analysis"
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
             result = self._validate_stage_result(result, output_contract)
 
@@ -577,6 +596,9 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=text error_kind=%s", _analysis_error_kind(e))
             return None
@@ -605,6 +627,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze images using image LLM provider."""
         try:
@@ -636,6 +659,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "image_analysis"
             pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
             result = self._validate_stage_result(result, output_contract)
@@ -651,6 +677,9 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=image error_kind=%s", _analysis_error_kind(e))
             return None
@@ -664,6 +693,7 @@ class AIAnalyzer:
         task_payload: Optional[dict[str, Any]] = None,
         *,
         output_contract: ScenarioOutputContract | None = None,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Analyze videos using video LLM provider."""
         try:
@@ -695,6 +725,9 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {"media_urls": media_urls}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "video_analysis"
             pydantic_model = output_contract.model if output_contract is not None else None
             result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
             result = self._validate_stage_result(result, output_contract)
@@ -710,12 +743,19 @@ class AIAnalyzer:
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=video error_kind=%s", _analysis_error_kind(e))
             return None
 
     async def _create_unified_summary(
-        self, analysis_results: dict[str, Any], agent_scenario: Optional[AgentScenario]
+        self,
+        analysis_results: dict[str, Any],
+        agent_scenario: Optional[AgentScenario],
+        *,
+        billing_execution: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """
         Create unified summary from multiple analysis results.
@@ -749,12 +789,18 @@ class AIAnalyzer:
             kwargs: dict[str, Any] = {}
             if agent_scenario and agent_scenario.max_tokens:
                 kwargs["max_tokens"] = agent_scenario.max_tokens
+            if billing_execution is not None:
+                kwargs["personal_billing_execution"] = billing_execution
+                kwargs["personal_billing_stage"] = "unified_summary"
             result = await client.analyze(prompt, **kwargs)
 
             logger.info("Unified summary created successfully")
             return result
 
         except Exception as e:
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=summary error_kind=%s", _analysis_error_kind(e))
             return None

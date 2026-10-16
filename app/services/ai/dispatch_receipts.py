@@ -58,9 +58,10 @@ def _preparation_time(value: Any) -> datetime:
 
 def validate_receipt(record: Mapping[str, Any]) -> dict[str, Any]:
     """Validate a fixed, prompt-free record without mutating its caller."""
-    if set(record) != set(RECEIPT_FIELDS):
+    if set(record) not in (set(RECEIPT_FIELDS), set(RECEIPT_FIELDS) | {"initiated_by_user_id"}):
         raise ValueError("Receipt fields do not match the storage contract")
     value = dict(record)
+    value.setdefault("initiated_by_user_id", None)
     if type(value["dispatch_id"]) is not str or not re.fullmatch(r"[0-9a-f]{32}", value["dispatch_id"]):
         raise ValueError("Invalid receipt identity")
     for field in ("tenant_id", "llm_model_row_id", "llm_provider_row_id"):
@@ -69,6 +70,10 @@ def validate_receipt(record: Mapping[str, Any]) -> dict[str, Any]:
     for field in EXECUTION_FIELDS:
         if value[field] is not None and not _positive_id(value[field]):
             raise ValueError("Invalid receipt execution reference")
+    if "initiated_by_user_id" in value and value["initiated_by_user_id"] is not None and not _positive_id(
+        value["initiated_by_user_id"]
+    ):
+        raise ValueError("Invalid receipt initiating user reference")
     for field in ("purpose", "stage"):
         if type(value[field]) is not str or not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", value[field]):
             raise ValueError("Invalid receipt purpose or stage")
@@ -108,7 +113,7 @@ def build_dispatch_receipt(
     estimates are retained here.
     """
     execution = dict(execution or {})
-    if set(execution) - set(EXECUTION_FIELDS):
+    if set(execution) - set(EXECUTION_FIELDS) - {"initiated_by_user_id"}:
         raise ValueError("Unsupported receipt execution fields")
     prepared_at = _preparation_time(prepared_at)
     provider = model.provider
@@ -130,6 +135,7 @@ def build_dispatch_receipt(
         "tariff_state": _tariff_state(input_rate, output_rate),
         "pricing_policy_version": PRICING_POLICY_VERSION,
         **{field: execution.get(field) for field in EXECUTION_FIELDS},
+        "initiated_by_user_id": execution.get("initiated_by_user_id"),
     }
     return validate_receipt(record)
 

@@ -51,6 +51,18 @@ Attention feed lives in the floating bell (B), not a home card.
   owner: unassigned; status: TODO — evidence:
   [PR #175 visual report](https://github.com/Starck43/social-media-ai/pull/175#issuecomment-6152533703)
 
+- [ ] P8-T06 — truthful analysis progress in the source detail "Последние
+  анализы" table and task "Выполнить сейчас" modal; accept: identify
+  authoritative persisted progress/state and its data limitations; UI shows a
+  simple running/stopped state and percentage of raw data processed to ordinary
+  users, handling unknown/stale/failed states honestly; additional privacy-safe
+  failure diagnostics exposed only to administrator/superuser; both requested
+  views updated; workspace authorization preserved; focused checks assigned
+  separately through test-runner; no unrelated UI overhaul; depends: none;
+  owns: source detail/task modal incl. progress + diagnostics; owner:
+  codex-analysis-progress; status: IN_PROGRESS — evidence: branch
+  `feat/analysis-progress`, planned PR pending (implementation not started)
+
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only
 when their contracts exist — no fake rows or Soon cards. NULL-role membership

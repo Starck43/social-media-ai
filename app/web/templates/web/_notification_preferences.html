@@ -1,18 +1,18 @@
-<section x-data="notificationPreferences({{ user.id|default(none)|tojson|forceescape }})" class="space-y-3" aria-label="Личные настройки показа уведомлений">
-    <p class="text-sm ui-muted">Только для вашего пользователя в этом браузере, без синхронизации между устройствами. Настройки не меняют права, сообщения и уведомления других участников.</p>
-    <fieldset class="space-y-2">
-        <legend class="text-sm font-semibold">Показывать в колокольчике</legend>
+<section x-data="notificationPreferences({{ user.id|default(none)|tojson|forceescape }}, {{ csrf|tojson|forceescape }})" class="space-y-3" aria-label="Личные настройки показа уведомлений">
+    <p class="text-sm ui-muted">Личные настройки синхронизируются между устройствами. Они не меняют права, сообщения и уведомления других участников.</p>
+    <fieldset class="space-y-3" :disabled="loading || saving">
+        <legend class="text-sm font-semibold">Показ в колокольчике</legend>
         <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.connections"> Мои подключения</label>
         <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.tasks"> Разрешённые ошибки задач</label>
         <p class="text-xs ui-muted">Сообщения пространства всегда доступны. Скрыть проблему ≠ устранить её. Прочтение сообщения явно подтверждается кнопкой и остаётся общим для пространства.</p>
+        <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.popup"> Подсказка о новых уведомлениях без открытия диалога</label>
+        <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.quiet"> Тихие часы для подсказки</label>
+        <div x-show="value.quiet" class="flex flex-wrap gap-3">
+            <label class="text-sm">Начало <input type="time" x-model="value.start" class="ui-control" required></label>
+            <label class="text-sm">Конец <input type="time" x-model="value.end" class="ui-control" required></label>
+        </div>
+        <p class="text-xs ui-muted">Часы по местному времени устройства. Подсказка выключена по умолчанию; тихие часы не скрывают колокольчик и не отмечают сообщения прочитанными.</p>
     </fieldset>
-    <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.popup"> Подсказка о новых уведомлениях без открытия диалога</label>
-    <label class="flex min-h-[44px] items-center gap-2"><input type="checkbox" x-model="value.quiet"> Тихие часы для подсказки</label>
-    <div x-show="value.quiet" class="flex flex-wrap gap-3">
-        <label class="text-sm">Начало <input type="time" x-model="value.start" class="ui-control" required></label>
-        <label class="text-sm">Конец <input type="time" x-model="value.end" class="ui-control" required></label>
-    </div>
-    <p class="text-xs ui-muted">Часы по времени устройства. Подсказка выключена по умолчанию; тихие часы не скрывают колокольчик и не отмечают сообщения прочитанными.</p>
-    <div class="flex flex-wrap gap-2"><button type="button" @click="save()" class="ui-control">Сохранить показ</button><button type="button" @click="restore()" class="ui-control">Восстановить показ</button></div>
+    <div class="flex flex-wrap gap-2"><button type="button" @click="save()" :disabled="loading || saving" class="ui-control">Сохранить показ</button><button type="button" @click="restore()" :disabled="loading || saving" class="ui-control">Восстановить показ</button><button type="button" @click="importLocal()" :disabled="loading || saving" class="ui-control">Импортировать настройки из этого браузера</button><button type="button" @click="load()" x-show="message.includes('Не удалось загрузить')" :disabled="loading || saving" class="ui-control">Повторить загрузку</button></div>
     <p x-text="message" role="status" class="text-sm"></p>
 </section>

@@ -1,9 +1,10 @@
 # Data Model Reference
 
-Reconciled on 2026-10-15 against source `dev`
-`edbe0fc02e6ea2d78302129e51febfa0e87464ab` (the task reservation commit
-`916d2e18eeafdd86d4857587638b73a24bcd0891` changes only the ownership board).
-The source-declared Alembic head is **0096**. This reference describes ORM and
+This combined code-review candidate is based on `dev`
+`92d6e2e4372212b940e4fad953998fe33ee2fe5a`, admin UI source
+`41875179261341ae823b1d37f7b0b61e3d260b76` and billing/preferences source
+`143dfae7bb52974f129818394b63a625fd799da4`. It is not merged or deployed.
+The source-declared Alembic head is **0103**. This reference describes ORM and
 migration definitions, not the revision or integrity of a running database.
 No application import, database inspection or migration was run for this update.
 Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
@@ -29,7 +30,7 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **31 mapped tables and 3 association tables**:
+The source defines **44 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
@@ -39,8 +40,26 @@ The source defines **31 mapped tables and 3 association tables**:
 | Analysis | `agent_scenarios`, `ai_analytics` | — |
 | LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
 | Scheduling | `agent_tasks`, `jobs`, `bot_actions` | `agent_task_sources` |
-| Notifications | `notifications`, `digest_runs` | — |
+| Notifications | `notifications`, `digest_runs`, `notification_preferences` | — |
 | Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
+
+The 12 additional billing tables are declared in [billing](../app/models/billing/):
+`personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`,
+`personal_billing_cutovers`, `personal_legacy_attribution_consents`,
+`personal_legacy_attributions`, `personal_llm_billing_incidents`,
+`personal_llm_bound_policies`, `personal_llm_budget_days`,
+`personal_llm_ledger_entries`, `personal_llm_reservation_states` and
+`personal_llm_reservations`. They are part of the 44 mapped tables above, not
+additional associations. Personal account identity is independent of workspace
+membership; task payer changes require explicit consent. Reviewed daily
+baselines, bound policies, reservations and immutable ledger settlement are
+separate from legacy analytics projections. Their owning P2 tasks remain open;
+this candidate does not accept billing cutover or provision a target schema.
+
+[NotificationPreference](../app/models/notifications/notification_preference.py)
+stores per-user bell presentation settings, optimistic version and quiet hours;
+its user FK cascades on deletion. Preference persistence is not notification
+acknowledgement, recipient permission or messenger delivery.
 
 ## Base classes and isolation boundaries
 
@@ -108,6 +127,13 @@ are stated in their own section.
 | `is_active`, `is_default` | Boolean defaults true/false |
 
 Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
+
+The SQLAdmin model editor exposes configuration fields only; cost/usage/history
+telemetry is read-only in details. The short model check is the shared local
+`probe_short()` service used by web settings and admin, not a provider-health or
+accounting acceptance test. See [admin testing modes and price display](ADMIN.md#llm-testing-and-prices)
+for the separate short/mock/explicit paid-probe contracts. This changes no ORM
+columns or migrations.
 
 ## Workspace and personal credential tables
 
@@ -467,13 +493,23 @@ Selected milestones, not a complete replay audit:
 | 0093 | Immutable preparation receipts and mutation guards |
 | 0094 | Immutable receipt-bound outcome observations and binding guards |
 | 0095 | Payer/day balances, immutable reservations and receipt-binding guards |
-| **0096** | Separate platform/workspace role catalogs; resource keys and derived permission codenames; membership AI flag; personal memory ownership/indexes |
+| 0096 | Separate platform/workspace role catalogs; resource keys and derived permission codenames; membership AI flag; personal memory ownership/indexes |
 
-Static inspection of `revision` / `down_revision` in the checked-in migration
-files gives the single source head **0096**, with recent chain
-0091 → 0092 → 0093 → 0094 → 0095 → 0096. This is not `alembic current`, an
-`alembic check`, a replay rehearsal or target-schema acceptance. The previous
-0091/27-table reconciliation was historical, not the current schema inventory.
+| 0097 | Personal account identity and fixed task payer consent |
+| 0098 | Durable per-user notification preferences |
+| 0099 | Personal dispatch, bound policies, reservations and settlement ledger |
+| 0100 | Reviewed legacy billing attribution and consent |
+| 0101 | Manual job initiator identity |
+| 0102 | Reservation validator with unambiguous local names |
+| **0103** | Platform task initiator guard correction |
+
+Static inspection of all checked-in `revision` / `down_revision` declarations,
+including tuple merge parents, gives the single source head **0103**, with chain
+0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103. The 0096/31-table
+inventory belongs to the earlier admin documentation audit, not this candidate.
+This is not `alembic current`, an `alembic check`, a replay rehearsal or
+target-schema acceptance. Migrations are carried unchanged from the billing
+source lane; no migration application or schema repair is authorized here.
 
 Before running this ORM against any target, verify its actual revision and
 catalog compatibility under the project's approval rules. Existing owner-local

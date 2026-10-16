@@ -10,11 +10,16 @@ workspace web application and not an editor for every ORM table.
   on 2026-10-15; reservation commit `916d2e18eeafdd86d4857587638b73a24bcd0891`
   changes only the ownership board.
 
-This is a source reference. No application startup, SQLAdmin/ASGI/browser test,
-database inspection, migration, provider call or messenger send was performed
-for this documentation update. Registered configuration is not proof that every
-legacy page currently renders; known source/configuration mismatches are listed
-below. See [MODELS](MODELS.md) for ORM definitions and
+This is a source reference, not proof of deployment or whole-console acceptance.
+The baseline above records the original documentation-only audit. The LLM model
+section was subsequently revised with the shared short-check/admin UI change
+and then combined with the personal-billing lane for code review only:
+its evidence is isolated source/mocked-handler tests, real SQLAdmin form
+scaffolding against canonical ORM metadata (no database), and offline template
+browser fixtures. Evidence from either source lane is not acceptance of the combined candidate.
+No real application startup, database inspection, migration,
+provider call or messenger send was performed remotely. Other legacy page
+mismatches remain listed below. See [MODELS](MODELS.md) for ORM definitions and
 [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) for attributed prior acceptance.
 
 ## Authentication and platform authority
@@ -100,7 +105,7 @@ business-workflow execution.
 | `JobAdmin` | `Job` | `/admin/job/list` | Read-only queue inspection: create/edit/delete/export disabled |
 | `NotificationAdmin` | `Notification` | `/admin/notification/list` | Shared workspace read state; guarded hidden send action |
 | `LLMProviderAdmin` | `LLMProvider` | `/admin/llm-provider/list` | Global provider/key configuration and connection test |
-| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Global model configuration and mock/real test |
+| `LLMModelAdmin` | `LLMModel` | `/admin/llm-model/list` | Global model configuration and short/mock/real checks |
 | `TenantAdmin` | `Tenant` | `/admin/tenant/list` | Global workspace settings; platform-admin-only visibility |
 | `UserCredentialAdmin` | `UserCredential` | `/admin/user-credential/list` | Personal credential vault rows, not workspace-owned credentials |
 
@@ -128,7 +133,7 @@ required model right are shown separately from implementation behavior.
 | `NotificationAdmin` / `mark-read` | UPDATE | List + detail | Sets selected rows' shared `is_read`; not personal acknowledgement or issue resolution |
 | `NotificationAdmin` / `send-to-messenger` | UPDATE | Hidden in list + detail | Endpoint remains registered; first selected notification requires explicit `recipient_id` for an active owned workspace binding |
 | `LLMProviderAdmin` / `test-connection` | CONFIGURE | List + detail | Uses the first active model found for that provider; real `client.analyze()` call with a fixed short prompt and `max_tokens=10` |
-| `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Opens status/test UI; mock is local, real mode is the capped probe described below |
+| `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Read-only GET opens the UI; POST checks fresh CONFIGURE, CSRF and real-call consent |
 
 `PlatformAdmin` declares no custom action; there is no implemented or placeholder
 sync button in the current class. `JobAdmin` has no run/cancel/retry button.
@@ -155,25 +160,51 @@ runtime contracts, not permission grants or a new business-workflow model.
 [Action implementation](../app/admin/actions.py),
 [capped probe](../app/services/ai/model_probe.py).
 
-- Opening the model action without `prompt` displays local configuration/history
-  checks. It does not prove provider reachability.
-- With a prompt, `test_type` defaults to `mock`. The mock path constructs a
-  request and canned response locally, with simulated token usage; no provider
-  traffic or actual paid usage is implied.
-- `test_type=real` requires local status checks, then uses the fixed one-word
-  probe prompt, `max_tokens=8`, temperature 0 and a 20-second timeout. It does
-  **not** send the user's free-form prompt. The helper currently posts to an
-  OpenAI-shaped `/chat/completions` endpoint; this is not proof that all configured
-  Anthropic/custom formats or multimodal capabilities are validated.
-- On a successful real probe with reported tokens, the action updates
-  `last_request_cost` / `last_request_cost_at` using configured USD-per-1K rates.
-  It does not rewrite model tariff fields from generated text or a response;
-  `price_updated` stays false. This display estimate is not journal completeness,
-  settled spend or concurrency-safe budget enforcement.
+- Opening `test-model` is read-only, even if a legacy URL carries `prompt` or
+  `test_type=real`. Select exactly one model. No GET performs a model probe.
+- The page has three explicit POST modes at `/admin/llm-model/test`. The route
+  checks fresh platform `llmmodel.CONFIGURE` rights and a signed CSRF token
+  before lookup/dispatch. Real mode also requires `confirm_real=yes` for that
+  submission. Hiding a button is not the permission boundary.
+- **Short check** (`test_type=short`) needs no question. It calls the same
+  `probe_short()` service as `/app/settings`: local configuration/history status
+  followed by canned mock data. No provider call, tokens or hidden paid fallback;
+  success is not proof that the remote model answers. Local failure remains failure.
+- **Mock** (`test_type=mock`) requires a question (up to 8000 characters); it returns
+  a canned local response and simulated usage, not actual paid tokens. The page
+  does not accept image uploads or claim multimodal validation.
+- **Real probe** (`test_type=real`) also requires enabled personal billing,
+  an active platform administrator and an explicitly selected active execution
+  workspace. The initiating administrator is the personal payer; a submitted
+  payer ID is never trusted. The personal admission service must authorize the
+  account, daily baseline, cap and model bound before transport. Disabling
+  billing refuses paid probes, never falls back to unaccounted HTTP.
+- Local status checks and `api_format=openai` are required. The selected client
+  receives the fixed one-word prompt, `max_tokens=8`, temperature 0 and a
+  20-second transport timeout; the mock question is not forwarded. Timeout is
+  not a provider JSON field. Anthropic/custom and multimodal validation remain
+  out of scope. The retired `/admin/llm-model/test-real` route never dispatches;
+  an authenticated administrator with valid CSRF receives 410, not a replay.
+- A successful real response with valid, reported input/output tokens allows an
+  estimate from configured USD-per-1K rates and an update of `last_request_cost`
+  / `last_request_cost_at`. Missing/invalid raw provider usage stays **unknown**, not zero, even if the
+  compatibility chat response synthesizes numeric zeros.
+  If saving fails, the answer remains visible with a warning; never automatically
+  repeat a paid call. Model tariffs are never rewritten from generated text.
+  This estimate is not journal completeness, settled spend or budget admission.
+- The list and detail views preserve tiny tariff values instead of rounding
+  them to `$0.0000`. The create/edit field allowlist excludes usage/cost/history
+  telemetry; those fields remain visible read-only in details. Capability choices,
+  provider selection and default-model rules keep their existing contracts.
+- The responsive testing page uses `/app` theme tokens with light/dark/system
+  themes, explicit labels, keyboard focus, 44px action targets and a common
+  escaped result panel. Offline fixture coverage does not replace owner-local
+  route, session, permission/revocation or PostgreSQL acceptance.
 - Provider `test-connection` is a separate real analyze path, not the model
-  probe's local/mock/8-token ladder. Admin probes still need an explicit operator
-  payer/accounting decision; do not infer journal capture or admission from a
-  successful connection test. See [accounting scope](IMPLEMENTATION_STATUS.md).
+  probe's local/mock/8-token ladder. Provider probes still need explicit
+  review of their distinct payer/accounting path; do not infer that this model
+  probe candidate accepts provider connection testing or the broader P2 cutover.
+  See [accounting scope](IMPLEMENTATION_STATUS.md).
 
 Only `LLMModel` has `is_default`; providers do not. Model capability/default
 selection and encrypted key access are described in [MODELS](MODELS.md).
@@ -234,7 +265,7 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
 - `LOGIN_TIMEOUT_MINUTES` is the legacy lockout interval, not session lifetime.
   Login counters are cookie-local; ordinary wrong-password returns do not call
   `track_login_attempt()`. A shared cross-surface throttle is still open work.
-- Login and password-change handlers explicitly verify `csrf_token`. The current
+- Login, password-change and the model-test POST handlers explicitly verify `csrf_token`. The current
   `CSRFTokenManager` constructor defaults to **30 minutes** and a signed timed
   payload. Setup passes only `secret_key`; the similarly named
   `SCRF_TOKEN_EXPIRY_MINUTES` / `SCRF_TOKEN_LENGTH` settings are not wired there.
@@ -245,7 +276,7 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
   Full SQLAdmin CRUD/action CSRF coverage was not verified by this source audit.
 - Console model rights do not replace tenant, recipient, provider-accounting,
   external-write approval or runtime safety contracts. No live action is needed
-  to verify this documentation patch.
+  to verify these local UI contracts.
 
 ### Known view/ORM configuration drift
 
@@ -259,8 +290,7 @@ reference must not describe them as working schema fields:
   no such mapped column/property. The permission catalog is otherwise read-only.
 
 These are source observations, not a claim that startup or a particular rendered
-page was reproduced. Fixing runtime/view code is separate from this docs-only
-package. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains
+page was reproduced. These unrelated runtime/view fixes are outside the LLM model-test change. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains
 outside the checks performed here; prior C/D limits stay in the delivered index.
 
 ## Templates and module map
@@ -284,8 +314,8 @@ independent template environment or URL safety.
 | `app/admin/auth.py` | Login/logout and fresh platform entry |
 | `app/admin/authorization.py` | Per-request grants, lazy identity/action catalog and external-route guard |
 | `app/admin/base.py`, `formatters.py`, `widgets.py` | Shared view configuration, display formatting and form widgets |
-| `app/admin/actions.py` | LLM model status/mock/real action rendering |
-| `app/admin/endpoints.py` | Password and dashboard FastAPI routes |
+| `app/admin/actions.py` | LLM shared short/mock/real action rendering |
+| `app/admin/endpoints.py` | Password, dashboard and model-test POST routes |
 | `app/admin/csrf.py`, `middleware.py` | Token manager and legacy middleware helpers; registration/coverage limits above |
 
 ## Access schema and rollout

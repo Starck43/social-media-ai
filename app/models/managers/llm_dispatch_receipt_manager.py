@@ -47,6 +47,7 @@ class LLMDispatchReceiptManager(BaseManager):
         from app.services.ai.dispatch_receipts import RECEIPT_FIELDS, validate_receipt
 
         value = validate_receipt(record)
+        legacy_value = {field: value[field] for field in RECEIPT_FIELDS if hasattr(self.model, field)}
         if value["tenant_id"] != tenant_id:
             raise TenantContextError("Dispatch receipt payer differs from the trusted scope")
         guard_result = await session.execute(
@@ -74,7 +75,7 @@ class LLMDispatchReceiptManager(BaseManager):
             raise ReceiptStorageUnavailable("Receipt immutability guards are not installed")
         statement = (
             insert(self.model.__table__)
-            .values(**value)
+            .values(**legacy_value)
             .on_conflict_do_nothing(constraint="uq_llm_dispatch_receipts_identity")
             .returning(self.model.id)
         )
@@ -83,7 +84,7 @@ class LLMDispatchReceiptManager(BaseManager):
             existing = (
                 (
                     await session.execute(
-                        select(*(getattr(self.model, field) for field in RECEIPT_FIELDS)).where(
+                            select(*(getattr(self.model, field) for field in RECEIPT_FIELDS if hasattr(self.model, field))).where(
                             self.model.dispatch_id == value["dispatch_id"],
                             self.model.tenant_id == tenant_id,
                         )
@@ -92,6 +93,6 @@ class LLMDispatchReceiptManager(BaseManager):
                 .mappings()
                 .one_or_none()
             )
-            if existing is None or any(existing[field] != value[field] for field in RECEIPT_FIELDS):
+            if existing is None or any(existing[field] != legacy_value[field] for field in legacy_value):
                 raise ReceiptEvidenceConflict("Receipt identity conflicts with stored evidence")
         return created

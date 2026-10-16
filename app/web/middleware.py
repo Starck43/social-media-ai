@@ -38,6 +38,14 @@ from .perms import WebPerms
 PUBLIC_PATHS = frozenset({"/app/login", "/app/register"})
 # Pages reachable while logged in but without any workspace membership.
 NO_WORKSPACE_PATHS = frozenset({"/app/invite", "/app/workspaces/new", "/app/logout"})
+PERSONAL_ACCOUNT_PATHS = frozenset(
+    {
+        "/app/notifications/preferences",
+        "/app/notifications/preferences/reset",
+        "/app/billing/account",
+        "/app/billing/account/daily-limit",
+    }
+)
 
 
 class TenantUIMiddleware:
@@ -78,6 +86,7 @@ class TenantUIMiddleware:
             user is not None
             and not memberships
             and path not in NO_WORKSPACE_PATHS
+            and path not in PERSONAL_ACCOUNT_PATHS
             and not (request.method in ("GET", "HEAD") and path in ("/app/settings", "/app/settings/"))
         ):
             await self._redirect(scope, receive, send, "/app/invite")
@@ -144,6 +153,8 @@ class TenantUIMiddleware:
         answers with its own message. Hiding the nav item is not the check.
         """
         if request.method not in ("GET", "HEAD") or getattr(request.state, "web_user", None) is None:
+            return None
+        if path in PERSONAL_ACCOUNT_PATHS:
             return None
         item = section_of(path)
         if item is None or allows(item, getattr(request.state, "web_perms", None)):

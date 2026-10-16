@@ -449,13 +449,7 @@ async def agent_model_probe(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Verify the currently selected agent chat model with the cheapest tier first.
-
-    Tiers: probe_status (0 tokens, no network) -> probe_mock (0 tokens, canned)
-    -> probe_real_capped (one capped real call, 1-8 tokens). The first passing
-    tier wins; the result is stored in the session and rendered inline in the
-    settings form.
-    """
+    """Run the shared prompt-free local check; never silently call a provider."""
     tenant_id = action_tenant_id(request, tenant_id)
     denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
@@ -465,7 +459,7 @@ async def agent_model_probe(
         return RedirectResponse(BACK, status_code=302)
 
     from app.models.managers.tenant_manager import tenants
-    from app.services.ai.model_probe import probe_mock, probe_real_capped, probe_status
+    from app.services.ai.model_probe import probe_short
 
     if await tenants.get(id=tenant_id) is None:
         add_flash(request, "error", "Пространство не найдено")
@@ -480,53 +474,7 @@ async def agent_model_probe(
         except ValueError:
             model = await LLMModel.objects.select_related("provider").filter(name=agent_model, is_active=True).first()
 
-    # Tier 0: free local verdict, no provider traffic at all.
-    verdict = probe_status(model) if model else {"ok": False, "checks": [], "hint": "Модель не выбрана"}
-    if not verdict["ok"]:
-        result = {
-            "ok": False,
-            "text": verdict["hint"],
-            "tier": "status",
-            "checks": verdict["checks"],
-            "tokens_spent": 0,
-        }
-    else:
-        # Tier 1: canned local answer, zero tokens, zero network.
-        mock = probe_mock(model, "Проверь маршрут, парсинг и учёт стоимости")
-        if mock.get("ok", True):
-            result = {
-                "ok": True,
-                "text": "Статус OK, мок-проверка пройдена локально. Модель отвечает корректно без сетевого вызова.",
-                "tier": "mock",
-                "checks": verdict["checks"] + mock.get("checks", []),
-                "tokens_spent": 0,
-                "content": mock.get("content", ""),
-                "usage": mock.get("usage", {}),
-                "cost": mock.get("cost", 0.0),
-            }
-        else:
-            # Tier 2: one minimal real provider call, capped cost.
-            real = await probe_real_capped(model)
-            if real.get("ok"):
-                result = {
-                    "ok": True,
-                    "text": "Всё ок: статус OK, мок OK, реальный вызов пройден.",
-                    "tier": "real",
-                    "checks": verdict["checks"] + real.get("checks", []),
-                    "tokens_spent": real.get("tokens_spent", 0),
-                    "content": real.get("content", ""),
-                    "usage": real.get("usage", {}),
-                    "cost": real.get("cost", 0.0),
-                }
-            else:
-                result = {
-                    "ok": False,
-                    "text": real.get("error", "Проверка не прошла"),
-                    "tier": "real",
-                    "checks": verdict["checks"],
-                    "tokens_spent": real.get("tokens_spent", 0),
-                    "error": real.get("error", ""),
-                }
+    result = probe_short(model)
 
     # Save probe result in session and redirect back to the settings page so
     # the template shows it from `context["probe_result"]`.

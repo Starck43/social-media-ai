@@ -199,7 +199,9 @@ async def run_task(
     from app.jobs.source_activity import SourceJobBusy
 
     try:
-        job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+        job = await enqueue_task_run(
+            task, extra_payload={"_one_off": True}, initiated_by_user_id=getattr(_user, "id", None)
+        )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
     outcome = await run_job_now(job.id, allow_retry=False) or {}
@@ -247,7 +249,9 @@ async def run_task_oneoff(
     from app.jobs.source_activity import SourceJobBusy
 
     try:
-        job = await enqueue_task_run(task, extra_payload={"_one_off": True})
+        job = await enqueue_task_run(
+            task, extra_payload={"_one_off": True}, initiated_by_user_id=getattr(_user, "id", None)
+        )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
     outcome = await run_job_now(job.id, allow_retry=False) or {}

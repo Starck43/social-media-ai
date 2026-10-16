@@ -232,7 +232,12 @@ async def test_personal_connections_always_use_caller_id_metadata_only(gateway, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "tab,allowed",
-    [("account", set()), ("team", {"members", "users"}), ("agent", {"models", "channels", "members"}), ("channels", {"channels"})],
+    [
+        ("account", set()),
+        ("team", {"members", "users"}),
+        ("agent", {"models", "channels", "members"}),
+        ("channels", {"channels"}),
+    ],
 )
 async def test_manager_selected_tab_only(gateway, tab, allowed):
     ns, calls = gateway
@@ -317,7 +322,7 @@ def test_old_bookmarks_keep_semantics():
     assert ns["_tab_of"](request("account")) == "account"
 
 
-def test_no_workspace_exception_is_read_only_exact_settings_page():
+def test_no_workspace_exception_is_limited_to_personal_account_and_settings_read():
     tree = ast.parse((ROOT / "app/web/middleware.py").read_text())
     condition = next(
         n.test
@@ -330,6 +335,10 @@ def test_no_workspace_exception_is_read_only_exact_settings_page():
     for method, path, redirect in [
         ("GET", "/app/settings", False),
         ("HEAD", "/app/settings/", False),
+        ("GET", "/app/billing/account", False),
+        ("POST", "/app/billing/account", False),
+        ("POST", "/app/billing/account/daily-limit", False),
+        ("POST", "/app/billing/tasks/7/payer", True),
         ("POST", "/app/settings/workspace", True),
         ("GET", "/app/settings/invites", True),
         ("GET", "/app/tasks", True),
@@ -343,7 +352,13 @@ def test_no_workspace_exception_is_read_only_exact_settings_page():
                         "memberships": [],
                         "path": path,
                         "request": NS(method=method),
-                        "NO_WORKSPACE_PATHS": set(),
+                        "NO_WORKSPACE_PATHS": {"/app/invite", "/app/workspaces/new", "/app/logout"},
+                        "PERSONAL_ACCOUNT_PATHS": {
+                            "/app/notifications/preferences",
+                            "/app/notifications/preferences/reset",
+                            "/app/billing/account",
+                            "/app/billing/account/daily-limit",
+                        },
                     },
                 )
             )

@@ -1,12 +1,11 @@
 from sqlalchemy import select
-from sqlalchemy.orm.clsregistry import ClsRegistryToken
 
 from app.models import Base, ModelType, Permission
 from app.types import ActionType
 from app.utils.permission import generate_permission_codename
 
 
-def get_model(tablename: str) -> type | ClsRegistryToken:
+def get_model(tablename: str) -> type:
     """
     Получить класс модели по имени таблицы.
     """
@@ -17,7 +16,7 @@ def get_model(tablename: str) -> type | ClsRegistryToken:
     raise ValueError(f"No model found for table '{tablename}'")
 
 
-def get_models() -> list[type | ClsRegistryToken]:
+def get_models() -> list[type]:
     """
     Получить список всех зарегистрированных моделей SQLAlchemy.
     """

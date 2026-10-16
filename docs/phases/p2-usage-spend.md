@@ -51,15 +51,23 @@ background runs; changing payer requires new payer consent.
   explicit per-identity owner consent, no automatic reassignment. Activation
   not included.
 
-- [ ] P2-T04 — atomic idempotent settlement/reconciliation;
+- [x] P2-T04 — atomic idempotent settlement/reconciliation;
   accept: uncertain obligations preserved after ambiguous outcomes;
-  depends: P2-T01, P2-T03; owner: billing-agent; status: IN_PROGRESS —
-  blocked on test_schema state at dev `7e5b4f1`: alembic_version 0103
-  stamped, but migration-0093 receipt immutability guards
-  (`reject_llm_receipt_mutation` triggers) are absent; receipt-backed PG
-  acceptance fails closed with `ReceiptStorageUnavailable`. Schema
-  reconciliation/reset requires owner authorization under R8; no schema
-  action taken by the executor.
+  depends: P2-T01, P2-T03; owner: billing-agent; status: DONE — accepted:
+  coordinator in this session under explicit owner instruction, 2026-10-17,
+  dev `689c6fb` (current workspace HEAD). Owner-authorized test_schema
+  reconciliation applied the migration guard DDL (functions/triggers) from
+  revisions 0093/0094/0095/0097/0099/0100/0102 in place via the documented
+  ACCESS_MIGRATION precedent (one transaction, no version table, current
+  tables retained). PG/ASGI acceptance
+  `tests/test_personal_billing_ledger_db.py` 5/5 PASS at the reconciled
+  schema, covering settle/release/freeze on overshoot, unknown-cost
+  failure + idempotent replay, and trusted operator task initiator
+  (rev 0103 validator). Evidence: `.agents/tmp/test-report.md`;
+  same run earlier passed no-DB 77/77 + post-0103 PG 15/15 on an
+  earlier consistent schema. Uncertain obligations are preserved via
+  incident rows and day freeze; production settlement/verification is
+  deferred to P2-T09. Activation not included.
 
 - [x] P2-T05 — provision UTC daily baselines; accept: reviewed upper bounds
   for paid attempts; depends: P2-T04; owner: billing-agent; status: DONE —

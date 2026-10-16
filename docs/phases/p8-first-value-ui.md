@@ -79,15 +79,29 @@ Attention feed lives in the floating bell (B), not a home card.
     HTML insertion, ordinary-user diagnostics absent, admin counters update;
     browser exit code 2, opened-details preservation not exercised, so not a
     fully passing browser acceptance run.
-  - Safari (user-selected stand) BLOCKED at `25ac852`: SafariDriver 27
-    responds to status but session creation times out connecting to a Safari
-    instance, including an escalated probe and an explicit Safari GUI launch.
-    No Safari page smoke executed; exact remote-automation/OS cause
-    unconfirmed. No browser preferences changed; owned driver and localhost
-    port cleaned. Browser acceptance not claimed; Chromium not substituted for
-    Safari.
-  - Next: verify DB scope against compatible existing test schema/metadata
-    without reset; keep PR Draft pending environment-dependent evidence.
+  - Safari validation PASS at `ca282f79` via native AppleScript and a stable
+    window ID, without SafariDriver or browser preference changes. Primary
+    OpenCode exact QwenPlan/deepseek-v4-flash-0731: 5 passed, 0 failed, 0
+    skipped; no
+    JavaScript errors/unhandled rejections; owned local server/window cleaned,
+    original user tabs preserved. DOM: running 0% pulse → unconfirmed 50% no
+    pulse → done 100%, one live row; login redirect yields safe no-status and
+    no login injection; admin diagnostics stay present and initially open
+    details stays open across 60→70%; ordinary diagnostics absent as 40%
+    running updates. Authenticated source detail: table present, one live row,
+    failed lifecycle with unknown percentage for legacy run; source progress
+    fragment GET 200 text/html with matching state/diagnostic visibility. No
+    source content or credentials logged, no analysis/provider/action calls.
+    Local web-only preview served the PR revision; localhost/app/sources
+    restored from 502 to 302 login and opened in Safari; no worker/runtime/
+    scheduler or schema initialization started. The earlier SafariDriver
+    session-timeout limitation at `25ac852` is historical — resolved for
+    acceptance through AppleScript; Safari browser acceptance now passes,
+    including the previously unverified opened-details preservation.
+  - Next: the sole remaining BLOCKED cause is the separate shared DB
+    acceptance preflight — 13 tables absent from branch metadata. Verify DB
+    scope against compatible existing test schema/metadata without reset; keep
+    PR Draft pending that environment-dependent evidence.
 
 Historical home placeholders (attention block, empty/access states, extension
 points) are covered by merged B/D slices; future kinds enter attention only

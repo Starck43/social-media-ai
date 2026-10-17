@@ -31,40 +31,40 @@
 
     <section class="llm-panel" aria-labelledby="llm-modes-title">
         <h2 id="llm-modes-title">Выберите проверку</h2>
-        <p class="llm-muted">Короткая проверка не требует вопроса. Mock использует локальные тестовые данные. Только реальная проба обращается к API.</p>
+        <p class="llm-muted">Короткая проверка обращается к API без генерации. Mock работает локально. Реальный запрос получает ответ модели.</p>
         <form method="post" action="/admin/llm-model/test" id="llm-test-form">
             <input type="hidden" name="model_id" value="{{ model.id }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="llm-mode-grid">
-                <div class="llm-mode"><span class="llm-step">01 / Локально</span><h3>Короткая проверка</h3>
-                    <p>Статус + mock. Без вопроса, сети и списания токенов. Та же проверка, что в настройках web.</p>
+                <div class="llm-mode"><span class="llm-step">01 / API</span><h3>Короткая проверка</h3>
+                    <p>Авторизованный GET /models, без вопроса и генерации текста. Проверяет доступ к API, но не качество ответа модели.</p>
                     <button class="llm-button llm-primary" type="submit" name="test_type" value="short" formnovalidate>Короткий тест</button></div>
                 <div class="llm-mode"><span class="llm-step">02 / Локально</span><h3>Mock-тест</h3>
                     <p>Тестовый ответ и имитация usage. Реальная модель не вызывается.</p>
                     <button class="llm-button" type="submit" name="test_type" value="mock">Mock-тест</button></div>
-                <div class="llm-mode"><span class="llm-step">03 / API</span><h3>Реальная проба</h3>
-                    <p>Фиксированный запрос, до 8 токенов ответа, таймаут 20 секунд. Может списать средства.</p>
-                    <button class="llm-button" type="submit" name="test_type" value="real"{% if not billing_ready or not billing_tenants %} disabled{% endif %}>Реальная проба</button></div>
+                <div class="llm-mode"><span class="llm-step">03 / API</span><h3>Реальный запрос</h3>
+                    <p>Ваш вопрос: до {{ request_max_tokens | default(512) }} токенов ответа (не выше лимита модели). Пустое поле: короткий вопрос по умолчанию, до 8 токенов. Таймаут 20 секунд. Может списать средства.</p>
+                    <button class="llm-button" type="submit" name="test_type" value="real"{% if not billing_ready or not billing_tenants %} disabled{% endif %}>Реальный запрос</button></div>
             </div>
             <div class="llm-prompt">
-                <label for="llm-prompt">Вопрос для mock-теста</label>
-                <textarea id="llm-prompt" name="prompt" rows="3" maxlength="8000" placeholder="Напишите вопрос для локальной имитации…" aria-describedby="llm-prompt-help">{{ prompt }}</textarea>
-                <p id="llm-prompt-help" class="llm-muted">Короткий тест и реальная проба это поле не используют. Загрузка изображений здесь не поддерживается.</p>
+                <label for="llm-prompt">Сообщение для модели или mock-теста</label>
+                <textarea id="llm-prompt" name="prompt" rows="3" maxlength="8000" placeholder="Напишите вопрос или оставьте пустым для короткого реального ответа…" aria-describedby="llm-prompt-help">{{ prompt }}</textarea>
+                <p id="llm-prompt-help" class="llm-muted">Реальный запрос отправляет этот текст модели. Если поле пустое, отправится «{{ probe_prompt }}». Mock требует текст; короткая API-проверка его не использует. Загрузка изображений здесь не поддерживается.</p>
             </div>
             {% if billing_ready %}
             <div class="llm-prompt">
-                <label for="llm-billing-tenant">Рабочее пространство для платной пробы</label>
+                <label for="llm-billing-tenant">Рабочее пространство для платного запроса</label>
                 <select id="llm-billing-tenant" name="tenant_id" aria-describedby="llm-billing-help">
                     <option value="">Выберите рабочее пространство</option>
                     {% for tenant in billing_tenants %}<option value="{{ tenant.id }}"{% if tenant.id == billing_tenant_id %} selected{% endif %}>{{ tenant.name }} ({{ tenant.id }})</option>{% endfor %}
                 </select>
-                <p id="llm-billing-help" class="llm-muted">Проба учитывается на личном счёте запускающего администратора, не владельца рабочего пространства. Нужны настроенный счёт, лимит и разрешённая политика модели. Короткий и mock-тест не используют этот выбор.</p>
+                <p id="llm-billing-help" class="llm-muted">Запрос учитывается на личном счёте запускающего администратора, не владельца рабочего пространства. Нужны настроенный счёт, лимит и разрешённая политика модели. Короткий API-тест и локальный mock не используют этот выбор.</p>
             </div>
             {% else %}
-            <p class="llm-muted">Платная проба требует включённого личного учёта расходов и прав администратора платформы. Короткий и mock-тест доступны без платного вызова.</p>
+            <p class="llm-muted">Платный запрос требует включённого личного учёта расходов и прав администратора платформы. Короткая API-проверка и локальный mock не вызывают генерацию.</p>
             {% endif %}
             <label class="llm-consent"><input type="checkbox" name="confirm_real" value="yes" id="llm-confirm-real">
-                <span>Разрешаю один платный вызов для реальной пробы. Фиксированный запрос: «{{ probe_prompt }}». Только OpenAI-совместимый API.</span></label>
+                <span>Разрешаю один платный вызов с сообщением выше или коротким вопросом по умолчанию. Только OpenAI-совместимый API.</span></label>
             <p id="llm-submit-status" role="status" class="llm-muted" aria-live="polite"></p>
         </form>
     </section>
@@ -72,15 +72,26 @@
     {% if result %}
     <section class="llm-panel llm-result {{ 'llm-result-ok' if result.ok else 'llm-result-error' }}" aria-labelledby="llm-result-title" role="status">
         <div class="llm-section-heading"><h2 id="llm-result-title">{{ 'Проверка завершена' if result.ok else 'Проверка не пройдена' }}</h2>
-            <span class="llm-tag">{{ 'Реальный API' if result.tier == 'real' else 'Локально · без API' }}</span></div>
+            <span class="llm-tag">{{ 'Реальный запрос · API' if result.tier == 'real' else 'Короткая проверка · API' if result.tier == 'connectivity' else 'Mock · без API' }}</span></div>
         <p>{{ result.text }}</p>
         {% if result.save_warning %}<p class="llm-warning">{{ result.save_warning }}</p>{% endif %}
+        {% if result.tier == 'connectivity' %}
+        <dl class="llm-meta">
+            <div><dt>Метод</dt><dd>{{ result.method }}</dd></div>
+            <div><dt>HTTP-статус</dt><dd>{{ result.http_status | default('Нет ответа') }}</dd></div>
+            {% if result.models_count is defined %}<div><dt>Моделей в списке</dt><dd>{{ result.models_count }}</dd></div>{% endif %}
+            {% if result.model_available is defined %}<div><dt>Выбранная модель в списке</dt><dd>{{ 'Да' if result.model_available else 'Нет — возможность генерации не подтверждена' }}</dd></div>{% endif %}
+        </dl>
+        {% endif %}
+        {% if result.request_prompt %}<details open><summary>{{ 'Отправленное сообщение' if result.tier == 'real' else 'Вопрос для имитации' }}</summary><pre class="llm-response">{{ result.request_prompt }}</pre></details>{% endif %}
+        {% if result.max_tokens is defined %}<p class="llm-muted">Лимит ответа: {{ result.max_tokens }} токенов · таймаут 20 секунд.</p>{% endif %}
         {% if result.content %}<pre class="llm-response">{{ result.content }}</pre>{% endif %}
         <dl class="llm-meta llm-result-meta">
+            {% if result.elapsed_ms is defined %}<div><dt>Время проверки</dt><dd>{{ result.elapsed_ms }} мс</dd></div>{% endif %}
             <div><dt>Реально использовано токенов</dt><dd>{{ result.tokens_spent if result.tokens_spent is defined and result.tokens_spent is not none else 'Неизвестно' }}</dd></div>
             <div><dt>Оценка по тарифу, USD</dt><dd>{% if result.tier != 'real' %}Нет платного вызова{% elif result.estimated_cost is defined and result.estimated_cost is not none %}{{ result.estimated_cost }}{% else %}Неизвестно{% endif %}</dd></div>
         </dl>
-        <p class="llm-muted">{% if result.tier == 'real' %}Проба проверяет текстовый маршрут, не качество ответов и не мультимодальность. Оценка — не подтверждённый счёт провайдера. Не повторяйте вызов автоматически при неизвестном ответе или ошибке учёта.{% else %}Локальный успех не подтверждает доступность провайдера или реальный ответ модели.{% endif %}</p>
+        <p class="llm-muted">{% if result.tier == 'real' %}Запрос проверяет текстовый ответ, но не мультимодальность. Оценка — не подтверждённый счёт провайдера. Не повторяйте вызов автоматически при неизвестном ответе или ошибке учёта.{% elif result.tier == 'connectivity' %}Проверяется только GET /models. Успех не доказывает доступ к генерации; отсутствие маршрута не доказывает, что генерация сломана. Платного fallback нет.{% else %}Это локальная имитация: usage ниже вымышленный, реальных токенов не потрачено. Доступность провайдера и качество ответа не проверялись.{% endif %}</p>
         {% if result.usage %}<details><summary>Usage {{ '(имитация)' if result.tier != 'real' else '(данные ответа)' }}</summary><pre>{{ result.usage | tojson(indent=2) }}</pre></details>{% endif %}
     </section>
     {% endif %}

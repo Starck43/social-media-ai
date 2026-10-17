@@ -156,6 +156,20 @@ authenticated Safari view and progress endpoint returned HTTP 200. No
 migrations or dependency changes. This delivery is separate from inventory
 P8-T06 and does not alter its task record.
 
+- [ ] P8-T15 — distinct admin model checks; accept: short performs an authenticated
+  metadata API request without generation; mock remains offline; real forwards
+  the supplied prompt or a short default, with bounded output, existing consent,
+  payer admission and no retry; mode-specific useful diagnostics; no migrations;
+  owns: admin model action/endpoint/template/JS, probe helpers, focused tests/docs;
+  owner: remote Notion agent (`fix/admin-model-real-request`); status: BLOCKED
+  (implementation ready; required local ASGI/PostgreSQL acceptance unavailable).
+  Remote evidence: 107 isolated no-DB tests passed; 56 offline Chromium
+  viewport/theme/state cases plus form/consent/no-JS checks passed;
+  Black/isort checks, py_compile and diff whitespace checks passed.
+  No migration, real provider or owner-local application run. Updated local
+  acceptance covers metadata vs offline web checks and blank/custom prompt
+  settlement. Keep Draft pending the exact-SHA local R8/R10 run.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

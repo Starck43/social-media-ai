@@ -1,6 +1,30 @@
 # Admin model / personal billing acceptance
 
-## Status and scope
+## Admin request-mode follow-up (P8-T15)
+
+The current candidate changes the admin short mode to authenticated metadata
+`GET /models` (no generation) and forwards the real question, or the tiny default
+when blank. This supersedes the historical fixed-prompt/admin-offline contracts
+below; previously accepted results do not validate this follow-up.
+
+Prepared local acceptance remains `tests/test_admin_model_billing_acceptance.py`:
+- Metadata requests use a separate recorded list; explicit counts verify admin
+  short dispatches exactly one GET, while web settings remain offline and no
+  personal dispatch exists. CSRF and revoked/disabled authority still refuse HTTP.
+- Real settlement checks are parametrized for blank (8 output tokens) and a
+  supplied prompt (512, bounded by the model). The transport asserts exact prompt,
+  limit, 20-second timeout and durable reservation before responding. Initiator
+  payer, immutable settlement, unknown usage and no-retry cases remain intact.
+- This changed PostgreSQL/ASGI suite has **not run remotely**. Execute sequentially
+  through the existing R8/R10 local runner, with normal root conftest and all
+  retained-fixture/network guards. No reset/migration or real provider call.
+- Remote source/mocked coverage: `tests/test_admin_model_probe.py`,
+  `tests/test_admin_model_billing_integration.py`,
+  `tests/test_admin_model_permission_policy.py`,
+  `tests/test_admin_model_request_modes.py`; browser fixture:
+  `tests/admin_model_test_layout.cjs`. Exact revision/results belong in the PR.
+
+## Historical status and scope
 
 This revision is a **prepared, locally unexecuted acceptance suite**, not a
 passing full integration report. Earlier owner-relayed runs are attributed
@@ -13,7 +37,7 @@ has a different name from the owner's unpublished
 `tests/test_admin_model_probe_local_acceptance.py`; do not replace or import
 that file, nor delete `test-results/`.
 
-The module declares 19 test functions / 41 parametrized cases. This count is
+The earlier revision declared 19 test functions / 41 parametrized cases. This count is
 from static AST enumeration, **not pytest collection**. Local collection may
 fail before any test, and actual execution is still required. It is not the
 entire repository suite or a complete billing subsystem audit.

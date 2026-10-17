@@ -82,7 +82,8 @@ async def test_secondary_journal_failure_retains_answer_and_never_replays():
 
 
 @pytest.mark.asyncio
-async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in_json():
+@pytest.mark.parametrize("prompt,limit", [("", 8), ("What is an API?", 512)])
+async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in_json(prompt, limit):
     settings = NS(PERSONAL_BILLING_ENABLED=True, LLM_DEFAULT_TIMEOUT=60)
     sent = []
 
@@ -123,12 +124,12 @@ async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in
         ROOT / "app/services/ai/model_probe.py",
         {"app.core.config": NS(settings=settings), "app.services.ai.llm_client": client_module},
     )
-    result = await probe.probe_real_capped(selected)
+    result = await probe.probe_real_capped(selected, prompt=prompt)
     assert result["ok"] and result["tokens_spent"] is None and len(sent) == 1
     import json
 
     payload = json.loads(sent[0].content)
-    assert payload["max_tokens"] == 8 and payload["messages"][0]["content"] == probe.PROBE_PROMPT
+    assert payload["max_tokens"] == limit and payload["messages"][0]["content"] == (prompt or probe.PROBE_PROMPT)
     assert "timeout" not in payload and "personal_billing_purpose" not in payload
     assert all(value == 20 for value in sent[0].extensions["timeout"].values())
     assert client_module._personal_admission.await_args.kwargs["purpose"] == "admin_probe"
@@ -220,12 +221,12 @@ async def test_paid_post_uses_trusted_actor_and_explicit_workspace_not_form_paye
     assert await handler(request) == "rendered"
     assert seen == ["configure", ("tenant", 3), ("actor", 31)]
     lookup.assert_awaited_once_with(id=3)
-    assert submit.await_args.args == ("view", request, "7", "real", "")
+    assert submit.await_args.args == ("view", request, "7", "real", "UNTRUSTED_PROMPT")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["short", "mock"])
-async def test_local_modes_do_not_require_billing_tenant_or_payer(mode):
+async def test_non_generation_modes_do_not_require_billing_tenant_or_payer(mode):
     handler, request, lookup, submit, seen, form = endpoint_case(enabled=False, admin=False, consent=False, tenant="")
     form["test_type"] = mode
     assert await handler(request) == "rendered"

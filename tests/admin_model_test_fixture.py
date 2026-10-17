@@ -56,7 +56,16 @@ def render(destination):
     states = {
         "initial": None,
         "short": dict(
-            ok=True, tier="mock", text="Статус и локальный mock: OK. Провайдер не вызывался.", tokens_spent=0
+            ok=True,
+            tier="connectivity",
+            mode="short",
+            text="API доступен: список моделей получен.",
+            method="GET /models",
+            http_status=200,
+            model_available=True,
+            models_count=3,
+            elapsed_ms=42,
+            tokens_spent=0,
         ),
         "mock": dict(
             ok=True,
@@ -69,7 +78,10 @@ def render(destination):
         "real": dict(
             ok=True,
             tier="real",
-            text="Провайдер ответил на фиксированную пробу.",
+            text="Получен ответ на ваш запрос.",
+            request_prompt="Скажи привет",
+            max_tokens=512,
+            elapsed_ms=350,
             content="да",
             tokens_spent=12,
             estimated_cost="0.000008",

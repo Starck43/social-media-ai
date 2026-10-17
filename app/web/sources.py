@@ -996,11 +996,12 @@ async def source_analyze_now(
             return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
         session = new_session()
+        job = None
         try:
             async with session.begin():
                 await JobManager.lock_source_admission(session, tenant_id)
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
-                await JobManager().admit_source_job(
+                job = await JobManager().admit_source_job(
                     job_type="analyze",
                     payload={"source_ids": [source.id], **window},
                     tenant_id=tenant_id,
@@ -1012,6 +1013,12 @@ async def source_analyze_now(
         finally:
             await session.close()
 
+    # Execute in this process's event loop so the job runs without app.runtime worker.
+    if job:
+        from app.jobs.dispatcher import launch_job_background
+
+        launch_job_background(job.id, allow_retry=False)
+
     name = source.name
     if reset_count:
         add_flash(
@@ -1019,7 +1026,7 @@ async def source_analyze_now(
             "info",
             f"Сброшено {reset_count} записей(ей) из «досрочного выхода» — будут проанализированы заново",
         )
-    add_flash(request, "success", f"Задача анализа по источнику «{name}» поставлена в очередь")
+    add_flash(request, "success", f"Анализ по источнику «{name}» запущен")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
 
 

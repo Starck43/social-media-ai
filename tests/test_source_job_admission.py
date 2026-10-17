@@ -546,6 +546,7 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
     scope = {
         "enqueue_task_run": AsyncMock(side_effect=activity.SourceJobBusy(NS(id=9, status="running"))),
         "SourceJobBusy": activity.SourceJobBusy,
+        "launch_job_background": lambda job_id, **kw: None,  # busy path returns early; never called
     }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "isolated_web_queue", "exec"),

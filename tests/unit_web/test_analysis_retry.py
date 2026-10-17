@@ -148,6 +148,7 @@ def route_scope():
         render_analysis=projection.render_analysis,
         parse_staged_window=retry.parse_staged_window,
         _source_has_running_job=AsyncMock(return_value={"collect": False, "analyze": False}),
+        launch_job_background=lambda job_id, **kw: None,
     )
     return scope, row, manager, collected, jobs, session, transaction
 

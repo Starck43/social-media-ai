@@ -396,7 +396,7 @@ async def run_task_now(task: "AgentTask") -> dict | None:
 
 
 async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = None) -> dict[str, Any]:
-	"""Queue the task's job for the worker instead of running it in this request.
+	"""Enqueue the task's job and execute it in this process (no worker needed).
 
 	"Сохранить и выполнить" used to call `run_task_now`, which executes the
 	handler synchronously and only then returns. For a long job that is minutes
@@ -407,14 +407,17 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 
 	Queueing returns as soon as the job row exists, so the page reloads at once
 	and the run-status modal (which already polls `/app/tasks/job/<id>/status`)
-	follows the job to completion. The job is a normal `pending` row here, so
-	the worker picks it up — that is the difference from `run_task_now`, which
-	deliberately stamps its row `running` to keep the worker away.
+	follows the job to completion. The job executes in a background asyncio task
+	in the same process (uvicorn event loop), so manual runs work even when
+	`app.runtime` worker is not running (dev: uvicorn alone). A competing real
+	worker may claim the job first (atomic claim) — either way the job runs.
 
 	Returns the same `{job_id, status}` shape so both callers read alike.
 	"""
+	from app.jobs.dispatcher import launch_job_background
 	from app.jobs.enqueue import enqueue_task_run
 	from app.jobs.source_activity import SourceJobBusy
+
 	if initiated_by_user_id is None:
 		from app.core.permissions import get_current_user
 		actor = get_current_user()
@@ -424,6 +427,9 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 		job = await enqueue_task_run(task, initiated_by_user_id=initiated_by_user_id)
 	except SourceJobBusy as busy:
 		return {"job_id": busy.job.id, "status": busy.job.status, "already_running": True}
+
+	# Execute in this process's event loop so the job runs without a worker.
+	launch_job_background(job.id, allow_retry=False)
 	return {"job_id": job.id, "status": job.status}
 
 

@@ -559,6 +559,38 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
     return {"status": finished.status, "result": finished.result, "error": finished.error}
 
 
+# Background tasks launched by web buttons (manual run without app.runtime worker).
+# Strong references prevent GC; done callback removes completed tasks.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def launch_job_background(job_id: int, *, allow_retry: bool = False) -> asyncio.Task:
+    """Run one admitted job in this process's event loop (web manual-run buttons).
+
+    The task runs like a worker would — claim (atomic) + execute with heartbeat
+    and progress binding — but in the same process as the web app (uvicorn),
+    so jobs execute even when `app.runtime` is not running (dev: uvicorn alone).
+    Progress snapshots land in `jobs.result.progress`; the run-status modal and
+    source analysis-progress poll already render them.
+
+    A competing real worker may claim first; our task then returns None (no
+    double execution — claim is atomic SKIP LOCKED). Closing the browser window
+    does not cancel the task (it runs server-side until the process stops).
+    """
+    task = asyncio.create_task(_run_job_background(job_id, allow_retry=allow_retry))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
+async def _run_job_background(job_id: int, *, allow_retry: bool) -> Optional[dict]:
+    try:
+        return await run_job_now(job_id, allow_retry=allow_retry)
+    except Exception as error:
+        logger.error("job_background_failed job_id=%s error=%s", job_id, error)
+        return None
+
+
 async def run_job_now(job_id: int, *, allow_retry: bool = True) -> Optional[dict]:
     """Execute one specific job now and return its outcome (operator path).
 

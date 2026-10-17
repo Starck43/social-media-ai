@@ -12,6 +12,7 @@ from source_import_isolation import load_isolated_source
 from sqladmin import Admin
 from sqladmin.authentication import AuthenticationBackend
 from sqladmin.authorization import Action
+from sqladmin.pagination import Pagination
 from sqlalchemy.orm import sessionmaker
 from starlette.applications import Starlette
 from starlette.datastructures import FormData
@@ -79,7 +80,7 @@ def source():
     ]
     ns = dict(
         BaseAdmin=admin_base.BaseAdmin,
-        OperatorGrantAdmin=catalog.OperatorGrantAdmin,
+        PlatformRoleGrantAdmin=catalog.PlatformRoleGrantAdmin,
         PermissionLabelAdmin=catalog.PermissionLabelAdmin,
         PlatformRole=role.PlatformRole,
         Permission=permission.Permission,
@@ -203,21 +204,25 @@ async def test_role_route_shows_actor_and_guarded_form(source):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["user", "admin"])
-async def test_fixed_role_edit_route_is_denied(source, role):
+@pytest.mark.parametrize("role", ["user", "admin", "operator"])
+async def test_platform_admin_can_open_every_role_edit_route(source, role):
     ctx = console(source)
     ctx.target.get.return_value.codename = role
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         response = await client.get("/admin/platform-role/edit/2")
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert 'name="permissions"' in response.text
+    assert 'name="codename"' not in response.text
     ctx.target.set_permissions.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_operator_cannot_edit_either_catalog_even_with_broad_grants(source):
+@pytest.mark.parametrize("target_role", ["user", "admin", "operator"])
+async def test_operator_cannot_edit_either_catalog_even_with_broad_grants(source, target_role):
     user = actor("operator")
     user.model_permissions = lambda _: set(TYPES.ActionType)
     ctx = console(source, user)
+    ctx.target.get.return_value.codename = target_role
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         for route in ["platform-role/edit/2", "permission/edit/1"]:
             assert (await client.get("/admin/" + route)).status_code == 403
@@ -232,8 +237,10 @@ def request_for(ctx, token=None):
 
 
 @pytest.mark.asyncio
-async def test_role_writer_uses_canonical_manager_with_actor_scope(source):
+@pytest.mark.parametrize("target_role", ["user", "admin", "operator"])
+async def test_role_writer_uses_canonical_manager_for_every_role_with_actor_scope(source, target_role):
     ctx = console(source)
+    ctx.target.get.return_value.codename = target_role
     observed = []
 
     async def write(role_id, permissions):
@@ -242,6 +249,7 @@ async def test_role_writer_uses_canonical_manager_with_actor_scope(source):
     ctx.target.set_permissions.side_effect = write
     await ctx.admin._views[0].update_model(request_for(ctx), "2", {"permissions": ["1", "3"]})
     assert observed == [(ctx.user, 2, [1, 3])]
+    assert ctx.target.get.return_value.codename == target_role
     assert source.contexts.get_current_user() is None
 
 
@@ -281,8 +289,10 @@ async def test_permission_writer_rejects_identity_or_grant_changes(source, data)
 
 
 @pytest.mark.asyncio
-async def test_http_role_post_clears_grants_and_rejects_missing_csrf(source):
+@pytest.mark.parametrize("target_role", ["user", "admin", "operator"])
+async def test_http_role_post_clears_grants_and_rejects_missing_csrf_for_every_role(source, target_role):
     ctx = console(source)
+    ctx.target.get.return_value.codename = target_role
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
         response = await client.post("/admin/platform-role/edit/2", data={"save": "Save"})
         assert response.status_code == 400  # SQLAdmin catches the rejected CSRF write.
@@ -312,3 +322,28 @@ async def test_escaped_verified_identity_ignores_session_username(source):
         response = await client.get("/admin/")
     assert response.status_code == 200
     assert "&lt;img" in response.text and "<img src=x" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_role_list_has_an_edit_link_for_every_record_for_platform_admin(source):
+    ctx = console(source)
+    rows = [
+        source.PlatformRole(id=pk, codename=codename, description=codename)
+        for pk, codename in [(1, "user"), (6, "admin"), (128, "operator")]
+    ]
+    ctx.admin._views[0].list = AsyncMock(return_value=Pagination(rows=rows, page=1, page_size=50, count=3))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
+        response = await client.get("/admin/platform-role/list")
+    assert response.status_code == 200, response.text
+    for role in rows:
+        assert f'/admin/platform-role/edit/{role.id}"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_missing_role_is_not_written(source):
+    ctx = console(source)
+    ctx.target.get.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        await ctx.admin._views[0].update_model(request_for(ctx), "999999", {"permissions": []})
+    assert exc.value.status_code == 404
+    ctx.target.set_permissions.assert_not_awaited()

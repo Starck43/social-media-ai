@@ -171,10 +171,10 @@ P8-T06 and does not alter its task record.
   settlement. Keep Draft pending the exact-SHA local R8/R10 run.
 
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
-  platform role, and expose platform-admin-only operator grant/permission-label
+  platform role, and expose platform-admin-only role-grant/permission-label
   editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-shell-and-role-management`); status: BLOCKED
-  (remote implementation checked; real authenticated PostgreSQL acceptance pending).
+  Notion agent (`fix/admin-all-role-records`); status: BLOCKED
+  (implementation checked; owner-local real PostgreSQL acceptance pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
   regression tests and documentation. P8-T15 model request behavior is unchanged.
   Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
@@ -186,8 +186,17 @@ P8-T06 and does not alter its task record.
   operator/revoked identities, menu continuity after model-test POST, persisted
   operator grants and permission names with protected catalog fields unchanged.
   Preserve existing grants/data; no reset, migration or live API calls.
-  Additional synthetic grant-selection cases were blocked by the execution
-  safety gate and were not applied or run; the blocker was not bypassed.
+  Historical PR #208 limitation: additional synthetic grant-selection cases were
+  blocked by the execution safety gate and were not applied or run in that PR.
+  Owner-requested follow-up from dev `b70911d`: removed the operator-only role-row
+  edit restriction in both SQLAdmin and the canonical manager writer. An active
+  platform admin may edit stored grants on user/admin/operator records; other
+  actors remain denied and fixed role authority/catalog identities are unchanged.
+  Follow-up evidence: 155 isolated tests passed, including all three edit links,
+  GET/POST forms with explicit storage doubles, manager policy for every role,
+  revocation/inactive/anonymous denial, CSRF and immutable-field checks.
+  Real database persistence is not certified; the owner's local-verification
+  agreement remains in force. No migration or runtime/provider operation.
 
 ## Phase approval
 

@@ -49,7 +49,7 @@ from app.types.enums.llm_types import APIFormatType
 
 from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
-from .catalog import OperatorGrantAdmin, PermissionLabelAdmin
+from .catalog import PermissionLabelAdmin, PlatformRoleGrantAdmin
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ class UserAdmin(BaseAdmin, model=User):
         )
 
 
-class RoleAdmin(OperatorGrantAdmin, model=PlatformRole):
+class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
@@ -161,12 +161,12 @@ class RoleAdmin(OperatorGrantAdmin, model=PlatformRole):
             "codename": "Кодовое наименование",
             "description": "Описание",
             "users": "Пользователи",
-            "permissions": "Разрешения оператора",
+            "permissions": "Разрешения роли",
         },
         **BaseAdmin.column_labels,
     )
     form_columns = ["permissions"]
-    form_args = {"permissions": {"label": "Разрешения оператора", "description": "Выберите разрешённые действия"}}
+    form_args = {"permissions": {"label": "Разрешения роли", "description": "Выберите разрешённые действия"}}
     column_formatters_detail = {"codename": lambda m, a: m.label}
 
 

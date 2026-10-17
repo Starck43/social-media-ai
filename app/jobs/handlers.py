@@ -209,6 +209,38 @@ async def _count_failed_staged(source_id: int, staged: list) -> int:
         await session.close()
 
 
+async def _llm_failure_code(source_id: int, since: Any) -> str | None:
+    """Outcome of the newest failed text-analysis LLM attempt since `since`.
+
+    Reads the immutable `llm_attempts` journal — the accounting evidence — so a
+    failed run can show WHY on the source page («failed_transport» = the provider
+    did not answer, «failed_output» = the answer was unusable) instead of a bare
+    "they did not get processed". Read-only and bounded; diagnostics is a display
+    hint, so any failure of this lookup never fails the run and yields no code.
+    """
+    from datetime import datetime, timezone
+
+    if isinstance(since, datetime):
+        since = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    else:
+        return None
+    from app.models.llm.llm_attempt import LLMAttempt
+
+    try:
+        attempt = await (
+            LLMAttempt.objects.filter(source_id=source_id, stage="text_analysis", created_at__gte=since)
+            .order_by(LLMAttempt.id.desc())
+            .limit(1)
+            .first()
+        )
+        outcome = getattr(attempt, "outcome", None)
+    except Exception:  # noqa: BLE001 — diagnostics must never fail the run
+        return None
+    if isinstance(outcome, str) and outcome and outcome != "succeeded" and outcome.isidentifier():
+        return outcome
+    return None
+
+
 async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Collect content from sources.
@@ -704,6 +736,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     start_date=window.get("start_date"),
                     end_date=window.get("end_date"),
                 )
+                # Failure-code horizon: only LLM attempts of THIS run may label it.
+                from datetime import datetime, timezone
+
+                attempt_journal_since = datetime.now(timezone.utc)
                 per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
                 await job_progress.update_current(sources, stats["per_source"], per)
                 progress_attempted = True
@@ -736,6 +772,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     reported_errors = getattr(analyzer, "reported_errors", None)
                     if type(reported_errors) is int and reported_errors > 0:
                         record_error(per, staged=True)
+                        failure_code = await _llm_failure_code(source.id, attempt_journal_since)
+                        if failure_code:
+                            per["error_code"] = failure_code
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.
@@ -776,6 +815,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(e, ProgressStopped):
                     raise
                 record_error(per, staged=True)
+                failure_code = await _llm_failure_code(source.id, attempt_journal_since)
+                if failure_code:
+                    per["error_code"] = failure_code
                 logger.warning(
                     "analyze_staged_processing_failed source_id=%s error_code=%s",
                     _log_id(source.id),

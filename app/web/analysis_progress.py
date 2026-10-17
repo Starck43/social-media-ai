@@ -109,16 +109,16 @@ def project_job(job: Any, source_id: int) -> dict[str, Any]:
     total = _count(raw_total)
     processed = _count(raw_processed)
     if status == "done":
-        # Lifecycle status remains trustworthy when optional counters are absent
-        # or malformed. Only consistent known counters refine it to empty or
-        # partial; an impossible ratio never produces a percentage.
-        if total == 0 and processed == 0:
+        # A per-source error reads as an error, never hidden behind a partial
+        # ratio: «0 из 13» after a failed LLM call is an error first, so the
+        # row label cannot pass for a merely incomplete success. The coverage
+        # bar stays visible either way.
+        if item.get("error") is True or item.get("outcome") == "error":
+            status, label = "failed", _STATUS_LABELS["failed"]
+        elif total == 0 and processed == 0:
             status, label = "empty", _STATUS_LABELS["empty"]
         elif total is not None and total > 0 and processed is not None and processed < total:
             status, label = "partial", _STATUS_LABELS["partial"]
-        if item.get("error") is True or item.get("outcome") == "error":
-            if status != "partial":
-                status, label = "failed", _STATUS_LABELS["failed"]
     if total is None or processed is None or total <= 0 or processed > total:
         percent = None
         if processed is not None and total is not None and processed > total:

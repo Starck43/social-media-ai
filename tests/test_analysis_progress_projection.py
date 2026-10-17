@@ -119,6 +119,16 @@ def test_done_partial_when_processed_below_total():
     assert view["percent"] == 40
 
 
+def test_done_with_per_source_error_reads_as_failed_not_partial():
+    """Regression: a fully failed run (0 из 13) must not read as 'Обработано частично'."""
+    row = _per_source(7, 13, 0)
+    row["error"] = True
+    view = project_job(_source_job(result={"per_source": [row]}), 7)
+    assert view["status"] == "failed"
+    assert view["label"] == "Ошибка"
+    assert view["percent"] == 0
+
+
 def test_done_empty_when_total_is_zero_is_no_data_never_zero_percent():
     view = project_job(_source_job(result={"per_source": [_per_source(7, 0, 0)]}), 7)
     assert view["status"] == "empty"

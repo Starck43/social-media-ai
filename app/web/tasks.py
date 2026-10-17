@@ -1839,6 +1839,13 @@ def _diagnostics_view(job: "Job", source_id: int | None = None) -> dict[str, Any
 	allowed_codes = {"storage_operation_failed", "provider_failed", "timeout", "cancelled", "unknown"}
 	error = str(getattr(job, "error", "") or "")[:80]
 	code = error if error in allowed_codes else ("unknown" if error else None)
+	if code is None:
+		# The run's own LLM journal outcome (failed_transport / failed_output),
+		# written into the per-source snapshot by the handler. Identifier-shaped
+		# values only: diagnosis codes, never provider or exception text.
+		run_code = current.get("error_code") if isinstance(current, dict) else None
+		if isinstance(run_code, str) and run_code.isidentifier() and len(run_code) <= 64:
+			code = run_code
 	selected = current.get("raw_selected")
 	if type(selected) is not int or not 0 <= selected <= 10**9:
 		selected = None

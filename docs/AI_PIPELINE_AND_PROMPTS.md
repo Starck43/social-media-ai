@@ -27,8 +27,10 @@ in `app/services/ai/param_registry.py` enforces that separation.
    model-level default rules. The selected model's provider supplies the client.
 5. Provider output is parsed and validated against the compiled scenario contract.
 6. A unified summary combines valid modality results.
-7. The result is saved to `AIAnalytics` with source/date, structured payload,
-   usage projection, analyzed media types, content hashes and optional topic chain.
+7. The result is saved to `AIAnalytics` with source/date, context fingerprint,
+   structured payload, usage projection, analyzed media types, content hashes
+   and optional topic chain. A durable success receipt is stored atomically with
+   the analytics row for each successfully covered hash.
 
 Useful valid siblings may be saved when another modality is unavailable or
 invalid. The row must then preserve incomplete coverage; missing media or an empty
@@ -102,6 +104,29 @@ availability are tracked separately from output validity:
 - a partial result cannot overwrite a stronger existing daily result merely to
   retain usage data.
 
+## Durable analysis deduplication
+
+The receipt key is workspace, source, content hash and a versioned fingerprint
+of the resolved scenario plus semantic configuration, prompts, scope, output
+schema, model preferences, task payload and trigger context. Operational task
+and job identifiers, run timestamps, date-window mechanics and force/keep-raw
+controls are excluded. Reordering known target lists does not create a new
+context. A changed scenario or semantic target/configuration can analyze the
+same source content separately.
+
+Receipts hold hashes and timestamps only; they have no expiry cutoff and do not
+preserve raw text. Receipt lookup errors stop analysis before provider calls.
+Successful receipts and analytics writes share a transaction, and only hashes
+actually covered by successfully persisted results are recorded. Ordinary web
+source-job admission serializes normal web runs, but direct simultaneous CLI
+analysis does not gain a new global in-flight claim mechanism.
+
+Migration `0104` scopes daily analytics uniqueness and generated weekly/monthly
+rollups by analysis fingerprint. Historical merged hashes cannot be assigned
+reliably to a specific analysis context, and deleted legacy results cannot be
+reconstructed; no unsafe receipt backfill is performed. Consequently, legacy
+content without a provable receipt can be analyzed once under the new policy.
+
 ## Staged raw-data progress contract
 
 Progress surfaces in the source detail "Последние анализы" table and the task
@@ -115,14 +140,20 @@ itself. The following invariants hold (`app/jobs/progress.py`,
   per-run batch cap; it is stable across the run and never a live queue count.
 - The numerator (`raw_processed`) counts only persisted, matched coverage:
   the number of selected **rows** (duplicates count) whose stored hash is in
-  the set the analysis actually saved, capped by the rows actually deleted
-  (`min(deleted, covered_selected_rows)` — the count is rows, not unique
-  hashes). Unanalysed rows stay staged and are not counted; a partial result
-  never implies the rest is done.
+  the set the analysis actually saved or already covered by an exact-context
+  receipt. This is independent of whether cleanup deleted the row: `--keep-raw`
+  and protection for another pending context do not erase analysis progress.
+  Unanalyzed rows stay staged and are not counted; a partial result never
+  implies the rest is done.
 - `raw_selected` is how many rows fit in the batch this run, not a processed
   count. No in-flight percentage is invented: a percentage renders only when
   processed and total are known integers and `total > 0`; otherwise the UI shows
   "—" or "прогресс пока неизвестен". An empty window is "Нет данных", never 0%.
+- Raw rows needed by another active, scheduled or queued context are retained
+  while they fall inside that context's configured content window. After normal
+  cleanup removes raw text, a newly introduced context needs collection again;
+  a receipt records coverage but cannot restore content. Direct CLI
+  `analyze --keep-raw` preserves staged text after successful persistence.
 - An unknown heartbeat is distinct from stopped: a missing or stale (> 90 s)
   lock on a running job is "Статус не подтверждён" (`unconfirmed`), while
   "Остановлено" (`cancelled`) means explicit operator cancellation. Loss of the

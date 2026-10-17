@@ -211,7 +211,9 @@ MTProto with an authorized user session instead of waiting for push:
   collection the owner is resolved per source (see [Credential vault](#credential-vault)).
 - Collection is incremental by message id: `iter_messages` starts at
   `Source.last_item_id` (the same watermark the push path advances), so a
-  repeat run costs nothing until new posts arrive. Set `force_refresh` +
+  repeat run costs nothing until new posts arrive. A direct CLI `collect
+  --force-refresh` can re-fetch a date window, but it does not bypass analysis
+  receipts. Set `cli_dates` +
   `cli_dates.start_date` for a one-off backfill into the past.
 - `external_id` of a pulled item is built from the source's own Bot API chat id,
   so a post that first arrived by push and is later pulled by L2 hashes to the
@@ -292,13 +294,12 @@ reporting a bug, not a fact.
 | `incremental_mode` | `true` → only fetch what is newer than `last_checked` |
 | `collection.count` / `limit` | page size / max items per run |
 | `collection.filter` | VK wall filter (`all`, `owner`, `others`, `suggests`) |
-| `force_refresh`, `cli_dates` | one-off/CLI date overrides used by the VK client |
+| `force_refresh`, `cli_dates` | direct CLI collection date/refetch overrides; web jobs clear legacy force flags |
 
-> **`force_refresh` has two flavours.** `collect --force-refresh` re-fetches the
-> full window from the API but analysis stays deduped (tokens saved). A
-> `task collect --force-refresh` additionally re-analyzes the whole window
-> (bypasses dedup) and overwrites `ai_analytics` rows by `(source, date)` — see
-> `docs/CLI.md`.
+> `force_refresh` is a direct collection diagnostic and may re-fetch the
+> requested API window. Web task/source force controls have been removed;
+> legacy stored force flags are ignored at web task admission. Re-fetching does
+> not bypass durable analysis receipts or trigger a paid re-analysis.
 
 ## Platform rate limits
 
@@ -339,23 +340,31 @@ sources or workers yet.
 2. **Shared rate budget** — honour `Platform.rate_limit_remaining`/reset across
    sources and workers instead of per request.
 
-## Deduplication
+## Deduplication and analysis contexts
 
-A repeated item is never analyzed (and paid for) twice —
-`app/services/ai/dedup.py`, wired into `AIAnalyzer.base_analyze_content`:
+`item_hash(item)` in `app/services/ai/dedup.py` hashes platform, external ID and
+text; engagement counters and dates do not affect the content hash. Analysis
+deduplication uses a durable success receipt keyed by workspace, source, content
+hash and a versioned fingerprint of the actual scenario and semantic analysis
+configuration. A repeated item in the same context is skipped even after its
+physical `AIAnalytics` result is deleted or pruned. Receipts have no 30-day
+cutoff and contain hashes and timestamps, not content. A different scenario,
+target set, prompt/configuration or other semantic context has a different
+fingerprint and can analyze the same source content independently.
 
-- `item_hash(item)` — sha256 over platform + external_id + text only;
-  engagement counters and dates are ignored, so refetched items still match.
-- `batch_hash(items)` — sha256 of the sorted item hashes (order-independent).
-- Batch level: `ai_analytics.content_hash` (migration `0049`); an identical
-  batch returns the existing analysis without touching an LLM.
-- Item level: every analyzed item's hash goes to
-  `summary_data["content_hashes"]` (merged, never replaced, when several
-  batches land on the same daily row); overlapping batches only pay for the
-  genuinely new items.
-- Fail-open: any lookup/matching error analyzes the full batch — a dedup bug
-  degrades to "pay twice", never to "analysis silently skipped".
-- Lookback: last 30 days, capped at 200 rows per source.
+Receipt lookup fails closed: if the receipt store cannot be checked, analysis
+stops before calling a provider. Receipts are written only for successfully
+covered hashes in the same transaction as their analytics result. Normal web
+job admission already serializes a source's ordinary runs; this does not add a
+global claim/lock for simultaneous direct CLI invocations.
+
+Migration `0104` makes daily analytics uniqueness and generated weekly/monthly
+rollups context-scoped by `analysis_fingerprint`, so distinct analyses for the
+same source and period coexist. Legacy analytics are marked as legacy context.
+Historical merged hashes cannot safely be assigned to a particular scenario,
+and deleted legacy rows cannot be reconstructed, so there is no unsafe
+historical receipt backfill. A previously analyzed legacy item without a
+surviving receipt can therefore be analyzed once under the new policy.
 
 ## Raw content (`collected_items`)
 
@@ -375,11 +384,13 @@ Consequences worth knowing before changing this code:
 - **Write before analyse.** The rows exist for the whole LLM call, so a crashed
   worker, a timeout or an outage leaves the content on disk. An inline analysis
   no longer keeps its batch in a local variable.
-- **Retire by stored hash, not by job.** `dedup.analysed_hashes()` reads
-  `ai_analytics.summary_data["content_hashes"]` and only those rows go, so a
-  partial analysis (one day of three failed) leaves the rest staged. Keying on
-  the run instead would both sweep other sources of the same job and miss rows
-  staged by an API/CLI collection that has no job at all.
+- **Retire by successfully covered hash, not by job.** Only hashes covered and
+  persisted by the current analysis context are eligible for deletion; a
+  receipt-only skip also counts as already processed. Partial analysis leaves
+  uncovered rows staged. Rows needed by another active, scheduled or queued
+  analysis context are retained while they are inside that context's date
+  window. Once normal cleanup removes raw text, a newly introduced context
+  needs collection again: a hash receipt cannot restore the text.
 - **Retention is `handle_prune`.** It sweeps rows older than `staged_days`
   (defaults to the job-history `days`), which is the ceiling on a permanently
   failing source. `staged_days` is also capped by `DATA_RETENTION_MONTHS`, which
@@ -389,7 +400,9 @@ Consequences worth knowing before changing this code:
 staged for the separate `analyze` task, which is the workspace's shipped shape
 (`daily-collect` parks, `daily-analyze` drains). Set `analyze_inline: true` to
 collect and analyse in one pass; the rows the analysis actually stored are then
-retired immediately.
+retired immediately. The direct CLI analyze command supports `--keep-raw` for
+diagnostic runs that should preserve staged text even after successful
+analysis; this option does not bypass receipts or enable paid calls by default.
 
 ## Tests
 
@@ -401,6 +414,6 @@ newer posts, unknown chats and private messages (analyzer stubbed, no network).
 sessions, entity resolution, cross-layer `external_id` for dedup, watermark
 advance, and tenant fail-closure (Telethon network client faked).
 `tests/test_dedup.py` — hash stability/order-independence, batch and item
-filtering, fail-open, and analyzer integration (replay costs one LLM call;
-partial overlap pays only for new items).
+filtering, and analyzer integration. Durable receipt and context behavior is
+covered separately by `tests/test_analysis_receipts.py`.
 

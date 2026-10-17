@@ -58,7 +58,7 @@ python -m cli.main <job_type> [options]
 **Job-type specific options:**
 | Command | Extra options |
 |---|---|
-| `analyze` | `--scenario <id>`, `--excluded <users>` |
+| `analyze` | `--scenario <id>`, `--excluded <users>`, `--keep-raw` |
 | `prune` | `--days <n>` (default `7`) |
 | `learn` | `--min-messages <n>` (default `8`), `--window <n>` (default `200`) |
 | `reflect` | `--dedup/--no-dedup` (default on) |
@@ -67,6 +67,9 @@ python -m cli.main <job_type> [options]
 ```bash
 # Analyze sources 739 and 740 with a scenario
 python -m cli.main analyze --src 739,740 --scenario 3
+
+# Preserve staged raw content after successful analysis
+python -m cli.main analyze --src 739 --scenario 3 --keep-raw
 
 # Prune jobs older than 14 days
 python -m cli.main prune --src 739 --days 14
@@ -118,10 +121,11 @@ python -m cli.main collect --src https://vk.com/russkikh_natalia --monitored use
 python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ```
 
-> `collect --force-refresh` re-fetches via the API only. Deduplication (by
-> content hash) stays on, so already-seen posts are not re-analyzed — this is
-> the token-saving behaviour. For a full re-analysis that overwrites rows, use
-> `task collect --force-refresh` (below).
+> `collect --force-refresh` re-fetches via the API only. Durable analysis
+> receipts remain in force, so already-covered content in the same analysis
+> context is not re-analyzed. Web task force controls are removed and legacy
+> stored force flags are ignored; the task CLI options below are legacy and do
+> not authorize web/API dedup bypass.
 
 ---
 
@@ -161,7 +165,7 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--scenario` | — | `AgentScenario` ID to apply when the task runs |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (collect/analyze) — stored on the task as `cli_dates.start_date` |
 | `--end-date` | — | Content end date `DD-MM-YYYY` — stored on the task as `cli_dates.end_date` |
-| `--force-refresh` | `false` | Overwrite the window on every run (collect) — stored on the task as `payload.force_refresh` |
+| `--force-refresh` | `false` | Legacy collection option; does not bypass analysis receipts |
 | `--brands` | — | Comma/space separated brands to track (brand_mentions scenario) |
 | `--competitors` | — | Comma/space separated competitors to analyze (competitor scenario) |
 | `--hashtags` | — | Comma/space separated hashtags to track (hashtag_analysis scenario) |
@@ -216,8 +220,8 @@ Only provided options are changed; all others keep their current values.
 | `--period` | Period for digest: `day`, `week` |
 | `--start-date` | New start date `YYYY-MM-DD` (collect/analyze) |
 | `--end-date` | New end date `YYYY-MM-DD` |
-| `--force-refresh` | New `force_refresh` value (collect) |
-| `--force-reanalyze` | New `force_reanalyze` value (analyze) |
+| `--force-refresh` | Legacy option; web task execution ignores stored force flags |
+| `--force-reanalyze` | Legacy option; web task execution ignores stored force flags |
 | `--brands` | New comma/space separated brands (brand_mentions scenario) |
 | `--competitors` | New comma/space separated competitors (competitor scenario) |
 | `--hashtags` | New comma/space separated hashtags (hashtag_analysis) |
@@ -257,21 +261,22 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 | `--scenario` | — | `AgentScenario` ID (one-off run) |
 | `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |
 | `--tenant` | — | Workspace slug or id for a one-off run |
-| `--force-refresh` | `false` | Full-cycle refresh (per job type, below); applied to this job only, never persisted on the task row |
+| `--force-refresh` | `false` | Direct CLI collection may re-fetch a window; it does not bypass analysis receipts |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (one-off only) |
 | `--end-date` | — | Content end date `DD-MM-YYYY` (one-off only) |
 
 A task's own workspace always wins over `--tenant`. Running a task executes
 *its own* job — it never drains an unrelated pending job.
 
-**`--force-refresh` per job type** — what gets updated:
-
-| Job type | Effect |
-|---|---|
-| `collect` | Re-fetch the whole selected period **and** re-analyze it (bypasses dedup), overwriting `ai_analytics` rows by `(source, date)`. Costs tokens — use deliberately. |
-| `digest` | Re-sends the digest even when it was already sent for this task + period (skips the idempotency check). |
-| `analyze` | No extra effect: it already re-evaluates triggers over stored analytics. |
-| `prune`, `learn`, `reflect` | No extra effect beyond a normal run. |
+For direct collection, `--force-refresh` can re-fetch the requested window but
+does not bypass durable analysis receipts. Web task force controls were removed;
+legacy stored force values are ignored by web task admission. Analysis re-runs
+when its semantic context changes (for example, scenario or targets), not
+through a force flag. The task-run `--force-refresh` still forces digest
+resending, while it does not bypass analysis receipts for collect/analyze.
+Prune, learn and reflect retain their normal behavior. Direct
+`analyze --keep-raw` changes retention only: staged rows are preserved after a
+successful save, while normal receipt and provider rules still apply.
 
 **Examples:**
 ```bash
@@ -284,8 +289,8 @@ python -m cli.main task digest --task 524 --period week
 # One-off analyze run
 python -m cli.main task analyze --sources 739 --scenario 3
 
-# Full-cycle refresh: re-fetch + re-analyze the whole period, overwriting rows
-python -m cli.main task collect --task 524 --force-refresh
+# Direct collect command: re-fetch a collection window; receipts still apply
+python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 ```
 
 ### Pause / Resume Task

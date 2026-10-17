@@ -254,6 +254,21 @@ P8-T06 and does not alter its task record.
   in-session dev delivery/local-validation deferral remains in force. No setting
   activation, schema change, runtime, live provider call or deployment.
 
+- [x] P8-T17 — audit collect force-refresh semantics and task-run feedback; accept:
+  correlate both Safari launch actions with persisted Jobs and source outcomes,
+  document raw/analytics overwrite behavior and confirmed failure cause, preserve
+  existing data, and record bounded follow-ups. Owner: codex-collect-repro;
+  status: DONE. Accepted by coordinating Codex on 2026-10-17 against the source
+  SHA below and the report diff. Evidence: [collection launch audit](../audits/2026-10-17-collection-launch.md)
+  reviewed at source SHA `b70911d6c1e0c6a71e5668a502df42f1e73fefa9`. Jobs 1737 and
+  1738 were correlated to the two Safari actions; each ended after about five
+  seconds with one VK source error and zero collected records. The reported
+  missing modal was not reproduced. The screen-name lookup failed with
+  `httpx.ConnectTimeout`; the precise network cause is unknown. Public raw and
+  analytics data were unchanged. No code or tests were changed or run. The
+  confirmed task-summary `ok` despite all-source errors is recorded as a bounded
+  follow-up; no speculative launch fix was applied.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

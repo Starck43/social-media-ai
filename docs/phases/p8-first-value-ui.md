@@ -170,6 +170,25 @@ P8-T06 and does not alter its task record.
   acceptance covers metadata vs offline web checks and blank/custom prompt
   settlement. Keep Draft pending the exact-SHA local R8/R10 run.
 
+- [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
+  platform role, and expose platform-admin-only operator grant/permission-label
+  editing without mutable catalog identities or role escalation; owner: remote
+  Notion agent (`fix/admin-shell-and-role-management`); status: BLOCKED
+  (remote implementation checked; real authenticated PostgreSQL acceptance pending).
+  Owns: shared admin shell/CSS/authorization, role and permission views, focused
+  regression tests and documentation. P8-T15 model request behavior is unchanged.
+  Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
+  explicit identity/storage doubles; 18 offline Chromium layout cases and one
+  no-JavaScript case passed. This is not real DB/owner-account acceptance.
+  The owner explicitly authorized merging PR #208 with real-environment
+  verification deferred to their machine; this does not certify DB acceptance
+  or mark the task DONE. Pending sequential local R8/R10 verification: admin/
+  operator/revoked identities, menu continuity after model-test POST, persisted
+  operator grants and permission names with protected catalog fields unchanged.
+  Preserve existing grants/data; no reset, migration or live API calls.
+  Additional synthetic grant-selection cases were blocked by the execution
+  safety gate and were not applied or run; the blocker was not bypassed.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

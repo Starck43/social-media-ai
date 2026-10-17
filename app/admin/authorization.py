@@ -223,7 +223,11 @@ async def require_admin_perm(request: Request, model_name: str, action: ActionTy
     go through the same `User.model_permissions()` the rest of the console uses,
     which keeps one answer to "may this operator do this" instead of two.
     """
-    user = await _console_backend(request).resolve_user(request)
+    backend = _console_backend(request)
+    # Plain FastAPI routes do not run SQLAdmin's login_required wrapper.
+    # Load the same request-bound grants before rendering its shared menu.
+    await backend.load(request)
+    user = await backend.resolve_user(request)
     if user is None or not user.has_admin_access() or not user.has_perm_for(model_name, action):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -70,8 +70,11 @@ Additional restrictions:
 
 - `TenantAdmin.is_accessible()` requires a platform admin, not merely a tenant
   model grant or ownership of one workspace.
-- Platform roles and permissions are read-only in SQLAdmin (`can_create`,
-  `can_edit`, `can_delete` false); this does not itself disable export.
+- Platform role and permission identities remain fixed: no create/delete or code,
+  resource/action, or user-assignment editing. A platform admin may edit the
+  operator role's permission selection through `RoleManager.set_permissions`,
+  and may edit a permission's display name. Operators cannot edit either catalog,
+  even with explicit grants. Writes recheck the active platform admin and CSRF.
 - User forms exclude `role` / `role_id`; new users receive the ordinary platform
   `user` role. Creating an operator/admin or changing operator grants is not an
   ordinary SQLAdmin user-form operation.
@@ -83,6 +86,25 @@ operator console/infrastructure, while `/app` and `/api` have their own scope
 middleware. Admin listings are not filtered by the web UI's selected workspace.
 Actions that execute a task re-enter the selected task's owning workspace.
 
+## Navigation and actor identity
+
+The shared sidebar displays the verified request user and platform role, never a
+username or privilege flag from session display values. Web account menus label
+the platform role separately from workspace membership; platform authority does
+not grant membership rights in `/app`.
+
+Custom FastAPI console routes load the same request-bound SQLAdmin grants before
+rendering the shared layout. This keeps model navigation present after model-test
+POST responses without changing the authorization decision. The sidebar uses a
+compact, scrollable menu and native mobile navigation disclosure.
+
+Catalog editing is covered remotely by actual-source, real SQLAdmin form/route
+checks with explicit identity and persistence doubles, plus offline Chromium
+layouts. These checks are not PostgreSQL persistence or owner-account acceptance.
+Real authenticated admin/operator/revoked-account checks and grant/name persistence
+remain pending owner-local verification. The owner explicitly authorized integration
+ahead of that verification and will report any findings. No migration is introduced.
+
 ## Registered model pages
 
 Exactly **16 model views** are registered by `setup_admin()`. Paths shown are the
@@ -93,8 +115,8 @@ business-workflow execution.
 | View | Model | List path | Explicit restriction / purpose |
 | --- | --- | --- | --- |
 | `UserAdmin` | `User` | `/admin/user/list` | Account forms exclude platform-role assignment; password action is separate |
-| `RoleAdmin` | `PlatformRole` | `/admin/platform-role/list` | Platform catalog; create/edit/delete disabled |
-| `PermissionAdmin` | `Permission` | `/admin/permission/list` | Permission catalog; create/edit/delete disabled |
+| `RoleAdmin` | `PlatformRole` | `/admin/platform-role/list` | Fixed catalog; platform admin may configure operator grants only |
+| `PermissionAdmin` | `Permission` | `/admin/permission/list` | Fixed catalog; platform admin may edit display name only |
 | `PlatformAdmin` | `Platform` | `/admin/platform/list` | Platform configuration; no sync action |
 | `SourceAdmin` | `Source` | `/admin/source/list` | Sources and synchronous collection check |
 | `CollectedItemAdmin` | `CollectedItem` | `/admin/collected-item/list` | Raw staged content |
@@ -296,8 +318,6 @@ reference must not describe them as working schema fields:
 - `SourceAdmin.column_list` names `date_from` / `date_to`, while current `Source`
   declares neither column nor property (the columns were removed in migration
   0079). Its create/edit form no longer includes those fields.
-- `PermissionAdmin.column_list` names `description`, but current Permission has
-  no such mapped column/property. The permission catalog is otherwise read-only.
 
 These are source observations, not a claim that startup or a particular rendered
 page was reproduced. These unrelated runtime/view fixes are outside the LLM model-test change. Real SQLAdmin/ASGI/PG role, revocation and page-render acceptance remains

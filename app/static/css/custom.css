@@ -28,70 +28,48 @@ main {
     display: flex;
 }
 
-/* ── Sidebar / navbar ─────────────────────────────────────────────────────── */
-aside {
-    padding: calc(var(--tblr-content-padding) * .5);
-    box-shadow: var(--box-shadow-lg) !important;
-    background-color: var(--tblr-navbar-bg, var(--tblr-bg-surface));
-    border-right: 1px solid var(--tblr-navbar-border-color, var(--tblr-border-color));
+/* Scoped shell: navigation must not distribute links over the viewport. */
+.admin-console { margin: 0; background: var(--tblr-body-bg) !important; }
+.admin-shell { display: grid; grid-template-columns: 16.5rem minmax(0, 1fr); min-height: 100dvh; }
+.admin-shell > .page-wrapper { margin-left: 0; min-width: 0; overflow: visible; }
+.admin-sidebar {
+    position: sticky; top: 0; height: 100dvh; min-height: 0;
+    display: flex; flex-direction: column; gap: 1rem; padding: 1rem;
+    background: var(--tblr-navbar-bg, var(--tblr-bg-surface));
+    border-right: 1px solid var(--tblr-border-color); overflow: auto;
 }
-
-aside .container-fluid {
-    margin: 0 calc(var(--tblr-content-padding) * .5);
-    height: 100%;
+.admin-brand { display: flex; align-items: center; gap: .65rem; color: var(--tblr-body-color); font-weight: 700; }
+.admin-brand img { flex: 0 0 32px; }
+.admin-brand small, .admin-caption { display: block; font-size: .75rem; color: var(--color-text-secondary); }
+.admin-brand small { font-weight: 400; }
+.admin-identity { display: grid; gap: .2rem; padding: .75rem; border: 1px solid var(--tblr-border-color); border-radius: .75rem; overflow-wrap: anywhere; }
+.admin-identity small { color: var(--color-text-secondary); }
+.admin-navigation { flex: 1 1 auto; min-height: 4rem; overflow: auto; }
+.admin-navigation > summary { cursor: pointer; padding: .5rem; font-weight: 600; }
+.admin-menu { height: auto; overflow: visible; }
+.admin-menu .navbar-nav { display: flex; flex-direction: column; gap: .125rem; margin: 0; padding: 0; }
+.admin-menu .nav-item { list-style: none; }
+.admin-menu .nav-link {
+    display: flex; align-items: center; gap: .6rem; padding: .5rem .65rem;
+    min-height: 2.5rem; border-radius: .5rem; color: var(--tblr-navbar-color);
 }
-
-nav {
-    height: 100%;
-    overflow-x: hidden;
-}
-
-.navbar-nav:last-child {
-    flex-grow: 0 !important;
-}
-
-.navbar .navbar-nav .nav-link {
-    color: var(--tblr-navbar-color);
-}
-
-.navbar .navbar-nav .nav-link.active {
-    background-color: var(--tblr-navbar-active-bg, rgba(var(--tblr-primary-rgb), 0.15));
-    color: var(--tblr-navbar-active-color, var(--tblr-primary)) !important;
-    font-weight: 600;
-}
-
-.navbar .navbar-nav .nav-link:hover:not(.active) {
-    background-color: var(--tblr-bg-surface-tertiary);
-}
-
-/* Vertical sidebar responsive */
+.admin-sidebar i { color: var(--tblr-primary) !important; }
+.admin-menu .nav-link-icon { flex: 0 0 1.25rem; text-align: center; }
+.admin-menu .nav-link-title { min-width: 0; overflow-wrap: anywhere; }
+.admin-menu .nav-link.active { background: var(--tblr-navbar-active-bg); color: var(--tblr-navbar-active-color); font-weight: 600; }
+.admin-menu .nav-link:hover, .admin-sidebar-link:hover { background: var(--tblr-bg-surface-secondary); }
+.admin-sidebar-footer { display: grid; gap: .5rem; border-top: 1px solid var(--tblr-border-color); padding-top: .75rem; }
+.admin-sidebar-link { display: flex; align-items: center; gap: .65rem; padding: .45rem .5rem; border-radius: .5rem; color: var(--tblr-navbar-color); }
+.admin-sidebar :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }
 @media (min-width: 768px) {
-    .navbar-vertical.navbar-expand-md {
-        max-width: 12rem;
-    }
-
-    .navbar-expand-md.navbar-vertical ~ .navbar,
-    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-        margin-left: 12rem;
-    }
+    .admin-navigation > summary { display: none; }
+    .admin-navigation:not([open]) > .admin-menu { display: block; }
 }
-
-@media (min-width: 992px) {
-    .navbar-vertical.navbar-expand-md {
-        max-width: unset;
-    }
-
-    .navbar-expand-md.navbar-vertical ~ .navbar,
-    .navbar-expand-md.navbar-vertical ~ .page-wrapper {
-        margin-left: 15rem;
-    }
-}
-
 @media (max-width: 767.98px) {
-    .navbar-expand-lg .navbar-collapse .navbar-nav {
-        flex-wrap: wrap;
-        justify-content: space-between;
-    }
+    .admin-shell { grid-template-columns: minmax(0, 1fr); }
+    .admin-sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--tblr-border-color); }
+    .admin-navigation { flex: none; max-height: 45dvh; }
+    .admin-shell > .page-wrapper { padding: .75rem; }
 }
 
 .d-flex > div {

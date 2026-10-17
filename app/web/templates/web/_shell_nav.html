@@ -42,6 +42,7 @@
             </section>
             <section class="shell-menu-group" aria-labelledby="account-tools-{{ menu_id }}">
                 <h2 id="account-tools-{{ menu_id }}" class="shell-menu-heading">Аккаунт</h2>
+                <p class="shell-menu-hint">Платформенная роль: {{ user.role.label if user.role else 'Роль не назначена' }}. Права в пространстве указаны отдельно.</p>
                 <a href="/app/settings?tab=account">{{ icon('settings') }}<span>Мой аккаунт</span></a>
                 {% if user and user.has_admin_access() %}<a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование ↗</span><span class="shell-menu-hint">Модели и действия — по правам аккаунта</span></span></a>{% endif %}
                 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Выйти из аккаунта</button></form>

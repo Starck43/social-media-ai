@@ -80,7 +80,10 @@ Additional restrictions:
   its separate operator-only update contract; the SQLAdmin editor is admin-only.
 - User forms exclude `role` / `role_id`; new users receive the ordinary platform
   `user` role. Creating an operator/admin or changing operator grants is not an
-  ordinary SQLAdmin user-form operation.
+  ordinary SQLAdmin user-form operation. `UserManager.set_platform_role()` also
+  rejects every self-assignment (including selecting `admin` again) before any
+  write; another active platform admin must change the account's role. Generic
+  SQLAdmin updates reject role fields rather than bypassing this service guard.
 - External FastAPI dashboards use `require_admin_perm()` explicitly. Password
   administration has its additional self/cross-account checks below.
 
@@ -88,6 +91,29 @@ The main app's `PlatformScopeMiddleware` supplies explicit tenant bypass for the
 operator console/infrastructure, while `/app` and `/api` have their own scope
 middleware. Admin listings are not filtered by the web UI's selected workspace.
 Actions that execute a task re-enter the selected task's owning workspace.
+
+## Role permission picker
+
+The role editor progressively enhances the existing `permissions` multiselect into
+**Available / Chosen** lists, with independent search and counts. Double-click an
+item to transfer it in either direction. On touch devices, tap to mark one or more
+items, then use **Add / Remove** (44px minimum targets). Keyboard users can use
+arrows/Home/End, Space to mark, Enter to transfer, Ctrl/Cmd+A to mark all filtered
+items, and Escape to clear marks. Nothing is persisted until the form is saved.
+
+Each list has its own bounded, contextual height and contained scrolling; its
+panel is not another scroll container. Narrow editors stack the panes. The native
+select remains the sole submitted value source, including filtered-out choices,
+and remains usable if JavaScript is disabled. This needs no new dependency or
+schema migration. Editing stored grants on `admin` does not remove its wildcard
+access and is distinct from changing one's account role.
+
+Offline validation: `tests/permission_transfer_fixture.py` renders actual SQLAdmin
+forms with 30 synthetic permissions and explicit storage doubles;
+`tests/permission_transfer_layout.py` exercises desktop/mobile widths, both themes,
+empty/full/small selections, double-click, keyboard, touch, native FormData/reset,
+scroll containment and the no-JavaScript fallback. These are not real database
+persistence or owner-account acceptance tests.
 
 ## Navigation and actor identity
 

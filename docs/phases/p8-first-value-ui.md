@@ -174,8 +174,9 @@ P8-T06 and does not alter its task record.
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
   editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-all-role-records`); status: BLOCKED
-  (implementation checked; owner-local real PostgreSQL acceptance pending).
+  Notion agent (`fix/admin-role-transfer-picker`); status: BLOCKED
+  (owner-requested self-role protection and responsive permission transfer picker;
+  base dev `3e57794` (includes PR #210); owner-local real PostgreSQL acceptance remains pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
   regression tests and documentation. P8-T15 model request behavior is unchanged.
   Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
@@ -198,6 +199,23 @@ P8-T06 and does not alter its task record.
   revocation/inactive/anonymous denial, CSRF and immutable-field checks.
   Real database persistence is not certified; the owner's local-verification
   agreement remains in force. No migration or runtime/provider operation.
+
+  Follow-up from dev `a36ef4f`: self-role assignments now fail before any manager
+  write (including `admin` to `admin`), and generic user CRUD rejects role fields.
+  Another active platform admin can still assign roles to other accounts.
+  Role grants use a dependency-free Available/Chosen picker with search, counts,
+  double-click, touch buttons, keyboard support, native select submission/reset
+  and bounded list-only scrolling. Native no-JS selection is preserved.
+  Evidence on refreshed dev `3e57794`: 192 isolated tests passed (0 failed/skipped);
+  18 offline Chromium
+  width/theme/state cases plus desktop, touch and no-JS interaction suites passed
+  with 30 synthetic permissions (Chromium 153.0.8010.12). Static formatting,
+  compilation, JS syntax and whitespace checks passed. No app/runtime, DB,
+  migration, live provider or deployment operation. Owner-local sequential
+  verification still needs persisted role grant edits, forbidden self-role API
+  writes, allowed other-account assignment and the actual owner browser form.
+  The standing owner request to publish to dev and test locally remains in force;
+  this is a delivery handoff, not final task/phase acceptance.
 
 - [ ] P8-T17 — remove redundant paid checkbox; explicit real POST is consent;
   readable answer plus sanitized provider JSON and transport/accounting statuses;

@@ -330,6 +330,26 @@ class AIAnalyzer:
             # stubs must not become conclusions or influence theme matching.
             has_results = any(result and result.get("parsed") for result in analysis_results.values())
 
+            # A model may answer with a refusal instead of the scenario schema
+            # («Недостаточно данных для анализа. Контент не предоставлен.»).
+            # Saving that answer as an analysis poisons the theme grouping
+            # («без темы», no title, no coverage truth) and, via stored
+            # content_hashes, blocks the records from ever being retried. A
+            # refusal is "no results": the batch stays staged, the attempt is
+            # counted by the usual failed-batch path, and the next run — with a
+            # content-carrying prompt or a working model — analyzes it.
+            from app.services.ai.model_suitability import is_refusal_summary
+
+            if has_results and is_refusal_summary(
+                (analysis_results.get("text_analysis", {}).get("parsed", {}) or {}).get("summary")
+            ):
+                logger.warning(
+                    "analyze_refusal_detected source_id=%s — the model refused to analyze; "
+                    "keeping the batch staged for a retry instead of saving the refusal",
+                    source.id,
+                )
+                has_results = False
+
             if not has_results:
                 logger.warning(f"No meaningful analysis results for source {source.id}, skipping save")
                 # Paid attempts still need evidence even when nothing is saved.
@@ -826,9 +846,15 @@ class AIAnalyzer:
         2. Auto-resolve by llm_strategy (fallback)
         3. Fall back to default model for media type
 
+        Priorities 2–3 (auto-picks) never return an analysis-incapable model —
+        a classifier or a never-succeeded one would only burn a run and blame
+        the operator with "модель не ответила". An explicitly configured
+        scenario model still runs as chosen.
         Returns:
                 LLMModel instance or None
         """
+
+        from app.services.ai.model_suitability import analysis_capable
 
         # Convert string to MediaType if needed
         if isinstance(media_type, str):
@@ -867,6 +893,11 @@ class AIAnalyzer:
         if agent_scenario and agent_scenario.llm_strategy:
             try:
                 model = await self._auto_resolve_model(agent_scenario, media_type)
+                if model and not analysis_capable(model):
+                    logger.warning(
+                        f"Auto-resolved model {model.name} is unfit for content analysis; skipping auto-fallback"
+                    )
+                    return None
                 if model:
                     return model
 
@@ -878,6 +909,9 @@ class AIAnalyzer:
             # Use get_enum_value to ensure we pass a string, not tuple
             media_type_str = get_enum_value(media_type)
             model = await LLMModel.objects.get_model_for_capability(media_type_str)
+            if model and not analysis_capable(model):
+                logger.warning(f"Default model {model.name} is unfit for content analysis; refusing fallback")
+                return None
             if model:
                 logger.info(f"✅ Select default fallback model {model.name} for {media_type}")
                 return model

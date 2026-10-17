@@ -186,6 +186,121 @@ async def test_saving_the_editor_writes_the_edited_fields() -> None:
             await _drop(user, tenant_id)
 
 
+async def test_model_popover_saves_numeric_id_and_never_posts_none() -> None:
+    """Regression: 'Выберите модель из списка' on every wizard save.
+
+    Model popovers used to render `value="None"` for an unset model (the caller
+    stringified the id with Jinja's `|string`), so saving the wizard — even with
+    a freshly picked model — posted the literal "None" and the id validation
+    rejected it. The popover macro now normalizes None to '' and the editors
+    pass the raw id; saving a picked model must land as an int.
+    """
+    from app.core.tenant_context import tenant_scope
+    from app.models import AgentScenario, LLMModel, LLMProvider
+
+    provider = await LLMProvider.objects.create(
+        name="PopRegrProvider", api_format="openai", base_url="https://api.popreg.test/v1", is_active=True
+    )
+    glm = await LLMModel.objects.create(
+        provider_id=provider.id,
+        name="GLM Fail (free)",
+        model_id="zai-org/GLM-fail",
+        model_type="text,image",
+        is_active=True,
+    )
+    qwen = await LLMModel.objects.create(
+        provider_id=provider.id,
+        name="Qwen Works",
+        model_id="nvidia/Qwen-works",
+        model_type="text,image",
+        is_active=True,
+    )
+    try:
+        async with await _client() as client:
+            user, tenant_id = await _register(client, "ScModelPick")
+            scenario_id = await _scenario(tenant_id, _name("model-pick"))
+            try:
+                page = await client.get(f"/app/scenarios/{scenario_id}")
+                assert f'data-popover-option="{qwen.id}"' in page.text, "options carry the numeric model id"
+                assert 'value="None"' not in page.text, "an unset model must not render the literal None"
+
+                form = await _editor_payload(page.text)
+                assert form.get("text_llm_model_id") == "", "an unset model stays empty, not 'None'"
+                form["text_llm_model_id"] = str(qwen.id)  # what the popover JS writes
+
+                resp = await client.post(f"/app/scenarios/{scenario_id}", data=form)
+                assert "Выберите модель" not in resp.text, "a numeric model id must save cleanly"
+                with tenant_scope(tenant_id):
+                    row = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
+                assert row.text_llm_model_id == qwen.id
+            finally:
+                await _drop(user, tenant_id)
+    finally:
+        await LLMModel.objects.filter(provider_id=provider.id).delete()
+        await LLMProvider.objects.filter(id=provider.id).delete()
+
+
+async def test_wizard_hides_classifiers_and_never_succeeded_models() -> None:
+    """Regression: a safety classifier was selectable for text analysis and only
+    manifested as failed runs («модель не ответила»). The picker now hides
+    classifier families and fleets with zero successes ever; a model already
+    wired into the draft stays listed so the operator can see what is set."""
+    from app.core.tenant_context import tenant_scope
+    from app.models import AgentScenario, LLMModel, LLMProvider
+
+    provider = await LLMProvider.objects.create(
+        name="SuitRepoProvider", api_format="openai", base_url="https://api.suitrepo.test/v1", is_active=True
+    )
+    guard = await LLMModel.objects.create(
+        provider_id=provider.id,
+        name="Guardian 4 Moderation",
+        model_id="vendor/llama-guard-4",
+        model_type="text,image",
+        is_active=True,
+    )
+    ghost = await LLMModel.objects.create(
+        provider_id=provider.id,
+        name="Ghost Free",
+        model_id="vendor/ghost-free",
+        model_type="text,image",
+        is_active=True,
+        use_count=5,
+        fail_count=5,
+    )
+    qwen = await LLMModel.objects.create(
+        provider_id=provider.id,
+        name="Qwen Works",
+        model_id="vendor/qwen-works",
+        model_type="text,image",
+        is_active=True,
+        use_count=4,
+        fail_count=0,
+    )
+    scenario_id = None
+    user = tenant_id = None
+    try:
+        async with await _client() as client:
+            user, tenant_id = await _register(client, "ScSuitable")
+            scenario_id = await _scenario(tenant_id, _name("suitable"))
+
+            page = await client.get(f"/app/scenarios/{scenario_id}")
+            assert "Guardian 4 Moderation" not in page.text, "a classifier must not be offered"
+            assert "Ghost Free" not in page.text, "a never-succeeded fleet must not be offered"
+            assert "Qwen Works" in page.text, "a working model stays offered"
+
+            # A model already wired into the scenario is never a mystery: it
+            # stays listed (and hint-labelled) so the operator can switch away.
+            await AgentScenario.objects.update_by_id(scenario_id, text_llm_model_id=ghost.id)
+            page = await client.get(f"/app/scenarios/{scenario_id}")
+            assert "Ghost Free" in page.text, "the wired model must remain visible"
+    finally:
+        await _drop(user, tenant_id)
+        if scenario_id:
+            await AgentScenario.objects.filter(id=scenario_id).delete()
+        await LLMModel.objects.filter(provider_id=provider.id).delete()
+        await LLMProvider.objects.filter(id=provider.id).delete()
+
+
 async def test_marking_a_scenario_default_does_not_unset_other_workspaces() -> None:
     """The regression: an unscoped `filter(is_default=True).update(...)`."""
     from app.core.tenant_context import tenant_scope

@@ -508,6 +508,26 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         }
         for m in await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.name)
     ]
+    # Scenario pickers must not offer models that only burn runs: safety
+    # classifiers answer with a verdict (analysis reads that as `failed_output`)
+    # and fleets that never once succeeded end runs in "модель не ответила".
+    # A model already wired into this draft stays listed — the operator has to
+    # see what is set to be able to judge it and switch away.
+    from app.services.ai.model_suitability import is_classifier_like, never_succeeded
+
+    wired_ids = {
+        model_id
+        for model_id in (draft.text_llm_model_id, draft.image_llm_model_id, draft.video_llm_model_id)
+        if model_id
+    }
+    llm_models = [
+        model
+        for model in llm_models
+        if model["id"] in wired_ids
+        or not (
+            is_classifier_like(model["model_id"], model["name"]) or never_succeeded(model["use_count"], model["fail_count"])
+        )
+    ]
     return render(
         request,
         "web/scenario_wizard.html",

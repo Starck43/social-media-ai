@@ -36,9 +36,6 @@ html.dark .llm-test, [data-theme="dark"] .llm-test { --llm-accent: #22d3ee; --ll
 .llm-test textarea { display: block; width: 100%; min-height: 104px; resize: vertical; border: 1px solid var(--llm-edge);
     background: var(--color-surface, #fff); color: inherit; border-radius: 8px; padding: 12px; font: inherit; }
 .llm-test textarea::placeholder { color: var(--color-text-secondary, #475569); opacity: 1; }
-.llm-consent { display: flex; align-items: flex-start; gap: 12px; padding: 12px; margin-top: 16px; font-size: 14px;
-    border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 8px; cursor: pointer; min-height: 44px; }
-.llm-consent input { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 2px; accent-color: var(--llm-accent); }
 .llm-test summary { cursor: pointer; padding: 12px 0; min-height: 44px; font-size: 14px; font-weight: 600; }
 .llm-checks { border-top: 1px solid var(--color-border-strong, #cbd5e1); } .llm-checks ul { list-style: none; padding: 0; }
 .llm-checks li { margin: 8px 0; } .llm-check { display: inline-block; min-width: 36px; font-weight: 600; }
@@ -56,3 +53,10 @@ html.dark .llm-test, [data-theme="dark"] .llm-test { --llm-accent: #22d3ee; --ll
     .llm-test-heading, .llm-section-heading { align-items: flex-start; flex-direction: column; }
     .llm-meta, .llm-result-meta { grid-template-columns: 1fr; gap: 12px; } .llm-button { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .llm-test * { scroll-behavior: auto; transition: none; animation: none; } }
+
+.llm-answer { border: 1px solid var(--color-border-strong, #cbd5e1); border-radius: 10px;
+    padding: 20px; margin-block: 20px; background: var(--color-surface-secondary, #f1f5f9); }
+.llm-answer-text { margin-top: 14px; font-size: 16px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.llm-json-panel { border-top: 1px solid var(--color-border-strong, #cbd5e1); margin-top: 20px; }
+.llm-json-panel .llm-copy { margin-top: 8px; } .llm-json-panel .llm-json { white-space: pre; tab-size: 2; }
+#llm-submit-status:empty { display: none; }

@@ -192,4 +192,4 @@ def test_mode_specific_output_escapes_prompts_and_shows_diagnostics(tier, label)
     if tier == "mock":
         assert "имитация" in html and "вымышленный" in html
     if tier == "real":
-        assert "512 токенов" in html and "Отправленное сообщение" in html
+        assert "512 токенов" in html and "Сообщение запроса" in html

@@ -461,6 +461,11 @@ class OpenAICompatibleClient(LLMClient):
     async def chat(
         self, messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None, **kwargs
     ) -> dict[str, Any]:
+        # Only the newly-created admin probe client opts into this in-memory
+        # observation. Never add diagnostics to the provider payload or logs.
+        diagnostic = getattr(self, "_probe_diagnostics", None)
+        if isinstance(diagnostic, dict):
+            diagnostic.update(stage="admission", dispatch_state="not_dispatched")
         if not self.api_key:
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
@@ -488,17 +493,31 @@ class OpenAICompatibleClient(LLMClient):
             execution=execution,
             uses_tools=bool(tools),
         )
+        if isinstance(diagnostic, dict):
+            diagnostic["effective_max_tokens"] = payload["max_tokens"]
         await _verify_personal_dispatch_day(receipt)
 
         try:
+            if isinstance(diagnostic, dict):
+                diagnostic.update(stage="transport", dispatch_state="possible")
             async with httpx.AsyncClient() as c:
                 r = await c.post(
                     f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
                 )
+                if isinstance(diagnostic, dict):
+                    diagnostic.update(stage="response", dispatch_state="response_received", http_status=r.status_code)
+                    try:
+                        diagnostic["raw_response"] = r.json()
+                    except ValueError:
+                        diagnostic["response_body"] = r.text
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
+                if isinstance(diagnostic, dict) and not isinstance(data, dict):
+                    raise ValueError("Provider response must be a JSON object")
 
+            if isinstance(diagnostic, dict):
+                diagnostic["stage"] = "accounting"
             accounting = {
                 "accounting_usage": self._accounting_usage(data),
                 **self._accounting_cost(data),
@@ -516,6 +535,8 @@ class OpenAICompatibleClient(LLMClient):
                 accounting_envelope=accounting,
             )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+            if isinstance(diagnostic, dict):
+                diagnostic.update(stage="complete", accounting_status="confirmed")
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)

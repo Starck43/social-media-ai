@@ -8,7 +8,9 @@ admin-supplied questions get a bounded, usable answer via the same billed client
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime
 from time import monotonic
 from typing import Any
@@ -189,31 +191,146 @@ async def probe_connectivity(model) -> dict[str, Any]:
     return result
 
 
-async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
-    """One bounded billed request; never fall back to an unaccounted HTTP path.
+def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
+    """Bounded JSON display copy; never mutate evidence or render provider HTML.
 
-    The selected client owns admission, durable dispatch/outcome accounting and
-    transport. A failure after dispatch is ambiguous and must not trigger retry.
+    Hide credential fields and the configured key even if echoed in other fields.
+    Keep token-usage fields intact. Mark truncated diagnostics, never invent data.
+    """
+    budget = [200_000] if budget is None else budget
+    if depth > 20 or budget[0] <= 0:
+        return "[truncated]"
+    budget[0] -= 1
+
+    def text(raw):
+        raw = str(raw)
+        raw = raw.replace(api_key, "[redacted]") if api_key else raw
+        raw = re.sub(r"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", raw)
+        raw = re.sub(
+            r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|session(?:id)?|cookie)\s*([=:])\s*([^\s&,;\"'<>]+)",
+            r"\1\2[redacted]",
+            raw,
+        )
+        limit = min(20_000, max(0, budget[0]))
+        budget[0] -= min(len(raw), limit)
+        return raw if len(raw) <= limit else raw[:limit] + "[truncated]"
+
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            if budget[0] <= 0:
+                result["_diagnostic_truncated"] = True
+                break
+            label = text(key)
+            sensitive = re.search(
+                r"(?i)(api.?key|authorization|access.?token|refresh.?token|password|secret|cookie|credential|session|^token$)",
+                str(key),
+            )
+            result[label] = (
+                "[redacted]" if sensitive else safe_probe_value(item, api_key, depth=depth + 1, budget=budget)
+            )
+        return result
+    if isinstance(value, list):
+        result = []
+        for item in value:
+            if budget[0] <= 0:
+                result.append("[truncated]")
+                break
+            result.append(safe_probe_value(item, api_key, depth=depth + 1, budget=budget))
+        return result
+    if isinstance(value, str):
+        return text(value)
+    return value if value is None or isinstance(value, (bool, int, float)) else text(value)
+
+
+def _real_result(observation, response=None, *, api_key="", error=None):
+    """Separate provider reply, usable text and accounting; absence is not zero."""
+    response = response if isinstance(response, dict) else {}
+    raw = observation.get("raw_response", response.get("raw"))
+    raw_usage = raw.get("usage", {}) if isinstance(raw, dict) else {}
+    raw_usage = raw_usage if isinstance(raw_usage, dict) else {}
+
+    def count(key):
+        value = raw_usage.get(key)
+        return value if type(value) is int and value >= 0 else None
+
+    incoming, outgoing = count("prompt_tokens"), count("completion_tokens")
+    total = incoming + outgoing if incoming is not None and outgoing is not None else None
+    choices = raw.get("choices") if isinstance(raw, dict) else None
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message")
+    message = message if isinstance(message, dict) else {}
+    content = response.get("content", message.get("content"))
+    content = content if isinstance(content, str) else ""
+    provider_error = isinstance(raw, dict) and bool(raw.get("error"))
+    result = {
+        "ok": bool(content.strip()) and not error and not provider_error,
+        "tier": "real",
+        "content": safe_probe_value(content, api_key),
+        "stage": observation.get("stage", "unknown"),
+        "dispatch_state": observation.get("dispatch_state", "unknown"),
+        "http_status": observation.get("http_status"),
+        "accounting_status": observation.get("accounting_status", "not_confirmed"),
+        "finish_reason": safe_probe_value(response.get("finish_reason", choice.get("finish_reason")), api_key),
+        "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
+        "tokens_spent": total,
+        "response_json": safe_probe_value(raw, api_key),
+        "response_body": safe_probe_value(observation.get("response_body"), api_key),
+        "effective_max_tokens": observation.get("effective_max_tokens"),
+    }
+    if result["response_json"] is not None:
+        result["response_json_text"] = json.dumps(result["response_json"], ensure_ascii=False, indent=2)
+    if error:
+        result.update(error=error[1], error_code=error[0])
+    elif provider_error:
+        result.update(error="API вернул JSON с ошибкой. См. ответ провайдера ниже.", error_code="provider_error")
+    elif not content.strip():
+        result.update(
+            error="Ответ API получен, но текст сообщения пуст. Проверьте JSON и finish_reason; автоматического повтора нет.",
+            error_code="empty_content",
+        )
+    return result
+
+
+async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
+    """One bounded billed request; explicit admin POST is the paid action.
+
+    Never bypass admission or retry. Preserve received provider evidence even
+    when parsing or subsequent accounting fails; diagnostics are display copies.
     """
     from app.core.config import settings
     from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
     question, max_tokens = request_parameters(model, prompt)
+
+    def blocked(code, message):
+        return {
+            "ok": False,
+            "error_code": code,
+            "error": message,
+            "stage": "preflight",
+            "dispatch_state": "not_dispatched",
+            "tokens_spent": 0,
+        }
+
     if not _dispatch_ready(model):
-        return {"ok": False, "error": "Проверьте API-ключ и активность модели/провайдера.", "tokens_spent": 0}
+        return blocked("configuration", "Проверьте API-ключ и активность модели/провайдера. Запрос не отправлен.")
     if not settings.PERSONAL_BILLING_ENABLED:
-        return {"ok": False, "error": "Личный учёт расходов ещё не включён", "tokens_spent": 0}
+        return blocked(
+            "billing_disabled", "PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён; запрос не отправлен."
+        )
     if getattr(getattr(model, "provider", None), "api_format", None) != "openai":
-        return {"ok": False, "error": "Нужен OpenAI-совместимый API", "tokens_spent": 0}
+        return blocked("unsupported_format", "Нужен OpenAI-совместимый API. Запрос не отправлен.")
     try:
         client = LLMClientFactory.create(model)
     except Exception:
-        return {"ok": False, "error": "Не удалось создать клиент. Проверьте конфигурацию.", "tokens_spent": 0}
+        return blocked(
+            "client_configuration", "Не удалось создать клиент. Проверьте конфигурацию; запрос не отправлен."
+        )
     if not client.api_key:
-        return {"ok": False, "error": "API-ключ провайдера не настроен", "tokens_spent": 0}
-
-    # This is a newly created client, not a shared setting. Transport controls
-    # stay out of provider JSON; chat() reads its timeout from the client.
+        return blocked("missing_key", "API-ключ провайдера не настроен. Запрос не отправлен.")
+    observation = {"stage": "client", "dispatch_state": "unknown"}
+    client._probe_diagnostics = observation
     client.timeout = PROBE_TIMEOUT
     try:
         response = await client.chat(
@@ -222,52 +339,96 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
             temperature=0.0,
             personal_billing_purpose="admin_probe",
         )
-    except Exception:
-        logger.warning("Billed probe response/accounting unconfirmed for model %s", getattr(model, "id", "?"))
-        return {
-            "ok": False,
-            "error": "Ответ или учёт расходов не подтверждены. Не повторяйте вызов автоматически.",
-            "tokens_spent": None,
-        }
+    except Exception as exc:
+        stage = observation.get("stage")
+        if stage == "admission":
+            # Match only fixed repository-owned messages. Never display arbitrary
+            # exception text, SQL, account identities or credentials.
+            reasons = {
+                "Payer has no configured personal daily limit": (
+                    "personal_account_required",
+                    "У администратора нет настроенного личного счёта с дневным лимитом.",
+                ),
+                "Reviewed clean-day billing boundary is not active": (
+                    "billing_cutover_required",
+                    "Не активирована проверенная граница начала личного учёта расходов (cutover).",
+                ),
+                "Capped payer requires a reviewed provider/model request bound": (
+                    "model_bound_required",
+                    "Для модели не настроена проверенная политика ограничения стоимости запроса.",
+                ),
+                "Personal daily limit would be exceeded": (
+                    "daily_limit_exceeded",
+                    "Запрос превысит личный дневной лимит расходов.",
+                ),
+                "Current payer/day cap would be exceeded": (
+                    "daily_limit_exceeded",
+                    "Запрос превысит доступный бюджет дня.",
+                ),
+                "Personal account is frozen by an unresolved billing discrepancy": (
+                    "account_frozen",
+                    "Личный счёт заблокирован до проверки расхождения учёта.",
+                ),
+                "Selected model or provider changed; reload configuration before retry": (
+                    "configuration_changed",
+                    "Конфигурация модели или провайдера изменилась. Обновите страницу.",
+                ),
+                "Active workspace member is required": (
+                    "initiator_unavailable",
+                    "Не подтверждены актуальные права инициатора запроса.",
+                ),
+            }
+            code, hint = reasons.get(
+                str(exc),
+                (
+                    "admission_denied",
+                    "Учёт расходов не разрешил запуск. Проверьте личный счёт, дневной бюджет и политику модели.",
+                ),
+            )
+            error = (code, "Запрос не отправлен: " + hint)
+        elif isinstance(exc, httpx.TimeoutException):
+            error = (
+                "timeout",
+                "Истёк таймаут 20 секунд. Доставка запроса может быть не подтверждена; не повторяйте автоматически.",
+            )
+        elif observation.get("http_status") and observation["http_status"] != 200:
+            error = ("provider_http", "API вернул HTTP-ошибку. См. статус и JSON ответа; автоматического повтора нет.")
+        elif stage == "accounting":
+            error = (
+                "accounting_failed",
+                "Ответ API получен, но учёт расходов не подтверждён. Ответ сохранён ниже; не повторяйте автоматически.",
+            )
+        elif isinstance(exc, httpx.TransportError):
+            error = (
+                "transport_error",
+                "Ошибка соединения с API. Доставка может быть не подтверждена; не повторяйте автоматически.",
+            )
+        elif stage == "response":
+            error = (
+                "invalid_response",
+                "Ответ API получен, но JSON не удалось разобрать. См. тело ответа; не повторяйте автоматически.",
+            )
+        else:
+            error = ("unconfirmed", "Ответ или учёт расходов не подтверждены. Не повторяйте вызов автоматически.")
+        result = _real_result(observation, api_key=client.api_key, error=error)
+        if observation.get("dispatch_state") == "not_dispatched":
+            result["tokens_spent"] = 0
+        return result
     if not isinstance(response, dict):
-        return {"ok": False, "error": "Ответ не подтверждён. Не повторяйте автоматически.", "tokens_spent": None}
-
+        return _real_result(
+            observation,
+            api_key=client.api_key,
+            error=("invalid_response", "Ответ не подтверждён. Не повторяйте автоматически."),
+        )
     dispatch_id = response.pop("_personal_dispatch_id", None)
     journal_warning = False
     try:
         await journal_chat_attempt(client, "admin_probe", response, dispatch_id=dispatch_id)
     except Exception:
-        # A secondary journal failure must not re-dispatch or erase an answer.
         journal_warning = True
-    raw = response.get("raw")
-    # The chat compatibility shape fills missing usage with zeros. Read only
-    # provider evidence so unknown usage is never mislabeled as free.
-    usage = raw.get("usage") if isinstance(raw, dict) else None
-    usage = usage if isinstance(usage, dict) else {}
-
-    def count(key):
-        value = usage.get(key)
-        return value if type(value) is int and value >= 0 else None
-
-    incoming, outgoing = count("prompt_tokens"), count("completion_tokens")
-    total = incoming + outgoing if incoming is not None and outgoing is not None else None
-    text = response.get("content")
-    if not isinstance(text, str) or not text.strip():
-        return {
-            "ok": False,
-            "error": "Провайдер вернул пустой ответ. Возможен расход токенов; автоматического повтора нет.",
-            "tokens_spent": total,
-            "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
-        }
-    result = {
-        "ok": True,
-        "content": text,
-        "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
-        "tokens_spent": total,
-        "is_real_response": True,
-        "request_prompt": question,
-        "max_tokens": max_tokens,
-    }
+    result = _real_result(observation, response, api_key=client.api_key)
+    result.update(request_prompt=question, max_tokens=max_tokens, is_real_response=True)
     if journal_warning:
         result["save_warning"] = "Ответ получен, но журнал не подтверждён. Не повторяйте вызов автоматически."
+        result["accounting_status"] = "journal_unconfirmed"
     return result

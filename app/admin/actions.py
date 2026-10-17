@@ -87,58 +87,62 @@ class LLMModelActions:
                     "text": "Не удалось собрать локальный mock. Проверьте настройки.",
                 }
         else:
-            verdict = probe_status(model)
-            if not all(passed for _, passed in verdict["checks"][:3]):
-                result = {"ok": False, "tier": "real", "text": verdict["hint"]}
-            elif model.provider.api_format != "openai":
-                # The existing capped helper is OpenAI-shaped, not a format-agnostic chat client.
-                result = {
-                    "ok": False,
-                    "tier": "real",
-                    "text": "Реальный запрос доступен только для OpenAI-совместимого API.",
-                }
-            else:
-                question, limit = request_parameters(model, prompt)
-                probe = await probe_real_capped(model, prompt=prompt)
-                result = {
-                    "ok": bool(probe.get("ok")),
-                    "tier": "real",
-                    "text": (
-                        (
-                            "Получен ответ на ваш запрос."
-                            if prompt.strip()
-                            else "Получен короткий ответ на вопрос по умолчанию."
-                        )
-                        if probe.get("ok")
-                        else probe.get("error", "Реальный ответ не подтверждён. Проверьте подключение, ключ и лимиты.")
-                    ),
-                    "content": probe.get("content", "") if probe.get("ok") else "",
-                    "usage": probe.get("usage", {}),
-                    "tokens_spent": probe.get("tokens_spent"),
-                    "request_prompt": question,
-                    "max_tokens": limit,
-                }
-                if probe.get("save_warning"):
-                    result["save_warning"] = probe["save_warning"]
-                estimate = _probe_estimate(model, result["usage"]) if result["ok"] else None
-                result["estimated_cost"] = estimate
-                if estimate is not None:
-                    try:
-                        await LLMModel.objects.update_by_id(
-                            model.id, last_request_cost=float(estimate), last_request_cost_at=datetime.now()
-                        )
-                    except Exception:
-                        result["save_warning"] = (
-                            "Ответ получен, но оценка стоимости не сохранена. Не повторяйте вызов автоматически."
-                        )
+            question, limit = request_parameters(model, prompt)
+            probe = await probe_real_capped(model, prompt=prompt)
+            result = {
+                **probe,
+                "ok": bool(probe.get("ok")),
+                "tier": "real",
+                "text": (
+                    "Получен ответ на ваш запрос."
+                    if probe.get("ok")
+                    else probe.get("error", "Реальный ответ не подтверждён. Автоматического повтора нет.")
+                ),
+                "request_prompt": question,
+                "max_tokens": probe.get("effective_max_tokens") or limit,
+            }
+            estimate = _probe_estimate(model, result.get("usage", {}))
+            result["estimated_cost"] = estimate
+            if estimate is not None:
+                try:
+                    await LLMModel.objects.update_by_id(
+                        model.id, last_request_cost=float(estimate), last_request_cost_at=datetime.now()
+                    )
+                except Exception:
+                    result["save_warning"] = (
+                        result.get("save_warning", "")
+                        + " Ответ получен, но оценка стоимости не сохранена. Не повторяйте вызов автоматически."
+                    ).strip()
         result["elapsed_ms"] = round((monotonic() - started) * 1000)
         result["mode"] = test_type
         if test_type == "mock":
             result["request_prompt"] = prompt
         return await cls._render(admin_view, request, model, prompt=prompt, result=result)
 
+    @classmethod
+    async def reject_test(cls, admin_view, request, model_id, prompt, *, code, text, status_code):
+        """Render an actionable preflight refusal without provider dispatch."""
+        model = await cls._model(model_id)
+        return await cls._render(
+            admin_view,
+            request,
+            model,
+            prompt=prompt[:8000],
+            status_code=status_code,
+            result={
+                "ok": False,
+                "tier": "real",
+                "text": text,
+                "error_code": code,
+                "stage": "preflight",
+                "dispatch_state": "not_dispatched",
+                "accounting_status": "not_started",
+                "tokens_spent": 0,
+            },
+        )
+
     @staticmethod
-    async def _render(admin_view, request, model, *, prompt="", result=None):
+    async def _render(admin_view, request, model, *, prompt="", result=None, status_code=200):
         from app.core.config import settings
         from app.models import Tenant
 
@@ -147,6 +151,14 @@ class LLMModelActions:
         billing_tenants = (
             list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name)) if billing_ready else []
         )
+        if not settings.PERSONAL_BILLING_ENABLED:
+            billing_block_reason = "Запуск заблокирован: PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён. Запрос к модели не отправляется."
+        elif not actor or not actor.is_platform_admin:
+            billing_block_reason = "Запуск заблокирован: нужен активный администратор платформы."
+        elif not billing_tenants:
+            billing_block_reason = "Запуск заблокирован: нет активного рабочего пространства для учёта запроса."
+        else:
+            billing_block_reason = ""
         verdict = probe_status(model)
         return await admin_view.templates.TemplateResponse(
             request,
@@ -162,9 +174,11 @@ class LLMModelActions:
                 "request_max_tokens": REQUEST_MAX_TOKENS,
                 "key_configured": bool(verdict["checks"][0][1]),
                 "billing_ready": billing_ready,
+                "billing_block_reason": billing_block_reason,
                 "billing_tenants": billing_tenants,
                 "billing_tenant_id": getattr(getattr(request, "state", None), "probe_tenant_id", None),
             },
+            **({"status_code": status_code} if status_code != 200 else {}),
         )
 
 

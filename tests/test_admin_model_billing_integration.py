@@ -159,6 +159,7 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
 
     lookup = AsyncMock(return_value=NS(id=3, is_active=active))
     submit = AsyncMock(return_value="rendered")
+    submit.reject = AsyncMock(side_effect=lambda *a, **kw: NS(status_code=kw["status_code"], code=kw["code"]))
     handler = extracted_handler(
         "app/admin/endpoints.py",
         "submit_llm_model_test",
@@ -171,7 +172,7 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
             "get_csrf_manager": lambda request: NS(verify_token=lambda token: csrf),
         },
         {
-            "app.admin.actions": NS(LLMModelActions=NS(submit_test=submit)),
+            "app.admin.actions": NS(LLMModelActions=NS(submit_test=submit, reject_test=submit.reject)),
             "app.core.permissions": NS(permission_scope=permission_scope),
             "app.core.tenant_context": NS(tenant_scope=tenant_scope),
         },
@@ -195,7 +196,6 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
     [
         ({"allowed": False}, 403),
         ({"csrf": False}, 403),
-        ({"consent": False}, 422),
         ({"enabled": False}, 409),
         ({"admin": False}, 403),
         ({"tenant": ""}, 422),
@@ -206,9 +206,15 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
 )
 async def test_paid_post_refuses_before_dispatch(changes, status):
     handler, request, lookup, submit, seen, _ = endpoint_case(**changes)
-    with pytest.raises(HTTPException) as error:
-        await handler(request)
-    assert error.value.status_code == status
+    if changes.get("allowed") is False or changes.get("csrf") is False:
+        with pytest.raises(HTTPException) as error:
+            await handler(request)
+        assert error.value.status_code == status
+        submit.reject.assert_not_awaited()
+    else:
+        response = await handler(request)
+        assert response.status_code == status
+        submit.reject.assert_awaited_once()
     submit.assert_not_awaited()
     assert not any(isinstance(item, tuple) for item in seen)
     if not changes.get("active") is False:
@@ -276,3 +282,13 @@ def test_billing_workspace_selector_is_escaped_optional_for_local_modes():
     assert "<script>bad()</script>" not in html and 'name="tenant_id"' in html
     assert 'name="payer_user_id"' not in html
     assert 'name="tenant_id" required' not in html
+
+
+@pytest.mark.asyncio
+async def test_explicit_real_post_is_consent_without_legacy_checkbox():
+    handler, request, _, submit, seen, form = endpoint_case(consent=False)
+    form.pop("confirm_real")
+    assert await handler(request) == "rendered"
+    submit.assert_awaited_once()
+    submit.reject.assert_not_awaited()
+    assert seen == ["configure", ("tenant", 3), ("actor", 31)]

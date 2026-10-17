@@ -168,7 +168,8 @@ P8-T06 and does not alter its task record.
   Black/isort checks, py_compile and diff whitespace checks passed.
   No migration, real provider or owner-local application run. Updated local
   acceptance covers metadata vs offline web checks and blank/custom prompt
-  settlement. Keep Draft pending the exact-SHA local R8/R10 run.
+  settlement. PR #207 was merged at owner-authorized exception; its local
+  R8/R10 acceptance remains deferred, not passed.
 
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
@@ -197,6 +198,23 @@ P8-T06 and does not alter its task record.
   revocation/inactive/anonymous denial, CSRF and immutable-field checks.
   Real database persistence is not certified; the owner's local-verification
   agreement remains in force. No migration or runtime/provider operation.
+
+- [ ] P8-T17 — remove redundant paid checkbox; explicit real POST is consent;
+  readable answer plus sanitized provider JSON and transport/accounting statuses;
+  visible pre-dispatch blockers with no bypass of CONFIGURE/CSRF/payer admission;
+  owns: model-test action/endpoint/template/JS/CSS, opt-in client diagnostics,
+  focused regression tests/docs; owner: remote Notion agent
+  (`fix/admin-model-diagnostics`); status: BLOCKED (implementation ready; real
+  PostgreSQL/owner-environment acceptance deferred under the owner's explicit
+  implementation-and-dev instruction following their merge exception).
+  Evidence: 167 isolated tests passed (actual client source over MockTransport,
+  explicit storage/admission doubles; not real billing integration); 72 offline
+  Chromium viewport/theme/state cases plus blank/custom submit, no extra consent,
+  JSON copying/manual fallback, result focus, no-JS, keyboard and busy guard
+  passed. Black/isort scoped checks, py_compile and diff whitespace check passed.
+  Local acceptance was updated but not run: real payer/ledger/settlement, CSRF,
+  revocation and workspace guards remain required R8/R10 follow-up. No migration,
+  schema/config/runtime activation, real provider or owner-local app run.
 
 ## Phase approval
 

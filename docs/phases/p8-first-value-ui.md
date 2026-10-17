@@ -174,9 +174,9 @@ P8-T06 and does not alter its task record.
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
   editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-role-transfer-picker`); status: BLOCKED
+  Notion agent (`fix/admin-permission-compact-layout`); status: BLOCKED
   (owner-requested self-role protection and responsive permission transfer picker;
-  base dev `3e57794` (includes PR #210); owner-local real PostgreSQL acceptance remains pending).
+  base dev `58a90c1` (includes PR #212 and fresh documentation); owner-local real PostgreSQL acceptance remains pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
   regression tests and documentation. P8-T15 model request behavior is unchanged.
   Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
@@ -217,6 +217,23 @@ P8-T06 and does not alter its task record.
   The standing owner request to publish to dev and test locally remains in force;
   this is a delivery handoff, not final task/phase acceptance.
 
+  Styling follow-up from dev `bd67996` (refreshed to docs-only `58a90c1`): neutralized the legacy checkbox-pill
+  cascade with block-flow lists, compact borderless/gapless rows and top-aligned
+  empty states. A viewport-height role editor keeps ordinary SQLAdmin footer
+  buttons visible; no full-width custom button styling. Only permission lists
+  scroll. The canonical Permission manager supplies code/display-name choices;
+  domain filtering, resource headings and word search work without changing the
+  hidden native select or server authorization/self-role protection.
+  Evidence: 204 isolated tests passed (0 failed/skipped); 48 offline Chromium
+  cases (390x667, 390x844, 768x700, 1440x900; both themes; six selection states)
+  plus desktop, group/name-filter, touch and no-JS interaction suites passed with
+  up to 206 synthetic permissions. Checks assert footer/viewport bounds, row CSS,
+  legacy selector collision, search/group selection retention, native FormData,
+  reset and contained scrolling. Black/isort, compilation, JS syntax and diff
+  checks passed. Real owner-browser/DB acceptance remains deferred under the
+  standing owner delivery/local-feedback instruction. No migration, runtime,
+  provider call or deployment; task is not self-accepted as DONE.
+
 - [ ] P8-T17 — remove redundant paid checkbox; explicit real POST is consent;
   readable answer plus sanitized provider JSON and transport/accounting statuses;
   visible pre-dispatch blockers with no bypass of CONFIGURE/CSRF/payer admission;
@@ -254,11 +271,13 @@ P8-T06 and does not alter its task record.
   in-session dev delivery/local-validation deferral remains in force. No setting
   activation, schema change, runtime, live provider call or deployment.
 
-- [x] P8-T17 — audit collect force-refresh semantics and task-run feedback; accept:
+- [x] P8-T19 — audit collect force-refresh semantics and task-run feedback; accept:
   correlate both Safari launch actions with persisted Jobs and source outcomes,
   document raw/analytics overwrite behavior and confirmed failure cause, preserve
   existing data, and record bounded follow-ups. Owner: codex-collect-repro;
-  status: DONE. Accepted by coordinating Codex on 2026-10-17 against the source
+  status: DONE. Identifier-only reconciliation: this audit formerly duplicated
+  P8-T17 (the existing admin diagnostics task); it is now P8-T19. Ownership,
+  acceptance and evidence are unchanged. Accepted by coordinating Codex on 2026-10-17 against the source
   SHA below and the report diff. Evidence: [collection launch audit](../audits/2026-10-17-collection-launch.md)
   reviewed at source SHA `b70911d6c1e0c6a71e5668a502df42f1e73fefa9`. Jobs 1737 and
   1738 were correlated to the two Safari actions; each ended after about five

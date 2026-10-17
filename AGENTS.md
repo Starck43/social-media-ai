@@ -13,6 +13,7 @@
 
 ## Collaboration workflow
 - `dev` is the integration branch. Complete authorized tasks autonomously, without routine confirmations.
+- Shared documentation: synchronize `ROADMAP.md` and owned `docs/` edits with fresh `dev` and other agents' relevant active work before claiming IDs, editing and publishing. Preserve foreign ownership, evidence and statuses; recheck unique task/question IDs and links after merging concurrent changes. Follow the shared-document synchronization procedure in `docs/COLLABORATION.md`; never publish stale full-file copies.
 - Default: work in the current `dev` checkout when one sequential task owns its changes; inspect status first, preserve unrelated edits. Separate branch/worktree only for parallel tasks, PR review, risky experiments, conflicts, or an explicit owner request — never as routine ceremony.
 - Mandatory routing: delegate every simple or routine bounded task to
   `routine-worker` (`.codex/agents/routine-worker.toml`), which executes through

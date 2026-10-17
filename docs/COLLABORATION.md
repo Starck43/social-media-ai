@@ -18,6 +18,28 @@ rules: [AGENTS.md](../AGENTS.md); environment/DB/test-delegation constraints:
    isolation is needed (RULES.md R6/R7). Never push `dev` without explicit
    authorization.
 
+## Shared-document synchronization (all agents)
+
+- Before reserving task/question IDs or editing `ROADMAP.md` / owned `docs/`,
+  inspect the working tree, fresh `dev`, the relevant phase ownership and other
+  agents' active PRs/handoffs that touch the same files or task. In remote lanes,
+  fetch the current `dev` ref; never assume a previously loaded copy is current.
+- Reserve globally unique IDs in the registry and phase files together. Check
+  both open and completed phase rows before choosing the next ID. `ROADMAP.md`
+  mirrors open tasks; accepted DONE/DROPPED rows stay in their phase only.
+- Make scoped edits, preserve other agents' task owners, statuses, evidence and
+  accepted work, and reconcile concurrent additions instead of replacing shared
+  files from stale branch copies. Do not silently claim another agent's work.
+- Recheck `dev` and relevant PR heads immediately before publish/merge. Integrate
+  new shared-doc changes, validate affected links and ID uniqueness, and document
+  resolved identifier-only collisions without changing acceptance evidence.
+- For conflicting ownership, task meaning or acceptance, stop that edit and
+  coordinate through the active PR/handoff (or an owner-relayed question). Never
+  invent agreement, silently overwrite another agent, or change a foreign status
+  just to make the registry agree. A clean merge alone is not semantic validation.
+- State the synchronized base SHA and any unresolved conflict in the handoff.
+  These checks never authorize direct `dev` pushes, force-pushes or deployment.
+
 ## Audits, Goals and subagents
 
 Follow routine and test routing in [AGENTS.md](../AGENTS.md) and

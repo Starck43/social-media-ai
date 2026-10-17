@@ -1,6 +1,35 @@
 {% extends "sqladmin/edit.html" %}
 {% block content %}
-<div class="col-12 permission-role-edit">{{ super() }}</div>
+<div class="col-12 permission-role-edit">
+  <div class="card permission-role-card">
+    <div class="card-header">
+      <h3 class="card-title">Разрешения роли: {{ obj.codename }}</h3>
+    </div>
+    <form class="permission-role-form" action="{{ model_view._build_url_for('admin:edit', request, obj) }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+          method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="permission-role-intro">
+        <details class="permission-role-notice">
+          <summary>Правила доступа</summary>
+          <p>{{ model_view.catalog_edit_notice }}</p>
+        </details>
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+      </div>
+      <div class="permission-role-field">
+        {{ form.permissions.label(class_="form-label") }}
+        {{ form.permissions(class_="form-control") }}
+        {% for error in form.permissions.errors %}
+        <div class="invalid-feedback d-block" role="alert">{{ error }}</div>
+        {% endfor %}
+      </div>
+      <div class="permission-role-footer">
+        <a class="btn btn-secondary" href="{{ url_for('admin:list', identity=model_view.identity) }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">Отмена</a>
+        <button type="submit" name="save" value="Save" class="btn btn-primary">Сохранить</button>
+        <button type="submit" name="save" value="Save and continue editing" class="btn btn-outline-secondary">Сохранить и продолжить</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 {% block head_css %}
 {{ super() }}

@@ -292,7 +292,7 @@ class Case:
             "csrf_token": await self.csrf(client),
         }
         if mode == "real":
-            data.update(tenant_id=str(self.tenant.id), confirm_real="yes")
+            data.update(tenant_id=str(self.tenant.id))
         data.update(changes)
         return await client.post(POST, data=data)
 
@@ -574,14 +574,10 @@ async def test_unknown_or_multiple_selection_is_refused(case, model_key, status)
     await case.no_dispatch()
 
 
-@pytest.mark.parametrize(
-    "variant,status", [("no_consent", 422), ("no_workspace", 422), ("inactive_workspace", 422), ("flag_off", 409)]
-)
+@pytest.mark.parametrize("variant,status", [("no_workspace", 422), ("inactive_workspace", 422), ("flag_off", 409)])
 async def test_paid_preconditions_before_dispatch(case, monkeypatch, variant, status):
     changes = {}
-    if variant == "no_consent":
-        changes["confirm_real"] = ""
-    elif variant == "no_workspace":
+    if variant == "no_workspace":
         changes["tenant_id"] = ""
     elif variant == "inactive_workspace":
         with fixture_scope():
@@ -616,6 +612,9 @@ async def test_real_request_initiator_payer_durable_settlement(case, prompt, lim
         assert "Проверка завершена" in html and "0.000008" in html
         assert SYNTHETIC_ANSWER not in html and "&lt;script&gt;" in html
         assert case.expected_prompt in html
+        assert 'name="confirm_real"' not in html
+        assert "JSON ответа провайдера" in html and "HTTP-статус API" in html
+        assert "response_json" not in html  # internal wrapper is not a provider field
     assert len(case.sent) == 1
     (dispatch,) = await case.dispatches()
     assert dispatch.payer_user_id == case.admin.id != tenant_owner.id

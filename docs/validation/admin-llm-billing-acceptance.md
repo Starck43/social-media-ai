@@ -1,5 +1,28 @@
 # Admin model / personal billing acceptance
 
+## Admin response diagnostics follow-up (P8-T17)
+
+The explicit CONFIGURE/CSRF-protected real POST is the administrator's paid
+operation. No extra confirmation field is required; no billing gate is removed.
+Prepared local settlement tests now send **no confirm_real field**, require the
+formatted provider JSON/status panel, and preserve the existing durable payer,
+reserve/settlement, unknown usage and no-replay assertions. Missing workspace and
+disabled billing remain original-status HTML refusals with no provider dispatch.
+
+Remote focused coverage additionally includes `tests/test_admin_model_diagnostics.py`:
+actual OpenAI client source over MockTransport with explicit admission/storage
+and journal doubles; HTTP errors, transport timeout, missing account/cutover/model
+bound, budget denial, empty text, provider JSON errors, safe copies and preserved
+answers after accounting failures. This is **not** real ledger/DB acceptance.
+Browser fixtures additionally check no redundant checkbox, actual form fields,
+readable text/JSON/statuses, auto-focus and copy/manual-selection fallback.
+
+The user's explicit implementation-and-dev instruction follows their in-session
+merge exception/local-validation deferral. Required owner-local execution remains
+unperformed, not a passing result. No real provider, schema/config changes or
+runtime activation. Run the existing local acceptance sequentially under R8/R10
+with normal root conftest and all guards below; exact remote evidence is in the PR.
+
 ## Admin request-mode follow-up (P8-T15)
 
 The current candidate changes the admin short mode to authenticated metadata

@@ -44,8 +44,10 @@
                     <button class="llm-button" type="submit" name="test_type" value="mock">Mock-тест</button></div>
                 <div class="llm-mode"><span class="llm-step">03 / API</span><h3>Реальный запрос</h3>
                     <p>Ваш вопрос: до {{ request_max_tokens | default(512) }} токенов ответа (не выше лимита модели). Пустое поле: короткий вопрос по умолчанию, до 8 токенов. Таймаут 20 секунд. Может списать средства.</p>
-                    <button class="llm-button" type="submit" name="test_type" value="real"{% if not billing_ready or not billing_tenants %} disabled{% endif %}>Реальный запрос</button></div>
+                    <button class="llm-button" type="submit" name="test_type" value="real">Реальный запрос</button>
+                    {% if billing_block_reason %}<p class="llm-warning" role="status">{{ billing_block_reason }}</p>{% endif %}</div>
             </div>
+            <p id="llm-submit-status" role="status" class="llm-muted" aria-live="polite" tabindex="-1"></p>
             <div class="llm-prompt">
                 <label for="llm-prompt">Сообщение для модели или mock-теста</label>
                 <textarea id="llm-prompt" name="prompt" rows="3" maxlength="8000" placeholder="Напишите вопрос или оставьте пустым для короткого реального ответа…" aria-describedby="llm-prompt-help">{{ prompt }}</textarea>
@@ -63,14 +65,12 @@
             {% else %}
             <p class="llm-muted">Платный запрос требует включённого личного учёта расходов и прав администратора платформы. Короткая API-проверка и локальный mock не вызывают генерацию.</p>
             {% endif %}
-            <label class="llm-consent"><input type="checkbox" name="confirm_real" value="yes" id="llm-confirm-real">
-                <span>Разрешаю один платный вызов с сообщением выше или коротким вопросом по умолчанию. Только OpenAI-совместимый API.</span></label>
-            <p id="llm-submit-status" role="status" class="llm-muted" aria-live="polite"></p>
+            <p class="llm-muted">Нажатие «Реальный запрос» запускает один вызов API, который может быть платным. Автоматического повтора нет.</p>
         </form>
     </section>
 
     {% if result %}
-    <section class="llm-panel llm-result {{ 'llm-result-ok' if result.ok else 'llm-result-error' }}" aria-labelledby="llm-result-title" role="status">
+    <section class="llm-panel llm-result {{ 'llm-result-ok' if result.ok else 'llm-result-error' }}" id="llm-result" tabindex="-1" aria-labelledby="llm-result-title" role="status">
         <div class="llm-section-heading"><h2 id="llm-result-title">{{ 'Проверка завершена' if result.ok else 'Проверка не пройдена' }}</h2>
             <span class="llm-tag">{{ 'Реальный запрос · API' if result.tier == 'real' else 'Короткая проверка · API' if result.tier == 'connectivity' else 'Mock · без API' }}</span></div>
         <p>{{ result.text }}</p>
@@ -83,9 +83,28 @@
             {% if result.model_available is defined %}<div><dt>Выбранная модель в списке</dt><dd>{{ 'Да' if result.model_available else 'Нет — возможность генерации не подтверждена' }}</dd></div>{% endif %}
         </dl>
         {% endif %}
-        {% if result.request_prompt %}<details open><summary>{{ 'Отправленное сообщение' if result.tier == 'real' else 'Вопрос для имитации' }}</summary><pre class="llm-response">{{ result.request_prompt }}</pre></details>{% endif %}
+        {% if result.request_prompt %}<details open><summary>{{ ('Подготовленное сообщение (не отправлено)' if result.dispatch_state == 'not_dispatched' else 'Отправленное сообщение' if result.dispatch_state == 'response_received' else 'Сообщение запроса') if result.tier == 'real' else 'Вопрос для имитации' }}</summary><pre class="llm-response">{{ result.request_prompt }}</pre></details>{% endif %}
         {% if result.max_tokens is defined %}<p class="llm-muted">Лимит ответа: {{ result.max_tokens }} токенов · таймаут 20 секунд.</p>{% endif %}
-        {% if result.content %}<pre class="llm-response">{{ result.content }}</pre>{% endif %}
+        {% if result.content %}<section class="llm-answer" aria-labelledby="llm-answer-title"><h3 id="llm-answer-title">Ответ модели{{ ' (имитация)' if result.tier == 'mock' else '' }}</h3><div class="llm-answer-text">{{ result.content }}</div></section>{% endif %}
+        {% if result.tier == 'real' %}
+        <dl class="llm-meta llm-diagnostics">
+            <div><dt>Доставка запроса</dt><dd>{{ {'not_dispatched': 'Не отправлен', 'possible': 'Отправка возможна; не подтверждена', 'response_received': 'Ответ API получен'}.get(result.dispatch_state, 'Не подтверждена') }}</dd></div>
+            <div><dt>HTTP-статус API</dt><dd>{{ result.http_status if result.http_status is defined and result.http_status is not none else 'Нет подтверждённого HTTP-ответа' }}</dd></div>
+            <div><dt>Этап</dt><dd>{{ {'preflight': 'До отправки', 'admission': 'Допуск по бюджету', 'transport': 'Соединение с API', 'response': 'Разбор ответа API', 'accounting': 'Учёт расходов', 'complete': 'Завершён'}.get(result.stage, 'Не подтверждён') }}</dd></div>
+            <div><dt>Учёт расходов</dt><dd>{{ {'not_started': 'Не запускался', 'confirmed': 'Подтверждён', 'journal_unconfirmed': 'Журнал не подтверждён'}.get(result.accounting_status, 'Не подтверждён') }}</dd></div>
+            <div><dt>finish_reason</dt><dd>{{ result.finish_reason | default('Не сообщён', true) }}</dd></div>
+            <div><dt>Код результата</dt><dd>{{ result.error_code | default('ok' if result.ok else 'unconfirmed') }}</dd></div>
+        </dl>
+        <details class="llm-json-panel" open><summary>JSON ответа провайдера</summary>
+            {% if result.response_json is defined and result.response_json is not none %}
+            <button type="button" class="llm-button llm-copy" data-copy-target="llm-response-json">Копировать JSON</button>
+            <pre id="llm-response-json" class="llm-json" tabindex="0">{{ result.response_json_text if result.response_json_text is defined else result.response_json | tojson(indent=2) }}</pre>
+            <p class="llm-muted">JSON фактического ответа API, не локальная имитация. Секреты скрыты; слишком большой ответ сокращается с отметкой [truncated].</p>
+            {% elif result.response_body %}<p class="llm-warning">API вернул не JSON. Безопасный фрагмент тела ответа:</p><pre>{{ result.response_body }}</pre>
+            {% else %}<p class="llm-muted">{{ 'Ответ API отсутствует: запрос не отправлен.' if result.dispatch_state == 'not_dispatched' else 'JSON ответа API не получен или не подтверждён.' }}</p>{% endif %}
+            <p class="llm-muted" id="llm-copy-status" role="status" aria-live="polite"></p>
+        </details>
+        {% endif %}
         <dl class="llm-meta llm-result-meta">
             {% if result.elapsed_ms is defined %}<div><dt>Время проверки</dt><dd>{{ result.elapsed_ms }} мс</dd></div>{% endif %}
             <div><dt>Реально использовано токенов</dt><dd>{{ result.tokens_spent if result.tokens_spent is defined and result.tokens_spent is not none else 'Неизвестно' }}</dd></div>

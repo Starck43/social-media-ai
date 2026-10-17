@@ -158,7 +158,7 @@ required model right are shown separately from implementation behavior.
 | `NotificationAdmin` / `mark-read` | UPDATE | List + detail | Sets selected rows' shared `is_read`; not personal acknowledgement or issue resolution |
 | `NotificationAdmin` / `send-to-messenger` | UPDATE | Hidden in list + detail | Endpoint remains registered; first selected notification requires explicit `recipient_id` for an active owned workspace binding |
 | `LLMProviderAdmin` / `test-connection` | CONFIGURE | List + detail | Uses the first active model found for that provider; real `client.analyze()` call with a fixed short prompt and `max_tokens=10` |
-| `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Read-only GET opens the UI; POST checks fresh CONFIGURE, CSRF and real-call consent |
+| `LLMModelAdmin` / `test-model` | CONFIGURE | List + detail | Read-only GET opens the UI; POST checks fresh CONFIGURE/CSRF; explicit real POST is the paid action |
 
 `PlatformAdmin` declares no custom action; there is no implemented or placeholder
 sync button in the current class. `JobAdmin` has no run/cancel/retry button.
@@ -189,8 +189,9 @@ runtime contracts, not permission grants or a new business-workflow model.
   `test_type=real`. Select exactly one model. No GET performs a model probe.
 - The page has three explicit POST modes at `/admin/llm-model/test`. The route
   checks fresh platform `llmmodel.CONFIGURE` rights and a signed CSRF token
-  before lookup/dispatch. Real mode also requires `confirm_real=yes` for that
-  submission. Hiding a button is not the permission boundary.
+  before lookup/dispatch. The explicit real-mode POST is the administrator's
+  paid action; no additional `confirm_real` checkbox or hidden consent field.
+  Legacy posted checkbox values are ignored. GET remains read-only.
 - **Short check** (`test_type=short`) needs no question. In the admin console it
   makes one authenticated `GET /models` through the configured OpenAI-compatible
   provider URL/headers, with a 20-second timeout and redirects disabled. No chat,
@@ -209,6 +210,22 @@ runtime contracts, not permission grants or a new business-workflow model.
   payer ID is never trusted. The personal admission service must authorize the
   account, daily baseline, cap and model bound before transport. Disabling
   billing refuses paid probes, never falls back to unaccounted HTTP.
+- Disabled billing, missing platform-admin authority and missing/inactive workspace
+  produce a visible, pre-dispatch result on the same page, with the original
+  HTTP 409/403/422 status. The real button is not silently disabled; a reason is
+  shown next to it. A client-side missing-workspace notice is scrolled into view.
+  The billing flag, account/cutover/cap/model-bound gates are **not bypassed**.
+- Real results show a readable escaped text card, delivery state, actual provider
+  HTTP status (or explicitly unconfirmed), stage, finish_reason, accounting/journal
+  status and a safe error code. Response JSON is formatted Unicode text, expanded
+  by default and copyable. It is an actual provider response, not a reconstructed
+  usage envelope. Known credential fields and the configured key are redacted;
+  depth/size limits mark truncated display copies. Non-JSON bodies are shown as
+  escaped, redacted excerpts. No request headers or arbitrary exception strings.
+  Provider JSON survives HTTP errors, empty content/length/tool/reasoning replies,
+  and failures after the response (including accounting). These are not conflated
+  with an unsent request. No diagnostics enter provider payloads or alter the
+  durable billing evidence; ordinary non-probe chat keeps its existing shape.
 - Active model/provider, configured key and `api_format=openai` are required.
   Historical failures are shown but do not permanently block an explicit recovery
   test. The endpoint forwards the entered question (at most 8000 characters) to
@@ -220,7 +237,7 @@ runtime contracts, not permission grants or a new business-workflow model.
   simulated and actual spent tokens stay zero. Timeout is not a provider JSON
   field. Anthropic/custom and multimodal validation remain out of scope. The retired `/admin/llm-model/test-real` route never dispatches;
   an authenticated administrator with valid CSRF receives 410, not a replay.
-- A successful real response with valid, reported input/output tokens allows an
+- A received real response with valid, reported input/output tokens allows an
   estimate from configured USD-per-1K rates and an update of `last_request_cost`
   / `last_request_cost_at`. Missing/invalid raw provider usage stays **unknown**, not zero, even if the
   compatibility chat response synthesizes numeric zeros.
@@ -235,7 +252,7 @@ runtime contracts, not permission grants or a new business-workflow model.
   themes, explicit labels, keyboard focus, 44px action targets and a common
   escaped result panel. Offline fixture coverage does not replace owner-local
   route, session, permission/revocation or PostgreSQL acceptance.
-- Provider `test-connection` is a separate real analyze path, not the model
+- Provider `test-connection` is a separate real analyze path, not the
   model page's metadata/mock/billed-request modes. Provider probes still need explicit
   review of their distinct payer/accounting path; do not infer that this model
   probe candidate accepts provider connection testing or the broader P2 cutover.

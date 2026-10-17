@@ -82,7 +82,18 @@ def render(destination):
             request_prompt="Скажи привет",
             max_tokens=512,
             elapsed_ms=350,
-            content="да",
+            content="Здравствуйте!\n\nЭто настоящий текстовый ответ модели.",
+            dispatch_state="response_received",
+            stage="complete",
+            http_status=200,
+            accounting_status="confirmed",
+            finish_reason="stop",
+            response_json={
+                "id": "fixture-reply",
+                "model": "fixture-model",
+                "choices": [{"message": {"content": "Привет <script>bad()</script>"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 4},
+            },
             tokens_spent=12,
             estimated_cost="0.000008",
         ),
@@ -99,9 +110,42 @@ def render(destination):
             tier="real",
             text="Реальный ответ не подтверждён. Проверьте подключение, ключ и лимиты.",
             tokens_spent=None,
+            stage="transport",
+            dispatch_state="possible",
+            error_code="timeout",
+            http_status=None,
+        ),
+        "blocked": dict(
+            ok=False,
+            tier="real",
+            text="PERSONAL_BILLING_ENABLED выключен. Запрос не отправлен.",
+            stage="preflight",
+            dispatch_state="not_dispatched",
+            error_code="billing_disabled",
+            tokens_spent=0,
+        ),
+        "empty": dict(
+            ok=False,
+            tier="real",
+            text="Ответ API получен без текста сообщения.",
+            stage="complete",
+            dispatch_state="response_received",
+            http_status=200,
+            accounting_status="confirmed",
+            finish_reason="length",
+            response_json={
+                "choices": [
+                    {
+                        "message": {"content": None, "reasoning_content": "Служебное рассуждение"},
+                        "finish_reason": "length",
+                    }
+                ]
+            },
         ),
     }
     for state, result in states.items():
+        if result and "response_json" in result:
+            result["response_json_text"] = json.dumps(result["response_json"], ensure_ascii=False, indent=2)
         html = env.get_template("llm_model/test_results.html").render(
             model=model,
             provider=provider,

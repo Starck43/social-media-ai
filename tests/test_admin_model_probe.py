@@ -43,7 +43,7 @@ def probe_module(response=None, status=200):
         _headers=lambda: {},
     )
     post = AsyncMock(return_value=NS(status_code=status, json=lambda: response))
-    http = NS(AsyncClient=Mock())
+    http = NS(AsyncClient=Mock(), TimeoutException=httpx.TimeoutException, TransportError=httpx.TransportError)
     http.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=NS(post=post))
     http.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
     # SimpleNamespace is not an async context manager on the type, so use AsyncMock.
@@ -261,9 +261,9 @@ def extracted_handler(path, name, globals_, imports):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "allowed,csrf,confirmed,expected",
-    [(False, True, True, 403), (True, False, True, 403), (True, True, False, 422), (True, True, True, None)],
+    [(False, True, True, 403), (True, False, True, 403), (True, True, False, None), (True, True, True, None)],
 )
-async def test_post_requires_fresh_configure_csrf_and_paid_confirmation(allowed, csrf, confirmed, expected):
+async def test_post_requires_fresh_configure_csrf_but_no_checkbox(allowed, csrf, confirmed, expected):
     async def guard(*args):
         if not allowed:
             raise HTTPException(403, "denied")
@@ -358,7 +358,7 @@ def test_actual_template_renders_partial_states_and_escapes(result):
     )
     assert "<script>bad()" not in rendered
     assert 'name="test_type" value="short"' in rendered and 'method="post"' in rendered
-    assert 'name="csrf_token"' in rendered and 'name="confirm_real"' in rendered
+    assert 'name="csrf_token"' in rendered and 'name="confirm_real"' not in rendered
     assert 'type="file"' not in rendered
 
 

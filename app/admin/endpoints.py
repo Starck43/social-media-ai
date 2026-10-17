@@ -448,24 +448,41 @@ async def submit_llm_model_test(request: Request):
     token = form.get("csrf_token")
     if not isinstance(token, str) or not get_csrf_manager(request).verify_token(token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
-    if form.get("test_type") == "real" and form.get("confirm_real") != "yes":
-        raise HTTPException(status_code=422, detail="Confirm the paid probe explicitly")
     from app.admin.actions import LLMModelActions
 
     if form.get("test_type") == "real":
-        if not settings.PERSONAL_BILLING_ENABLED:
-            raise HTTPException(status_code=409, detail="Личный учёт расходов ещё не включён")
+        # The explicit real POST is consent. Retain every authority/accounting
+        # boundary, but render refusals on the test page instead of a JSON dead end.
+        async def reject(code, text, status_code=422):
+            return await LLMModelActions.reject_test(
+                request.app.state.admin,
+                request,
+                str(form.get("model_id", "")),
+                str(form.get("prompt", "")),
+                code=code,
+                text=text,
+                status_code=status_code,
+            )
+
         if not user.is_platform_admin:
-            raise HTTPException(status_code=403, detail="Personal admin probes require a platform administrator")
+            return await reject("platform_admin_required", "Нужен администратор платформы. Запрос не отправлен.", 403)
+        if not settings.PERSONAL_BILLING_ENABLED:
+            return await reject(
+                "billing_disabled",
+                "PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён; запрос не отправлен.",
+                409,
+            )
         try:
             tenant_id = int(str(form.get("tenant_id", "")))
         except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="Select an active execution workspace") from None
-        if tenant_id <= 0:
-            raise HTTPException(status_code=422, detail="Select an active execution workspace")
+            return await reject("workspace_required", "Выберите активное рабочее пространство. Запрос не отправлен.")
+        if not 1 <= tenant_id <= 2_147_483_647:
+            return await reject("workspace_required", "Выберите активное рабочее пространство. Запрос не отправлен.")
         tenant = await Tenant.objects.get(id=tenant_id)
         if tenant is None or not tenant.is_active:
-            raise HTTPException(status_code=422, detail="Select an active execution workspace")
+            return await reject(
+                "workspace_inactive", "Рабочее пространство не найдено или неактивно. Запрос не отправлен."
+            )
 
         from app.core.permissions import permission_scope
         from app.core.tenant_context import tenant_scope

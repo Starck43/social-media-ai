@@ -264,6 +264,19 @@ runtime contracts, not permission grants or a new business-workflow model.
   expanded by default and copyable. Known secrets are redacted; bounded display
   copies are marked when truncated. Provider JSON/text survives HTTP errors,
   empty replies and post-response failures; no automatic retries.
+- JSON copying uses an accessible top-right SVG button. A temporary checkmark
+  indicates success, with a screen-reader announcement but no visible success
+  paragraph. Clipboard denial keeps manual JSON selection and a visible fallback;
+  without JS the inert copy button is hidden. Text status colors distinguish
+  success (green), incomplete/uncertain (amber), errors (red) and neutral facts;
+  labels remain readable without color. HTTP 200 does not imply usable content:
+  `finish_reason=length` with empty `content` remains an incomplete text result.
+- Provider-reported USD cost is shown separately from the configured-tariff
+  estimate, using the same pure structured-cost parser as the attempt journal.
+  Explicit `usage.cost=0` is a reported zero, not missing data; missing cost is
+  unknown, and non-USD/unrepresentable claims remain unresolved. Supplier
+  `usage.cost_details.upstream_inference_*` is not the customer's retail cost.
+  Output counts include reasoning tokens; detail counts are not added again.
 - Active model/provider, configured key and `api_format=openai` are required.
   Historical failures are shown but do not permanently block an explicit recovery
   test. The endpoint forwards the entered question (at most 8000 characters) to
@@ -282,6 +295,13 @@ runtime contracts, not permission grants or a new business-workflow model.
   If saving fails, the answer remains visible with a warning; never automatically
   repeat a paid call. Model tariffs are never rewritten from generated text.
   This estimate is not journal completeness, settled spend or budget admission.
+  `last_request_cost` remains an estimate (the existing column contract), not the
+  API-reported price. `_record_llm_usage` updates model health/use counters, not
+  per-call token rows. The existing `llm_attempts` journal records input/output
+  tokens and exact provider USD evidence when a trusted tenant scope is present;
+  its best-effort writer can skip/fail. In single-owner mode without that scope,
+  no durable per-attempt token/price row is guaranteed. No implicit workspace or
+  personal billing account is created by a test.
 - The list and detail views preserve tiny tariff values instead of rounding
   them to `$0.0000`. The create/edit field allowlist excludes usage/cost/history
   telemetry; those fields remain visible read-only in details. Capability choices,

@@ -14,7 +14,7 @@ const assert = require('node:assert/strict');
     const browser = await chromium.launch({headless:true, executablePath:process.env.CHROMIUM_BIN || undefined, args:['--no-sandbox']});
     let cases = 0;
     try {
-        for (const width of [390, 1440]) for (const theme of ['light','dark','system-light','system-dark']) for (const state of states) {
+        for (const width of [320, 390, 1440]) for (const theme of ['light','dark','system-light','system-dark']) for (const state of states) {
             const context = await browser.newContext({viewport:{width,height:1000}, colorScheme:theme.endsWith('dark') || theme === 'dark' ? 'dark':'light'});
             await context.addInitScript(mode => localStorage.setItem('theme', mode.startsWith('system') ? 'system' : mode), theme);
             const page = await context.newPage();
@@ -39,6 +39,11 @@ const assert = require('node:assert/strict');
                 pairs.push([css('.llm-panel .llm-muted').color,css('.llm-panel').backgroundColor]);
                 pairs.push([css('.llm-mode p').color,css('.llm-mode').backgroundColor]);
                 pairs.push([css('.llm-primary').color,css('.llm-primary').backgroundColor]);
+                document.querySelectorAll('.llm-state, #llm-result-title').forEach(node => {
+                    pairs.push([getComputedStyle(node).color, css('.llm-panel').backgroundColor]);
+                });
+                const copy = document.querySelector('.llm-copy');
+                if (copy) pairs.push([getComputedStyle(copy).color, getComputedStyle(copy).backgroundColor]);
                 return pairs.map(([a,b]) => ratio(a,b));
             });
             contrasts.forEach(value => assert(value >= 4.5, `${width}/${theme}/${state} text contrast ${value}`));
@@ -46,6 +51,20 @@ const assert = require('node:assert/strict');
             if (process.env.SCREENSHOT_DIR && states.includes(state) && ['light','dark'].includes(theme)) {
                 fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive:true});
                 await page.screenshot({path:path.join(process.env.SCREENSHOT_DIR, `${width}-${theme}-${state}.png`), fullPage:true});
+            }
+            const copy = page.locator('.llm-copy');
+            if (await copy.count()) {
+                assert.equal(await copy.getAttribute('aria-label'), 'Копировать JSON');
+                assert.equal(await copy.innerText(), '');
+                assert.equal(await copy.locator('svg:visible').count(), 1);
+                // Read both rectangles in one layout snapshot while smooth result focus scrolls.
+                const {box, jsonBox} = await copy.evaluate(node => ({
+                    box: node.getBoundingClientRect().toJSON(),
+                    jsonBox: node.closest('.llm-json-code').getBoundingClientRect().toJSON(),
+                }));
+                assert(box.width >= 44 && box.height >= 44);
+                assert(Math.abs(jsonBox.x + jsonBox.width - (box.x + box.width) - 8) <= 1);
+                assert(Math.abs(box.y - jsonBox.y - 8) <= 1);
             }
             cases++; await context.close();
         }
@@ -95,11 +114,28 @@ const assert = require('node:assert/strict');
         await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async text => { window.copiedJson = text; }}}));
         await page.locator('[data-copy-target="llm-response-json"]').click();
         assert.equal(await page.evaluate(() => window.copiedJson), actualJson);
-        assert.match(await page.locator('#llm-copy-status').innerText(), /скопирован/);
+        const copyButton = page.locator('[data-copy-target="llm-response-json"]');
+        assert.equal(await copyButton.getAttribute('data-copy-state'), 'success');
+        assert.equal(await copyButton.getAttribute('aria-label'), 'JSON скопирован');
+        assert.equal(await copyButton.locator('.llm-copy-done').isVisible(), true);
+        assert.equal(await copyButton.locator('.llm-copy-icon').isVisible(), false);
+        const liveBox = await page.locator('#llm-copy-status').boundingBox();
+        assert(liveBox.width <= 1 && liveBox.height <= 1, 'success announcement must not create visible text below JSON');
+        assert.equal(await page.locator('#llm-copy-fallback').isVisible(), false);
+        await page.waitForTimeout(2100);
+        assert.equal(await copyButton.getAttribute('data-copy-state'), null);
+        assert.equal(await copyButton.getAttribute('aria-label'), 'Копировать JSON');
         await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async () => { throw new Error('offline clipboard'); }}}));
         await page.locator('[data-copy-target="llm-response-json"]').click();
-        assert.match(await page.locator('#llm-copy-status').innerText(), /выделен/);
+        assert.equal(await copyButton.getAttribute('data-copy-state'), 'error');
+        assert.equal(await copyButton.locator('.llm-copy-error').isVisible(), true);
+        assert.match(await page.locator('#llm-copy-fallback').innerText(), /выделен/);
         assert.equal(await page.evaluate(() => window.getSelection().toString()), actualJson);
+        await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async text => { window.copiedJson = text; }}}));
+        await copyButton.focus(); await page.keyboard.press('Enter');
+        assert.equal(await copyButton.getAttribute('data-copy-state'), 'success');
+        assert.equal(await page.locator('#llm-copy-fallback').isVisible(), false);
+        assert.equal(await page.evaluate(() => document.activeElement.getAttribute('data-copy-target')), 'llm-response-json');
         await page.goto('file://' + path.join(folder, 'owner.html'));
         assert.equal(await page.locator('[name="tenant_id"]').count(), 0);
         assert.equal(await page.locator('body').innerText().then(text => text.includes('PERSONAL_BILLING_ENABLED')), false);
@@ -126,6 +162,7 @@ const assert = require('node:assert/strict');
         assert.equal(await native.locator('form#llm-test-form').getAttribute('method'), 'post');
         assert.equal(await native.locator('input[name="csrf_token"]').count(), 1);
         await native.goto('file://' + path.join(folder, 'owner.html'));
+        assert.equal(await native.locator('.llm-copy').isVisible(), false);
         assert.equal(await native.locator('[name="tenant_id"]').count(), 0);
         assert.equal(await native.locator('button[value="real"]:not([disabled])').count(), 1);
         await noJS.close();

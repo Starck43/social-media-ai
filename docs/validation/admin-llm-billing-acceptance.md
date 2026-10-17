@@ -1,5 +1,30 @@
 # Admin model / personal billing acceptance
 
+## Provider cost and compact diagnostic controls follow-up (P8-T20)
+
+Remote tests verify the administrator's OpenRouter-shaped 470 input / 8 output /
+478 total, empty-content, `length`, explicit-zero-cost response with the actual
+client/probe/action source over HTTP/storage doubles. The pure journal parser and
+pricing pipeline pass exact tokens and zero/free USD to a manager double when
+scoped, and refuse a missing payer. This is not PostgreSQL persistence evidence.
+API price is now shown separately from the configured-tariff estimate; the latter
+retains the `llm_models.last_request_cost` contract. Supplier upstream costs and
+reasoning detail counts do not replace retail cost or add duplicate output usage.
+Model telemetry is not token history: an unscoped single-owner probe still has no
+promised durable `llm_attempts` row. Full history in that mode is separate work.
+
+Prepared local acceptance adds an empty-content/zero-price owner-mode case:
+exactly one mocked HTTP, no personal dispatch/account prerequisite, zero API
+price on screen, model counter plus tariff-estimate DB readback. Run the existing
+suite sequentially through normal R8/R10 with root conftest; never run it with the
+remote no-DB flags. This added case has not run remotely. No schema/config change,
+real provider, retry or migration. Delivery to dev follows the owner's existing
+explicit merge exception/local-validation deferral, not a full acceptance claim.
+
+Offline browser coverage checks top-right SVG coordinates, icon/check feedback,
+no visible copy-success paragraph, clipboard-denied selection fallback, keyboard,
+no-JS, semantic status colors, contrast, mobile/desktop and dark/light themes.
+
 ## Single-owner testing follow-up (P8-T18)
 
 This revision supersedes the historical disabled-billing refusal below. A real

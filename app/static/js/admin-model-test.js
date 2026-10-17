@@ -23,17 +23,36 @@
         form.querySelectorAll('button[type="submit"]').forEach(button => button.setAttribute('aria-disabled', 'true'));
     });
     document.querySelectorAll('[data-copy-target]').forEach(button => {
+        const output = document.getElementById(button.dataset.copyTarget);
+        const feedback = document.getElementById('llm-copy-status');
+        const fallback = document.getElementById('llm-copy-fallback');
+        if (!output || !feedback || !fallback) return;
+        button.hidden = false;
+        let resetTimer;
+        let copying = false;
+        const label = text => { button.setAttribute('aria-label', text); button.title = text; };
         button.addEventListener('click', async () => {
-            const output = document.getElementById(button.dataset.copyTarget);
-            const feedback = document.getElementById('llm-copy-status');
+            if (copying) return;
+            copying = true;
+            clearTimeout(resetTimer);
+            feedback.textContent = ''; fallback.hidden = true;
             try {
                 await navigator.clipboard.writeText(output.textContent);
+                button.dataset.copyState = 'success'; label('JSON скопирован');
                 feedback.textContent = 'JSON скопирован.';
+                resetTimer = setTimeout(() => {
+                    delete button.dataset.copyState; label('Копировать JSON');
+                    feedback.textContent = '';
+                }, 2000);
             } catch (_) {
                 const range = document.createRange(); range.selectNodeContents(output);
                 const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-                feedback.textContent = 'Копирование недоступно. JSON выделен — скопируйте его вручную.';
+                button.dataset.copyState = 'error'; label('Копирование недоступно — JSON выделен');
+                fallback.textContent = 'Копирование недоступно. JSON выделен — скопируйте его вручную.';
+                fallback.hidden = false; feedback.textContent = fallback.textContent;
                 output.focus();
+            } finally {
+                copying = false;
             }
         });
     });

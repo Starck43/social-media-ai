@@ -245,6 +245,8 @@ def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
 
 def _real_result(observation, response=None, *, api_key="", error=None):
     """Separate provider reply, usable text and accounting; absence is not zero."""
+    from app.services.ai.attempt_journal import provider_cost_evidence
+
     response = response if isinstance(response, dict) else {}
     raw = observation.get("raw_response", response.get("raw"))
     raw_usage = raw.get("usage", {}) if isinstance(raw, dict) else {}
@@ -263,6 +265,7 @@ def _real_result(observation, response=None, *, api_key="", error=None):
     content = response.get("content", message.get("content"))
     content = content if isinstance(content, str) else ""
     provider_error = isinstance(raw, dict) and bool(raw.get("error"))
+    cost_claimed, provider_cost = provider_cost_evidence(raw)
     result = {
         "ok": bool(content.strip()) and not error and not provider_error,
         "tier": "real",
@@ -274,6 +277,10 @@ def _real_result(observation, response=None, *, api_key="", error=None):
         "finish_reason": safe_probe_value(response.get("finish_reason", choice.get("finish_reason")), api_key),
         "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
         "tokens_spent": total,
+        # Structured provider evidence only; never overwrite the configured tariff
+        # estimate or infer a price from generated text/upstream supplier costs.
+        "provider_cost_usd": str(provider_cost) if provider_cost is not None else None,
+        "provider_cost_state": "resolved" if provider_cost is not None else "unresolved" if cost_claimed else "absent",
         "response_json": safe_probe_value(raw, api_key),
         "response_body": safe_probe_value(observation.get("response_body"), api_key),
         "effective_max_tokens": observation.get("effective_max_tokens"),

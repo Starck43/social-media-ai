@@ -166,24 +166,34 @@ runtime contracts, not permission grants or a new business-workflow model.
   checks fresh platform `llmmodel.CONFIGURE` rights and a signed CSRF token
   before lookup/dispatch. Real mode also requires `confirm_real=yes` for that
   submission. Hiding a button is not the permission boundary.
-- **Short check** (`test_type=short`) needs no question. It calls the same
-  `probe_short()` service as `/app/settings`: local configuration/history status
-  followed by canned mock data. No provider call, tokens or hidden paid fallback;
-  success is not proof that the remote model answers. Local failure remains failure.
+- **Short check** (`test_type=short`) needs no question. In the admin console it
+  makes one authenticated `GET /models` through the configured OpenAI-compatible
+  provider URL/headers, with a 20-second timeout and redirects disabled. No chat,
+  generated answer, billing dispatch or paid fallback. The result shows HTTP status,
+  elapsed time, model count and whether the selected model appears. A valid list
+  confirms metadata API/key access, not generation permissions or answer quality.
+  Unsupported metadata endpoints fail explicitly; never retry via chat. Non-OpenAI
+  formats are explicitly unsupported. `/app/settings` and scenario checks retain
+  their existing offline `probe_short()` behavior; this change is admin-only.
 - **Mock** (`test_type=mock`) requires a question (up to 8000 characters); it returns
   a canned local response and simulated usage, not actual paid tokens. The page
   does not accept image uploads or claim multimodal validation.
-- **Real probe** (`test_type=real`) also requires enabled personal billing,
+- **Real request / «Реальный запрос»** (`test_type=real`) also requires enabled personal billing,
   an active platform administrator and an explicitly selected active execution
   workspace. The initiating administrator is the personal payer; a submitted
   payer ID is never trusted. The personal admission service must authorize the
   account, daily baseline, cap and model bound before transport. Disabling
   billing refuses paid probes, never falls back to unaccounted HTTP.
-- Local status checks and `api_format=openai` are required. The selected client
-  receives the fixed one-word prompt, `max_tokens=8`, temperature 0 and a
-  20-second transport timeout; the mock question is not forwarded. Timeout is
-  not a provider JSON field. Anthropic/custom and multimodal validation remain
-  out of scope. The retired `/admin/llm-model/test-real` route never dispatches;
+- Active model/provider, configured key and `api_format=openai` are required.
+  Historical failures are shown but do not permanently block an explicit recovery
+  test. The endpoint forwards the entered question (at most 8000 characters) to
+  the selected billed client with temperature 0, a 20-second transport timeout and
+  at most `min(model.max_tokens, 512)` output tokens. A blank/whitespace question
+  sends `Ответь одним словом: да` with at most `min(model.max_tokens, 8)` output
+  tokens. The request and answer, limit, elapsed time, actual/unknown usage and
+  known/unknown cost estimate are displayed separately. Mock usage is labelled
+  simulated and actual spent tokens stay zero. Timeout is not a provider JSON
+  field. Anthropic/custom and multimodal validation remain out of scope. The retired `/admin/llm-model/test-real` route never dispatches;
   an authenticated administrator with valid CSRF receives 410, not a replay.
 - A successful real response with valid, reported input/output tokens allows an
   estimate from configured USD-per-1K rates and an update of `last_request_cost`
@@ -201,7 +211,7 @@ runtime contracts, not permission grants or a new business-workflow model.
   escaped result panel. Offline fixture coverage does not replace owner-local
   route, session, permission/revocation or PostgreSQL acceptance.
 - Provider `test-connection` is a separate real analyze path, not the model
-  probe's local/mock/8-token ladder. Provider probes still need explicit
+  model page's metadata/mock/billed-request modes. Provider probes still need explicit
   review of their distinct payer/accounting path; do not infer that this model
   probe candidate accepts provider connection testing or the broader P2 cutover.
   See [accounting scope](IMPLEMENTATION_STATUS.md).
@@ -314,7 +324,7 @@ independent template environment or URL safety.
 | `app/admin/auth.py` | Login/logout and fresh platform entry |
 | `app/admin/authorization.py` | Per-request grants, lazy identity/action catalog and external-route guard |
 | `app/admin/base.py`, `formatters.py`, `widgets.py` | Shared view configuration, display formatting and form widgets |
-| `app/admin/actions.py` | LLM shared short/mock/real action rendering |
+| `app/admin/actions.py` | LLM metadata/mock/billed-request action rendering |
 | `app/admin/endpoints.py` | Password, dashboard and model-test POST routes |
 | `app/admin/csrf.py`, `middleware.py` | Token manager and legacy middleware helpers; registration/coverage limits above |
 

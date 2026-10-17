@@ -2,13 +2,22 @@
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from time import monotonic
 from typing import Any
 
 from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.models import LLMModel
-from app.services.ai.model_probe import PROBE_PROMPT, probe_mock, probe_real_capped, probe_short, probe_status
+from app.services.ai.model_probe import (
+    PROBE_PROMPT,
+    REQUEST_MAX_TOKENS,
+    probe_connectivity,
+    probe_mock,
+    probe_real_capped,
+    probe_status,
+    request_parameters,
+)
 
 
 class LLMModelActions:
@@ -42,8 +51,9 @@ class LLMModelActions:
         if len(prompt) > 8000:
             raise HTTPException(422, "Prompt exceeds 8000 characters")
         model = await cls._model(model_id)
+        started = monotonic()
         if test_type == "short":
-            result = probe_short(model)
+            result = await probe_connectivity(model)
         elif test_type == "mock":
             if not prompt.strip():
                 return await cls._render(
@@ -51,7 +61,14 @@ class LLMModelActions:
                     request,
                     model,
                     prompt=prompt,
-                    result={"ok": False, "tier": "mock", "text": "Введите вопрос для mock-теста."},
+                    result={
+                        "ok": False,
+                        "tier": "mock",
+                        "mode": "mock",
+                        "tokens_spent": 0,
+                        "elapsed_ms": 0,
+                        "text": "Введите вопрос для mock-теста.",
+                    },
                 )
             try:
                 mock = probe_mock(model, prompt)
@@ -71,28 +88,35 @@ class LLMModelActions:
                 }
         else:
             verdict = probe_status(model)
-            if not verdict["ok"]:
+            if not all(passed for _, passed in verdict["checks"][:3]):
                 result = {"ok": False, "tier": "real", "text": verdict["hint"]}
             elif model.provider.api_format != "openai":
                 # The existing capped helper is OpenAI-shaped, not a format-agnostic chat client.
                 result = {
                     "ok": False,
                     "tier": "real",
-                    "text": "Реальная проба доступна только для OpenAI-совместимого API.",
+                    "text": "Реальный запрос доступен только для OpenAI-совместимого API.",
                 }
             else:
-                probe = await probe_real_capped(model)
+                question, limit = request_parameters(model, prompt)
+                probe = await probe_real_capped(model, prompt=prompt)
                 result = {
                     "ok": bool(probe.get("ok")),
                     "tier": "real",
                     "text": (
-                        "Провайдер ответил на фиксированную пробу."
+                        (
+                            "Получен ответ на ваш запрос."
+                            if prompt.strip()
+                            else "Получен короткий ответ на вопрос по умолчанию."
+                        )
                         if probe.get("ok")
-                        else "Реальный ответ не подтверждён. Проверьте подключение, ключ и лимиты."
+                        else probe.get("error", "Реальный ответ не подтверждён. Проверьте подключение, ключ и лимиты.")
                     ),
                     "content": probe.get("content", "") if probe.get("ok") else "",
                     "usage": probe.get("usage", {}),
                     "tokens_spent": probe.get("tokens_spent"),
+                    "request_prompt": question,
+                    "max_tokens": limit,
                 }
                 if probe.get("save_warning"):
                     result["save_warning"] = probe["save_warning"]
@@ -107,7 +131,10 @@ class LLMModelActions:
                         result["save_warning"] = (
                             "Ответ получен, но оценка стоимости не сохранена. Не повторяйте вызов автоматически."
                         )
+        result["elapsed_ms"] = round((monotonic() - started) * 1000)
         result["mode"] = test_type
+        if test_type == "mock":
+            result["request_prompt"] = prompt
         return await cls._render(admin_view, request, model, prompt=prompt, result=result)
 
     @staticmethod
@@ -132,6 +159,7 @@ class LLMModelActions:
                 "status_checks": verdict["checks"],
                 "status_hint": verdict["hint"],
                 "probe_prompt": PROBE_PROMPT,
+                "request_max_tokens": REQUEST_MAX_TOKENS,
                 "key_configured": bool(verdict["checks"][0][1]),
                 "billing_ready": billing_ready,
                 "billing_tenants": billing_tenants,

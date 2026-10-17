@@ -1,25 +1,19 @@
-"""Local model checks and explicitly requested, capped provider probes.
+"""Shared offline checks, admin metadata connectivity and bounded billed requests.
 
-Tiered testing for LLM models. Local checks and explicitly requested provider probes are distinct:
-
-* Level 0 — ``probe_status``: no provider traffic at all. Local config +
-  history verdicts; not proof of remote reachability.
-* Level 1 — ``probe_mock``: canned local answer, no network. Verifies the
-  response/usage display shape for 0 tokens; not an end-to-end routing check.
-* Level 2 — ``probe_real_capped``: one minimal provider call with a fixed
-  one-word prompt (``max_tokens=8``, timeout 20s). Proves the key/route
-  returned a response; actual provider charges depend on its pricing.
-
-The admin ``test_model`` action, ``/app/settings`` chat-model check and the
-scenario model check all share this module, so the economy rule lives in one
-place.
+Web settings retain the offline ``probe_short`` contract. The admin's explicit
+short POST uses ``probe_connectivity`` (metadata only, never generation).
+``probe_real_capped`` defaults to an eight-token probe for existing callers;
+admin-supplied questions get a bounded, usable answer via the same billed client.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+from time import monotonic
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +22,7 @@ logger = logging.getLogger(__name__)
 PROBE_PROMPT = "Ответь одним словом: да"
 PROBE_MAX_TOKENS = 8
 PROBE_TIMEOUT = 20.0
+REQUEST_MAX_TOKENS = 512
 
 
 def probe_status(model) -> dict[str, Any]:
@@ -59,7 +54,7 @@ def probe_status(model) -> dict[str, Any]:
     failed = [label for label, passed in checks if not passed]
     ok = not failed
     hint = (
-        "Всё хорошо — можно запускать мок или реальную пробу."
+        "Всё хорошо — можно запускать mock или реальный запрос."
         if ok
         else "Сначала исправьте: " + "; ".join(failed) + "."
     )
@@ -128,8 +123,74 @@ def probe_short(model) -> dict[str, Any]:
     return result
 
 
-async def probe_real_capped(model) -> dict[str, Any]:
-    """One billed fixed probe; never fall back to an unaccounted HTTP path.
+def request_parameters(model, prompt: str = "") -> tuple[str, int]:
+    """Preserve the tiny default; cap custom answers by both UI and model limits."""
+    if len(prompt) > 8000:
+        raise ValueError("Prompt exceeds 8000 characters")
+    question = prompt.strip()
+    limit = REQUEST_MAX_TOKENS if question else PROBE_MAX_TOKENS
+    return question or PROBE_PROMPT, min(limit, max(1, int(model.max_tokens)))
+
+
+def _dispatch_ready(model) -> bool:
+    # Past failures are diagnostic, not a permanent ban on testing recovery.
+    return all(passed for _, passed in probe_status(model)["checks"][:3])
+
+
+async def probe_connectivity(model) -> dict[str, Any]:
+    """Authenticated OpenAI metadata GET, no prompt/completion or paid fallback.
+
+    A valid model list proves this endpoint/key responded, not that generation
+    works. Unsupported metadata routes must remain failures, never chat retries.
+    """
+    from app.services.ai.llm_client import LLMClientFactory
+
+    result = {"ok": False, "tier": "connectivity", "tokens_spent": 0, "method": "GET /models"}
+    if not _dispatch_ready(model):
+        return {**result, "text": "Проверьте API-ключ и активность модели/провайдера."}
+    if model.provider.api_format != "openai":
+        return {**result, "text": "Короткая API-проверка поддерживает только OpenAI-совместимый GET /models."}
+    started = monotonic()
+    try:
+        client = LLMClientFactory.create(model)
+        async with httpx.AsyncClient(follow_redirects=False) as http:
+            response = await http.get(f"{client.base_url}/models", headers=client._headers(), timeout=PROBE_TIMEOUT)
+        result["http_status"] = response.status_code
+        if response.status_code != 200:
+            hints = {
+                401: "API отклонил ключ (HTTP 401).",
+                403: "API отказал в доступе (HTTP 403).",
+                404: "GET /models не найден (HTTP 404). Генерация не проверялась.",
+                405: "GET /models не поддерживается (HTTP 405). Генерация не проверялась.",
+                429: "API ограничил частоту запросов или квоту (HTTP 429).",
+            }
+            result["text"] = hints.get(response.status_code, "API вернул ошибку. Проверьте подключение провайдера.")
+        else:
+            data = response.json()
+            models = data.get("data") if isinstance(data, dict) else None
+            if not isinstance(models, list) or any(
+                not isinstance(row, dict) or not isinstance(row.get("id"), str) for row in models
+            ):
+                result["text"] = "API ответил, но формат списка моделей не подтверждён. Генерация не проверялась."
+            else:
+                available = any(row["id"] == model.model_id for row in models)
+                result.update(
+                    ok=True,
+                    model_available=available,
+                    models_count=len(models),
+                    text="API доступен: авторизованный список моделей получен. Генерация ответа не запускалась.",
+                )
+    except httpx.TimeoutException:
+        result["text"] = "API не ответил за 20 секунд. Генерация не запускалась."
+    except Exception:
+        # Never expose provider bodies, URLs, request headers or exception text.
+        result["text"] = "Не удалось проверить API. Проверьте адрес, ключ и формат ответа провайдера."
+    result["elapsed_ms"] = round((monotonic() - started) * 1000)
+    return result
+
+
+async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
+    """One bounded billed request; never fall back to an unaccounted HTTP path.
 
     The selected client owns admission, durable dispatch/outcome accounting and
     transport. A failure after dispatch is ambiguous and must not trigger retry.
@@ -137,6 +198,9 @@ async def probe_real_capped(model) -> dict[str, Any]:
     from app.core.config import settings
     from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
+    question, max_tokens = request_parameters(model, prompt)
+    if not _dispatch_ready(model):
+        return {"ok": False, "error": "Проверьте API-ключ и активность модели/провайдера.", "tokens_spent": 0}
     if not settings.PERSONAL_BILLING_ENABLED:
         return {"ok": False, "error": "Личный учёт расходов ещё не включён", "tokens_spent": 0}
     if getattr(getattr(model, "provider", None), "api_format", None) != "openai":
@@ -153,8 +217,8 @@ async def probe_real_capped(model) -> dict[str, Any]:
     client.timeout = PROBE_TIMEOUT
     try:
         response = await client.chat(
-            [{"role": "user", "content": PROBE_PROMPT}],
-            max_tokens=PROBE_MAX_TOKENS,
+            [{"role": "user", "content": question}],
+            max_tokens=max_tokens,
             temperature=0.0,
             personal_billing_purpose="admin_probe",
         )
@@ -189,13 +253,20 @@ async def probe_real_capped(model) -> dict[str, Any]:
     total = incoming + outgoing if incoming is not None and outgoing is not None else None
     text = response.get("content")
     if not isinstance(text, str) or not text.strip():
-        return {"ok": False, "error": "Провайдер вернул пустой ответ", "tokens_spent": total}
+        return {
+            "ok": False,
+            "error": "Провайдер вернул пустой ответ. Возможен расход токенов; автоматического повтора нет.",
+            "tokens_spent": total,
+            "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
+        }
     result = {
         "ok": True,
         "content": text,
         "usage": {"prompt_tokens": incoming, "completion_tokens": outgoing, "total_tokens": total},
         "tokens_spent": total,
         "is_real_response": True,
+        "request_prompt": question,
+        "max_tokens": max_tokens,
     }
     if journal_warning:
         result["save_warning"] = "Ответ получен, но журнал не подтверждён. Не повторяйте вызов автоматически."

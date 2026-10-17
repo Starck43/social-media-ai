@@ -22,7 +22,7 @@
             if (tenant) tenant.focus(); return;
         }
         form.dataset.busy = 'true';
-        status.textContent = mode === 'real' ? 'Ожидаем ответ провайдера…' : 'Выполняем локальную проверку…';
+        status.textContent = mode === 'real' ? 'Ожидаем ответ модели…' : mode === 'short' ? 'Проверяем API без генерации…' : 'Выполняем локальную имитацию…';
         // Do not disable the submitter: its name/value must reach the server.
         form.querySelectorAll('button[type="submit"]').forEach(button => button.setAttribute('aria-disabled', 'true'));
     });

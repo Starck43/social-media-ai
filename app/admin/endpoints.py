@@ -474,7 +474,7 @@ async def submit_llm_model_test(request: Request):
         request.state.probe_tenant_id = tenant.id
         with tenant_scope(tenant.id), permission_scope(user):
             return await LLMModelActions.submit_test(
-                request.app.state.admin, request, str(form.get("model_id", "")), "real", ""
+                request.app.state.admin, request, str(form.get("model_id", "")), "real", str(form.get("prompt", ""))
             )
 
     return await LLMModelActions.submit_test(

@@ -117,6 +117,9 @@ class Case:
     marker: str = field(default_factory=lambda: f"p205-{uuid4().hex[:20]}")
     password: str = field(default_factory=lambda: f"Synthetic-Q7!{uuid4().hex}")
     users: list = field(default_factory=list)
+    metadata_sent: list = field(default_factory=list)
+    expected_prompt: str = PROBE_PROMPT
+    expected_max_tokens: int = 8
     tenant: object = None
     provider: object = None
     model: object = None
@@ -226,13 +229,19 @@ class Case:
 
     async def transport(self, request):
         # ANY unexpected HTTP is refused; no passthrough or provider credentials.
-        self.sent.append(request)
         assert request.url.host == "provider.invalid", "Forbidden external HTTP target"
+        if request.method == "GET" and request.url.path == "/v1/models":
+            self.metadata_sent.append(request)
+            assert request.headers["authorization"] == "Bearer synthetic-p205-key"
+            assert set(request.extensions["timeout"].values()) == {20.0}
+            assert not request.content and not await self.dispatches()
+            return httpx.Response(200, json={"data": [{"id": self.model.model_id}]})
+        self.sent.append(request)
         assert request.method == "POST" and request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         assert body["model"] == self.model.model_id
-        assert body["messages"] == [{"role": "user", "content": PROBE_PROMPT}]
-        assert body["max_tokens"] == 8 and body["temperature"] == 0
+        assert body["messages"] == [{"role": "user", "content": self.expected_prompt}]
+        assert body["max_tokens"] == self.expected_max_tokens and body["temperature"] == 0
         assert "timeout" not in body and "personal_billing_purpose" not in body
         assert set(request.extensions["timeout"].values()) == {20.0}
         assert request.headers["authorization"] == "Bearer synthetic-p205-key"
@@ -287,7 +296,8 @@ class Case:
         data.update(changes)
         return await client.post(POST, data=data)
 
-    async def no_dispatch(self):
+    async def no_dispatch(self, *, metadata_requests=0):
+        assert len(self.metadata_sent) == metadata_requests
         assert not self.sent and not await self.dispatches()
 
 
@@ -437,18 +447,18 @@ async def test_admin_create_and_edit_roundtrip(case):
     await case.no_dispatch()
 
 
-async def test_short_empty_question_and_shared_web_service(case):
+async def test_admin_short_metadata_and_web_short_stays_offline(case):
     owner = await case.user(membership="owner")
     async with case.client(case.admin) as client:
         html = page_ok(await case.post(client))
-        assert "Статус и локальный mock: OK" in html and "Нет платного вызова" in html
+        assert "API доступен" in html and "GET /models" in html and "Нет платного вызова" in html
     async with case.client(owner, "web") as client:
         csrf = token_from(await client.get("/app/settings?tab=agent"), "_csrf")
         result = await client.post(WEB_POST, data={"agent_model": str(case.model.id), "_csrf": csrf})
         assert result.status_code == 302 and "tab=agent" in result.headers["location"]
         html = page_ok(await client.get(result.headers["location"]))
         assert "Статус и локальный mock: OK" in html
-    await case.no_dispatch()
+    await case.no_dispatch(metadata_requests=1)
 
 
 @pytest.mark.parametrize("prompt", ["", "<script>never_execute()</script>"])
@@ -526,8 +536,8 @@ async def test_existing_operator_profile_matches_console_enforcement(case):
         )
         assert response.status_code == (200 if can_configure else 403)
         if can_configure:
-            assert "Статус и локальный mock: OK" in response.text
-    await case.no_dispatch()
+            assert "API доступен" in response.text
+    await case.no_dispatch(metadata_requests=int(can_configure))
 
 
 @pytest.mark.parametrize("change", ["disabled", "revoked"])
@@ -596,14 +606,16 @@ async def test_real_admission_cannot_bypass_personal_safeguards(case, missing):
     await case.no_dispatch()
 
 
-async def test_real_fixed_probe_initiator_payer_durable_settlement(case):
+@pytest.mark.parametrize("prompt,limit", [("", 8), ("Explain API briefly", 512)])
+async def test_real_request_initiator_payer_durable_settlement(case, prompt, limit):
+    case.expected_prompt, case.expected_max_tokens = prompt or PROBE_PROMPT, limit
     tenant_owner = await case.user(membership="owner")
     await case.billing()
     async with case.client(case.admin) as client:
-        html = page_ok(await case.post(client, "real", prompt="NEVER_FORWARD_THIS", payer_user_id=str(tenant_owner.id)))
+        html = page_ok(await case.post(client, "real", prompt=prompt, payer_user_id=str(tenant_owner.id)))
         assert "Проверка завершена" in html and "0.000008" in html
         assert SYNTHETIC_ANSWER not in html and "&lt;script&gt;" in html
-        assert "NEVER_FORWARD_THIS" not in html
+        assert case.expected_prompt in html
     assert len(case.sent) == 1
     (dispatch,) = await case.dispatches()
     assert dispatch.payer_user_id == case.admin.id != tenant_owner.id
@@ -713,10 +725,10 @@ async def test_short_and_mock_do_not_require_billing_or_workspace_selection(case
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", False)
     async with case.client(case.admin) as client:
         short = page_ok(await case.post(client, "short", tenant_id="bad"))
-        assert "Статус и локальный mock: OK" in short
+        assert "API доступен" in short
         mock = page_ok(await case.post(client, "mock", tenant_id="bad", prompt="Synthetic question"))
         assert "локальный ответ" in mock
-    await case.no_dispatch()
+    await case.no_dispatch(metadata_requests=1)
 
 
 @pytest.mark.parametrize("broken", ["inactive_model", "inactive_provider", "missing_key", "unsupported_format"])

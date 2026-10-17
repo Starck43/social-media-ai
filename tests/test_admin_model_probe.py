@@ -154,13 +154,13 @@ async def test_get_never_executes_legacy_query_modes():
 
 
 @pytest.mark.asyncio
-async def test_short_post_needs_no_question_and_calls_shared_service():
+async def test_short_post_needs_no_question_and_calls_api_service():
     probe, post = probe_module()
-    probe.probe_short = Mock(wraps=probe.probe_short)
+    probe.probe_connectivity = AsyncMock(return_value={"ok": True, "tier": "connectivity", "tokens_spent": 0})
     actions, _, view = action_module(probe)
     result = await actions.LLMModelActions.submit_test(view, NS(), "7", "short", "")
     assert result["result"]["ok"]
-    probe.probe_short.assert_called_once()
+    probe.probe_connectivity.assert_awaited_once()
     post.assert_not_awaited()
 
 
@@ -206,12 +206,13 @@ async def test_missing_model_and_empty_mock_are_truthful():
 
 
 @pytest.mark.asyncio
-async def test_real_uses_fixed_probe_and_known_estimate_only():
+async def test_real_forwards_question_and_preserves_unknown_estimate():
     probe, post = probe_module({"choices": [{"message": {"content": "да"}}]})
     actions, manager, view = action_module(probe)
     result = await actions.LLMModelActions.submit_test(view, NS(), "7", "real", "PRIVATE_PROMPT")
     assert result["result"]["ok"] and result["result"]["estimated_cost"] is None
-    assert "PRIVATE_PROMPT" not in str(post.await_args)
+    assert post.await_args.kwargs["json"]["messages"][0]["content"] == "PRIVATE_PROMPT"
+    assert post.await_args.kwargs["json"]["max_tokens"] == 512
     manager.update_by_id.assert_not_awaited()
 
 

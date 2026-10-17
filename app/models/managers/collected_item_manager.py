@@ -228,17 +228,25 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
             query = query.filter(CollectedItem.published_at <= end_date)
         return list(await query.order_by(CollectedItem.published_at.desc().nullslast()).limit(limit))
 
-    async def exhausted_count(self, source_id: int) -> int:
-        """How many staged rows for a source have burned their ceiling."""
+    async def exhausted_count(
+        self, source_id: int, *, start_date: Any = None, end_date: Any = None
+    ) -> int:
+        """How many staged rows for a source have burned their ceiling.
+
+        `start_date`/`end_date` scope the count to a content window — the same
+        bounds `count_for_source` applies, so a warning about stuck rows reads
+        against the window a run would actually process, not the whole history.
+        """
         from app.models.collected_item import CollectedItem
 
         # Both columns are read because the ceiling is per row: one workspace may
         # have widened it while another kept the default.
-        rows = (
-            await self.filter(source_id=source_id)
-            .values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts)
-            .rows()
-        )
+        query = self.filter(source_id=source_id)
+        if start_date is not None:
+            query = query.filter(CollectedItem.published_at >= start_date)
+        if end_date is not None:
+            query = query.filter(CollectedItem.published_at <= end_date)
+        rows = await query.values(CollectedItem.analyze_attempts, CollectedItem.give_up_after_attempts).rows()
         return sum(1 for r in rows if r and r[0] is not None and r[0] >= (r[1] or 0))
 
     async def count_for_source(self, source_id: int, *, start_date: Any = None, end_date: Any = None) -> int:

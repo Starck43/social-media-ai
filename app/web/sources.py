@@ -566,6 +566,22 @@ async def source_detail(request: Request, source_id: int):
             CollectedItem.objects.filter(source_id=source.id).values(func.count(CollectedItem.id)).scalar(0)
         )
         given_up = await CollectedItem.objects.exhausted_count(source.id)
+        # The runs only ever process the task's configured window, so a stuck-rows
+        # warning is only comparable to the run's "9 из 9" when it says which part
+        # of the backlog that window covers. History outside the window stays
+        # counted and reported separately instead of silently migrating into the
+        # headline number.
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        window = await _resolve_source_window(source)
+        cli_dates = window.get("cli_dates") or {}
+        window_bounds = (
+            AgentTaskManager.parse_date(cli_dates.get("start_date")),
+            AgentTaskManager.parse_date(cli_dates.get("end_date")),
+        )
+        given_up_in_window = await CollectedItem.objects.exhausted_count(source.id, **_window_kwargs(window_bounds))
+        given_up_history = max(0, given_up - given_up_in_window)
+        window_label = _window_human_label(window_bounds)
         running = await _source_has_running_job(source.id)
         from app.models.managers.job_manager import JobManager
         from app.web.analysis_progress import project_job
@@ -588,6 +604,9 @@ async def source_detail(request: Request, source_id: int):
         pending_count=pending_count,
         given_up=given_up,
         given_up_label=given_up_label,
+        given_up_in_window=given_up_in_window,
+        given_up_history=given_up_history,
+        window_label=window_label,
         filter_tenant_id=filter_tenant_id,
         mode=_mode_view(mode_key),
         mode_label=dict(COLLECTION_MODES)[mode_key],
@@ -735,6 +754,23 @@ async def _resolve_source_window(source) -> dict:
 
 def _last_checked_label(last_checked) -> str:
     return human_datetime(last_checked, empty="не проверялся")
+
+
+def _window_kwargs(bounds: tuple) -> dict:
+    """Content-window kwargs for manager queries; Nones stay out (no bound)."""
+    return {key: value for key, value in zip(("start_date", "end_date"), bounds) if value is not None}
+
+
+def _window_human_label(bounds: tuple) -> str:
+    """«с 01.09.2026» / «с 01.09.2026 по 17.10.2026» for the window mention."""
+    start, end = bounds
+    if start is None and end is None:
+        return ""
+    if start and end:
+        return f"с {start:%d.%m.%Y} по {end:%d.%m.%Y}"
+    if start:
+        return f"с {start:%d.%m.%Y}"
+    return f"до {end:%d.%m.%Y}"
 
 
 # How many collect runs to scan for a source's history. Deep enough to show a

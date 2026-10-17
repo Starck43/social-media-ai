@@ -34,6 +34,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P3-T02 — close one actor/workspace/tool/write gap → [p3](docs/phases/p3-identity-access.md) — unassigned — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — TODO
 - [ ] P5-T01 — close one typed-output/hostile-input/coverage gap → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
+- [ ] P5-T04 — persist analysis receipts to prevent duplicate model spend → [p5](docs/phases/p5-ai-boundaries.md) — owner: codex-analysis-receipts — IN_PROGRESS
 - [ ] P6-T01 — data-retention rollout (deploy gated) → [p6](docs/phases/p6-lifecycle-privacy.md) — owner — BLOCKED
 - [ ] P6-T02 — one bounded retention/export/offboarding contract → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
@@ -62,3 +63,4 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->
 
 - [ ] Q-1 — compress `docs/validation/llm-budget-pg-runner.md` (807-line evidence ledger) to a short summary after P2-T01 activation completes; keep the example JSONs (pinned by `tests/test_budget_isolated_fixture_coherence.py`); context: docs/validation/; asked by: opencode; status: OPEN
+- [ ] Q-2 — verify source 2939 VK post origin and missing media references against the original API response, if obtainable; context: [VK raw content audit](docs/audits/2026-10-18-vk-raw-content.md); owner: codex-vk-raw-audit; status: OPEN

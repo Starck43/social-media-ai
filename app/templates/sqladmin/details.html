@@ -1,5 +1,8 @@
 {% extends "sqladmin/layout.html" %}
 {% block content %}
+{% if model_view.catalog_edit_notice is defined %}
+<div class="col-12"><div class="alert alert-info" role="note">{{ model_view.catalog_edit_notice }}</div></div>
+{% endif %}
 <div class="col-12">
   <div class="card">
     <div class="card-header">

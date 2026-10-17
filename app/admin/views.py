@@ -49,6 +49,7 @@ from app.types.enums.llm_types import APIFormatType
 
 from ..services.ai.llm_client import LLMClientFactory
 from .base import BaseAdmin
+from .catalog import OperatorGrantAdmin, PermissionLabelAdmin
 from .widgets import CommaSeparatedSelectMultipleField, EuropeanDateField
 
 logger = logging.getLogger(__name__)
@@ -148,13 +149,10 @@ class UserAdmin(BaseAdmin, model=User):
         )
 
 
-class RoleAdmin(BaseAdmin, model=PlatformRole):
-    name = "Роль"
+class RoleAdmin(OperatorGrantAdmin, model=PlatformRole):
+    name = "Платформенная роль"
     name_plural = "Роли"
     icon = "fa fa-shield"
-    can_create = False
-    can_edit = False
-    can_delete = False
     column_list = ["id", "codename", "description"]
     column_searchable_list = ["codename"]
     column_labels = dict(
@@ -163,24 +161,20 @@ class RoleAdmin(BaseAdmin, model=PlatformRole):
             "codename": "Кодовое наименование",
             "description": "Описание",
             "users": "Пользователи",
-            "permissions": "Разрешения",
+            "permissions": "Разрешения оператора",
         },
         **BaseAdmin.column_labels,
     )
+    form_columns = ["permissions"]
+    form_args = {"permissions": {"label": "Разрешения оператора", "description": "Выберите разрешённые действия"}}
+    column_formatters_detail = {"codename": lambda m, a: m.label}
 
-    column_formatters_detail = {
-        "codename": lambda m, a: m.label,
-    }
 
-
-class PermissionAdmin(BaseAdmin, model=Permission):
+class PermissionAdmin(PermissionLabelAdmin, model=Permission):
     name = "Разрешение"
     name_plural = "Разрешения"
     icon = "fa fa-key"
-    can_create = False
-    can_edit = False
-    can_delete = False
-    column_list = ["id", "codename", "name", "description"]
+    column_list = ["id", "codename", "name", "action_type"]
     column_searchable_list = ["name"]
     column_labels = dict(
         {
@@ -190,53 +184,17 @@ class PermissionAdmin(BaseAdmin, model=Permission):
             "action_type": "Вид разрешения",
             "codename": "Кодовое имя",
             "name": "Название",
-            "description": "Описание",
             "roles": "Роли",
         },
         **BaseAdmin.column_labels,
     )
-    column_details_exclude_list = ["model_type", "model_type_id"]
-
-    form_excluded_columns = ["model_type_id", "codename"] + BaseAdmin.form_excluded_columns
-
-    form_overrides = {
-        # SelectField override keeps the choices from form_args below (the default
-        # enum converter would replace them with raw enum names)
-        "action_type": SelectField,
-        **BaseAdmin.form_overrides,
-    }
-
-    form_args = {
-        "name": {
-            "label": "Название",
-            "description": "Человекочитаемое описание права, например «Просмотр источников»",
-        },
-        "action_type": {
-            "label": "Вид разрешения",
-            "description": "Какое действие разрешает право; кодовое имя строится как домен.ресурс.действие",
-            "choices": ActionType.choices(),
-            "coerce": str,
-            "validators": [validators.AnyOf([value for value, _ in ActionType.choices()])],
-        },
-        "description": {
-            "label": "Описание",
-            "description": "Для справки: что именно разрешает право",
-        },
-        "roles": {
-            "label": "Роли",
-            "description": "Роли, которым выдано это право",
-        },
-        **BaseAdmin.form_args,
-    }
-
+    form_columns = ["name"]
+    form_args = {"name": {"label": "Название", "validators": [validators.DataRequired(), validators.Length(max=200)]}}
     column_formatters = {
         "action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
         **BaseAdmin.column_formatters,
     }
-
-    column_formatters_detail = {
-        "action_type": lambda m, a: m.action_type.label if hasattr(m.action_type, "label") else "—",
-    }
+    column_formatters_detail = {"action_type": lambda m, a: m.action_type.label}
 
 
 class PlatformAdmin(BaseAdmin, model=Platform):

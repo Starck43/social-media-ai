@@ -72,9 +72,12 @@ Additional restrictions:
   model grant or ownership of one workspace.
 - Platform role and permission identities remain fixed: no create/delete or code,
   resource/action, or user-assignment editing. A platform admin may edit the
-  operator role's permission selection through `RoleManager.set_permissions`,
+  permission selection of every role (`user`, `admin`, `operator`) through `RoleManager.set_permissions`,
   and may edit a permission's display name. Operators cannot edit either catalog,
   even with explicit grants. Writes recheck the active platform admin and CSRF.
+  Stored grants do not change fixed role authority: `admin` retains wildcard
+  console access, and `user` cannot enter the console. The role API/service keeps
+  its separate operator-only update contract; the SQLAdmin editor is admin-only.
 - User forms exclude `role` / `role_id`; new users receive the ordinary platform
   `user` role. Creating an operator/admin or changing operator grants is not an
   ordinary SQLAdmin user-form operation.
@@ -115,7 +118,7 @@ business-workflow execution.
 | View | Model | List path | Explicit restriction / purpose |
 | --- | --- | --- | --- |
 | `UserAdmin` | `User` | `/admin/user/list` | Account forms exclude platform-role assignment; password action is separate |
-| `RoleAdmin` | `PlatformRole` | `/admin/platform-role/list` | Fixed catalog; platform admin may configure operator grants only |
+| `RoleAdmin` | `PlatformRole` | `/admin/platform-role/list` | Platform admin may edit every existing role's grants; catalog identities remain fixed |
 | `PermissionAdmin` | `Permission` | `/admin/permission/list` | Fixed catalog; platform admin may edit display name only |
 | `PlatformAdmin` | `Platform` | `/admin/platform/list` | Platform configuration; no sync action |
 | `SourceAdmin` | `Source` | `/admin/source/list` | Sources and synchronous collection check |

@@ -94,6 +94,9 @@ class RoleManager(BaseManager["Role"]):
 
         The association table has no model, so this is the single write path
         for it — the API, the CLI and the setup scripts all funnel through here.
+        Active platform admins may configure any existing role's stored grants;
+        the caller's API/service may impose a narrower contract. This never
+        changes a role's identity or its fixed platform authority.
         """
         from app.core.permissions import get_current_user
         from app.core.tenant_context import is_bypass
@@ -108,8 +111,8 @@ class RoleManager(BaseManager["Role"]):
         else:
             fresh = await User.objects.prefetch_related("role").get(id=actor.id, is_active=True)
             target = await self.get(id=role_id)
-            if fresh is None or not fresh.is_platform_admin or target is None or target.codename != "operator":
-                raise PermissionError("Only platform admins may configure operator grants")
+            if fresh is None or not fresh.is_platform_admin or target is None:
+                raise PermissionError("Only platform admins may configure existing role grants")
 
         return await self._replace_secondary(role_permission, "role_id", role_id, "permission_id", permission_ids)
 

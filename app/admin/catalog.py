@@ -42,24 +42,20 @@ class CatalogEditAdmin(BaseAdmin):
         return fresh
 
 
-class OperatorGrantAdmin(CatalogEditAdmin):
+class PlatformRoleGrantAdmin(CatalogEditAdmin):
     catalog_edit_notice = (
-        "Изменяются только разрешения оператора. Коды системных ролей, назначения пользователей "
-        "и полный доступ администратора платформы защищены от изменения."
+        "Администратор платформы может редактировать разрешения всех ролей. Роль admin сохраняет полный доступ "
+        "независимо от списка разрешений; роль user не получает вход в консоль. Коды ролей и назначения пользователей "
+        "не изменяются этой формой."
     )
-
-    def has_permission(self, request: Request, action: str, obj: Any | None = None) -> bool:
-        if action == Action.EDIT and obj is not None and obj.codename != "operator":
-            return False
-        return super().has_permission(request, action, obj)
 
     async def update_model(self, request: Request, pk: str, data: dict) -> Any:
         actor = await self.require_catalog_edit(request)
         if set(data) != {"permissions"}:
-            raise HTTPException(status_code=422, detail="Разрешено менять только права оператора")
+            raise HTTPException(status_code=422, detail="Разрешено менять только разрешения роли")
         role = await PlatformRole.objects.get(id=int(pk))
-        if role is None or role.codename != "operator":
-            raise HTTPException(status_code=403, detail="Изменяются только разрешения оператора")
+        if role is None:
+            raise HTTPException(status_code=404, detail="Роль не найдена")
         # Use the canonical association writer, with an explicit actor context.
         # Never let SQLAdmin replace role/users relationships through generic ORM CRUD.
         with permission_scope(actor):

@@ -174,7 +174,7 @@ P8-T06 and does not alter its task record.
 - [ ] P8-T16 — repair admin sidebar/menu continuity, display the verified actor and
   platform role, and expose platform-admin-only role-grant/permission-label
   editing without mutable catalog identities or role escalation; owner: remote
-  Notion agent (`fix/admin-permission-compact-layout`); status: BLOCKED
+  Notion agent (`fix/admin-role-picker-controls`); status: BLOCKED
   (owner-requested self-role protection and responsive permission transfer picker;
   base dev `58a90c1` (includes PR #212 and fresh documentation); owner-local real PostgreSQL acceptance remains pending).
   Owns: shared admin shell/CSS/authorization, role and permission views, focused
@@ -233,6 +233,18 @@ P8-T06 and does not alter its task record.
   checks passed. Real owner-browser/DB acceptance remains deferred under the
   standing owner delivery/local-feedback instruction. No migration, runtime,
   provider call or deployment; task is not self-accepted as DONE.
+
+  Presentation-only follow-up from fresh dev `9868b20`: field caption and a smaller
+  hint below the panes, circular transfer arrows with marked-item counts between
+  them, and non-collapsible access rules with readable spacing. Footer buttons,
+  grouping/search, row styles and authorization/persistence behavior are unchanged.
+  Evidence: 59 isolated catalog/role/self-role tests and 48 offline Chromium cases
+  plus four interaction suites passed with up to 206 synthetic permissions.
+  Checks include caption/button positions, 44px circular targets, badge counts,
+  always-visible rules, small hint text, keyboard/touch, native submission/reset,
+  filtering and viewport/footer bounds. Formatting, JS syntax and diff checks
+  passed. Remote mocks only; real owner-browser/DB acceptance is still deferred.
+  Shared docs synchronized with dev; foreign task records and evidence preserved.
 
 - [ ] P8-T17 — remove redundant paid checkbox; explicit real POST is consent;
   readable answer plus sanitized provider JSON and transport/accounting statuses;

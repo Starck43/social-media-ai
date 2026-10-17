@@ -9,10 +9,10 @@
 .permission-role-card { flex: 1; min-width: 0; min-height: 0; }
 .permission-role-card > .card-header { flex: none; min-height: 0; padding: .75rem 1rem; }
 .permission-role-form { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
-.permission-role-intro { flex: none; padding: .5rem 1rem 0; }
+.permission-role-intro { flex: none; padding: .75rem 1rem .25rem; }
 .permission-role-notice { font-size: .875rem; }
-.permission-role-notice summary { cursor: pointer; }
-.permission-role-notice p { margin: .25rem 0; }
+.permission-role-notice h4 { margin: 0 0 .375rem; font-size: .875rem; font-weight: 600; }
+.permission-role-notice p { margin: 0; line-height: 1.45; color: var(--color-text-secondary); }
 .permission-role-intro .alert { margin: .25rem 0; padding: .5rem; }
 .permission-role-field { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: .5rem 1rem; }
 .permission-role-field > .form-label { flex: none; margin-bottom: .25rem; }
@@ -25,11 +25,13 @@
 select[data-permission-transfer] { flex: 1; min-height: 0; width: 100%; overflow-y: auto; }
 select[data-permission-transfer][hidden], .permission-transfer [hidden] { display: none !important; }
 .permission-transfer { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; color: var(--color-text); }
-.permission-transfer-help { flex: none; margin: 0 0 .5rem; font-size: .875rem; color: var(--color-text-secondary); }
+.permission-transfer-caption { flex: none; margin-top: .75rem; }
+.permission-transfer-caption .form-label { display: block; margin: 0 0 .25rem; font-size: .875rem; }
+.permission-transfer-help { margin: 0; font-size: .75rem; line-height: 1.4; color: var(--color-text-secondary); }
 .permission-transfer-filter { display: flex; flex: none; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .permission-transfer-filter label { margin: 0; font-size: .875rem; }
 .permission-transfer-filter select { width: auto; flex: 1; max-width: 24rem; min-width: 0; min-height: 44px; }
-.permission-transfer-grid { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; }
+.permission-transfer-grid { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) 2.75rem minmax(0, 1fr); gap: .75rem; }
 .permission-transfer-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: .25rem; }
 .permission-transfer-heading { display: flex; flex: none; flex-wrap: wrap; justify-content: space-between; gap: .25rem; font-weight: 600; }
 .permission-transfer-count { font-size: .8125rem; font-weight: 400; color: var(--color-text-secondary); }
@@ -66,8 +68,21 @@ select[data-permission-transfer][hidden], .permission-transfer [hidden] { displa
 }
 .permission-transfer .permission-transfer-list > .permission-transfer-empty { padding: .5rem; color: var(--color-text-secondary); }
 .permission-transfer :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: -2px; }
-.permission-transfer-controls { display: flex; flex: none; align-items: flex-start; gap: .5rem; padding-top: .5rem; }
-.permission-transfer-controls > .btn { min-height: 44px; white-space: normal; }
+.permission-transfer-controls {
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .875rem;
+    min-width: 0; padding: .25rem 0;
+}
+.permission-transfer-controls > .permission-transfer-arrow {
+    position: relative; display: inline-flex; justify-content: center; align-items: center;
+    flex: none; width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%;
+}
+.permission-transfer-arrow-icon { font-size: 1.25rem; line-height: 1; }
+.permission-transfer-mark-count {
+    position: absolute; top: -.25rem; right: -.25rem; display: grid; place-items: center;
+    min-width: 1.125rem; height: 1.125rem; padding: 0 .2rem; border-radius: 1rem;
+    background: var(--tblr-bg-surface-secondary); color: var(--tblr-body-color);
+    font-size: .6875rem; line-height: 1; font-variant-numeric: tabular-nums;
+}
 .permission-transfer-status { flex: none; min-height: 1.4em; margin: .25rem 0 0; color: var(--color-text-secondary); font-size: .875rem; }
 @media (max-width: 1000px) {
     /* Resource is already visible in the group heading; retain the full ARIA label. */
@@ -85,7 +100,7 @@ select[data-permission-transfer][hidden], .permission-transfer [hidden] { displa
     .permission-role-card > .card-header { padding: .5rem; }
     .permission-role-footer { padding: .5rem; gap: .375rem; }
     .permission-role-footer > .btn { font-size: .875rem; }
-    .permission-transfer-grid { gap: .5rem; }
+    .permission-transfer-grid { gap: .375rem; }
     .permission-transfer-panel { font-size: .875rem; }
     .permission-transfer-search { padding-inline: .375rem; font-size: .875rem; }
 }

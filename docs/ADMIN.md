@@ -102,7 +102,10 @@ arrows/Home/End, Space to mark, Enter to transfer, Ctrl/Cmd+A to mark all filter
 items, and Escape to clear marks. Nothing is persisted until the form is saved.
 
 The editor uses the viewport height: only the lists scroll, while transfer controls
-and ordinary shared SQLAdmin buttons remain outside them and visible. Rows flow
+and ordinary shared SQLAdmin buttons remain outside them and visible. Circular
+transfer arrows sit between the panes and show the number of marked matches.
+The field label and smaller keyboard hint sit below the lists; access rules remain
+fully visible above them. Rows flow
 from the top without per-item borders or gaps (32px desktop, at least 44px with a
 coarse pointer). The two panes stay side by side on narrow screens; resource
 prefixes appear in group headings rather than repeated narrow-screen rows.

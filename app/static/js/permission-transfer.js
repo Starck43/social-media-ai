@@ -8,6 +8,7 @@
         root.dataset.permissionTransferUi = '';
         root.setAttribute('role', 'group');
         root.setAttribute('aria-label', select.labels[0]?.textContent.trim() || 'Разрешения роли');
+        const fieldLabel = select.labels[0];
         const baseId = select.id || 'permissions';
         const entries = Array.from(select.options, (option, index) => {
             const label = option.textContent.trim();
@@ -26,9 +27,11 @@
             return node;
         }
         const help = element('p', 'permission-transfer-help',
-            'Двойной щелчок — перенос. Пробел — выделить, Enter — перенести. На телефоне — выделение и кнопки.');
+            'Двойной щелчок/Enter — перенос, пробел — выделение.');
         help.id = `${baseId}-transfer-help`;
-        root.append(help);
+        const caption = element('div', 'permission-transfer-caption');
+        if (fieldLabel) caption.append(fieldLabel);
+        caption.append(help);
         const filter = element('div', 'permission-transfer-filter');
         const groupLabel = element('label', '', 'Группа');
         const groupSelect = element('select', 'form-select');
@@ -138,19 +141,24 @@
         const available = panel('available', 'Доступные');
         const chosen = panel('chosen', 'Выбранные');
         const controls = element('div', 'permission-transfer-controls');
-        function transferButton(side, text) {
-            const button = element('button', 'btn btn-outline-secondary', text);
+        function transferButton(side, arrow) {
+            const button = element('button', 'btn btn-outline-secondary permission-transfer-arrow');
+            const icon = element('span', 'permission-transfer-arrow-icon', arrow);
+            const count = element('span', 'permission-transfer-mark-count', '0');
+            icon.setAttribute('aria-hidden', 'true');
+            count.setAttribute('aria-hidden', 'true');
+            button.append(icon, count);
             button.type = 'button';
             button.dataset.transferFrom = side;
             button.setAttribute('aria-controls', `${baseId}-available-list ${baseId}-chosen-list`);
             button.addEventListener('click', () => move(side, marked[side]));
             return button;
         }
-        nodes.available.button = transferButton('available', 'Добавить →');
-        nodes.chosen.button = transferButton('chosen', '← Убрать');
+        nodes.available.button = transferButton('available', '→');
+        nodes.chosen.button = transferButton('chosen', '←');
         controls.append(nodes.available.button, nodes.chosen.button);
-        grid.append(available, chosen);
-        root.append(controls, status);
+        grid.append(available, controls, chosen);
+        root.append(caption, status);
         function render(side) {
             const {list, count} = nodes[side];
             const scroll = list.scrollTop;
@@ -210,7 +218,10 @@
             }
             const selectedCount = visible.filter(entry => marked[side].has(entry.option.value)).length;
             button.disabled = selectedCount === 0;
-            button.textContent = `${side === 'chosen' ? '← Убрать' : 'Добавить →'}${selectedCount ? ` (${selectedCount})` : ''}`;
+            button.querySelector('.permission-transfer-mark-count').textContent = String(selectedCount);
+            const label = `${side === 'chosen' ? 'Убрать' : 'Добавить'} отмеченные разрешения: ${selectedCount}`;
+            button.setAttribute('aria-label', label);
+            button.title = label;
         }
         function move(side, values) {
             const transferred = candidates(side).filter(entry => values.has(entry.option.value));
@@ -228,7 +239,7 @@
         select.after(root);
         render('available');
         render('chosen');
-        if (select.labels[0]) select.labels[0].htmlFor = nodes.available.search.id;
+        if (fieldLabel) fieldLabel.htmlFor = nodes.available.search.id;
         select.hidden = true;
         select.dataset.transferReady = 'true';
         select.form?.addEventListener('reset', () => {

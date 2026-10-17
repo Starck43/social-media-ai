@@ -9,15 +9,15 @@
           method="POST" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="permission-role-intro">
-        <details class="permission-role-notice">
-          <summary>Правила доступа</summary>
+        <section class="permission-role-notice" aria-labelledby="permission-role-rules">
+          <h4 id="permission-role-rules">Правила доступа</h4>
           <p>{{ model_view.catalog_edit_notice }}</p>
-        </details>
+        </section>
         {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
       </div>
       <div class="permission-role-field">
-        {{ form.permissions.label(class_="form-label") }}
         {{ form.permissions(class_="form-control") }}
+        {{ form.permissions.label(class_="form-label") }}
         {% for error in form.permissions.errors %}
         <div class="invalid-feedback d-block" role="alert">{{ error }}</div>
         {% endfor %}

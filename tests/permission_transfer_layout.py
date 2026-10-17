@@ -54,6 +54,30 @@ def run():
                             )
                             assert not errors, errors
                             assert page.locator(SELECT).is_hidden()
+                            assert page.locator(".permission-role-notice p").is_visible()
+                            assert (
+                                page.locator("details.permission-role-notice, .permission-role-notice summary").count()
+                                == 0
+                            )
+                            left = page.locator(".permission-transfer-panel").first.bounding_box()
+                            right = page.locator(".permission-transfer-panel").last.bounding_box()
+                            controls = page.locator(".permission-transfer-controls").bounding_box()
+                            caption = page.locator(".permission-transfer-caption").bounding_box()
+                            assert left["x"] + left["width"] <= controls["x"] < right["x"]
+                            assert controls["x"] + controls["width"] <= right["x"] + 1
+                            assert caption["y"] >= max(left["y"] + left["height"], right["y"] + right["height"])
+                            assert page.locator(".permission-transfer-help").evaluate(
+                                "n => parseFloat(getComputedStyle(n).fontSize)"
+                            ) < page.locator(".permission-transfer-caption .form-label").evaluate(
+                                "n => parseFloat(getComputedStyle(n).fontSize)"
+                            )
+                            for button in page.locator(".permission-transfer-arrow").all():
+                                box = button.bounding_box()
+                                assert box["width"] == box["height"] == 44
+                                assert button.evaluate("n => getComputedStyle(n).borderRadius") == "50%"
+                                assert button.locator(".permission-transfer-mark-count").inner_text() == "0"
+                                assert button.get_attribute("aria-label")
+
                             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), (
                                 width,
                                 state,
@@ -119,7 +143,13 @@ def run():
                 page.locator(CHOSEN + ' [data-value="1"]').dblclick()
                 assert values(page) == initial
                 page.locator(AVAILABLE + ' [data-value="2"]').click()
+                assert (
+                    page.locator('[data-transfer-from="available"] .permission-transfer-mark-count').inner_text() == "1"
+                )
                 page.locator('[data-transfer-from="available"]').click()
+                assert (
+                    page.locator('[data-transfer-from="available"] .permission-transfer-mark-count').inner_text() == "0"
+                )
                 assert "2" in values(page)
                 # Filtering never removes selected values from native form submission.
                 page.locator("#permissions-chosen-search").fill("permission_02")
@@ -154,6 +184,9 @@ def run():
                 assert abs(page.evaluate("scrollY") - before) < 1
                 # Select all visible, transfer, then remove all; no duplicate submitted values.
                 available.press("Control+a")
+                assert page.locator(
+                    '[data-transfer-from="available"] .permission-transfer-mark-count'
+                ).inner_text() == str(page.locator(AVAILABLE + ' [role="option"]').count())
                 available.press("Enter")
                 assert len(values(page)) == len(set(values(page))) == 30
                 chosen = page.locator(CHOSEN)
@@ -172,13 +205,11 @@ def run():
                 page.goto(Path(directory, "large.html").as_uri())
                 page.wait_for_selector("[data-permission-transfer-ui]")
                 original = values(page)
-                page.locator(".permission-role-notice summary").click()
                 assert (
                     page.locator(".permission-role-footer").bounding_box()["y"]
                     + page.locator(".permission-role-footer").bounding_box()["height"]
                     <= 901
                 )
-                page.locator(".permission-role-notice summary").click()
                 page.set_viewport_size({"width": 1440, "height": 720})
                 assert (
                     page.locator(".permission-role-footer").bounding_box()["y"]

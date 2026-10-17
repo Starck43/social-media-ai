@@ -100,6 +100,23 @@ const assert = require('node:assert/strict');
         await page.locator('[data-copy-target="llm-response-json"]').click();
         assert.match(await page.locator('#llm-copy-status').innerText(), /выделен/);
         assert.equal(await page.evaluate(() => window.getSelection().toString()), actualJson);
+        await page.goto('file://' + path.join(folder, 'owner.html'));
+        assert.equal(await page.locator('[name="tenant_id"]').count(), 0);
+        assert.equal(await page.locator('body').innerText().then(text => text.includes('PERSONAL_BILLING_ENABLED')), false);
+        await page.evaluate(() => {
+            window.ownerSubmissions = [];
+            document.querySelector('#llm-test-form').addEventListener('submit', e => {
+                if (!e.defaultPrevented) { window.ownerSubmissions.push([...new FormData(e.target, e.submitter)]); e.preventDefault(); }
+            });
+        });
+        await page.locator('button[value="real"]').click();
+        assert.equal(await page.evaluate(() => window.ownerSubmissions.length), 1);
+        assert.equal(await page.evaluate(() => window.ownerSubmissions[0].find(([k]) => k === 'prompt')[1]), '');
+        assert.match(await page.locator('#llm-submit-status').innerText(), /Ожидаем ответ модели/);
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
+        await page.locator('#llm-prompt').fill('Проверка владельца');
+        await page.locator('button[value="real"]').click();
+        assert.equal(await page.evaluate(() => window.ownerSubmissions[1].find(([k]) => k === 'prompt')[1]), 'Проверка владельца');
         await context.close();
         const noJS = await browser.newContext({viewport:{width:390,height:900}, javaScriptEnabled:false});
         const native = await noJS.newPage();
@@ -108,6 +125,9 @@ const assert = require('node:assert/strict');
         assert.equal(await native.locator('button[type="submit"][name="test_type"]').count(), 3);
         assert.equal(await native.locator('form#llm-test-form').getAttribute('method'), 'post');
         assert.equal(await native.locator('input[name="csrf_token"]').count(), 1);
+        await native.goto('file://' + path.join(folder, 'owner.html'));
+        assert.equal(await native.locator('[name="tenant_id"]').count(), 0);
+        assert.equal(await native.locator('button[value="real"]:not([disabled])').count(), 1);
         await noJS.close();
         console.log(`PASS: ${cases} viewport/theme/state cases + submission, no redundant consent, contrast, native no-JS controls, busy guard, bfcache and keyboard checks`);
     } finally { await browser.close(); fs.rmSync(folder, {recursive:true,force:true}); }

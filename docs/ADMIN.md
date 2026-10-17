@@ -230,28 +230,27 @@ runtime contracts, not permission grants or a new business-workflow model.
 - **Mock** (`test_type=mock`) requires a question (up to 8000 characters); it returns
   a canned local response and simulated usage, not actual paid tokens. The page
   does not accept image uploads or claim multimodal validation.
-- **Real request / «Реальный запрос»** (`test_type=real`) also requires enabled personal billing,
-  an active platform administrator and an explicitly selected active execution
-  workspace. The initiating administrator is the personal payer; a submitted
-  payer ID is never trusted. The personal admission service must authorize the
-  account, daily baseline, cap and model bound before transport. Disabling
-  billing refuses paid probes, never falls back to unaccounted HTTP.
-- Disabled billing, missing platform-admin authority and missing/inactive workspace
-  produce a visible, pre-dispatch result on the same page, with the original
-  HTTP 409/403/422 status. The real button is not silently disabled; a reason is
-  shown next to it. A client-side missing-workspace notice is scrolled into view.
-  The billing flag, account/cutover/cap/model-bound gates are **not bypassed**.
+- **Real request / «Реальный запрос»** (`test_type=real`) is available to an active
+  platform administrator with CONFIGURE and valid CSRF in both accounting modes.
+  The billing feature selects accounting; it is never a prerequisite to testing.
+  In single-owner mode the existing client runs with normal model usage/health
+  telemetry and cost estimate. No personal account, execution workspace, cutover
+  or model-bound policy is required; posted payer/workspace identities are ignored.
+  No personal reservation or settlement is fabricated, and the UI has no billing
+  activation warning or workspace selector in that mode.
+- When personal accounting is enabled, the administrator who initiated the test
+  remains the trusted personal payer (never a submitted payer or workspace owner).
+  An active execution workspace is required and the existing personal admission
+  service enforces account, cutover, daily cap and reviewed model bound before
+  transport. Missing/invalid workspace and admin refusals retain HTML 422/403
+  results with no dispatch. This path is not bypassed or replaced with direct HTTP.
 - Real results show a readable escaped text card, delivery state, actual provider
   HTTP status (or explicitly unconfirmed), stage, finish_reason, accounting/journal
-  status and a safe error code. Response JSON is formatted Unicode text, expanded
-  by default and copyable. It is an actual provider response, not a reconstructed
-  usage envelope. Known credential fields and the configured key are redacted;
-  depth/size limits mark truncated display copies. Non-JSON bodies are shown as
-  escaped, redacted excerpts. No request headers or arbitrary exception strings.
-  Provider JSON survives HTTP errors, empty content/length/tool/reasoning replies,
-  and failures after the response (including accounting). These are not conflated
-  with an unsent request. No diagnostics enter provider payloads or alter the
-  durable billing evidence; ordinary non-probe chat keeps its existing shape.
+  status and a safe error code. Ordinary mode is labelled normal model accounting,
+  not a confirmed personal settlement. Response JSON is formatted Unicode text,
+  expanded by default and copyable. Known secrets are redacted; bounded display
+  copies are marked when truncated. Provider JSON/text survives HTTP errors,
+  empty replies and post-response failures; no automatic retries.
 - Active model/provider, configured key and `api_format=openai` are required.
   Historical failures are shown but do not permanently block an explicit recovery
   test. The endpoint forwards the entered question (at most 8000 characters) to

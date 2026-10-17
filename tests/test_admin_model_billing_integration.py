@@ -16,14 +16,12 @@ from test_admin_model_probe import ROOT, extracted_handler, model, probe_module,
 
 
 @pytest.mark.asyncio
-async def test_billing_disabled_has_no_client_or_transport():
-    module, post = probe_module()
+async def test_single_owner_mode_runs_without_personal_billing():
+    module, post = probe_module({"choices": [{"message": {"content": "да"}}]})
     module.__isolated_imports__["app.core.config"].settings.PERSONAL_BILLING_ENABLED = False
-    factory = module.__isolated_imports__["app.services.ai.llm_client"].LLMClientFactory
-    factory.create = Mock(side_effect=AssertionError("must not create client"))
-    assert not (await module.probe_real_capped(model()))["ok"]
-    factory.create.assert_not_called()
-    post.assert_not_awaited()
+    result = await module.probe_real_capped(model())
+    assert result["ok"] and result["content"] == "да"
+    post.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -196,7 +194,6 @@ def endpoint_case(*, enabled=True, admin=True, csrf=True, consent=True, tenant="
     [
         ({"allowed": False}, 403),
         ({"csrf": False}, 403),
-        ({"enabled": False}, 409),
         ({"admin": False}, 403),
         ({"tenant": ""}, 422),
         ({"tenant": "3,4"}, 422),

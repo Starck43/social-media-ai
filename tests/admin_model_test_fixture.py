@@ -118,10 +118,10 @@ def render(destination):
         "blocked": dict(
             ok=False,
             tier="real",
-            text="PERSONAL_BILLING_ENABLED выключен. Запрос не отправлен.",
+            text="API-ключ не настроен. Запрос не отправлен.",
             stage="preflight",
             dispatch_state="not_dispatched",
-            error_code="billing_disabled",
+            error_code="missing_key",
             tokens_spent=0,
         ),
         "empty": dict(
@@ -143,6 +143,7 @@ def render(destination):
             },
         ),
     }
+    states["owner"] = {**states["real"], "accounting_status": "standard"}
     for state, result in states.items():
         if result and "response_json" in result:
             result["response_json_text"] = json.dumps(result["response_json"], ensure_ascii=False, indent=2)
@@ -156,7 +157,7 @@ def render(destination):
             status_checks=checks,
             status_hint="Локальные настройки доступны.",
             probe_prompt="Ответь одним словом: да",
-            billing_ready=True,
+            billing_ready=state != "owner",
             billing_tenants=[NS(id=3, name="Test workspace")],
             billing_tenant_id=3,
         )

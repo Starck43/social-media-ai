@@ -18,6 +18,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P8-T18 — allow model tests in single-owner accounting mode → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
+
 - [ ] P8-T17 — admin model response JSON and visible launch diagnostics → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 - [ ] P8-T16 — admin navigation, actor visibility and guarded catalog editing → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED

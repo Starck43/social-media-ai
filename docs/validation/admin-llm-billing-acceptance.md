@@ -1,5 +1,25 @@
 # Admin model / personal billing acceptance
 
+## Single-owner testing follow-up (P8-T18)
+
+This revision supersedes the historical disabled-billing refusal below. A real
+admin test works in the existing single-owner mode without personal account,
+workspace, cutover or bound setup. Same client, model telemetry, usage/estimate,
+JSON diagnostics, permissions, CSRF, caps and no-retry behavior. When personal
+accounting is enabled, the initiating administrator remains the payer and the
+existing workspace/admission/reserve/settlement contracts are unchanged.
+
+Prepared local acceptance now includes a flag-off, no-personal-account real test:
+one mocked provider HTTP, no personal dispatches, normal model counter/cost
+readback, no workspace selector or activation warning. Existing flag-on ledger
+and denial tests remain. Remote coverage additionally exercises the ACTUAL client
+flag-off admission branch and both-mode authority/CSRF with explicit offline
+storage/HTTP doubles; it is not PostgreSQL acceptance. Browser fixtures verify
+blank/custom owner-mode submit without a workspace field, as well as personal
+workspace validation, JSON copy, no-JS and busy safeguards. Local acceptance is
+updated, not remotely executed; normal R8/R10 follow-up remains deferred under
+the owner's existing delivery agreement. No config activation or migration.
+
 ## Admin response diagnostics follow-up (P8-T17)
 
 The explicit CONFIGURE/CSRF-protected real POST is the administrator's paid

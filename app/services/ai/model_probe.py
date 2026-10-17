@@ -293,12 +293,11 @@ def _real_result(observation, response=None, *, api_key="", error=None):
 
 
 async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
-    """One bounded billed request; explicit admin POST is the paid action.
+    """One bounded provider request using the client's active accounting mode.
 
     Never bypass admission or retry. Preserve received provider evidence even
     when parsing or subsequent accounting fails; diagnostics are display copies.
     """
-    from app.core.config import settings
     from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
     question, max_tokens = request_parameters(model, prompt)
@@ -315,10 +314,7 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
 
     if not _dispatch_ready(model):
         return blocked("configuration", "Проверьте API-ключ и активность модели/провайдера. Запрос не отправлен.")
-    if not settings.PERSONAL_BILLING_ENABLED:
-        return blocked(
-            "billing_disabled", "PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён; запрос не отправлен."
-        )
+
     if getattr(getattr(model, "provider", None), "api_format", None) != "openai":
         return blocked("unsupported_format", "Нужен OpenAI-совместимый API. Запрос не отправлен.")
     try:

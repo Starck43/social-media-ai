@@ -62,8 +62,6 @@
                 </select>
                 <p id="llm-billing-help" class="llm-muted">Запрос учитывается на личном счёте запускающего администратора, не владельца рабочего пространства. Нужны настроенный счёт, лимит и разрешённая политика модели. Короткий API-тест и локальный mock не используют этот выбор.</p>
             </div>
-            {% else %}
-            <p class="llm-muted">Платный запрос требует включённого личного учёта расходов и прав администратора платформы. Короткая API-проверка и локальный mock не вызывают генерацию.</p>
             {% endif %}
             <p class="llm-muted">Нажатие «Реальный запрос» запускает один вызов API, который может быть платным. Автоматического повтора нет.</p>
         </form>
@@ -91,7 +89,7 @@
             <div><dt>Доставка запроса</dt><dd>{{ {'not_dispatched': 'Не отправлен', 'possible': 'Отправка возможна; не подтверждена', 'response_received': 'Ответ API получен'}.get(result.dispatch_state, 'Не подтверждена') }}</dd></div>
             <div><dt>HTTP-статус API</dt><dd>{{ result.http_status if result.http_status is defined and result.http_status is not none else 'Нет подтверждённого HTTP-ответа' }}</dd></div>
             <div><dt>Этап</dt><dd>{{ {'preflight': 'До отправки', 'admission': 'Допуск по бюджету', 'transport': 'Соединение с API', 'response': 'Разбор ответа API', 'accounting': 'Учёт расходов', 'complete': 'Завершён'}.get(result.stage, 'Не подтверждён') }}</dd></div>
-            <div><dt>Учёт расходов</dt><dd>{{ {'not_started': 'Не запускался', 'confirmed': 'Подтверждён', 'journal_unconfirmed': 'Журнал не подтверждён'}.get(result.accounting_status, 'Не подтверждён') }}</dd></div>
+            <div><dt>Учёт расходов</dt><dd>{{ {'not_started': 'Не запускался', 'confirmed': 'Подтверждён', 'standard': 'Обычный учёт модели, без личного списания', 'journal_unconfirmed': 'Журнал не подтверждён'}.get(result.accounting_status, 'Не подтверждён') }}</dd></div>
             <div><dt>finish_reason</dt><dd>{{ result.finish_reason | default('Не сообщён', true) }}</dd></div>
             <div><dt>Код результата</dt><dd>{{ result.error_code | default('ok' if result.ok else 'unconfirmed') }}</dd></div>
         </dl>

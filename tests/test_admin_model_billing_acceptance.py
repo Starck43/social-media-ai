@@ -120,6 +120,7 @@ class Case:
     metadata_sent: list = field(default_factory=list)
     expected_prompt: str = PROBE_PROMPT
     expected_max_tokens: int = 8
+    personal_mode: bool = True
     tenant: object = None
     provider: object = None
     model: object = None
@@ -246,6 +247,9 @@ class Case:
         assert set(request.extensions["timeout"].values()) == {20.0}
         assert request.headers["authorization"] == "Bearer synthetic-p205-key"
         dispatches = await self.dispatches()
+        if not self.personal_mode:
+            assert not dispatches, "Single-owner mode must not create personal reservations"
+            return httpx.Response(200, json=self.payload)
         assert len(dispatches) == 1, "Durable admission must precede HTTP"
         dispatch = dispatches[0]
         assert dispatch.payer_user_id == dispatch.initiated_by_user_id == self.admin.id
@@ -574,7 +578,7 @@ async def test_unknown_or_multiple_selection_is_refused(case, model_key, status)
     await case.no_dispatch()
 
 
-@pytest.mark.parametrize("variant,status", [("no_workspace", 422), ("inactive_workspace", 422), ("flag_off", 409)])
+@pytest.mark.parametrize("variant,status", [("no_workspace", 422), ("inactive_workspace", 422)])
 async def test_paid_preconditions_before_dispatch(case, monkeypatch, variant, status):
     changes = {}
     if variant == "no_workspace":
@@ -582,8 +586,6 @@ async def test_paid_preconditions_before_dispatch(case, monkeypatch, variant, st
     elif variant == "inactive_workspace":
         with fixture_scope():
             await Tenant.objects.update_by_id(case.tenant.id, is_active=False)
-    else:
-        monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", False)
     async with case.client(case.admin) as client:
         response = await case.post(client, "real", **changes)
         assert response.status_code == status
@@ -747,3 +749,17 @@ async def test_invalid_model_configuration_cannot_dispatch(case, broken):
         html = page_ok(await case.post(client, "real"))
         assert "Проверка не пройдена" in html
     await case.no_dispatch()
+
+
+async def test_single_owner_real_runs_without_personal_account_or_workspace(case, monkeypatch):
+    monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", False)
+    case.personal_mode = False
+    async with case.client(case.admin) as client:
+        html = page_ok(await case.post(client, "real", tenant_id="ignored", payer_user_id="999"))
+        assert "Проверка завершена" in html and "JSON ответа провайдера" in html
+        assert "PERSONAL_BILLING_ENABLED" not in html and 'name="tenant_id"' not in html
+        assert "Обычный учёт модели" in html
+    assert len(case.sent) == 1 and not await case.dispatches()
+    with fixture_scope():
+        updated = await LLMModel.objects.get(id=case.model.id)
+    assert updated.use_count == 1 and updated.last_request_cost == pytest.approx(0.000008)

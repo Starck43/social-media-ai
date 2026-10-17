@@ -496,6 +496,10 @@
      name — имя поля формы; id — базовый id; current — выбранное значение;
      options — список (value, label, hint); placeholder — текст при пустом. #}
 {% macro popover_select(name, id, options, current='', placeholder='Автовыбор') -%}
+    {# `current` arrives as an id (int), a preselected value or None; '' keeps the
+       placeholder. Normalizing here guards every caller: `None|string` would
+       otherwise post the literal "None" and fail id validation. #}
+    {% set current = '' if current is none else current|string %}
     {% set ns = namespace(current_label=placeholder) %}
     {% for value, label, hint in options %}
         {% if current|string == value|string %}{% set ns.current_label = label %}{% endif %}

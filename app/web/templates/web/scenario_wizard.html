@@ -251,7 +251,7 @@
                                         {% set last_used = m.last_used_at.strftime('%d.%m %H:%M') if m.last_used_at else 'никогда' %}
                                         {% do model_options.append((m.id, m.name ~ ' / ' ~ m.model_id, provider ~ ' · ' ~ m.model_type ~ ' · ' ~ status ~ ' · ' ~ last_used ~ ' · ' ~ m.use_count ~ '/' ~ m.fail_count ~ ' тестов')) %}
                                     {% endfor %}
-                                    {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current|string, placeholder='Модель') }}
+                                    {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current, placeholder='Модель') }}
                                 </div>
                             {% endfor %}
                         </div>

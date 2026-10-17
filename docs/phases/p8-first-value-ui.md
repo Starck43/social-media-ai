@@ -234,6 +234,26 @@ P8-T06 and does not alter its task record.
   revocation and workspace guards remain required R8/R10 follow-up. No migration,
   schema/config/runtime activation, real provider or owner-local app run.
 
+- [ ] P8-T18 — real model test runs in existing single-owner mode without
+  personal billing/workspace setup; enabled personal mode retains trusted actor
+  payer, workspace and account/budget admission; remove disabled-billing warning;
+  preserve answer/JSON/statuses and normal model usage; no activation/migrations;
+  owns: model-test endpoint/actions/probe/client diagnostic label/template/JS,
+  focused tests/docs; owner: remote Notion agent (`fix/admin-model-owner-mode`);
+  status: BLOCKED only for deferred owner-local acceptance, not implementation.
+  Owner explicitly clarified that disabled personal billing is normal single-owner
+  operation and must not block real tests. Evidence: 178 isolated tests passed;
+  80 offline Chromium viewport/theme/state cases plus owner blank/custom submit
+  without workspace, personal workspace validation, no-JS, JSON copy/fallback,
+  busy guard, keyboard and focus checks passed. Source uses the actual client
+  flag-off admission branch over MockTransport; storage/metrics are explicit
+  doubles, not a real DB/ledger acceptance claim. Scope formatting, compilation,
+  JS syntax and diff checks passed. Prepared local acceptance covers one owner
+  request, model counter/cost readback and zero personal dispatches; not executed
+  remotely. Existing personal payer/admission/settlement tests remain. Owner's
+  in-session dev delivery/local-validation deferral remains in force. No setting
+  activation, schema change, runtime, live provider call or deployment.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

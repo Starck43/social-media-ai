@@ -13,8 +13,8 @@
             document.getElementById('llm-prompt').focus(); return;
         }
         const tenant = document.getElementById('llm-billing-tenant');
-        if (mode === 'real' && (!tenant || !tenant.value)) {
-            event.preventDefault(); status.textContent = 'Выберите рабочее пространство; нужен включённый личный учёт и администратор платформы.';
+        if (mode === 'real' && tenant && !tenant.value) {
+            event.preventDefault(); status.textContent = 'Выберите рабочее пространство для личного учёта запроса.';
             status.scrollIntoView({block: 'center'}); status.focus(); return;
         }
         form.dataset.busy = 'true';

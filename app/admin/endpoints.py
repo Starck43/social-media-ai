@@ -466,12 +466,16 @@ async def submit_llm_model_test(request: Request):
 
         if not user.is_platform_admin:
             return await reject("platform_admin_required", "Нужен администратор платформы. Запрос не отправлен.", 403)
+        from app.core.permissions import permission_scope
+
         if not settings.PERSONAL_BILLING_ENABLED:
-            return await reject(
-                "billing_disabled",
-                "PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён; запрос не отправлен.",
-                409,
-            )
+            # Single-owner mode uses the same client and model usage telemetry.
+            # Personal billing selects accounting, never whether a test can run.
+            # Ignore posted payer/workspace identities in this global admin mode.
+            with permission_scope(user):
+                return await LLMModelActions.submit_test(
+                    request.app.state.admin, request, str(form.get("model_id", "")), "real", str(form.get("prompt", ""))
+                )
         try:
             tenant_id = int(str(form.get("tenant_id", "")))
         except (TypeError, ValueError):
@@ -484,7 +488,6 @@ async def submit_llm_model_test(request: Request):
                 "workspace_inactive", "Рабочее пространство не найдено или неактивно. Запрос не отправлен."
             )
 
-        from app.core.permissions import permission_scope
         from app.core.tenant_context import tenant_scope
 
         # Workspace is explicit; payer identity is never accepted from the form.

@@ -48,6 +48,7 @@ def stack(*, payload=None, status=200, failure=None, accounting_failure=False, a
         },
         module_imports={"httpx": http},
     )
+    client_module._actual_personal_admission = client_module._personal_admission
     client_module._personal_admission = AsyncMock(
         return_value=({"dispatch_id": "owned"}, "owned"), side_effect=admission_failure
     )
@@ -189,11 +190,11 @@ async def test_rejection_uses_real_template_context_and_original_http_status():
         side_effect=lambda req, name, context, **kw: NS(context=context, status_code=kw.get("status_code", 200))
     )
     reply = await actions.LLMModelActions.reject_test(
-        view, NS(), "7", "question", code="billing_disabled", text="Запрос не отправлен", status_code=409
+        view, NS(), "7", "question", code="workspace_inactive", text="Запрос не отправлен", status_code=422
     )
-    assert reply.status_code == 409
+    assert reply.status_code == 422
     assert reply.context["result"]["dispatch_state"] == "not_dispatched"
-    assert "PERSONAL_BILLING_ENABLED" in reply.context["billing_block_reason"]
+    assert "PERSONAL_BILLING_ENABLED" not in reply.context["billing_block_reason"]
     post.assert_not_awaited()
 
 
@@ -221,12 +222,12 @@ def test_template_exposes_readable_answer_safe_json_and_statuses_without_checkbo
             error_code="accounting_failed",
             tokens_spent=5,
         ),
-        billing_block_reason="PERSONAL_BILLING_ENABLED выключен",
+        billing_block_reason="Рабочее пространство неактивно",
     )
     assert "<script>bad()" not in html and 'name="confirm_real"' not in html
     assert 'class="llm-answer-text"' in html and 'id="llm-response-json"' in html
     assert "Ответ API получен" in html and "HTTP-статус API" in html and "accounting_failed" in html
-    assert " disabled" not in html and "PERSONAL_BILLING_ENABLED" in html
+    assert " disabled" not in html and "PERSONAL_BILLING_ENABLED" not in html
 
 
 @pytest.mark.asyncio

@@ -536,7 +536,7 @@ class OpenAICompatibleClient(LLMClient):
             )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             if isinstance(diagnostic, dict):
-                diagnostic.update(stage="complete", accounting_status="confirmed")
+                diagnostic.update(stage="complete", accounting_status="confirmed" if receipt is not None else "standard")
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)

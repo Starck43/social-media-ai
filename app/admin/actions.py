@@ -151,11 +151,9 @@ class LLMModelActions:
         billing_tenants = (
             list(await Tenant.objects.filter(is_active=True).order_by(Tenant.name)) if billing_ready else []
         )
-        if not settings.PERSONAL_BILLING_ENABLED:
-            billing_block_reason = "Запуск заблокирован: PERSONAL_BILLING_ENABLED выключен. Учёт расходов не включён. Запрос к модели не отправляется."
-        elif not actor or not actor.is_platform_admin:
+        if not actor or not actor.is_platform_admin:
             billing_block_reason = "Запуск заблокирован: нужен активный администратор платформы."
-        elif not billing_tenants:
+        elif billing_ready and not billing_tenants:
             billing_block_reason = "Запуск заблокирован: нет активного рабочего пространства для учёта запроса."
         else:
             billing_block_reason = ""

@@ -180,10 +180,12 @@ P8-T06 and does not alter its task record.
   Evidence: 131 isolated tests passed, including real SQLAdmin routes/forms with
   explicit identity/storage doubles; 18 offline Chromium layout cases and one
   no-JavaScript case passed. This is not real DB/owner-account acceptance.
-  Before merge: sequential local R8/R10 verification at the published PR SHA of
-  admin/operator/revoked identities, menu continuity after model-test POST,
-  persisted operator grants and permission names with protected catalog fields
-  unchanged. Preserve existing grants/data; no reset, migration or live API calls.
+  The owner explicitly authorized merging PR #208 with real-environment
+  verification deferred to their machine; this does not certify DB acceptance
+  or mark the task DONE. Pending sequential local R8/R10 verification: admin/
+  operator/revoked identities, menu continuity after model-test POST, persisted
+  operator grants and permission names with protected catalog fields unchanged.
+  Preserve existing grants/data; no reset, migration or live API calls.
   Additional synthetic grant-selection cases were blocked by the execution
   safety gate and were not applied or run; the blocker was not bypassed.
 

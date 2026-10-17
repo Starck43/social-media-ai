@@ -102,7 +102,8 @@ Catalog editing is covered remotely by actual-source, real SQLAdmin form/route
 checks with explicit identity and persistence doubles, plus offline Chromium
 layouts. These checks are not PostgreSQL persistence or owner-account acceptance.
 Real authenticated admin/operator/revoked-account checks and grant/name persistence
-remain required before integration of this package. No migration is introduced.
+remain pending owner-local verification. The owner explicitly authorized integration
+ahead of that verification and will report any findings. No migration is introduced.
 
 ## Registered model pages
 

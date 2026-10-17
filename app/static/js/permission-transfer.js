@@ -9,9 +9,13 @@
         root.setAttribute('role', 'group');
         root.setAttribute('aria-label', select.labels[0]?.textContent.trim() || 'Разрешения роли');
         const baseId = select.id || 'permissions';
-        const entries = Array.from(select.options, (option, index) => ({
-            option, id: `${baseId}-choice-${index}`, label: option.textContent.trim()
-        }));
+        const entries = Array.from(select.options, (option, index) => {
+            const label = option.textContent.trim();
+            const [code, ...name] = label.split(' — ');
+            const resource = code.includes('.') ? code.slice(0, code.lastIndexOf('.')) : 'Прочее';
+            return {option, id: `${baseId}-choice-${index}`, label, code, name: name.join(' — '),
+                resource, group: resource.split('.')[0]};
+        }).sort((a, b) => a.resource.localeCompare(b.resource) || a.code.localeCompare(b.code));
         const marked = {available: new Set(), chosen: new Set()};
         const active = {available: null, chosen: null};
         const nodes = {};
@@ -22,10 +26,27 @@
             return node;
         }
         const help = element('p', 'permission-transfer-help',
-            'Выделите разрешения и нажмите «Добавить» или «Убрать». Двойной щелчок переносит сразу. ' +
-            'С клавиатуры: стрелки — переход, пробел — выделение, Enter — перенос.');
+            'Двойной щелчок — перенос. Пробел — выделить, Enter — перенести. На телефоне — выделение и кнопки.');
         help.id = `${baseId}-transfer-help`;
         root.append(help);
+        const filter = element('div', 'permission-transfer-filter');
+        const groupLabel = element('label', '', 'Группа');
+        const groupSelect = element('select', 'form-select');
+        groupSelect.id = `${baseId}-group`;
+        groupLabel.htmlFor = groupSelect.id;
+        groupSelect.add(new Option('Все группы', ''));
+        for (const group of [...new Set(entries.map(entry => entry.group))].sort())
+            groupSelect.add(new Option(group, group));
+        filter.append(groupLabel, groupSelect);
+        root.append(filter);
+        groupSelect.addEventListener('change', () => {
+            for (const side of ['available', 'chosen']) {
+                marked[side].clear();
+                active[side] = null;
+                nodes[side].list.scrollTop = 0;
+                render(side);
+            }
+        });
         const grid = element('div', 'permission-transfer-grid');
         root.append(grid);
         const status = element('p', 'permission-transfer-status');
@@ -33,9 +54,10 @@
         status.setAttribute('aria-live', 'polite');
         status.setAttribute('aria-atomic', 'true');
         function candidates(side) {
-            const query = nodes[side].search.value.trim().toLocaleLowerCase();
+            const words = nodes[side].search.value.trim().toLocaleLowerCase().split(/\s+/);
             return entries.filter(entry => entry.option.selected === (side === 'chosen') &&
-                entry.label.toLocaleLowerCase().includes(query));
+                (!groupSelect.value || entry.group === groupSelect.value) &&
+                words.every(word => entry.label.toLocaleLowerCase().includes(word)));
         }
         function panel(side, title) {
             const section = element('section', 'permission-transfer-panel');
@@ -46,7 +68,7 @@
             const search = element('input', 'form-control permission-transfer-search');
             search.id = `${baseId}-${side}-search`;
             search.type = 'search';
-            search.placeholder = 'Поиск разрешений';
+            search.placeholder = 'Код или название';
             search.setAttribute('aria-label', `Поиск: ${title.toLocaleLowerCase()}`);
             const list = element('ul', 'permission-transfer-list');
             list.id = `${baseId}-${side}-list`;
@@ -57,9 +79,13 @@
             list.setAttribute('aria-describedby', help.id);
             section.append(heading, search, list);
             nodes[side] = {section, count, search, list};
+            search.addEventListener('keydown', event => {
+                if (event.key === 'Enter') event.preventDefault();
+            });
             search.addEventListener('input', () => {
                 marked[side].clear();
                 active[side] = null;
+                list.scrollTop = 0;
                 render(side);
             });
             list.addEventListener('click', event => {
@@ -113,7 +139,7 @@
         const chosen = panel('chosen', 'Выбранные');
         const controls = element('div', 'permission-transfer-controls');
         function transferButton(side, text) {
-            const button = element('button', 'btn btn-outline-primary', text);
+            const button = element('button', 'btn btn-outline-secondary', text);
             button.type = 'button';
             button.dataset.transferFrom = side;
             button.setAttribute('aria-controls', `${baseId}-available-list ${baseId}-chosen-list`);
@@ -123,8 +149,8 @@
         nodes.available.button = transferButton('available', 'Добавить →');
         nodes.chosen.button = transferButton('chosen', '← Убрать');
         controls.append(nodes.available.button, nodes.chosen.button);
-        grid.append(available, controls, chosen);
-        root.append(status);
+        grid.append(available, chosen);
+        root.append(controls, status);
         function render(side) {
             const {list, count} = nodes[side];
             const scroll = list.scrollTop;
@@ -132,8 +158,27 @@
             const total = entries.filter(entry => entry.option.selected === (side === 'chosen')).length;
             count.textContent = `${visible.length} из ${total}`;
             list.replaceChildren();
+            let previousResource = null;
             for (const entry of visible) {
-                const row = element('li', 'permission-transfer-option', entry.label);
+                if (previousResource !== entry.resource) {
+                    const heading = element('li', 'permission-transfer-group', entry.resource);
+                    heading.setAttribute('role', 'presentation');
+                    list.append(heading);
+                    previousResource = entry.resource;
+                }
+                const row = element('li', 'permission-transfer-option');
+                const text = element('span', 'permission-transfer-option-text');
+                const code = element('span', 'permission-transfer-option-code');
+                const split = entry.code.lastIndexOf('.');
+                if (split >= 0) {
+                    code.append(element('span', 'permission-transfer-option-resource', entry.code.slice(0, split + 1)));
+                    code.append(element('span', '', entry.code.slice(split + 1)));
+                } else code.textContent = entry.code;
+                text.append(code);
+                if (entry.name) text.append(element('span', 'permission-transfer-option-name', entry.name));
+                row.append(text);
+                row.title = entry.label;
+                row.setAttribute('aria-label', entry.label);
                 row.id = entry.id;
                 row.dataset.value = entry.option.value;
                 row.setAttribute('role', 'option');
@@ -177,10 +222,9 @@
             render('available');
             render('chosen');
             status.textContent = `${side === 'available' ? 'Добавлено' : 'Убрано'}: ${transferred.length}. ` +
-                `Выбрано разрешений: ${select.selectedOptions.length}. Изменения применятся после сохранения.`;
+                `Всего выбрано: ${select.selectedOptions.length}. Сохраните изменения.`;
             select.dispatchEvent(new Event('change', {bubbles: true}));
         }
-        root.style.setProperty('--permission-list-height', `${Math.min(10, Math.max(4, entries.length)) * 44 + 10}px`);
         select.after(root);
         render('available');
         render('chosen');
@@ -193,6 +237,7 @@
                 marked.chosen.clear();
                 active.available = active.chosen = null;
                 nodes.available.search.value = nodes.chosen.search.value = '';
+                groupSelect.value = '';
                 render('available');
                 render('chosen');
                 status.textContent = 'Исходный выбор восстановлен.';

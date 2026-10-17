@@ -40,7 +40,7 @@ def source():
         ROOT / "app/models/identity/user.py",
         {**deps, "app.core.decorators": NS(app_label=lambda _: lambda cls: cls)},
     )
-    models = NS(PlatformRole=role.PlatformRole, User=users.User)
+    models = NS(PlatformRole=role.PlatformRole, User=users.User, Permission=permission.Permission)
     formatting = NS(
         **{
             name: (lambda *args: "")
@@ -108,6 +108,7 @@ def console(source, user=None):
     user = user if user is not None else actor()
     user.username = "verified-admin"
     user.role.label = CATALOG.role_label(user.role.codename)
+    source.Permission.objects = NS(prefetch_related=Mock(return_value=NS(all=AsyncMock(return_value=[]))))
     source.models.User.objects = NS(prefetch_related=Mock())
     source.models.User.objects.prefetch_related.return_value = NS(get=AsyncMock(return_value=user))
     csrf = source.csrf.CSRFTokenManager("synthetic-not-a-secret")
@@ -346,4 +347,26 @@ async def test_missing_role_is_not_written(source):
     with pytest.raises(HTTPException) as exc:
         await ctx.admin._views[0].update_model(request_for(ctx), "999999", {"permissions": []})
     assert exc.value.status_code == 404
+    ctx.target.set_permissions.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_role_choice_labels_include_names_and_preserve_escaped_native_values(source):
+    ctx = console(source)
+    resource = source.canonical_model_type(
+        id=1, resource_key="agent.message", model_name="message", table_name="messages"
+    )
+    name = 'Чтение <script>alert("not-executed")</script>'
+    permission = source.Permission(id=9, name=name, model_type=resource, action_type=TYPES.ActionType.VIEW)
+    source.Permission.objects.prefetch_related.return_value.all.return_value = [permission]
+    ctx.target.get.return_value.permissions = [permission]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ctx.app), base_url="https://test.invalid") as client:
+        response = await client.get("/admin/platform-role/edit/2")
+    assert response.status_code == 200
+    assert '<option selected value="9">agent.message.view — Чтение &lt;script&gt;' in response.text
+    assert '<script>alert("not-executed")</script>' not in response.text
+    assert 'name="csrf_token"' in response.text
+    assert 'value="Save and continue editing"' in response.text
+    source.Permission.objects.prefetch_related.assert_called_once_with("model_type")
+    source.Permission.objects.prefetch_related.return_value.all.assert_awaited_once()
     ctx.target.set_permissions.assert_not_awaited()

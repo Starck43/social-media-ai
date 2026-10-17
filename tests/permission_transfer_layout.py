@@ -37,44 +37,77 @@ def run():
                 args=["--no-sandbox"],
             )
             cases = 0
-            heights = {}
+
             try:
-                for width in [390, 768, 1440]:
+                for width, height in [(390, 667), (390, 844), (768, 700), (1440, 900)]:
                     for theme in ["light", "dark"]:
-                        for state in ["initial", "full", "small"]:
-                            page = browser.new_page(viewport={"width": width, "height": 1000})
+                        for state in ["initial", "full", "small", "large", "large-empty", "large-full"]:
+                            page = browser.new_page(viewport={"width": width, "height": height})
                             page.route("**/*", offline)
                             page.add_init_script(f"localStorage.setItem('theme', '{theme}')")
                             errors = []
                             page.on("pageerror", lambda error: errors.append(str(error)))
                             page.goto(Path(directory, state + ".html").as_uri())
                             page.wait_for_selector("[data-permission-transfer-ui]")
+                            page.evaluate(
+                                "document.querySelector('.page-wrapper').scrollIntoView({block:'start',behavior:'instant'})"
+                            )
                             assert not errors, errors
                             assert page.locator(SELECT).is_hidden()
                             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), (
                                 width,
                                 state,
                             )
-                            assert len(values(page)) == {"initial": 10, "full": 30, "small": 0}[state]
-                            assert page.locator('[role="option"]').count() == (3 if state == "small" else 30)
+                            assert (
+                                len(values(page))
+                                == {
+                                    "initial": 10,
+                                    "full": 30,
+                                    "small": 0,
+                                    "large": 27,
+                                    "large-empty": 0,
+                                    "large-full": 206,
+                                }[state]
+                            )
+                            assert page.locator('[role="option"]').count() == (
+                                3 if state == "small" else (206 if state.startswith("large") else 30)
+                            )
                             for selector in [AVAILABLE, CHOSEN]:
                                 dimensions = page.locator(selector).evaluate("""n => ({h:n.clientHeight,
                                     scroll:n.scrollHeight, overflow:getComputedStyle(n).overflowY,
                                     contain:getComputedStyle(n).overscrollBehaviorY})""")
-                                assert 100 <= dimensions["h"] <= 450, dimensions
-                                heights[(width, theme, state)] = dimensions["h"]
+                                assert 80 <= dimensions["h"] < height, (width, height, state, dimensions)
                                 assert dimensions["overflow"] == "auto" and dimensions["contain"] == "contain"
                             assert page.locator(".permission-transfer-panel").evaluate_all(
                                 "nodes => nodes.every(n => !['auto','scroll'].includes(getComputedStyle(n).overflowY))"
                             )
+                            card = page.locator(".permission-role-card").bounding_box()
+                            footer = page.locator(".permission-role-footer").bounding_box()
+                            assert (
+                                card["height"] <= height
+                                and card["y"] >= -1
+                                and card["y"] + card["height"] <= height + 1
+                            ), (width, height, state, card)
+                            assert footer["y"] >= 0 and footer["y"] + footer["height"] <= height + 1, footer
+                            assert page.locator(".permission-transfer-list").evaluate_all(
+                                "nodes => nodes.every(n => getComputedStyle(n).display === 'block' && getComputedStyle(n).gap === '0px')"
+                            )
+                            assert page.locator(".permission-transfer-option").evaluate_all(
+                                "nodes => nodes.every(n => parseFloat(getComputedStyle(n).borderWidth) === 0 && parseFloat(getComputedStyle(n).marginBottom) === 0)"
+                            )
                             if state == "initial":
+                                # Reproduce the legacy checkbox-pill selector collision, not just an empty wrapper.
+                                page.locator(".permission-role-field").evaluate("n => n.classList.add('form-group')")
+                                assert page.locator(AVAILABLE).evaluate("n => getComputedStyle(n).display === 'block'")
+                                assert page.locator(AVAILABLE + ' [role="option"]').first.evaluate(
+                                    "n => getComputedStyle(n).borderWidth === '0px'"
+                                )
                                 assert page.locator(AVAILABLE).evaluate("n => n.scrollHeight > n.clientHeight")
-                            if width in [390, 1440] and theme == "dark" and state == "initial":
-                                page.screenshot(path=f"/data/permission-transfer-{width}.png", full_page=True)
+                            if theme == "dark" and state in ["large", "large-empty"]:
+                                page.screenshot(path=f"/data/permission-compact-{width}-{height}-{state}.png")
                             page.close()
                             cases += 1
 
-                assert heights[(1440, "dark", "small")] < heights[(1440, "dark", "initial")]
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.route("**/*", offline)
                 page.goto(Path(directory, "initial.html").as_uri())
@@ -134,6 +167,50 @@ def run():
                 assert page.locator(CHOSEN + ' [role="option"]').count() == 10
                 page.close()
 
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.route("**/*", offline)
+                page.goto(Path(directory, "large.html").as_uri())
+                page.wait_for_selector("[data-permission-transfer-ui]")
+                original = values(page)
+                page.locator(".permission-role-notice summary").click()
+                assert (
+                    page.locator(".permission-role-footer").bounding_box()["y"]
+                    + page.locator(".permission-role-footer").bounding_box()["height"]
+                    <= 901
+                )
+                page.locator(".permission-role-notice summary").click()
+                page.set_viewport_size({"width": 1440, "height": 720})
+                assert (
+                    page.locator(".permission-role-footer").bounding_box()["y"]
+                    + page.locator(".permission-role-footer").bounding_box()["height"]
+                    <= 721
+                )
+                page.select_option("#permissions-group", "agent")
+                assert page.locator(AVAILABLE + ' [role="option"]').count() == 72
+                assert page.locator(CHOSEN + ' [role="option"]').count() == 0
+                assert values(page) == original
+                page.locator("#permissions-available-search").fill("НАЗВАНИЕ 15")
+                assert page.locator(AVAILABLE + ' [role="option"]').count() == 1
+                page.locator(AVAILABLE + ' [data-value="15"]').dblclick()
+                assert set(values(page)) == set(original + ["15"])
+                page.locator("#permissions-chosen-search").fill("название 15")
+                page.locator(CHOSEN + ' [data-value="15"]').dblclick()
+                assert values(page) == original
+                page.locator("#permissions-available-search").fill("not-a-permission")
+                assert page.locator(AVAILABLE + ' [role="option"]').count() == 0
+                assert (
+                    page.locator(AVAILABLE + " .permission-transfer-empty").bounding_box()["y"]
+                    - page.locator(AVAILABLE).bounding_box()["y"]
+                    <= 2
+                )
+                page.select_option("#permissions-group", "tenancy")
+                page.locator("#permissions-available-search").fill("")
+                assert page.locator(AVAILABLE + ' [role="option"]').count() > 0
+                page.locator(SELECT).evaluate("s => s.form.reset()")
+                page.wait_for_timeout(30)
+                assert page.locator("#permissions-group").input_value() == "" and values(page) == original
+                page.close()
+
                 touch = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
                 page = touch.new_page()
                 page.route("**/*", offline)
@@ -153,14 +230,14 @@ def run():
                 page.goto(Path(directory, "initial.html").as_uri())
                 assert page.locator(SELECT).is_visible()
                 assert page.locator(SELECT + " option:checked").count() == 10
-                assert page.locator(SELECT).bounding_box()["height"] <= 380
+                assert page.locator(SELECT).bounding_box()["height"] < 844
                 page.close()
                 print(
                     json.dumps(
                         {
                             "layout_cases_passed": cases,
-                            "interaction_suites_passed": 3,
-                            "mock_permissions": 30,
+                            "interaction_suites_passed": 4,
+                            "mock_permissions": 206,
                             "browser": browser.version,
                         }
                     )

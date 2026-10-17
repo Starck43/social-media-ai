@@ -101,18 +101,31 @@ items, then use **Add / Remove** (44px minimum targets). Keyboard users can use
 arrows/Home/End, Space to mark, Enter to transfer, Ctrl/Cmd+A to mark all filtered
 items, and Escape to clear marks. Nothing is persisted until the form is saved.
 
-Each list has its own bounded, contextual height and contained scrolling; its
-panel is not another scroll container. Narrow editors stack the panes. The native
-select remains the sole submitted value source, including filtered-out choices,
-and remains usable if JavaScript is disabled. This needs no new dependency or
-schema migration. Editing stored grants on `admin` does not remove its wildcard
+The editor uses the viewport height: only the lists scroll, while transfer controls
+and ordinary shared SQLAdmin buttons remain outside them and visible. Rows flow
+from the top without per-item borders or gaps (32px desktop, at least 44px with a
+coarse pointer). The two panes stay side by side on narrow screens; resource
+prefixes appear in group headings rather than repeated narrow-screen rows.
+The mobile sidebar remains a separate section before the viewport-height editor.
+
+A shared group filter selects a domain (the first resource-key component), and
+resource headings group related actions in each pane. Independent case-insensitive
+search accepts words from both the code and display name; group and search filters
+combine without clearing stored selections. Labels come from the canonical
+Permission manager with model types prefetched. Keyboard select-all/transfer acts
+only on visible matches. Group changes clear transient marks, never selected grants.
+
+The native select remains the sole submitted value source, including filtered-out
+choices, and remains usable if JavaScript is disabled. This needs no new dependency
+or schema migration. Editing stored grants on `admin` does not remove its wildcard
 access and is distinct from changing one's account role.
 
 Offline validation: `tests/permission_transfer_fixture.py` renders actual SQLAdmin
-forms with 30 synthetic permissions and explicit storage doubles;
+forms with up to 206 synthetic permissions and explicit storage doubles;
 `tests/permission_transfer_layout.py` exercises desktop/mobile widths, both themes,
-empty/full/small selections, double-click, keyboard, touch, native FormData/reset,
-scroll containment and the no-JavaScript fallback. These are not real database
+empty/full/small selections, group/name filters, double-click, keyboard, touch,
+native FormData/reset, legacy checkbox CSS collisions, scroll containment,
+viewport/footer bounds and the no-JavaScript fallback. These are not real database
 persistence or owner-account acceptance tests.
 
 ## Navigation and actor identity

@@ -177,7 +177,7 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
     form_columns = ["permissions"]
     edit_template = "sqladmin/role_edit.html"
     form_widget_args = {"permissions": {"data-permission-transfer": "true", "size": 10}}
-    form_args = {"permissions": {"label": "Разрешения роли", "description": "Выберите разрешённые действия"}}
+    form_args = {"permissions": {"label": "Разрешения роли"}}
     column_formatters_detail = {"codename": lambda m, a: m.label}
 
 

@@ -1,4 +1,4 @@
-"""Render the actual role form with 30 synthetic permissions; no app/DB startup."""
+"""Render the actual role form with up to 206 synthetic permissions; no app/DB startup."""
 
 import asyncio
 import re
@@ -15,22 +15,36 @@ PACKAGE = distribution("sqladmin").locate_file("sqladmin")
 async def render(destination):
     destination.mkdir(parents=True, exist_ok=True)
     loaded = source.__wrapped__()
-    for state, count, selected in [("initial", 30, range(21, 31)), ("full", 30, range(1, 31)), ("small", 3, [])]:
+    for state, count, selected in [
+        ("initial", 30, range(21, 31)),
+        ("full", 30, range(1, 31)),
+        ("small", 3, []),
+        ("large", 206, range(180, 207)),
+        ("large-empty", 206, []),
+        ("large-full", 206, range(1, 207)),
+    ]:
         ctx = console(loaded)
         choices = []
         for number in range(1, count + 1):
+            domain = ["agent", "platform", "tenancy"][(number - 1) // 72] if count > 30 else "mock"
+            resource_key = f"{domain}.resource_{(number - 1) // 6:02}" if count > 30 else f"mock.permission_{number:02}"
+            action = list(TYPES.ActionType)[(number - 1) % 6] if count > 30 else TYPES.ActionType.VIEW
             resource = loaded.canonical_model_type(
                 id=number,
-                resource_key=f"mock.permission_{number:02}",
+                resource_key=resource_key,
                 model_name=f"mock_{number}",
                 table_name=f"mock_{number}",
             )
             choices.append(
                 loaded.Permission(
-                    id=number, name=f"Mock permission {number}", model_type=resource, action_type=TYPES.ActionType.VIEW
+                    id=number,
+                    name=(f"Название разрешения {number}" if count > 30 else f"Mock permission {number}"),
+                    model_type=resource,
+                    action_type=action,
                 )
             )
         ctx.target.get.return_value.permissions = [permission for permission in choices if permission.id in selected]
+        loaded.Permission.objects.prefetch_related.return_value.all.return_value = choices
         view = ctx.admin._views[0]
         view.session_maker.return_value.__enter__.return_value.execute.return_value.scalars.return_value.unique.return_value.all.return_value = (
             choices

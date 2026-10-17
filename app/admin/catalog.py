@@ -4,12 +4,13 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqladmin.authorization import Action
+from sqladmin.forms import ModelConverter
 from starlette.requests import Request
 
 from app.admin.base import BaseAdmin
 from app.admin.csrf import get_csrf_manager
 from app.core.permissions import permission_scope
-from app.models import PlatformRole, User
+from app.models import Permission, PlatformRole, User
 
 
 class CatalogEditAdmin(BaseAdmin):
@@ -42,7 +43,18 @@ class CatalogEditAdmin(BaseAdmin):
         return fresh
 
 
+class RolePermissionFormConverter(ModelConverter):
+    async def _prepare_select_options(self, prop, session_maker):
+        """Use canonical catalog reads; SQLAdmin's default labels discard names."""
+        if prop.key == "permissions" and prop.mapper.class_ is Permission:
+            permissions = await Permission.objects.prefetch_related("model_type").all()
+            return [(str(permission.id), f"{permission.codename} — {permission.name}") for permission in permissions]
+        return await super()._prepare_select_options(prop, session_maker)
+
+
 class PlatformRoleGrantAdmin(CatalogEditAdmin):
+    form_converter = RolePermissionFormConverter
+
     catalog_edit_notice = (
         "Администратор платформы может редактировать разрешения всех ролей. Роль admin сохраняет полный доступ "
         "независимо от списка разрешений; роль user не получает вход в консоль. Коды ролей и назначения пользователей "

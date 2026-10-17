@@ -1,5 +1,6 @@
 {% if latest_progress %}
-<tr id="source-analysis-progress-row" data-progress-status="{{ latest_progress.status }}">
+<tr id="source-analysis-progress-row" data-progress-status="{{ latest_progress.status }}" 
+    {% if latest_progress.job_id and latest_progress.status in ('pending', 'running', 'unconfirmed') %}data-job-id="{{ latest_progress.job_id }}" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"{% endif %}>
     <td class="py-2.5 pr-4 text-slate-700 dark:text-slate-300">
         <span class="inline-flex items-center gap-2">
             {% if latest_progress.status == 'running' %}<span class="h-2 w-2 rounded-full bg-cyan-500 animate-pulse"></span>{% endif %}

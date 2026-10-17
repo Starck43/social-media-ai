@@ -222,6 +222,43 @@ class AgentTaskManager(BaseManager):
             grouped.setdefault(int(task_id), []).append(int(source_id))
         return {tid: sorted(grouped.get(tid, [])) for tid in task_ids}
 
+    async def get_source_scenario(self, source_id: int) -> Optional["AgentScenario"]:
+        """The analysis scenario a taskless analyze run should use for `source_id`.
+
+        A staging-triggered analyze has no task of its own, so it used to fall
+        straight to the tenant default scenario. When a task explicitly links
+        the source and pins a scenario, that task owns the source's analysis and
+        its scenario (model choice) must win over the workspace default. Where
+        several tasks link the same source with different scenarios, the choice
+        is ambiguous — keep the tenant-default fallback.
+
+        Returns the pinned scenario, or None when no task with an explicit
+        scenario links the source (caller falls back to the tenant default).
+        """
+        from app.models import AgentScenario
+
+        if type(source_id) is not int or source_id <= 0:
+            return None
+        from sqlalchemy import select
+
+        from ..agent_task import agent_task_sources
+
+        rows = await self.aggregate_rows(
+            select(agent_task_sources.c.agent_task_id).where(agent_task_sources.c.source_id == source_id)
+        )
+        if not rows:
+            return None
+        task_ids = {int(row[0]) for row in rows}
+        tasks = await self.filter(id__in=list(task_ids)).prefetch_related("agent_scenario")
+        scenarios = {
+            task.agent_scenario
+            for task in tasks
+            if task.agent_scenario is not None and task.agent_scenario.is_active
+        }
+        if len(scenarios) == 1:
+            return next(iter(scenarios))
+        return None
+
     @staticmethod
     def _task_effectively_active(task, workspace_active_source_ids) -> bool:
         """Whether a task is effectively active — i.e. should be scheduled/shown as active.

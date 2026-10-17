@@ -596,6 +596,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     4. If action needed, check guards and create BotAction (dry_run=True by default)
     """
     from app.models import AgentScenario, AIAnalytics, BotAction, CollectedItem
+    from app.models.managers.agent_task_manager import AgentTaskManager
     from app.services.ai.trigger_evaluator import trigger_evaluator
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
@@ -656,11 +657,17 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             stats["sources"] += 1
 
             # Resolve scenario — the task's own scenario, else an explicit
-            # override, else the tenant default. A source carries no scenario.
+            # override, else the scenario of a task that explicitly links this
+            # source, else the tenant default. A source carries no scenario.
             if task is not None and getattr(task, "agent_scenario", None):
                 scenario = task.agent_scenario
             elif scenario_id:
                 scenario = await AgentScenario.objects.get(id=scenario_id)
+            elif task is None:
+                # A staging-triggered analyze has no task of its own; if a task
+                # pinned a scenario on this source, that task owns the analysis
+                # and its model must win over the workspace default.
+                scenario = await AgentTaskManager().get_source_scenario(source.id)
             else:
                 scenario = None
 

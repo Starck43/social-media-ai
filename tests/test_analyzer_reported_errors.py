@@ -272,6 +272,10 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
             {
                 "app.services.social.credentials": SimpleNamespace(AuthorizationRequired=type("Auth", (Exception,), {})),
                 "app.models": self.models,
+                "app.models.managers.agent_task_manager": SimpleNamespace(AgentTaskManager=lambda: SimpleNamespace(
+                    # A taskless run with no owning-task scenario falls through to the
+                    # tenant default — the resolution these tests assert.
+                    get_source_scenario=AsyncMock(return_value=None))),
                 "app.services.ai.dedup": SimpleNamespace(analysed_hashes=dedup.analysed_hashes),
                 "app.services.ai.trigger_evaluator": SimpleNamespace(trigger_evaluator=SimpleNamespace(
                     should_analyze=AsyncMock(side_effect=lambda content, task: content))),

@@ -130,6 +130,15 @@ class UserAdmin(BaseAdmin, model=User):
             raise HTTPException(status_code=400, detail="Требуется заполнить поле 'Пароль'")
         return await super().insert_model(request, data)
 
+    async def update_model(self, request: Request, pk: str, data: dict) -> Any:
+        """Keep role assignment out of generic CRUD, including forged payloads."""
+        if {"role", "role_id"} & data.keys():
+            actor = self.get_admin_user(request)
+            if actor is not None and str(actor.id) == str(pk):
+                raise HTTPException(status_code=403, detail="Нельзя менять свою платформенную роль")
+            raise HTTPException(status_code=400, detail="Используйте отдельную операцию назначения платформенной роли")
+        return await super().update_model(request, pk, data)
+
     @action(
         name="change_password",
         label="Изменить пароль",
@@ -166,6 +175,8 @@ class RoleAdmin(PlatformRoleGrantAdmin, model=PlatformRole):
         **BaseAdmin.column_labels,
     )
     form_columns = ["permissions"]
+    edit_template = "sqladmin/role_edit.html"
+    form_widget_args = {"permissions": {"data-permission-transfer": "true", "size": 10}}
     form_args = {"permissions": {"label": "Разрешения роли", "description": "Выберите разрешённые действия"}}
     column_formatters_detail = {"codename": lambda m, a: m.label}
 

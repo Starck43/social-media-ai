@@ -100,6 +100,11 @@ class UserManager(BaseManager):
         actor = await User.objects.prefetch_related("role").get(id=actor_id)
         if actor is None or not actor.is_active or not actor.is_platform_admin:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin required")
+        if actor.id == user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Нельзя менять свою платформенную роль. Обратитесь к другому администратору платформы.",
+            )
         role = await PlatformRole.objects.get_by_codename(role_code)
         if role is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown platform role")

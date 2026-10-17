@@ -1,0 +1,70 @@
+/* Scope form layout to the role editor, including the no-JavaScript fallback. */
+.permission-role-edit .form-group > .form-label,
+.permission-role-edit .form-group > .col-sm-10 { flex: 0 0 100%; width: 100%; }
+.permission-role-edit .btn-group { width: 100%; max-width: 100%; display: flex; flex-wrap: wrap; gap: .5rem; }
+.permission-role-edit .btn-group > .btn { flex: 1 1 12rem; margin: 0; border-radius: .375rem; white-space: normal; }
+.permission-role-edit .form-fieldset { padding: .75rem; }
+/* Role permissions: only the lists own an inner scroll container. */
+select[data-permission-transfer] {
+    width: 100%;
+    max-height: min(24rem, 45dvh);
+    overflow-y: auto;
+}
+select[data-permission-transfer][hidden] { display: none !important; }
+.permission-transfer { min-width: 0; width: 100%; color: var(--color-text); container-type: inline-size; }
+.permission-transfer [hidden] { display: none !important; }
+.permission-transfer-help { margin: 0 0 .75rem; font-size: .875rem; color: var(--color-text-secondary); }
+.permission-transfer-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .75rem; }
+.permission-transfer-panel {
+    display: flex; flex-direction: column; gap: .5rem; min-width: 0;
+    padding: .75rem; border: 1px solid var(--color-border-strong);
+    border-radius: .75rem; background: var(--color-surface);
+}
+.permission-transfer-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem; font-weight: 600; }
+.permission-transfer-count { font-size: .8125rem; font-weight: 400; color: var(--color-text-secondary); }
+.permission-transfer-search { width: 100%; min-width: 0; min-height: 44px; }
+.permission-transfer-list {
+    position: relative; box-sizing: border-box; height: var(--permission-list-height, 20rem);
+    min-height: 8.25rem; max-height: min(24rem, 45dvh);
+    margin: 0; padding: .25rem; list-style: none;
+    overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable;
+    touch-action: pan-y; border: 1px solid var(--color-border); border-radius: .5rem;
+    background: var(--color-surface-secondary);
+}
+.permission-transfer-list > .permission-transfer-option {
+    width: 100%; max-width: 100%; margin: 0 0 .25rem; box-sizing: border-box;
+    display: flex; align-items: center; gap: .5rem; min-height: 44px;
+    padding: .5rem; border-radius: .375rem; cursor: pointer; overflow-wrap: anywhere;
+    font-size: .875rem; line-height: 1.4;
+}
+.permission-transfer-option::before {
+    content: ""; flex: 0 0 1rem; height: 1rem; border: 1px solid var(--color-border-strong);
+    border-radius: .25rem; background: var(--color-surface);
+}
+.permission-transfer-option[aria-selected="true"] { background: var(--tblr-navbar-active-bg); }
+.permission-transfer-option[aria-selected="true"]::before {
+    content: "✓"; text-align: center; line-height: 1rem; background: var(--tblr-primary); color: #fff;
+}
+.permission-transfer-option:hover { background: var(--tblr-navbar-active-bg); }
+.permission-transfer :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }
+.permission-transfer-list:focus-visible { outline-offset: -2px; }
+.permission-transfer-empty { padding: .75rem; color: var(--color-text-secondary); }
+.permission-transfer-controls { display: flex; flex-direction: column; justify-content: center; gap: .5rem; }
+.permission-transfer-controls .btn { min-height: 44px; white-space: normal; }
+.permission-transfer-status { min-height: 1.5em; margin: .5rem 0 0; color: var(--color-text-secondary); font-size: .875rem; }
+@media (max-width: 767.98px) {
+    .permission-transfer-grid { grid-template-columns: minmax(0, 1fr); }
+    .permission-transfer-controls { flex-direction: row; }
+    .permission-transfer-controls .btn { flex: 1; }
+    .permission-transfer-list { max-height: min(18rem, 32dvh); }
+}
+@container (max-width: 40rem) {
+    .permission-transfer-grid { grid-template-columns: minmax(0, 1fr); }
+    .permission-transfer-controls { flex-direction: row; }
+    .permission-transfer-controls .btn { flex: 1; }
+    .permission-transfer-list { max-height: min(18rem, 32dvh); }
+}
+@media (forced-colors: active) {
+    .permission-transfer-option[aria-selected="true"] { outline: 1px solid Highlight; }
+    .permission-transfer-option[aria-selected="true"]::before { color: HighlightText; background: Highlight; }
+}

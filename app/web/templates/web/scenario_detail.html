@@ -1,5 +1,5 @@
 {% extends "web/base.html" %}
-{% from "web/_macros.html" import switch_toggle %}
+{% from "web/_macros.html" import switch_toggle, popover_select %}
 {% block title %}{{ scenario.name }} | Сценарии{% endblock %}
 {% block page_heading %}{{ scenario.name }}{% endblock %}
 {% block content %}
@@ -137,23 +137,14 @@
                 ] %}
                     <div>
                         <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
-                        {% for field, current, label in [
-                            ('text_llm_model_id', scenario.text_llm_model_id, 'Текст'),
-                            ('image_llm_model_id', scenario.image_llm_model_id, 'Изображения'),
-                            ('video_llm_model_id', scenario.video_llm_model_id, 'Видео'),
-                        ] %}
-                            <div>
-                                <label for="sc-{{ field }}" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">{{ label }}</label>
-                                {% set model_options = [] %}
-                                {% for m in llm_models if m.model_type == field.split('_')[0] %}
-                                    {% set provider = m.provider.name if m.provider else '?' %}
-                                    {% set status = 'активна' if m.is_active else 'неактивна' %}
-                                    {% set last_used = m.last_used_at.strftime('%d.%m %H:%M') if m.last_used_at else 'никогда' %}
-                                    {% do model_options.append((m.id, m.name ~ ' / ' ~ m.model_id, provider ~ ' · ' ~ m.model_type ~ ' · ' ~ status ~ ' · ' ~ last_used ~ ' · ' ~ m.use_count ~ '/' ~ m.fail_count ~ ' тестов')) %}
-                                {% endfor %}
-                                {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current|string, placeholder='Модель') }}
-                            </div>
+                        {% set model_options = [] %}
+                        {% for m in llm_models if field.split('_')[0] in m.model_type.split(',') %}
+                            {% set provider = m.provider.name if m.provider else '?' %}
+                            {% set status = 'активна' if m.is_active else 'неактивна' %}
+                            {% set last_used = m.last_used_at.strftime('%d.%m %H:%M') if m.last_used_at else 'никогда' %}
+                            {% do model_options.append((m.id, m.name ~ ' / ' ~ m.model_id, provider ~ ' · ' ~ m.model_type ~ ' · ' ~ status ~ ' · ' ~ last_used ~ ' · ' ~ m.use_count ~ '/' ~ m.fail_count ~ ' тестов')) %}
                         {% endfor %}
+                        {{ popover_select(field, 'sc-' ~ loop.index0, model_options, current=current|string, placeholder='Модель') }}
                     </div>
                 {% endfor %}
             </div>

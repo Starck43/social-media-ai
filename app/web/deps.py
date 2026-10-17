@@ -24,6 +24,7 @@ from .nav import MOBILE_NAV_ITEMS, NAV_ITEMS, allows
 
 _j2_env = Environment(
     loader=FileSystemLoader("app/web/templates", encoding="UTF-8"),
+    extensions=["jinja2.ext.do"],
     # Stored names, prompts and errors are text, never template-authored HTML.
     autoescape=select_autoescape(("html", "htm", "xml"), default_for_string=True),
     auto_reload=True,  # recompile templates on change

@@ -495,8 +495,18 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
 
     perms = getattr(request.state, "web_perms", None)
     llm_models = [
-        {"id": m.id, "name": m.name, "model_type": m.model_type}
-        for m in await LLMModel.objects.filter(is_active=True).order_by(LLMModel.name)
+        {
+            "id": m.id,
+            "name": m.name,
+            "model_id": m.model_id,
+            "model_type": m.model_type,
+            "is_active": m.is_active,
+            "use_count": m.use_count,
+            "fail_count": m.fail_count,
+            "last_used_at": m.last_used_at,
+            "provider": m.provider,
+        }
+        for m in await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.name)
     ]
     return render(
         request,

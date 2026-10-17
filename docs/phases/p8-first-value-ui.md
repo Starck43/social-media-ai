@@ -288,6 +288,32 @@ P8-T06 and does not alter its task record.
   confirmed task-summary `ok` despite all-source errors is recorded as a bounded
   follow-up; no speculative launch fix was applied.
 
+- [ ] P8-T20 — verify OpenRouter token/cost evidence (including explicit zero),
+  model-test persistence and response-only truncation; replace JSON copy text
+  control with accessible corner SVG feedback and semantic status text colors.
+  Scope: model-test UI, focused cost extraction if needed, regression tests/docs.
+  Owner: remote Notion agent (`fix/admin-model-cost-feedback`); status: BLOCKED (implementation ready;
+  owner-local PostgreSQL/ASGI acceptance remains deferred under the explicit
+  in-session dev delivery/merge exception).
+  Acceptance: supplied 470/8/478, zero-cost response has faithful cost evidence;
+  accessible copy success on icon only, manual fallback retained; dark/light and
+  narrow layouts; no real provider/DB calls remotely, local persistence deferred.
+  Identifier-only synchronization: P8-T19 was reserved by the merged collection
+  audit before publication; this lane now uses P8-T20. Foreign owners, evidence
+  and statuses are preserved. Synced base: `18a2cb6`.
+  Evidence: 198 isolated tests passed (0 failed/skipped) on synchronized dev,
+  including actual source over HTTP/storage doubles, canonical structured USD
+  evidence and journal pricing. 144 offline Chromium viewport/theme/state cases
+  (320/390/1440 px; explicit/system light/dark) plus clipboard success/reset,
+  denial/manual selection, SVG position/44px target, keyboard, no-JS, submit and
+  busy/bfcache safeguards passed. Semantic text contrast >=4.5 checked. Scoped
+  Black/isort, Python compilation, JS syntax and diff checks passed. Prepared
+  real DB readback case was updated, not remotely executed. API price is separate
+  from the existing last-request tariff estimate; no token-history guarantee is
+  added for unscoped owner mode. No schema/config/runtime/live provider/deploy.
+  Remote tests are self-executed per the owner's explicit exception, now recorded
+  in the remote skill; shared-doc sync follows the existing all-agent procedure.
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

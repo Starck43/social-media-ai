@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from source_import_isolation import load_isolated_source
-from test_admin_model_probe import ROOT, extracted_handler, model, probe_module, template_env
+from test_admin_model_probe import COST_EVIDENCE, ROOT, extracted_handler, model, probe_module, template_env
 
 
 @pytest.mark.asyncio
@@ -120,7 +120,11 @@ async def test_actual_chat_transport_keeps_caps_and_admission_but_not_timeout_in
     probe = load_isolated_source(
         "_billed_probe_service",
         ROOT / "app/services/ai/model_probe.py",
-        {"app.core.config": NS(settings=settings), "app.services.ai.llm_client": client_module},
+        {
+            "app.core.config": NS(settings=settings),
+            "app.services.ai.llm_client": client_module,
+            "app.services.ai.attempt_journal": COST_EVIDENCE,
+        },
     )
     result = await probe.probe_real_capped(selected, prompt=prompt)
     assert result["ok"] and result["tokens_spent"] is None and len(sent) == 1

@@ -763,3 +763,26 @@ async def test_single_owner_real_runs_without_personal_account_or_workspace(case
     with fixture_scope():
         updated = await LLMModel.objects.get(id=case.model.id)
     assert updated.use_count == 1 and updated.last_request_cost == pytest.approx(0.000008)
+
+
+async def test_single_owner_zero_provider_price_stays_separate_from_saved_tariff_estimate(case, monkeypatch):
+    """Prepared local DB readback; never part of remote no-DB coverage."""
+    monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", False)
+    case.personal_mode = False
+    case.payload["choices"] = [{"message": {"role": "assistant", "content": None}, "finish_reason": "length"}]
+    case.payload["usage"] = {"prompt_tokens": 470, "completion_tokens": 8, "total_tokens": 478, "cost": 0}
+    async with case.client(case.admin) as client:
+        html = page_ok(await case.post(client, "real", tenant_id="ignored"))
+        assert "Проверка не пройдена" in html and "empty_content" in html
+        assert "Цена провайдера, USD" in html and 'llm-state-success">0</span>' in html
+        assert "478" in html and "length" in html
+    assert len(case.sent) == 1 and not await case.dispatches()
+    with fixture_scope():
+        updated = await LLMModel.objects.get(id=case.model.id)
+    assert updated.use_count == 1
+    # Fixture's configured rates, not the explicit zero retail report.
+    expected = (
+        Decimal(470) * Decimal(str(case.model.input_cost_per_1k))
+        + Decimal(8) * Decimal(str(case.model.output_cost_per_1k))
+    ) / 1000
+    assert updated.last_request_cost == pytest.approx(float(expected))

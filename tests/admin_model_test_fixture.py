@@ -143,6 +143,17 @@ def render(destination):
             },
         ),
     }
+    states["empty"].update(provider_cost_usd="0", provider_cost_state="resolved", tokens_spent=478)
+    states["http-error"] = {
+        **states["real"],
+        "ok": False,
+        "http_status": 429,
+        "error_code": "provider_http",
+        "stage": "response",
+        "content": "",
+        "finish_reason": None,
+    }
+    states["filtered"] = {**states["empty"], "finish_reason": "content_filter", "error_code": "empty_content"}
     states["owner"] = {**states["real"], "accounting_status": "standard"}
     for state, result in states.items():
         if result and "response_json" in result:

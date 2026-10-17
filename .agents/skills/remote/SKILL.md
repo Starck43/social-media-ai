@@ -13,10 +13,19 @@ Read current AGENTS.md, docs/RULES.md and docs/COLLABORATION.md. Use docs/PRODUC
 - Hand full regression, database, integration and environment-dependent validation to the local agent with branch, exact implementation SHA, commands and acceptance criteria. Use references/local-validation.md when a detailed validation assignment is needed.
 - Keep PR draft while required evidence is outstanding. Recheck heads before accepting reports, preserving their original SHA and attribution. Follow current owner authorization for Ready/merge; do not infer deployment or schema permission.
 - Before session switches, update the PR's compact current handoff per docs/COLLABORATION.md. Use ROADMAP.md / docs/phases/ for ownership/status; do not create a second task list.
+- Synchronize `ROADMAP.md` and owned `docs/` with fresh `dev` and relevant active
+  PR/handoff ownership before claiming IDs, editing and publishing; follow
+  `docs/COLLABORATION.md` shared-document synchronization. Preserve foreign
+  additions/evidence/statuses, check task/question ID uniqueness including DONE
+  rows, and state the synchronized base SHA. Never push stale full-file copies.
 - Coordinate through PR descriptions and owner-relayed reports. Do not assume local filesystem access or automatic conversation sync. Person-directed comments require explicit authorization.
 
 ## Remote no-database testing exception (owner-authorized)
 
+- The remote agent runs its remote tests itself, without delegating to OpenCode,
+  Kilo or another agent. This owner-requested remote exception overrides the
+  repository's routine/test delegation instructions for the isolated scope below;
+  it does not relax DB, credentials, runtime or live-provider restrictions.
 - Run genuinely database-independent tests directly in the remote agent's own isolated environment, including pytest unit tests, mocked service/handler tests and offline browser fixtures. For this narrow remote scope, Kilo and the owner's project .venv are not prerequisites; this is an explicit exception to the blanket pytest-routing language in AGENTS.md and docs/RULES.md R10, not a change to local/shared-DB execution.
 - If the existing suite is incomplete or a real environment is unavailable, add/run a focused synthetic or mocked subset for the implemented behavior. Incompleteness alone never makes a DB-dependent test safe: replace DB/provider boundaries with explicit mocks before execution, or leave that case deferred. Never present mocked coverage as real DB, ASGI integration, permission/tenant-isolation or full acceptance evidence.
 - Inspect the selected tests and their import/fixture graph first. Use explicit test paths, disable root conftest and cache for isolated pytest (`--noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`). Use no real secrets, .env files, database URLs, credentials or external sends; use clearly fictitious nonsecret configuration only if an isolated import requires it. Browser fixtures must intercept/abort external requests and mock application endpoints. Do not start the application/runtime or contact any real DB/provider to make a synthetic check pass.

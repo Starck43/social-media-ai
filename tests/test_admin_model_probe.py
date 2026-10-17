@@ -14,6 +14,7 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, select_autoescap
 from source_import_isolation import load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[1]
+COST_EVIDENCE = load_isolated_source("_probe_cost_evidence", ROOT / "app/services/ai/attempt_journal.py")
 
 
 def model(**changes):
@@ -73,6 +74,7 @@ def probe_module(response=None, status=200):
                 journal_chat_attempt=AsyncMock(),
             ),
             "app.core.config": NS(settings=NS(PERSONAL_BILLING_ENABLED=True)),
+            "app.services.ai.attempt_journal": COST_EVIDENCE,
         },
         module_imports={"httpx": http},
     )

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from source_import_isolation import load_isolated_source
 from test_admin_model_billing_integration import endpoint_case
-from test_admin_model_probe import ROOT, action_module, model, probe_module, template_env
+from test_admin_model_probe import COST_EVIDENCE, ROOT, action_module, model, probe_module, template_env
 
 PAYLOAD = {
     "id": "chat-fixture",
@@ -43,7 +43,7 @@ def stack(*, payload=None, status=200, failure=None, accounting_failure=False, a
             "app.core.config": NS(settings=settings),
             "app.models": NS(LLMModel=object),
             "app.services.ai.json_schema_builder": NS(validate_with_pydantic=Mock()),
-            "app.services.ai.attempt_journal": NS(provider_cost_evidence=lambda data: (False, None)),
+            "app.services.ai.attempt_journal": COST_EVIDENCE,
             "app.services.billing.errors": NS(is_personal_billing_block=lambda error: False),
         },
         module_imports={"httpx": http},
@@ -66,7 +66,11 @@ def stack(*, payload=None, status=200, failure=None, accounting_failure=False, a
     probe = load_isolated_source(
         "_diagnostic_probe",
         ROOT / "app/services/ai/model_probe.py",
-        {"app.core.config": NS(settings=settings), "app.services.ai.llm_client": client_module},
+        {
+            "app.core.config": NS(settings=settings),
+            "app.services.ai.llm_client": client_module,
+            "app.services.ai.attempt_journal": COST_EVIDENCE,
+        },
     )
     return probe, client_module, selected, sent, client
 

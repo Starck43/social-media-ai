@@ -1,13 +1,15 @@
 # Data Model Reference
 
-This combined code-review candidate is based on `dev`
-`92d6e2e4372212b940e4fad953998fe33ee2fe5a`, admin UI source
-`41875179261341ae823b1d37f7b0b61e3d260b76` and billing/preferences source
-`143dfae7bb52974f129818394b63a625fd799da4`. It is not merged or deployed.
-The source-declared Alembic head is **0103**. This reference describes ORM and
-migration definitions, not the revision or integrity of a running database.
-No application import, database inspection or migration was run for this update.
-Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
+This repository model reference is based on `dev` HEAD
+`e79583e719e97ba16945b31db20267d40d297b0d`, which already contains migration
+0104 and its model changes; the admin UI source is
+`41875179261341ae823b1d37f7b0b61e3d260b76` and the billing/preferences source
+is `143dfae7bb52974f129818394b63a625fd799da4`. The source-declared Alembic
+head is **0104**. This document is a repository model reference, not a
+production deployment record: it describes ORM and migration definitions, not
+the revision or integrity of a running database. No application import,
+database inspection or migration was run for this update. Schema comes from
+`settings.DB_SCHEMA`; never hardcode it in application code.
 
 The public facade is [app.models](../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../app/models/bootstrap.py) binds managers
@@ -30,14 +32,14 @@ activation and whole-gate acceptance are distinct states.
 
 ### Table inventory
 
-The source defines **44 mapped tables and 3 association tables**:
+The source defines **45 mapped tables and 3 association tables**:
 
 | Domain | Mapped tables | Association tables |
 | --- | --- | --- |
 | Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials` | `role_permission` |
 | Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles` | `workspace_role_permission` |
 | Collection | `platforms`, `sources`, `collected_items` | — |
-| Analysis | `agent_scenarios`, `ai_analytics` | — |
+| Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
 | LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
 | Scheduling | `agent_tasks`, `jobs`, `bot_actions` | `agent_task_sources` |
 | Notifications | `notifications`, `digest_runs`, `notification_preferences` | — |
@@ -49,7 +51,7 @@ The 12 additional billing tables are declared in [billing](../app/models/billing
 `personal_legacy_attributions`, `personal_llm_billing_incidents`,
 `personal_llm_bound_policies`, `personal_llm_budget_days`,
 `personal_llm_ledger_entries`, `personal_llm_reservation_states` and
-`personal_llm_reservations`. They are part of the 44 mapped tables above, not
+`personal_llm_reservations`. They are part of the 45 mapped tables above, not
 additional associations. Personal account identity is independent of workspace
 membership; task payer changes require explicit consent. Reviewed daily
 baselines, bound policies, reservations and immutable ledger settlement are
@@ -186,9 +188,34 @@ Methodology belongs here; schedule, source selection, triggers and approval guar
 
 ### `ai_analytics`
 
-[Source](../app/models/analysis/ai_analytics.py). Fields: `id`; non-null `source_id` FK CASCADE; nullable `analysis_date` **Date**; non-null native `period_type` enum; nullable `content_hash` String(64); nullable `topic_chain_id` String(100), `chain_label`/`normalized_label` String(255); nullable `parent_analysis_id` self-FK SET NULL; non-null `summary_data` JSON; nullable `response_payload`, `main_topics`, `media_types` JSON; nullable `prompt_text` Text, `llm_model`/`provider_type` String(100), `request_tokens`/`response_tokens` Integer, `estimated_cost` Numeric(14,6).
+[Source](../app/models/analysis/ai_analytics.py). Fields: `id`; non-null `source_id` FK CASCADE; nullable `analysis_date` **Date**; non-null native `period_type` enum; nullable `content_hash` String(64); non-null `analysis_fingerprint` String(64) default/server default `legacy` (versioned semantic identity of the analysis context; legacy rows are unattributed); nullable `topic_chain_id` String(100), `chain_label`/`normalized_label` String(255); nullable `parent_analysis_id` self-FK SET NULL; non-null `summary_data` JSON; nullable `response_payload`, `main_topics`, `media_types` JSON; nullable `prompt_text` Text, `llm_model`/`provider_type` String(100), `request_tokens`/`response_tokens` Integer, `estimated_cost` Numeric(14,6).
 
-Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`); indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
+Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`, `analysis_fingerprint`) as `uq_analytics_source_date_period_context`; indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. Migration 0104 added the fingerprint and widened this uniqueness so distinct semantic contexts can coexist for one source/period; no historical receipts are backfilled. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
+
+### `analyzed_content_receipts` — durable success coverage
+
+[Source](../app/models/analysis/analyzed_content_receipt.py),
+[manager](../app/models/managers/analyzed_content_receipt_manager.py),
+[migration 0104](../migrations/versions/0104_durable_analysis_context_receipts.py).
+
+Fields: `id` PK; non-null `source_id` FK → sources CASCADE; non-null
+`content_hash` String(64) and `analysis_fingerprint` String(64); nullable
+`scenario_id` FK → agent_scenarios SET NULL and `analytics_id` FK →
+ai_analytics SET NULL; non-null timezone-aware `analyzed_at` server default
+now(). Unique (`tenant_id`, `source_id`, `content_hash`,
+`analysis_fingerprint`) as `uq_analyzed_content_receipt_identity`; index
+(tenant_id, source_id).
+
+Durable proof that a source item was successfully analyzed in one context.
+Receipts have no expiry: they survive analytics-row deletion (`analytics_id`
+SET NULL) and raw `collected_items` cleanup (the receipt has no FK to the raw
+table), so a repeated item is skipped even after its result row is pruned.
+Receipt lookup fails closed, and receipts are written only for successfully
+covered hashes in the same transaction as their analytics result. Migration
+0104 adds `analysis_fingerprint` to `ai_analytics` with a `legacy` server
+default applying to existing and new analytics rows; the receipts table itself
+has no such default, so receipt rows require a real analysis fingerprint and
+historical merged hashes are not backfilled into receipts.
 
 ## Tenant-scoped LLM accounting and admission storage
 
@@ -414,6 +441,10 @@ erDiagram
     platforms ||--o{ sources : platform_id
     sources ||--o{ ai_analytics : source_id
     ai_analytics o|--o{ ai_analytics : parent_analysis_id
+    tenants ||--o{ analyzed_content_receipts : tenant_id
+    sources ||--o{ analyzed_content_receipts : source_id
+    agent_scenarios o|--o{ analyzed_content_receipts : scenario_id
+    ai_analytics o|--o{ analyzed_content_receipts : analytics_id
     llm_providers ||--o{ llm_models : provider_id
     llm_models o|--o{ agent_scenarios : text_model_id
     llm_models o|--o{ agent_scenarios : image_model_id
@@ -502,14 +533,16 @@ Selected milestones, not a complete replay audit:
 | 0101 | Manual job initiator identity |
 | 0102 | Reservation validator with unambiguous local names |
 | **0103** | Platform task initiator guard correction |
+| **0104** | Durable analysis context receipts; fingerprint-scoped analytics uniqueness with `legacy` default; no historical receipt backfill |
 
 Static inspection of all checked-in `revision` / `down_revision` declarations,
-including tuple merge parents, gives the single source head **0103**, with chain
-0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103. The 0096/31-table
-inventory belongs to the earlier admin documentation audit, not this candidate.
-This is not `alembic current`, an `alembic check`, a replay rehearsal or
-target-schema acceptance. Migrations are carried unchanged from the billing
-source lane; no migration application or schema repair is authorized here.
+including tuple merge parents, gives the single source head **0104**, with chain
+0096 → 0097 → 0098 → 0099 → 0100 → 0101 → 0102 → 0103 → 0104. The 0096/31-table
+inventory belongs to the earlier admin documentation audit. This is not
+`alembic current`, an `alembic check`, a replay rehearsal or target-schema
+acceptance. The migrations are the checked-in repository chain; migration 0104
+has been applied on user approval to the local `public` schema and read-only
+re-verified, as recorded in the P5-T04 phase note.
 
 Before running this ORM against any target, verify its actual revision and
 catalog compatibility under the project's approval rules. Existing owner-local
@@ -518,7 +551,8 @@ attributed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); they are not a
 claim about every environment or a production deployment.
 
 0093–0095 ordinary downgrades refuse evidence deletion; 0096 is forward-only
-without an owner-reviewed preservation plan. 0092's downgrade drops attempt
+without an owner-reviewed preservation plan. 0104's downgrade refuses when
+analytics rows contain multiple analysis contexts. 0092's downgrade drops attempt
 history; older downgrades can restore obsolete flags/constraints or discard
 attachments/checkpoints. Never infer a safe automatic rollback from a repository
 merge or metadata-only bootstrap. No create/reset/drop/stamp/migrate operation is

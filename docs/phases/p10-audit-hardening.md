@@ -60,6 +60,26 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   import/asset smoke, no DB/provider; depends: none; owner: unassigned;
   status: TODO
 
+- [ ] P10-T13 — repair post-migration LLM CLI contracts; owner: remote Notion
+  agent; status: BLOCKED. Accept: provider listing without removed default
+  flag; shared local mock probe, no client/key/network setup; positive model ID
+  and bounded prompt validation; explicit nonzero failures with no exception
+  disclosure; real CLI dispatch fails closed without an authenticated payer.
+  Synchronized base: `be07e515c4fa86e856af04faf2233c0680a57acd`.
+  IDs P10-T11/P10-T12 are reserved by active PRs #216/#217; those drafts and
+  old dirty worktrees are preserved. No shared API/tool or billing changes.
+  Implementation: provider default read removed; shared local mock restored;
+  real CLI probes fail closed before catalog access (no authenticated payer).
+  Remote self-run evidence: Python 3.13.14; pinned Typer/Rich and formatters;
+  17 handler/shared-mock + 8 real parser tests passed, exit 0, no skips/xfails.
+  Same tests fail on the clean synchronized dev baseline (both commands exit 1).
+  No app startup, real DB/keys/providers, migration/reset or deployment.
+  Deferred: existing-catalog ORM/CLI and zero-write/no-dispatch acceptance in
+  the approved owner environment at the published PR SHA; coordinator review.
+  Commands/limits: [CLI handoff](../CLI.md#llm-cli-validation-handoff).
+  Integration: reconcile #216's historical expected-failure probes and CLI
+  warnings before merging both packages; do not erase pinned audit evidence.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

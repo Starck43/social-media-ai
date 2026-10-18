@@ -26,6 +26,84 @@ is never blocked behind a long collection.
   job's LLM call — `learn`/`reflect`, NULL when none), plus `agent_task_id` when
   the job came from a task.
 
+### Chat task configuration
+
+`app/agent/toolset/tasks.py` is the shared Telegram/MAX/web-chat task surface.
+`task_list` resolves the current model locally. The write tools retain their
+existing `scheduling.task.create/update` permissions and actor-bound confirmation;
+this package does not grant global LLM catalog access or trigger task execution.
+
+For `task_update(name, ...)`:
+
+- Omitted scenario, payload targets, dates and source links remain unchanged.
+  `scenario_id=None` also means no change; `clear_scenario=true` is the explicit
+  confirmed unbind operation. Do not supply both a scenario ID and clear flag.
+- A supplied `cron` writes `cron_expr` and `next_run_at` in the same manager
+  update. Normal cron uses the workspace timezone. `@once` schedules one minute
+  ahead, matching the API convention, without passing `@once` to croniter.
+  It does not implicitly reactivate a paused task.
+- Supplied `source_ids` replace the links via `set_sources`, not additive linking.
+  Explicit `[]` removes links and therefore selects all active workspace sources;
+  omission preserves the existing links. The confirmation schema states this.
+- Source/scenario IDs must be positive PostgreSQL INTEGER values (not booleans
+  or strings), exist and belong to the active workspace. Missing and foreign rows
+  receive the same unavailable response. These checks precede configuration
+  writes; the manager's own scope and permission checks remain in force.
+- Content-window edits merge omitted start/end bounds and preserve target payload
+  fields. Invalid/reversed dates are refused; switching to a source-based job
+  requires a start date. Legacy scheduled repeat flags still cannot bypass the
+  durable analysis receipt policy; that policy is unchanged.
+- A no-op returns `status=unchanged` and writes nothing. A missing task or a task
+  that disappears before the field update is not reported as updated.
+
+`task_add` also checks source/scenario availability before inserting its row and
+uses the same one-shot scheduling helper. Field writes and source-link writes
+still use existing separate manager operations: **this is not a new atomic
+transaction, concurrency fence or rollback guarantee**. Mid-operation DB errors,
+concurrent deletion/revocation and real tenant enforcement need owner-local
+acceptance; no synthetic test substitutes for that evidence.
+
+#### Isolated verification and local handoff
+
+Implementation lane: `refactor/chat-task-contracts`, synchronized base
+`be07e515c4fa86e856af04faf2233c0680a57acd`. Task P10-T12; audit scope comes from
+[PR #216](https://github.com/Starck43/social-media-ai/pull/216). The PR head pins
+implementation and exact sandbox test source. No migration is needed.
+
+Sandbox: Linux, Python 3.13.14, separate `/data/task-contracts-venv`, pip 24.2,
+stdlib-only tests; no third-party dependency installation or owner `.venv` use.
+Exact commands from the task worktree:
+
+```sh
+/data/task-contracts-venv/bin/python tests/test_chat_task_contracts.py -v
+/data/task-contracts-venv/bin/python tests/test_runtime_confirmation_authorization.py
+git diff --check
+```
+
+Results: 27 new tests passed (exit 0), 26 existing offline confirmation tests
+passed (exit 0), no skipped or expected-failure cases. The new tests execute the
+actual tool module through explicit import doubles; date parsing and selected
+manager date helpers use their actual source. DB managers, cron evaluation and
+runtime infrastructure are mocked. The same 27-test file was copied to an isolated
+archive of the synchronized base: baseline failed (exit 1; missing import,
+scenario/cron/source/date assertions and absent new clear flag). This is regression
+evidence, not real ORM/HTTP/permission acceptance. No app/server/runtime startup,
+conftest, real database, credentials, provider call or external action occurred.
+
+Required before Ready/merge, on the owner's sequential local test route: verify
+actual task persistence, workspace timezone/`@once`, source replacement and clear,
+missing/foreign input refusal without field mutation, owner/manager/viewer rights,
+revocation and actor-bound confirmation. Existing local scopes include
+`tests/test_scenario_agent_tools.py`, `tests/test_task_timezone.py` and the
+runtime confirmation tests; supplement them with the new partial-update and
+negative-input cases against the real manager. Inspect fixture graphs and current
+HEAD first, follow RULES R8/R10, never reset/migrate to make a test pass.
+
+The audit PR #216 still contains source-pinned expected-failure probes for the old
+runtime. Rebase/reconcile those expectations before integrating both PRs; task
+listing and scenario/cron preservation are no longer expected failures in this
+implementation lane. Its historical report and original evidence remain intact.
+
 ### Source-aware run admission
 
 Explicit `collect`/`analyze` starts use `JobManager.admit_source_job`, not a

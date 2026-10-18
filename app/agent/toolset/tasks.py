@@ -24,6 +24,7 @@ async def task_list() -> list[dict[str, Any]]:
     from zoneinfo import ZoneInfo
 
     from app.core.config import settings
+    from app.models import AgentTask
 
     rows = await AgentTask.objects.order_by(AgentTask.id)
     tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
@@ -161,7 +162,7 @@ async def task_add(
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.tasks.cron import next_run_at, resolve_tz
+    from app.tasks.cron import resolve_tz
 
     job_types = _get_job_types()
     if job_type not in job_types:
@@ -202,10 +203,18 @@ async def task_add(
         if force_reanalyze:
             payload["force_reanalyze"] = True
 
+    tenant_id = current_tenant_id()
+    if not _valid_task_id(tenant_id):
+        return {"error": "An active workspace is required"}
+    if source_ids is not None:
+        await _check_task_sources(source_ids, tenant_id)
+    await _check_task_scenario(scenario_id, tenant_id)
+
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.
-    tenant = await Tenant.objects.get(id=current_tenant_id())
+    tenant = await Tenant.objects.get(id=tenant_id)
     tz = resolve_tz(tenant)
+    next_run = _task_next_run_at(cron, tenant)
     task = await AgentTask.objects.create(
         name=name,
         cron_expr=cron,
@@ -213,16 +222,13 @@ async def task_add(
         payload=payload,
         agent_scenario_id=scenario_id,
         is_active=True,
-        next_run_at=next_run_at(cron, tz),
+        next_run_at=next_run,
     )
 
     if source_ids:
         from app.models.managers.agent_task_manager import AgentTaskManager
 
-        # The m2m table has no tenant column, so a link written here is the
-        # only thing keeping a task out of another workspace's sources. Verify
-        # them against the task's own workspace, like the CLI and web do.
-        await _check_task_sources(source_ids, task.tenant_id)
+        # Source availability was checked before creating the task.
         await AgentTaskManager().add_sources(task.id, source_ids)
 
     result: dict[str, Any] = {
@@ -252,16 +258,81 @@ async def task_add(
     return result
 
 
+def _task_next_run_at(cron: str, tenant: Any):
+    """Match API scheduling for one-shot tasks and workspace-local cron."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.tasks.cron import next_run_at, resolve_tz
+
+    if cron == "@once":
+        return datetime.now(timezone.utc) + timedelta(minutes=1)
+    return next_run_at(cron, resolve_tz(tenant))
+
+
+def _valid_task_id(value: Any) -> bool:
+    return type(value) is int and 1 <= value <= 2_147_483_647
+
+
 async def _check_task_sources(source_ids: list[int], tenant_id: int) -> None:
-    """Reject source ids that are missing or belong to another workspace."""
+    """Reject malformed or unavailable source IDs before any configuration write."""
     from app.models import Source
 
+    if not isinstance(source_ids, list) or any(not _valid_task_id(sid) for sid in source_ids):
+        raise ValueError("source_ids must be a list of positive source IDs")
     if not source_ids:
         return
-    sources = {s.id: s for s in await Source.objects.filter(id__in=source_ids)}
-    foreign = sorted(sid for sid, s in sources.items() if s.tenant_id != tenant_id)
-    if foreign:
-        raise ValueError(f"Source(s) {', '.join(map(str, foreign))} belong to another workspace")
+    sources = await Source.objects.filter(id__in=source_ids, tenant_id=tenant_id)
+    available = {source.id for source in sources if source.tenant_id == tenant_id}
+    if set(source_ids) - available:
+        # Do not distinguish missing rows from another workspace's rows.
+        raise ValueError("One or more sources are unavailable in this workspace")
+
+
+async def _check_task_scenario(scenario_id: int | None, tenant_id: int) -> None:
+    """A task may only bind an existing scenario from the same workspace."""
+    from app.models import AgentScenario
+
+    if scenario_id is None:
+        return
+    if not _valid_task_id(scenario_id):
+        raise ValueError("scenario_id must be a positive scenario ID")
+    scenario = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
+    if scenario is None or scenario.tenant_id != tenant_id:
+        raise ValueError("Scenario is unavailable in this workspace")
+
+
+def _merge_task_dates(
+    payload: dict[str, Any],
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    force_refresh: bool | None,
+    force_reanalyze: bool | None,
+) -> None:
+    """Merge a requested content window without discarding its omitted bound."""
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
+    existing = payload.get("cli_dates") or {}
+    parsed = {}
+    for key, value in (("start_date", start_date), ("end_date", end_date)):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be a date string")
+        raw = value if value is not None else existing.get(key)
+        parsed[key] = AgentTaskManager.parse_date(raw)
+        if raw is not None and parsed[key] is None:
+            raise ValueError(f"Invalid {key}")
+    start, end = parsed["start_date"], parsed["end_date"]
+    if start is None:
+        raise ValueError("A content start_date is required")
+    if end is not None and end < start:
+        raise ValueError("end_date must not precede start_date")
+    for flag in (force_refresh, force_reanalyze):
+        if flag is not None and type(flag) is not bool:
+            raise ValueError("Repeat flags must be boolean")
+    refresh = force_refresh if force_refresh is not None else bool(payload.get("force_refresh", False))
+    payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=refresh))
+    if force_reanalyze is not None:
+        payload["force_reanalyze"] = force_reanalyze
 
 
 @tool(
@@ -308,7 +379,7 @@ async def task_remove(name: str) -> dict[str, Any]:
             "source_ids": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Новый список source IDs (пусто = все активные)",
+                "description": "Заменить source IDs; [] = все активные, не передано = оставить текущие",
             },
             "monitored_users": {
                 "type": "array",
@@ -320,7 +391,8 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "items": {"type": "string"},
                 "description": "Новый список excluded users (collect/analyze)",
             },
-            "scenario_id": {"type": "integer", "description": "Новый ID сценария агента"},
+            "scenario_id": {"type": "integer", "description": "Новый ID сценария; пусто = оставить текущий"},
+            "clear_scenario": {"type": "boolean", "description": "Явно отвязать сценарий (по умолчанию false)"},
             "period": {"type": "string", "description": "Период для digest: day | week"},
             "start_date": {
                 "type": "string",
@@ -388,21 +460,32 @@ async def task_update(
     influencer_names: list[str] | None = None,
     keywords_list: list[str] | None = None,
     topic_list: list[str] | None = None,
+    clear_scenario: bool = False,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
-    from app.tasks.cron import next_run_at, resolve_tz
 
-    task = await AgentTask.objects.get(name=name)
-    if task is None:
+    if not isinstance(name, str) or not name.strip():
+        return {"error": "A task name is required"}
+    if type(clear_scenario) is not bool or (clear_scenario and scenario_id is not None):
+        return {"error": "Use either scenario_id or clear_scenario=true"}
+    tenant_id = current_tenant_id()
+    if not _valid_task_id(tenant_id):
+        return {"error": "An active workspace is required"}
+    task = await AgentTask.objects.get(name=name, tenant_id=tenant_id)
+    if task is None or task.tenant_id != tenant_id:
         return {"error": f"Task {name!r} not found"}
 
     job_types = _get_job_types()
     if job_type is not None and job_type not in job_types:
         return {"error": f"Unknown job_type: {job_type!r}. Use one of: {', '.join(job_types)}"}
-    if cron is not None and not AgentTaskManager.validate_cron(cron):
+    if cron is not None and (not isinstance(cron, str) or not AgentTaskManager.validate_cron(cron)):
         return {"error": f"Invalid cron expression: {cron!r}"}
+
+    if source_ids is not None:
+        await _check_task_sources(source_ids, tenant_id)
+    await _check_task_scenario(scenario_id, tenant_id)
 
     # Build updated payload by merging into existing payload
     updated_payload = dict(task.payload) if task.payload else {}
@@ -423,49 +506,39 @@ async def task_update(
         if value is not None:
             updated_payload[key] = list(value)
 
-    # Handle date fields for collect/analyze
-    _existing_cli_dates = (task.payload or {}).get("cli_dates", {})
-    if job_type is not None and AgentTaskManager.requires_content_dates(job_type):
-        start = AgentTaskManager.parse_date(start_date)
-        if start is None:
-            start = AgentTaskManager.parse_date(_existing_cli_dates.get("start_date"))
-        end = AgentTaskManager.parse_date(end_date)
-        if end is None:
-            end = AgentTaskManager.parse_date(_existing_cli_dates.get("end_date"))
-        fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-        updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
-        if force_reanalyze is not None:
-            updated_payload["force_reanalyze"] = force_reanalyze
-    elif job_type is None and AgentTaskManager.requires_content_dates(task.job_type):
-        # job_type unchanged but dates provided
-        if start_date or end_date or force_refresh is not None:
-            start = AgentTaskManager.parse_date(start_date) if start_date else None
-            end = AgentTaskManager.parse_date(end_date) if end_date else None
-            fr = force_refresh if force_refresh is not None else task.payload.get("force_refresh", False)
-            updated_payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=fr))
-            if force_reanalyze is not None:
-                updated_payload["force_reanalyze"] = force_reanalyze
-
-    # Determine new job_type
     new_job_type = job_type if job_type is not None else task.job_type
-    new_cron = cron if cron is not None else task.cron_expr
+    date_edit = job_type is not None or any(
+        value is not None for value in (start_date, end_date, force_refresh, force_reanalyze)
+    )
+    if date_edit and AgentTaskManager.requires_content_dates(new_job_type):
+        _merge_task_dates(
+            updated_payload,
+            start_date=start_date,
+            end_date=end_date,
+            force_refresh=force_refresh,
+            force_reanalyze=force_reanalyze,
+        )
 
-    # Compute next_run_at if cron changed
-    tenant = await Tenant.objects.get(id=current_tenant_id())
-    updates: dict[str, Any] = {
-        "job_type": new_job_type,
-        "payload": updated_payload,
-        "agent_scenario_id": scenario_id,
-    }
+    updates: dict[str, Any] = {}
+    if job_type is not None:
+        updates["job_type"] = new_job_type
+    if updated_payload != (task.payload or {}):
+        updates["payload"] = updated_payload
+    if scenario_id is not None or clear_scenario:
+        updates["agent_scenario_id"] = None if clear_scenario else scenario_id
     if cron is not None:
-        updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+        tenant = await Tenant.objects.get(id=tenant_id)
+        updates["cron_expr"] = cron
+        updates["next_run_at"] = _task_next_run_at(cron, tenant)
 
-    await AgentTask.objects.update_by_id(task.id, **updates)
-
-    # Update sources if provided
+    if updates:
+        updated = await AgentTask.objects.update_by_id(task.id, **updates)
+        if updated is None:
+            return {"error": "Task is no longer available"}
     if source_ids is not None:
-        await _check_task_sources(source_ids, task.tenant_id)
-        await AgentTaskManager().add_sources(task.id, source_ids)
+        await AgentTaskManager().set_sources(task.id, source_ids)
+    if not updates and source_ids is None:
+        return {"status": "unchanged", "name": task.name}
 
     changes: dict[str, Any] = {"status": "updated", "name": task.name}
     if job_type:

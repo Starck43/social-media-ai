@@ -5,7 +5,7 @@
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
     <div>
 
-        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Управление сценариями анализа и автоматизации</p>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Сценарий задаёт методику анализа. Выберите его при создании задачи; затем задайте источники и расписание.</p>
     </div>
     {% if perms and perms.can('agentscenario', 'create') %}
         <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><a href="/app/scenarios/new"
@@ -24,7 +24,7 @@
                 <th class="px-4 py-3">Описание</th>
                 <th class="px-4 py-3">Типы анализа</th>
                 <th class="px-4 py-3">Контент</th>
-                <th class="px-4 py-3 text-center">Задач</th>
+                {% if can_view_tasks %}<th class="px-4 py-3 text-center">Задач</th>{% endif %}
                 <th class="px-4 py-3 text-center">Статус</th>
             </tr>
         </thead>
@@ -55,7 +55,7 @@
                         {% endif %}
                     </div>
                 </td>
-                <td class="px-4 py-3 text-center text-slate-700 dark:text-slate-300">{{ s.task_count }}</td>
+                {% if can_view_tasks %}<td class="px-4 py-3 text-center text-slate-700 dark:text-slate-300">{{ s.task_count }}</td>{% endif %}
                 <td class="px-4 py-3 text-center">
                     {# The same pill the sources and tasks lists use. The dot-plus-word
                        pair this had before was the only state on the page not wearing

@@ -7,8 +7,7 @@
     <div class="mb-6">
 
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Два шага — и конвейер заработает: подключите источник, поставьте расписание.
-            Дальше сбор, анализ и дайджесты выполняются сами.
+            Подключите источник, выберите методику анализа и создайте задачу. Запуск можно выполнить сразу или сохранить расписание.
         </p>
     </div>
 
@@ -28,7 +27,7 @@
             </div>
 
             {% if has_source %}
-                <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Источник подключён — сбор по нему пойдёт по расписанию.</p>
+                <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Источник готов. Добавьте его в задачу анализа.</p>
                 <a href="/app/sources" class="mt-4 inline-block text-sm text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
                     Управлять источниками →
                 </a>
@@ -57,7 +56,7 @@
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <p class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Шаг 2</p>
-                    <h2 class="mt-1 text-lg font-semibold">Расписание</h2>
+                    <h2 class="mt-1 text-lg font-semibold">Задача анализа</h2>
                 </div>
                 {% if has_task %}
                     <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-400">готово</span>
@@ -67,7 +66,7 @@
             </div>
 
             {% if has_task %}
-                <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Расписание задано — планировщик сам запускает задачи.</p>
+                <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Задача настроена — её можно запустить или изменить расписание.</p>
                 <a href="/app/tasks" class="mt-4 inline-block text-sm text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
                     Управлять задачами →
                 </a>
@@ -76,15 +75,12 @@
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     <input type="hidden" name="next" value="/app/onboarding">
                     {{ task_fields(job_types, "ob") }}
-                    {# The wizard only ever creates a `collect` task (the default
-                       type), which needs a content start date — without it the
-                       first run would drain the whole history from the first
-                       post. Default to the last 30 days. #}
+                    {# Bound the first analysis window to avoid importing all history. #}
                     <div class="sm:col-span-2">
-                        <label for="ob-start_date" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">С какого периода собирать</label>
+                        <label for="ob-start_date" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">С какого периода анализировать</label>
                         <input type="date" id="ob-start_date" name="start_date"
                                value="{{ default_start_date }}" class="{{ control() }}">
-                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты будет собран контент из источников.</p>
+                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">За выбранный период задача соберёт новые данные и проанализирует доступные записи.</p>
                     </div>
                     <div class="sm:col-span-2">
                         <label for="ob-cron" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Когда</label>
@@ -99,7 +95,7 @@
                     </div>
                     <div class="sm:col-span-2">
                         <button class="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-                            Создать расписание
+                            Создать задачу анализа
                         </button>
                     </div>
                 </form>

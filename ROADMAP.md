@@ -18,6 +18,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — IN_PROGRESS
+
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 - [ ] P8-T18 — allow model tests in single-owner accounting mode → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
@@ -40,6 +42,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P6-T01 — data-retention rollout (deploy gated) → [p6](docs/phases/p6-lifecycle-privacy.md) — owner — BLOCKED
 - [ ] P6-T02 — one bounded retention/export/offboarding contract → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
 - [ ] P6-T03 — admin removal of unprocessed source content → [p6](docs/phases/p6-lifecycle-privacy.md) — owner: codex — IN_PROGRESS
+- [ ] P6-T04 — preserve explicit task source scope when deleting its last source → [p6](docs/phases/p6-lifecycle-privacy.md) — unassigned — TODO
 - [ ] P7-T01 — loopback-only DB binding (pre-production) → [p7](docs/phases/p7-operations.md) — owner — TODO
 - [ ] P7-T02 — one staging-backed operation proof → [p7](docs/phases/p7-operations.md) — unassigned — TODO
 - [ ] P8-T07 — operator-visible stale-source observable → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
@@ -62,6 +65,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T10 — distributable package runtime completeness (AUD-10) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 
 - [ ] P10-T13 — LLM CLI provider listing and safe model-test contract → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
+
+- [ ] P8-T21 — compact inline task source picker → [p8](docs/phases/p8-first-value-ui.md) — $local — READY
 
 ## Questions
 

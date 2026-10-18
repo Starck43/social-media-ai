@@ -28,7 +28,7 @@
         </details>
         {% endif %}
     </td>
-    <td class="py-2.5 pr-4 text-xs text-slate-500">{% if latest_progress.status == 'unconfirmed' %}Проверяем связь{% elif latest_progress.status == 'pending' %}В очереди{% elif latest_progress.job_type == 'collect' and latest_progress.status in ('running', 'done') %}{{ latest_progress.label }}{% elif latest_progress.status == 'running' %}Анализируется{% elif latest_progress.status == 'skipped' %}Пропущено{% elif latest_progress.status == 'failed' %}Ошибка{% else %}—{% endif %}</td>
+    <td class="py-2.5 pr-4 text-xs text-slate-500">{% if latest_progress.status == 'unconfirmed' %}Проверяем связь{% elif latest_progress.status == 'pending' %}В очереди{% elif latest_progress.job_type in ('collect', 'analyze') and latest_progress.status in ('running', 'done', 'partial') %}{{ latest_progress.label }}{% elif latest_progress.status == 'running' %}Анализируется{% elif latest_progress.status == 'skipped' %}Пропущено{% elif latest_progress.status == 'failed' %}Ошибка{% else %}—{% endif %}</td>
     <td class="py-2.5 pr-4 text-slate-500">—</td><td class="py-2.5 pr-4 text-slate-500">—</td><td class="py-2.5 text-slate-500">—</td>
 </tr>
 {% endif %}

@@ -29,12 +29,12 @@ Browser titles are retained. Long headings wrap rather than widen the layout.
 | Templates | Navbar heading / compact actions | Content retained |
 | --- | --- | --- |
 | dashboard | Overview / authorized chat icon | Operator data-workspace filter, bounded overview and setup step |
-| sources, tasks | Section / guarded create dialog trigger | Workspace filters, source connection banners, tables, dialogs |
-| source_detail | Source name or missing / analyze, collect, edit, toggle, delete under original guards | Breadcrumb, source metadata, forms, activity; explicitly closed header wrapper |
-| task_detail | Task name or missing / edit, toggle, delete under original guards | Queue-aware breadcrumb, task/workspace metadata, editor, outcomes |
+| sources, tasks | Section / guarded create dialog trigger | Workspace filters, source connection banners, concise setup guidance, tables, dialogs |
+| source_detail | Source name or missing / guarded create-analysis-task link, edit, toggle | Breadcrumb, source access/readiness, permitted schedules, raw backlog and analysis results; destructive tools in a lower details block |
+| task_detail | Task name or missing / edit, toggle, delete under original guards | Queue-aware breadcrumb, task/workspace metadata, canonical editor link, outcomes |
 | task_edit | Task name, synchronized with editing / back link | Existing form, source selector, submitter overrides, confirmations |
-| scenarios | Scenarios / guarded create link | Description and list |
-| scenario_detail, scenario_wizard | Scenario name or new / guarded save with original form ID | Breadcrumbs, description, wizard, form validation |
+| scenarios | Scenarios / guarded create link | Methodology description and list; task counts only for task viewers |
+| scenario_detail, scenario_wizard | Scenario name or new / guarded save with original form ID | Methodology wizard; permitted task usage and prefilled task creation |
 | analytics | Analytics | Period/workspace filters, metrics and analysis projections |
 | analytics_detail | Analysis title / source context | Analysis breadcrumbs, source/chain links, saved result |
 | analytics_group | Group value | Group breadcrumbs, filters and result list |

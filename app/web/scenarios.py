@@ -13,7 +13,7 @@ import logging
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import func
+from sqlalchemy import and_, func
 
 from app.models.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
@@ -28,13 +28,21 @@ router = APIRouter(prefix="/scenarios")
 @router.get("")
 @router.get("/")
 async def scenarios_list(request: Request):
-    """Scenarios with their task counts (LEFT JOIN — a scenario may have none)."""
-    # No `tenant_id` predicate: the manager's guard already scopes the rows.
-    from app.models import AgentTask
+    """List methodologies; task metadata is queried only for permitted viewers."""
+    from app.types import AnalysisType, ContentType
 
-    rows = await (
-        AgentScenario.objects.outerjoin(AgentTask, AgentScenario.id == AgentTask.agent_scenario_id)
-        .values(
+    can_view_tasks = getattr(request.state, "web_perms", None) is not None and request.state.web_perms.can(
+        "agenttask", "view"
+    )
+    query = AgentScenario.objects.filter(tenant_id=request.state.tenant_id)
+    if can_view_tasks:
+        from app.models import AgentTask
+
+        query = query.outerjoin(
+            AgentTask,
+            and_(AgentScenario.id == AgentTask.agent_scenario_id, AgentScenario.tenant_id == AgentTask.tenant_id),
+        )
+    fields = [
             AgentScenario.id,
             AgentScenario.name,
             AgentScenario.description,
@@ -42,12 +50,15 @@ async def scenarios_list(request: Request):
             AgentScenario.is_active,
             AgentScenario.analysis_types,
             AgentScenario.content_types,
-            func.count(AgentTask.id).label("task_count"),
-        )
-        .group_by(AgentScenario.id)
-        .order_by(AgentScenario.is_default.desc(), AgentScenario.name)
-        .rows()
-    )
+        ]
+    if can_view_tasks:
+        fields.append(func.count(AgentTask.id).label("task_count"))
+    query = query.values(*fields).order_by(AgentScenario.is_default.desc(), AgentScenario.name)
+    if can_view_tasks:
+        query = query.group_by(AgentScenario.id)
+    rows = await query.rows()
+    analysis_labels = {item.db_value: item.display_name for item in AnalysisType}
+    content_labels = {item.db_value: item.display_name for item in ContentType}
 
     scenarios = [
         {
@@ -56,13 +67,15 @@ async def scenarios_list(request: Request):
             "description": r.description or "",
             "is_default": r.is_default,
             "is_active": r.is_active,
-            "analysis_types": r.analysis_types or [],
-            "content_types": r.content_types or [],
-            "task_count": r.task_count,
+            "analysis_types": [analysis_labels.get(value, value) for value in (r.analysis_types or [])],
+            "content_types": [content_labels.get(value, value) for value in (r.content_types or [])],
+            "task_count": r.task_count if can_view_tasks else None,
         }
         for r in rows
     ]
-    return render(request, "web/scenarios.html", section="scenarios", scenarios=scenarios)
+    return render(
+        request, "web/scenarios.html", section="scenarios", scenarios=scenarios, can_view_tasks=can_view_tasks
+    )
 
 
 @router.post("/set-default")
@@ -492,6 +505,7 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.models.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
     from app.types import AnalysisType, ContentType, LLMStrategyType
+    from app.web.deps import human_datetime
 
     perms = getattr(request.state, "web_perms", None)
     llm_models = [
@@ -508,6 +522,44 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         }
         for m in await LLMModel.objects.select_related("provider").filter(is_active=True).order_by(LLMModel.name)
     ]
+    usage = None
+    can_view_tasks = perms is not None and perms.can("agenttask", "view")
+    if not create and scenario_id is not None and can_view_tasks:
+        from app.core.tenant_context import tenant_scope
+        from app.models.job import Job
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        manager = AgentTaskManager()
+        with tenant_scope(request.state.tenant_id):
+            tasks = await manager.filter(
+                tenant_id=request.state.tenant_id, agent_scenario_id=scenario_id
+            ).prefetch_related("agent_scenario", "sources")
+            active_sources = await manager.get_workspace_active_source_ids()
+            effective = await manager.effective_active_map(tasks, active_sources)
+            task_ids = [task.id for task in tasks]
+            last_job = (
+                await Job.objects.filter(tenant_id=request.state.tenant_id, agent_task_id__in=task_ids)
+                .order_by(Job.created_at.desc())
+                .first()
+                if task_ids
+                else None
+            )
+        usage = {
+            "total": len(tasks),
+            "active": sum(1 for task in tasks if effective.get(task.id)),
+            "paused": sum(1 for task in tasks if not effective.get(task.id)),
+            "last_status": {
+                "done": "завершён",
+                "failed": "ошибка",
+                "pending": "в очереди",
+                "running": "выполняется",
+            }.get(str(last_job.status), str(last_job.status)) if last_job else None,
+            "next_run": human_datetime(min((t.next_run_at for t in tasks if effective.get(t.id) and t.next_run_at), default=None), empty="не запланирован"),
+            "tasks": [
+                {"id": task.id, "name": task.name, "is_active": effective.get(task.id, False)}
+                for task in tasks[:5]
+            ],
+        }
     # Scenario pickers must not offer models that only burn runs: safety
     # classifiers answer with a verdict (analysis reads that as `failed_output`)
     # and fleets that never once succeeded end runs in "модель не ответила".
@@ -536,6 +588,8 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
         show_preview_step=perms is not None and perms.is_superuser_role,
         create=create,
         scenario_id=scenario_id,
+        usage=usage,
+        can_create_tasks=perms is not None and perms.can("agenttask", "create"),
         draft=draft,
         content_types=list(ContentType),
         analysis_types=list(AnalysisType),

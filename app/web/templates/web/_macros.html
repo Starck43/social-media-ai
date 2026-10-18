@@ -102,7 +102,7 @@
         <select id="{{ idp }}-job_type" name="job_type" required
                 class="{{ control() }}"{% if model %} x-model="{{ model }}"{% endif %}>
             {% for value, label in job_types %}
-                <option value="{{ value }}" {% if value == "collect" %}selected{% endif %}>{{ label|ui_label }}</option>
+                <option value="{{ value }}" {% if value == "analyze" %}selected{% endif %}>{{ label|ui_label }}</option>
             {% endfor %}
         </select>
     </div>
@@ -140,22 +140,13 @@
 {# The trigger + action section, rendered only for `analyze` tasks. `m` and
    `model` are the same paths as in `task_dates`. The per-trigger fields are
    inside `x-if` templates so only the active type's config is submitted. #}
-{% macro task_trigger_actions(m, model, trigger_types, action_types) -%}
+{% macro task_trigger_actions(m, model, trigger_types, action_types, current_trigger='', current_action='') -%}
     <div x-show="{{ model }} === 'analyze'" x-cloak class="space-y-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
         <p class="text-sm text-slate-700 dark:text-slate-300">Условие срабатывания</p>
-        <div class="grid grid-cols-2 gap-3">
-            <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип триггера</label>
-                <select name="trigger_type" x-model="{{ m }}.trigger_type" class="{{ control() }}">
-                    <option value="">не задан</option>
-                    {% for value, label in trigger_types %}
-                        <option value="{{ value }}">{{ label|ui_label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="flex items-end">
-                <p class="text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
-            </div>
+        <div>
+            <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип триггера</label>
+            {{ bound_popover_select('trigger_type', 'task-trigger-' ~ m, [('', 'не задан')] + trigger_types, m ~ '.trigger_type', current_trigger, 'не задан') }}
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Без триггера контент проходит без фильтрации.</p>
         </div>
 
         <template x-if="{{ m }}.trigger_type === 'KEYWORD_MATCH'">
@@ -215,12 +206,7 @@
         <p class="text-sm text-slate-700 dark:text-slate-300">Действие после анализа</p>
         <div>
             <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Тип действия</label>
-            <select name="action_type" x-model="{{ m }}.action_type" class="{{ control() }}">
-                <option value="">не выполнять</option>
-                {% for value, label in action_types %}
-                    <option value="{{ value }}">{{ label|ui_label }}</option>
-                {% endfor %}
-            </select>
+            {{ bound_popover_select('action_type', 'task-action-' ~ m, [('', 'не выполнять')] + action_types, m ~ '.action_type', current_action, 'не выполнять') }}
         </div>
 
         <div class="grid grid-cols-2 gap-3">
@@ -504,6 +490,28 @@
             <button type="button" role="option" data-popover-option="" aria-selected="{{ 'true' if not current else 'false' }}"><span>{{ placeholder }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
             {% for value, label, hint in options %}
             <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current|string == value|string else 'false' }}"><span>{{ label }}</span>{% if hint %}<span class="text-xs text-slate-600 dark:text-slate-400">{{ hint }}</span>{% endif %}<span class="shell-theme-check" aria-hidden="true">✓</span></button>
+            {% endfor %}
+        </div>
+    </div>
+{%- endmacro %}
+
+{# Compact select bound to Alpine state. Shell JS updates the hidden form value
+   and dispatches input so x-model and dependent fields stay in sync. #}
+{% macro bound_popover_select(name, id, options, model, current='', placeholder='') -%}
+    {% set current = '' if current is none else current|string %}
+    {% set ns = namespace(current_label=placeholder) %}
+    {% for value, label in options %}
+        {% if current == value|string %}{% set ns.current_label = label|ui_label %}{% endif %}
+    {% endfor %}
+    <div class="shell-popover inline-block max-w-full align-middle" data-shell-popover>
+        <input type="hidden" name="{{ name }}" x-model="{{ model }}" value="{{ current }}" data-popover-value>
+        <button type="button" class="inline-flex min-h-10 max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900" data-popover-trigger aria-expanded="false" aria-controls="{{ id }}-popover">
+            <span class="max-w-[18rem] truncate" data-popover-label>{{ ns.current_label }}</span>
+            <span aria-hidden="true" class="shrink-0 text-slate-500 dark:text-slate-400">▾</span>
+        </button>
+        <div id="{{ id }}-popover" class="shell-popover-panel" hidden role="listbox">
+            {% for value, label in options %}
+            <button type="button" role="option" data-popover-option="{{ value }}" aria-selected="{{ 'true' if current == value|string else 'false' }}"><span>{{ label|ui_label }}</span><span class="shell-theme-check" aria-hidden="true">✓</span></button>
             {% endfor %}
         </div>
     </div>

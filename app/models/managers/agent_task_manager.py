@@ -259,6 +259,46 @@ class AgentTaskManager(BaseManager):
             return next(iter(scenarios))
         return None
 
+    async def for_source(
+        self,
+        source_id: int,
+        tenant_id: int,
+        *,
+        source_is_active: bool = True,
+        include_all_active: bool = True,
+    ) -> list["AgentTask"]:
+        """Tasks that schedule analysis for one source in an explicit tenant.
+
+        Explicitly linked tasks are included even when paused. Tasks with no
+        source links act on all active sources, so they apply only while this
+        source is active. Callers may disable that fallback when resolving the
+        historic explicit-link-first source window.
+        """
+        from sqlalchemy import exists, literal, not_, or_, select
+
+        from ..agent_task import AgentTask, agent_task_sources
+
+        linked = exists(
+            select(literal(1)).where(
+                agent_task_sources.c.agent_task_id == AgentTask.id,
+                agent_task_sources.c.source_id == source_id,
+            )
+        )
+        criteria = [
+            AgentTask.tenant_id == tenant_id,
+            AgentTask.job_type.in_(tuple(SOURCE_BASED_JOB_TYPES)),
+        ]
+        if include_all_active and source_is_active:
+            any_link = exists(select(literal(1)).where(agent_task_sources.c.agent_task_id == AgentTask.id))
+            criteria.append(or_(linked, not_(any_link)))
+        else:
+            criteria.append(linked)
+        return await (
+            self.filter(*criteria)
+            .prefetch_related("agent_scenario", "sources")
+            .order_by(AgentTask.created_at.desc(), AgentTask.id.desc())
+        )
+
     @staticmethod
     def _task_effectively_active(task, workspace_active_source_ids) -> bool:
         """Whether a task is effectively active — i.e. should be scheduled/shown as active.

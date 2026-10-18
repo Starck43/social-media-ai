@@ -66,7 +66,10 @@
             panel.querySelectorAll('[data-popover-option]').forEach(option => option.addEventListener('click', () => {
                 const value = option.dataset.popoverOption || '';
                 const hidden = popover.querySelector('[data-popover-value]');
-                if (hidden) hidden.value = value;
+                if (hidden) {
+                    hidden.value = value;
+                    hidden.dispatchEvent(new Event('input', { bubbles: true }));
+                }
                 const label = popover.querySelector('[data-popover-label]');
                 if (label) label.textContent = option.querySelector('span')?.textContent || value;
                 panel.querySelectorAll('[data-popover-option]').forEach(other => other.setAttribute('aria-selected', String(other === option)));

@@ -24,6 +24,10 @@ def load_analyzer():
     # Declared dependency of the analyzer's attempt journal helper; isolated
     # harnesses must declare it so no real import chain or DB is reached.
     attempt_journal = ns(record_analysis_attempts=AsyncMock())
+
+    async def filter_by_context_receipts(content, *_args):
+        return content, set()
+
     media = type("MediaType", (), {
         "TEXT": ns(db_value="text"), "IMAGE": ns(db_value="image"), "VIDEO": ns(db_value="video")
     })
@@ -36,13 +40,15 @@ def load_analyzer():
         "app.models": ns(AgentScenario=type("Scenario", (), {}), AIAnalytics=type("Analytics", (), {}),
                          LLMModel=type("Model", (), {}), Source=type("Source", (), {})),
         "app.services.ai.attempt_journal": attempt_journal,
+        "app.services.ai.analysis_context": ns(analysis_fingerprint=Mock(return_value="fixture-fingerprint")),
         "app.services.ai.chain_resolver": ns(
             _normalize=Mock(), _token_set_ratio=Mock(), resolve_chain_async=AsyncMock()
         ),
         "app.services.ai.content_classifier": ns(ContentClassifier=ns(
             uncovered_attachment_items=classifier.ContentClassifier.uncovered_attachment_items)),
         "app.services.ai.dedup": ns(
-            batch_hash=Mock(), filter_analyzed=AsyncMock(), hashes_hash=Mock(), item_hash=Mock()
+            batch_hash=Mock(), filter_by_context_receipts=filter_by_context_receipts,
+            hashes_hash=Mock(), item_hash=Mock()
         ),
         "app.services.ai.scenario_schema": schema,
         "app.services.ai.json_schema_builder": ns(build_pydantic_model=Mock(), validate_with_pydantic=Mock()),
@@ -66,7 +72,7 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.module = load_analyzer()
         self.analyzer = self.module.AIAnalyzer()
         self.source = SimpleNamespace(id=1, tenant_id=1, source_type=None)
-        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None)
+        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None, is_active=True)
         self.good = {"parsed": {"analysis": "A measured conclusion"}, "response": {}}
         self.failed = {"parsed": {"analysis": "Error: " + PRIVATE}, "response": {"error": PRIVATE}}
         self.module.ContentClassifier.classify_content = Mock(return_value={"text": [1], "image": [2], "video": []})
@@ -78,7 +84,9 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.analyzer._create_unified_summary = AsyncMock(return_value=None)
         self.analyzer._generate_topic_chain_id = AsyncMock(return_value="chain")
         self.analyzer._resolve_chain_label = Mock(return_value="label")
-        self.saved = SimpleNamespace(id=7)
+        self.saved = SimpleNamespace(
+            id=7, summary_data={"summary": "content"}, response_payload={}
+        )
         self.analyzer._save_analysis = AsyncMock(return_value=self.saved)
         self.module.logger = Mock()
 
@@ -129,12 +137,14 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.base())
         self.assertEqual(self.analyzer.reported_errors, 0)
 
-    async def test_dedup_return_is_unchanged(self):
-        self.module.filter_analyzed.return_value = ([], self.saved)
+    async def test_exact_receipt_hit_is_neutral_and_skips_model_and_save(self):
+        self.module.filter_by_context_receipts = AsyncMock(return_value=([], {"covered-hash"}))
         result = await self.analyzer.base_analyze_content([{}], self.source, agent_scenario=self.scenario)
-        self.assertIs(result, self.saved)
+        self.assertIsNone(result)
+        self.assertEqual(self.analyzer.completed_hashes, {"covered-hash"})
         self.assertEqual(self.analyzer.reported_errors, 0)
         self.analyzer._analyze_text.assert_not_awaited()
+        self.analyzer._save_analysis.assert_not_awaited()
 
     async def test_summary_failure_reported_without_discarding_saved_row(self):
         self.analyzer._analyze_images.return_value = self.good
@@ -251,7 +261,7 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         self.source = SimpleNamespace(id=1, name="source", external_id="source", tenant_id=1)
         scenario = SimpleNamespace(id=1, is_active=True)
         self.staged = [SimpleNamespace(as_agent_item=Mock(return_value={"text": "input"}))]
-        self.fresh = [SimpleNamespace(id=2)]
+        self.fresh = [SimpleNamespace(id=2, summary_data={"summary": "content"}, response_payload={})]
         self.analyzer = SimpleNamespace(reported_errors=1, analyze_content=AsyncMock(return_value=self.fresh))
         self.factory = Mock(return_value=self.analyzer)
         self.row = SimpleNamespace(id=4, summary_data={"summary": "content"}, response_payload={})
@@ -267,6 +277,9 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
                                         created_at=SimpleNamespace(desc=lambda: None)),
             BotAction=SimpleNamespace(objects=Mock()),
         )
+        self.trigger_evaluator = SimpleNamespace(
+            should_analyze=AsyncMock(side_effect=lambda content, task: content)
+        )
         self.module = load_isolated_source(
             "_staged_analyzer_signal", ROOT / "app/jobs/handlers.py",
             {
@@ -277,8 +290,7 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
                     # tenant default — the resolution these tests assert.
                     get_source_scenario=AsyncMock(return_value=None))),
                 "app.services.ai.dedup": SimpleNamespace(analysed_hashes=dedup.analysed_hashes),
-                "app.services.ai.trigger_evaluator": SimpleNamespace(trigger_evaluator=SimpleNamespace(
-                    should_analyze=AsyncMock(side_effect=lambda content, task: content))),
+                "app.services.ai.trigger_evaluator": SimpleNamespace(trigger_evaluator=self.trigger_evaluator),
                 "app.services.social.guards": SimpleNamespace(extract_target_user=Mock(), guards_checker=Mock()),
                 "app.types": SimpleNamespace(BotActionStatus=Mock()),
                 "app.services.ai.analyzer": SimpleNamespace(AIAnalyzer=self.factory),
@@ -287,6 +299,7 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         self.module.logger = Mock()
         self.module._load_task = AsyncMock(return_value=None)
         self.module._task_payload = Mock(return_value={})
+        self.module._llm_failure_code = AsyncMock(return_value=None)
         self.module._resolve_content_window = Mock(return_value={})
         self.module._resolve_action_type = Mock(return_value=None)
         self.module._resolve_sources = AsyncMock(return_value=[self.source])
@@ -308,8 +321,10 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         result = await self.run_handler()
         self.assert_error_once(result)
         self.assertEqual((result["analyzed"], result["actions_created"]), (1, 0))
-        self.module._retire_staged.assert_awaited_once_with(self.fresh, 1)
-        self.module._count_failed_staged.assert_awaited_once_with(1, self.staged)
+        self.module._retire_staged.assert_awaited_once_with(
+            self.fresh, 1, 1, completed_hashes=set(), analysis_fingerprint=None
+        )
+        self.module._count_failed_staged.assert_awaited_once_with(1, self.staged, set())
         self.assertIs(self.analyzer.analyze_content.return_value, self.fresh)
 
     async def test_multiple_reported_calls_count_source_once(self):
@@ -326,8 +341,9 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         self.assert_error_once(await self.run_handler())
 
     async def test_later_outer_failure_does_not_double_source_error(self):
-        self.analytics.side_effect = RuntimeError(PRIVATE)
+        self.trigger_evaluator.should_analyze.side_effect = RuntimeError(PRIVATE)
         self.assert_error_once(await self.run_handler())
+        self.trigger_evaluator.should_analyze.assert_awaited_once()
 
     async def test_missing_diagnostic_is_unknown_not_error(self):
         del self.analyzer.reported_errors
@@ -406,13 +422,15 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
         fixture.scenario.id = 1
         fixture.scenario.is_active = True
         self.models.AgentScenario.objects.get_default_scenario.return_value = fixture.scenario
-        fixture.module.filter_analyzed.return_value = ([{"text": "input"}], None)
+        fixture.module.filter_by_context_receipts = AsyncMock(side_effect=lambda content, *_args: (content, set()))
         fixture.analyzer._auto_link_to_existing_theme = AsyncMock()
         self.factory.return_value = fixture.analyzer
         result = await self.run_handler()
         self.assert_error_once(result)
         self.assertEqual(result["analyzed"], 1)
-        self.module._retire_staged.assert_awaited_once_with([fixture.saved], 1)
+        self.module._retire_staged.assert_awaited_once_with(
+            [fixture.saved], 1, 1, completed_hashes=set(), analysis_fingerprint="fixture-fingerprint"
+        )
 
 
 if __name__ == "__main__":

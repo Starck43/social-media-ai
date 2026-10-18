@@ -63,6 +63,7 @@ def env(monkeypatch):
     )
     environment.filters["ui_label"] = str
     environment.filters["human_dt"] = lambda value, **kwargs: str(value or "")
+    environment.globals["static_v"] = lambda path: f"/static/{path}"
     # Match the production tojson policy while retaining all HTML-safe escaping.
     environment.policies["json.dumps_kwargs"] = {"sort_keys": True, "ensure_ascii": False}
     return environment
@@ -223,22 +224,34 @@ def test_default_text_attribute_and_textarea_escaping(env, payload):
     assert "".join(parsed.text) == payload * 2
 
 
-@pytest.mark.parametrize("template", ["task_detail.html", "source_detail.html"])
 @pytest.mark.parametrize("payload", PAYLOADS)
-def test_stored_names_and_edit_values_are_inert_on_real_detail_templates(page_env, template, payload):
-    rendered = page_env.get_template("web/" + template).render(**context(payload))
+def test_source_name_and_edit_value_are_inert_on_source_detail(page_env, payload):
+    rendered = page_env.get_template("web/source_detail.html").render(**context(payload))
     parsed = Document(rendered)
     assert_inert(parsed)
-    if template == "source_detail.html":
-        scripts = re.findall(r"<script>(.*?)</script>", rendered, re.S)
-        # The source page has separate static polling and job-modal scripts.
-        assert len(scripts) == 2
-        clean = page_env.get_template("web/" + template).render(**context("safe static name"))
-        assert re.findall(r"<script>(.*?)</script>", clean, re.S) == scripts
-    else:
-        assert not parsed.elements("script")
+    scripts = re.findall(r"<script>(.*?)</script>", rendered, re.S)
+    # The source page has separate static polling and job-modal scripts.
+    assert len(scripts) == 2
+    clean = page_env.get_template("web/source_detail.html").render(**context("safe static name"))
+    assert re.findall(r"<script>(.*?)</script>", clean, re.S) == scripts
     assert payload in "".join(parsed.text)
     assert next(attrs["value"] for attrs in parsed.elements("input") if attrs.get("name") == "name") == payload
+    messages = [attrs["data-confirm"] for _, attrs in parsed.tags if "data-confirm" in attrs]
+    assert messages and any(payload in message for message in messages)
+    assert any(
+        attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture" for attrs in parsed.elements("input")
+    )
+
+
+@pytest.mark.parametrize("payload", PAYLOADS)
+def test_task_detail_links_to_standalone_editor_and_keeps_names_inert(page_env, payload):
+    rendered = page_env.get_template("web/task_detail.html").render(**context(payload))
+    parsed = Document(rendered)
+    assert_inert(parsed)
+    assert payload in "".join(parsed.text)
+    assert any(attrs.get("href") == "/app/tasks/5/edit" for attrs in parsed.elements("a"))
+    assert not any(attrs.get("name") == "name" for attrs in parsed.elements("input"))
+    assert not any(attrs.get("action") == "/app/tasks/5/edit" for attrs in parsed.elements("form"))
     messages = [attrs["data-confirm"] for _, attrs in parsed.tags if "data-confirm" in attrs]
     assert messages and any(payload in message for message in messages)
     assert any(
@@ -275,7 +288,11 @@ def test_task_editor_json_roundtrips_without_script_breakout(page_env, payload):
     rendered = page_env.get_template("web/task_edit.html").render(**ctx)
     parsed = Document(rendered)
     assert_inert(parsed)
-    assert len(parsed.elements("script")) == 1
+    scripts = parsed.elements("script")
+    inline_scripts = [script for script in scripts if "src" not in script]
+    external_scripts = [script.get("src") for script in scripts if "src" in script]
+    assert len(inline_scripts) == 1
+    assert external_scripts == ["/static/js/task-schedule.js"]
     data = re.search(r"const TASK_EDIT = (.*);", rendered).group(1)
     assert json.loads(data) == ctx["edit"]
     inputs = parsed.elements("input")

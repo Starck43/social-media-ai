@@ -30,4 +30,15 @@ required for unresolved effects and accounting.
 
 ## Phase approval
 
+- [ ] P6-T04 — prevent source deletion from widening an explicitly scoped task
+  to all active workspace sources; accept: deleting the final selected source
+  atomically pauses or otherwise preserves the explicit task scope; genuinely
+  all-active tasks retain their contract; tenant/permission checks and concurrent
+  task edits are covered by focused PostgreSQL acceptance; depends: none;
+  owns: source deletion manager/service, affected delete callers and focused
+  tests; owner: unassigned; status: TODO. Confirmed at `a11f1f9`:
+  source deletion removes m2m links but leaves the task active, while an empty
+  link set means all active sources. See
+  [social analysis audit](../audits/2026-10-18-social-analysis-web.md).
+
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

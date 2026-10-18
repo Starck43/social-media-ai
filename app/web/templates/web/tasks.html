@@ -4,6 +4,10 @@
 {% block page_heading %}Задачи{% endblock %}
 {% block content %}
 <div x-data="tasksPage()">
+    <div class="ui-card mb-4">
+        <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Источники → Сценарий → Задача → Результаты</p>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Добавьте источники и настройте сценарий, затем создайте анализ соцсетей. Запуск можно выполнить сразу или сохранить задачу для очереди и расписания.</p>
+    </div>
     <div class="mb-6 flex items-center justify-between">
 
         <div class="flex items-center gap-3">
@@ -62,7 +66,7 @@
                 </td>
                 <td class="px-4 py-3">
                                 <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">
-                                    {{ task.job_type }}
+                                    {% if task.job_type == 'collect' %}Сбор данных{% elif task.job_type == 'analyze' %}Анализ соцсетей{% else %}{{ task.job_type }}{% endif %}
                                 </span>
                 </td>
                 <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
@@ -139,7 +143,7 @@
                             {% if is_superuser and filter_tenant_id %}<input type="hidden" name="tenant_id"
                                                                              value="{{ filter_tenant_id }}">{% endif %}
                              <button title="Выполнить сейчас" aria-label="Выполнить сейчас"
-                                     class="flex items-center justify-center rounded-md border border-emerald-700 p-1.5 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950">
+                                     class="flex items-center justify-center rounded-md border border-cyan-700 p-1.5 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950">
                                  <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
                                       stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z" />
@@ -245,17 +249,17 @@
                             </button>
                         </div>
 
-                        <template x-if="!isOnce">
+                        <template x-if="!isOnce && freq !== 'custom'">
                             <div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Время</label>
-                                        <input type="time" name="sched_time" x-model="time" value="09:00"
+                                        <input type="time" name="sched_time" x-model="time" @input="markChanged()" value="09:00"
                                                class="{{ control() }}">
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Периодичность</label>
-                                        <select x-model="freq"
+                                        <select x-model="freq" @change="markChanged()"
                                                 class="{{ control() }}">
                                             <option value="daily">Каждый день</option>
                                             <option value="weekly">По дням недели</option>
@@ -283,9 +287,9 @@
                                 <template x-if="freq === 'monthly'">
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">День месяца</label>
-                                        <select x-model.number="monthday"
+                                        <select x-model.number="monthday" @change="markChanged()"
                                                 class="{{ control() }}">
-                                            <template x-for="d in 28" :key="d">
+                                            <template x-for="d in 31" :key="d">
                                                 <option :value="d" x-text="d"></option>
                                             </template>
                                         </select>
@@ -295,7 +299,7 @@
                                 <template x-if="freq === 'interval'">
                                     <div>
                                         <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Интервал</label>
-                                        <select x-model.number="everyHours"
+                                        <select x-model.number="everyHours" @change="markChanged()"
                                                 class="{{ control() }}">
                                             <template x-for="h in intervalOptions" :key="h">
                                                 <option :value="h" x-text="h + ' ч'"></option>
@@ -306,7 +310,16 @@
                             </div>
                         </template>
 
-                        <input type="hidden" name="cron_custom" :value="cron">
+                        <template x-if="freq === 'custom'">
+                            <div>
+                                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Точное cron-выражение</label>
+                                <input type="text" name="cron_custom" x-model="rawCron" @input="markChanged()" class="{{ control('font-mono') }}">
+                                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Для расширенного расписания введите корректное cron-выражение.</p>
+                                <button type="button" @click="useBuilder()" class="mt-2 text-xs text-cyan-700 dark:text-cyan-400 hover:underline">Вернуться к простому расписанию</button>
+                            </div>
+                        </template>
+                        <template x-if="freq !== 'custom'"><input type="hidden" name="cron_custom" :value="cron"></template>
+                        <button x-show="freq !== 'custom'" type="button" @click="useCustom()" class="text-xs text-cyan-700 dark:text-cyan-400 hover:underline">Ввести cron вручную</button>
                     </div>
                 </div>
 
@@ -332,19 +345,18 @@
                 </div>
                 {% endif %}
 
-                {% if scenarios %}
                 <div>
                     <label for="add-scenario_id" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сценарий для агента</label>
                     <select id="add-scenario_id" name="scenario_id" x-model="task.scenario_id"
                             class="{{ control() }}">
-                        <option value="">— не выбран —</option>
+                        <option value="">Сценарий workspace по умолчанию</option>
                         {% for scenario in scenarios %}
-                        <option value="{{ scenario.id }}">{{ scenario.name }}</option>
+                        <option value="{{ scenario.id }}" {% if scenario.id == prefill_scenario_id %}selected{% endif %}>{{ scenario.name }}</option>
                         {% endfor %}
                     </select>
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Применяется для типа «Анализ»</p>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Методология анализа. Для анализа нужен выбранный активный сценарий или активный сценарий по умолчанию.
+                        {% if not scenarios and perms and perms.can('agentscenario', 'create') %}<a class="text-cyan-700 underline dark:text-cyan-300" href="/app/scenarios/new">Создать сценарий</a>{% endif %}</p>
                 </div>
-                {% endif %}
 
                 {# The same conditional targets as on the edit page: the
                    scenario's analysis types pick which payload keys the form
@@ -404,42 +416,43 @@
                    must not reach the POST for the others — `_payload_from_form`
                    does not gate them by type. #}
                 <div class="grid grid-cols-2 gap-3">
-                    <template x-if="task.job_type === 'collect'">
+                    <template x-if="task.job_type === 'analyze'">
                         <div>
                             <label for="add-monitored" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживать
                                 пользователей</label>
                             <input id="add-monitored" name="monitored_users" x-model="task.monitored_users"
                                    placeholder="username1, username2"
                                    class="{{ control() }}">
-                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор)</p>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Будут собраны публикации этих пользователей.</p>
                         </div>
                     </template>
-                    <template x-if="task.job_type === 'collect' || task.job_type === 'analyze'">
+                    <template x-if="task.job_type === 'analyze'">
                         <div>
                             <label for="add-excluded" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Исключить
                                 пользователей</label>
                             <input id="add-excluded" name="excluded_users" x-model="task.excluded_users"
                                    placeholder="username1, username2"
                                    class="{{ control() }}">
-                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел (сбор/анализ)</p>
+                            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую или пробел.</p>
                         </div>
                     </template>
                 </div>
 
                 {{ task_trigger_actions("task", "task.job_type", trigger_types, action_types) }}
 
+                <p class="text-xs text-slate-600 dark:text-slate-400">Сохранение добавит задачу в список; второй вариант сохранит её и сразу поставит запуск в очередь.</p>
                 <div class="flex gap-2 pt-2">
                     <button type="button" @click="openAdd = false"
                             class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
                         Отмена
                     </button>
                     <button type="submit" x-bind:disabled="sending"
-                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Создать задачу
+                            class="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Сохранить
                     </button>
                     <button type="submit" name="run_now" value="on" x-bind:disabled="sending"
-                            class="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Создать и выполнить
+                            class="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Сохранить и поставить в очередь
                     </button>
                 </div>
             </form>
@@ -508,7 +521,7 @@
                             </div>
                         </template>
                         <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                            <span x-text="`Источников обработано: ${runModal.data.progress.completed} из ${runModal.data.progress.total}`"></span>
+                            <span x-text="`${runModal.data.progress.phase || 'Обработка источников'}: ${runModal.data.progress.completed} из ${runModal.data.progress.total} источников`"></span>
                             <span x-text="`${runModal.data.progress.percent}%`"></span>
                         </div>
                         <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -784,8 +797,12 @@
     </div>
 </div>
 
+<script src="{{ static_v('js/task-schedule.js') }}"></script>
 <script>
     const RUN_JOB_ID = {{ job_id|tojson if job_id else "null" }};
+    const OPEN_ADD_MODAL = {{ open_add_modal|default(false)|tojson }};
+    const PREFILL_SOURCE_IDS = {{ prefill_source_ids|default([])|tojson }};
+    const PREFILL_SCENARIO_ID = {{ prefill_scenario_id|default(none)|tojson }};
     const RUNNING_JOBS = {{ running_jobs|tojson }};
     const RUN_CSRF = {{ csrf|tojson }};
     const RUN_TERMINAL = ["done", "failed", "cancelled", "not_found"];
@@ -803,9 +820,9 @@
         return {
             sending: false,
             task: {
-                source_ids: [],
-                job_type: "collect",
-                scenario_id: "",
+                source_ids: PREFILL_SOURCE_IDS.slice(),
+                job_type: "analyze",
+                scenario_id: PREFILL_SCENARIO_ID || "",
                 start_date: "",
                 end_date: "",
                 digest_period: "day",
@@ -848,7 +865,7 @@
 
     function tasksPage() {
         return {
-            openAdd: false,
+            openAdd: OPEN_ADD_MODAL,
             runModal: {
                 open: RUN_JOB_ID !== null,
                 loading: RUN_JOB_ID !== null,
@@ -1074,97 +1091,6 @@
         }
     }
 
-    function scheduleBuilder() {
-        const pad = n => String(n).padStart(2, "0")
-        const toCron = (h, m, day, dow) => `${pad(m)} ${pad(h)} ${day} * ${dow}`
-        const parseCron = (cron) => {
-            const st = { isOnce: cron === "@once" }
-            if (st.isOnce) return st
-            const [min, hour, dom, mon, dow] = (cron || "").split(/\s+/)
-            const h = parseInt(hour, 10)
-            const m = parseInt(min, 10)
-            const t = `${pad(isNaN(h) ? 9 : h)}:${pad(isNaN(m) ? 0 : m)}`
-            Object.assign(st, { time: t, weekdays: [1], monthday: 1, everyHours: 6 })
-            if (hour.startsWith("*/")) {
-                st.freq = "interval"
-                st.everyHours = parseInt(hour.slice(2), 10) || 6
-            } else if (dow && dow !== "*") {
-                st.freq = "weekly"
-                st.weekdays = dow.split(",").map(Number).filter(n => n >= 1 && n <= 7)
-                if (!st.weekdays.length) st.weekdays = [1]
-            } else if (dom && dom !== "*") {
-                st.freq = "monthly"
-                st.monthday = parseInt(dom, 10) || 1
-            } else {
-                st.freq = "daily"
-            }
-            return st
-        }
-        return {
-            time: "09:00",
-            freq: "daily",
-            isOnce: false,
-            weekdays: [1],
-            monthday: 1,
-            everyHours: 6,
-            days: [
-                { value: 1, label: "Пн" }, { value: 2, label: "Вт" }, { value: 3, label: "Ср" },
-                { value: 4, label: "Чт" }, { value: 5, label: "Пт" }, { value: 6, label: "Сб" }, {
-                    value: 7,
-                    label: "Вс",
-                },
-            ],
-            intervalOptions: [1, 2, 3, 4, 6, 8, 12],
-            get cron() {
-                if (this.isOnce) return "@once"
-                const [h, m] = this.time.split(":")
-                switch (this.freq) {
-                    case "weekly":
-                        return toCron(h, m, "*", this.weekdays.slice().sort((a, b) => a - b).join(","))
-                    case "monthly":
-                        return toCron(h, m, this.monthday, "*")
-                    case "interval":
-                        return `0 */${this.everyHours} * * *`
-                    default:
-                        return toCron(h, m, "*", "*")
-                }
-            },
-            load(cron) {
-                Object.assign(this, parseCron(cron))
-            },
-            presetCron(key) {
-                if (key === "daily") return toCron(9, 0, "*", "*")
-                if (key === "weekly") return toCron(9, 0, "*", "1")
-                if (key === "every_6_hours") return "0 */6 * * *"
-                if (key === "once") return "@once"
-                return null
-            },
-            isPreset(key) {
-                return this.cron === this.presetCron(key)
-            },
-            applyPreset(key) {
-                this.isOnce = false
-                if (key === "daily") {
-                    this.freq = "daily"
-                    this.time = "09:00"
-                } else if (key === "weekly") {
-                    this.freq = "weekly"
-                    this.time = "09:00"
-                    this.weekdays = [1]
-                } else if (key === "every_6_hours") {
-                    this.freq = "interval"
-                    this.everyHours = 6
-                } else if (key === "once") {
-                    this.isOnce = true
-                }
-            },
-            toggleDay(v) {
-                const i = this.weekdays.indexOf(v)
-                if (i === -1) this.weekdays.push(v)
-                else this.weekdays.splice(i, 1)
-                if (!this.weekdays.length) this.weekdays.push(v)
-            },
-        }
-    }
+    function scheduleBuilder() { return window.taskScheduleBuilder(); }
 </script>
 {% endblock %}

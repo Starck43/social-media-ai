@@ -261,7 +261,7 @@ async def _llm_failure_code(source_id: int, since: Any) -> str | None:
     return None
 
 
-async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -> dict[str, Any]:
     """
     Collect content from sources.
 
@@ -292,13 +292,12 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     # The job's own id, used to tie staged raw content back to this run so it
     # can be retired once an analysis has consumed it.
     run_id = payload.get("job_id")
-    # Whether this task wants its freshly collected content analysed right away.
+    # Whether this task wants its freshly collected content analysed inline.
     # Default False: a `collect` task parks the raw batch in `collected_items`
     # for a separate `analyze` task to drain (the workspace ships collect and
-    # analyze as two tasks). Set `analyze_inline: true` to collect and analyse
-    # in one pass — that case stages first and retires the rows the analysis
-    # actually stored.
-    analyze_inline = task_payload.get("analyze_inline")
+    # analyze as two tasks). A unified web run uses `stage_only` and starts its
+    # analysis pass after this collection has staged the raw rows.
+    analyze_inline = False if stage_only else task_payload.get("analyze_inline")
     if analyze_inline is None:
         analyze_inline = payload.get("analyze_inline", False)
 
@@ -347,6 +346,8 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
         "per_source": [],
     }
     from app.jobs import progress as job_progress
+    if stage_only:
+        await job_progress.begin_phase("collection")
 
     for source in sources:
         # Before the exclusion check: progress counts every resolved source.
@@ -659,6 +660,17 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
     task = await _load_task(payload.get("agent_task_id"))
     task_payload = _task_payload(task)
+    unified_run = bool(task_payload.get("collect_before_analyze"))
+    collection_stats = await handle_collect(payload, stage_only=True) if unified_run else None
+    collection_by_source = {
+        row["source_id"]: row
+        for row in (collection_stats or {}).get("per_source", [])
+        if isinstance(row, dict) and type(row.get("source_id")) is int
+    }
+    from app.jobs import progress as job_progress
+
+    if unified_run:
+        await job_progress.begin_phase("analysis")
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
     excluded_users = task_payload.get("excluded_users") or []
     force_reanalyze = bool(payload.get("force_reanalyze")) if task is None else False
@@ -684,21 +696,40 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         "staged_errors": 0,
         "per_source": [],
     }
+    if collection_stats is not None:
+        # Keep collection diagnostics alongside analysis results so the single
+        # web job reports partial collection even when backlog analysis worked.
+        stats["collection"] = collection_stats
+        stats["collection_errors"] = int(collection_stats.get("error", 0) or 0)
+        stats["collection_rate_limited"] = int(collection_stats.get("rate_limited", 0) or 0)
+        stats["error"] += stats["collection_errors"]
+        stats["error_sources"].extend(collection_stats.get("error_sources") or [])
+        # Collector exceptions may contain provider response details. The
+        # analysis job exposes bounded codes and source outcomes instead.
+        collection_stats.pop("error_messages", None)
+        collection_stats.pop("per_source", None)
+        collection_error_source_ids = {
+            source_id
+            for source_id, row in collection_by_source.items()
+            if row.get("error") is True or row.get("outcome") in {"error", "auth_required"}
+        }
+
+    if collection_stats is None:
+        collection_error_source_ids = set()
 
     def record_error(per: dict[str, Any], *, staged: bool = False) -> None:
         # Count affected sources, not exceptions: staging and later processing
         # can both fail for one source. Never persist raw exception text here.
         if not per.get("error"):
-            stats["error"] += 1
-            stats["error_sources"].append(per["name"])
+            if per["source_id"] not in collection_error_source_ids:
+                stats["error"] += 1
+                stats["error_sources"].append(per["name"])
         per["error"] = True
         if staged and not per.get("staged_error"):
             stats["staged_errors"] += 1
             per["staged_error"] = True
 
     sources = await _resolve_sources(task, payload)
-
-    from app.jobs import progress as job_progress
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])
@@ -864,7 +895,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
             # Get recent analytics for this source
-            if analytics is None:
+            if analytics is None and not (unified_run and not staged):
                 analytics = (
                     await AIAnalytics.objects.filter(source_id=source.id)
                     .order_by(AIAnalytics.created_at.desc()).limit(10)
@@ -983,6 +1014,21 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             # analyse) and every one of them is still an outcome the user should
             # be able to reach from the modal.
             stats["per_source"].append(per)
+            collection_row = collection_by_source.get(per["source_id"])
+            if collection_row is not None:
+                per["collection"] = {
+                    key: collection_row.get(key)
+                    for key in ("outcome", "items", "new_items", "error", "rate_limited", "content_hashes")
+                    if key in collection_row
+                }
+                if collection_row.get("error") is True or collection_row.get("outcome") in {
+                    "error", "auth_required", "rate_limited"
+                }:
+                    per["collection_error"] = True
+                    if collection_row.get("error") is True or collection_row.get("outcome") in {
+                        "error", "auth_required"
+                    }:
+                        per["error"] = True
             if not progress_attempted and "raw_total" not in per:
                 # Unknown is retained as unknown; inline collection or an
                 # earlier scenario failure cannot claim a staged denominator.

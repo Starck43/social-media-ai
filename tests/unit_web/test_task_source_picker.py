@@ -61,6 +61,7 @@ def env(monkeypatch):
     )
     environment.filters["ui_label"] = str
     environment.filters["human_dt"] = lambda value, **kwargs: str(value or "")
+    environment.globals["static_v"] = lambda path: f"/static/{path}"
     environment.policies["json.dumps_kwargs"] = {"sort_keys": True, "ensure_ascii": False}
     return environment
 

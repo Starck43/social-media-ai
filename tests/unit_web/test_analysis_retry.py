@@ -276,11 +276,12 @@ def render_detail(**overrides):
     return env.get_template("web/analytics_detail.html").render(**template_context(**overrides))
 
 
-def test_retry_template_reuses_post_csrf_confirmation_and_existing_button_style():
-    html = render_detail(is_superuser=False, platform_name="<script>bad</script>")
+@pytest.mark.parametrize("is_superuser", [False, True])
+def test_retry_template_reuses_post_csrf_confirmation_and_existing_button_style(is_superuser):
+    html = render_detail(is_superuser=is_superuser, platform_name="<script>bad</script>")
     assert 'action="/app/analytics/1127/retry"' in html
     assert 'method="post"' in html and 'name="_csrf" value="fixture-only"' in html
-    assert 'name="tenant_id" value="7"' in html
+    assert ('name="tenant_id" value="7"' in html) is is_superuser
     assert 'data-confirm-title="Повторить анализ?"' in html
     assert "bg-violet-500" in html
     assert "не пересобирает эту запись целиком" in html
@@ -461,6 +462,9 @@ def test_source_shows_raw_content_delete_only_to_admin_and_when_idle():
     assert 'action="/app/sources/2939/delete-unprocessed"' in source_html(is_source_admin=True)
     assert "delete-unprocessed" not in source_html(
         is_source_admin=True, running={"collect": True, "analyze": False}
+    )
+    assert "delete-unprocessed" not in source_html(
+        is_source_admin=True, running={"collect": False, "analyze": True}
     )
 
 

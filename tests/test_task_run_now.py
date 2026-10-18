@@ -24,7 +24,7 @@ from httpx import ASGITransport, AsyncClient
 from app.core.database import new_session
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import AgentTask, CollectedItem, Job, Platform, Source, User
+from app.models import AgentScenario, AgentTask, CollectedItem, Job, Platform, Source, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.types import SourceType
 
@@ -88,7 +88,25 @@ async def _make_source(tenant_id: int) -> Source:
         )
 
 
+async def _ensure_default_scenario(tenant_id: int) -> None:
+    """Provide the methodology required by unified web analysis fixtures."""
+    with tenant_scope(bypass=True):
+        existing = await AgentScenario.objects.get_default_scenario(tenant_id=tenant_id)
+        if existing is None:
+            await AgentScenario.objects.create(
+                name=_name("default-scenario"),
+                analysis_types=["themes"],
+                is_active=True,
+                is_default=True,
+                tenant_id=tenant_id,
+            )
+
+
 async def _create(client: AsyncClient, task_name: str, source_id: int, run_now: bool = False, path="/app/tasks"):
+    with tenant_scope(bypass=True):
+        source = await Source.objects.get(id=source_id)
+    assert source is not None
+    await _ensure_default_scenario(source.tenant_id)
     data = {
         "name": task_name,
         "job_type": "analyze",

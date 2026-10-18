@@ -26,6 +26,8 @@ _COLLECT_RUNNING_LABEL = "Сбор данных"
 _COLLECT_DONE_LABEL = "Сбор завершён"
 _COLLECT_INLINE_RUNNING_LABEL = "Сбор и анализ"
 _COLLECT_INLINE_DONE_LABEL = "Сбор и анализ завершены"
+_UNIFIED_COLLECTION_RUNNING_LABEL = "Сбор новых данных"
+_UNIFIED_COLLECTION_DONE_LABEL = "Сбор завершён, анализ впереди"
 _KNOWN_JOB_STATUSES = frozenset({"pending", "running", "done", "failed"})
 
 
@@ -76,6 +78,7 @@ def project_job(job: Any, source_id: int) -> dict[str, Any]:
             heartbeat = heartbeat if heartbeat.tzinfo else heartbeat.replace(tzinfo=timezone.utc)
             unconfirmed = now - heartbeat.astimezone(timezone.utc) > timedelta(seconds=90)
         item_state = snapshot_item.get("state") if snapshot_item else None
+        unified_collection = getattr(job, "job_type", None) == "analyze" and (snapshot or {}).get("phase") == "collection"
         if status == "running" and snapshot_item is not None:
             if item_state == "waiting":
                 status, label = "pending", _STATUS_LABELS["pending"]
@@ -84,11 +87,15 @@ def project_job(job: Any, source_id: int) -> dict[str, Any]:
             elif item_state == "done":
                 status = "done"
                 label = _STATUS_LABELS["done"]
-                if getattr(job, "job_type", None) == "collect":
+                if unified_collection:
+                    label = _UNIFIED_COLLECTION_DONE_LABEL
+                elif getattr(job, "job_type", None) == "collect":
                     label = _COLLECT_INLINE_DONE_LABEL if getattr(job, "_analysis_inline", False) else _COLLECT_DONE_LABEL
             elif item_state == "running":
                 if unconfirmed:
                     status, label = "unconfirmed", _STATUS_LABELS["unconfirmed"]
+                elif unified_collection:
+                    label = _UNIFIED_COLLECTION_RUNNING_LABEL
                 elif getattr(job, "job_type", None) == "collect":
                     label = (
                         _COLLECT_INLINE_RUNNING_LABEL
@@ -115,6 +122,8 @@ def project_job(job: Any, source_id: int) -> dict[str, Any]:
         # bar stays visible either way.
         if item.get("error") is True or item.get("outcome") == "error":
             status, label = "failed", _STATUS_LABELS["failed"]
+        elif item.get("collection_error") is True or item.get("outcome") == "rate_limited":
+            status, label = "partial", _STATUS_LABELS["partial"]
         elif total == 0 and processed == 0:
             status, label = "empty", _STATUS_LABELS["empty"]
         elif total is not None and total > 0 and processed is not None and processed < total:

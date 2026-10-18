@@ -4,6 +4,10 @@
 {% block page_heading %}Источники{% endblock %}
 {% block content %}
 <div x-data="sourcesPage()">
+    <p class="mb-4 text-sm text-slate-600 dark:text-slate-400">Источники — данные для анализа. Подключите источник, выберите методику в сценарии и задайте расписание в задаче.
+        {% if perms and perms.can('agentscenario', 'view') %}<a href="/app/scenarios" class="text-cyan-700 dark:text-cyan-400 hover:underline">Сценарии →</a>{% endif %}
+        {% if perms and perms.can('agenttask', 'create') %}<a href="/app/tasks?create=1" class="ml-2 text-cyan-700 dark:text-cyan-400 hover:underline">Создать задачу →</a>{% endif %}
+    </p>
     <div class="mb-6 flex items-center justify-between">
 
         <div class="flex items-center gap-3">

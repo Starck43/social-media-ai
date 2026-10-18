@@ -454,7 +454,6 @@ async def source_detail(request: Request, source_id: int):
     *what did it produce*.
     """
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_task import AgentTask, agent_task_sources
     from app.models.ai_analytics import AIAnalytics
     from app.web.tasks import _diagnostics_admin
 
@@ -489,22 +488,27 @@ async def source_detail(request: Request, source_id: int):
             .values(func.coalesce(func.sum(AIAnalytics.estimated_cost), 0))
             .scalar(0)
         )
-        # Tasks that actually drive this source. The m2m row lives in
-        # `agent_task_sources`, and the manager's kwarg lookup cannot express it:
-        # `sources__id` splits on the last `__`, so `id` is parsed as a column
-        # lookup and rejected. An explicit join keeps the read on the guarded
-        # manager instead of a hand-built session, and the table is keyed by
-        # (task_id, source_id) so no row can duplicate a task.
-        # A task with no sources at all ("all active") is reported by the
-        # readiness hint below.
-        linked_tasks = AgentTask.objects.join(agent_task_sources).filter(agent_task_sources.c.source_id == source.id)
-        schedules = await linked_tasks.order_by(AgentTask.created_at.desc())
-        usage_count = (
-            await AgentTask.objects.join(agent_task_sources)
-            .filter(agent_task_sources.c.source_id == source.id)
-            .values(func.count(func.distinct(AgentTask.id)))
-            .scalar(0)
-        )
+    can_view_tasks = perms_can(request, "agenttask", "view")
+    schedules = []
+    effective_schedules = {}
+    usage_count = None
+    if can_view_tasks:
+        from app.core.tenant_context import tenant_scope
+        from app.models.managers.agent_task_manager import AgentTaskManager
+
+        task_manager = AgentTaskManager()
+        with tenant_scope(source.tenant_id):
+            schedules = await task_manager.for_source(source.id, source.tenant_id, source_is_active=source.is_active)
+            workspace_active_source_ids = await task_manager.get_workspace_active_source_ids()
+            effective_schedules = await task_manager.effective_active_map(schedules, workspace_active_source_ids)
+        usage_count = len(schedules)
+    schedule_tasks = schedules
+    is_ready, readiness_hint = await _readiness(
+        source, schedule_tasks if can_view_tasks else None, effective_schedules if can_view_tasks else None
+    )
+    schedules = [] if not can_view_tasks else [
+        _schedule_view(task, effective_schedules.get(task.id, False)) for task in schedule_tasks
+    ]
 
     mode_key = (source.params or {}).get("mode", "pull")
     if mode_key not in dict(COLLECTION_MODES):
@@ -542,8 +546,6 @@ async def source_detail(request: Request, source_id: int):
     else:
         owner_label = "Не определён"
         owner_hint = "В этом пространстве нет пользователя с веб-доступом."
-
-    is_ready, readiness_hint = await _readiness(source, schedules)
 
     # The owner's own connection, shown in "Чей токен" — the exact place an
     # operator looks when one source is silent while the rest work.
@@ -600,7 +602,6 @@ async def source_detail(request: Request, source_id: int):
     # `collections` is empty even though raw rows are staged. Anyone who may
     # work with tasks sees the counts; readable texts stay admin-only.
     live_queue: dict[str, Any] = {"pending": 0, "given_up": 0, "preview": []}
-    can_view_tasks = perms_can(request, "agenttask", "view")
     show_live_queue = can_view_tasks and not collections and pending_count > 0
     if show_live_queue:
         preview_rows: list[Any] = []
@@ -632,6 +633,7 @@ async def source_detail(request: Request, source_id: int):
         given_up_in_window=given_up_in_window,
         given_up_history=given_up_history,
         window_label=window_label,
+        window_scope=window.get("scope_label", ""),
         filter_tenant_id=filter_tenant_id,
         mode=_mode_view(mode_key),
         mode_label=dict(COLLECTION_MODES)[mode_key],
@@ -640,8 +642,9 @@ async def source_detail(request: Request, source_id: int):
         owner_hint=owner_hint,
         owner_connection=owner_connection,
         token_owner=token_owner,
-        schedules=[_schedule_view(s) for s in schedules],
+        schedules=schedules,
         usage_count=usage_count,
+        can_view_tasks=can_view_tasks,
         can_delete=perms_can(request, "source", "delete"),
         is_source_admin=_diagnostics_admin(request),
         recent=recent,
@@ -735,15 +738,18 @@ def _analysis_row(a) -> dict:
     }
 
 
-def _schedule_view(task) -> dict:
+def _schedule_view(task, effective_active: bool | None = None) -> dict:
     """A task as the schedule list needs it."""
     from app.tasks.cron import cron_to_human
 
+    effective = task.is_active if effective_active is None else effective_active
     return {
+        "id": task.id,
         "name": task.name,
         "is_active": task.is_active,
+        "effective_active": effective,
         "cron_label": cron_to_human(task.cron_expr),
-        "next_run_label": human_datetime(task.next_run_at),
+        "next_run_label": human_datetime(task.next_run_at) if effective else "не запланирован",
     }
 
 
@@ -766,18 +772,22 @@ async def _resolve_source_window(source) -> dict:
     source's own params — the same priority the handlers use. Returns a dict
     suitable for merging into a job payload (`{"cli_dates": {...}}` or `{}`).
     """
-    from app.models.agent_task import AgentTask, agent_task_sources
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
-    linked = (
-        await AgentTask.objects.join(agent_task_sources)
-        .filter(agent_task_sources.c.source_id == source.id)
-        .order_by(AgentTask.created_at.desc())
-        .first()
+    linked = await AgentTaskManager().for_source(
+        source.id,
+        source.tenant_id,
+        source_is_active=source.is_active,
+        include_all_active=False,
     )
-    cli_dates = (linked.payload or {}).get("cli_dates") if linked else None
+    selected = linked[0] if linked else None
+    cli_dates = (selected.payload or {}).get("cli_dates") if selected else None
+    scope_label = f"по задаче «{selected.name}»" if selected and cli_dates else "по настройкам источника"
     if not cli_dates:
         cli_dates = (source.params or {}).get("cli_dates")
-    return {"cli_dates": cli_dates} if cli_dates else {}
+    if len(linked) > 1 and selected and cli_dates:
+        scope_label += " (использована наиболее новая из связанных задач)"
+    return {"cli_dates": cli_dates, "scope_label": scope_label} if cli_dates else {"scope_label": scope_label}
 
 
 def _last_checked_label(last_checked) -> str:
@@ -813,19 +823,19 @@ RAW_PREVIEW_CHARS = 160
 
 
 async def _recent_collections(source_id: int) -> list[dict]:
-    """Recent collect runs for one source, newest first, with what each yielded.
+    """Recent collection stages for one source, newest first, with what each yielded.
 
     The collect handler records a per-source breakdown in `jobs.result`
     (`per_source`), keyed by source id — that is the only place the number of
     items a *specific* source produced survives, because `result["items"]` is a
-    single total for the whole run. Jobs written before that breakdown existed
-    have no entry for this source and are skipped rather than shown as zero: "we
-    do not know" and "nothing was collected" are different answers.
+    single total for the whole run. Unified analyze jobs carry a nested
+    `collection` entry; standalone analysis jobs are ignored. Jobs written
+    before the breakdown existed are skipped rather than shown as zero.
     """
     from app.models.job import Job
 
     rows = (
-        await Job.objects.filter(job_type="collect")
+        await Job.objects.filter(job_type__in=("collect", "analyze"))
         .order_by(Job.created_at.desc())
         .limit(COLLECTION_HISTORY_LIMIT * 10)
     )
@@ -836,6 +846,10 @@ async def _recent_collections(source_id: int) -> list[dict]:
         for entry in result.get("per_source") or []:
             if entry.get("source_id") != source_id:
                 continue
+            collection = entry.get("collection") if isinstance(entry.get("collection"), dict) else None
+            if job.job_type == "analyze" and collection is None:
+                continue
+            collection = collection or entry
             out.append(
                 {
                     "job_id": job.id,
@@ -843,10 +857,10 @@ async def _recent_collections(source_id: int) -> list[dict]:
                     # `items` is what the platform returned, `new_items` what of it
                     # was unseen. Absent on jobs written before the counter existed
                     # — None renders as "—" rather than a fabricated zero.
-                    "items": int(entry.get("items") or 0),
-                    "new_items": None if entry.get("new_items") is None else int(entry["new_items"]),
-                    "analyzed": int(entry.get("analyzed") or 0),
-                    "outcome": entry.get("outcome") or "empty",
+                    "items": int(collection.get("items") or 0),
+                    "new_items": None if collection.get("new_items") is None else int(collection["new_items"]),
+                    "analyzed": int(entry.get("analyzed") or collection.get("analyzed") or 0),
+                    "outcome": collection.get("outcome") or entry.get("outcome") or "empty",
                     "failed": job.status == "failed",
                     # Filled in below, once every run id is known. Both are
                     # seeded so the template never compares an undefined value.
@@ -911,7 +925,7 @@ def _preview(text: str | None, limit: int = RAW_PREVIEW_CHARS) -> str:
     return cut.rstrip(" .,;:!?—-") + " …"
 
 
-async def _readiness(source, schedules) -> tuple[bool, str]:
+async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool, str]:
     """Why nothing is coming out of this source — or True when nothing is wrong.
 
     The reasons are ordered as an operator would hit them, so the hint names
@@ -922,10 +936,16 @@ async def _readiness(source, schedules) -> tuple[bool, str]:
     """
     if not source.is_active:
         return False, "Источник выключен — сбор по нему не идёт."
-    if not schedules:
+    if schedules is None:
+        pass  # Task visibility is denied; still check the source and its access below.
+    elif not schedules:
         return False, "Ни одна задача не ссылается на этот источник — сбор не запускается."
-    if not any(s.is_active for s in schedules):
+    elif not any(s.is_active for s in schedules):
         return False, "Все задачи по этому источнику на паузе."
+    if schedules is not None and effective_schedules is not None and not any(
+        effective_schedules.get(task.id, False) for task in schedules
+    ):
+        return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
     if (source.params or {}).get("mode", "pull") == "push":
         # Nothing to schedule: pushes arrive on the channel listener's own.
         return False, "Push-источник наполняет канал Telegram — проверьте, что бот подключён."
@@ -985,7 +1005,9 @@ async def source_collect_now(
         from app.jobs.source_activity import SourceJobBusy
 
         try:
-            outcome = await run_job_inline("collect", {"source_ids": [source.id], **window})
+            outcome = await run_job_inline(
+                "collect", {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})}
+            )
         except SourceJobBusy:
             add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
             return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
@@ -1067,7 +1089,7 @@ async def source_analyze_now(
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
                 job = await JobManager().admit_source_job(
                     job_type="analyze",
-                    payload={"source_ids": [source.id], **window},
+                    payload={"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
                     tenant_id=tenant_id,
                     session=session,
                 )

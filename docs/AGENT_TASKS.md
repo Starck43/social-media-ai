@@ -234,12 +234,35 @@ no migration is needed. Note that the CLI and the agent's task tool
 currently expose a narrower allowlist than the registry, so not every handler
 is reachable through them yet.
 
-In the web UI (`/app/tasks`) a task is edited in a modal that is addressed by
-`?task_id=<id>`: opening it writes the parameter (`history.replaceState`),
-closing removes it, and loading the URL opens that editor. The row data the
-modal binds comes from `_edit_payload()` (`app/web/tasks.py`), built from the
-rows the page already shows — so a link to a task outside the current
-workspace (or one a superuser filtered out) opens nothing.
+In the web UI (`/app/tasks`) a task is edited on `/app/tasks/{id}/edit`.
+The `/app/tasks?task_id=<id>` compatibility link redirects there only when the
+caller has edit permission. `_edit_payload()` (`app/web/tasks.py`) loads the
+workspace-scoped task and its complete source, scenario, target and trigger
+configuration before rendering the standalone editor.
+
+The web task form presents source work as one **Анализ соцсетей** task. Saving
+it stores the existing `analyze` job type with `collect_before_analyze=true`:
+the handler first stages fresh source data without inline model calls, then
+analyzes that backlog. Any raw rows the model cannot process remain staged for
+a later run. The `collect` job type remains available to CLI/API/chat and for
+technical history compatibility, but is not offered as a separate web task.
+The source page reports raw waiting/suspended rows, recent analyses and total
+analytics cost; only users with `agenttask.view` see task names and schedules.
+
+The operator setup path is **source → scenario → task → results**. A scenario
+holds analysis methodology and can be reused; each task selects its scenario,
+sources, target filters, date window and schedule. A missing task-level scenario
+uses the workspace default. Source and scenario detail pages link directly to
+pre-filled task creation when the caller has `agenttask.create`; task links and
+usage counts are gated by `agenttask.view`.
+
+Unified web analysis requires an active selected scenario or an active workspace
+default before creation or launch. A paused task may retain its inactive
+selected scenario; missing methodology does not prevent pausing a task.
+The editor requires JavaScript and disables saving when it is unavailable,
+preventing partial parameter loss. Its shared cron builder preserves the original
+expression until an explicit schedule change; unsupported visual patterns stay
+editable as raw cron.
 
 A task's own page is `/app/tasks/{id}`. The queue links to it per row
 (`/app/tasks/{id}?from=jobs`), and `?from=jobs` swaps the card's breadcrumb for

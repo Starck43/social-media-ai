@@ -326,6 +326,32 @@ P8-T06 and does not alter its task record.
   Remote tests are self-executed per the owner's explicit exception, now recorded
   in the remote skill; shared-doc sync follows the existing all-agent procedure.
 
+## Phase approval — pending P8-T21 inline source picker
+
+- [ ] P8-T21 — compact inline source picker on the task edit page; accept: selected sources render as inline chips with a remove control, adding goes through a same-style button opening a searchable list, POST semantics of `source_ids` unchanged, no-JS checkbox fallback retained; depends: none; owns: `app/web/templates/web/task_edit.html`, focused render test; owner: $local; status: READY — commit `a11f1f9`; isolated no-DB pytest 53/53 passed (`tests/unit_web/test_task_source_picker.py`, `tests/unit_web/test_template_autoescape.py`); `node --check` on the rendered script block passed; integration suite `tests/test_web_task_edit.py` blocked before setup by pre-existing test-schema drift (`analyzed_content_receipts` absent, owned by the analysis-receipts line) — not caused by this change, schema untouched per R8.
+
 ## Phase approval
+
+- [ ] P8-T22 — audit and simplify the social analysis web journey; accept:
+  one social analysis task choice collects then analyzes, standalone CLI/API/chat
+  operations remain compatible, partial analysis retains staged input; scenario,
+  source and task pages explain their distinct setup/actions/statistics using
+  shared shell styles and permission-gated diagnostics; focused backend/render
+  and browser checks include the final task editor snapshot; depends: none;
+  owns: web task backend and scenario/source/task templates, shared web
+  presentation helpers, final editor follow-up after the explicit P8-T21 handoff,
+  focused tests and subsystem/audit docs; owner: codex-social-analysis;
+  status: IN_PROGRESS. Base: local dev `c98dc9c`, origin/dev `1e0e3a0`
+  verified 2026-10-18; foreign P8-T21 changes preserved. Task editor changes
+  are serialized after its active source-picker work finishes.
+  Implementation and isolated verification recorded at `a11f1f9` plus reviewed
+  working diff: 210 isolated pytest cases passed through primary OpenCode;
+  Node cron checks and Safari 27.0 actual synthetic POST checks passed. See
+  [audit and layout contract](../audits/2026-10-18-social-analysis-web.md).
+  Status remains IN_PROGRESS for persisted PostgreSQL acceptance: the local
+  test schema lacks `analyzed_content_receipts`; no migration/reset authorized.
+  The live site returned 502. No paid collection/model run or full responsive
+  visual acceptance is claimed. The final compact selector/button styling
+  follow-up received syntax and diff checks only; it was not visually tested.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

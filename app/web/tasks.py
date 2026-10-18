@@ -41,6 +41,20 @@ def _split_names(raw: str) -> list[str]:
 	return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
 
 
+def _web_job_type_choices() -> list[tuple[str, str]]:
+	"""Task types shown in the web UI; collection is part of social analysis."""
+	return [
+		(value, "📊 Анализ соцсетей" if value == "analyze" else label)
+		for value, label in JobType.choices()
+		if value != "collect"
+	]
+
+
+def _normalize_web_job_type(job_type: str) -> str:
+	"""Map legacy web submissions to the unified social analysis task."""
+	return "analyze" if job_type in ("collect", "analyze") else job_type
+
+
 # The analysis targets a task payload carries (param_registry.PAYLOAD_PARAMS):
 # the scenario's analysis types say *what kind* of target matters, the task
 # says *which* brands/hashtags/… to aim at.
@@ -133,6 +147,7 @@ def _payload_from_form(
 	`time_breakdown` flag are stored in payload so the scheduled run uses
 	the operator's preference.
 	"""
+	job_type = _normalize_web_job_type(job_type)
 	payload: dict = {}
 	if monitored_users:
 		payload["monitored_users"] = _split_names(monitored_users)
@@ -145,6 +160,7 @@ def _payload_from_form(
 		end = AgentTaskManager.parse_date(end_date)
 		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=False))
 		payload["force_reanalyze"] = False
+		payload["collect_before_analyze"] = True
 	if job_type == "digest":
 		if digest_period and digest_period in ("day", "week", "month"):
 			payload["period"] = digest_period
@@ -229,7 +245,7 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 	edit: dict[str, Any] = {
 		"id": task.id,
 		"name": task.name,
-		"job_type": task.job_type,
+		"job_type": _normalize_web_job_type(task.job_type),
 		"cron_expr": task.cron_expr,
 		"is_active": task.id in effective_active,
 		"source_ids": source_ids,
@@ -327,7 +343,6 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
 
 		if not AgentTaskManager.requires_sources(job_type):
 			return None
-
 		if source_ids:
 			sources = await Source.objects.filter(id__in=source_ids)
 			inactive = sorted(s.name for s in sources if not s.is_active)
@@ -340,6 +355,24 @@ async def _can_activate(tenant_id: int, job_type: str, source_ids: list[int], sc
 		if not active:
 			return f"для типа «{job_type}» не выбран ни один источник, а в воркспейсе нет активных источников"
 		return None
+
+
+async def _unified_analysis_scenario_block(
+	tenant_id: int, scenario_id: int | None, *, allow_inactive_selected: bool = False
+) -> str | None:
+	"""Require methodology for web-created collect-and-analyze tasks."""
+	from app.core.tenant_context import tenant_scope
+
+	with tenant_scope(tenant_id):
+		if scenario_id is not None:
+			scenario = await AgentScenario.objects.get(id=scenario_id, tenant_id=tenant_id)
+			if scenario is None:
+				return "выбранный сценарий недоступен в этом workspace"
+			return None if scenario.is_active or allow_inactive_selected else "выбранный сценарий деактивирован"
+		default_scenario = await AgentScenario.objects.get_default_scenario(tenant_id=tenant_id)
+		if default_scenario is not None:
+			return None
+	return "создайте активный сценарий и выберите его для анализа"
 
 
 async def _duplicate_name(request: Request, back: str, name: str, exclude_id: int | None = None) -> Response | None:
@@ -452,6 +485,20 @@ async def tasks_list(request: Request):
 	sources = await Source.objects.filter(tenant_id=tenant_id).order_by(Source.name)
 
 	scenarios = await AgentScenario.objects.filter(tenant_id=tenant_id, is_active=True).order_by(AgentScenario.name)
+	permitted_source_ids = {source.id for source in sources}
+	prefill_source_ids = []
+	for raw_source_id in request.query_params.getlist("source_id") + request.query_params.getlist("source_ids"):
+		for candidate in raw_source_id.split(","):
+			if candidate.isdigit() and int(candidate) in permitted_source_ids:
+				prefill_source_ids.append(int(candidate))
+	prefill_source_ids = list(dict.fromkeys(prefill_source_ids))
+	raw_scenario_id = request.query_params.get("scenario_id", "")
+	prefill_scenario_id = (
+		int(raw_scenario_id)
+		if raw_scenario_id.isdigit() and any(scenario.id == int(raw_scenario_id) for scenario in scenarios)
+		else None
+	)
+	open_add_modal = request.query_params.get("create") == "1" and perms_can(request, "agenttask", "create")
 	# Which payload target keys each scenario wants (param_registry.PAYLOAD_PARAMS):
 	# drives the conditional target inputs in the add modal, as on the edit page.
 	scenario_analysis = {str(s.id): list(s.analysis_types or []) for s in scenarios}
@@ -501,10 +548,13 @@ async def tasks_list(request: Request):
 		sources=sources,
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
+		prefill_source_ids=prefill_source_ids,
+		prefill_scenario_id=prefill_scenario_id,
+		open_add_modal=open_add_modal,
 		effective_active=effective_active,
 		unconfirmed_tasks={task.id for task in tasks if outcome_unconfirmed(task.last_error)},
 		running_jobs=running_jobs,
-		job_types=JobType.choices(),
+		job_types=_web_job_type_choices(),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
 		cron_to_human=cron_to_human,
@@ -564,6 +614,7 @@ async def task_create(
 	if not ensure_csrf(request, token):
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
 		return RedirectResponse(back, status_code=302)
+	job_type = _normalize_web_job_type(job_type)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
@@ -619,6 +670,11 @@ async def task_create(
 			"topic_list": topic_list,
 		},
 	)
+	if job_type == "analyze":
+		scenario_block = await _unified_analysis_scenario_block(tenant_id, scenario_id)
+		if scenario_block is not None:
+			add_flash(request, "error", f"Для анализа соцсетей {scenario_block}")
+			return RedirectResponse(back, status_code=302)
 
 	# Warn about missing target params for the scenario's analysis types.
 	# Non-blocking: the task is still created, but analysis will have nothing
@@ -628,7 +684,7 @@ async def task_create(
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
 
-			if job_type == "analyze" or (job_type == "collect" and payload.get("analyze_inline") is True):
+			if job_type == "analyze":
 				missing = missing_target_params(sc.analysis_types, payload)
 			else:
 				missing = []
@@ -894,7 +950,7 @@ async def task_edit_page(request: Request, task_id: int):
 		sources=sources,
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
-		job_types=JobType.choices(),
+		job_types=_web_job_type_choices(),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
 		cron_to_human=cron_to_human,
@@ -961,6 +1017,11 @@ async def task_toggle(
 		if blocked is not None:
 			add_flash(request, "error", f"Задача «{task.name}» не активирована: {blocked}")
 			return RedirectResponse("/app/tasks", status_code=302)
+		if task.job_type == "analyze" and isinstance(task.payload, dict) and task.payload.get("collect_before_analyze"):
+			scenario_block = await _unified_analysis_scenario_block(tenant_id, task.agent_scenario_id)
+			if scenario_block is not None:
+				add_flash(request, "error", f"Для запуска анализа соцсетей {scenario_block}")
+				return RedirectResponse("/app/tasks", status_code=302)
 
 	await AgentTask.objects.update_by_id(task.id, is_active=new_active)
 	action = "активирована" if new_active else "деактивирована"
@@ -990,6 +1051,11 @@ async def task_run_now(
 	if task is None:
 		add_flash(request, "error", "Задача не найдена")
 		return RedirectResponse("/app/tasks", status_code=302)
+	if task.job_type == "analyze" and isinstance(task.payload, dict) and task.payload.get("collect_before_analyze"):
+		scenario_block = await _unified_analysis_scenario_block(tenant_id, task.agent_scenario_id)
+		if scenario_block is not None:
+			add_flash(request, "error", f"Для запуска анализа соцсетей {scenario_block}")
+			return RedirectResponse("/app/tasks", status_code=302)
 
 	# Prevent duplicate runs: if a job is already pending or running for this
 	# task, redirect to it so the user can watch the same modal instead of
@@ -1062,6 +1128,7 @@ async def task_update(
 	if not ensure_csrf(request, token):
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
 		return RedirectResponse("/app/tasks", status_code=302)
+	job_type = _normalize_web_job_type(job_type)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
@@ -1131,6 +1198,16 @@ async def task_update(
 	# "days", "min_messages" set via CLI or agent tool must survive a web edit.
 	payload = task.payload.copy() if isinstance(task.payload, dict) else {}
 	payload.update(new_payload)
+	requested_active = is_active == "on"
+	if job_type == "analyze":
+		scenario_block = await _unified_analysis_scenario_block(
+			tenant_id, scenario_id, allow_inactive_selected=not requested_active and not run_now
+		)
+		if scenario_block is not None:
+			add_flash(request, "error", f"Для анализа соцсетей {scenario_block}")
+			return RedirectResponse("/app/tasks", status_code=302)
+	if job_type == "analyze":
+		payload.pop("analyze_inline", None)
 	# Editing through the web form removes legacy force keys. Manual web runs
 	# also override stored legacy values in the one-off job payload above.
 	payload.pop("force_refresh", None)
@@ -1156,7 +1233,7 @@ async def task_update(
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
 
-			if job_type == "analyze" or (job_type == "collect" and payload.get("analyze_inline") is True):
+			if job_type == "analyze":
 				missing = missing_target_params(sc.analysis_types, payload)
 			else:
 				missing = []
@@ -1194,7 +1271,6 @@ async def task_update(
 
 	# Activation is allowed only when the task has an active scenario and, for a
 	# source-based type, at least one active source; otherwise it stays inactive.
-	requested_active = is_active == "on"
 	activation_blocked = None
 	if requested_active:
 		activation_blocked = await _can_activate(tenant_id, job_type, parsed_source_ids, scenario_id)
@@ -1267,7 +1343,7 @@ async def task_delete(
 
 JOB_TYPE_TITLES = {
 	"collect": "Сбор данных",
-	"analyze": "Анализ данных",
+	"analyze": "Анализ соцсетей",
 	"digest": "Дайджест",
 	"prune": "Очистка",
 	"learn": "Обучение",
@@ -1281,7 +1357,7 @@ OUTCOME_HEADLINES = {
 	# The second tuple is the fallback for jobs recorded before `new_items`
 	# existed — better an honest total than a "0 новых" nobody measured.
 	"collect": ("Новых записей", "new_items", ("Записей собрано", "items")),
-	"analyze": ("Проанализировано", "analyzed"),
+	"analyze": ("Результатов анализа", "analyzed"),
 	"digest": ("Отправлено сообщений", "messages_sent"),
 	"prune": ("Записей удалено", "deleted"),
 }
@@ -1342,7 +1418,13 @@ def _run_outcome(job_type: str, result: dict[str, Any]) -> str:
 	if job_type == "analyze":
 		# Only recorded nonnegative integer counters are known; never coerce
 		# legacy/malformed values or add overlapping source/staged failures.
-		if any(type(count) is int and count > 0 for count in (result.get("error"), result.get("staged_errors"))):
+		if any(
+			type(count) is int and count > 0
+			for count in (
+				result.get("error"), result.get("staged_errors"),
+				result.get("collection_errors"), result.get("collection_rate_limited"),
+			)
+		):
 			return "partial"
 		if _as_int(result.get("analyzed")):
 			return "ok"
@@ -1368,6 +1450,7 @@ _OUTCOME_NOTES = {
 	},
 	"analyze": {
 		"no_data": "Нечего анализировать — новых данных нет.",
+		"partial": "Анализ завершён частично: часть источников не удалось собрать или обработать.",
 		"skipped": "Источники пропущены: вероятно, нет активного сценария.",
 	},
 	"prune": {
@@ -1378,7 +1461,7 @@ _OUTCOME_NOTES = {
 
 _ACTIVITY = {
 	"collect": "Агент по очереди опрашивает источники и сохраняет новые публикации.",
-	"analyze": "Агент по очереди разбирает собранные записи каждого источника и готовит анализ и черновики действий.",
+	"analyze": "Агент анализирует собранные записи и готовит результаты и черновики действий.",
 	"digest": "Агент собирает итоги за период и отправляет дайджест получателям.",
 	"prune": "Удаляются устаревшие записи по правилам хранения данных.",
 	"learn": "Агент изучает свежие результаты и обновляет свои выводы.",
@@ -1444,19 +1527,38 @@ def _cancel_info(job: "Job") -> dict[str, Any]:
 
 
 def _source_note(entry: dict[str, Any]) -> str:
-	"""One source's line in the modal: what this run got from it."""
-	outcome = entry.get("outcome") or "empty"
+	"""One source's line in the modal: what this run got from it.
+
+	`collect` rows carry the visit's outcome at the top level. `analyze` rows
+	have no such field: the analysis verdict lives on the row (`analyzed`,
+	`error`), the collect stage's own row is stashed under `collection`.
+	Falling straight through to «без новых данных» read an analysis failure as
+	"nothing was gathered" — the one thing the run did do was gather.
+	"""
+	outcome = entry.get("outcome")
+	stage = entry
+	if not isinstance(outcome, str):
+		collection = entry.get("collection")
+		if isinstance(collection, dict) and isinstance(collection.get("outcome"), str) and collection["outcome"]:
+			outcome = collection["outcome"]
+			stage = collection
+		else:
+			outcome = "empty"
+		# The analysis verdict outranks its collect stage: a row that failed
+		# the analysis must not present the gathered items as the run's gain.
+		if entry.get("error") is True:
+			outcome = "error"
 	if outcome == "error":
 		note = "ошибка"
 	elif outcome == "rate_limited":
 		note = "отложено: лимит запросов"
 	elif outcome == "collected":
-		items = int(entry.get("items") or 0)
+		items = int(stage.get("items") or 0)
 		# Prefer the new count: "32 records" for a source that re-serves the
 		# same 32 every hour reads as 32 new records, which is not what
 		# happened. Older jobs have no counter — fall back to the total.
-		if entry.get("new_items") is not None:
-			new_items = int(entry["new_items"])
+		if stage.get("new_items") is not None:
+			new_items = int(stage["new_items"])
 			if new_items:
 				note = f"{new_items} {_plural(new_items, 'новая', 'новых', 'новых')}"
 			else:
@@ -1465,12 +1567,11 @@ def _source_note(entry: dict[str, Any]) -> str:
 			note = f"{items} {_plural(items, 'запись', 'записи', 'записей')}"
 	else:
 		note = "без новых данных"
-	# `analyze` records what the agent looked at rather than rows collected,
-	# so the line carries that count instead of the collection wording.
+	# `analyzed` counts task-filtered analysis results, not all persisted rows or raw source records.
 	analyzed = entry.get("analyzed")
 	if outcome != "error" and analyzed:
 		count = int(analyzed)
-		note = f"{count} {_plural(count, 'анализ', 'анализа', 'анализов')}"
+		note = f"{count} {_plural(count, 'результат', 'результата', 'результатов')} анализа"
 	return note
 
 
@@ -1506,6 +1607,10 @@ def _progress_view(job: "Job", *, stopped: bool = False) -> dict[str, Any] | Non
 		})
 	total, completed = snapshot["total"], snapshot["completed"]
 	return {
+		"phase": {
+			"collection": "Сбор новых данных",
+			"analysis": "Анализ данных",
+		}.get(snapshot.get("phase"), "Обработка источников"),
 		"total": total,
 		"completed": completed,
 		"percent": int(completed * 100 / total),
@@ -1593,6 +1698,8 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			progress = _progress_view(job)
 			if progress is not None:
 				summary["progress"] = progress
+				if job_type == "analyze" and progress.get("phase") == "collection":
+					summary["activity"] = "Агент собирает новые публикации перед анализом накопленных записей."
 		# A job nobody claimed is not "running" — it is waiting for a worker.
 		# Without this the modal dead-ends on its client timeout and the row
 		# keeps a spinner for a job that never started, which reads as a hang.
@@ -1637,7 +1744,8 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			count = int(result.get(key, 0) or 0)
 		except (TypeError, ValueError):
 			count = 0
-		headline = {"value": count, "label": word, "noun": _plural(count, "запись", "записи", "записей")}
+		noun = _plural(count, "результат", "результата", "результатов") if job_type == "analyze" else _plural(count, "запись", "записи", "записей")
+		headline = {"value": count, "label": word, "noun": noun}
 
 	stats: list[dict[str, Any]] = []
 	if job_type == "collect":
@@ -1658,6 +1766,13 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
 			_stat(result.get("actions_created", 0), "действий создано"),
 			_stat(result.get("skipped", 0), "пропущено"),
 		]
+		if isinstance(result.get("collection"), dict):
+			collection = result["collection"]
+			stats.extend([
+				_stat(collection.get("collected", 0), "источников собрали данные"),
+				_stat(collection.get("new_items", 0), "новых записей"),
+				_stat(collection.get("error", 0), "ошибок сбора"),
+			])
 		for key, label in (
 			("error", "источников с ошибками"),
 			("staged_errors", "ошибок обработки накопленных данных"),
@@ -1780,7 +1895,10 @@ def _source_links(job: "Job", task_name: str | None = None) -> list[dict[str, An
 			"source_id": source_id,
 			"name": entry.get("name") or f"Источник {source_id}",
 			"note": _source_note(entry),
-			"error": (entry.get("outcome") or "empty") == "error",
+			# Failures surface red on the chip: collect rows mark them in the
+			# outcome, analyze rows via the row-level error flag (analysis or
+			# its inline collect stage).
+			"error": (entry.get("outcome") or "empty") == "error" or entry.get("error") is True,
 		}
 		links.append(link)
 	return links

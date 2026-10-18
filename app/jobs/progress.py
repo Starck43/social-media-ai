@@ -27,6 +27,7 @@ _OUTCOMES = frozenset({"collected", "empty", "error", "auth_required", "rate_lim
 # Only bounded counters/flags; never content hashes, hints, messages or payloads.
 _INT_KEYS = ("items", "new_items", "analyzed", "actions")
 _RAW_KEYS = ("raw_total", "raw_selected", "raw_processed")
+_FLAG_KEYS = ("collection_error",)
 
 
 class ProgressStopped(RuntimeError):
@@ -62,11 +63,18 @@ def _item(source: Any, state: str, entry: dict | None) -> dict[str, Any]:
                 item[key] = count
         if entry.get("error") is True or outcome == "error":
             item["error"] = True
+        if entry.get("collection_error") is True:
+            item["collection_error"] = True
     return item
 
 
 def build_snapshot(
-    sources: Sequence[Any], position: int, per_source: Sequence[dict], *, now: Optional[datetime] = None
+    sources: Sequence[Any],
+    position: int,
+    per_source: Sequence[dict],
+    *,
+    phase: str = "processing",
+    now: Optional[datetime] = None,
 ) -> dict[str, Any]:
     """Snapshot before handling `sources[position]`; earlier ones are finished."""
     total = len(sources)
@@ -89,6 +97,7 @@ def build_snapshot(
         # Keep the current source visible with a few finished ones before it.
         first = max(0, min(position - 10, total - MAX_ITEMS))
     return {
+        "phase": phase if phase in {"collection", "analysis"} else "processing",
         "total": total,
         "completed": position,
         "current": items[position]["name"] if position < total else None,
@@ -123,6 +132,7 @@ class ProgressSession:
         self.claim = claim
         self.calls = 0
         self.lost = False
+        self.phase = "processing"
         self._writer = writer or _default_writer
         self._settler = settler or _default_settler
 
@@ -137,7 +147,7 @@ class ProgressSession:
             return
         position = self.calls
         self.calls += 1
-        snapshot = build_snapshot(sources, position, per_source)
+        snapshot = build_snapshot(sources, position, per_source, phase=self.phase)
         try:
             written = await self._writer(self.claim, snapshot)
         except Exception as error:  # noqa: BLE001 — progress must never fail a run
@@ -157,13 +167,16 @@ class ProgressSession:
             raise ProgressStopped()
         if not self.tracked:
             return
-        snapshot = build_snapshot(sources, max(0, self.calls - 1), per_source)
+        snapshot = build_snapshot(sources, max(0, self.calls - 1), per_source, phase=self.phase)
         item = next((entry for entry in snapshot["items"] if entry.get("source_id") == current.get("source_id")), None)
         if item is not None:
             item["state"] = "running"
-            for key in _RAW_KEYS:
+            for key in (*_RAW_KEYS, *_FLAG_KEYS):
                 count = _count(current.get(key))
-                if count is not None:
+                if key in _FLAG_KEYS:
+                    if current.get(key) is True:
+                        item[key] = True
+                elif count is not None:
                     item[key] = count
         try:
             written = await self._writer(self.claim, snapshot)
@@ -189,6 +202,13 @@ class ProgressSession:
                 type(error).__name__[:40],
             )
 
+    async def begin_phase(self, phase: str) -> None:
+        """Start a distinct source pass without carrying its completed count."""
+        if self.lost:
+            raise ProgressStopped()
+        self.phase = phase if phase in {"collection", "analysis"} else "processing"
+        self.calls = 0
+
 
 _current: ContextVar[Optional[ProgressSession]] = ContextVar("job_progress_session", default=None)
 
@@ -212,6 +232,12 @@ async def update_current(sources: Sequence[Any], per_source: Sequence[dict], cur
     session = _current.get()
     if session is not None:
         await session.update_current(sources, per_source, current)
+
+
+async def begin_phase(phase: str) -> None:
+    session = _current.get()
+    if session is not None:
+        await session.begin_phase(phase)
 
 
 def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
@@ -245,9 +271,12 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
                 item[key] = count
         if raw.get("error") is True:
             item["error"] = True
+        if raw.get("collection_error") is True:
+            item["collection_error"] = True
         items.append(item)
     current = progress.get("current")
     return {
+        "phase": progress.get("phase") if progress.get("phase") in {"collection", "analysis"} else "processing",
         "total": total,
         "completed": completed,
         "first": first,

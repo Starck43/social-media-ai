@@ -17,13 +17,7 @@
             <a href="/app/scenarios" class="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">← Все сценарии</a>
 
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {% if not create %}
-                    {% if draft.is_default %}
-                        Сценарий по умолчанию для новых источников.
-                    {% else %}
-                        Назначен тем источникам, которые его выбрали.
-                    {% endif %}
-                {% endif %}
+                Методика анализа; её выбирают в задаче. Если задача не задаёт сценарий, используется сценарий workspace по умолчанию.
             </p>
         </div>
         {% if editable %}
@@ -38,6 +32,29 @@
         <div class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-4 text-sm text-slate-600 dark:text-slate-400">
             {% if create %}У вас нет прав создавать сценарии.{% else %}Вы можете читать сценарий, но не менять его — правомочие требуется ролью.{% endif %}
         </div>
+    {% endif %}
+
+    {% if usage is not none %}
+    <section class="ui-card mb-5" aria-labelledby="scenario-usage-title">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 id="scenario-usage-title" class="text-sm font-medium text-slate-800 dark:text-slate-200">Использование сценария</h2>
+                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Задач: {{ usage.total }} · активных: {{ usage.active }} · приостановлено: {{ usage.paused }} · последний запуск: {{ usage.last_status or 'ещё не запускался' }} · следующий: {{ usage.next_run }}</p>
+            </div>
+            {% if can_create_tasks and draft.is_active %}
+            <a href="/app/tasks?create=1&amp;scenario_id={{ scenario_id }}" class="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-cyan-400">Создать задачу с этим сценарием</a>
+            {% elif can_create_tasks %}
+            <span class="text-xs text-amber-800 dark:text-amber-300">Активируйте сценарий, чтобы создать задачу по нему.</span>
+            {% endif %}
+        </div>
+        {% if usage.tasks %}
+        <ul class="mt-3 grid gap-2 sm:grid-cols-2">
+            {% for task in usage.tasks %}
+            <li><a href="/app/tasks/{{ task.id }}" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">{{ task.name }}</a><span class="ml-2 text-xs text-slate-600 dark:text-slate-400">{% if task.is_active %}активна{% else %}на паузе{% endif %}</span></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
     {% endif %}
 
     {% set ro = '' if editable else 'pointer-events-none opacity-60' %}
@@ -77,7 +94,7 @@
                         <div class="flex flex-wrap gap-6">
                             {{ switch_toggle("is_active", "Активен", checked=draft.is_active, disabled=not editable) }}
                             {% if not create %}
-                            {{ switch_toggle("is_default", "По умолчанию для новых источников", checked=draft.is_default, disabled=not editable) }}
+                            {{ switch_toggle("is_default", "Сценарий workspace по умолчанию", checked=draft.is_default, disabled=not editable) }}
                             {% endif %}
                         </div>
                     </div>

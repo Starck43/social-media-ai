@@ -20,52 +20,18 @@
             </p>
         </div>
 <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions">        <div class="flex flex-wrap items-center gap-2">
-        {% if perms and perms.can('source', 'analyze') %}
-            {% if running.collect or running.analyze %}
-                {% if running.collect %}
-                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Сбор выполняется">
-                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                    <span class="ml-1">Сбор…</span>
-                </span>
-                {% endif %}
-                {% if running.analyze %}
-                <span class="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-400" title="Анализ выполняется">
-                    <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                    <span class="ml-1">Анализ…</span>
-                </span>
-                {% endif %}
-            {% else %}
-                <form method="post" action="/app/sources/{{ source.id }}/analyze">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400"
-                            title="Разбирает всю текущую очередь этого источника">
-                        Анализировать очередь{% if pending_count %} ({{ pending_count }}){% endif %}
-                    </button>
-                </form>
-                {% if is_source_admin %}
-                <form method="post" action="/app/sources/{{ source.id }}/delete-unprocessed"
-                      data-confirm="Будут удалены все необработанные материалы только этого источника. Аналитика и история анализов останутся."
-                      data-confirm-title="Удалить необработанный контент?" data-confirm-label="Удалить контент">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                        Удалить необработанный контент
-                    </button>
-                </form>
-                {% endif %}
-                <form method="post" action="/app/sources/{{ source.id }}/collect">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-                        Собрать сейчас
-                    </button>
-                </form>
-            {% endif %}
+        {% if running.collect or running.analyze %}
+            <span class="rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300" title="Задача выполняется">
+                <svg class="h-4 w-4 animate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <span class="ml-1">{% if running.collect %}Сбор данных…{% else %}Анализ…{% endif %}</span>
+            </span>
+        {% elif perms and perms.can('agenttask', 'create') %}
+            <a href="/app/tasks?create=1&amp;source_id={{ source.id }}"
+               class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                Создать задачу анализа
+            </a>
         {% endif %}
         {% if perms and perms.can('source', 'update') %}
             <button @click="openEdit = true"
@@ -78,15 +44,6 @@
                 <button class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900">
                     {% if source.is_active %}Деактивировать{% else %}Активировать{% endif %}
                 </button>
-            </form>
-        {% endif %}
-        {% if can_delete %}
-            <form method="post" action="/app/sources/{{ source.id }}/delete"
-                  data-confirm="«{{ source.name|e }}» и вся собранная по нему аналитика ({{ analytics_count }} записей) будут удалены безвозвратно. Задачи останутся, но без этого источника.{% if usage_count %} Источник используется в {{ usage_count }} задаче(ах) — сбор по ним перестанет работать.{% endif %}"
-                  data-confirm-title="Удалить источник?" data-confirm-label="Удалить навсегда">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Удалить</button>
             </form>
         {% endif %}
     </div></div></template>
@@ -140,15 +97,15 @@
         </div>
         <!-- Schedule ──────────────────────────────────────────────────── -->
         <div class="ui-card">
-            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Когда собирается</h2>
+            <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Задачи анализа</h2>
             {% if schedules %}
                 <ul class="mt-3 space-y-3">
                     {% for s in schedules %}
                         <li class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 px-3 py-2.5">
                             <div class="flex items-center justify-between gap-2">
-                                <a href="/app/tasks" class="truncate text-sm text-slate-800 dark:text-slate-200 hover:text-cyan-700 dark:hover:text-cyan-400">{{ s.name }}</a>
-                                <span class="shrink-0 text-[11px] {% if s.is_active %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-600{% endif %}">
-                                    {% if s.is_active %}активна{% else %}на паузе{% endif %}
+                                <a href="/app/tasks/{{ s.id }}" class="truncate text-sm text-slate-800 dark:text-slate-200 hover:text-cyan-700 dark:hover:text-cyan-400">{{ s.name }}</a>
+                                <span class="shrink-0 text-[11px] {% if s.effective_active %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">
+                                    {% if s.effective_active %}активна{% elif s.is_active %}приостановлена{% else %}на паузе{% endif %}
                                 </span>
                             </div>
                             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
@@ -162,7 +119,7 @@
                     Ни одна задача не ссылается на этот источник — сбор сам не запустится.
                 </p>
                 {% if perms and perms.can('agenttask', 'create') %}
-                    <a href="/app/tasks" class="mt-3 inline-block text-sm text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
+                    <a href="/app/tasks?create=1&amp;source_id={{ source.id }}" class="mt-3 inline-block text-sm text-cyan-700 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
                         Создать задачу →
                     </a>
                 {% endif %}
@@ -171,18 +128,29 @@
         <!-- Result ────────────────────────────────────────────────────── -->
         <div class="ui-card">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Результат</h2>
+            {% if window_label %}
+            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">Окно данных: {{ window_label }}{% if window_scope %} · {{ window_scope }}{% endif %}</p>
+            {% endif %}
             <div class="mt-3 grid grid-cols-2 gap-3">
                 <div>
                     <p class="text-2xl font-semibold">{{ analytics_count }}</p>
                     <p class="text-xs text-slate-600 dark:text-slate-400">анализов</p>
                 </div>
                 <div>
+                    <p class="text-2xl font-semibold">{{ pending_count - given_up }}</p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">сырых записей ждут анализа</p>
+                </div>
+                <div>
+                    <p class="text-2xl font-semibold {% if given_up %}text-amber-800 dark:text-amber-300{% endif %}">{{ given_up }}</p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">попытки приостановлены</p>
+                </div>
+                <div>
                     <p class="text-2xl font-semibold">{{ sentiment_label }}</p>
-                    <p class="text-xs text-slate-600 dark:text-slate-400">средняя тональность</p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">тональность · последние {{ recent|length }} анализов</p>
                 </div>
                 <div>
                     <p class="text-2xl font-semibold">${{ "%.2f"|format(cost_usd) }}</p>
-                    <p class="text-xs text-slate-600 dark:text-slate-400">LLM-расход, всего</p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">расчётная стоимость анализов, всего</p>
                 </div>
                 <div>
                     <p class="text-sm font-medium {% if last_checked %}text-slate-800 dark:text-slate-200{% else %}text-slate-600{% endif %}">
@@ -269,7 +237,7 @@
                 <form method="post" action="/app/sources/{{ source.id }}/analyze" class="mt-3">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button type="submit" class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400">Выполнить анализ</button>
+                    <button type="submit" class="rounded-lg border border-cyan-700 px-4 py-2 text-sm font-medium text-cyan-800 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40">Повторить анализ</button>
                 </form>
             {% endif %}
         </div>
@@ -278,19 +246,18 @@
         <div class="mt-6 rounded-2xl border border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-4">
             <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
-                    <p class="text-sm text-amber-200">
+                    <p class="text-sm text-amber-800 dark:text-amber-300">
                         {{ given_up }} {{ given_up_label }} не удалось проанализировать — модель не ответила на них несколько раз подряд.
                     </p>
                     {% if window_label %}
                     <p class="mt-1 text-xs text-amber-800 dark:text-amber-300/70">
-                        Запуск анализа обрабатывает только период задачи ({{ window_label }}){% if given_up_in_window %}: в нём застряло {{ given_up_in_window }}.{% else %} — в нём застрявших нет.{% endif %}
+                        Запуск анализа обрабатывает окно {{ window_label }}{% if window_scope %} ({{ window_scope }}){% endif %}{% if given_up_in_window %}: в нём застряло {{ given_up_in_window }}.{% else %} — в нём застрявших нет.{% endif %}
                         {% if given_up_history %}Остальные {{ given_up_history }} — исторические, вне периода; они попадут в анализ, только если расширить период задачи или источника.{% endif %}
                     </p>
                     {% endif %}
                     <p class="mt-1 text-xs text-amber-800 dark:text-amber-300/70">
                         Сырые данные сохранены и ждут. Автоматические попытки для них приостановлены;
-                        чтобы разобраться, проверьте модель этого источника или поднимите лимит попыток
-                        в <code>collected_items.give_up_after_attempts</code>.
+                        проверьте настройки модели и сценария, назначенного задаче.
                     </p>
                 </div>
                 {% if running.collect or running.analyze %}
@@ -304,7 +271,7 @@
                     <form method="post" action="/app/sources/{{ source.id }}/analyze" class="shrink-0">
                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                         {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                        <button class="rounded-lg border border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-800/40">
+                        <button class="rounded-lg border border-cyan-700/60 px-3 py-1.5 text-xs font-medium text-cyan-800 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40">
                             Повторить анализ
                         </button>
                     </form>
@@ -480,6 +447,32 @@
                 </table>
             </div>
     </div>
+    {% if can_delete or is_source_admin %}
+    <details class="mt-8 rounded-xl border border-slate-200 dark:border-slate-800 px-4 py-3">
+        <summary class="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400">Дополнительные действия</summary>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+            {% if is_source_admin and pending_count and not running.collect and not running.analyze %}
+            <form method="post" action="/app/sources/{{ source.id }}/delete-unprocessed"
+                  data-confirm="Будут удалены все необработанные материалы только этого источника. Аналитика и история анализов останутся."
+                  data-confirm-title="Удалить необработанный контент?" data-confirm-label="Удалить контент">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                <button type="submit" class="rounded-lg border border-amber-700/60 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-500/10">Удалить необработанные записи ({{ pending_count }})</button>
+            </form>
+            {% endif %}
+            {% if can_delete %}
+            <form method="post" action="/app/sources/{{ source.id }}/delete"
+                  data-confirm="«{{ source.name|e }}» и вся собранная по нему аналитика ({{ analytics_count }} записей) будут удалены безвозвратно.{% if usage_count %} Источник используется в {{ usage_count }} задаче(ах). Если удалить последний выбранный источник задачи, она будет использовать все активные источники. Сначала приостановите или перенастройте такие задачи.{% endif %}"
+                  data-confirm-title="Удалить источник?" data-confirm-label="Удалить навсегда">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                <button type="submit" class="rounded-lg border border-rose-700/60 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-500/10">Удалить источник</button>
+            </form>
+            {% endif %}
+        </div>
+    </details>
+    {% endif %}
+
     <!-- Job status modal (source-page twin of the tasks-page run modal):
          opened by clicking the active analysis row, polls /app/tasks/job/<id>/status. -->
     <div id="job-status-modal" class="fixed inset-0 z-50 hidden bg-slate-950/60 dark:bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-labelledby="job-status-modal-title">

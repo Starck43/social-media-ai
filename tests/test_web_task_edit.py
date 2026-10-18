@@ -253,6 +253,8 @@ async def test_collect_ignores_forged_repeat_flags_and_clears_legacy_flags(clien
         assert resp.status_code == 200
         with tenant_scope(bypass=True):
             updated = await AgentTask.objects.get(id=task.id)
+        assert updated.job_type == "analyze"
+        assert updated.payload["collect_before_analyze"] is True
         assert "force_refresh" not in updated.payload
         assert "force_reanalyze" not in updated.payload
 
@@ -271,6 +273,8 @@ async def test_collect_ignores_forged_repeat_flags_and_clears_legacy_flags(clien
         assert resp.status_code == 200
         with tenant_scope(bypass=True):
             updated = await AgentTask.objects.get(id=task.id)
+        assert updated.job_type == "analyze"
+        assert updated.payload["collect_before_analyze"] is True
         assert "force_refresh" not in updated.payload
         assert "force_reanalyze" not in updated.payload
     finally:
@@ -305,7 +309,7 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         assert 'name="digest_group_by"' in page.text
         assert "task.job_type === 'digest'" in page.text
         # User lists post only for the types that read them.
-        assert 'x-if="task.job_type === \'collect\'"' in page.text
+        assert 'x-if="task.job_type === \'analyze\'"' in page.text
         # Repeat-policy controls are absent from the add form.
         assert 'name="force_reanalyze"' not in page.text
         assert 'name="force_refresh"' not in page.text
@@ -350,7 +354,9 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
         with tenant_scope(bypass=True):
             created = await AgentTask.objects.filter(name=name).first()
         assert created is not None
+        assert created.job_type == "analyze"
         assert created.agent_scenario_id == scenario.id
+        assert created.payload["collect_before_analyze"] is True
         assert created.payload["brands"] == ["Coca Cola", "Sprite"]
         assert created.payload["keywords_list"] == ["жалоба"]
         assert created.payload["force_refresh"] is False
@@ -368,9 +374,9 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
 
 
 @pytest.mark.asyncio
-async def test_collect_only_creation_does_not_warn_about_analysis_targets(client: AsyncClient) -> None:
-    """A collect-only task does not analyze content, so target warnings mislead."""
-    user, tenant_id = await _register(client, "CollectOnly")
+async def test_legacy_collect_creation_becomes_unified_analysis_and_warns(client: AsyncClient) -> None:
+    """Legacy form submissions use the unified web analysis workflow."""
+    user, tenant_id = await _register(client, "LegacyCollect")
     scenario = created = None
     try:
         scenario = await _make_scenario(tenant_id, ["brand_mentions"])
@@ -391,7 +397,9 @@ async def test_collect_only_creation_does_not_warn_about_analysis_targets(client
         with tenant_scope(bypass=True):
             created = await AgentTask.objects.filter(name=name).first()
         assert created is not None
-        assert "укажите в параметрах задачи" not in resp.text
+        assert created.job_type == "analyze"
+        assert created.payload["collect_before_analyze"] is True
+        assert "укажите в параметрах задачи" in resp.text
     finally:
         if created is not None:
             with tenant_scope(bypass=True):

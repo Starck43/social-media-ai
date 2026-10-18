@@ -5,8 +5,7 @@
 - Task truth: root `ROADMAP.md` is the live registry of open tasks/questions (ID + link only); `docs/phases/README.md` is the global phase list, one task file per phase (`P<n>-T<nn>`, statuses TODO/IN_PROGRESS/BLOCKED/READY/DONE/DROPPED). A phase closes only when all its tasks are DONE and Codex signs the phase approval block.
 - Claim a task in ROADMAP.md and its phase file before work; on resolution update the phase file to READY with evidence, and only the coordinating Codex then reviews the diff/evidence at the exact SHA, marks the task DONE and deletes its ROADMAP row. No subagent removes resolved ROADMAP rows or self-accepts as DONE. New questions that need separate elaboration go to ROADMAP.md `## Questions` (Q-<n>) and are deleted when resolved.
 - Docs: `docs/DOCS_INDEX.md` (index), `docs/PRODUCT_PLAN.md` (product), `docs/BUSINESS_PRODUCTION_READINESS.md` (gates), `docs/IMPLEMENTATION_STATUS.md` (delivered), `docs/design/assistant-shell.md` (shell contract).
-- Agent roles: Codex = main coordinator and approver (accepts READY tasks, closes phases; does not run pytest or commit directly). OpenCode = executor, primary pytest runner (`.agents/skills/test-runner/`), and the only local committer; as routine-worker it completes simple bounded tasks and makes their authorized commits, returning a ready answer or explicit blockers/questions. Kilo = secondary test route (only when OpenCode is BLOCKED). Remote agents = GitHub PR lanes (`.agents/skills/remote/`), local relay via `.agents/skills/remote-agent-helper/`.
-- Routine delegation: `.codex/agents/routine-worker.toml` (OpenCode `build`, exact `QwenPlan/deepseek-v4-flash-0731`); mandatory for simple/routine tasks.
+- Agent roles: Codex = main coordinator and approver (accepts READY tasks, closes phases; does not run pytest or commit directly). OpenCode = executor, primary pytest runner (`.agents/skills/test-runner/`), and the only local committer. Kilo = secondary test route (only when OpenCode is BLOCKED). Remote agents = GitHub PR lanes (`.agents/skills/remote/`), local relay via `.agents/skills/remote-agent-helper/`.
 - Subagents/test delegation: `.codex/agents/test-runner.toml` (OpenCode `QwenPlan/deepseek-v4-flash-0731`, primary), `.codex/agents/kilo-test-runner.toml` (Kilo, secondary). Evidence in `.agents/tmp/` is human-audit only — never main-context input.
 - `.agents/tmp/` working files: agents may create, read, edit, and remove their own task files and temporary working artifacts under `.agents/tmp/` without asking the owner for per-file approval.
 - Treat those files as transient: after the task or delegated run completes, delete each own file that is no longer needed (task prompts, reports, scratch notes, logs). Retain files only while an active task/agent still needs them or when the owner explicitly requests preservation; coordinate before removing another active agent's artifact.
@@ -18,24 +17,14 @@
 - `dev` is the integration branch. Complete authorized tasks autonomously, without routine confirmations.
 - Shared documentation: synchronize `ROADMAP.md` and owned `docs/` edits with fresh `dev` and other agents' relevant active work before claiming IDs, editing and publishing. Preserve foreign ownership, evidence and statuses; recheck unique task/question IDs and links after merging concurrent changes. Follow the shared-document synchronization procedure in `docs/COLLABORATION.md`; never publish stale full-file copies.
 - Default: work in the current `dev` checkout when one sequential task owns its changes; inspect status first, preserve unrelated edits. Separate branch/worktree only for parallel tasks, PR review, risky experiments, conflicts, or an explicit owner request — never as routine ceremony.
-- Mandatory routing: delegate every simple or routine bounded task to
-  `routine-worker` (`.codex/agents/routine-worker.toml`), which executes through
-  OpenCode `build` pinned to `QwenPlan/deepseek-v4-flash-0731`. This includes
-  mechanical changes, routine fixes, scoped documentation updates and inventories.
-  If CLI/provider/model/network is unavailable, the coordinator assigns the same
-  task and acceptance criteria to its Codex subagent. Never bypass HEAD,
-  permission or ownership blockers.
-- Tests go separately to `test-runner`; `routine-worker` never runs pytest.
-  Independent implementation lanes require separate worktrees and exclusive
-  files; one sequential delegated task may use the current `dev` checkout with
-  explicit file ownership. Shared-DB tests always remain sequential.
+- Independent implementation lanes require separate worktrees and exclusive files; one sequential delegated task may use the current `dev` checkout with explicit file ownership. Shared-DB tests always remain sequential. Never bypass HEAD, permission or ownership blockers.
 - On completion in `dev`: follow commit and closeout rules in `docs/COLLABORATION.md`. Prepare and review a scoped staged diff, then delegate every local `git commit` to OpenCode; the coordinating Codex does not commit directly. No PR for ordinary sequential work. Never push `dev`, merge, force-push, deploy, or touch production data without explicit authorization.
 - Tests: assign every pytest scope per `docs/RULES.md` R10 — primary OpenCode `test-runner`, shared test schema sequential (R8), Codex never runs pytest; remote agents use the no-DB exception in `.agents/skills/remote/`.
 - Keep context small: lazy reads (rg, line ranges); read only the selected phase file, subsystem doc and call sites; reuse completed evidence at its exact revision; one bounded task per session/PR; summaries in chat, evidence in files/PRs.
 
 ## Understand common requests
 - “Audit completed work”, “check what is done”, or “find gaps” means compare `docs/IMPLEMENTATION_STATUS.md` with current code and PR evidence. Report verified findings and a prioritized fix plan; do not change code unless asked to fix or implement.
-- For one named feature, task, or PR, inspect only that slice. Delegate routine review/inventory steps to `routine-worker`; keep architectural decisions and acceptance with Codex.
+- For one named feature, task, or PR, inspect only that slice. Keep architectural decisions and acceptance with Codex.
 - “Take the next active task” means select one unclaimed TODO row from `ROADMAP.md` (respecting phase priority in `docs/phases/README.md`), verify current code and ownership, claim it, then implement that item. It does not mean execute the whole board.
 - “Implement/fix the audit findings” means the accepted items already live in the phase files; implement dependency-ready items, verify each before READY, and make per-item commits when the request or active Goal asks for them.
 - Run focused checks appropriate to changed behavior. Request broad suites only when warranted; all pytest commands go through the primary OpenCode test route. Docs-only edits do not need pytest.

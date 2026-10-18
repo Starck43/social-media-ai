@@ -231,7 +231,8 @@ def test_stored_names_and_edit_values_are_inert_on_real_detail_templates(page_en
     assert_inert(parsed)
     if template == "source_detail.html":
         scripts = re.findall(r"<script>(.*?)</script>", rendered, re.S)
-        assert len(scripts) == 1
+        # The source page has separate static polling and job-modal scripts.
+        assert len(scripts) == 2
         clean = page_env.get_template("web/" + template).render(**context("safe static name"))
         assert re.findall(r"<script>(.*?)</script>", clean, re.S) == scripts
     else:
@@ -279,7 +280,7 @@ def test_task_editor_json_roundtrips_without_script_breakout(page_env, payload):
     assert json.loads(data) == ctx["edit"]
     inputs = parsed.elements("input")
     assert any(attrs.get("x-model") == "editing.is_active" for attrs in inputs)
-    assert any(attrs.get("x-model") == "editing.force_refresh" for attrs in inputs)
+    assert not any(attrs.get("x-model") in {"editing.force_refresh", "editing.force_reanalyze"} for attrs in inputs)
     assert any(attrs.get(":checked") == "editing.source_ids.includes(7)" for attrs in inputs)
     assert any(attrs.get("name") == "tenant_id" and attrs.get("value") == "9" for attrs in inputs)
 

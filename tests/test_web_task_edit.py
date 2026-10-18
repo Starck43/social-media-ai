@@ -107,9 +107,8 @@ async def test_edit_page_renders_targets_for_the_bound_scenario(client: AsyncCli
 
     `brand_mentions` wants `brands`, `keywords` wants `keywords_list` — the
     mapping the analyzer reads from payload has to be editable here, and the
-    scenario's own id reaches the Alpine state to drive it. The force flags
-    stay one checkbox per type: the second `force_reanalyze` control that used
-    to sit in the monitored/excluded grid posted the same field name.
+    scenario's own id reaches the Alpine state to drive it. Repeat-policy
+    switches are absent from the web form.
     """
     user, tenant_id = await _register(client, "EditTargets")
     scenario = task = None
@@ -134,11 +133,11 @@ async def test_edit_page_renders_targets_for_the_bound_scenario(client: AsyncCli
         # The user list inputs survive for the types that read them.
         assert 'name="monitored_users"' in page.text
         assert 'name="excluded_users"' in page.text
-        # One force flag per job type, not two controls on one field name.
-        assert page.text.count('name="force_reanalyze"') == 1
+        # The web surface always uses the default repeat policy.
+        assert 'name="force_reanalyze"' not in page.text
         assert "Переанализировать всё (игнорировать хеши)" not in page.text
-        assert "Принудительный повторный анализ" in page.text
-        assert 'name="force_refresh"' in page.text
+        assert "Принудительный повторный анализ" not in page.text
+        assert 'name="force_refresh"' not in page.text
     finally:
         if task is not None and scenario is not None:
             await _delete(task, scenario, user, tenant_id)
@@ -160,6 +159,8 @@ async def test_update_round_trips_target_values(client: AsyncClient) -> None:
                 "cron_expr": "0 * * * *",
                 "scenario_id": str(scenario.id),
                 "start_date": "2026-09-01",
+                "force_refresh": "on",
+                "force_reanalyze": "on",
                 "brands": "Coca Cola, Sprite",
                 "keywords_list": "жалоба",
                 "competitors": "",
@@ -178,6 +179,8 @@ async def test_update_round_trips_target_values(client: AsyncClient) -> None:
         assert updated.payload["keywords_list"] == ["жалоба"]
         assert "competitors" not in updated.payload
         assert updated.payload["cli_dates"] == {"start_date": "2026-09-01"}
+        assert "force_refresh" not in updated.payload
+        assert "force_reanalyze" not in updated.payload
     finally:
         if task is not None and scenario is not None:
             await _delete(task, scenario, user, tenant_id)
@@ -220,9 +223,8 @@ async def test_update_clears_emptied_target_and_warns_about_missing_ones(client:
             await _delete(task, scenario, user, tenant_id)
 
 
-async def test_collect_force_refresh_is_the_full_cycle_flag(client: AsyncClient) -> None:
-    """The single collect checkbox sets both flags (docs/CLI.md full cycle),
-    and unchecking it clears the stored ones instead of leaving a stale value."""
+async def test_collect_ignores_forged_repeat_flags_and_clears_legacy_flags(client: AsyncClient) -> None:
+    """Web saves ignore submitted force flags and remove previously stored ones."""
     user, tenant_id = await _register(client, "EditForce")
     scenario = task = None
     try:
@@ -244,14 +246,15 @@ async def test_collect_force_refresh_is_the_full_cycle_flag(client: AsyncClient)
                 "scenario_id": str(scenario.id),
                 "start_date": "2026-09-01",
                 "force_refresh": "on",
+                "force_reanalyze": "on",
                 "_csrf": csrf,
             },
         )
         assert resp.status_code == 200
         with tenant_scope(bypass=True):
             updated = await AgentTask.objects.get(id=task.id)
-        assert updated.payload["force_refresh"] is True
-        assert updated.payload["force_reanalyze"] is True
+        assert "force_refresh" not in updated.payload
+        assert "force_reanalyze" not in updated.payload
 
         csrf = await _csrf(client, f"/app/tasks/{task.id}/edit")
         resp = await client.post(
@@ -268,8 +271,8 @@ async def test_collect_force_refresh_is_the_full_cycle_flag(client: AsyncClient)
         assert resp.status_code == 200
         with tenant_scope(bypass=True):
             updated = await AgentTask.objects.get(id=task.id)
-        assert updated.payload["force_refresh"] is False
-        assert updated.payload["force_reanalyze"] is False
+        assert "force_refresh" not in updated.payload
+        assert "force_reanalyze" not in updated.payload
     finally:
         if task is not None and scenario is not None:
             await _delete(task, scenario, user, tenant_id)
@@ -303,8 +306,9 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         assert "task.job_type === 'digest'" in page.text
         # User lists post only for the types that read them.
         assert 'x-if="task.job_type === \'collect\'"' in page.text
-        # One force flag per job type, the same macro the editor uses.
-        assert page.text.count('name="force_reanalyze"') == 1
+        # Repeat-policy controls are absent from the add form.
+        assert 'name="force_reanalyze"' not in page.text
+        assert 'name="force_refresh"' not in page.text
         assert "Переанализировать всё (игнорировать хеши)" not in page.text
     finally:
         if scenario is not None:
@@ -337,6 +341,8 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
                 "start_date": "2026-09-01",
                 "brands": "Coca Cola, Sprite",
                 "keywords_list": "жалоба",
+                "force_refresh": "on",
+                "force_reanalyze": "on",
                 "_csrf": csrf,
             },
         )
@@ -347,6 +353,44 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
         assert created.agent_scenario_id == scenario.id
         assert created.payload["brands"] == ["Coca Cola", "Sprite"]
         assert created.payload["keywords_list"] == ["жалоба"]
+        assert created.payload["force_refresh"] is False
+        assert created.payload["force_reanalyze"] is False
+        assert "укажите в параметрах задачи" not in resp.text
+    finally:
+        if created is not None:
+            with tenant_scope(bypass=True):
+                await AgentTask.objects.delete(id=created.id)
+        if scenario is not None:
+            with tenant_scope(bypass=True):
+                await AgentScenario.objects.delete(id=scenario.id)
+        await User.objects.delete_user(user.id)
+        await tenants.delete_by_id(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_collect_only_creation_does_not_warn_about_analysis_targets(client: AsyncClient) -> None:
+    """A collect-only task does not analyze content, so target warnings mislead."""
+    user, tenant_id = await _register(client, "CollectOnly")
+    scenario = created = None
+    try:
+        scenario = await _make_scenario(tenant_id, ["brand_mentions"])
+        csrf = await _csrf(client, "/app/tasks")
+        name = _name("task")
+        resp = await client.post(
+            "/app/tasks",
+            data={
+                "name": name,
+                "job_type": "collect",
+                "cron_custom": "0 9 * * *",
+                "scenario_id": str(scenario.id),
+                "start_date": "2026-09-01",
+                "_csrf": csrf,
+            },
+        )
+        assert resp.status_code == 200
+        with tenant_scope(bypass=True):
+            created = await AgentTask.objects.filter(name=name).first()
+        assert created is not None
         assert "укажите в параметрах задачи" not in resp.text
     finally:
         if created is not None:

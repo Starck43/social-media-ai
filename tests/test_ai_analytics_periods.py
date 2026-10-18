@@ -110,6 +110,32 @@ async def test_build_period_rollups_folds_daily_rows(source):
     await AIAnalytics.objects.filter(source_id=source.id).delete()
 
 
+async def test_period_rollups_keep_analysis_contexts_separate(source):
+    from app.models.managers.ai_analytics_manager import AIAnalyticsManager
+
+    day = date(2026, 2, 1)
+    for fingerprint, posts in (("a" * 64, 2), ("b" * 64, 7)):
+        await AIAnalytics.objects.create(
+            source_id=source.id,
+            analysis_date=day,
+            period_type=PeriodType.DAY,
+            analysis_fingerprint=fingerprint,
+            summary_data={"content_statistics": {"total_posts": posts, "messages_count": posts}},
+        )
+
+    written = await AIAnalyticsManager().build_period_rollups(PeriodType.WEEK, day, date(2026, 2, 7))
+    rollups = await AIAnalytics.objects.filter(
+        source_id=source.id, analysis_date=day, period_type=PeriodType.WEEK
+    )
+
+    assert written == 2
+    assert {row.analysis_fingerprint for row in rollups} == {"a" * 64, "b" * 64}
+    assert {
+        row.analysis_fingerprint: row.summary_data["content_statistics"]["total_posts"] for row in rollups
+    } == {"a" * 64: 2, "b" * 64: 7}
+    await AIAnalytics.objects.filter(source_id=source.id).delete()
+
+
 def test_calculate_content_stats_writes_activity_metrics():
     """content_statistics carries active_users/messages_count/engagement_rate."""
     content = [

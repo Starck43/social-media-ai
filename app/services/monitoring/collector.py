@@ -99,14 +99,20 @@ class ContentCollector:
 		from app.models import CollectedItem
 		from app.services.ai.dedup import analysed_hashes
 
-		hashes = analysed_hashes(analytics)
+		hashes = analysed_hashes(analytics) | set(getattr(self.analyzer, "completed_hashes", set()))
 		if not hashes:
 			return 0
 
 		session = new_session()
 		try:
 			async with session.begin():
-				removed = await CollectedItem.objects.delete_hashes(session, source.id, hashes)
+				removed = await CollectedItem.objects.delete_hashes(
+					session,
+					source.id,
+					hashes,
+					tenant_id=source.tenant_id,
+					analysis_fingerprint=getattr(self.analyzer, "current_fingerprint", None),
+				)
 		except Exception as e:  # noqa: BLE001 — leftovers are swept by retention
 			logger.warning("collector_retirement_failed error_code=storage_operation_failed")
 			return 0

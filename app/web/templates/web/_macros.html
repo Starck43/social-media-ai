@@ -132,16 +132,6 @@
                     <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
                 </div>
             </div>
-            {# One flag per type: collect's force_refresh is the documented full
-               cycle (re-fetch + re-analyze), analyze keeps force_reanalyze.
-               Hidden + x-model rather than `:checked`, so the value survives
-               the template being torn down and rebuilt on a job_type switch. #}
-            <template x-if="{{ model }} === 'collect'">
-                {{ switch_toggle("force_refresh", "Перетирать данные за этот период", hint="заново получить записи за период и перепрогнать их анализ (иначе — только новые)", attrs={'x-model': m ~ '.force_refresh'}) }}
-            </template>
-            <template x-if="{{ model }} === 'analyze'">
-                {{ switch_toggle("force_reanalyze", "Принудительный повторный анализ", hint="перепрогнать модель по уже обработанным записям, игнорируя дедуп-хеши", attrs={'x-model': m ~ '.force_reanalyze'}) }}
-            </template>
         </div>
     </template>
 {%- endmacro %}

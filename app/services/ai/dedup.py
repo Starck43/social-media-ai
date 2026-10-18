@@ -111,6 +111,21 @@ async def filter_analyzed(
         return content, None
 
 
+async def filter_by_context_receipts(
+    content: list[dict], source_id: int, tenant_id: int, analysis_fingerprint: str
+) -> tuple[list[dict], set[str]]:
+    """Filter only exact-context durable successes; storage errors fail closed."""
+    if not content:
+        return [], set()
+    hashes = {item_hash(item) for item in content}
+    from app.models import AnalyzedContentReceipt
+
+    covered = await AnalyzedContentReceipt.objects.covered_hashes(
+        source_id, analysis_fingerprint, list(hashes), tenant_id=tenant_id
+    )
+    return [item for item in content if item_hash(item) not in covered], covered
+
+
 # ---------------------------------------------------------------------------
 # "Have we ever fetched this?" — a separate question from "have we analysed it?"
 # ---------------------------------------------------------------------------

@@ -34,8 +34,23 @@ def load_methods():
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CollectedItemManager")
     nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_staged_mutation_scope"]
     nodes.extend(n for n in cls.body if getattr(n, "name", None) in METHODS)
-    namespace = {"Any": Any, "Sequence": Sequence, "settings": SimpleNamespace(DB_SCHEMA="isolated_schema"),
-                 "sa_text": lambda sql: sql}
+    class Column:
+        def __eq__(self, other):
+            return (self, other)
+
+    class Select:
+        def where(self, *conditions):
+            self.conditions = conditions
+            return self
+
+    namespace = {
+        "Any": Any,
+        "Sequence": Sequence,
+        "settings": SimpleNamespace(DB_SCHEMA="isolated_schema"),
+        "sa_text": lambda sql: sql,
+        "select": lambda *columns: Select(),
+        "Source": SimpleNamespace(id=Column(), tenant_id=Column()),
+    }
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
     return {name: namespace[name] for name in METHODS}
 
@@ -46,11 +61,13 @@ class SessionDouble:
         self.rowcount = rowcount
         self.error = error
 
-    async def execute(self, sql, params):
-        self.calls.append((sql, dict(params)))
+    async def execute(self, sql, params=None):
+        self.calls.append((sql, dict(params or {})))
         await asyncio.sleep(0)
         if self.error:
             raise self.error
+        if hasattr(sql, "conditions"):
+            return SimpleNamespace(scalar_one_or_none=lambda: self.source_tenant_id)
         return SimpleNamespace(rowcount=self.rowcount)
 
 
@@ -63,6 +80,7 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patcher.stop)
 
     async def invoke(self, name, session, source_id=41, hashes=("alpha",)):
+        session.source_tenant_id = self.context.current_tenant_id() or 17
         args = (None, session, source_id) if name == "reset_attempts" else (None, session, source_id, hashes)
         return await self.methods[name](*args)
 
@@ -70,9 +88,12 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
         session = SessionDouble()
         with self.context.tenant_scope(17):
             self.assertEqual(await self.invoke(name, session), 2)
-        sql, params = session.calls[0]
+        sql, params = session.calls[-1]
         self.assertIn("isolated_schema.collected_items", sql)
-        self.assertIn("WHERE source_id = :source_id", sql)
+        if name == "delete_hashes":
+            self.assertIn("WHERE tenant_id = :tenant_id AND source_id = :source_id", sql)
+        else:
+            self.assertIn("WHERE source_id = :source_id", sql)
         self.assertTrue(sql.endswith(" AND tenant_id = :tenant_id"))
         self.assertEqual((params["source_id"], params["tenant_id"]), (41, 17))
         if name == "reset_attempts":
@@ -121,11 +142,18 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
                 session = SessionDouble()
                 with self.context.tenant_scope(bypass=True):
                     await self.invoke(name, session)
-                sql, params = session.calls[0]
-                self.assertNotIn("tenant_id", sql)
-                self.assertNotIn("tenant_id", params)
+                sql, params = session.calls[-1]
+                if name == "delete_hashes":
+                    self.assertIn("tenant_id = :tenant_id", sql)
+                    self.assertEqual(params["tenant_id"], 17)
+                else:
+                    self.assertNotIn("tenant_id", sql)
+                    self.assertNotIn("tenant_id", params)
                 self.assertEqual(params["source_id"], 41)
-                self.assertIn("WHERE source_id = :source_id", sql)
+                if name == "delete_hashes":
+                    self.assertIn("WHERE tenant_id = :tenant_id AND source_id = :source_id", sql)
+                else:
+                    self.assertIn("WHERE source_id = :source_id", sql)
                 if name != "reset_attempts":
                     self.assertEqual(params["hashes"], ["alpha"])
 
@@ -142,7 +170,7 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
             session = SessionDouble()
             with self.context.tenant_scope(17):
                 await self.invoke(name, session, hashes=("beta", "alpha", "beta", "", None))
-            self.assertEqual(session.calls[0][1]["hashes"], ["beta", "alpha"])
+            self.assertEqual(session.calls[-1][1]["hashes"], ["beta", "alpha"])
 
     async def test_rowcounts_and_unknown_rowcount_return_contract_are_unchanged(self):
         for name in METHODS:
@@ -166,7 +194,7 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
             with self.context.tenant_scope(tenant):
                 await asyncio.sleep(0)
                 await self.invoke(name, session)
-            return session.calls[0][1]["tenant_id"]
+            return session.calls[-1][1]["tenant_id"]
         for name in METHODS:
             with self.subTest(method=name):
                 self.assertEqual(await asyncio.gather(mutate(name, 17), mutate(name, 29)), [17, 29])
@@ -178,7 +206,7 @@ class StagedMutationScopeTests(unittest.IsolatedAsyncioTestCase):
                 session = SessionDouble()
                 with self.context.tenant_scope(29):
                     await self.invoke(name, session)
-                self.assertEqual(session.calls[0][1]["tenant_id"], 29)
+                self.assertEqual(session.calls[-1][1]["tenant_id"], 29)
             self.assertTrue(self.context.is_bypass())
 
 

@@ -8,6 +8,7 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 # isort: split
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
+from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
 from .analysis.ai_analytics import AIAnalytics
 from .billing import (
     PersonalBillingAccount,
@@ -78,6 +79,7 @@ __all__ = [
     "LLMModel",
     # Analytics models
     "AIAnalytics",
+    "AnalyzedContentReceipt",
     "LLMAttempt",
     "LLMBudgetDay",
     "LLMBudgetReservation",

@@ -10,7 +10,8 @@ from app.core.config import settings
 from app.models import AgentScenario, AIAnalytics, LLMModel, Source
 from app.services.ai.chain_resolver import _normalize, _token_set_ratio, resolve_chain_async
 from app.services.ai.content_classifier import ContentClassifier
-from app.services.ai.dedup import batch_hash, filter_analyzed, hashes_hash, item_hash
+from app.services.ai.dedup import batch_hash, filter_by_context_receipts, hashes_hash, item_hash
+from app.services.ai.analysis_context import analysis_fingerprint
 from app.services.ai.json_schema_builder import build_pydantic_model, validate_with_pydantic
 from app.services.ai.scenario_schema import ScenarioOutputContract, ScenarioSchemaError, compile_scenario_output
 from app.services.ai.llm_client import LLMClientFactory
@@ -60,6 +61,10 @@ class AIAnalyzer:
         # Cumulative diagnostics for this instance, independent of saved rows.
         # Callers may inspect a delta; no raw provider result is exposed here.
         self.reported_errors = 0
+        # Per-call durable coverage, including receipt hits whose analytics row
+        # was later deleted. Callers use this only to retire matching staged rows.
+        self.completed_hashes: set[str] = set()
+        self.current_fingerprint: str | None = None
 
     def _record_result_error(self, result: Any) -> bool:
         """Record explicit client failure envelopes, not unknown/empty results."""
@@ -146,7 +151,7 @@ class AIAnalyzer:
         Args:
                 content: List of content items
                 source: Source being analyzed
-                force_reanalyze: Bypass dedup and re-analyze everything (full-cycle refresh)
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative
                 agent_scenario: Already-resolved scenario (task's own). When given,
                         the tenant-default lookup is skipped, so a task's scenario
                         actually shapes the analysis instead of being silently ignored.
@@ -155,6 +160,8 @@ class AIAnalyzer:
         Returns:
                 List of AIAnalytics records (one per theme cluster per source per run)
         """
+        self.completed_hashes = set()
+        self.current_fingerprint = None
         return await self._analyze_content_by_themes(
             content,
             source,
@@ -192,9 +199,7 @@ class AIAnalyzer:
                 topic_chain_id: Optional chain ID for ongoing topics
                 parent_analysis_id: Optional parent analysis ID for threaded analysis
                 analysis_date: Optional date to use for this analysis (defaults to today)
-                force_reanalyze: Bypass dedup and analyze everything (used by a
-                        full-cycle `--force-refresh` task run so stored rows are
-                        overwritten; costs tokens, so it is never the default).
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative.
                 agent_scenario: Already-resolved scenario (a task's own). When
                         given, the tenant-default lookup is skipped — the caller
                         resolved the scenario, so this analysis must use it.
@@ -205,26 +210,15 @@ class AIAnalyzer:
         Returns:
                 AIAnalytics object with complete analysis results or None if failed
         """
+        # This method is also a supported direct entry point. Keep per-call
+        # outcome state isolated when callers reuse one analyzer across sources.
+        self.completed_hashes = set()
+        self.current_fingerprint = None
         if not content:
             logger.warning(f"No content to analyze for source {source.id}")
             return None
 
         billing_execution = {"source_id": source.id, **(billing_execution or {})}
-
-        # Dedup before anything expensive: items already covered by an earlier
-        # analysis must never reach the LLM again (fail-open, see dedup.py).
-        # `force_reanalyze` is the deliberate exception: a full-cycle refresh
-        # re-analyzes the whole selected period so its rows get overwritten.
-        if not force_reanalyze:
-            content, known = await filter_analyzed(content, source.id)
-            if not content:
-                if known is not None:
-                    logger.info(f"Batch for source {source.id} fully covered by analytics {known.id}, returning as-is")
-                    return known
-                logger.warning(f"No content to analyze for source {source.id} after dedup filtering")
-                return None
-        else:
-            logger.info(f"Force re-analysis for source {source.id}: bypassing dedup ({len(content)} items)")
 
         # Load the scenario: the source no longer carries one. A caller that
         # resolved a scenario (a task's own) passes it in; everything else
@@ -236,8 +230,16 @@ class AIAnalyzer:
                 if default_sc:
                     agent_scenario = default_sc
                     logger.info(f"Using tenant default scenario '{agent_scenario.name}' for source {source.id}")
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning("analysis_context_resolution_failed source_id=%s error_kind=%s", source.id,
+                               _analysis_error_kind(error))
+                self.reported_errors += 1
+                return None
+
+        if agent_scenario is not None and not agent_scenario.is_active:
+            self.reported_errors += 1
+            logger.warning("analysis_context_inactive source_id=%s", source.id)
+            return None
 
         # One immutable output contract for every modality and the save boundary.
         # Unsupported stored schemas stop before model selection/provider calls;
@@ -248,6 +250,24 @@ class AIAnalyzer:
             self.reported_errors += 1
             logger.warning("analysis_schema_rejected error_code=%s", error.code)
             return None
+
+        context_fingerprint = analysis_fingerprint(
+            agent_scenario,
+            trigger_config=trigger_config,
+            task_payload=task_payload,
+            output_schema=output_contract.schema,
+        )
+        self.current_fingerprint = context_fingerprint
+        # Resolve the exact-context receipt before any provider call. A legacy
+        # force flag cannot bypass durable protection.
+        fresh_content, previously_covered = await filter_by_context_receipts(
+            content, source.id, source.tenant_id, context_fingerprint
+        )
+        self.completed_hashes = set(previously_covered)
+        if not fresh_content:
+            logger.info("analysis_receipt_hit source_id=%s covered=%s", source.id, len(previously_covered))
+            return None
+        content = fresh_content
 
         # Prepare metadata
         content_stats = self._calculate_content_stats(content, analysis_date)
@@ -435,7 +455,11 @@ class AIAnalyzer:
                 task_payload=task_payload,
                 trigger_config=trigger_config,
                 output_contract=output_contract,
+                analysis_fingerprint=context_fingerprint,
             )
+            if analysis is not None:
+                persisted_hashes = (getattr(analysis, "summary_data", None) or {}).get("content_hashes") or []
+                self.completed_hashes.update(value for value in persisted_hashes if type(value) is str)
 
             return analysis
 
@@ -463,7 +487,7 @@ class AIAnalyzer:
         Args:
                 content: List of content items
                 source: Source being analyzed
-                force_reanalyze: Bypass dedup and re-analyze everything
+                force_reanalyze: Legacy compatibility input; durable receipts remain authoritative
                 task_payload: Task-specific parameters (brands, competitors, etc.)
 
         Returns:
@@ -1402,6 +1426,7 @@ class AIAnalyzer:
         media_coverage_limited: bool = False,
         output_contract: ScenarioOutputContract | None = None,
         text_coverage_limited: bool = False,
+        analysis_fingerprint: str = "legacy",
     ) -> Any | None:
         """Save useful results without claiming new coverage after reported failures."""
         from datetime import date as date_class
@@ -1448,7 +1473,8 @@ class AIAnalyzer:
         existing_analysis = None
         if reported_partial is True or media_coverage_limited is True:
             existing_analysis = await AIAnalytics.objects.filter(
-                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
+                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY,
+                analysis_fingerprint=analysis_fingerprint,
             ).first()
             if existing_analysis:
                 # Do not replace A's useful body while retaining its hashes.
@@ -1650,75 +1676,80 @@ class AIAnalyzer:
         # Primary provider (most used)
         primary_provider = list(providers_used)[0] if providers_used else None
 
-        # Check if analysis already exists for this date
-        if reported_partial is not True and media_coverage_limited is not True:
-            existing_analysis = await AIAnalytics.objects.filter(
-                source_id=source.id, analysis_date=analysis_date, period_type=PeriodType.DAY
-            ).first()
+        from app.core.database import new_session
 
-        if existing_analysis:
-            # Merge dedup sets: a partial re-run must not forget (and re-pay
-            # for) items covered by earlier analyses of the same day.
-            existing_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
-            merged_hashes = sorted(set(existing_hashes) | set(content_hashes or []))
-            if merged_hashes:
-                comprehensive_data["content_hashes"] = merged_hashes
-                content_hash = hashes_hash(merged_hashes)
-            elif content_hash is None:
-                content_hash = existing_analysis.content_hash
+        session = new_session()
+        try:
+            async with session.begin():
+                existing_analysis = await AIAnalytics.objects.filter(
+                    source_id=source.id,
+                    analysis_date=analysis_date,
+                    period_type=PeriodType.DAY,
+                    analysis_fingerprint=analysis_fingerprint,
+                    session=session,
+                ).first()
 
-            # Update existing analysis using manager
-            updated_analysis = await AIAnalytics.objects.update_by_id(
-                existing_analysis.id,
-                summary_data=comprehensive_data,
-                content_hash=content_hash,
-                llm_model=llm_model or "multi-llm",
-                prompt_text=prompt_text if settings.DEBUG else None,
-                response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-                topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
-                chain_label=chain_label or existing_analysis.chain_label,
-                normalized_label=normalized_label or existing_analysis.normalized_label,
-                # Preserve existing chain_id or set new one
-                parent_analysis_id=parent_analysis_id,
-                request_tokens=total_request_tokens if total_request_tokens > 0 else None,
-                response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-                estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
-                provider_type=primary_provider,
-                media_types=list(media_types_analyzed) if media_types_analyzed else None,
-            )
+                if existing_analysis:
+                    existing_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
+                    merged_hashes = sorted(set(existing_hashes) | set(content_hashes or []))
+                    if merged_hashes:
+                        comprehensive_data["content_hashes"] = merged_hashes
+                        content_hash = hashes_hash(merged_hashes)
+                    elif content_hash is None:
+                        content_hash = existing_analysis.content_hash
+                    analytics = await AIAnalytics.objects.update_by_id(
+                        existing_analysis.id,
+                        session=session,
+                        summary_data=comprehensive_data,
+                        content_hash=content_hash,
+                        analysis_fingerprint=analysis_fingerprint,
+                        llm_model=llm_model or "multi-llm",
+                        prompt_text=prompt_text if settings.DEBUG else None,
+                        response_payload=self._make_json_serializable(response_payload) if response_payload else None,
+                        topic_chain_id=topic_chain_id or existing_analysis.topic_chain_id,
+                        chain_label=chain_label or existing_analysis.chain_label,
+                        normalized_label=normalized_label or existing_analysis.normalized_label,
+                        parent_analysis_id=parent_analysis_id,
+                        request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+                        response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+                        estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+                        provider_type=primary_provider,
+                        media_types=list(media_types_analyzed) if media_types_analyzed else None,
+                    )
+                else:
+                    analytics = await AIAnalytics.objects.create(
+                        session=session,
+                        source_id=source.id,
+                        summary_data=comprehensive_data,
+                        content_hash=content_hash,
+                        analysis_fingerprint=analysis_fingerprint,
+                        llm_model=llm_model or "multi-llm",
+                        prompt_text=prompt_text if settings.DEBUG else None,
+                        response_payload=self._make_json_serializable(response_payload) if response_payload else None,
+                        analysis_date=analysis_date,
+                        period_type=PeriodType.DAY,
+                        topic_chain_id=topic_chain_id,
+                        chain_label=chain_label,
+                        normalized_label=normalized_label,
+                        parent_analysis_id=parent_analysis_id,
+                        request_tokens=total_request_tokens if total_request_tokens > 0 else None,
+                        response_tokens=total_response_tokens if total_response_tokens > 0 else None,
+                        estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
+                        provider_type=primary_provider,
+                        media_types=list(media_types_analyzed) if media_types_analyzed else None,
+                    )
+                if content_hashes:
+                    from app.models import AnalyzedContentReceipt
 
-            scenario_info = f" using scenario '{agent_scenario.name}'" if agent_scenario else ""
-            logger.info(
-                f"Multi-LLM analysis updated for source {source.id}{scenario_info} "
-                f"(analytics_id: {existing_analysis.id}, providers: {len(analysis_results)})"
-            )
-            return updated_analysis
-
-        # Create analytics record
-        analytics = await AIAnalytics.objects.create(
-            source_id=source.id,
-            summary_data=comprehensive_data,
-            content_hash=content_hash,
-            llm_model=llm_model or "multi-llm",
-            prompt_text=prompt_text if settings.DEBUG else None,
-            response_payload=self._make_json_serializable(response_payload) if response_payload else None,
-            analysis_date=analysis_date,
-            period_type=PeriodType.DAY,
-            topic_chain_id=topic_chain_id,
-            chain_label=chain_label,
-            normalized_label=normalized_label,
-            parent_analysis_id=parent_analysis_id,
-            # Cost tracking fields
-            request_tokens=total_request_tokens if total_request_tokens > 0 else None,
-            response_tokens=total_response_tokens if total_response_tokens > 0 else None,
-            estimated_cost=estimated_cost_cents if estimated_cost_cents > 0 else None,
-            provider_type=primary_provider,
-            media_types=list(media_types_analyzed) if media_types_analyzed else None,
-        )
-
-        scenario_info = f" using scenario '{agent_scenario.name}'" if agent_scenario else ""
-        logger.info(
-            f"Multi-LLM analysis saved for source {source.id}{scenario_info} "
-            f"(analytics_id: {analytics.id}, providers: {len(analysis_results)})"
-        )
-        return analytics
+                    await AnalyzedContentReceipt.objects.record_successes(
+                        session,
+                        tenant_id=source.tenant_id,
+                        source_id=source.id,
+                        analysis_fingerprint=analysis_fingerprint,
+                        hashes=content_hashes,
+                        scenario_id=agent_scenario.id if agent_scenario else None,
+                        analytics_id=analytics.id,
+                    )
+            return analytics
+        finally:
+            await session.close()

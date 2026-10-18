@@ -328,6 +328,49 @@ async def test_failed_analysis_keeps_staged_rows(source, monkeypatch):
     assert len(await CollectedItem.objects.filter(source_id=source.id)) == 3
 
 
+async def test_receipt_only_staged_skip_does_not_replay_old_analytics_actions(source, monkeypatch):
+    """A deleted-analytics receipt skip cannot replay recent results as actions."""
+    from datetime import date
+    from unittest.mock import AsyncMock
+
+    from app.jobs import handlers
+    from app.models import AIAnalytics, BotAction
+    from app.services.ai import analyzer as analyzer_mod
+    from app.services.ai.dedup import item_hash
+    from app.types import AgentActionType
+
+    items = _items(1)
+    await _collector(items).collect_from_source(source, analyze=False, run_id=667)
+    task, _scenario = await _task_with_scenario()
+    await AgentTask.objects.update_by_id(task.id, action_type=AgentActionType.COMMENT)
+    old = await AIAnalytics.objects.create(
+        source_id=source.id,
+        analysis_date=date.today(),
+        summary_data={"summary": "old saved result", "recent_posts": []},
+        response_payload={"response": "old response"},
+    )
+
+    async def receipt_hit(self, content, source_, **kwargs):
+        self.completed_hashes = {item_hash(items[0])}
+        self.current_fingerprint = "a" * 64
+        return None
+
+    monkeypatch.setattr(analyzer_mod.AIAnalyzer, "analyze_content", receipt_hit)
+    monkeypatch.setattr(handlers, "_retire_staged", AsyncMock(return_value=0))
+    monkeypatch.setattr(handlers, "_count_failed_staged", AsyncMock(return_value=0))
+    action_create = AsyncMock(side_effect=AssertionError("old analytics must not create an action"))
+    monkeypatch.setattr(BotAction.objects, "create", action_create)
+    try:
+        result = await handlers.handle_analyze({"agent_task_id": task.id})
+    finally:
+        await AIAnalytics.objects.delete_by_id(old.id)
+        await AgentTask.objects.delete_by_id(task.id)
+
+    assert result["actions_created"] == 0
+    assert result["analyzed"] == 0
+    action_create.assert_not_awaited()
+
+
 async def test_retiring_one_source_leaves_the_others_alone(source):
     """A job collects every source, so retirement must not sweep the workspace.
 

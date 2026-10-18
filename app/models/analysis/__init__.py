@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .agent_scenario import AgentScenario
+    from .analyzed_content_receipt import AnalyzedContentReceipt
     from .ai_analytics import AIAnalytics
     from .llm_attempt import LLMAttempt
     from .llm_budget import LLMBudgetDay, LLMBudgetReservation
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AgentScenario",
+    "AnalyzedContentReceipt",
     "AIAnalytics",
     "LLMAttempt",
     "LLMBudgetDay",
@@ -28,6 +30,7 @@ __all__ = [
 ]
 _MODULES = {
     "AgentScenario": "agent_scenario",
+    "AnalyzedContentReceipt": "analyzed_content_receipt",
     "AIAnalytics": "ai_analytics",
     "LLMAttempt": "llm_attempt",
     "LLMBudgetDay": "llm_budget",

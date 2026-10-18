@@ -120,16 +120,14 @@ def _build_trigger_config(
 
 
 def _payload_from_form(
-		job_type, monitored_users, excluded_users, start_date, end_date, force_refresh, force_reanalyze,
+		job_type, monitored_users, excluded_users, start_date, end_date,
 		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
 ) -> dict:
 	"""The flat payload keys a task of this type needs.
 
 	For collect/analyze a `cli_dates.start_date` is mandatory: without it a
 	fresh source has no lower bound and the first run drains the whole history
-	from the first post. `force_refresh` (collect: overwrite the window — and,
-	per docs/CLI.md, re-run the analysis over it) and `force_reanalyze`
-	(analyze: re-run the model on stored rows) are the operator's own choices.
+	from the first post. Web-launched jobs use the default skip-repeat policy.
 
 	For digest: `period` (day/week/month), `group_by` axis, and
 	`time_breakdown` flag are stored in payload so the scheduled run uses
@@ -145,15 +143,8 @@ def _payload_from_form(
 		if start is None:
 			raise ValueError("Укажите дату начала сбора контента — иначе первый запуск вытянет всё с первого поста")
 		end = AgentTaskManager.parse_date(end_date)
-		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=bool(force_refresh)))
-		# One flag per type, written explicitly so a value left behind by a
-		# job-type switch never survives the save. `force_refresh` on collect is
-		# the documented full cycle (docs/CLI.md: re-fetch the period *and* re-run
-		# the analysis over it); `analyze` keeps its own `force_reanalyze`.
-		if job_type == "collect":
-			payload["force_reanalyze"] = bool(force_refresh)
-		else:
-			payload["force_reanalyze"] = bool(force_reanalyze)
+		payload.update(AgentTaskManager.build_dates_payload(start, end, force_refresh=False))
+		payload["force_reanalyze"] = False
 	if job_type == "digest":
 		if digest_period and digest_period in ("day", "week", "month"):
 			payload["period"] = digest_period
@@ -247,8 +238,6 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"excluded_users": ", ".join(payload.get("excluded_users") or []),
 		"start_date": cli_dates.get("start_date") or "",
 		"end_date": cli_dates.get("end_date") or "",
-		"force_refresh": bool(payload.get("force_refresh")),
-		"force_reanalyze": bool(payload.get("force_reanalyze")),
 		"digest_period": payload.get("period") or "day",
 		"digest_group_by": payload.get("group_by") or "themes",
 		"digest_time_breakdown": bool(payload.get("time_breakdown")),
@@ -424,7 +413,11 @@ async def queue_task_now(task: "AgentTask", initiated_by_user_id: int | None = N
 		initiated_by_user_id = getattr(actor, "id", None)
 
 	try:
-		job = await enqueue_task_run(task, initiated_by_user_id=initiated_by_user_id)
+		job = await enqueue_task_run(
+			task,
+			extra_payload={"force_refresh": False, "force_reanalyze": False},
+			initiated_by_user_id=initiated_by_user_id,
+		)
 	except SourceJobBusy as busy:
 		return {"job_id": busy.job.id, "status": busy.job.status, "already_running": True}
 
@@ -540,8 +533,6 @@ async def task_create(
 		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
-		force_refresh: str = Form(""),
-		force_reanalyze: str = Form(""),
 		digest_period: str = Form(""),
 		digest_group_by: str = Form(""),
 		digest_time_breakdown: str = Form(""),
@@ -609,8 +600,6 @@ async def task_create(
 			excluded_users,
 			start_date,
 			end_date,
-			force_refresh,
-			force_reanalyze,
 			digest_period=digest_period,
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
@@ -639,7 +628,10 @@ async def task_create(
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
 
-			missing = missing_target_params(sc.analysis_types, payload)
+			if job_type == "analyze" or (job_type == "collect" and payload.get("analyze_inline") is True):
+				missing = missing_target_params(sc.analysis_types, payload)
+			else:
+				missing = []
 			if missing:
 				add_flash(
 					request,
@@ -1047,8 +1039,6 @@ async def task_update(
 		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
-		force_refresh: str = Form(""),
-		force_reanalyze: str = Form(""),
 		digest_period: str = Form(""),
 		digest_group_by: str = Form(""),
 		digest_time_breakdown: str = Form(""),
@@ -1112,8 +1102,6 @@ async def task_update(
 			excluded_users,
 			start_date,
 			end_date,
-			force_refresh,
-			force_reanalyze,
 			digest_period=digest_period,
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
@@ -1143,6 +1131,10 @@ async def task_update(
 	# "days", "min_messages" set via CLI or agent tool must survive a web edit.
 	payload = task.payload.copy() if isinstance(task.payload, dict) else {}
 	payload.update(new_payload)
+	# Editing through the web form removes legacy force keys. Manual web runs
+	# also override stored legacy values in the one-off job payload above.
+	payload.pop("force_refresh", None)
+	payload.pop("force_reanalyze", None)
 	# The form's target fields are authoritative for their own keys: filled
 	# sets, emptied clears (see `_apply_targets`).
 	_apply_targets(
@@ -1164,7 +1156,10 @@ async def task_update(
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
 
-			missing = missing_target_params(sc.analysis_types, payload)
+			if job_type == "analyze" or (job_type == "collect" and payload.get("analyze_inline") is True):
+				missing = missing_target_params(sc.analysis_types, payload)
+			else:
+				missing = []
 			if missing:
 				add_flash(
 					request,

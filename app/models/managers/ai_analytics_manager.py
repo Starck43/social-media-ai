@@ -98,18 +98,24 @@ class AIAnalyticsManager(BaseManager):
         llm_model: Optional[str] = None,
         prompt_text: Optional[str] = None,
         response_payload: Optional[dict] = None,
+        analysis_fingerprint: str = "legacy",
     ) -> Any:
         """
         Save AI analysis results with full LLM tracing.
 
-        Upserts on (source, date, period): an existing row is updated in place,
+        Upserts on (source, date, period, context): an existing row is updated in place,
         otherwise a new one is created. `create()` stamps `tenant_id` from the
         ambient scope, so callers must run inside `tenant_scope(...)`.
 
         Returns:
                 The created or updated AIAnalytics object
         """
-        existing = await self.get(source_id=source_id, analysis_date=analysis_date, period_type=period_type)
+        existing = await self.get(
+            source_id=source_id,
+            analysis_date=analysis_date,
+            period_type=period_type,
+            analysis_fingerprint=analysis_fingerprint,
+        )
 
         updates: dict[str, Any] = {"summary_data": summary_data}
         if topic_chain_id:
@@ -130,6 +136,7 @@ class AIAnalyticsManager(BaseManager):
             source_id=source_id,
             analysis_date=analysis_date,
             period_type=period_type,
+            analysis_fingerprint=analysis_fingerprint,
             **updates,
         )
 
@@ -344,11 +351,11 @@ class AIAnalyticsManager(BaseManager):
         return base
 
     async def build_period_rollups(self, period_type: PeriodType, start: date, end: date) -> int:
-        """Aggregate the daily analytics of a period into one rollup row per source.
+        """Aggregate daily analytics per source and analysis context.
 
         Gives `period_type` its real meaning: a WEEKLY/MONTHLY run folds the
         period's DAILY rows for each source into a single row (upserted by
-        `(source_id, start, period_type)`). Engagement and LLM cost are summed;
+        `(source_id, start, period_type, analysis_fingerprint)`). Engagement and LLM cost are summed;
         the summary_data carries a period_rollup marker plus the rolled-up
         content statistics.
 
@@ -369,12 +376,13 @@ class AIAnalyticsManager(BaseManager):
             period_type=PeriodType.DAY,
         )
 
-        by_source: dict[int, list[Any]] = {}
+        by_source_context: dict[tuple[int, str], list[Any]] = {}
         for row in daily:
-            by_source.setdefault(row.source_id, []).append(row)
+            fingerprint = getattr(row, "analysis_fingerprint", "legacy") or "legacy"
+            by_source_context.setdefault((row.source_id, fingerprint), []).append(row)
 
         written = 0
-        for source_id, rows in by_source.items():
+        for (source_id, analysis_fingerprint), rows in by_source_context.items():
             total_posts = sum((r.summary_data or {}).get("content_statistics", {}).get("total_posts", 0) for r in rows)
             messages = sum((r.summary_data or {}).get("content_statistics", {}).get("messages_count", 0) for r in rows)
             active_users = sum(
@@ -409,11 +417,17 @@ class AIAnalyticsManager(BaseManager):
                 "content_statistics": content_statistics,
             }
 
-            existing = await self.filter(source_id=source_id, analysis_date=start, period_type=period_type).first()
+            existing = await self.filter(
+                source_id=source_id,
+                analysis_date=start,
+                period_type=period_type,
+                analysis_fingerprint=analysis_fingerprint,
+            ).first()
             if existing:
                 await self.update_by_id(
                     existing.id,
                     summary_data=summary,
+                    analysis_fingerprint=analysis_fingerprint,
                     request_tokens=request_tokens or None,
                     response_tokens=response_tokens or None,
                     estimated_cost=estimated_cost or None,
@@ -423,6 +437,7 @@ class AIAnalyticsManager(BaseManager):
                     source_id=source_id,
                     analysis_date=start,
                     period_type=period_type,
+                    analysis_fingerprint=analysis_fingerprint,
                     summary_data=summary,
                     request_tokens=request_tokens or None,
                     response_tokens=response_tokens or None,

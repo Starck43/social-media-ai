@@ -10,6 +10,15 @@ from app.models import AgentTask
 from app.schemas.task import TaskCreate, TaskUpdate, TaskRunRequest, TaskResponse
 from app.types import ActionType
 
+
+def _web_api_payload(payload: dict | None) -> dict:
+    """Remove repeat-bypass flags from API-authored task configuration."""
+    safe_payload = dict(payload or {})
+    safe_payload.pop("force_refresh", None)
+    safe_payload.pop("force_reanalyze", None)
+    return safe_payload
+
+
 router = APIRouter(tags=["tasks"])
 
 
@@ -86,7 +95,7 @@ async def create_task(
         name=request.name.strip()[:100],
         cron_expr=request.cron_expr,
         job_type=request.job_type,
-        payload=request.payload or {},
+        payload=_web_api_payload(request.payload),
         agent_scenario_id=request.agent_scenario_id,
         is_active=request.is_active,
         next_run_at=next_run,
@@ -112,6 +121,8 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     updates = request.model_dump(exclude_unset=True)
+    if "payload" in updates:
+        updates["payload"] = _web_api_payload(updates["payload"])
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:100]
 
@@ -191,16 +202,13 @@ async def run_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Merge payload if provided
-    payload = dict(task.payload or {})
-    if request.payload:
-        payload.update(request.payload)
-
     from app.jobs.source_activity import SourceJobBusy
 
     try:
         job = await enqueue_task_run(
-            task, extra_payload={"_one_off": True}, initiated_by_user_id=getattr(_user, "id", None)
+            task,
+            extra_payload={"_one_off": True, "force_refresh": False, "force_reanalyze": False},
+            initiated_by_user_id=getattr(_user, "id", None),
         )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None
@@ -237,7 +245,7 @@ async def run_task_oneoff(
         name=f"one-off-{job_type}-{stamp:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}",
         cron_expr="@once",
         job_type=job_type,
-        payload=payload,
+        payload=_web_api_payload(payload),
         agent_scenario_id=scenario_id,
         is_active=False,
         next_run_at=None,
@@ -250,7 +258,9 @@ async def run_task_oneoff(
 
     try:
         job = await enqueue_task_run(
-            task, extra_payload={"_one_off": True}, initiated_by_user_id=getattr(_user, "id", None)
+            task,
+            extra_payload={"_one_off": True, "force_refresh": False, "force_reanalyze": False},
+            initiated_by_user_id=getattr(_user, "id", None),
         )
     except SourceJobBusy as busy:
         raise HTTPException(status_code=409, detail={"code": "source_busy", "job_id": busy.job.id}) from None

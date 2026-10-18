@@ -38,6 +38,9 @@ def bind_managers(models):
     models.UserCredential.objects = import_module("app.models.managers.user_credential_manager").UserCredentialManager()
     models.LLMAttempt.objects = import_module("app.models.managers.llm_attempt_manager").LLMAttemptManager()
     models.AIAnalytics.objects = import_module("app.models.managers.ai_analytics_manager").AIAnalyticsManager()
+    models.AnalyzedContentReceipt.objects = import_module(
+        "app.models.managers.analyzed_content_receipt_manager"
+    ).AnalyzedContentReceiptManager()
     models.LLMBudgetReservation.objects = import_module("app.models.managers.llm_budget_manager").LLMBudgetManager()
     personal_billing = import_module("app.models.managers.personal_billing_manager")
     models.PersonalBillingAccount.objects = personal_billing.PersonalBillingManager()

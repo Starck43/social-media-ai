@@ -139,7 +139,13 @@ def _resolve_action_type(task) -> "AgentActionType | None":
     return getattr(task, "action_type", None) if task is not None else None
 
 
-async def _retire_staged(analytics: Any, source_id: int) -> int:
+async def _retire_staged(
+    analytics: Any,
+    source_id: int,
+    tenant_id: int | None = None,
+    completed_hashes: set[str] | None = None,
+    analysis_fingerprint: str | None = None,
+) -> int:
     """Drop the raw rows whose content these saved analyses actually cover.
 
     Keyed on the stored item hashes rather than on the job that fetched them,
@@ -155,13 +161,23 @@ async def _retire_staged(analytics: Any, source_id: int) -> int:
     from app.models import CollectedItem
     from app.services.ai.dedup import analysed_hashes
 
-    hashes = analysed_hashes(analytics)
+    hashes = analysed_hashes(analytics) | (completed_hashes or set())
     if not hashes:
         return 0
     session = new_session()
     try:
         async with session.begin():
-            return await CollectedItem.objects.delete_hashes(session, source_id, hashes)
+            if tenant_id is None and not completed_hashes and not analysis_fingerprint:
+                # Compatibility for diagnostic callers; production handler
+                # always supplies the explicit source tenant and context.
+                return await CollectedItem.objects.delete_hashes(session, source_id, hashes)
+            return await CollectedItem.objects.delete_hashes(
+                session,
+                source_id,
+                hashes,
+                tenant_id=tenant_id,
+                analysis_fingerprint=analysis_fingerprint,
+            )
     except Exception:  # noqa: BLE001 — leftovers are swept by the retention pass
         # Log only bounded correlation, never storage errors, SQL or raw content.
         safe_source_id = source_id if type(source_id) is int and 0 < source_id <= 2**63 - 1 else None
@@ -174,7 +190,7 @@ async def _retire_staged(analytics: Any, source_id: int) -> int:
         await session.close()
 
 
-async def _count_failed_staged(source_id: int, staged: list) -> int:
+async def _count_failed_staged(source_id: int, staged: list, completed_hashes: set[str] | None = None) -> int:
     """Count one failed analysis attempt against the staged rows that produced nothing.
 
     The counterpart to `_retire_staged`: a row that was analysed but saved
@@ -190,7 +206,11 @@ async def _count_failed_staged(source_id: int, staged: list) -> int:
     from app.core.database import new_session
     from app.models import CollectedItem
 
-    hashes = [row.content_hash for row in staged if getattr(row, "content_hash", None)]
+    completed_hashes = completed_hashes or set()
+    hashes = [
+        row.content_hash for row in staged
+        if getattr(row, "content_hash", None) and row.content_hash not in completed_hashes
+    ]
     if not hashes:
         return 0
     session = new_session()
@@ -259,14 +279,16 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
     excluded_users = task_payload.get("excluded_users") or []
     # Optional per-run overrides merged into each source's params (the collector
     # reads force_refresh/cli_dates/incremental_mode from source.params).
-    force_refresh = task_payload.get("force_refresh") or payload.get("force_refresh")
+    # Web task rows may contain historical force flags. They are never runtime
+    # overrides; only a direct taskless CLI invocation can request one explicitly.
+    force_refresh = bool(payload.get("force_refresh")) if task is None else False
     # The content window is resolved once and applied at every stage (collect +
     # analyze) — see `_resolve_content_window`.
     window = _resolve_content_window(task_payload, payload, None)
     cli_dates = window or None
-    # Full-cycle refresh: re-analyze the whole selected period, overwriting rows
-    # by (source, date). Only ever set by an explicit `--force-refresh` task run.
-    force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
+    # Legacy task force flags are ignored. A taskless CLI diagnostic may set
+    # this override, but durable receipts still prevent repeat analysis.
+    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None else False
     # The job's own id, used to tie staged raw content back to this run so it
     # can be retired once an analysis has consumed it.
     run_id = payload.get("job_id")
@@ -290,8 +312,10 @@ async def handle_collect(payload: dict[str, Any]) -> dict[str, Any]:
 
     def _apply_params(source) -> None:
         params = dict(source.params or {})
-        if force_refresh is not None:
-            params["force_refresh"] = bool(force_refresh)
+        params.pop("force_refresh", None)
+        params.pop("cli_dates", None)
+        if task is None and force_refresh:
+            params["force_refresh"] = True
         if cli_dates:
             params["cli_dates"] = cli_dates
         source.params = params
@@ -637,7 +661,8 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     task_payload = _task_payload(task)
     scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
     excluded_users = task_payload.get("excluded_users") or []
-    force_reanalyze = task_payload.get("force_reanalyze") or payload.get("force_reanalyze")
+    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None else False
+    keep_raw = bool(payload.get("keep_raw")) if task is None else False
     # The content window gates which staged rows this run drains — the same
     # window that gated collection, so analysis never touches content outside
     # the task's configured period.
@@ -719,6 +744,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             # result keeps the unanalysed rows and a failed analysis leaves
             # every one of them for the next attempt — the only copy of the
             # content must never be the thing we drop.
+            fresh = []
+            staged = []
+            analytics = None
             try:
                 try:
                     raw_total = await CollectedItem.objects.count_for_source(
@@ -743,6 +771,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 per.update({"raw_total": raw_total, "raw_selected": len(staged), "raw_processed": 0})
                 await job_progress.update_current(sources, stats["per_source"], per)
                 progress_attempted = True
+                covered = set()
                 if staged:
                     from app.services.ai.analyzer import AIAnalyzer
 
@@ -778,37 +807,47 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     # Retire by what the analysis stored, not by the run the rows
                     # came from: rows staged by an API/CLI run carry no run id at
                     # all, and a partial analysis must leave the rest alone.
-                    deleted = await _retire_staged(fresh, source.id)
+                    completed_hashes = getattr(analyzer, "completed_hashes", set())
+                    deleted = 0 if keep_raw else await _retire_staged(
+                        fresh,
+                        source.id,
+                        source.tenant_id,
+                        completed_hashes=completed_hashes,
+                        analysis_fingerprint=getattr(analyzer, "current_fingerprint", None),
+                    )
                     # Only rows from this exact batch can count as processed.
                     # `fresh` is persisted coverage; intersect its hashes with
                     # the selected batch to avoid crediting unrelated rows.
                     from app.services.ai.dedup import analysed_hashes
 
-                    covered = analysed_hashes(fresh)
+                    covered = analysed_hashes(fresh) | completed_hashes
                     covered_selected_rows = sum(
                         1 for row in staged if getattr(row, "content_hash", None) in covered
                     )
-                    per["raw_processed"] = min(deleted, covered_selected_rows)
+                    per["raw_processed"] = covered_selected_rows
                     await job_progress.update_current(sources, stats["per_source"], per)
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
-                    else:
+                    elif not completed_hashes:
                         logger.warning(
                             f"Analysis of {len(staged)} staged item(s) for source {source.id} produced "
                             "no result; keeping them staged for a retry"
                         )
-                    # Count a miss against whatever survived the retirement.
-                    # `record_attempts` is an UPDATE keyed on the hash, so rows
-                    # that were just retired are simply not there any more — a
-                    # partial result still counts only the rows that failed,
-                    # which would otherwise never accrue an attempt and would be
-                    # offered again on every run at a full timeout each.
-                    counted = await _count_failed_staged(source.id, staged)
+                    counted = await _count_failed_staged(source.id, staged, covered)
                     if counted:
                         logger.warning(
                             f"{counted} staged item(s) of source {source.id} went unanalysed; "
                             "counting the attempt so they stop being retried eventually"
                         )
+
+                # Trigger evaluation is a continuation of this run's analysis,
+                # not a replay mechanism for recent history. Receipt-only hits
+                # deliberately have no analytics object to trigger from.
+                if staged:
+                    if not fresh:
+                        stats["skipped"] += 1
+                        continue
+                    analytics = fresh
             except Exception as e:  # noqa: BLE001 — a staging problem must not abort the run
                 from app.jobs.progress import ProgressStopped
 
@@ -825,9 +864,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
             # Get recent analytics for this source
-            analytics = (
-                await AIAnalytics.objects.filter(source_id=source.id).order_by(AIAnalytics.created_at.desc()).limit(10)
-            )
+            if analytics is None:
+                analytics = (
+                    await AIAnalytics.objects.filter(source_id=source.id)
+                    .order_by(AIAnalytics.created_at.desc()).limit(10)
+                )
 
             if not analytics:
                 stats["skipped"] += 1

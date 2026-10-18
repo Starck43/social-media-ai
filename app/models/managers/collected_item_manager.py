@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import JSON, bindparam, func, text as sa_text
+from sqlalchemy import JSON, bindparam, func, select, text as sa_text
 
 from app.core.config import settings
 from app.utils.content_attachments import normalize_attachments
@@ -303,7 +303,15 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         rows = await self.filter(source_id=source_id).values(CollectedItem.content_hash).rows()
         return {r[0] for r in rows if r and r[0]}
 
-    async def delete_hashes(self, session: Any, source_id: int, hashes: Sequence[str]) -> int:
+    async def delete_hashes(
+        self,
+        session: Any,
+        source_id: int,
+        hashes: Sequence[str],
+        *,
+        tenant_id: int | None = None,
+        analysis_fingerprint: str | None = None,
+    ) -> int:
         """Retire the raw items whose content an analysis has actually saved.
 
         The precise counterpart to "analyse first, store the raw copy": the
@@ -321,14 +329,162 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         if not wanted:
             return 0
         tenant_clause, tenant_params = _staged_mutation_scope()
+        from app.models import Source
+
+        source_tenant_id = (await session.execute(
+            select(Source.tenant_id).where(Source.id == source_id)
+        )).scalar_one_or_none()
+        if type(source_tenant_id) is not int or source_tenant_id <= 0:
+            raise ValueError("content_source_invalid")
+        if tenant_id is None:
+            tenant_id = source_tenant_id
+        if type(tenant_id) is not int or tenant_id != source_tenant_id:
+            raise ValueError("content_tenant_invalid")
+        scoped_tenant = tenant_params.get("tenant_id")
+        if scoped_tenant is not None and scoped_tenant != source_tenant_id:
+            from app.core.tenant_context import TenantContextError
+
+            raise TenantContextError("Staged mutation source differs from the active tenant")
+        if analysis_fingerprint:
+            protected = await self._pending_other_context_hashes(
+                session, source_id, tenant_id, wanted, analysis_fingerprint
+            )
+            wanted = [value for value in wanted if value not in protected]
+            if not wanted:
+                return 0
         result = await session.execute(
             sa_text(
                 f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
-                "WHERE source_id = :source_id AND content_hash = ANY(:hashes)" + tenant_clause
+                "WHERE tenant_id = :tenant_id AND source_id = :source_id "
+                "AND content_hash = ANY(:hashes)" + tenant_clause
             ),
-            {"source_id": source_id, "hashes": list(wanted), **tenant_params},
+            {"tenant_id": tenant_id, "source_id": source_id, "hashes": list(wanted), **tenant_params},
         )
         return int(result.rowcount or 0)
+
+    async def _pending_other_context_hashes(
+        self, session: Any, source_id: int, tenant_id: int, hashes: Sequence[str], current_fingerprint: str
+    ) -> set[str]:
+        """Keep staged rows needed by another active or queued context in its date window."""
+        from app.models import AgentScenario, CollectedItem, Job, Source
+        from app.models.managers.agent_task_manager import AgentTaskManager
+        from app.services.ai.analysis_context import analysis_fingerprint
+        from app.services.ai.scenario_schema import compile_scenario_output
+        from app.utils.date_parsing import universal_date_parser
+
+        rows = (await session.execute(select(CollectedItem.content_hash, CollectedItem.published_at).where(
+            CollectedItem.tenant_id == tenant_id, CollectedItem.source_id == source_id,
+            CollectedItem.content_hash.in_(list(hashes)),
+        ))).all()
+        dates = {digest: (published.date() if published is not None else None) for digest, published in rows}
+        contexts: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
+        task_manager = AgentTaskManager()
+        scheduled = await task_manager.filter(
+            tenant_id=tenant_id, is_active=True, job_type__in=["analyze", "collect"]
+        ).prefetch_related("sources", "agent_scenario")
+        jobs = await Job.objects.filter(
+            tenant_id=tenant_id, status__in=["pending", "running"], job_type__in=["analyze", "collect"]
+        ).limit(200)
+        queued_task_ids = {job.agent_task_id for job in jobs if job.agent_task_id}
+        queued_payloads = {job.agent_task_id: job.payload for job in jobs if job.agent_task_id}
+        queued = await task_manager.filter(
+            tenant_id=tenant_id, id__in=list(queued_task_ids), job_type__in=["analyze", "collect"]
+        ).prefetch_related("sources", "agent_scenario") if queued_task_ids else []
+        known_ids = set()
+        for task in scheduled:
+            if task.id in known_ids:
+                continue
+            known_ids.add(task.id)
+            contexts.append((task, task.payload if isinstance(task.payload, dict) else {}, {}))
+        for task in queued:
+            job_payload = queued_payloads.get(task.id)
+            contexts.append(
+                (
+                    task,
+                    task.payload if isinstance(task.payload, dict) else {},
+                    job_payload if isinstance(job_payload, dict) else {},
+                )
+            )
+        for job in jobs:
+            if job.agent_task_id is not None or job.job_type != "analyze":
+                continue
+            job_payload = job.payload if isinstance(job.payload, dict) else {}
+            source_ids = job_payload.get("source_ids")
+            if isinstance(source_ids, list) and source_ids and source_id not in source_ids:
+                continue
+            contexts.append((None, {}, job_payload))
+
+        default_scenario = await AgentScenario.objects.get_default_scenario(tenant_id=tenant_id)
+        source = await Source.objects.filter(id=source_id, tenant_id=tenant_id).first()
+        pending: set[str] = set()
+        context_hashes: dict[str, set[str]] = {}
+        for task, task_payload, job_payload in contexts:
+            if task is not None and task.job_type == "collect" and not task_payload.get("analyze_inline"):
+                continue
+            if task is not None and task.sources and all(item.id != source_id for item in task.sources):
+                continue
+            if task is None:
+                scenario = None
+                if job_payload.get("scenario_id"):
+                    scenario = await AgentScenario.objects.filter(
+                        id=job_payload["scenario_id"], tenant_id=tenant_id
+                    ).first()
+                if scenario is None:
+                    scenario = await AgentTaskManager().get_source_scenario(source_id)
+                task_payload = {}
+            else:
+                scenario = task.agent_scenario
+            if scenario is None and task_payload.get("scenario_id"):
+                scenario = await AgentScenario.objects.filter(
+                    id=task_payload["scenario_id"], tenant_id=tenant_id
+                ).first()
+            if scenario is None or not scenario.is_active:
+                scenario = default_scenario
+            if scenario is None or not scenario.is_active:
+                # A broken active context is still a possible future consumer.
+                pending.update(hashes)
+                continue
+            try:
+                output_contract = compile_scenario_output(scenario)
+                fingerprint = analysis_fingerprint(
+                    scenario,
+                    trigger_config=task.trigger_config if task is not None else None,
+                    task_payload=task_payload,
+                    output_schema=output_contract.schema,
+                )
+            except Exception:
+                pending.update(hashes)
+                continue
+            if fingerprint == current_fingerprint:
+                continue
+            effective_dates = job_payload.get("cli_dates") or task_payload.get("cli_dates")
+            if not effective_dates and source is not None and isinstance(source.params, dict):
+                effective_dates = source.params.get("cli_dates")
+            start = end = None
+            if isinstance(effective_dates, dict):
+                start_value = universal_date_parser(effective_dates.get("start_date"))
+                end_value = universal_date_parser(effective_dates.get("end_date"))
+                start = start_value.date() if start_value else None
+                end = end_value.date() if end_value else None
+            eligible = {
+                digest for digest in hashes
+                if dates.get(digest) is None
+                or ((start is None or dates[digest] >= start) and (end is None or dates[digest] <= end))
+            }
+            if eligible:
+                context_hashes.setdefault(fingerprint, set()).update(eligible)
+        context_hashes.pop(current_fingerprint, None)
+        if context_hashes:
+            from app.models import AnalyzedContentReceipt
+
+            fingerprints = list(context_hashes)
+            all_hashes = set().union(*(context_hashes[value] for value in fingerprints))
+            completed = await AnalyzedContentReceipt.objects.covered_by_contexts(
+                source_id, fingerprints, list(all_hashes), tenant_id=tenant_id
+            )
+            for fingerprint in fingerprints:
+                pending.update(context_hashes[fingerprint] - completed.get(fingerprint, set()))
+        return pending
 
     @staticmethod
     async def delete_run(session: Any, run_id: int) -> int:

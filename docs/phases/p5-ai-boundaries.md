@@ -69,11 +69,24 @@ safely.
   collection again. The direct CLI `analyze --keep-raw` option is newly added and
   preserves staged text after successful analysis. UI analytics deletion remains
   present and permission guarded. VK L1/L2 requests and media collection are out
-  of scope. Code and migration 0104 are prepared; focused isolated DB validation
-  remains pending, and public migration application requires separate owner
-  approval after review. Do not record test or migration-application success
-  until performed. Evidence: implementation on dev SHA
-  `3e5779460aa9cbb277a5b5c8c0a7ab8e27b4c526`; depends: none; owns: analysis
+  of scope. Verified state: migration 0104 has been applied on user approval to
+  the public schema and read-only re-verified; all 26 prior analytics records
+  remain and no unsafe receipt backfill was performed; source 2939 still holds
+  raw 51 / analytics 23. No-DB acceptance scope passed: 67 tests. Focused
+  isolated DB scope on `test_analysis_receipts`: 17 passed, 1 failed; the
+  failure
+  (`tests/test_web_analytics.py::test_workspace_owner_without_structured_delete_right_cannot_delete_analytics`)
+  asserts a workspace owner without a structured delete right sees no delete
+  forms even though the owner membership grants workspace permissions — an
+  unrelated permission expectation that is not resolved here, so full DB scope
+  is not passed. Safari UI check was not completed; by code inspection and
+  automated form tests no `force_refresh` / `force_reanalyze` controls remain in
+  the web task edit/template form. No VK/LLM calls were made during
+  verification. Evidence: implementation on dev SHA
+  `c243e39ecc772e8282a51fac026c6a9106bb27aa` (feature/test changes still
+  uncommitted); the isolated test snapshot was based on
+  `3e5779460aa9cbb277a5b5c8c0a7ab8e27b4c526` and contains the same
+  feature/test changes; depends: none; owns: analysis
   receipt design/implementation and focused tests; owner: codex-analysis-receipts;
   status: IN_PROGRESS.
 

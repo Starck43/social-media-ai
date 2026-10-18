@@ -69,13 +69,16 @@ def cmd_analyze(
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active)"),
     scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID to apply"),
     excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
+    keep_raw: bool = typer.Option(False, "--keep-raw", help="Keep staged raw content after successful analysis"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
 ):
     """Run the analyze job handler (trigger evaluation + bot actions) directly."""
     excluded_users = parse_usernames(excluded)
 
     async def _main():
-        tenant_id, payload, sources = await _resolve(tenant, src, scenario_id=scenario, excluded_users=excluded_users)
+        tenant_id, payload, sources = await _resolve(
+            tenant, src, scenario_id=scenario, excluded_users=excluded_users, keep_raw=keep_raw
+        )
         if verbose:
             for s in sources:
                 rprint(f"[dim]🎯 Источник: {s.name} (id={s.id}, platform={s.platform.name})[/dim]")

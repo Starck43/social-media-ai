@@ -566,16 +566,100 @@ python -m cli.main scenarios seed-default --tenant owner --force
 
 ---
 
+## LLM catalog and local model tests
+
+`llm provider-list` displays provider ID, name, API format, base URL, active
+flag and model count. Defaults belong to models; providers have no default
+flag after migration 0091. Model lifecycle commands continue using the existing
+model manager; this package does not change capability filtering or API/tool
+schemas. `model-list --type` remains an exact stored-value filter.
+
+```bash
+# Trusted operator catalog reads (require the configured database)
+python -m cli.main llm provider-list
+python -m cli.main llm model-list
+
+# Shared local mock: catalog lookup, no provider request or key decryption
+python -m cli.main llm model-test 7 --mock --prompt "Local check"
+```
+
+`model-test` accepts a positive PostgreSQL INTEGER ID (1–2147483647) and a
+nonblank prompt of at most 8000 characters. `--mock` explicitly selects the
+shared `model_probe.probe_mock` service. It reads the model/provider from the
+catalog but never constructs a provider client, decrypts a key, reserves
+billing, journals a provider attempt or sends a request. Inactive models and
+providers can be mocked: success is **not** a readiness, authorization or
+provider-reachability verdict. The prompt is not echoed in the report.
+
+Mock success prints one JSON report with `ok`, `mode`, `is_real_response`,
+`content`, `tokens_spent`, `simulated_usage` and `estimated_cost_usd`. Simulated
+usage and tariff estimates are not observed usage or charges; `tokens_spent`
+is zero because nothing was dispatched. The shared pricing helper's zero
+estimate does not establish a known-free provider tariff. Rich markup is
+literal and control characters are JSON-escaped.
+
+Without `--mock`, the command exits **1 before any catalog access or dispatch**.
+The trusted CLI tenant bypass does not establish an authenticated payer. Use
+the authenticated admin model-test surface for an explicitly authorized paid
+probe; its current admission, permission, CSRF, capping and accounting rules
+remain unchanged. No automatic fallback or CLI impersonation flag is added.
+Do not grant global catalog tools to workspace chat as a workaround.
+
+Exit codes: **0** for a successful mock; **1** for semantic validation,
+missing model/provider, failed/malformed probe, lookup/service error or the
+blocked real path; **2** for Typer parsing errors. Failed probes print a fixed
+generic message, never raw exceptions/provider diagnostics. No retries.
+
+### LLM CLI validation handoff
+
+P10-T13 is based on dev `be07e515c4fa86e856af04faf2233c0680a57acd`.
+Remote execution used Python 3.13.14 in a separate sandbox venv, Typer 0.27.3
+and Rich 15.0.0 from `requirements.txt`; Black 26.10.1 and isort 9.0.2 were
+also pinned there. Direct unittest commands, without pytest/conftest:
+
+```bash
+python tests/test_llm_cli_contracts.py -v
+python tests/test_llm_cli_parser.py -v
+python -m isort --check-only cli/commands/llm.py tests/test_llm_cli_contracts.py tests/test_llm_cli_parser.py
+python -m black --check cli/commands/llm.py tests/test_llm_cli_contracts.py tests/test_llm_cli_parser.py
+git diff --check
+```
+
+Results: 17 whole-source handler/shared-mock tests and 8 real Typer/Rich parser
+checks passed (exit 0, no skips/expected failures). On a separate clean archive
+of the same dev SHA, the new tests fail as expected: handler suite 17 tests,
+5 failures/5 errors; parser suite 8 tests, 5 failures (both exit 1). All model
+queries, tenant context and provider boundaries were explicit doubles; no app,
+settings, real DB, secrets or providers were loaded. Actual shared mock source
+ran with an isolated pricing double; this is not full pricing acceptance.
+
+Draft/BLOCKED until the coordinating local agent reviews the exact published
+PR SHA and validates existing-catalog ORM behavior, missing/providerless rows,
+mock zero writes/dispatch/key access, and exit codes in the owner's approved
+environment. The examples above are deferred acceptance guidance, not remote
+execution evidence or permission to start a runtime/use a real DB. No schema,
+paid probe or deployment is required or authorized by this package.
+
+Active audit PR #216 (P10-T11) is historical at `e79583e`: reconcile its
+provider-list/model-test expected-failure probes and outdated CLI warnings
+before integrating both PRs; retain its pinned audit evidence. PR #217
+(P10-T12) owns chat task-tool fixes; no task-tool/API/billing files are changed
+here. All existing dirty worktree copies remain untouched.
+
+---
+
 ## Architecture Notes
 
 ### How CLI Commands Run
 
-Every CLI command goes through `_run_platform()`, which wraps execution in
-`tenant_scope(bypass=True)`. This means:
+CLI entrypoints use `_run_platform()`, command-local `_run()`/`_platform()`
+wrappers or the direct-job runner; they are not all calls to one wrapper. The
+trusted operator lane starts with `tenant_scope(bypass=True)` and selected
+operations re-enter a concrete workspace scope. This means:
 
-1. The CLI always has superuser-level access to all tenant data.
-2. Tenant-scoped operations (credentials, agent tasks, etc.) work without
-   explicitly setting a tenant context.
+1. Unscoped developer operations can access data across workspaces.
+2. Workspace-specific commands resolve a tenant and retain their service,
+   validation and accounting boundaries; bypass is not end-user authorization.
 3. The `--tenant` option is used to scope operations to a specific workspace
    when needed.
 
@@ -593,7 +677,8 @@ def _run(coro):
 ### Rich Output
 
 The CLI uses the `rich` library for formatted tables and colored output.
-No JSON output — the CLI is operator-facing, not machine-facing.
+Most commands are operator-facing tables/messages. `llm model-test --mock`
+prints the explicit JSON report described above, with Rich markup disabled.
 
 
 ### Digest grouping values

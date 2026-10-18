@@ -50,14 +50,27 @@
     entry.status.textContent = "Запись сохранена. Связь применится после сохранения основной формы.";
     entry.button.focus();
   });
+  const icon = (mode) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute("d", mode === "create" ? "M12 5v14M5 12h14" :
+      "m16 3 5 5M4 15 16 3a2 2 0 0 1 5 5L9 20l-6 1 1-6Z");
+    svg.append(path);
+    return svg;
+  };
   controls.forEach((control) => {
     const select = document.getElementById(control.field);
     if (!select || select.tagName !== "SELECT" || select.disabled || select.hidden || select.hasAttribute("readonly") ||
         select.dataset.permissionTransfer || select.closest("[hidden]")) return;
     const bar = document.createElement("div");
-    bar.className = "d-flex flex-wrap gap-2 mt-2";
+    bar.className = "admin-related-actions";
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", `Действия со связью: ${control.label}`);
     const status = document.createElement("small");
-    status.className = "d-block text-muted mt-1";
+    status.className = "admin-related-status text-muted";
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
     const selected = () => Array.from(select.selectedOptions).filter((item) => item.value && item.value !== "__None");
@@ -65,8 +78,9 @@
       if (!base) return;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "btn btn-outline-secondary btn-sm";
-      button.textContent = title;
+      button.className = "admin-related-icon";
+      button.title = `${title} (отдельное окно)`;
+      button.append(icon(mode));
       button.setAttribute("aria-label", `${title}: ${control.label} (отдельное окно)`);
       button.addEventListener("click", () => {
         const items = selected();
@@ -100,9 +114,18 @@
     addButton("create", "+ Добавить", control.create);
     addButton("edit", "Редактировать выбранную", control.edit);
     if (bar.childElementCount) {
-      const container = select.closest(".col-sm-10");
-      if (container) container.append(bar, status);
-      else select.after(bar, status);
+      // Keep native inputs and existing/later Select2 containers in the same
+      // flexible slot. Never recreate the select or its event handlers.
+      const row = document.createElement("div");
+      row.className = "admin-related-field";
+      const input = document.createElement("div");
+      input.className = "admin-related-input";
+      const select2 = select.nextElementSibling?.matches(".select2-container") ? select.nextElementSibling : null;
+      select.before(row);
+      input.append(select);
+      if (select2) input.append(select2);
+      row.append(input, bar);
+      row.after(status);
     }
   });
 })();

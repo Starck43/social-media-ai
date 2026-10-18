@@ -333,7 +333,8 @@ P8-T06 and does not alter its task record.
   popup, validation errors and hostile messages do not mutate the selection.
   No new catalog privileges, raw FK fields, ORM writes, schema or live actions.
   Depends: none; owns: app/admin/related.py, scoped setup/template integration,
-  app/static/js/admin-related.js and focused tests/docs/ADMIN.md; owner: remote
+  app/admin/base.py (form converter), app/static/{js,css}/admin-related.* and
+  focused tests/docs/ADMIN.md; owner: remote
   Notion agent (`feat/admin-related-records`); status: BLOCKED (remote implementation
   complete; owner-local DB/permission/browser acceptance pending).
   Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Active PRs #216
@@ -344,6 +345,14 @@ P8-T06 and does not alter its task record.
   (exit 0, all requests intercepted); actual target route/fragment behavior
   over synthetic ORM and explicit storage doubles, not real DB acceptance.
   [Contract, commands, versions and local handoff](../ADMIN.md#related-fkm2m-record-editors).
+  Follow-up on owner feedback: inline plus/pencil SVG controls (not text buttons
+  below the field); canonical Tenant Float `NoConverterFound` reproduced on
+  SQLAlchemy 2.1/SQLAdmin 0.32 and fixed in BaseAdmin without converting precise
+  Numeric/Decimal money. 81 isolated tests + 228 offline browser assertions
+  passed (exit 0; 0 failed/skipped), including real Select2 and canonical Tenant
+  create/edit/related GET scaffolding. Original evidence remains attributed above;
+  local reported 500 is failure evidence only. Exact follow-up published SHA in
+  PR #219 handoff; no successful real DB/owner-browser acceptance claimed.
 
 ## Phase approval
 

@@ -441,7 +441,8 @@ acceptance. This patch applies no migrations and activates no provider or live a
 ## Related FK/m2m record editors
 
 On existing create/edit form selects backed by a registered FK or many-to-many
-relationship, permitted operators see **+ Добавить** and **Редактировать выбранную**.
+relationship, permitted operators see inline **plus** (add) and **pencil**
+(edit selected) SVG icon buttons, with Russian tooltips and accessible names.
 The latter needs exactly one selected record (for m2m, temporarily select only
 that record to edit it). This is a related-record window, not nested inline CRUD.
 
@@ -474,7 +475,7 @@ synchronized dev: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Other active
 lanes #216/P10-T11 and #217/P10-T12 were inspected; their owners, reservations,
 statuses and evidence were not changed or imported as accepted work.
 
-Sandbox self-executed evidence (owner remote exception):
+Initial implementation sandbox evidence (owner remote exception; follow-up below):
 
 ```sh
 /data/admin-relations-venv/bin/python -m pytest tests/test_admin_related.py \
@@ -521,3 +522,52 @@ prepared environment, without reset/migration/seed or real provider dispatch:
 
 No migration, schema change, real DB/ASGI integration acceptance, full-suite,
 whole-console security or deployment certification is claimed by this subset.
+
+
+### Related-editor follow-up: inline icons and Float forms
+
+The owner-local attempt reported HTTP 500 while opening `/admin/tenant/edit/1`
+from a related field. This is failure evidence, not successful local acceptance.
+The same failure was reproduced offline on the canonical Tenant/TenantAdmin:
+SQLAdmin 0.32.0 could not convert `daily_cost_limit` (`sqlalchemy.sql.sqltypes.Float`)
+with SQLAlchemy 2.1.5, where Float no longer inherits Numeric.
+
+`BaseAdmin` now uses a converter for Float/FLOAT/REAL/Double/DOUBLE families;
+exact Numeric/Decimal monetary fields retain SQLAdmin's DecimalField path.
+This does not alter ORM types, stored values, validation boundaries or grants.
+The regression loads the actual model and view declaration with isolated
+configuration and a storage function that raises on use; both ordinary and
+related create/edit form scaffolding therefore need no database.
+
+Plus/pencil SVG actions now share a flex row with the native input or actual
+Select2 container. Icon-only controls have 44px targets, accessible names,
+tooltips and visible keyboard focus; the status remains below the field.
+Select2 is moved with its original select and handlers, not recreated; scoped
+height/padding prevents label clipping and chips follow the existing theme.
+
+Follow-up evidence: **81 isolated pytest cases passed**, 0 failed/skipped, exit 0;
+**228 offline Chromium assertions passed**, exit 0, across native + real Select2,
+light/dark and 390/1440px. Checks include canonical Tenant related GETs, required
+and nullable float parsing, unchanged precise Decimal, existing catalog grants,
+parent preservation, popup protocol, inline geometry, icon-only labels, dropdown
+operation, label bounds and no page overflow. Eight fixture screens were
+individually inspected; this is not owner-local browser or DB acceptance.
+Published source SHA is pinned in PR #219's current handoff. Initial evidence
+above stays attributed to its original SHA and does not certify this follow-up.
+
+```sh
+/data/admin-relations-venv/bin/python -m pytest \
+  tests/test_admin_form_compatibility.py tests/test_admin_related.py \
+  tests/test_admin_shell_catalog.py tests/test_admin_all_role_records.py \
+  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+SQLADMIN_STATIC_DIR=/data/admin-relations-venv/lib/python3.13/site-packages/sqladmin/statics \
+NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
+```
+
+Same Python/SQLAdmin/SQLAlchemy/Starlette/WTForms versions as the initial run;
+FastAPI 0.146.0 and itsdangerous 2.2.0 added to the separate sandbox environment
+for the existing isolated catalog tests. Python 3.14 was not available/tested
+remotely. No application/runtime, real DB, environment secrets, providers,
+schema operation, dependency manifest change or delegated test execution.
+Task remains BLOCKED/PR Draft pending the original owner-local acceptance,
+including retesting the previously failing Tenant form in the owner's environment.

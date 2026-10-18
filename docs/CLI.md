@@ -35,8 +35,37 @@ Output that spans workspaces names them: `task list` has a `workspace` column an
 | `credentials` | Manage platform credentials (tenant vault) |
 | `roles` | Manage roles and permissions |
 | `scenarios` | Manage agent scenarios |
+| `llm` | Operator model/provider inspection and model lifecycle |
+| `chains` | Topic-chain groups and dry-run/apply merge |
 
 ---
+
+## Post-migration audit limitations
+
+The source-pinned [CLI/API/chat audit](audits/2026-10-18-cli-api-chat.md)
+contains the complete registered-command inventory and offline evidence. Known
+runtime defects are not repaired by this reference update:
+
+- `llm provider-list` reads the provider `is_default` field removed in 0091.
+- `llm model-test` (including `--mock`) instantiates an abstract client; the
+  real branch also targets a deleted admin helper. Do not use it as validation.
+  Mock still requires a catalog lookup; it is not a database-free command.
+- Model defaults belong to models, never providers. Current ORM model types
+  are comma-separated capabilities; the API/tool enums still lag behind them.
+
+### LLM and topic-chain commands
+
+| Group | Registered subcommands |
+| --- | --- |
+| `llm` | `provider-list`, `model-list`, `model-add`, `model-update`, `model-delete`, `model-test` |
+| `chains` | `groups`, `merge` |
+
+`llm model-list` supports `--provider`, `--active`, `--type`; `--type` is an
+exact stored-value filter, not capability membership. `model-add` takes name,
+provider model ID and `--provider-id`; add/update take model settings and costs.
+`model-delete` prompts unless `--force` is supplied. `chains merge` defaults to
+dry-run; only explicit `--apply` requests writes. These are trusted operator
+surfaces, not tools to expose directly to workspace chat users.
 
 ## Direct Job-Type Commands
 
@@ -570,12 +599,14 @@ python -m cli.main scenarios seed-default --tenant owner --force
 
 ### How CLI Commands Run
 
-Every CLI command goes through `_run_platform()`, which wraps execution in
-`tenant_scope(bypass=True)`. This means:
+CLI entrypoints use `_run_platform()`, command-local `_run()`/`_platform()`
+wrappers or the direct-job runner; they are not all calls to one wrapper. The
+trusted operator lane starts with `tenant_scope(bypass=True)` and selected
+operations re-enter a concrete workspace scope. This means:
 
-1. The CLI always has superuser-level access to all tenant data.
-2. Tenant-scoped operations (credentials, agent tasks, etc.) work without
-   explicitly setting a tenant context.
+1. Unscoped developer operations can access data across workspaces.
+2. Workspace-specific commands resolve a tenant and retain their service,
+   validation and accounting boundaries; bypass is not end-user authorization.
 3. The `--tenant` option is used to scope operations to a specific workspace
    when needed.
 

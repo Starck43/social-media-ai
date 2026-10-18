@@ -9,6 +9,18 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 
 ## Tasks
 
+- [ ] P10-T11 — audit post-migration CLI/API and embedded web-chat tools;
+  accept: source-pinned interface inventory, prioritized verified findings,
+  isolated no-DB reproductions and corrected interface documentation; no
+  runtime/security acceptance implied. Depends: none; owns:
+  docs/audits/2026-10-18-cli-api-chat.md, scoped CLI/API/AGENT documentation,
+  tests/test_interface_audit_probes.py; owner: remote Notion agent;
+  synchronized base: bd123b76e4e90829e2b935c05f6419ca36bd44be;
+  evidence: [audit](../audits/2026-10-18-cli-api-chat.md), 14 offline probes
+  (4 passed, 10 expected failures documenting open defects, exit 0); runtime
+  unchanged and real-environment acceptance deferred to future fix tasks;
+  status: READY.
+
 - [ ] P10-T01 (AUD-01, P0) — replace unauthenticated password mutation with
   authorized recovery; accept: account-bound, expiring, one-use recovery or
   approved operator-only reset; no anonymous hash mutation or password logs;

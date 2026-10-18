@@ -3,15 +3,29 @@ from typing import Any, ClassVar
 
 from sqladmin import ModelView
 from sqladmin.fields import SelectField
+from sqladmin.forms import ModelConverter, converts
 from starlette.requests import Request
+from wtforms import FloatField
 
 from app.types import ActionType
 
 from .formatters import bool_formatter, date_formatter, datetime_formatter, empty_formatter
 
 
+class AdminFormConverter(ModelConverter):
+    """Keep floating point forms compatible with SQLAlchemy's type hierarchy."""
+
+    @converts("Float", "FLOAT", "Double", "DOUBLE", "DOUBLE_PRECISION", "REAL")
+    def conv_float(self, model, prop, kwargs):
+        # SQLAlchemy 2.1 Float no longer inherits Numeric, which SQLAdmin's
+        # decimal converter relies on. Numeric/Decimal money stays unchanged.
+        return FloatField(**kwargs)
+
+
 class BaseAdmin(ModelView):
     """Base admin view with common configurations."""
+
+    form_converter = AdminFormConverter
 
     # Common settings
     icon = "fa fa-table"

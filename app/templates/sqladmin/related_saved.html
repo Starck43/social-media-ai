@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Запись сохранена</title></head>
+<body>
+<p role="status">Запись сохранена. Если окно не закрылось, вернитесь в основную форму.</p>
+<button type="button" id="related-close">Закрыть окно</button>
+<script type="application/json" id="admin-related-saved">{{ saved | tojson }}</script>
+<script src="{{ url_for('static', path='js/admin-related.js') }}" defer></script>
+</body>
+</html>

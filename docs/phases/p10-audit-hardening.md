@@ -60,6 +60,22 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   import/asset smoke, no DB/provider; depends: none; owner: unassigned;
   status: TODO
 
+- [ ] P10-T12 — preserve chat task configuration on partial updates and restore
+  task listing; accepted by owner request to start the audit refactor. Accept:
+  omitted scenario/dates/targets remain unchanged; explicit scenario clearing;
+  cron and next-run persistence agree; unavailable source/scenario inputs are
+  refused before writes; source-list replacement is explicit; focused offline
+  regressions and sequential owner-local persistence/permission checks. Depends:
+  audit PR #216 (P10-T11 reserved there; no merge dependency). Owns:
+  app/agent/toolset/tasks.py, tests/test_chat_task_contracts.py and scoped
+  docs/AGENT_TASKS.md updates; owner: remote Notion agent; synchronized base:
+  be07e515c4fa86e856af04faf2233c0680a57acd; evidence:
+  [contract and handoff](../AGENT_TASKS.md#chat-task-configuration), 27 new
+  offline tests + 26 existing confirmation tests passed, exit 0; baseline new
+  tests failed (exit 1). Remote implementation complete; blocked on owner-local
+  persistence/permission/concurrency acceptance, no DB/migration authorized;
+  status: BLOCKED.
+
 Related audit notes: admission activation → P2-T01; operator recovery → P4-T01;
 C/D validation → P8-T03; DB binding → P7-T01; retention rollout → P6-T01.
 Do not close a whole gate from this audit. PR #176 acceptance → P3-T01.

@@ -70,6 +70,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P8-T29 — agent paraphrase/search/compose tools for abstract "find and analyse" requests → [p8](docs/phases/p8-first-value-ui.md) — unassigned — TODO
 
+- [ ] P10-T12 — preserve chat task configuration on partial updates → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — BLOCKED
+
 ## Questions
 
 - [ ] Q-5 — which VK application type/credentials should the deployment use for

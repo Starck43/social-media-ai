@@ -8,6 +8,9 @@
 - Agent roles: Codex = main coordinator and approver (accepts READY tasks, closes phases; does not run pytest or commit directly). OpenCode = executor, primary pytest runner (`.agents/skills/test-runner/`), and the only local committer; as routine-worker it completes simple bounded tasks and makes their authorized commits, returning a ready answer or explicit blockers/questions. Kilo = secondary test route (only when OpenCode is BLOCKED). Remote agents = GitHub PR lanes (`.agents/skills/remote/`), local relay via `.agents/skills/remote-agent-helper/`.
 - Routine delegation: `.codex/agents/routine-worker.toml` (OpenCode `build`, exact `QwenPlan/deepseek-v4-flash-0731`); mandatory for simple/routine tasks.
 - Subagents/test delegation: `.codex/agents/test-runner.toml` (OpenCode `QwenPlan/deepseek-v4-flash-0731`, primary), `.codex/agents/kilo-test-runner.toml` (Kilo, secondary). Evidence in `.agents/tmp/` is human-audit only — never main-context input.
+- `.agents/tmp/` working files: agents may create, read, edit, and remove their own task files and temporary working artifacts under `.agents/tmp/` without asking the owner for per-file approval.
+- Treat those files as transient: after the task or delegated run completes, delete each own file that is no longer needed (task prompts, reports, scratch notes, logs). Retain files only while an active task/agent still needs them or when the owner explicitly requests preservation; coordinate before removing another active agent's artifact.
+- `.agents/tmp/` is never a location for durable task truth or checked-in deliverables: put durable outcomes in canonical docs/PRs and keep `.agents/tmp/` ignored/uncommitted.
 - Local IDE/CLI: `$local`; remote GitHub: `$remote`; same registry, phases and PR handoff.
 - Resume from the current handoff after verifying its SHA. Git and PRs hold detailed history; generated Codex memories are optional recall, never project policy or task truth.
 

@@ -94,7 +94,10 @@ Shared by all agents (Codex, OpenCode, Kilo, remote). Operational workflow:
 ## Local-only paths
 
 - `.agents/tmp/` — shared temp lane for task files, test reports and agent
-  session notes (git-ignored; clean up finished items).
+  session notes (git-ignored). Each agent creates, reads, edits and removes its
+  own files without per-file approval and cleans up finished items; coordinate
+  before removing another agent's artifacts. Never used for durable task truth
+  or checked-in deliverables.
 - `.agent/private-budget-review/` — legacy local-only artifact path still
   referenced by `scripts/prepare_llm_budget_fixture.py` and its acceptance
   test; do not commit, do not repurpose the rest of `.agent/`.

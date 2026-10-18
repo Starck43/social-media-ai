@@ -362,6 +362,39 @@ class CollectedItemManager(BaseManager["CollectedItem"]):
         )
         return int(result.rowcount or 0)
 
+    async def delete_unprocessed_for_source(self, session: Any, source_id: int, tenant_id: int) -> int:
+        """Delete only raw staged rows belonging to one source and tenant.
+
+        This is an explicit operator cleanup, not analysis retirement: analytics
+        and analysis receipts are intentionally outside this table operation.
+        The caller owns the transaction and must reject active source jobs.
+        """
+        if type(source_id) is not int or source_id <= 0 or type(tenant_id) is not int or tenant_id <= 0:
+            raise ValueError("content_scope_invalid")
+
+        tenant_clause, tenant_params = _staged_mutation_scope()
+        if tenant_params.get("tenant_id", tenant_id) != tenant_id:
+            from app.core.tenant_context import TenantContextError
+
+            raise TenantContextError("Staged mutation tenant differs from the active tenant")
+
+        from app.models import Source
+
+        source_tenant_id = (
+            await session.execute(select(Source.tenant_id).where(Source.id == source_id).with_for_update())
+        ).scalar_one_or_none()
+        if source_tenant_id != tenant_id:
+            raise ValueError("content_source_scope_invalid")
+
+        result = await session.execute(
+            sa_text(
+                f"DELETE FROM {settings.DB_SCHEMA}.collected_items "
+                "WHERE tenant_id = :tenant_id AND source_id = :source_id" + tenant_clause
+            ),
+            {"tenant_id": tenant_id, "source_id": source_id, **tenant_params},
+        )
+        return int(result.rowcount or 0)
+
     async def _pending_other_context_hashes(
         self, session: Any, source_id: int, tenant_id: int, hashes: Sequence[str], current_fingerprint: str
     ) -> set[str]:

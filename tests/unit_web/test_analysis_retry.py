@@ -408,6 +408,7 @@ def source_html(rights=True, **overrides):
         running={"collect": False, "analyze": False},
         csrf="fake",
         is_superuser=False,
+        is_source_admin=False,
         can_delete=False,
         analytics_count=1,
         usage_count=0,
@@ -453,6 +454,65 @@ def test_source_hides_all_analysis_buttons_without_permission():
     html = source_html(rights=False)
     assert 'action="/app/sources/2939/analyze"' not in html
     assert "data-analysis-backlog" in html  # read-only explanation remains
+
+
+def test_source_shows_raw_content_delete_only_to_admin_and_when_idle():
+    assert "delete-unprocessed" not in source_html()
+    assert 'action="/app/sources/2939/delete-unprocessed"' in source_html(is_source_admin=True)
+    assert "delete-unprocessed" not in source_html(
+        is_source_admin=True, running={"collect": True, "analyze": False}
+    )
+
+
+@pytest.mark.asyncio
+async def test_source_raw_content_delete_requires_admin_csrf_and_idle_source():
+    scope = functions("app/web/sources.py", "source_delete_unprocessed")
+    source = NS(id=2939, tenant_id=7)
+    manager = NS(get=AsyncMock(return_value=source))
+    staged = NS(delete_unprocessed_for_source=AsyncMock(return_value=3))
+    session = NS(begin=lambda: Transaction(), close=AsyncMock())
+    job_manager = NS(lock_source_admission=AsyncMock())
+    scope.update(
+        ensure_csrf=Mock(return_value=True),
+        _diagnostics_admin=Mock(return_value=True),
+        action_tenant_id=Mock(return_value=7),
+        add_flash=Mock(),
+        RedirectResponse=Response,
+        Source=NS(objects=manager),
+        CollectedItem=NS(objects=staged),
+        new_session=Mock(return_value=session),
+        tenant_scope=lambda tenant_id: nullcontext(),
+        JobManager=job_manager,
+        _source_has_running_job=AsyncMock(return_value={"collect": False, "analyze": False}),
+    )
+
+    response = await scope["source_delete_unprocessed"](NS(), 2939, token="fake", tenant_id=7)
+    assert response.url == "/app/sources/2939"
+    job_manager.lock_source_admission.assert_awaited_once_with(session, 7)
+    manager.get.assert_awaited_once_with(id=2939, tenant_id=7, session=session)
+    staged.delete_unprocessed_for_source.assert_awaited_once_with(session, 2939, 7)
+    assert scope["add_flash"].call_args.args[1] == "success"
+    session.close.assert_awaited_once()
+
+    for blocked in ("admin", "csrf", "busy"):
+        blocked_scope = functions("app/web/sources.py", "source_delete_unprocessed")
+        blocked_scope.update(scope)
+        blocked_scope["new_session"].reset_mock()
+        staged.delete_unprocessed_for_source.reset_mock()
+        blocked_scope["_diagnostics_admin"].return_value = True
+        blocked_scope["ensure_csrf"].return_value = True
+        blocked_scope["_source_has_running_job"].return_value = {"collect": False, "analyze": False}
+        if blocked == "admin":
+            blocked_scope["_diagnostics_admin"].return_value = False
+        elif blocked == "csrf":
+            blocked_scope["ensure_csrf"].return_value = False
+        else:
+            blocked_scope["_source_has_running_job"].return_value = {"collect": True, "analyze": False}
+        await blocked_scope["source_delete_unprocessed"](NS(), 2939, token="fake", tenant_id=7)
+        if blocked in ("admin", "csrf"):
+            assert blocked_scope["new_session"].call_count == 0
+        else:
+            staged.delete_unprocessed_for_source.assert_not_awaited()
 
 
 def test_source_hides_retry_during_collection_or_queued_analysis():

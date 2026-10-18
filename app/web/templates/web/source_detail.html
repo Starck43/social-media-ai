@@ -46,6 +46,17 @@
                         Выполнить анализ
                     </button>
                 </form>
+                {% if is_source_admin %}
+                <form method="post" action="/app/sources/{{ source.id }}/delete-unprocessed"
+                      data-confirm="Будут удалены все необработанные материалы только этого источника. Аналитика и история анализов останутся."
+                      data-confirm-title="Удалить необработанный контент?" data-confirm-label="Удалить контент">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
+                    <button type="submit" class="rounded-lg border border-rose-300 dark:border-rose-900/70 px-4 py-2 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">
+                        Удалить необработанный контент
+                    </button>
+                </form>
+                {% endif %}
                 <form method="post" action="/app/sources/{{ source.id }}/collect">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}

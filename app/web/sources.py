@@ -455,6 +455,7 @@ async def source_detail(request: Request, source_id: int):
     from app.core.tenant_context import tenant_scope
     from app.models.agent_task import AgentTask, agent_task_sources
     from app.models.ai_analytics import AIAnalytics
+    from app.web.tasks import _diagnostics_admin
 
     user = getattr(request.state, "web_user", None)
     is_superuser = False
@@ -618,6 +619,7 @@ async def source_detail(request: Request, source_id: int):
         schedules=[_schedule_view(s) for s in schedules],
         usage_count=usage_count,
         can_delete=perms_can(request, "source", "delete"),
+        is_source_admin=_diagnostics_admin(request),
         recent=recent,
         analytics_count=analytics_count,
         cost_usd=float(cost_cents) / 100,
@@ -1064,6 +1066,62 @@ async def source_analyze_now(
         )
     add_flash(request, "success", f"Анализ по источнику «{name}» запущен")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
+
+
+@router.post("/{source_id}/delete-unprocessed")
+async def source_delete_unprocessed(
+    request: Request,
+    source_id: int,
+    token: str = Form("", alias="_csrf"),
+    tenant_id: int | None = Form(default=None),
+):
+    """Remove raw staged content for one source; analytics remain unchanged."""
+    back = f"/app/sources/{source_id}"
+    if not ensure_csrf(request, token):
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(back, status_code=302)
+
+    from app.web.tasks import _diagnostics_admin
+
+    if not _diagnostics_admin(request):
+        add_flash(request, "error", "Удалять необработанный контент может только администратор")
+        return RedirectResponse(back, status_code=302)
+
+    active_tenant_id = action_tenant_id(request, tenant_id)
+    if type(active_tenant_id) is not int or active_tenant_id <= 0:
+        add_flash(request, "error", "Не удалось определить workspace источника")
+        return RedirectResponse("/app/sources", status_code=302)
+
+    from app.core.database import new_session
+    from app.core.tenant_context import tenant_scope
+    from app.models.managers.job_manager import JobManager
+
+    session = new_session()
+    try:
+        with tenant_scope(active_tenant_id):
+            async with session.begin():
+                # Serialize with source-job admission. The active-job check and
+                # delete share one transaction so queued work cannot race cleanup.
+                await JobManager.lock_source_admission(session, active_tenant_id)
+                source = await Source.objects.get(id=source_id, tenant_id=active_tenant_id, session=session)
+                if source is None:
+                    add_flash(request, "error", "Источник не найден")
+                    return RedirectResponse("/app/sources", status_code=302)
+                running = await _source_has_running_job(source_id)
+                if running["collect"] or running["analyze"]:
+                    add_flash(request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется")
+                    return RedirectResponse(back, status_code=302)
+                deleted = await CollectedItem.objects.delete_unprocessed_for_source(
+                    session, source_id, active_tenant_id
+                )
+    finally:
+        await session.close()
+
+    if deleted:
+        add_flash(request, "success", f"Удалено необработанных записей: {deleted}")
+    else:
+        add_flash(request, "info", "Необработанного контента для удаления нет")
+    return RedirectResponse(back, status_code=302)
 
 
 @router.post("/{source_id}/delete")

@@ -501,7 +501,8 @@ NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_br
   request `query_string`; corrected explicit doubles/request scope, not weakened
   assertions. These were not successful runs. Final counts above are complete.
 
-Required owner-local acceptance remains **deferred**; keep PR Draft/task BLOCKED.
+Original owner-local acceptance checklist (historical plan; final bounded owner
+acceptance is recorded below; the full checklist is not claimed as executed).
 At the exact implementation SHA, run sequentially under R8/R10 in the owner's
 prepared environment, without reset/migration/seed or real provider dispatch:
 
@@ -569,5 +570,11 @@ FastAPI 0.146.0 and itsdangerous 2.2.0 added to the separate sandbox environment
 for the existing isolated catalog tests. Python 3.14 was not available/tested
 remotely. No application/runtime, real DB, environment secrets, providers,
 schema operation, dependency manifest change or delegated test execution.
-Task remains BLOCKED/PR Draft pending the original owner-local acceptance,
-including retesting the previously failing Tenant form in the owner's environment.
+Owner subsequently reported that the updated local UI works and explicitly
+requested task closure and Ready/merge into dev. Accepted implementation:
+`aec048db192bfc9842883502065646d5650f43d9`. This is owner-reported functional
+smoke, not a remotely verified PostgreSQL/revocation/rollback/full-suite result.
+The coordinator reviewed the exact implementation and reused the completed
+81-test/228-assertion evidence; no runtime source changed for closeout. P8-T21
+is accepted as a bounded feature; no whole-phase, security-gate, schema or
+deployment acceptance is implied. Detailed original test limitations remain above.

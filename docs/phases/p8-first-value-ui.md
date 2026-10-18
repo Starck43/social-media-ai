@@ -326,7 +326,7 @@ P8-T06 and does not alter its task record.
   Remote tests are self-executed per the owner's explicit exception, now recorded
   in the remote skill; shared-doc sync follows the existing all-agent procedure.
 
-- [ ] P8-T21 — add/edit related FK/m2m records without losing the parent form.
+- [x] P8-T21 — add/edit related FK/m2m records without losing the parent form.
   Accept: permission-aware controls on existing editable relationships; normal
   guarded CRUD in a separate window; successful save updates the correct select,
   preserves other m2m selections and unsaved parent input; cancellation, blocked
@@ -335,8 +335,8 @@ P8-T06 and does not alter its task record.
   Depends: none; owns: app/admin/related.py, scoped setup/template integration,
   app/admin/base.py (form converter), app/static/{js,css}/admin-related.* and
   focused tests/docs/ADMIN.md; owner: remote
-  Notion agent (`feat/admin-related-records`); status: BLOCKED (remote implementation
-  complete; owner-local DB/permission/browser acceptance pending).
+  Notion agent (`feat/admin-related-records`); status: DONE (owner accepted the bounded implementation and explicitly
+  authorized Ready/merge after reporting that the updated local UI works).
   Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Active PRs #216
   (P10-T11) and #217 (P10-T12) inspected; their reservations, ownership and
   evidence remain on their own branches, with no code ownership conflict.
@@ -352,7 +352,14 @@ P8-T06 and does not alter its task record.
   passed (exit 0; 0 failed/skipped), including real Select2 and canonical Tenant
   create/edit/related GET scaffolding. Original evidence remains attributed above;
   local reported 500 is failure evidence only. Exact follow-up published SHA in
-  PR #219 handoff; no successful real DB/owner-browser acceptance claimed.
+  PR #219 handoff. Owner subsequently reported that the updated local UI works
+  and requested closeout/Ready/merge. This is owner-reported functional smoke,
+  not evidence that the full PostgreSQL/revocation/rollback checklist ran.
+  Accepted source: `aec048db192bfc9842883502065646d5650f43d9`; reviewed against
+  fresh dev `1e0e3a0c772c4a7bcc04862434c172d32288868e`, no conflicting changes
+  or review threads; GitGuardian check passed. Prior failures and sandbox evidence
+  remain attributed above. Phase/gate approval, full-suite, deployment and schema
+  acceptance are not implied by this task closure.
 
 ## Phase approval
 

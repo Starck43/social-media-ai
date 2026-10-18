@@ -1,0 +1,5 @@
+{% if form is defined and model_view is defined %}
+<script type="application/json" id="admin-related-controls">{{ related_controls(model_view, form, request) | tojson }}</script>
+<script type="application/json" id="admin-related-token">{{ related_token(request) | tojson }}</script>
+<script src="{{ url_for('static', path='js/admin-related.js') }}" defer></script>
+{% endif %}

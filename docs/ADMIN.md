@@ -437,3 +437,87 @@ personal-memory ownership, and changes membership AI access. See
 application/validation is recorded in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md);
 it is not proof of production state, universal schema parity or full admin
 acceptance. This patch applies no migrations and activates no provider or live action.
+
+## Related FK/m2m record editors
+
+On existing create/edit form selects backed by a registered FK or many-to-many
+relationship, permitted operators see **+ Добавить** and **Редактировать выбранную**.
+The latter needs exactly one selected record (for m2m, temporarily select only
+that record to edit it). This is a related-record window, not nested inline CRUD.
+
+- A separate window uses the normal target SQLAdmin create/edit route. Parent
+  input stays in place; successful creation selects the new record, preserving
+  other m2m selections. Editing updates the option label without changing the
+  current selection. Save the parent form to persist its relationship changes.
+- The related record is saved independently. Cancelling the parent does not
+  undo creation/editing of the related record. Closing the child without saving
+  does not change the parent's selection. Popup blockers get an inline notice.
+- Buttons follow the target's access, create/edit flags and grants; target routes
+  still enforce authentication, current grants and object-specific edit checks.
+  No new grants, raw FK fields, CRUD endpoints or persistence/session code.
+  Excluded relationships, view-only and one-to-many relationships, unregistered
+  models, disabled/read-only selects and the specialized permission-transfer
+  widget are not expanded. Existing catalog restrictions remain unchanged.
+- The return receipt is emitted only after successful normal CRUD and its hooks;
+  validation/storage failures and custom responses retain normal behavior. A
+  form-body token survives validation errors even when the action loses its
+  query string. The parent validates same origin, exact child window, random
+  token, target identity and (for edits) original record ID. Labels are JSON
+  escaped and inserted as text, never HTML. A receipt is not write authority.
+- Without JavaScript, ordinary selectors and standard CRUD remain available;
+  automatic return from a separate window requires JavaScript and popups.
+
+### Related-editor validation and local handoff
+
+Task P8-T21. Implementation/test SHA: `9cfb5bd0860b88e877ca9dfd6a0c6917a2938a9e`;
+synchronized dev: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Other active
+lanes #216/P10-T11 and #217/P10-T12 were inspected; their owners, reservations,
+statuses and evidence were not changed or imported as accepted work.
+
+Sandbox self-executed evidence (owner remote exception):
+
+```sh
+/data/admin-relations-venv/bin/python -m pytest tests/test_admin_related.py \
+  --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+NODE_PATH=/data/admin-relations-browser/node_modules node tests/admin_related_browser.cjs
+```
+
+- Pytest: exit 0, **20 passed, 0 failed/skipped**. Actual SQLAdmin routes and
+  Jinja fragments over synthetic ORM metadata and explicit storage doubles;
+  create/edit, ordinary redirects, validation/storage failures, grant and
+  object-check denials, excluded/unregistered targets, token preservation,
+  JSON escaping and custom-response preservation. No bound database engine.
+- Chromium: exit 0, **32 assertions** at 390/1440px. Actual child-completion
+  script, FK and m2m selection/rename, unsaved parent preservation, origin,
+  source-window, identity/ID rejection, cancellation and popup blocker. Every
+  request intercepted; no real application server or external requests.
+- Separate venv: Python 3.13.14; SQLAdmin 0.32.0, SQLAlchemy 2.1.5,
+  Starlette 1.9.0, WTForms 3.2.2, pytest 9.1.1, pytest-asyncio 1.4.0,
+  httpx 0.28.1, greenlet 3.5.6 (manifest-compatible versions). Browser fixture
+  uses a separate Playwright install and local Chromium; set `CHROMIUM_PATH`
+  if Chromium is elsewhere. No owner `.venv`, `.env`, secrets or providers used.
+- Earlier fixture attempts failed on an unbound synthetic read and a missing
+  request `query_string`; corrected explicit doubles/request scope, not weakened
+  assertions. These were not successful runs. Final counts above are complete.
+
+Required owner-local acceptance remains **deferred**; keep PR Draft/task BLOCKED.
+At the exact implementation SHA, run sequentially under R8/R10 in the owner's
+prepared environment, without reset/migration/seed or real provider dispatch:
+
+1. Exercise actual `LLMModel.provider` and `Source.platform` FK forms, then
+   `AgentTask.sources` m2m with records in an existing approved test workspace.
+   Verify create/edit persistence, unchanged other selections/unsaved fields,
+   cancellation and independent child/parent transaction behavior.
+2. Verify platform admin/operator create-only/edit-only/denied roles, revoked
+   identity/grants between opening and saving, direct forged popup POSTs and
+   object-level denials. Catalog permissions and hidden user-role assignment
+   must remain restricted; workspace roles must not gain console access.
+3. Check actual Select2, application CSP/browser headers, popup opener policy,
+   specialized forms, nested windows, validation retry, back/refresh and no-JS.
+   A restrictive opener policy may require falling back to ordinary CRUD.
+4. Confirm existing workspace/source/scenario validators still reject invalid
+   cross-workspace links and actual DB write/rollback failures do not report a
+   success receipt. No new atomicity guarantee is made across two forms.
+
+No migration, schema change, real DB/ASGI integration acceptance, full-suite,
+whole-console security or deployment certification is claimed by this subset.

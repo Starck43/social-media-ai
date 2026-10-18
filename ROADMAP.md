@@ -18,6 +18,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P8-T21 — related FK/m2m record add/edit controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
+
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
 
 - [ ] P8-T18 — allow model tests in single-owner accounting mode → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED

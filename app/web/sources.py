@@ -19,6 +19,7 @@ first-class form fields instead of being invisible defaults:
 from __future__ import annotations
 
 from contextlib import nullcontext
+from typing import Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
@@ -595,6 +596,29 @@ async def source_detail(request: Request, source_id: int):
 
             if _diagnostics_admin(request):
                 latest_diagnostics = _diagnostics_view(progress_jobs[0], source_id=source.id)
+    # Live queue fallback (variant B): when the job history is gone (pruned),
+    # `collections` is empty even though raw rows are staged. Anyone who may
+    # work with tasks sees the counts; readable texts stay admin-only.
+    live_queue: dict[str, Any] = {"pending": 0, "given_up": 0, "preview": []}
+    can_view_tasks = perms_can(request, "agenttask", "view")
+    show_live_queue = can_view_tasks and not collections and pending_count > 0
+    if show_live_queue:
+        preview_rows: list[Any] = []
+        if _diagnostics_admin(request):
+            preview_rows = await CollectedItem.objects.for_source(source.id, limit=RAW_PREVIEW_LIMIT)
+        live_queue = {
+            "pending": pending_count,
+            "given_up": given_up,
+            "window_label": window_label,
+            "preview": [
+                {
+                    "published_at": row.published_at,
+                    "raw_text": (row.text or "")[:RAW_PREVIEW_CHARS],
+                    "permalink": row.permalink,
+                }
+                for row in preview_rows
+            ],
+        }
     given_up_label = plural(given_up, "запись", "записи", "записей")
 
     return render(
@@ -626,6 +650,8 @@ async def source_detail(request: Request, source_id: int):
         sentiment_label=sentiment_label,
         last_checked_label=_last_checked_label(source.last_checked),
         collections=collections,
+        live_queue=live_queue,
+        show_live_queue=show_live_queue,
         is_ready=is_ready,
         readiness_hint=readiness_hint,
         platforms=platforms,

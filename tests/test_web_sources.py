@@ -245,6 +245,61 @@ async def test_a_source_without_collect_history_says_so():
             await _drop(user, tenant_id)
 
 
+@pytest.mark.tenancy
+async def test_staged_queue_shows_live_counts_without_job_history():
+    """Pruned job history must not hide staged rows: counts for task viewers, texts for admins."""
+    from app.core.database import new_session
+    from app.models import CollectedItem
+
+    async with await _client() as client:
+        user, tenant_id = await _register(client, "SrcLiveQ")
+        source_id = None
+        try:
+            await _login(client, user.username)
+            source_id = await _make_source(client, "источник с очередью")
+
+            session = new_session()
+            try:
+                with tenant_scope(tenant_id):
+                    await CollectedItem.objects.store_items(
+                        session,
+                        [
+                            {
+                                "run_id": None,
+                                "source_id": source_id,
+                                "external_id": f"live-{i}",
+                                "content_hash": f"{'a' * 60}{i:04d}",
+                                "platform": "telegram",
+                                "published_at": None,
+                                "media_type": None,
+                                "attachments": None,
+                                "text": f"живой текст {i}",
+                                "metrics": {},
+                                "author": None,
+                                "permalink": None,
+                            }
+                            for i in range(3)
+                        ],
+                    )
+                    await session.commit()
+            finally:
+                await session.close()
+
+            page = await client.get(f"/app/sources/{source_id}")
+            assert page.status_code == 200
+            # No jobs exist, so the history table is absent...
+            assert "ещё не зафиксировано" not in page.text
+            # ...but the live queue counts are visible to anyone with agenttask.view.
+            assert "В очереди" in page.text
+            assert "История задач очищена" in page.text
+        finally:
+            with tenant_scope(bypass=True):
+                if source_id is not None:
+                    await CollectedItem.objects.delete(source_id=source_id)
+            await _drop_source(source_id)
+            await _drop(user, tenant_id)
+
+
 async def test_the_sources_page_does_not_push_the_vk_login():
     """The sources page no longer carries a VK badge; Settings owns that state.
 

@@ -42,8 +42,9 @@
                 <form method="post" action="/app/sources/{{ source.id }}/analyze">
                     <input type="hidden" name="_csrf" value="{{ csrf }}">
                     {% if is_superuser %}<input type="hidden" name="tenant_id" value="{{ source.tenant_id }}">{% endif %}
-                    <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400">
-                        Выполнить анализ
+                    <button class="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-400"
+                            title="Разбирает всю текущую очередь этого источника">
+                        Анализировать очередь{% if pending_count %} ({{ pending_count }}){% endif %}
                     </button>
                 </form>
                 {% if is_source_admin %}
@@ -398,10 +399,35 @@
                 </p>
             </div>
         {% else %}
+            {% if show_live_queue %}
+            {# Job history is gone (pruned), but raw rows are still staged:
+               counts for anyone who works with tasks, texts for admins only. #}
+            <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                В очереди {{ live_queue.pending }} {{ plural(live_queue.pending, "запись", "записи", "записей") }}{% if live_queue.given_up %} (из них {{ live_queue.given_up }} исчерпали попытки){% endif %}{% if live_queue.window_label %} · окно {{ live_queue.window_label }}{% endif %}.
+                История задач очищена, поэтому показано живое состояние очереди.
+            </p>
+            {% if live_queue.preview %}
+            <ul class="mt-3 space-y-1">
+                {% for raw in live_queue.preview %}
+                <li class="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                    {{ raw.raw_text|e }}
+                    <span class="text-slate-600 dark:text-slate-400"> · {{ raw.published_at|human_dt(tz=_tz) }}</span>
+                    {% if raw.permalink %}<a class="hover:text-cyan-700 dark:hover:text-cyan-400" href="{{ raw.permalink }}">открыть</a>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% if live_queue.pending > live_queue.preview|length %}
+            <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                и ещё {{ live_queue.pending - live_queue.preview|length }}
+            </p>
+            {% endif %}
+            {% endif %}
+            {% else %}
             <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
                 Сборов по этому источнику ещё не зафиксировано. Первое значение появится после
                 ближайшего запуска задачи сбора.
             </p>
+            {% endif %}
         {% endif %}
     </div>
 

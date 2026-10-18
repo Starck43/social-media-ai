@@ -281,7 +281,13 @@ def test_task_editor_json_roundtrips_without_script_breakout(page_env, payload):
     inputs = parsed.elements("input")
     assert any(attrs.get("x-model") == "editing.is_active" for attrs in inputs)
     assert not any(attrs.get("x-model") in {"editing.force_refresh", "editing.force_reanalyze"} for attrs in inputs)
-    assert any(attrs.get(":checked") == "editing.source_ids.includes(7)" for attrs in inputs)
+    # Alpine renders one hidden `source_ids` input per selected id at runtime
+    # (x-for over `editing.source_ids`); statically the template carries the
+    # loop template plus the no-JS checkbox fallback with the same values.
+    assert 'name="source_ids" :value="sid"' in rendered
+    assert any(attrs.get("name") == "source_ids" and attrs.get("value") == "7" for attrs in inputs)
+    assert "const SOURCES = " in rendered
+    assert 'x-text="src.name"' in rendered
     assert any(attrs.get("name") == "tenant_id" and attrs.get("value") == "9" for attrs in inputs)
 
 

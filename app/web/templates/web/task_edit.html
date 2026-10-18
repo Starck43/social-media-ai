@@ -130,21 +130,70 @@
             </div>
         </div>
         {% if sources %}
+        {# Compact inline source picker: selected sources are chips with a
+           remove (×) control; adding goes through a same-style "+ Добавить"
+           button that opens the searchable list of the remaining sources.
+           The POST contract is unchanged — one `source_ids` value per
+           selected source. With Alpine/JS the chips render from
+           `editing.source_ids` and the hidden inputs below carry the values;
+           without JS the fallback checkbox list below submits identically. #}
         <div>
             <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
-            <ul class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
-                {% for source in sources %}
-                {{ check_card(
-                    cid="task-src-" ~ source.id,
-                    name="source_ids",
-                    value=source.id,
-                    content=source.name,
-                    checked=source.id in edit.source_ids,
-                    cls="content-cb",
-                    attrs={':checked': 'editing.source_ids.includes(' ~ source.id ~ ')'}
-                ) }}
-                {% endfor %}
-            </ul>
+            <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <template x-for="src in selectedSources()" :key="src.id">
+                        <span class="inline-flex max-w-full items-center gap-1 rounded-lg border border-cyan-500 bg-cyan-500/10 px-2 py-1 text-sm text-cyan-700 dark:text-cyan-300">
+                            <span class="min-w-0 truncate" x-text="src.name"></span>
+                            <button type="button" @click="removeSource(src.id)"
+                                    :aria-label="'Убрать источник ' + src.name"
+                                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-base leading-none hover:bg-cyan-500/20 focus-visible:ring-2 focus-visible:ring-cyan-500/60 dark:focus-visible:ring-cyan-400/60">×</button>
+                        </span>
+                    </template>
+                    <span x-show="editing.source_ids.length === 0" class="px-1 text-sm text-slate-600 dark:text-slate-400">Все активные источники</span>
+                    <div class="relative" @click.outside="pickerOpen = false">
+                        <button type="button" @click="pickerOpen = !pickerOpen; if (pickerOpen) { $nextTick(() => $refs.search.focus()) }"
+                                :aria-expanded="pickerOpen" aria-haspopup="listbox"
+                                class="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 px-2 py-1 text-sm text-slate-700 dark:text-slate-300 transition hover:border-cyan-500 dark:hover:border-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300">
+                            <span aria-hidden="true">+</span> Добавить
+                        </button>
+                        <div x-show="pickerOpen" x-cloak
+                             class="absolute left-0 z-20 mt-1 w-64 max-w-[70vw] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 shadow-lg">
+                            <input type="text" x-model="sourceQuery" x-ref="search" placeholder="Поиск по названию…"
+                                   aria-label="Поиск источника по названию"
+                                   class="{{ control() }} !py-1.5">
+                            <ul role="listbox" class="mt-1 max-h-48 overflow-y-auto">
+                                <template x-for="src in filteredSources()" :key="src.id">
+                                    <li>
+                                        <button type="button" role="option" :aria-selected="false" @click="addSource(src.id)"
+                                                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                            <span aria-hidden="true">+</span>
+                                            <span class="min-w-0 flex-1 truncate" x-text="src.name"></span>
+                                        </button>
+                                    </li>
+                                </template>
+                                <li x-show="filteredSources().length === 0" class="px-2 py-1.5 text-sm text-slate-600 dark:text-slate-400">Ничего не найдено</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <template x-for="sid in editing.source_ids" :key="'hidden-' + sid">
+                    <input type="hidden" name="source_ids" :value="sid">
+                </template>
+            </div>
+            <noscript>
+                <ul class="mt-2 grid grid-cols-1 gap-2 max-h-40 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
+                    {% for source in sources %}
+                    {{ check_card(
+                        cid="task-src-" ~ source.id,
+                        name="source_ids",
+                        value=source.id,
+                        content=source.name,
+                        checked=source.id in edit.source_ids,
+                        cls="content-cb"
+                    ) }}
+                    {% endfor %}
+                </ul>
+            </noscript>
             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Отметка деактивированного источника активирует его.</p>
         </div>
         {% endif %}
@@ -278,6 +327,7 @@
 <script>
     const TASK_EDIT = {{ edit|tojson }};
     const SCENARIO_ANALYSIS = {{ scenario_analysis|tojson }};
+    const SOURCES = [{% for s in sources %}{"id": {{ s.id }}, "name": {{ s.name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}];
     const TARGET_FIELDS = [
         { key: "brands", type: "brand_mentions", label: "Бренды", ph: "Coca-Cola, Sprite", hint: "Какие бренды упоминать в контенте" },
         { key: "competitors", type: "competitor", label: "Конкуренты", ph: "brand-a, brand-b", hint: "Чьи упоминания считать конкурентными" },
@@ -420,6 +470,37 @@
             editing: { ...defaults },
             editSched: scheduleBuilder(),
             targetDefs: TARGET_FIELDS,
+            // Compact inline source picker state. `SOURCES` is the full
+            // tenant catalog (id + name); `editing.source_ids` stays the
+            // single source of truth so the hidden `source_ids` inputs and
+            // the POST contract never diverge from the chips on screen.
+            // Everything lives on the page scope (no nested x-data), so the
+            // markup below calls these methods directly; `init()` fills
+            // `sourceById`. `pickerOpen`/`sourceQuery` are prefixed to avoid
+            // clashing with modal/dialog state elsewhere on the page.
+            pickerOpen: false,
+            sourceQuery: "",
+            sourceById: {},
+            selectedSources() {
+                return (this.editing.source_ids || []).map((id) => this.sourceById[id]).filter(Boolean);
+            },
+            filteredSources() {
+                const q = (this.sourceQuery || "").trim().toLowerCase();
+                return SOURCES.filter(
+                    (s) => !this.editing.source_ids.includes(s.id)
+                        && (!q || s.name.toLowerCase().includes(q)),
+                );
+            },
+            addSource(id) {
+                if (!this.editing.source_ids.includes(id) && id in this.sourceById) {
+                    this.editing.source_ids.push(id);
+                }
+                this.sourceQuery = "";
+                this.pickerOpen = false;
+            },
+            removeSource(id) {
+                this.editing.source_ids = this.editing.source_ids.filter((sid) => sid !== id);
+            },
             activeTargetTypes() {
                 return SCENARIO_ANALYSIS[String(this.editing.scenario_id)] || [];
             },
@@ -454,6 +535,12 @@
                     whitelist: TASK_EDIT.whitelist || "",
                 }
                 this.editSched.load(this.editing.cron_expr)
+                // Drop linked ids missing from the tenant catalog (e.g. a
+                // source removed elsewhere) so chips never render nameless.
+                this.sourceById = Object.fromEntries(SOURCES.map((s) => [s.id, s]));
+                this.pickerOpen = false;
+                this.sourceQuery = "";
+                this.editing.source_ids = (this.editing.source_ids || []).filter((id) => id in this.sourceById);
             },
         }
     }

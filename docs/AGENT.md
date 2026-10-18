@@ -45,19 +45,24 @@ OpenAI function calling.
 Runtime допускает только активного участника с привязанным активным User и
 согласованными tenant/channel/chat. Роли и права загружаются явно; authority
 повторно читается перед инструментами. Весь turn находится в permission_scope.
-Owner в runtime — только явная membership-роль SUPERUSER, не NULL и не env-флаг.
-Owner override ограничен source/agenttask/agentscenario; глобальные права не даёт.
+Workspace authority comes from the active membership's workspace-role grants
+and `ai_chat_enabled`; platform roles do not substitute for membership rights.
+Ownership is not the retired SUPERUSER membership role. NULL roles grant no
+workspace rights. Global LLM catalog rights never follow from workspace ownership.
 
 Оба registry-пути `call_tool`/`execute` проверяют `required_permission` до handler.
-Отсутствующее объявление пока не означает полное покрытие: такие инструменты и
-raw manager writes требуют отдельного аудита. Trusted service/operator scopes
+All 34 current built-in declarations have a required permission. That inventory
+is not complete handler/manager authorization coverage, and registry dispatch
+does not itself validate every declared JSON-Schema type, enum or range.
+Trusted service/operator scopes
 не используются как замена интерактивной identity. `confirm=True` требует
 одноразовый approval даже при прямом registry-вызове с правами.
 
 ### Confirmation flow
 
-1. Fresh identity/right + `confirm=True` create a version-2 intent with a unique intent ID,
-   actor/tenant/membership, session, role IDs, current tool contract/schema,
+1. Fresh identity/right + `confirm=True` create a version-3 intent with a unique intent ID,
+   actor/tenant/membership, session, platform/workspace role binding and chat-enabled
+   state, current tool contract/schema,
    arguments and expiry (one hour).
 2. Runtime returns a preview and does not execute further effects in that batch.
 3. The same actor answers yes/no; another actor cannot consume, replace or cancel
@@ -71,9 +76,9 @@ raw manager writes требуют отдельного аудита. Trusted ser
    before the registry consumes the one-use in-process approval and invokes the
    handler. Revocation, change or expiry refuses execution; stale cleanup cannot
    erase a replacement.
-5. Legacy version-1 intents, missing bindings or missing unique intent IDs are
-   refused: request the action again. Older runtimes reject version 2 rather than
-   authorizing an action without atomic consumption.
+5. Legacy version-1/version-2 intents, missing bindings or missing unique intent
+   IDs are refused: request the action again. Version 3 must match current
+   workspace-role and chat-enabled binding before approval.
 
 The integrated compare-and-consume boundary (PR #105) admits at most one handler
 invocation for the same stored intent across cooperating processes. Owner-local
@@ -100,19 +105,25 @@ exact tested revision and evidence attribution; constraints are in
 [TENANCY](TENANCY.md) and [business readiness](BUSINESS_PRODUCTION_READINESS.md).
 PR #22 is integrated, while full durable approval lifecycle work remains open.
 
-### LLM модели и провайдеры
+### LLM models and providers
 
-Инструменты в `app/agent/toolset/llm.py` (permission prefix `llmmodel.*`,
-`llmprovider.*`):
+Tools remain registered in `app/agent/toolset/llm.py`, but are not ordinary
+workspace-chat capabilities after the platform/workspace split (0096).
+`tool_specs_for` hides global resources from authenticated workspace members,
+including owners; runtime and registry recheck rights. Platform administration
+belongs in `/admin`, the operator API or trusted CLI, not a workspace bypass.
+The declarations below describe registered handlers, not tools a web user can
+necessarily call. See the [post-migration audit](audits/2026-10-18-cli-api-chat.md)
+for the complete 34-tool inventory and unresolved schema/probe defects.
 
 | Tool | Назначение | Confirm | Право |
 |---|---|---|---|
-| `llm_providers_list` | список провайдеров (id, name, api_format, base_url, is_active) | нет | `llmprovider.view` |
-| `llm_models_list` | список моделей с фильтрами provider_id, model_type, active_only | нет | `llmmodel.view` |
-| `llm_model_test` | тест модели (промпт → ответ, usage, нет секретов) | нет | `llmmodel.view` |
-| `llm_model_add` | создать модель (provider_id, name, api_model_id, model_type, costs, is_default) | да | `llmmodel.create` |
-| `llm_model_update` | частичное обновление модели | да | `llmmodel.update` |
-| `llm_model_delete` | удалить модель с preview перераспределения default (dry_run=true по умолчанию) | да | `llmmodel.delete` |
+| `llm_providers_list` | provider list; currently declares model-view, not provider-view | нет | `llm.model.view` |
+| `llm_models_list` | список моделей с фильтрами provider_id, model_type, active_only | нет | `llm.model.view` |
+| `llm_model_test` | legacy paid probe; raw errors, not equivalent to capped admin test | нет | `llm.model.view` |
+| `llm_model_add` | создать модель (provider_id, name, api_model_id, model_type, costs, is_default) | да | `llm.model.create` |
+| `llm_model_update` | частичное обновление модели | да | `llm.model.update` |
+| `llm_model_delete` | удалить модель с preview перераспределения default (dry_run=true по умолчанию) | да | `llm.model.delete` |
 
 Удаление модели (`llm_model_delete`) показывает план перед выполнением:
 - какая модель удаляется
@@ -120,6 +131,11 @@ PR #22 is integrated, while full durable approval lifecycle work remains open.
 - сколько сценариев (`AgentScenario.text_llm_model_id` / `image_llm_model_id` / `video_llm_model_id`) сбросится в NULL
 - кто станет новым default (по приоритету: `last_success_at` → имя в `ai_analytics.llm_model` → любой активный)
 - предупреждение, если модели этого типа не останется
+
+The model-type enum still omits video and capability combinations. List filtering
+uses exact stored values. `llm_model_test` is unconfirmed and view-gated; “no
+confirmation” does not mean read-only or free. Do not expose these global tools
+to workspace members as a workaround.
 
 ### Команды чата
 
@@ -131,8 +147,10 @@ PR #22 is integrated, while full durable approval lifecycle work remains open.
 
 ## Память и обучение
 
-`memory_set`/`memory_get` — durable KV, скоуп на workspace
-(см. `agent_memory_manager`). Теперь память **подмешивается в системный промпт**
+`memory_set`/`memory_get` use durable personal memory bound to the authenticated
+actor within the workspace (`memory_actor_scope`), not a shared workspace KV.
+Legacy shared facts are exposed only to the owner via the explicit legacy path.
+Memory is **included in the system prompt**
 автоматически: `build_system_prompt()` (`app/agent/runtime.py`) добавляет
 соглашение о стиле (`tenants.agent_style`) и top-N фактов по `confidence`
 (`agent_memory.snapshot()`, scope `meta` исключён).
@@ -184,8 +202,9 @@ run). Автоматическая эволюция промптов **не пр
 
 `/app/chat` использует тот же runtime (`handle_web_message`), что и Telegram/MAX.
 Workspace разрешается `TenantUIMiddleware` из `tenant_users` web membership.
-Роль передаётся как `role_id` в `handle_web_message()`, permission checks
-работают через `permission_scope()` так же, как в messenger.
+The web handler passes role hints, but runtime resolves and refreshes the actual
+membership, workspace-role grants and chat-enabled state. Permission checks use
+`permission_scope()` just as in messenger; hints alone confer no authority.
 
 Сессия агента — одна на (tenant, channel, chat_id): один и тот же web-пользователь
 в двух workspaces ведёт два разных диалога, а не общий транскрипт.
@@ -211,7 +230,15 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 | `task_remove` | удалить по имени | да |
 | `task_pause` | поставить на паузу / возобновить | да |
 
-При создании/изменении задачи проверяется соответствие payload сценарию:
+Known source-audit defects: `task_list` lacks its `AgentTask` import;
+`task_update` clears an omitted scenario and does not persist the new cron
+expression. Do not infer correct partial-update behavior from the declared
+schema/confirmation preview. These runtime defects remain open in the
+[CLI/API/chat audit](audits/2026-10-18-cli-api-chat.md).
+
+At creation, the tool checks target parameters against the selected scenario;
+the update handler does not provide the same missing-target warning:
+
 если сценарий использует `brand_mentions`, а `brands` не переданы — возвращается
 `warnings` (не ошибка). Это позволяет анализу работать без фокуса, просто шире.
 
@@ -268,8 +295,10 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 
 `llm_model_add/update/delete/test` already exist in `toolset/llm.py` and are
 registered by `toolset/__init__.py`. Writes require confirmation and the matching
-`llmmodel.create/update/delete` right; the runtime rechecks permissions after
-confirmation. Connection testing is read-gated by `llmmodel.view`.
+`llm.model.create/update/delete` rights; the runtime rechecks permissions after
+confirmation. Connection testing is read-gated by `llm.model.view`. These global
+handlers are filtered out of workspace chat; registration is not availability.
+The legacy test helper is not equivalent to current capped admin probes.
 
 Model tools support `decision` and `custom_endpoint_path` as well as the existing
 model types. Delete preview excludes the model being deleted and models on

@@ -1026,7 +1026,14 @@ Content-Type: application/json
 
 **Permissions:** `llmmodel.create`
 
-`model_type` accepts `text`, `image`, `embedding`, `decision`.
+The current request **and response** schemas restrict `model_type` to `text`,
+`image`, `embedding`, `decision`. This is a known post-migration contract defect:
+the ORM supports comma-separated capabilities, including video. Model list/detail
+serialization can fail for such rows, and writes cannot express them. The list
+filter is exact stored-value equality, not capability membership. No runtime fix
+is included in this documentation update; see the source-pinned
+[CLI/API/chat audit](audits/2026-10-18-cli-api-chat.md) for evidence and the full
+mounted-route inventory.
 `custom_endpoint_path` is optional (migration 0086), used for `api_format=custom`.
 List/detail responses include the endpoint path and usage/health counters.
 
@@ -1319,9 +1326,15 @@ Returns the current user's personal credentials (secrets are encrypted, never re
 ### Disable Credential
 
 ```
-PATCH /api/v1/credentials/{credential_id}/disable
+PATCH /api/v1/credentials/credentials/{credential_id}/disable
 Authorization: Bearer <token>
 ```
+
+The repeated `credentials` segment is the actual mounted path at the audited
+revision (router prefix plus endpoint path), not a recommended URL design.
+The formerly documented single-segment path is not registered. A later runtime
+fix should choose an explicit compatibility policy; see the
+[interface audit](audits/2026-10-18-cli-api-chat.md).
 
 Deactivates a credential (row kept for audit).
 

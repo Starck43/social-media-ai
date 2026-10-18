@@ -41,6 +41,12 @@ foundations and their PRs. Verify current behavior in code, migrations and tests
 - [Agent workflow](../AGENTS.md), [rules](RULES.md) and [collaboration](COLLABORATION.md) — instructions, environment constraints, delegation lifecycle.
 - [Phases](phases/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
 
+## Interface audit
+
+- [CLI/API and embedded-chat audit](audits/2026-10-18-cli-api-chat.md) — source-pinned
+  post-migration inventory, verified open defects and offline probes. Documentation
+  and audit evidence only; runtime behavior is not repaired or accepted.
+
 ## Pending source-audit follow-ups
 
 - [PR #196](https://github.com/Starck43/social-media-ai/pull/196) — ten source-verified TODO contracts and evidence; runtime

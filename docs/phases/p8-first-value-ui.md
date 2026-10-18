@@ -339,7 +339,7 @@ P8-T06 and does not alter its task record.
   Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Active PRs #216
   (P10-T11) and #217 (P10-T12) inspected; their reservations, ownership and
   evidence remain on their own branches, with no code ownership conflict.
-  Evidence at `9cfb5bd0860b88e877ca9dfd6a0c6917a2938a9e`: 20 isolated tests passed
+  Evidence at `6f1f695dec730396bda79043d19414fea13a2094`: 20 isolated tests passed
   (exit 0, no failures/skips), 32 offline Chromium assertions at 390/1440px
   (exit 0, all requests intercepted); actual target route/fragment behavior
   over synthetic ORM and explicit storage doubles, not real DB acceptance.

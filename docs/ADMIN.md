@@ -469,7 +469,7 @@ that record to edit it). This is a related-record window, not nested inline CRUD
 
 ### Related-editor validation and local handoff
 
-Task P8-T21. Implementation/test SHA: `9cfb5bd0860b88e877ca9dfd6a0c6917a2938a9e`;
+Task P8-T21. Implementation/test SHA: `6f1f695dec730396bda79043d19414fea13a2094`;
 synchronized dev: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Other active
 lanes #216/P10-T11 and #217/P10-T12 were inspected; their owners, reservations,
 statuses and evidence were not changed or imported as accepted work.

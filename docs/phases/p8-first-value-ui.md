@@ -487,8 +487,11 @@ P8-T06 and does not alter its task record.
   focused offline settings tests; owner: remote Notion agent;
   status: READY for coordinator review in PR #222; implementation
   `500900ba86293f063d0bf0bce6f551be788dc023`. Synchronized dev
-  `959a461410aa220cd1059c4e3ee59b55d5f79eaa` and active PRs
-  #216/#217/#220/#221 rechecked 2026-10-19; foreign owners/evidence preserved.
+  `959a461410aa220cd1059c4e3ee59b55d5f79eaa` initially; refreshed to
+  `0c757b274aaa6c46054e0bec6298dc30485d8c64` before Ready after #221 merged.
+  Branch update `86b94aafaeea35f8ca2301b5d3a99bfe1d3c0b73` preserves #221's
+  foreign records; settings implementation/tests are byte-identical to the
+  tested implementation. Active #216/#217/#220 heads remained unchanged.
   Sandbox evidence at that exact implementation SHA: 109 isolated pytest
   checks passed (0 failed/skipped) across `test_settings_layout.py`,
   `test_settings_scopes.py` and `test_template_autoescape.py`, with

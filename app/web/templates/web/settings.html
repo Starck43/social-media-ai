@@ -14,7 +14,7 @@
 <div class="settings-page">
     <p class="text-sm ui-muted">Личные настройки принадлежат вам. Настройки пространства действуют для команды.</p>
     {% set section_labels = {'account': 'Мой аккаунт', 'connections': 'Мои подключения', 'workspace': 'Пространство', 'team': 'Команда', 'agent': 'Агент для чата', 'channels': 'Каналы доставки'} %}
-    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Участники текущего пространства и их доступ.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.'} %}
+    {% set section_hints = {'account': 'Профиль и показ уведомлений.', 'connections': 'Ваши аккаунты и ключи для сбора данных. Они не принадлежат команде.', 'workspace': 'Название, часовой пояс расписаний и лимиты команды.', 'team': 'Роли участников действуют только в этом пространстве и не меняют роль аккаунта.', 'agent': 'Модель и параметры ответов для всех чатов этого пространства.', 'channels': 'Куда отправлять дайджесты пространства.'} %}
     <div class="settings-layout">
         <aside class="settings-sidebar">
             <details class="settings-menu" open>
@@ -24,10 +24,12 @@
                 <a href="/app/settings?tab={{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ section_labels[key] }}</a>
                 {% endfor %}
             </nav>
+            {% if user and user.has_admin_access() %}
             <div class="settings-admin">
                 <a href="/admin/" class="ui-control">Консоль администратора</a>
                 <p class="ui-muted">Модели и провайдеры — по отдельным правам аккаунта.</p>
             </div>
+            {% endif %}
             </details>
         </aside>
         <div class="settings-body">
@@ -98,8 +100,8 @@
                         </div>
                     </dl>
 
-                    <details class="mt-6 ui-card settings-plan-details">
-                    <summary>Тариф и лимиты — {{ plan_labels.get(tenant.plan, tenant.plan) }}</summary>
+                    <section class="mt-6 ui-card settings-plans" aria-labelledby="settings-plans-heading">
+                    <h3 id="settings-plans-heading" class="text-base font-semibold">Тарифные планы</h3>
                     <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                         Ваш тариф — {{ plan_labels.get(tenant.plan, tenant.plan) }}. Смена тарифа применяется сразу:
                         новые лимиты начинают действовать при следующем добавлении.
@@ -107,7 +109,7 @@
                     <div class="mt-3">
                         {{ plan_comparison_table(plans, plan_rows, tenant.plan, plan_usage) }}
                     </div>
-                    </details>
+                    </section>
                 {% endif %}
         {# Only a platform superuser may move a workspace between tiers: it is a
                    billing act, not a workspace preference. Everyone else sees the
@@ -117,14 +119,10 @@
                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                         <input type="hidden" name="tenant_id" value="{{ tenant.id }}">
                         <div>
-                            <label for="ws-plan" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сменить тариф</label>
-                            <select id="ws-plan" name="plan" class="{{ control() }}">
-                                {% for key in plans %}
-                                    <option value="{{ key }}" {% if key == tenant.plan %}selected{% endif %}>
-                                        {{ plan_labels[key] }}
-                                    </option>
-                                {% endfor %}
-                            </select>
+                            <label for="ws-plan-trigger" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сменить тариф</label>
+                            {% set plan_options = [] %}
+                            {% for key in plans %}{% set _ = plan_options.append((key, plan_labels[key], '')) %}{% endfor %}
+                            {{ popover_select('plan', 'ws-plan', plan_options, current=tenant.plan, placeholder='Выберите тариф', allow_empty=false, label='Сменить тариф') }}
                             <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                                 Понижение не удаляет данные, но превышенные лимиты придётся сократить,
                                 чтобы продолжить добавлять.
@@ -238,19 +236,19 @@
                             </div>
                             {% if m_key == 'owner' %}<span class="ui-count">Владелец</span>{% endif %}
                         </div>
-                        {% if perms.can_manage_workspace(tenant.id if tenant else none) and perms.can_manage_member(m_key) %}
+                        {% if m.user_id != user.id and m_key != 'owner' and perms.can_manage_workspace(tenant.id if tenant else none) and perms.can_manage_member(m_key) %}
                         <details class="settings-member-actions">
                             <summary>Управлять доступом<span class="sr-only">: {{ member_name }}</span></summary>
                             <div class="settings-member-controls">
                                 <form method="post" action="/app/settings/members/{{ m.id }}/role" class="settings-role-form">
                                     <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                    <label for="member-role-{{ m.id }}" class="text-sm ui-muted">Роль участника</label>
+                                    <label for="member-role-{{ m.id }}-trigger" class="text-sm ui-muted">Роль участника</label>
                                     <div class="settings-inline-form">
-                                        <select id="member-role-{{ m.id }}" name="role" class="ui-control">
-                                            {% for value, label in role_labels.items() if perms.can_manage_member(m_key, value) %}
-                                            <option value="{{ value }}" {% if value == m_key %}selected{% endif %}>{{ label }}</option>
-                                            {% endfor %}
-                                        </select>
+                                        {% set member_options = [] %}
+                                        {% for value, label in role_labels.items() if perms.can_manage_member(m_key, value) %}
+                                        {% set _ = member_options.append((value, label, '')) %}
+                                        {% endfor %}
+                                        {{ popover_select('role', 'member-role-' ~ m.id, member_options, current=m_key, placeholder='Выберите роль', allow_empty=false, label='Роль участника ' ~ member_name) }}
                                         <button class="ui-control">Сохранить роль</button>
                                     </div>
                                 </form>
@@ -371,11 +369,11 @@
                                     <form method="post" action="/app/settings/credentials" class="mt-3 space-y-3">
                                         <input type="hidden" name="_csrf" value="{{ csrf }}">
                                         {% if card.manual_kinds | length > 1 %}
-                                            <select name="kind" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-500">
-                                                {% for kind, label in card.manual_kinds %}
-                                                    <option value="{{ card.platform }}::{{ kind }}">{{ label }}</option>
-                                                {% endfor %}
-                                            </select>
+                                            {% set kind_options = [] %}
+                                            {% for kind, label in card.manual_kinds %}
+                                            {% set _ = kind_options.append((card.platform ~ '::' ~ kind, label, '')) %}
+                                            {% endfor %}
+                                            {{ popover_select('kind', 'credential-kind-' ~ card.platform, kind_options, current=card.platform ~ '::' ~ card.manual_kinds[0][0], placeholder='Выберите тип ключа', allow_empty=false, label='Тип ключа ' ~ card.title) }}
                                         {% else %}
                                             <input type="hidden" name="kind" value="{{ card.platform }}::{{ card.manual_kinds[0][0] }}">
                                         {% endif %}

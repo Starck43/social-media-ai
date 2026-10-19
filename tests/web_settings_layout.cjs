@@ -22,6 +22,39 @@ const modes = [
   "operator",
 ];
 
+async function choose(root, name, value) {
+  const picker = root.locator(
+    `[data-popover-select]:has(input[name="${name}"])`,
+  );
+  await picker.locator("[data-popover-trigger]").press("ArrowDown");
+  assert.equal(await picker.locator('[data-popover-option=""]').count(), 0);
+  const bounds = await picker.locator(".shell-popover-panel").boundingBox();
+  assert.ok(
+    bounds.y >= 0 &&
+      bounds.y + bounds.height <= root.page().viewportSize().height,
+    "open selector must fit vertically",
+  );
+  assert.ok(
+    bounds.x >= 0 &&
+      bounds.x + bounds.width <= root.page().viewportSize().width,
+    "open selector must fit horizontally",
+  );
+  if ([390, 1440].includes(root.page().viewportSize().width)) {
+    const theme = await root
+      .page()
+      .evaluate(() =>
+        document.documentElement.classList.contains("dark") ? "dark" : "light",
+      );
+    await root.page().screenshot({
+      path: path.join(
+        fixtures,
+        `select-${name}-${value}-${root.page().viewportSize().width}-${theme}.png`,
+      ),
+    });
+  }
+  await picker.locator(`[data-popover-option="${value}"]`).press("Enter");
+}
+
 async function main() {
   const browser = await chromium.launch({
     headless: true,
@@ -114,6 +147,11 @@ async function main() {
             assert.equal(await nav.locator('[aria-current="page"]').count(), 1);
             assert.equal(await content.locator(".ui-segments").count(), 0);
             assert.equal(await page.locator("h1").count(), 1);
+            assert.equal(
+              await content.locator('a[href="/admin/"]').count(),
+              mode === "operator" ? 1 : 0,
+            );
+            assert.equal(await content.locator("select").count(), 0);
             const menu = content.locator(".settings-menu");
             if (width < 1024) {
               assert.equal(await menu.getAttribute("open"), null);
@@ -150,6 +188,16 @@ async function main() {
               });
             });
             if (mode === "owner-team") {
+              assert.equal(
+                await content.locator('[data-member-id="1"] summary').count(),
+                0,
+              );
+              assert.equal(
+                await content
+                  .locator('form[action="/app/settings/members/1/role"]')
+                  .count(),
+                0,
+              );
               const member = content.locator('[data-member-id="2"]');
               assert.equal(
                 await member
@@ -163,9 +211,7 @@ async function main() {
               const summary = member.locator("summary");
               await summary.focus();
               await page.keyboard.press("Enter");
-              await member
-                .locator('select[name="role"]')
-                .selectOption("viewer");
+              await choose(member, "role", "viewer");
               await member
                 .getByRole("button", { name: "Сохранить роль", exact: true })
                 .click();
@@ -211,9 +257,8 @@ async function main() {
               await dialog
                 .locator('form[action="/app/settings/invites"]')
                 .waitFor();
-              await dialog
-                .locator('select[name="role"]')
-                .selectOption("editor");
+              await choose(dialog, "role", "editor");
+              await choose(dialog, "days", "30");
               await dialog
                 .getByRole("button", {
                   name: "Создать приглашение",
@@ -224,6 +269,11 @@ async function main() {
                 (await page.evaluate(() => syntheticSubmissions)).at(-1).fields
                   .role,
                 "editor",
+              );
+              assert.equal(
+                (await page.evaluate(() => syntheticSubmissions)).at(-1).fields
+                  .days,
+                "30",
               );
               await dialog
                 .getByRole("button", { name: "Отозвать", exact: true })
@@ -248,6 +298,19 @@ async function main() {
               inviteState = "issued";
               await content.locator("[data-invite-open]").click();
               await dialog.locator("[data-issued-invite]").waitFor();
+              const previousPosts = await page.evaluate(
+                () => syntheticSubmissions.length,
+              );
+              await choose(dialog, "role", "editor");
+              await choose(dialog, "days", "1");
+              assert.equal(
+                await dialog.locator('input[name="days"]').inputValue(),
+                "1",
+              );
+              assert.equal(
+                await page.evaluate(() => syntheticSubmissions.length),
+                previousPosts,
+              );
               assert.equal(
                 await dialog.locator("#invite-link").inputValue(),
                 "http://fixture.test/app/invite/fake",
@@ -328,11 +391,38 @@ async function main() {
               );
             }
             if (mode === "owner-workspace") {
-              await content.locator(".settings-plan-details summary").click();
+              if (width === 1440) {
+                const account = page.locator(
+                  ".shell-sidebar .shell-account-trigger",
+                );
+                await account.click();
+                assert.equal(
+                  await account.getAttribute("aria-expanded"),
+                  "true",
+                );
+                await page.locator("#page-heading").click();
+                assert.equal(
+                  await account.getAttribute("aria-expanded"),
+                  "false",
+                );
+                const themeMenu = page.locator(".shell-sidebar .shell-theme");
+                await themeMenu.locator("[data-popover-trigger]").click();
+                await themeMenu
+                  .locator(`[data-theme-choice="${theme}"]`)
+                  .click();
+                assert.equal(
+                  await themeMenu
+                    .locator("[data-popover-trigger]")
+                    .getAttribute("aria-expanded"),
+                  "false",
+                );
+              }
               assert.equal(
-                await content
-                  .locator(".settings-plan-details table")
-                  .isVisible(),
+                await content.locator(".settings-plans summary").count(),
+                0,
+              );
+              assert.equal(
+                await content.locator(".settings-plans table").isVisible(),
                 true,
               );
             }

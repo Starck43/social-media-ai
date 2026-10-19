@@ -26,55 +26,78 @@
             popover.querySelector('.shell-popover-panel').hidden = true;
             if (focus) popover.querySelector('[data-popover-trigger]').focus();
         };
-        document.querySelectorAll('[data-shell-popover]').forEach(popover => {
-            const trigger = popover.querySelector('[data-popover-trigger]');
-            const panel = popover.querySelector('.shell-popover-panel');
-            let timer, openedByHover = false;
-            const open = (fromHover = false) => {
-                if (panel.hidden) openedByHover = fromHover;
-                clearTimeout(timer);
-                document.querySelectorAll('[data-shell-popover]').forEach(other => { if (other !== popover) closePopover(other); });
-                panel.hidden = false;
-                trigger.setAttribute('aria-expanded', 'true');
-            };
-            trigger.addEventListener('click', () => {
-                if (panel.hidden) open();
-                else if (openedByHover) openedByHover = false;
-                else closePopover(popover);
-            });
-            trigger.addEventListener('keydown', event => {
-                if (event.key === 'ArrowDown') { event.preventDefault(); open(); panel.querySelector('a, button')?.focus(); }
-            });
-            popover.addEventListener('keydown', event => {
-                if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); }
-            });
-            popover.addEventListener('focusout', () => setTimeout(() => {
-                if (!popover.contains(document.activeElement)) closePopover(popover);
-            }, 0));
-            document.addEventListener('click', event => { if (!popover.contains(event.target)) closePopover(popover); });
-            if (popover.hasAttribute('data-hover-popover')) {
-                popover.addEventListener('pointerenter', event => {
-                    if (popover.closest('.shell-sidebar') && event.pointerType === 'mouse' && matchMedia('(hover: hover)').matches) open(true);
+        const initializedPopovers = new WeakSet();
+        const initPopovers = (root = document) => {
+            root.querySelectorAll('[data-shell-popover]').forEach(popover => {
+                if (initializedPopovers.has(popover)) return;
+                initializedPopovers.add(popover);
+                const trigger = popover.querySelector('[data-popover-trigger]');
+                const panel = popover.querySelector('.shell-popover-panel');
+                let timer, openedByHover = false;
+                const open = (fromHover = false) => {
+                    if (panel.hidden) openedByHover = fromHover;
+                    clearTimeout(timer);
+                    document.querySelectorAll('[data-shell-popover]').forEach(other => { if (other !== popover) closePopover(other); });
+                    panel.hidden = false;
+                    if (popover.hasAttribute('data-popover-select')) {
+                        // Keep option lists inside both the viewport and a scrolling dialog.
+                        const rect = trigger.getBoundingClientRect();
+                        const dialog = popover.closest('dialog')?.getBoundingClientRect();
+                        const top = Math.max(8, dialog ? dialog.top + 8 : 8);
+                        const bottom = Math.min(innerHeight - 8, dialog ? dialog.bottom - 8 : innerHeight - 8);
+                        const above = Math.max(0, rect.top - top - 4);
+                        const below = Math.max(0, bottom - rect.bottom - 4);
+                        const upwards = below < Math.min(panel.scrollHeight, 320) && above > below;
+                        panel.style.top = upwards ? 'auto' : 'calc(100% + 4px)';
+                        panel.style.bottom = upwards ? 'calc(100% + 4px)' : 'auto';
+                        panel.style.maxHeight = Math.max(44, Math.min(320, innerHeight / 2, upwards ? above : below)) + 'px';
+                    }
+                    trigger.setAttribute('aria-expanded', 'true');
+                };
+                trigger.addEventListener('click', () => {
+                    if (panel.hidden) open();
+                    else if (openedByHover) openedByHover = false;
+                    else closePopover(popover);
                 });
-                popover.addEventListener('pointerleave', () => {
-                    timer = setTimeout(() => { if (!popover.contains(document.activeElement)) closePopover(popover); }, 180);
+                trigger.addEventListener('keydown', event => {
+                    if (event.key === 'ArrowDown') { event.preventDefault(); open(); panel.querySelector('a, button')?.focus(); }
                 });
-            }
-            panel.querySelectorAll('[data-theme-choice]').forEach(choice => choice.addEventListener('click', () => closePopover(popover, true)));
-            // Popover-select options (model pickers): write the value into the
-            // hidden input, refresh the trigger label, mark aria-selected.
-            panel.querySelectorAll('[data-popover-option]').forEach(option => option.addEventListener('click', () => {
-                const value = option.dataset.popoverOption || '';
-                const hidden = popover.querySelector('[data-popover-value]');
-                if (hidden) {
-                    hidden.value = value;
-                    hidden.dispatchEvent(new Event('input', { bubbles: true }));
+                popover.addEventListener('keydown', event => {
+                    if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); }
+                });
+                popover.addEventListener('focusout', () => setTimeout(() => {
+                    if (!popover.contains(document.activeElement)) closePopover(popover);
+                }, 0));
+                if (popover.hasAttribute('data-hover-popover')) {
+                    popover.addEventListener('pointerenter', event => {
+                        if (popover.closest('.shell-sidebar') && event.pointerType === 'mouse' && matchMedia('(hover: hover)').matches) open(true);
+                    });
+                    popover.addEventListener('pointerleave', () => {
+                        timer = setTimeout(() => { if (!popover.contains(document.activeElement)) closePopover(popover); }, 180);
+                    });
                 }
-                const label = popover.querySelector('[data-popover-label]');
-                if (label) label.textContent = option.querySelector('span')?.textContent || value;
-                panel.querySelectorAll('[data-popover-option]').forEach(other => other.setAttribute('aria-selected', String(other === option)));
-                closePopover(popover, true);
-            }));
+                panel.querySelectorAll('[data-theme-choice]').forEach(choice => choice.addEventListener('click', () => closePopover(popover, true)));
+                // Popover-select options (model pickers): write the value into the
+                // hidden input, refresh the trigger label, mark aria-selected.
+                panel.querySelectorAll('[data-popover-option]').forEach(option => option.addEventListener('click', () => {
+                    const value = option.dataset.popoverOption || '';
+                    const hidden = popover.querySelector('[data-popover-value]');
+                    if (hidden) {
+                        hidden.value = value;
+                        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    const label = popover.querySelector('[data-popover-label]');
+                    if (label) label.textContent = option.querySelector('span')?.textContent || value;
+                    panel.querySelectorAll('[data-popover-option]').forEach(other => other.setAttribute('aria-selected', String(other === option)));
+                    closePopover(popover, true);
+                }));
+            });
+        };
+        initPopovers();
+        document.addEventListener('click', event => {
+            document.querySelectorAll('[data-shell-popover]').forEach(popover => {
+                if (!popover.contains(event.target)) closePopover(popover);
+            });
         });
         let scrollDepth = 0, oldOverflow = '';
         document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
@@ -135,6 +158,7 @@
                 const response = await fetch('/app/settings/invites', { headers: { Accept: 'text/html' }, cache: 'no-store' });
                 if (!response.ok || response.redirected) throw new Error('load');
                 body.innerHTML = await response.text();
+                initPopovers(body);
             } catch (_) {
                 body.textContent = 'Не удалось загрузить приглашения. Права могли измениться. ';
                 const retry = document.createElement('button');

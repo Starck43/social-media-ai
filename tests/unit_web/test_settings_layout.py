@@ -65,6 +65,7 @@ def test_team_compact_controls_preserve_actions_roles_and_owner_protection():
         assert f"/app/settings/members/{member}/role" in forms
         assert f"/app/settings/members/{member}/ai" in forms
         assert f"/app/settings/members/{member}/disable" in forms
+    assert "/app/settings/members/1/role" not in forms
     assert "/app/settings/members/1/disable" not in forms
     assert "/app/settings/members/1/ai" not in forms
     assert next(a["value"] for _, a in forms["/app/settings/members/2/ai"] if a.get("name") == "enabled") == "0"

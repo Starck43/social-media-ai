@@ -485,7 +485,7 @@ P8-T06 and does not alter its task record.
   compact invitation/member controls without changing routes or permissions.
   Depends: none; owns: settings template/CSS, invite partial presentation and
   focused offline settings tests; owner: remote Notion agent;
-  status: READY for coordinator review in PR #222; implementation
+  status: IN_PROGRESS for owner-requested review follow-up in PR #222; implementation
   `500900ba86293f063d0bf0bce6f551be788dc023`. Synchronized dev
   `959a461410aa220cd1059c4e3ee59b55d5f79eaa` initially; refreshed to
   `0c757b274aaa6c46054e0bec6298dc30485d8c64` before Ready after #221 merged.

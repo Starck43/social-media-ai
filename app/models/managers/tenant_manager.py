@@ -283,6 +283,8 @@ class TenantUserManager(BaseManager["TenantUser"]):
             if caller is None or caller.role is None or target is None:
                 return False
             authority, existing = caller.role.codename, target.role.codename if target.role else None
+            if role_id is not None and target.user_id == actor.id:
+                return False
             new_role = (
                 None
                 if role_id is None

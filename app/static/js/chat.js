@@ -31,10 +31,20 @@ function chatApp() {
                         }).catch(() => { this.notice = 'Не удалось скопировать. Выделите текст сообщения вручную.' })
                     }
                 })
+                // The page scrolls inside .shell-content, not window: listen there.
+                this._scroller = this.scrollContainer();
+                if (this._scroller && this._scroller.addEventListener) {
+                    this._onScrollBound = () => this.onScroll();
+                    const target = (this._scroller === document.scrollingElement || this._scroller === document.documentElement)
+                        ? window
+                        : this._scroller;
+                    target.addEventListener('scroll', this._onScrollBound, { passive: true });
+                    window.addEventListener('resize', this._onScrollBound);
+                }
                 // Initialize messages from server-rendered data
                 this.messages = this.visibleMessages(window.__chatMessages || [])
                 // Scroll to bottom on page load
-                this.$nextTick(() => this.scrollToBottom())
+                this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
             visibleMessages(items) {
@@ -298,18 +308,44 @@ function chatApp() {
                 } finally { this.pending = false }
             },
 
+            scrollContainer() {
+                // The whole page scrolls now: .shell-content is the scroller,
+                // window/document is the fallback.
+                return document.querySelector('.shell-content') || document.scrollingElement || document.documentElement;
+            },
+
             scrollToBottom() {
-                const el = this.$refs.messages
-                if (el) {
-                    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+                const scroller = this.scrollContainer();
+                const target = this.$refs.form || this.$refs.end;
+                if (target && target.scrollIntoView) {
+                    target.scrollIntoView({ behavior: "smooth", block: "end" });
+                    return;
+                }
+                if (scroller) {
+                    const top = scroller === document.scrollingElement || scroller === document.documentElement
+                        ? document.documentElement.scrollHeight
+                        : scroller.scrollHeight;
+                    scroller.scrollTo({ top, behavior: "smooth" });
                 }
             },
 
             onScroll() {
-                const el = this.$refs.messages
-                if (!el) return
-                // Disable auto-scroll if user scrolled up more than 100px from bottom
-                this.autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 100
+                const scroller = this._scroller || this.scrollContainer();
+                if (!scroller) return;
+                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
+                // Primary: is there scrollable room below (>120px)? Works even with short chats.
+                const distance = isDoc
+                    ? scroller.scrollHeight - window.innerHeight - window.scrollY
+                    : scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+                if (distance > 120) { this.autoScroll = false; return; }
+                // Secondary: input form is below the visible viewport (long page, form out of view).
+                const form = this.$refs.form;
+                if (form) {
+                    const rect = form.getBoundingClientRect();
+                    const viewport = window.innerHeight || document.documentElement.clientHeight;
+                    if (rect.top - viewport > 120) { this.autoScroll = false; return; }
+                }
+                this.autoScroll = true;
             },
 
             copyText(text, event) {

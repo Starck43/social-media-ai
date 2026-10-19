@@ -589,15 +589,16 @@ dialog.ui-notification-overlay:not([open]) {
 	display: none !important;
 }
 
-/* The fixed bell occupies a reserved footer band, not the chat input. */
+/* Chat is an open page layout: it scrolls with .shell-content, no fixed heights. */
 body[data-shell-section="chat"] .chat-page {
 	height: auto;
-	min-height: calc(100dvh - 240px);
+	min-height: 0;
 }
 
 body[data-shell-section="chat"] .chat-window {
 	flex: none;
-	height: clamp(320px, calc(100dvh - 300px), 900px);
+	height: auto;
+	min-height: 0;
 }
 
 /* Reserve a real viewport footer band when the bell exists. Padding on a long

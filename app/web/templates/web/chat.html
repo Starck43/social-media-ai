@@ -18,7 +18,7 @@
 
 {% block page_heading %}Чат с агентом{% endblock %}
 {% block content %}
-<div class="chat-page mx-auto flex max-w-4xl flex-col" x-data="chatApp()">
+<div class="chat-page flex flex-col" x-data="chatApp()">
     <!-- Header -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -45,12 +45,11 @@
     </div>
 
     <section class="chat-window" aria-label="Диалог с агентом">
-        <!-- Messages area -->
+        <!-- Messages area: scrolls with the whole page container -->
         <div
-            class="chat-messages min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5" role="log" aria-live="polite"
+            class="chat-messages min-h-0 flex-1 space-y-4 p-4 md:p-5" role="log" aria-live="polite"
             :aria-busy="pending"
             x-ref="messages"
-            @scroll="onScroll()"
         >
             <!-- Empty state -->
             <div x-show="messages.length === 0"
@@ -188,25 +187,24 @@
             <div x-ref="end"></div>
         </div>
 
-        <!-- Scroll-to-bottom button (shows when user scrolled up) -->
-        <div x-show="!autoScroll && messages.length > 0"
+        <!-- Scroll-to-input button: same arrow as the send button, centered at the bottom of the screen -->
+        <button x-show="!autoScroll" x-cloak
              x-transition:enter="transition ease-out duration-200"
              x-transition:enter-start="opacity-0 translate-y-2"
              x-transition:enter-end="opacity-100 translate-y-0"
              x-transition:leave="transition ease-in duration-150"
              x-transition:leave-start="opacity-100 translate-y-0"
              x-transition:leave-end="opacity-0 translate-y-2"
-             class="mt-2 flex justify-end">
-            <button @click="scrollToBottom()"
-                    class="scroll-btn flex items-center gap-1.5 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 backdrop-blur">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+             @click="scrollToBottom()"
+                    class="chat-scroll-bottom scroll-btn"
+                    aria-label="К окну ввода"
+                    title="К окну ввода">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                      stroke-width="2"
-                     stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25" />
+                     stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
                 </svg>
-                Новые сообщения
             </button>
-        </div>
 
         <div x-show="notice" x-cloak class="chat-notice chat-notice-error" role="alert"><span x-text="notice"></span>
             <button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button>

@@ -164,7 +164,7 @@
         }
     }
 
-    /* Scroll-to-bottom button */
+    /* Scroll-to-input button: fixed, centered, bottom of the screen */
     .scroll-btn {
         transition: opacity 0.2s, transform 0.2s;
     }
@@ -173,9 +173,10 @@
         transform: scale(1.1);
     }
 
-.chat-page { min-height: 0; height:calc(100dvh - 140px); }
-.chat-window { display:flex; flex-direction:column; flex:1; min-height:280px; border:1px solid var(--color-border); border-radius:16px; background:var(--color-surface); overflow:hidden; }
-.chat-messages { scrollbar-gutter:stable; }
+.chat-page { width:100%; max-width:56rem; margin-inline:auto; padding-inline:24px; padding-bottom:32px; }
+/* Open layout: no card background, no frame — messages breathe on the page. */
+.chat-window { display:flex; flex-direction:column; min-height:0; border:0; border-radius:0; background:transparent; overflow:visible; }
+.chat-messages { overflow:visible; scrollbar-gutter:auto; }
 .chat-row { display:flex; }
 .chat-row-user { justify-content:flex-end; }
 .chat-row-assistant { justify-content:flex-start; }
@@ -218,8 +219,15 @@
 /* Failures (a refused turn, a limit) must not read like a passive hint. */
 .chat-notice-error { background:#fff1f2; color:#9f1239; border-top:1px solid #fecdd3; }
 .chat-notice button { padding:4px 8px; text-decoration:underline; min-height:0; }
-.ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
-@media(max-width:639px) { .chat-input { font-size:16px; } .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
+.ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible, .ui-shell .chat-scroll-bottom:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
+/* Centered circular button fixed at the bottom of the screen. */
+/* Uses the same arrow icon as the send button (rotated to point down). */
+.chat-scroll-bottom { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(16px + env(safe-area-inset-bottom)); z-index:30; display:flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; border-radius:50%; background:#06b6d4; color:#020617; box-shadow:0 4px 12px rgba(0,0,0,.2); transition:transform 150ms ease, opacity 200ms ease; }
+.chat-scroll-bottom:hover { transform:translateX(-50%) scale(1.06); }
+.chat-scroll-bottom svg { transform:rotate(180deg); }
+/* Tablet and below: full width with standard shell gutters. */
+@media(max-width:1023px) { .chat-page { max-width:none; padding-inline:16px; } }
+@media(max-width:639px) { .chat-input { font-size:16px; } .chat-composer { margin-inline:0; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }
 
 /* Starter cards in the empty state */
 .chat-starters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; width:100%; max-width:520px; margin-top:16px; }

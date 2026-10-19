@@ -1081,8 +1081,9 @@ async def journal_chat_attempt(
 
 async def chat_with_fallback(
     messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
-    preferred_model: Optional[LLMModel] = None, *, failures: Optional[list[dict[str, Any]]] = None, **kwargs
-) -> dict[str, Any]:
+    preferred_model: Optional[LLMModel] = None, *, budget: Optional[float] = None,
+    failures: Optional[list[dict[str, Any]]] = None, **kwargs
+) -> Optional[dict[str, Any]]:
     """One chat turn across the eligible fleet: the preferred model first, then the rest.
 
     Ordering follows the product rule: the workspace's ★ default (or the model
@@ -1096,8 +1097,13 @@ async def chat_with_fallback(
     no tool call — e.g. a truncated `max_tokens` envelope). Every switch is
     appended to `failures` as `{model, provider, reason}` for the caller's
     hint; the raw provider body never is.
+
+    `budget` is the USD this workspace may still spend today; once it is gone
+    the walk stops instead of switching the owner to a paid provider. The
+    caller gets None, which means "try again tomorrow", not "the model broke".
     """
     # Accounting label only, never sent to the provider.
+    accounting_purpose = kwargs.pop("accounting_purpose", "chat")    # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     kwargs.setdefault("personal_billing_purpose", accounting_purpose)
     models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
@@ -1116,7 +1122,15 @@ async def chat_with_fallback(
     ))
 
     last_err: Optional[Exception] = None
+    blocked_paid = False
     for model in text_models:
+        # A paid try must fit in what is left; free rows never touch the cap.
+        price = _model_price_floor(model)
+        if budget is not None and price > 0 and budget <= price:
+            blocked_paid = True
+            if failures is not None:
+                failures.append({"model": model.model_id, "provider": model.provider.name, "reason": "budget"})
+            continue
         try:
             client = LLMClientFactory.create(model)
             # Usage is recorded inside client.chat (single recording point).
@@ -1138,7 +1152,7 @@ async def chat_with_fallback(
             if not _chat_response_usable(response):
                 reason = _empty_reply_reason(response)
                 logger.warning("%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason)
-                _record_failure(failures, model, reason)
+                _record_failure(failures, model, reason, limit=getattr(model, "max_tokens", None))
                 last_err = RuntimeError(f"empty_reply:{reason}")
                 continue
             dispatch_id = response.pop("_personal_dispatch_id", None)
@@ -1171,7 +1185,18 @@ async def chat_with_fallback(
             last_err = e
             _record_failure(failures, model, "timeout")
             logger.warning(f"{model.provider.name}/{model.model_id} timeout/transport, trying next")
+    if blocked_paid and budget is not None:
+        # Nothing free answered and the cap forbids the paid rows: this is the
+        # budget, not a broken fleet. None tells the caller to stop the turn.
+        return None
     raise last_err or RuntimeError("No LLM models available")
+
+
+def _model_price_floor(model: LLMModel) -> float:
+    """The lowest per-1k price the row declares; 0.0 for a free/incomplete row."""
+    prices = [getattr(model, "input_cost_per_1k", None), getattr(model, "output_cost_per_1k", None)]
+    known = [float(price) for price in prices if price is not None]
+    return max(known) if known else 0.0
 
 
 def _model_proven_score(model: LLMModel) -> int:
@@ -1200,19 +1225,25 @@ FAILURE_LABELS = {
     "tools_unsupported": "не поддерживает инструменты",
     "empty_reply": "пустой ответ",
     "truncated": "ответ обрезан",
+    "budget": "не оплачено — дневной лимит",
 }
 
 
-def _record_failure(failures: Optional[list[dict[str, Any]]], model: LLMModel, reason: str) -> None:
+def _record_failure(
+    failures: Optional[list[dict[str, Any]]], model: LLMModel, reason: str, *, limit: Optional[int] = None
+) -> None:
     if failures is None:
         return
-    failures.append(
-        {
-            "model": model.model_id,
-            "provider": getattr(getattr(model, "provider", None), "name", None),
-            "reason": reason,
-        }
-    )
+    entry: dict[str, Any] = {
+        "model": model.model_id,
+        "provider": getattr(getattr(model, "provider", None), "name", None),
+        "reason": reason,
+    }
+    if limit is not None:
+        # The row's own output ceiling, so the caller can name it instead of
+        # guessing why a free model answered with nothing.
+        entry["max_tokens"] = int(limit)
+    failures.append(entry)
 
 
 def _empty_reply_reason(response: dict[str, Any]) -> str:

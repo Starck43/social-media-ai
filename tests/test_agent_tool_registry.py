@@ -220,7 +220,7 @@ def _stub_loop(monkeypatch, dispatched: list, *, repeat: bool = True):
     the refusal never surfaces in the reply.
     """
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         asked = any(m.get("role") == "tool" for m in messages)
         if repeat or not asked:
             return {

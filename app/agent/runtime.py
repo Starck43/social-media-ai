@@ -769,7 +769,7 @@ async def _run_tool_loop(
             break
 
         try:
-            response = await _chat(messages, specs)
+            response = await _chat(messages, specs, budget=await _spend_remaining())
         except Exception as e:  # noqa: BLE001
             # Keep provider bodies and traceback details out of runtime logs.
             # The existing user-facing status classification is unchanged.
@@ -778,6 +778,10 @@ async def _run_tool_loop(
             reply = _join_replies(reply, error_reply)
             await session.append("assistant", error_reply)
             break
+        if response is None:
+            # The cap, not a model: no paid model is worth switching to.
+            reply = _join_replies(reply, f"{LIMIT_REACHED_PREFIX} расхода исчерпан.")
+            break
 
         tool_calls = response.get("tool_calls") or []
         content = (response.get("content") or "").strip()
@@ -785,6 +789,17 @@ async def _run_tool_loop(
         hint = _model_failure_hint(response)
         if hint:
             reply = _join_replies(reply, hint)
+        ceiling = _usage_ceiling(response.get("_model_failures") or [])
+        if ceiling is not None and not (response.get("content") or "").strip():
+            # Every try hit its output limit before producing text: say so
+            # instead of sending the owner to a cheaper model again.
+            reason = (
+                f"Ответ не поместился: у моделей лимит вывода {ceiling} токенов. "
+                "Выберите модель с большим лимитом (например, с настройкой max_tokens)."
+            )
+            await session.append("assistant", reason)
+            reply = _join_replies(reply, reason)
+            break
 
         if not tool_calls:
             text = content or "Готово."
@@ -854,9 +869,14 @@ def _model_failure_hint(response: dict | None) -> str:
     failures = (response or {}).get("_model_failures") or []
     if not failures:
         return ""
+    # A budget stop is not a model switch the owner should chase: it has its
+    # own message, and naming the paid row here would read as an outage.
+    switched = [item for item in failures if item.get("reason") != "budget"]
+    if not switched:
+        return ""
     parts = [
         f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}"
-        for item in failures
+        for item in switched
     ]
     return "Переключил модель: " + "; ".join(parts) + "."
 
@@ -995,8 +1015,12 @@ async def build_system_prompt(*, actor_user_id: int | None = None, is_owner: boo
     return "\n\n".join(sections)
 
 
-async def _chat(messages: list[dict], specs: list[dict]) -> dict:
-    """Call the LLM with tool specs + provider fallback; returns {content, tool_calls, usage}."""
+async def _chat(messages: list[dict], specs: list[dict], *, budget: Optional[float] = None) -> Optional[dict]:
+    """Call the LLM with tool specs + provider fallback.
+
+    Returns `{content, tool_calls, usage}`, or None when `budget` is exhausted:
+    the caller must stop the turn instead of spending past today's cap.
+    """
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.tenant_manager import tenants
     from app.services.ai.llm_client import chat_with_fallback
@@ -1013,16 +1037,17 @@ async def _chat(messages: list[dict], specs: list[dict]) -> dict:
         if tenant.agent_temperature is not None:
             temperature = tenant.agent_temperature
 
-    from app.models import LLMModel
-
     # The workspace may name the model for this chat; otherwise the ★ default
-    # (`is_default`) starts. Either way the call walks every eligible active
-    # model on failure, most-proven first — see `chat_with_fallback`.
+    # (`is_default`) starts. Either way the call walks this workspace's own
+    # models on failure, most-proven first — see `chat_with_fallback`.
     narrative_model = await _preferred_agent_model(tenant)
+    if budget is not None and budget <= 0:
+        return None
     failures: list = []
     response = await chat_with_fallback(
         messages,
         preferred_model=narrative_model,
+        budget=budget,
         tools=specs,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -1057,6 +1082,42 @@ async def _cost_today() -> float:
     from app.services.tenancy.resolver import daily_cost_today
 
     return await daily_cost_today()
+
+
+async def _spend_remaining() -> Optional[float]:
+    """USD left in today's cap, if one applies to this workspace.
+
+    A free model serves for free, but the cap is a budget on the workspace, not
+    a permission for one model: past it the chat stops instead of quietly
+    switching the owner to a paid provider.
+    """
+    from app.core.tenant_context import current_tenant_id
+    from app.agent.runtime import tenant_daily_cost_limit
+
+    tid = current_tenant_id()
+    if tid is None:
+        return None
+    try:
+        limit = await tenant_daily_cost_limit(tid)
+        if not limit:
+            return None
+        return max(0.0, float(limit) - await _cost_today())
+    except Exception as error:  # noqa: BLE001 — a budget probe never blocks a chat turn
+        _log_runtime_failure(logging.WARNING, "agent_budget_probe_failed", error)
+        return None
+
+
+def _usage_ceiling(failures: list) -> Optional[int]:
+    """The tightest `max_tokens` among failed tries, if all of them were truncated.
+
+    A free model whose output limit cuts the answer before any text is not a
+    network problem: retrying the next model with the same budget repeats it.
+    """
+    reasons = [f.get("reason") for f in failures]
+    if not reasons or any(r != "truncated" for r in reasons):
+        return None
+    ceilings = [f.get("max_tokens") for f in failures if isinstance(f.get("max_tokens"), int)]
+    return min(ceilings) if ceilings else None
 
 
 async def _record_usage(session: Any, usage: dict) -> None:

@@ -84,7 +84,7 @@ async def test_owner_confirmation_roundtrip(_clean_sessions, monkeypatch):
     _set_owner(monkeypatch)
     calls = []
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         if not calls:
             calls.append(1)
             return {
@@ -112,7 +112,7 @@ async def test_confirmation_cancel(_clean_sessions, monkeypatch):
     """«нет» drops the staged call and never executes the tool."""
     _set_owner(monkeypatch)
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         return {
             "content": "",
             "tool_calls": [{"id": "c1", "name": "digest_send_now", "arguments": {}}],
@@ -145,7 +145,7 @@ async def test_scenario_create_waits_for_confirmation(_clean_sessions, monkeypat
     _set_owner(monkeypatch)
     before = await AgentScenario.objects.count()
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         return {
             "content": "",
             "tool_calls": [
@@ -178,7 +178,7 @@ async def test_plain_reply_no_tools(_clean_sessions, monkeypatch):
     """A normal answer without tool calls is persisted and returned as-is."""
     _set_owner(monkeypatch)
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         return {"content": "Привет! Чем помочь?", "tool_calls": [], "usage": {}}
 
     monkeypatch.setattr(agent_runtime, "_chat", fake_chat)
@@ -204,7 +204,7 @@ async def test_a_tool_call_is_replayed_to_the_api_in_wire_shape(_clean_sessions,
     _set_owner(monkeypatch)
     seen: list[list[dict]] = []
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         seen.append(messages)
         if len(seen) == 1:
             return {
@@ -260,7 +260,7 @@ async def test_llm_failures_reply_short_and_never_leak_the_body(_clean_sessions,
         response = httpx.Response(status, text=body, request=httpx.Request("POST", "http://llm/chat/completions"))
         error = httpx.HTTPStatusError(f"{status}: {body}", request=response.request, response=response)
 
-        async def failing(messages, specs, _err=error):
+        async def failing(messages, specs, _err=error, **kwargs):
             raise _err
 
         monkeypatch.setattr(agent_runtime, "_chat", failing)
@@ -289,7 +289,7 @@ async def test_cost_cap_short_circuits(_clean_sessions, monkeypatch):
     async def rich():
         return 99.0
 
-    async def boom(messages, specs):  # must never run
+    async def boom(messages, specs, **kwargs):  # must never run
         raise AssertionError("model must not be called at cap")
 
     monkeypatch.setattr(agent_runtime, "_cost_today", rich)
@@ -309,7 +309,7 @@ async def test_cost_cap_enforced_from_recorded_usage(_clean_sessions, monkeypatc
     """
     _set_owner(monkeypatch)
 
-    async def priced(messages, specs):
+    async def priced(messages, specs, **kwargs):
         return {"content": "ok", "tool_calls": [], "usage": {"total_tokens": 100, "cost": 6.0}}
 
     monkeypatch.setattr(agent_runtime, "_chat", priced)
@@ -331,7 +331,7 @@ async def test_non_owner_ignored(_clean_sessions, monkeypatch):
     """Strangers get nothing and create no sessions."""
     _set_owner(monkeypatch, owner_ids=(7,))
 
-    async def boom(messages, specs):
+    async def boom(messages, specs, **kwargs):
         raise AssertionError("model must not be called for strangers")
 
     monkeypatch.setattr(agent_runtime, "_chat", boom)
@@ -392,7 +392,7 @@ async def test_help_command(_clean_sessions, monkeypatch):
     """/help returns the help text without ever calling the model."""
     _set_owner(monkeypatch)
 
-    async def boom(messages, specs):  # must never run
+    async def boom(messages, specs, **kwargs):  # must never run
         raise AssertionError("model must not be called for /help")
 
     monkeypatch.setattr(agent_runtime, "_chat", boom)
@@ -436,7 +436,7 @@ async def test_confirmed_tool_resumes_the_plan(_clean_sessions, monkeypatch):
     _set_owner(monkeypatch)
     calls = []
 
-    async def fake_chat(messages, specs):
+    async def fake_chat(messages, specs, **kwargs):
         calls.append(1)
         if len(calls) == 1:
             return {

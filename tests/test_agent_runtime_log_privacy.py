@@ -27,6 +27,8 @@ SELECTED = {
     "_runtime_error_code", "_log_runtime_failure", "_check_prompt_injection",
     # The consent/cancel predicates the confirmation path now calls by name.
     "_CONFIRM_VERDICTS", "_CANCEL_VERDICTS", "is_confirmation_verdict",
+    # The budget probe runs before every model call; it must not need a DB.
+    "_spend_remaining", "_usage_ceiling", "tenant_daily_cost_limit", "_cost_today",
     "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
     "tool_specs_for",
     "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
@@ -102,6 +104,10 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             # The tool loop and the confirmation path run inside a memory actor
             # scope; the isolated module must be given one, like the real import.
             "memory_actor_scope": lambda *args, **kwargs: nullcontext(),
+            # No cap in the isolated runtime: the budget probe would need a
+            # tenant row, and this file tests log privacy, not spending.
+            "tenant_daily_cost_limit": AsyncMock(return_value=None),
+            "_cost_today": AsyncMock(return_value=0.0),
         }
         exec(compile(ast.Module(body=definitions, type_ignores=[]), "isolated-runtime.py", "exec"), self.ns)
 
@@ -141,7 +147,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "Не удалось обратиться к языковой модели. Подробности в логах.")
         self.assertEqual(session.messages, [("assistant", result, {})])
         self.assertEqual(session.touches, 1)
-        chat.assert_awaited_once_with([], [])
+        chat.assert_awaited_once_with([], [], budget=None)
         self.assert_logs_private()
 
 

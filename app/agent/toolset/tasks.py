@@ -72,7 +72,10 @@ async def task_list() -> list[dict[str, Any]]:
             "name": {"type": "string", "description": "Уникальное имя задачи"},
             "cron": {
                 "type": "string",
-                "description": "Cron-выражение из 5 полей (мин час день месяц день-недели) или @once",
+                "description": (
+                    "Расписание: cron-выражение из 5 полей (мин час день месяц день-недели) "
+                    "или @once — разовый запуск через минуту после создания"
+                ),
             },
             "job_type": {"type": "string", "enum": list(_get_job_types()), "description": "Что запускать"},
             "source_ids": {

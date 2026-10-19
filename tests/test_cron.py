@@ -114,3 +114,24 @@ class TestCronToHuman:
     def test_malformed_returns_raw(self):
         assert cron_to_human("bad") == "bad"
         assert cron_to_human("0 9 * *") == "0 9 * *"
+
+
+class TestOnceIsSchedulable:
+    """`@once` passes validation, so it must also be placeable on a calendar.
+
+    A one-off task used to fail with croniter's "exactly 5, 6 or 7 columns"
+    error at creation: every caller that used the shared helper could not
+    schedule what the validator had just accepted.
+    """
+
+    def test_once_is_a_minute_ahead(self):
+        now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+        fire = next_run_at("@once", "Europe/Moscow", after=now)
+        assert fire.utcoffset().total_seconds() == 0, "the runner stores UTC"
+        assert (fire - now).total_seconds() == 60
+
+    def test_manager_helper_agrees_with_the_shared_one(self):
+        now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+        assert AgentTaskManager.next_run_at("@once", "Europe/Moscow", after=now) == next_run_at(
+            "@once", "Europe/Moscow", after=now
+        )

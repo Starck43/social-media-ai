@@ -280,15 +280,14 @@ class AgentTaskManager(BaseManager):
 
     @staticmethod
     def next_run_at(cron_expr: str, timezone_name: str, after: Optional[datetime] = None) -> datetime:
-        """Compute next run time for cron expression in the given timezone (UTC returned)."""
-        from zoneinfo import ZoneInfo
+        """Compute next run time for cron expression in the given timezone (UTC returned).
 
-        base = after or datetime.now(timezone.utc)
-        tz = ZoneInfo(timezone_name)
-        local_base = base.astimezone(tz)
-        itr = croniter(cron_expr, local_base)
-        nxt = itr.get_next(datetime)
-        return nxt.astimezone(timezone.utc)
+        Delegates to the shared helper so `@once` and 5-field cron behave the
+        same in the web form, the API, the agent tools and the runner.
+        """
+        from app.tasks.cron import next_run_at as compute_next_run
+
+        return compute_next_run(cron_expr, timezone_name, after=after)
 
     async def get_active(self) -> list["AgentTask"]:
         """All active tasks."""

@@ -1,6 +1,6 @@
 """Cron helpers built on croniter (5-field expressions, tz-aware)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -71,8 +71,16 @@ def validate_cron(cron_expr: str) -> bool:
 
 
 def next_run_at(cron_expr: str, tz_name: str, after: Optional[datetime] = None) -> datetime:
-    """Next fire time for cron_expr in tz_name; returns tz-aware UTC datetime."""
+    """Next fire time for cron_expr in tz_name; returns tz-aware UTC datetime.
+
+    `@once` is a valid schedule everywhere else (`validate_cron`, `cron_to_human`,
+    the runner), so it is resolved here too: when it fires next, a minute from
+    now. Rejecting it with croniter's "exactly 5 columns" error made one-off
+    tasks impossible from any caller that used this helper.
+    """
     base = after or datetime.now(timezone.utc)
+    if cron_expr == "@once":
+        return base + timedelta(minutes=1)
     tz = ZoneInfo(tz_name)
     itr = croniter(cron_expr, base.astimezone(tz))
     return itr.get_next(datetime).astimezone(timezone.utc)

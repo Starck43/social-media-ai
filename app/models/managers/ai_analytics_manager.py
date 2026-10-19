@@ -25,6 +25,60 @@ class AIAnalyticsManager(BaseManager):
 
         super().__init__(AIAnalytics)
 
+    async def most_similar_by_topics(
+        self, source_id: int, topics: list[str], *, threshold: float = 0.3
+    ) -> Optional[Any]:
+        """Closest prior analysis for this source by main_topics Jaccard similarity.
+
+        Raw SQL is unavoidable here: `main_topics` is a json column and
+        PostgreSQL defines no ranked similarity for it. The topic array is
+        expanded per row (`json_array_elements_text` with a json_typeof array
+        guard — older rows may hold scalars), the ratio compares unnest
+        INTERSECT/UNION with the candidate list, and only the overlap operator
+        `&&` filters, since no intersection/union operators exist for arrays.
+        Parameters bind through explicit CAST(... AS text[]): a `:name::text[]`
+        form breaks SQLAlchemy text() parsing. Schema is interpolated (raw SQL
+        bypasses the metadata layer); the matched id is loaded back through the
+        ordinary queryset so the tenant guard applies to the returned record.
+        """
+        from sqlalchemy import text
+
+        from ...core.config import settings
+
+        if type(topics) is not list or not topics:
+            return None
+        statement = text(f"""
+            WITH topics AS (
+                SELECT b.id,
+                       COALESCE((SELECT array_agg(x) FROM json_array_elements_text(
+                           CASE WHEN json_typeof(b.main_topics) = 'array' THEN b.main_topics ELSE '[]'::json END
+                       ) AS x), ARRAY[]::text[]) AS topics_arr
+                FROM {settings.DB_SCHEMA}.ai_analytics b
+                WHERE b.source_id = :source_id AND b.main_topics IS NOT NULL
+            ),
+            ranked_analytics AS (
+                SELECT id,
+                       (SELECT count(*) FROM (SELECT unnest(topics_arr) INTERSECT SELECT unnest(CAST(:topics AS text[]))) s)::float /
+                       GREATEST((SELECT count(*) FROM (SELECT unnest(topics_arr) UNION SELECT unnest(CAST(:topics AS text[]))) s), 1) as similarity
+                FROM topics
+                WHERE topics_arr && CAST(:topics AS text[])
+            )
+            SELECT id, similarity FROM ranked_analytics
+            WHERE similarity >= :threshold
+            ORDER BY similarity DESC
+            LIMIT 1
+        """)
+        async with self._get_owned_session() as session:
+            row = (
+                await session.execute(
+                    statement,
+                    {"source_id": source_id, "topics": topics, "threshold": threshold},
+                )
+            ).first()
+        if row is None:
+            return None
+        return await self.filter(id=int(row[0])).first()
+
     async def delete_expired(self, cutoff: datetime) -> int:
         """Retention sweep: delete rows whose last write is before `cutoff`.
 

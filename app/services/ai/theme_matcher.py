@@ -44,33 +44,21 @@ class ThemeMatcher:
 			return None
 
 		try:
-			# Use PostgreSQL array overlap operator (&&) for efficient matching
-			# This finds records where main_topics array overlaps with new_topics
-			similar_analytics = await AIAnalytics.objects.raw_sql("""
-				WITH ranked_analytics AS (
-					SELECT *, 
-						CARDINALITY(main_topics & %s)::float / 
-						GREATEST(CARDINALITY(main_topics | %s), 1) as similarity
-					FROM {settings.DB_SCHEMA}.ai_analytics 
-					WHERE source_id = %s 
-					AND main_topics && %s
-					AND main_topics IS NOT NULL
-				)
-				SELECT * FROM ranked_analytics
-				WHERE similarity >= %s
-				ORDER BY similarity DESC, created_at DESC
-				LIMIT 1
-			""", [new_topics, new_topics, source_id, new_topics, similarity_threshold])
-
-			if similar_analytics:
-				logger.info(
-					f"Found similar analytics for source {source_id}: "
-					f"{len(similar_analytics[0].main_topics or [])} overlapping topics"
-				)
-				return similar_analytics[0]
-
-			logger.debug(f"No similar analytics found for source {source_id}")
-			return None
+			# Delegates to `AIAnalytics.objects.most_similar_by_topics` — the
+			# manager owns the raw SQL details (json expansion, Jaccard ratio
+			# via unnest INTERSECT/UNION, tenant-guarded record load) and the
+			# reasons behind every seemingly-needless cast there.
+			ranked = await AIAnalytics.objects.most_similar_by_topics(
+				source_id, new_topics, threshold=similarity_threshold
+			)
+			if ranked is None:
+				logger.debug(f"No similar analytics found for source {source_id}")
+				return None
+			logger.info(
+				f"Found similar analytics for source {source_id}: "
+				f"analysis {ranked.id}, chain {ranked.topic_chain_id!r}"
+			)
+			return ranked
 
 		except Exception as e:
 			logger.error(f"Error in similarity search: {e}")

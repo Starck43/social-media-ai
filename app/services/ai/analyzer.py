@@ -25,6 +25,10 @@ from app.utils.translit import translit_slug
 
 logger = logging.getLogger(__name__)
 
+# Bounded failover for the text stage: the scenario's model first, then at
+# most this many other active capable models (owner decision 2026-10-19).
+TEXT_MODEL_FALLBACK_LIMIT = 2
+
 
 def _analysis_error_kind(error: Exception) -> str:
     """Allowlisted categories only; never format provider messages or tracebacks."""
@@ -282,6 +286,12 @@ class AIAnalyzer:
             analysis_results = {}
             media_coverage_gaps = self._uncovered_media_hashes(None, ContentClassifier.uncovered_attachment_items(content))
 
+            # Media modalities follow the scenario's configured models: a
+            # modality without a configured model is deliberately ignored rather
+            # than treated as a coverage gap (owner decision 2026-10-19) — a
+            # text-only scenario analyzes text and retires its posts without
+            # waiting for media that nobody is configured to process.
+            #
             # Text analysis
             if classified[MediaType.TEXT.db_value]:
                 text_result = await self._analyze_text(
@@ -314,37 +324,51 @@ class AIAnalyzer:
 
             # Image analysis
             if classified[MediaType.IMAGE.db_value]:
-                image_result = await self._analyze_images(
-                    classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
-                    output_contract=output_contract,
-                    billing_execution=billing_execution,
-                )
-                if self._record_result_error(image_result):
-                    # Preserve request/response usage for existing accounting;
-                    # provider failure text is not a semantic analysis result.
-                    image_result = {**image_result, "parsed": {}}
-                media_coverage_gaps.update(self._uncovered_media_hashes(
-                    image_result, classified[MediaType.IMAGE.db_value]
-                ))
-                if image_result:
-                    analysis_results["image_analysis"] = image_result
+                if await self._get_llm_model(agent_scenario, MediaType.IMAGE) is None:
+                    # No image model configured: per the coverage decision above,
+                    # the modality is skipped and keeps no posts unretired.
+                    logger.info(
+                        f"Image analysis ignored: no image model configured for source {source.id} "
+                        f"({len(classified[MediaType.IMAGE.db_value])} image items in batch)"
+                    )
+                else:
+                    image_result = await self._analyze_images(
+                        classified[MediaType.IMAGE.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        output_contract=output_contract,
+                        billing_execution=billing_execution,
+                    )
+                    if self._record_result_error(image_result):
+                        # Preserve request/response usage for existing accounting;
+                        # provider failure text is not a semantic analysis result.
+                        image_result = {**image_result, "parsed": {}}
+                    media_coverage_gaps.update(self._uncovered_media_hashes(
+                        image_result, classified[MediaType.IMAGE.db_value]
+                    ))
+                    if image_result:
+                        analysis_results["image_analysis"] = image_result
 
             # Video analysis
             if classified[MediaType.VIDEO.db_value]:
-                video_result = await self._analyze_videos(
-                    classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
-                    output_contract=output_contract,
-                    billing_execution=billing_execution,
-                )
-                if self._record_result_error(video_result):
-                    # Preserve request/response usage for existing accounting;
-                    # provider failure text is not a semantic analysis result.
-                    video_result = {**video_result, "parsed": {}}
-                media_coverage_gaps.update(self._uncovered_media_hashes(
-                    video_result, classified[MediaType.VIDEO.db_value]
-                ))
-                if video_result:
-                    analysis_results["video_analysis"] = video_result
+                if await self._get_llm_model(agent_scenario, MediaType.VIDEO) is None:
+                    logger.info(
+                        f"Video analysis ignored: no video model configured for source {source.id} "
+                        f"({len(classified[MediaType.VIDEO.db_value])} video items in batch)"
+                    )
+                else:
+                    video_result = await self._analyze_videos(
+                        classified[MediaType.VIDEO.db_value], agent_scenario, platform_name, trigger_config, task_payload,
+                        output_contract=output_contract,
+                        billing_execution=billing_execution,
+                    )
+                    if self._record_result_error(video_result):
+                        # Preserve request/response usage for existing accounting;
+                        # provider failure text is not a semantic analysis result.
+                        video_result = {**video_result, "parsed": {}}
+                    media_coverage_gaps.update(self._uncovered_media_hashes(
+                        video_result, classified[MediaType.VIDEO.db_value]
+                    ))
+                    if video_result:
+                        analysis_results["video_analysis"] = video_result
 
             # Failed envelopes retain tracing/usage above, but their parsed
             # stubs must not become conclusions or influence theme matching.
@@ -620,22 +644,66 @@ class AIAnalyzer:
                 source_type=stype,
                 trigger_config=trigger_config,
             )
-
-            # Create LLM client and analyze
-            client = LLMClientFactory.create(model)
-            kwargs: dict[str, Any] = {}
-            if agent_scenario and agent_scenario.max_tokens:
-                kwargs["max_tokens"] = agent_scenario.max_tokens
             pydantic_model = output_contract.model if output_contract is not None else None
             if output_contract is not None:
                 prompt += "\n\nОтвет должен соответствовать JSON Schema:\n" + json.dumps(output_contract.schema, ensure_ascii=False)
+            kwargs: dict[str, Any] = {}
+            if agent_scenario and agent_scenario.max_tokens:
+                kwargs["max_tokens"] = agent_scenario.max_tokens
             if billing_execution is not None:
                 kwargs["personal_billing_execution"] = billing_execution
                 kwargs["personal_billing_stage"] = "text_analysis"
-            result = await client.analyze(prompt, pydantic_model=pydantic_model, **kwargs)
-            result = self._validate_stage_result(result, output_contract)
 
-            logger.info(f"Text analysis completed using {model.name}")
+            # Create LLM client and analyze. Bounded failover: the scenario's
+            # model first, then other active capable models — a transport
+            # failure or an unusable answer on one model must not zero the
+            # whole batch when a working replacement exists (owner-approved
+            # behavior). Every attempt is journalled and priced separately.
+            candidates = [model]
+            try:
+                from app.models.managers.llm_model_manager import LLMModelManager
+
+                for extra in await LLMModelManager().capability_candidates(
+                    "text", exclude_id=model.id, limit=TEXT_MODEL_FALLBACK_LIMIT
+                ):
+                    if all(extra.id != kept.id for kept in candidates):
+                        candidates.append(extra)
+            except Exception as fallback_error:  # noqa: BLE001 — failover is best-effort
+                logger.warning("text_fallback_candidates_failed error_kind=%s", _analysis_error_kind(fallback_error))
+
+            result = None
+            last_error_kind = None
+            for candidate in candidates:
+                client = LLMClientFactory.create(candidate)
+                try:
+                    result = await client.analyze(prompt, pydantic_model=pydantic_model, **dict(kwargs))
+                    result = self._validate_stage_result(result, output_contract)
+                except Exception as e:
+                    from app.services.billing.errors import raise_personal_billing_block
+
+                    raise_personal_billing_block(e)
+                    self.reported_errors += 1
+                    last_error_kind = _analysis_error_kind(e)
+                    logger.warning(
+                        "text_analysis_attempt_failed model_id=%s error_kind=%s", candidate.id, last_error_kind
+                    )
+                    result = None
+                    continue
+                response = result.get("response") if isinstance(result, dict) else None
+                if (isinstance(result, dict) and isinstance(result.get("parsed"), dict) and result.get("parsed")
+                        and not (isinstance(response, dict) and response.get("error"))):
+                    logger.info(f"Text analysis completed using {candidate.name}")
+                    break
+                logger.warning(
+                    "text_analysis_attempt_unusable model_id=%s (trying a fallback model)",
+                    candidate.id,
+                )
+                result = None
+            if result is None:
+                if last_error_kind:
+                    logger.error("analysis_failed stage=text error_kind=%s", last_error_kind)
+                return None
+
             if isinstance(result, dict):
                 # Keep this local coverage evidence outside parsed output, and
                 # never trust a provider-supplied field with the same name.
@@ -1482,7 +1550,25 @@ class AIAnalyzer:
                 # partial B cannot be represented separately in this daily row.
                 # Silent media gaps must not overwrite A either; bounded text
                 # sampling alone still follows its normal covered-subset path.
-                logger.info("partial_analysis_update_skipped")
+                # A fuller B (same fingerprint) must still move the queue: merge
+                # its coverage into A's daily row so the staged records retire —
+                # the text work for them is already paid for. B's own body is
+                # not persisted; its per-item coverage lives in the hashes.
+                previous_hashes = (existing_analysis.summary_data or {}).get("content_hashes") or []
+                merged_hashes = list(dict.fromkeys(
+                    [*(value for value in previous_hashes if type(value) is str),
+                     *(value for value in content_hashes if type(value) is str)]
+                ))
+                updated_summary = dict(existing_analysis.summary_data or {})
+                updated_summary["content_hashes"] = merged_hashes
+                await AIAnalytics.objects.update_by_id(
+                    existing_analysis.id, summary_data=updated_summary
+                )
+                self.completed_hashes.update(value for value in merged_hashes if type(value) is str)
+                logger.info(
+                    "partial_analysis_update_skipped — merged %s coverage hashes into analysis %s",
+                    len(merged_hashes), existing_analysis.id,
+                )
                 return None
 
         if output_contract is None:

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from .base_manager import BaseManager
@@ -10,6 +11,8 @@ if TYPE_CHECKING:
     from ..llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+_EPOCH_MIN = datetime(1, 1, 1, tzinfo=timezone.utc)
 
 
 class LLMModelManager(BaseManager):
@@ -23,6 +26,45 @@ class LLMModelManager(BaseManager):
     async def get_active_models(self) -> list["LLMModel"]:
         """Get all active LLM models."""
         return await self.filter(is_active=True)
+
+    async def capability_candidates(
+        self, capability: str, *, exclude_id: int | None = None, limit: int = 3
+    ) -> list["LLMModel"]:
+        """Ordered active models handling this capability: default first, the rest after.
+
+        The analyzer's text-stage failover walks this bounded queue when the
+        scenario's model fails: a provider transport failure or unusable output
+        must not zero a whole batch while the fleet has a working replacement.
+        Classifiers and models that never once succeeded stay excluded, so a
+        fallback cannot burn another run on a known-dead pick (the same
+        suitability discipline the auto-resolve path already applies).
+        """
+        from app.services.ai.model_suitability import analysis_capable
+
+        default = await self.resolve_default_model(capability)
+        candidates: list["LLMModel"] = []
+        for model in await self._get_by_capability(capability):
+            if exclude_id is not None and model.id == exclude_id:
+                continue
+            if any(model.id == kept.id for kept in candidates):
+                continue
+            if not model.is_active or not model.provider or not model.provider.is_active:
+                continue
+            if not analysis_capable(model):
+                continue
+            candidates.append(model)
+        # Proven models first: a fleet walk starts with what actually answered
+        # before (use_count - fail_count, then most recently used), so a
+        # fallback does not re-probe free-heap models that never worked.
+        candidates.sort(
+            key=lambda model: (
+                model.id == (default.id if default else None),
+                (model.use_count or 0) - (model.fail_count or 0),
+                model.last_used_at or _EPOCH_MIN,
+            ),
+            reverse=True,
+        )
+        return candidates[: max(1, limit)]
 
     async def get_models_by_provider(self, provider_id: int, is_active: bool = True) -> list["LLMModel"]:
         """

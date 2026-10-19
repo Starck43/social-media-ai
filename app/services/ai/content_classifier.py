@@ -2,7 +2,7 @@ import logging
 from typing import Dict, List, Any
 
 from app.types.enums.llm_types import MediaType
-from app.utils.content_attachments import attachment_coverage_reason, canonical_attachment_type
+from app.utils.content_attachments import canonical_attachment_type
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,13 @@ class ContentClassifier:
 			
 			for attachment in attachments if type(attachments) is list else []:
 				media_type = canonical_attachment_type(attachment.get('type')) if type(attachment) is dict else 'unknown'
-				
+				# A staged attachment without a usable URL carries no analyzable
+				# media body (collector found none — see VK raw-content audit
+				# Q-2). Bucketing it as media would request media analysis of
+				# nothing and then withhold the parent post from text coverage
+				# forever, so such an attachment is not media for analysis.
+				if not attachment.get('url'):
+					continue
 				if media_type == 'image':
 					classified[MediaType.IMAGE.db_value].append({
 						**item,
@@ -64,18 +70,22 @@ class ContentClassifier:
 	
 	@staticmethod
 	def uncovered_attachment_items(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
-		"""Parents with concrete unsupported/missing media cannot be retired.
+		"""Parents whose attachment collection is unreadable evidence.
 
-		Missing/NULL is legacy unknown, not repaired or reinterpreted here.
-		Explicit [] means no attachments. Malformed non-NULL collections are
-		concrete unknown evidence, not silently empty. Preserve each parent once.
+		Owner-approved coverage semantics: an attachment without a usable URL
+		(collector found none, VK raw-content audit Q-2) or of an unknown type
+		is not analyzable media at all, so it neither reaches a media stage nor
+		withholds its parent post from text coverage. Only a malformed
+		non-NULL attachment collection stays concrete unknown evidence here;
+		the runtime media stages add their own per-result gaps via
+		`_uncovered_media_hashes`. Preserve each parent once.
 		"""
 		uncovered = []
 		for item in content:
 			attachments = item.get("attachments")
-			if attachments is None:
+			if attachments is None or attachments == []:
 				continue
-			if type(attachments) is not list or any(attachment_coverage_reason(entry) for entry in attachments):
+			if type(attachments) is not list:
 				uncovered.append(item)
 		return uncovered
 

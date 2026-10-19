@@ -94,6 +94,25 @@ def _log_runtime_failure(level: int, event: str, error: BaseException) -> None:
     logger.log(level, "%s error_code=%s", event, _runtime_error_code(error))
 
 
+# What counts as "yes" to a staged action. Kept next to the parser that builds
+# the primary button (`app.agent.quick_replies._CONFIRM_OPTION`), so pressing the
+# button never falls through to the model as an ordinary request.
+_CONFIRM_VERDICTS = ("да", "yes", "y", "ok", "+", "подтверждаю")
+_CANCEL_VERDICTS = ("нет", "no", "n", "-", "отменяю", "отмена")
+
+
+def is_confirmation_verdict(text: str, *, agree: bool = True) -> bool:
+    """Whether a reply agrees to (or refuses) the staged action.
+
+    Accepts the button labels too, so pressing «Да, подтверждаю: …» or
+    «Отмена» answers the stage instead of reaching the model as a request.
+    """
+    verdict = " ".join((text or "").strip().lower().split())
+    if agree:
+        return verdict in _CONFIRM_VERDICTS or verdict.startswith("да, подтверждаю")
+    return verdict in _CANCEL_VERDICTS
+
+
 def _pending_confirmation(session: Any) -> Optional[dict]:
     state = session.state if isinstance(session.state, dict) else {}
     pending = state.get("pending_confirmation")
@@ -232,11 +251,13 @@ def _human_confirmation(name: str, args: dict) -> str:
     }
     render = renderers.get(name)
     if render is not None:
-        return f"Требуется подтверждение: {render(args)}. Ответьте «да» или «нет»."
+        # No «Ответьте «да» или «нет»»: the web chat renders the staged action
+        # as a button, and the model repeats this text verbatim in its reply.
+        return f"Требуется подтверждение: {render(args)}."
     preview = json.dumps(args, ensure_ascii=False, default=str)
     if len(preview) > 500:
         preview = preview[:500] + "..."
-    return f"Требуется подтверждение: {name} с параметрами {preview}. Ответьте «да» или «нет»."
+    return f"Требуется подтверждение: {name} с параметрами {preview}."
 
 
 def _check_prompt_injection(text: str) -> Optional[str]:
@@ -527,8 +548,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
     # 1) Confirmation flow first (before touching the model)
     pending = _pending_confirmation(session)
     if pending:
-        verdict = text.lower()
-        if verdict in ("да", "yes", "y", "ok", "+", "подтверждаю"):
+        if is_confirmation_verdict(text):
             fresh = await refresh_runtime_identity(identity)
             spec = TOOL_REGISTRY.get(pending.get("name"))
             rejection = (
@@ -591,7 +611,7 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
             # instead of waiting for the next message.
             messages = await _build_messages(session, identity)
             return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity, seed_reply=seed)
-        if verdict in ("нет", "no", "n", "-", "отменяю"):
+        if is_confirmation_verdict(text, agree=False):
             if isinstance(pending.get("authorization"), dict) and not pending_actor_matches(pending, identity):
                 return "Это подтверждение относится к другому пользователю."
             await _clear_pending(session, expected=pending)
@@ -673,8 +693,7 @@ async def _dispatch_or_stage(
                 # «pending» line twice without explaining why.
                 return (
                     "Это действие уже ждёт вашего ответа — повторно не создано.\n"
-                    f"{_human_confirmation(name, existing.get('args') or args)}\n"
-                    "Ответьте «да» или «нет»."
+                    f"{_human_confirmation(name, existing.get('args') or args)}"
                 ), True
             intent = make_pending_intent(fresh, session, spec, args, call_id)
             if intent is None:

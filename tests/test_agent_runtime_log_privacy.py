@@ -25,6 +25,8 @@ from unittest.mock import AsyncMock, patch
 PRIVATE = "synthetic-private-marker"
 SELECTED = {
     "_runtime_error_code", "_log_runtime_failure", "_check_prompt_injection",
+    # The consent/cancel predicates the confirmation path now calls by name.
+    "_CONFIRM_VERDICTS", "_CANCEL_VERDICTS", "is_confirmation_verdict",
     "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
     "tool_specs_for",
     "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
@@ -59,14 +61,25 @@ class Session:
         self.touches += 1
 
 
+def _selected(node) -> bool:
+    """Module-level definitions the isolated runtime needs, by name.
+
+    Constants are included: the confirmation predicates read their verdict
+    tuples, and a function without them is not a faithful copy.
+    """
+    if isinstance(node, ast.Assign):
+        return any(isinstance(t, ast.Name) and t.id in SELECTED for t in node.targets)
+    return node.name in SELECTED
+
+
 class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         source = Path("app/agent/runtime.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         definitions = [
             node for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name in SELECTED
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign))
+            and _selected(node)
         ]
         self.capture = Capture()
         logger = logging.Logger("isolated-runtime-review", level=logging.DEBUG)

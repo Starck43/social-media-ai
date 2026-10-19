@@ -26,10 +26,52 @@ def test_options_are_deduplicated_trimmed_and_capped():
     assert len(options) == MAX_OPTIONS
 
 
-def test_pending_confirmation_offers_yes_no_without_marker():
-    body, options = split_quick_replies("Требуется подтверждение: добавить источник. Ответьте «да» или «нет».")
-    assert options == ["Да", "Нет"]
-    assert body.startswith("Требуется подтверждение")
+def test_pending_confirmation_offers_action_buttons_without_marker():
+    body, options = split_quick_replies(
+        "Требуется подтверждение: добавить источник «Кабанов» — ВКонтакте. Ответьте «да» или «нет»."
+    )
+    # The primary button names the action; «Отмена» is the only way to refuse.
+    assert options[0].startswith("Да, подтверждаю: добавить источник")
+    assert options[1:] == ["Покажи данные", "Отмена"]
+    # The instruction is replaced by the buttons, the question itself stays.
+    assert "Ответьте" not in body
+    assert body.endswith("ВКонтакте.")
+
+
+def test_confirmation_primary_label_stays_button_sized():
+    _, options = split_quick_replies("Требуется подтверждение: " + "очень длинное действие " * 5)
+    assert len(options[0]) <= 60
+    assert options[0].endswith("…")
+
+
+def test_confirmation_with_marker_keeps_the_model_labels():
+    body, options = split_quick_replies("Требуется подтверждение: удалить задачу.\n[[options: Удалить | Оставить]]")
+    assert options == ["Удалить", "Оставить"]
+    assert "[[", "] ]" not in body and "[[" not in body
+
+
+def test_primary_button_is_accepted_as_consent():
+    from app.agent.runtime import is_confirmation_verdict
+
+    label = "Да, подтверждаю: добавить источник «kaban828»…"
+    import re
+
+    assert is_confirmation_verdict(re.sub(r"…$", "", label))
+    assert is_confirmation_verdict(label)
+    assert is_confirmation_verdict("  ДА ")
+    assert is_confirmation_verdict("подтверждаю")
+    assert not is_confirmation_verdict("нет")
+    assert not is_confirmation_verdict("Покажи данные")
+    assert not is_confirmation_verdict("")
+
+
+def test_confirmation_text_is_verbatim_reused_by_the_model():
+    from app.agent.runtime import _human_confirmation
+
+    text = _human_confirmation("source_add", {"external_id": "kaban828", "platform": "vk", "source_type": "user"})
+    assert text.startswith("Требуется подтверждение:")
+    _, options = split_quick_replies(text)
+    assert options[-1] == "Отмена" and "Ответьте" not in text
 
 
 def test_plain_text_and_empty_reply_have_no_options():
@@ -41,8 +83,17 @@ def test_channel_rendering_strips_marker_and_lists_choices():
     rendered = render_for_channel("Что дальше?\n[[options: Мои задачи | Сводка]]")
     assert "[[" not in rendered
     assert rendered.endswith("Варианты: «Мои задачи» · «Сводка»")
-    confirmation = "Требуется подтверждение: x. Ответьте «да» или «нет»."
+    confirmation = "Требуется подтверждение: x."
     assert render_for_channel(confirmation) == confirmation
+
+
+def test_system_prompt_forbids_restating_and_word_answers():
+    from app.agent.prompts import DEFAULT_SYSTEM_PROMPT, QUICK_REPLIES_SECTION
+
+    assert "Не перечисляй то, что не спрашивали" in DEFAULT_SYSTEM_PROMPT
+    assert "сразу к делу" in DEFAULT_SYSTEM_PROMPT
+    assert "кнопки действия" in QUICK_REPLIES_SECTION
+    assert "Не пиши «напишите да или нет»" in QUICK_REPLIES_SECTION
 
 
 def test_help_text_offers_quick_replies():

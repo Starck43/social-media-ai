@@ -33,10 +33,20 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   readiness; accept: bounded generic legacy probe failures; synthetic DB/DSN
   sentinels absent; root readiness unchanged; depends: none;
   owns: app/api/v1/entry.py, tests/test_legacy_api_db_probes.py and scoped
-  docs/API.md health contract; owner: remote Notion agent; status: IN_PROGRESS.
+  docs/API.md health contract and docs/validation/legacy-api-db-probes.md;
+  owner: remote Notion agent; status: READY.
   Synchronized base: `959a461410aa220cd1059c4e3ee59b55d5f79eaa`;
-  active PRs #216/#217/#220 inspected: no runtime/probe overlap; shared
-  registry/phase edits remain task-scoped, foreign evidence preserved.
+  active PRs #216/#217/#220 heads rechecked unchanged: no runtime/probe overlap;
+  shared registry/phase edits remain task-scoped, foreign evidence preserved.
+  Implementation/test SHA: `00f560e6236a43cd7f9ebeee9a0ab526a00d7618`.
+  Remote self-run: 14 isolated tests passed, exit 0, no skips/xfails; final
+  tests on the synchronized baseline: 8 failed / 6 passed, exit 1. Two-second
+  cooperative ORM timeout, fixed legacy 500 detail, success/auth/cancellation
+  preserved; root health source unchanged. Commands, environment, earlier failed
+  test-harness run and limits: [validation](../validation/legacy-api-db-probes.md).
+  READY is implementation review only, not DONE or DB/ASGI acceptance. Keep PR
+  Draft pending coordinator review and required owner-local acceptance; no
+  migration, reset, provider, runtime start or deployment authorized.
 
 - [ ] P10-T06 (AUD-06, P1) — centralize safe provider-error envelopes without
   dropping accounting; accept: allowlisted failure envelopes/logs; no

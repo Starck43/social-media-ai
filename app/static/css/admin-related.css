@@ -1,0 +1,52 @@
+/* Related controls are inline with the field, including native m2m/Select2. */
+.admin-related-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.admin-related-input { flex: 1 1 0; min-width: 0; }
+.admin-related-input > select { width: 100%; max-width: 100%; }
+.admin-related-input > .select2-container { width: 100% !important; max-width: 100%; }
+.admin-related-input .select2-selection__rendered { overflow-wrap: anywhere; }
+.admin-related-input .select2-selection--single { height: 44px; }
+.admin-related-input .select2-selection--single .select2-selection__rendered { line-height: 42px; padding: 0 32px 0 12px; }
+.admin-related-input .select2-selection--single .select2-selection__arrow { height: 42px; }
+.admin-related-input .select2-selection--multiple { min-height: 44px; }
+.admin-related-input .select2-selection__choice {
+  color: var(--tblr-body-color) !important;
+  background: var(--tblr-bg-surface-secondary, #f0f2f5) !important;
+  border-color: var(--tblr-border-color, #6b7280) !important;
+}
+.admin-related-input .select2-selection__choice__remove { color: inherit !important; }
+.admin-related-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+.admin-related-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  flex: 0 0 44px;
+  border: 1px solid #6b7280;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.admin-related-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.admin-related-icon:hover:not(:disabled) { background: rgba(127, 127, 127, .12); }
+.admin-related-input .select2-selection:focus-visible,
+.admin-related-icon:focus-visible { outline: 2px solid #2783de; outline-offset: 2px; }
+.admin-related-icon:disabled { opacity: .45; cursor: not-allowed; }
+.admin-related-status { display: block; margin-top: 4px; font-size: 14px; }
+.admin-related-status:empty { display: none; }
+[data-theme="dark"] .admin-related-icon, [data-bs-theme="dark"] .admin-related-icon { border-color: #8e939c; }
+[data-theme="dark"] .admin-related-icon:focus-visible,
+[data-bs-theme="dark"] .admin-related-icon:focus-visible,
+[data-theme="dark"] .admin-related-input .select2-selection:focus-visible,
+[data-bs-theme="dark"] .admin-related-input .select2-selection:focus-visible { outline-color: #5e9fe8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-bs-theme="light"]) .admin-related-icon { border-color: #8e939c; }
+}

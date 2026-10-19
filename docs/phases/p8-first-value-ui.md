@@ -326,32 +326,41 @@ P8-T06 and does not alter its task record.
   Remote tests are self-executed per the owner's explicit exception, now recorded
   in the remote skill; shared-doc sync follows the existing all-agent procedure.
 
-## Phase approval — pending P8-T21 inline source picker
-
-- [ ] P8-T21 — compact inline source picker on the task edit page; accept: selected sources render as inline chips with a remove control, adding goes through a same-style button opening a searchable list, POST semantics of `source_ids` unchanged, no-JS checkbox fallback retained; depends: none; owns: `app/web/templates/web/task_edit.html`, focused render test; owner: $local; status: READY — commit `a11f1f9`; isolated no-DB pytest 53/53 passed (`tests/unit_web/test_task_source_picker.py`, `tests/unit_web/test_template_autoescape.py`); `node --check` on the rendered script block passed; integration suite `tests/test_web_task_edit.py` blocked before setup by pre-existing test-schema drift (`analyzed_content_receipts` absent, owned by the analysis-receipts line) — not caused by this change, schema untouched per R8.
+- [x] P8-T21 — add/edit related FK/m2m records without losing the parent form.
+  Accept: permission-aware controls on existing editable relationships; normal
+  guarded CRUD in a separate window; successful save updates the correct select,
+  preserves other m2m selections and unsaved parent input; cancellation, blocked
+  popup, validation errors and hostile messages do not mutate the selection.
+  No new catalog privileges, raw FK fields, ORM writes, schema or live actions.
+  Depends: none; owns: app/admin/related.py, scoped setup/template integration,
+  app/admin/base.py (form converter), app/static/{js,css}/admin-related.* and
+  focused tests/docs/ADMIN.md; owner: remote
+  Notion agent (`feat/admin-related-records`); status: DONE (owner accepted the bounded implementation and explicitly
+  authorized Ready/merge after reporting that the updated local UI works).
+  Synchronized base: `1e0e3a0c772c4a7bcc04862434c172d32288868e`. Active PRs #216
+  (P10-T11) and #217 (P10-T12) inspected; their reservations, ownership and
+  evidence remain on their own branches, with no code ownership conflict.
+  Evidence at `6f1f695dec730396bda79043d19414fea13a2094`: 20 isolated tests passed
+  (exit 0, no failures/skips), 32 offline Chromium assertions at 390/1440px
+  (exit 0, all requests intercepted); actual target route/fragment behavior
+  over synthetic ORM and explicit storage doubles, not real DB acceptance.
+  [Contract, commands, versions and local handoff](../ADMIN.md#related-fkm2m-record-editors).
+  Follow-up on owner feedback: inline plus/pencil SVG controls (not text buttons
+  below the field); canonical Tenant Float `NoConverterFound` reproduced on
+  SQLAlchemy 2.1/SQLAdmin 0.32 and fixed in BaseAdmin without converting precise
+  Numeric/Decimal money. 81 isolated tests + 228 offline browser assertions
+  passed (exit 0; 0 failed/skipped), including real Select2 and canonical Tenant
+  create/edit/related GET scaffolding. Original evidence remains attributed above;
+  local reported 500 is failure evidence only. Exact follow-up published SHA in
+  PR #219 handoff. Owner subsequently reported that the updated local UI works
+  and requested closeout/Ready/merge. This is owner-reported functional smoke,
+  not evidence that the full PostgreSQL/revocation/rollback checklist ran.
+  Accepted source: `aec048db192bfc9842883502065646d5650f43d9`; reviewed against
+  fresh dev `1e0e3a0c772c4a7bcc04862434c172d32288868e`, no conflicting changes
+  or review threads; GitGuardian check passed. Prior failures and sandbox evidence
+  remain attributed above. Phase/gate approval, full-suite, deployment and schema
+  acceptance are not implied by this task closure.
 
 ## Phase approval
-
-- [ ] P8-T22 — audit and simplify the social analysis web journey; accept:
-  one social analysis task choice collects then analyzes, standalone CLI/API/chat
-  operations remain compatible, partial analysis retains staged input; scenario,
-  source and task pages explain their distinct setup/actions/statistics using
-  shared shell styles and permission-gated diagnostics; focused backend/render
-  and browser checks include the final task editor snapshot; depends: none;
-  owns: web task backend and scenario/source/task templates, shared web
-  presentation helpers, final editor follow-up after the explicit P8-T21 handoff,
-  focused tests and subsystem/audit docs; owner: codex-social-analysis;
-  status: IN_PROGRESS. Base: local dev `c98dc9c`, origin/dev `1e0e3a0`
-  verified 2026-10-18; foreign P8-T21 changes preserved. Task editor changes
-  are serialized after its active source-picker work finishes.
-  Implementation and isolated verification recorded at `a11f1f9` plus reviewed
-  working diff: 210 isolated pytest cases passed through primary OpenCode;
-  Node cron checks and Safari 27.0 actual synthetic POST checks passed. See
-  [audit and layout contract](../audits/2026-10-18-social-analysis-web.md).
-  Status remains IN_PROGRESS for persisted PostgreSQL acceptance: the local
-  test schema lacks `analyzed_content_receipts`; no migration/reset authorized.
-  The live site returned 502. No paid collection/model run or full responsive
-  visual acceptance is claimed. The final compact selector/button styling
-  follow-up received syntax and diff checks only; it was not visually tested.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

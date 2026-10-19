@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from sqladmin import Admin
 from starlette.staticfiles import StaticFiles
 
 from app.admin.authorization import AdminAuthorizationBackend
@@ -10,6 +9,7 @@ from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .related import RelatedAdmin, related_controls, related_token
 from .views import (
     AgentScenarioAdmin,
     AgentTaskAdmin,
@@ -63,7 +63,7 @@ def setup_admin(app):
     authentication_backend = AdminAuthBackend(secret_key=settings.SECRET_KEY, csrf_manager=app.state.csrf_manager)
 
     # --- SQLAdmin instance ---
-    admin = Admin(
+    admin = RelatedAdmin(
         app=app,
         engine=async_engine,
         authentication_backend=authentication_backend,
@@ -80,6 +80,8 @@ def setup_admin(app):
             "settings": settings,
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,
+            "related_controls": related_controls,
+            "related_token": related_token,
         }
     )
 

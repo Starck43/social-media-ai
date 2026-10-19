@@ -454,7 +454,11 @@ async def test_a_read_only_member_gets_no_workspace_form() -> None:
         async with await _client() as c:
             await _login(c, viewer.username)
             page = await c.get("/app/settings")
-            assert "Изменять настройки воркспейса может владелец" in page.text
+            # The read-only workspace tab explains *reading* (the settings-pages
+            # redesign), not "ask the owner": the viewer sees the summary and
+            # the form is absent.
+            assert "Вам доступны эти сведения только для чтения" in page.text
+            assert 'action="/app/settings/workspace"' not in page.text
 
             # The rendered form is not the check: a crafted POST must be refused.
             token = await _csrf(c, "/app/settings")

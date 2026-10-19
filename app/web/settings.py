@@ -440,6 +440,11 @@ async def agent_settings_update(
         agent_system_prompt=prompt,
     )
     add_flash(request, "success", "Настройки агента сохранены")
+    # A save without a response body ends the request with an empty document
+    # (HTTP `null`): the operator sees no confirmation and cannot tell whether
+    # the click landed. Every other settings write redirects back to its tab,
+    # where the flash is rendered; this one used to just stop.
+    return RedirectResponse(BACK, status_code=302)
 
 
 @router.post("/agent/model-probe")

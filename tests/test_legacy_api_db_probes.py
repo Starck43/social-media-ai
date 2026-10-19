@@ -103,7 +103,7 @@ async def test_timeout_cancels_blocked_probe(entry, handler, monkeypatch):
             cancelled.set()
 
     entry.Permission.objects.count = blocked
-    monkeypatch.setattr(entry, "DB_PROBE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(entry, "DB_PROBE_TIMEOUT_SECONDS", 0.01, raising=False)
     with pytest.raises(HTTPException) as raised:
         # Guard the test itself so removing the production timeout fails promptly.
         await asyncio.wait_for(getattr(entry, handler)(), timeout=1.0)

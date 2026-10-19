@@ -357,34 +357,3 @@ async def test_collect_job_records_a_deferred_source_apart_from_errors(stub_coll
     links = {link["name"]: link for link in _source_links(job)}
     assert links["beta"]["note"] == "отложено: лимит запросов"
     assert links["beta"]["error"] is False
-
-
-async def test_monitored_users_count_deferrals_apart_from_failures(monkeypatch):
-    import app.services.monitoring.collector as collector_module
-    from app.services.monitoring.collector import ContentCollector
-
-    class _Query:
-        def __init__(self, external_id):
-            self.external_id = external_id
-
-        async def first(self):
-            return SimpleNamespace(id=hash(self.external_id) % 1000 + 1, name=self.external_id, params={})
-
-    class _Objects:
-        def filter(self, **kwargs):
-            return _Query(kwargs["external_id"])
-
-    monkeypatch.setattr(collector_module.Source, "objects", _Objects(), raising=False)
-    monkeypatch.setattr(ContentCollector, "__init__", lambda self: None)
-
-    async def fake_collect(self, source, analyze=True, force_reanalyze=False, run_id=None):
-        if source.name == "busy":
-            raise SourceRateLimited("vk")
-        return {"content_count": 1, "new_items": 1}
-
-    monkeypatch.setattr(ContentCollector, "collect_from_source", fake_collect)
-    parent = SimpleNamespace(id=9, platform_id=1, params={})
-    results = await ContentCollector().collect_monitored_users(parent, monitored_users=["ok", "busy"])
-    assert results["failed"] == 0
-    assert results["rate_limited"] == 1
-    assert results["successful"] == 1

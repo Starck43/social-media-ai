@@ -160,7 +160,6 @@ async def test_the_add_form_writes_mode_and_token_owner_into_params() -> None:
                     "platform": await _platform_value(),
                     "external_id": external_id,
                     "source_type": "user",
-                    "monitored_users": "",
                     "mode": MODE_USER,
                     "token_owner": "",
                     "_csrf": token,

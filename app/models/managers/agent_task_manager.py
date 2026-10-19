@@ -169,6 +169,53 @@ class AgentTaskManager(BaseManager):
         return payload
 
     @staticmethod
+    def build_selection_payload(
+        *,
+        tracked_users: Any = None,
+        keywords: Any = None,
+        topics: Any = None,
+        keywords_match: str | None = None,
+        existing: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Merge a task's selection into its payload (`docs/design/task-selection.md`).
+
+        The one writer for every surface — web form, CLI, chat tool and API —
+        so the same settings cannot be stored three different ways. `None` means
+        "not supplied, keep what is there"; an empty list/string clears the key.
+
+        Malformed entries raise `SelectionError` so a save fails visibly instead
+        of storing a selection that silently selects nothing.
+        """
+        import app.services.monitoring.selection as selection
+
+        payload = dict(existing or {})
+        if tracked_users is not None:
+            # Validate through the same parser the runtime uses.
+            payload["tracked_users"] = [user.key() for user in selection.parse_tracked_users(tracked_users)]
+            if not payload["tracked_users"]:
+                payload.pop("tracked_users")
+        for raw, key in ((keywords, "keywords_list"), (topics, "topics_list")):
+            if raw is None:
+                continue
+            values = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+            phrases = [" ".join(str(value).split()) for value in values if value and str(value).strip()]
+            if phrases:
+                payload[key] = phrases
+            else:
+                payload.pop(key, None)
+        if keywords_match is not None:
+            if keywords_match not in selection.MATCH_MODES:
+                raise selection.SelectionError("keywords_match_invalid")
+            if keywords_match == selection.MATCH_ANY:
+                # "any" is the default the reader applies: not storing it keeps
+                # the payload (and its analysis fingerprint) stable.
+                payload.pop("keywords_match", None)
+            else:
+                payload["keywords_match"] = keywords_match
+        selection.build_scope(payload)
+        return payload
+
+    @staticmethod
     def validate_cron(cron_expr: str) -> bool:
         """Return True if cron expression is valid (5-field) or @once."""
         if cron_expr == "@once":

@@ -271,7 +271,6 @@ async def test_owner_may_create_a_source() -> None:
                     "platform": await _platform_value(),
                     "external_id": external_id,
                     "source_type": "user",
-                    "monitored_users": "",
                     "_csrf": token,
                 },
             )
@@ -372,7 +371,6 @@ async def test_member_role_decides_for_a_non_owner() -> None:
                     "platform": await _platform_value(),
                     "external_id": external_id,
                     "source_type": "user",
-                    "monitored_users": "",
                     "_csrf": token,
                 },
             )

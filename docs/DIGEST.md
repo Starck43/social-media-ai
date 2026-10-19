@@ -94,8 +94,11 @@ are grouped differently depending on these parameters — no data duplication.
 the technical axis value remains `entities`.
 
 **Entity filtering:** `entities` axis supports an optional `entity_type` filter
-(`"person"`, `"brand"`, `"org"`). The old `monitored_users` mode is now
-`group_by="entities", entity_type="person"`.
+(`"person"`, `"brand"`, `"org"`). Per-person grouping of people *mentioned in
+the analysed items* is `group_by="entities", entity_type="person"`. That is a
+report over analysed rows, not a selection of whose posts were analysed — those
+are different people and are chosen by the task's `tracked_users`
+([task selection](design/task-selection.md)).
 
 **Example task payload:**
 ```json

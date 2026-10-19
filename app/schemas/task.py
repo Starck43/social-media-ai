@@ -15,6 +15,14 @@ class TaskCreate(BaseModel):
     cron_expr: str = Field(..., min_length=1)
     job_type: str = Field(..., pattern="^(collect|digest|prune|analyze|learn|reflect)$")
     payload: dict[str, Any] = Field(default_factory=dict)
+    # Selection (`docs/design/task-selection.md`): top-level too, because they
+    # are a task property, not an opaque blob. The API merges them into
+    # `payload` through the same writer the web form and CLI use.
+    tracked_users: Optional[list[str]] = Field(
+        None, description="Authors whose items are analysed: platform:external_id. Empty = the sources' own items."
+    )
+    keywords_list: Optional[list[str]] = Field(None, description="Phrases an item must contain to be analysed.")
+    keywords_match: Optional[str] = Field(None, pattern="^(any|all)$")
     agent_scenario_id: Optional[int] = None
     source_ids: list[int] = Field(default_factory=list)
     is_active: bool = True
@@ -27,6 +35,11 @@ class TaskUpdate(BaseModel):
     cron_expr: Optional[str] = None
     job_type: Optional[str] = None
     payload: Optional[dict[str, Any]] = None
+    tracked_users: Optional[list[str]] = Field(
+        None, description="Authors whose items are analysed: platform:external_id. Empty list clears the filter."
+    )
+    keywords_list: Optional[list[str]] = Field(None, description="Phrases an item must contain.")
+    keywords_match: Optional[str] = Field(None, pattern="^(any|all)$")
     agent_scenario_id: Optional[int] = None
     source_ids: Optional[list[int]] = None
     is_active: Optional[bool] = None

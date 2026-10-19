@@ -206,7 +206,7 @@ for the fresh RuntimeIdentity (PR #22 and later tenancy follow-ups).
 | Tool | Назначение | Confirm |
 |---|---|---|
 | `task_list` | список всех cron-задач с активностью и следующим запуском | нет |
-| `task_add` | создать задачу: cron, job_type, sources, payload (brands, competitors, hashtags, influencer_names, keywords_list, topic_list) | да |
+| `task_add` | создать задачу: cron, job_type, sources, selection (tracked_users, keywords_list + keywords_match, topics_list, excluded_users) и run-переменные (brands, competitors, hashtags, influencer_names) | да |
 | `task_update` | изменить задачу: job_type, cron, payload, scenario_id, source_ids (частичное, только переданные поля) | да |
 | `task_remove` | удалить по имени | да |
 | `task_pause` | поставить на паузу / возобновить | да |

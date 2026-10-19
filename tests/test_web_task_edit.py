@@ -130,9 +130,12 @@ async def test_edit_page_renders_targets_for_the_bound_scenario(client: AsyncCli
         assert "Бренды" in page.text
         # Values round-trip: the stored brand is bound to its input.
         assert "Coca Cola" in page.text
-        # The user list inputs survive for the types that read them.
-        assert 'name="monitored_users"' in page.text
+        # Selection belongs to the task: tracked authors and text scope are
+        # rendered, `excluded_users` stays, the removed key is gone.
+        assert 'name="tracked_users"' in page.text
+        assert 'name="keywords_match"' in page.text
         assert 'name="excluded_users"' in page.text
+        assert 'name="monitored_users"' not in page.text
         # The web surface always uses the default repeat policy.
         assert 'name="force_reanalyze"' not in page.text
         assert "Переанализировать всё (игнорировать хеши)" not in page.text

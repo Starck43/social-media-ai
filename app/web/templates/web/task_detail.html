@@ -145,13 +145,24 @@
                     <dd class="mt-1 text-xs text-slate-600 dark:text-slate-400">все активные</dd>
                 </div>
                 {% endif %}
-                {% set mu = (task.payload or {}).get("monitored_users", []) %}
-                {% if mu %}
+                {% set tu = (task.payload or {}).get("tracked_users", []) %}
+                {% if tu %}
                 <div>
-                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Отслеживаемые</dt>
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Отслеживаемые авторы</dt>
                     <dd class="mt-1 flex flex-wrap gap-1.5">
-                        {% for u in mu %}
+                        {% for u in tu %}
                         <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-700 dark:text-slate-300">{{ u }}</span>
+                        {% endfor %}
+                    </dd>
+                </div>
+                {% endif %}
+                {% set kw = (task.payload or {}).get("keywords_list", []) %}
+                {% if kw %}
+                <div>
+                    <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">Ключевые слова</dt>
+                    <dd class="mt-1 flex flex-wrap gap-1.5">
+                        {% for word in kw %}
+                        <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-700 dark:text-slate-300">{{ word }}</span>
                         {% endfor %}
                     </dd>
                 </div>

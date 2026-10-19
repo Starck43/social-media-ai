@@ -100,7 +100,9 @@ class CliUsernameParsingTests(unittest.TestCase):
                     )
 
     def test_all_three_command_sites_use_the_shared_helper(self):
-        expected = {"collect": ["monitored", "excluded"], "direct": ["excluded"]}
+        # `--tracked` replaced `--monitored`: the same tokenizer still normalises
+        # the operator's input before the task-selection writer validates it.
+        expected = {"collect": ["tracked", "excluded"], "direct": ["excluded"]}
         for module, arguments in expected.items():
             tree = ast.parse((_ROOT / "cli" / "commands" / f"{module}.py").read_text())
             with self.subTest(module=module):
@@ -129,26 +131,25 @@ class CliUsernameParsingTests(unittest.TestCase):
 
     def test_collect_payload_guards_remain_distinct_from_analyze(self):
         collect = ast.parse((_ROOT / "cli" / "commands" / "collect.py").read_text())
-        for argument, key in (
-            ("monitored", "monitored_users"),
-            ("excluded", "excluded_users"),
-        ):
-            with self.subTest(argument=argument):
-                guard = next(
-                    node
-                    for node in ast.walk(collect)
-                    if isinstance(node, ast.If)
-                    and isinstance(node.test, ast.Name)
-                    and node.test.id == argument
-                )
-                assignment = guard.body[0]
-                self.assertIsInstance(assignment, ast.Assign)
-                self.assertEqual(
-                    ast.unparse(assignment.targets[0]), f"payload['{key}']"
-                )
-                self.assertEqual(
-                    ast.unparse(assignment.value), f"parse_usernames({argument})"
-                )
+        guard = next(
+            node
+            for node in ast.walk(collect)
+            if isinstance(node, ast.If)
+            and "tracked" in ast.unparse(node.test)
+        )
+        # `--tracked` goes through the one selection writer, never straight into
+        # `payload["tracked_users"]` (docs/design/task-selection.md).
+        self.assertIn("build_selection_payload", ast.unparse(guard))
+        excluded_guard = next(
+            node
+            for node in ast.walk(collect)
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == "excluded"
+        )
+        self.assertEqual(
+            ast.unparse(excluded_guard.body[0]), "payload['excluded_users'] = parse_usernames(excluded)"
+        )
         direct = ast.parse((_ROOT / "cli" / "commands" / "direct.py").read_text())
         analyze = next(
             node

@@ -16,7 +16,7 @@ is never blocked behind a long collection.
 - `agent_tasks` — one cron definition **and the reaction it produces**:
   `cron_expr`, `job_type`
   (`collect` | `digest` | `prune` | `analyze` | `learn` | `reflect`),
-  `payload` (JSON): **write-path keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `force_refresh`, `force_reanalyze`, `analyze_inline`, `monitored_users`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`, `keywords_list`, `topic_list`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override).
+  `payload` (JSON): **selection keys (collect/analyze):** `cli_dates` (`start_date`/`end_date`), `tracked_users` (author filter, `platform:external_id`), `keywords_list` + `keywords_match` (`any`/`all`), `topics_list`, `excluded_users`, `brands`, `competitors`, `hashtags`, `influencer_names`; **operational keys (collect/analyze):** `force_refresh`, `force_reanalyze`, `analyze_inline`, `collect_before_analyze`; **read-path keys (digest):** `group_by` (`themes` | `sources` | `entities` | `intent` | `topic_chains`, default `themes`), `time_breakdown` (boolean, default `false` — enables per-date entries within each group), `period` (`day` | `week` | `month`), `scenario_id` (alias for `agent_scenario_id` override).
 - `agent_task_sources` — many-to-many between tasks and `sources`. A task's
   sources are linked here (not in `payload`); an empty set means all active
   sources. The `sources` relationship is loaded via `task.sources` (a list).
@@ -209,7 +209,7 @@ in `Europe/Moscow` therefore means 06:00 UTC.
 ```bash
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 python -m cli.main task add hourly-collect "0 * * * *" collect \
-  --sources "1 2 3" --monitored "user_a, user_b" --excluded "spam_user"
+  --sources "1 2 3" --tracked "vk:123456, vk:7890" --keywords "Киров, дизайн" --excluded "spam_user"
 python -m cli.main task add nightly-analyze "0 2 * * *" analyze \
   --sources "1" --scenario 5 --brands "Coca-Cola, Sprite"
 python -m cli.main task list
@@ -219,11 +219,15 @@ python -m cli.main task update hourly-collect --brands "Coca-Cola, Fanta" --cron
 ```
 
 Task sources are linked via the `agent_task_sources` m2m table
-(`--sources`); `--monitored`/`--excluded` become the flat `monitored_users` /
-`excluded_users` payload keys; `--scenario` sets `agent_scenario_id`. Specific
-analysis targets (`--brands`, `--competitors`, `--hashtags`, `--influencers`,
-`--keywords`, `--topics`) go into the task `payload`, not the shared scenario.
-Date window: `--start-date`/`--end-date` → `cli_dates.start_date`/`end_date`.
+(`--sources`). Selection belongs to the task, not to a source or a scenario
+([task selection](design/task-selection.md)): `--tracked` → `payload.tracked_users`
+(authors whose items are analysed, `platform:external_id`),
+`--keywords`/`--topics` → the text scope (`keywords_list` + `keywords_match`,
+`topics_list`), `--excluded` → `excluded_users`. `--scenario` sets
+`agent_scenario_id`. Specific analysis targets (`--brands`, `--competitors`,
+`--hashtags`, `--influencers`) are run variables in the task `payload`, not the
+shared scenario. Date window: `--start-date`/`--end-date` →
+`cli_dates.start_date`/`end_date`.
 Flags: `--force-refresh` → `force_refresh`, `--force-reanalyze` → `force_reanalyze`,
 `--analyze-inline` → `analyze_inline`. Use `task update <name> [options]` to change any field on an existing task —
 only the fields you pass are modified.

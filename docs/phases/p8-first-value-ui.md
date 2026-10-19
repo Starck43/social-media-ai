@@ -15,6 +15,17 @@ Attention feed lives in the floating bell (B), not a home card.
 
 ## Tasks
 
+- [ ] P8-T26 — implement the accepted jobs lifecycle audit: built-in cleanup
+  independent of a scheduled prune task, default 24-hour terminal history,
+  administrator-only retention configuration through prefilled prune forms,
+  safe linked replay, history-only clear, paginated jobs and useful safe error
+  explanations; accept: scoped regression tests through R10, tenant and role
+  isolation, unresolved effects protected, manual web execution without runtime;
+  depends: none; owns: jobs lifecycle service/manager/dispatcher, web jobs and
+  task forms, application lifespan, task bootstrap, focused tests and subsystem
+  docs; owner: codex-jobs; status: IN_PROGRESS. Base: local dev `959a461`;
+  preserve pre-existing OpenCode edits in shared task/handler/doc files.
+
 - [x] P8-T01 — home mixed latest-results feed; accept: permitted analyses and
   digest runs merged into ≤5 cards via a bounded read-time projection;
   analysis creation time, digest period and actual delivery state labelled
@@ -437,6 +448,26 @@ P8-T06 and does not alter its task record.
   does not claim persisted worker acceptance. Removed its open registry row.
 
 ## Phase approval
+
+- [ ] P8-T25 — the chat agent can turn an abstract "find and analyse" request
+  into a reviewable plan instead of one concrete task. Scope: `search_plan`
+  (free-form request → paraphrase families, platform search queries and a short
+  candidate wording for target names, every value proposed and confirmed);
+  `sources_search` (uses the P5-T09 discovery source and returns a capped,
+  tenant-scoped candidate list — usernames, names, city, reason; returns to the
+  model only a bounded list); `source_add` accepts `mode`, `token_owner`,
+  `monitored_users` and `params` so a candidate becomes a usable source without
+  the web UI; `task_plan` (one multi-step preview: selection keywords, sources,
+  scenario, window, chain hint) executed as confirmed `task_add` calls.
+  `scenario_suggest_prompt` and `scenario_create` warn when a custom prompt
+  omits `{payload_instruction}` and a scenario asks for targets the task does
+  not carry. Prompt procedure: never invent usernames, people or organisations;
+  ask the owner to confirm every paraphrase and candidate; always state that
+  discovery coverage is partial. Accept: mocked-runtime tests cover the plan
+  preview, candidate cap, refusal without confirmation and the prompt warning;
+  no live platform call in verification; depends: P5-T08, P5-T09, P5-T11;
+  owns: app/agent/toolset/, app/agent/prompts.py, focused tests; owner:
+  unassigned; status: TODO
 
 - [x] P8-T24 — keep incomplete-analysis recovery and its progress on analysis
   detail; accept: explicit retry launches only after committed admission even

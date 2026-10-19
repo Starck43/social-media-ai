@@ -146,6 +146,86 @@ safely.
   tests/test_media_coverage_semantics.py, tests/test_theme_matcher_sql.py;
   owner: $local (opencode); status: READY
 
+- [ ] P5-T08 — **task selection scope; `monitored_users` removed end to end.**
+  The task, not a source and not a scenario, decides which collected items are
+  analysed. Design: `docs/design/task-selection.md`. Selection is applied in
+  order — sources (`agent_task_sources`) → `payload.tracked_users`
+  (`platform:external_id`, author filter only) → text scope
+  (`keywords_list` + `keywords_match`, `topics_list`) — before the provider
+  call, in the staged `analyze` path and in every inline path. Content types
+  come from the scenario only: without `tracked_users` the source's own items
+  are analysed, with `tracked_users` only those authors' items of the same
+  content types — selection never widens or narrows `content_types`.
+
+  Staged execution plan (one task, one PR, commits in this order):
+
+  1. **Pure selection core** (`app/services/monitoring/selection.py` new):
+     `parse_tracked_users` / normalise to `platform:external_id`, reject
+     malformed entries, `select_items(items, scope) -> (eligible, reasons)` with
+     per-layer counters (`no_source`, `author_not_tracked`, `no_text_match`,
+     `unknown_tracked_user`), phrase matching (word-bounded, case-insensitive,
+     `ё`=`е`, `any`/`all`). Unit tests only, no DB, no platform.
+  2. **Task payload contract** (`AgentTaskManager.build_selection_payload` /
+     `parse_selection`): one writer/reader used by web, CLI, chat and API so the
+     same JSON is produced everywhere; `monitored_users` is rejected with a
+     named error (not silently ignored). `analysis_context` fingerprint:
+     `tracked_users` and the text scope become semantic keys (different people
+     ⇒ different analysis context), the old `monitored_users` exclusion goes.
+  3. **Runtime**: `handle_collect` loses the `monitored_users` branch and calls
+     `collect_monitored_users` nowhere; `handle_analyze` runs `select_items`
+     over the staged batch per source and passes only eligible items to
+     `AIAnalyzer`, reporting selection counters in job progress/result.
+     Delete `ContentCollector.collect_monitored_users`, `Source.params`
+     fallback, and the API route `POST /monitoring/collect/monitored` with its
+     schema. Behaviour check: a source's own wall is never replaced by a
+     person's wall.
+  4. **Teardown**: remove `monitored_users` from `Source.params` readers/writers,
+     from `analysis_context._OPERATIONAL_KEYS`, and from reporting fallbacks.
+     Alembic migration (new revision): strip `monitored_users` from
+     `agent_tasks.payload` and `sources.params`; do not fabricate
+     `tracked_users` — the pre-production note in the design doc governs the
+     one-off data decision. Downgrade restores nothing (documented).
+  5. **Surfaces in this order** (each one commit, each with focused tests):
+     - CLI: `--tracked` and `--keywords` replace `--monitored` in `task add`,
+       `task update`, `collect` and one-off `task <job>`;
+     - API: task schemas gain `tracked_users`/text scope, the monitored route
+       is gone (`docs/API.md`);
+     - chat tools: `task_add`/`task_update` take `tracked_users`,
+       `keywords_match`; the prompt section explains the three layers and
+       forbids inventing identities;
+     - web UI: task editor/detail/list — one "Кого отслеживаем" field
+       (platform + id), one "Ключевые слова" field with any/all, source form
+       loses "Отслеживаемые пользователи" entirely (no legacy hint);
+     - admin: sqladmin help text for `agent_tasks.payload` and `sources.params`,
+       source form params help, and the audit doc reference.
+
+  Accept: no reference to `monitored_users` outside the design doc's history
+  section and tests that assert its removal; a mocked run proves a tracked
+  author's item reaches the provider and another author's item does not; the
+  same task produces the same payload through web, CLI and chat; job
+  diagnostics show the selection split; docs (`task-selection`,
+  `COLLECTION`, `AGENT_TASKS`, `CLI`, `API`, `DIGEST`,
+  `ANALYTICS_AGGREGATION_SYSTEM`) describe the shipped behavior. Depends:
+  P5-T05 (analyzer/handler files), P8-T22. Owns: app/services/monitoring/,
+  app/services/social/, app/jobs/handlers.py, app/services/ai/analysis_context.py,
+  app/models/managers/agent_task_manager.py, app/web/tasks.py,
+  app/web/sources.py, templates, app/agent/toolset/tasks.py, cli/, app/api,
+  app/admin/views.py, alembic revision, tests. Owner: unassigned; status: TODO
+
+- [ ] P5-T12 — VK repost author snapshot: `wall.get` must request
+  `copy_history` (and `extended=1` with the needed `fields`) so each stored item
+  carries its carrier (`collected_items.author` = `{id, name, platform}` from
+  `from_id` low 31 bits / `signer_id`) and a deterministic `external_id` per
+  carrier (`{carrier}_{wall_id}_{post_id}`). Without it `tracked_users` cannot
+  match anyone on a community that only reposts. Keep one staged identity per
+  carrier (a second carrier stages its own row), and repeat reposts must not
+  duplicate analysis. Accept: fixture with two carriers of one repost yields two
+  row identities and no duplicate analytics; malformed `copy_history` cannot
+  fabricate an author; a tracked author's repost is selected while an untracked
+  one is not. Depends: P5-T08. Owns: app/services/social/vk_client.py,
+  app/models/managers/collected_item_manager.py, tests. Owner: unassigned;
+  status: TODO
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

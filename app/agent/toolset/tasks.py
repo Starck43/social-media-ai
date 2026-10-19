@@ -54,12 +54,15 @@ async def task_list() -> list[dict[str, Any]]:
         "Создать cron-задачу. Примеры: «каждый день в 9:00» → '0 9 * * *', "
         "«каждый час» → '0 * * * *'. Тип задачи: collect, digest, prune, analyze, learn, reflect."
         " Источники задаются списком source_ids (связываются с задачей); пустой список = все активные. "
-        "Для collect можно задать monitored_users (кого отслеживать) и excluded_users (кого игнорировать). "
+        "Выборка задаётся задачей: tracked_users — авторы (platform:external_id), чьи записи анализируются "
+        "из источников задачи (пусто — материалы самих источников); keywords_list + keywords_match — фразы, "
+        "которые должны быть в записи; excluded_users — кого пропускать. Типы контента (посты, комментарии…) "
+        "задаются сценарием, а не задачей. "
         "Для collect/analyze ОБЯЗАТЕЛЬНО указать start_date (с какой даты собирать контент, YYYY-MM-DD) — "
         "иначе первый запуск вытянет всё с первого поста. "
-        "Конкретные цели анализа (brands, competitors, hashtags, influencer_names, keywords_list, "
-        "topic_list) кладутся в payload задачи, а не в сценарий: сценарий — это методика, задача — "
-        "конкретика. Если сценарий требует цель, а она не задана, результат вернёт warnings."
+        "Конкретные цели анализа (brands, competitors, hashtags, influencer_names) кладутся в payload "
+        "задачи, а не в сценарий: сценарий — это методика, задача — конкретика. Если сценарий требует "
+        "цель, а она не задана, результат вернёт warnings."
     ),
     confirm=True,
     required_permission="scheduling.task.create",
@@ -77,10 +80,21 @@ async def task_list() -> list[dict[str, Any]]:
                 "items": {"type": "integer"},
                 "description": "ID источников для задачи (связываются через m2m). Пусто = все активные",
             },
-            "monitored_users": {
+            "tracked_users": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Опционально: список username для отслеживания (только collect)",
+                "description": "Опционально: авторы platform:external_id, чьи записи анализируются "
+                "(фильтр по автору, не цель сбора)",
+            },
+            "keywords_list": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Опционально: фразы, которые должны быть в записи, чтобы её анализировали",
+            },
+            "keywords_match": {
+                "type": "string",
+                "enum": ["any", "all"],
+                "description": "any — любая из фраз, all — все (по умолчанию any)",
             },
             "excluded_users": {
                 "type": "array",
@@ -141,7 +155,9 @@ async def task_add(
     cron: str,
     job_type: str,
     source_ids: list[int] | None = None,
-    monitored_users: list[str] | None = None,
+    tracked_users: list[str] | None = None,
+    keywords_list: list[str] | None = None,
+    keywords_match: str | None = None,
     excluded_users: list[str] | None = None,
     scenario_id: int | None = None,
     period: str | None = None,
@@ -153,7 +169,6 @@ async def task_add(
     competitors: list[str] | None = None,
     hashtags: list[str] | None = None,
     influencer_names: list[str] | None = None,
-    keywords_list: list[str] | None = None,
     topic_list: list[str] | None = None,
 ) -> dict[str, Any]:
     from zoneinfo import ZoneInfo
@@ -171,9 +186,18 @@ async def task_add(
     if await AgentTask.objects.get(name=name):
         return {"error": f"Task {name!r} already exists"}
 
+    from app.services.monitoring.selection import SelectionError
+
     payload: dict[str, Any] = {}
-    if monitored_users:
-        payload["monitored_users"] = list(monitored_users)
+    try:
+        payload = AgentTaskManager.build_selection_payload(
+            tracked_users=tracked_users,
+            keywords=keywords_list,
+            keywords_match=keywords_match,
+            existing=payload,
+        )
+    except SelectionError as error:
+        return {"error": f"Некорректная выборка задачи: {error}"}
     if excluded_users:
         payload["excluded_users"] = list(excluded_users)
     if period:
@@ -185,8 +209,6 @@ async def task_add(
         ("competitors", competitors),
         ("hashtags", hashtags),
         ("influencer_names", influencer_names),
-        ("keywords_list", keywords_list),
-        ("topic_list", topic_list),
     ):
         if value:
             payload[key] = list(value)
@@ -286,7 +308,7 @@ async def task_remove(name: str) -> dict[str, Any]:
     name="task_update",
     description=(
         "Изменить существующую задачу. Можно поменять: job_type (collect, digest, prune, analyze, learn, reflect), "
-        "cron-расписание, payload (monitored_users, excluded_users, brands, competitors и т.д.), "
+        "cron-расписание, payload (tracked_users, keywords_list, excluded_users, brands, competitors и т.д.), "
         "scenario_id, source_ids. Передавайте только те поля, которые нужно изменить. "
         "Неизменные поля остаются текущими. job_type можно сменить полностью."
     ),
@@ -310,10 +332,20 @@ async def task_remove(name: str) -> dict[str, Any]:
                 "items": {"type": "integer"},
                 "description": "Новый список source IDs (пусто = все активные)",
             },
-            "monitored_users": {
+            "tracked_users": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Новый список monitored users (collect)",
+                "description": "Новый список авторов platform:external_id (пусто = материалы источников)",
+            },
+            "keywords_list": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Новый список фраз отбора (пусто = без отбора по тексту)",
+            },
+            "keywords_match": {
+                "type": "string",
+                "enum": ["any", "all"],
+                "description": "any — любая из фраз, all — все",
             },
             "excluded_users": {
                 "type": "array",
@@ -374,7 +406,9 @@ async def task_update(
     job_type: str | None = None,
     cron: str | None = None,
     source_ids: list[int] | None = None,
-    monitored_users: list[str] | None = None,
+    tracked_users: list[str] | None = None,
+    keywords_list: list[str] | None = None,
+    keywords_match: str | None = None,
     excluded_users: list[str] | None = None,
     scenario_id: int | None = None,
     period: str | None = None,
@@ -386,7 +420,6 @@ async def task_update(
     competitors: list[str] | None = None,
     hashtags: list[str] | None = None,
     influencer_names: list[str] | None = None,
-    keywords_list: list[str] | None = None,
     topic_list: list[str] | None = None,
 ) -> dict[str, Any]:
     from app.core.tenant_context import current_tenant_id
@@ -404,10 +437,20 @@ async def task_update(
     if cron is not None and not AgentTaskManager.validate_cron(cron):
         return {"error": f"Invalid cron expression: {cron!r}"}
 
+    from app.services.monitoring.selection import SelectionError
+
     # Build updated payload by merging into existing payload
     updated_payload = dict(task.payload) if task.payload else {}
-    if monitored_users is not None:
-        updated_payload["monitored_users"] = list(monitored_users)
+    # The removed author-selection key never survives a task update.
+    try:
+        updated_payload = AgentTaskManager.build_selection_payload(
+            tracked_users=tracked_users,
+            keywords=keywords_list,
+            keywords_match=keywords_match,
+            existing=updated_payload,
+        )
+    except SelectionError as error:
+        return {"error": f"Некорректная выборка задачи: {error}"}
     if excluded_users is not None:
         updated_payload["excluded_users"] = list(excluded_users)
     if period is not None:
@@ -417,7 +460,6 @@ async def task_update(
         ("competitors", competitors),
         ("hashtags", hashtags),
         ("influencer_names", influencer_names),
-        ("keywords_list", keywords_list),
         ("topic_list", topic_list),
     ):
         if value is not None:

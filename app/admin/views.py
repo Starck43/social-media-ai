@@ -366,10 +366,10 @@ class SourceAdmin(BaseAdmin, model=Source):
             "label": "Параметры",
             "description": (
                 "JSON. mode — api (Bot API, по умолчанию) | user (MTProto-сессия) | browser (план); "
-                "monitored_users — список username для отслеживания; "
                 "incremental_mode — собирать только новое; collection.count / collection.limit — размер "
                 "страницы и лимит за прогон; collection.filter — фильтр стены VK; "
-                "force_refresh и cli_dates — разовые переопределения дат"
+                "force_refresh и cli_dates — разовые переопределения дат. "
+                "Кого анализировать, задаётся в задаче (tracked_users), а не в источнике"
             ),
         },
         **BaseAdmin.form_args,
@@ -1974,7 +1974,12 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         },
         "payload": {
             "label": "Параметры",
-            "description": 'JSON с дополнительными параметрами задачи, например {"period": "day"}',
+            "description": (
+                'JSON задачи, например {"period": "day"}. Выборка (docs/design/task-selection.md): '
+                'tracked_users — авторы из источников задачи, чьи записи анализируются (пусто — записи '
+                'самих источников); keywords_list + keywords_match (any|all) — фразы, которые должны '
+                "быть в записи; типы контента задаёт сценарий"
+            ),
         },
         "is_active": {
             "label": "Активна",

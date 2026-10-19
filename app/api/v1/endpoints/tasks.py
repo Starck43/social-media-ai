@@ -1,6 +1,7 @@
 """Task CRUD + run API endpoints."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,26 @@ def _web_api_payload(payload: dict | None) -> dict:
     safe_payload.pop("force_refresh", None)
     safe_payload.pop("force_reanalyze", None)
     return safe_payload
+
+
+def _selection_payload(request, existing: dict | None) -> dict:
+    """Merge the request's selection fields through the shared writer.
+
+    `None` means "not supplied, keep what the task has"; an empty list clears.
+    A malformed identity is a 400, never a stored filter that selects nothing.
+    """
+    from app.models.managers.agent_task_manager import AgentTaskManager
+    from app.services.monitoring.selection import SelectionError
+
+    try:
+        return AgentTaskManager.build_selection_payload(
+            tracked_users=getattr(request, "tracked_users", None),
+            keywords=getattr(request, "keywords_list", None),
+            keywords_match=getattr(request, "keywords_match", None),
+            existing=existing,
+        )
+    except SelectionError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 router = APIRouter(tags=["tasks"])
@@ -95,7 +116,7 @@ async def create_task(
         name=request.name.strip()[:100],
         cron_expr=request.cron_expr,
         job_type=request.job_type,
-        payload=_web_api_payload(request.payload),
+        payload=_selection_payload(request, _web_api_payload(request.payload)),
         agent_scenario_id=request.agent_scenario_id,
         is_active=request.is_active,
         next_run_at=next_run,
@@ -121,8 +142,18 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     updates = request.model_dump(exclude_unset=True)
-    if "payload" in updates:
-        updates["payload"] = _web_api_payload(updates["payload"])
+    selection_fields = {
+        key: updates.pop(key) for key in ("tracked_users", "keywords_list", "keywords_match") if key in updates
+    }
+    if "payload" in updates or selection_fields:
+        updates["payload"] = _selection_payload(
+            SimpleNamespace(
+                tracked_users=selection_fields.get("tracked_users"),
+                keywords_list=selection_fields.get("keywords_list"),
+                keywords_match=selection_fields.get("keywords_match"),
+            ),
+            _web_api_payload(updates.get("payload", task.payload)),
+        )
     if "name" in updates:
         updates["name"] = updates["name"].strip()[:100]
 

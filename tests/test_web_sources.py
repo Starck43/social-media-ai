@@ -112,7 +112,6 @@ async def _make_source(client: AsyncClient, name: str, mode: str = "pull", owner
             "platform": await _platform_value(),
             "external_id": external_id,
             "source_type": "user",
-            "monitored_users": "",
             "mode": mode,
             "token_owner": str(owner_id or ""),
             "_csrf": token,

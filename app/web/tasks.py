@@ -3,7 +3,7 @@
 Flow:
 - sources are linked via the m2m `agent_task_sources` table (not payload)
 - scenario is set via `agent_scenario_id` FK (not payload)
-- payload keeps flat keys: period, monitored_users, excluded_users, ...
+- payload keeps flat keys: period, tracked_users, excluded_users, ...
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from app.tasks.cron import cron_to_human
 from app.jobs.progress import read_snapshot
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR, outcome_unconfirmed
 from app.types import AgentActionType, BotTriggerType, JobType
+from app.services.monitoring.selection import SelectionError, parse_tracked_users
 
 from .deps import (
 	action_tenant_id,
@@ -39,8 +40,18 @@ logger = logging.getLogger(__name__)
 
 
 def _split_names(raw: str) -> list[str]:
-	"""Split a comma/space separated username string into a clean list."""
+	"""Split a comma/space separated username string into a clean list.
+
+	Tokenisation only: case and order are preserved and a leading `@` is
+	removed, because the stored identity, not the typed spelling, is what the
+	runtime compares. Validation belongs to the selection writer.
+	"""
 	return [n.strip().lstrip("@") for n in raw.replace(",", " ").split() if n.strip()]
+
+
+def _split_phrases(raw: str) -> list[str]:
+	"""Split a comma separated phrase string, keeping spaces inside a phrase."""
+	return [" ".join(value.split()) for value in (raw or "").split(",") if value.strip()]
 
 
 def _web_job_type_choices() -> list[tuple[str, str]]:
@@ -60,7 +71,36 @@ def _normalize_web_job_type(job_type: str) -> str:
 # The analysis targets a task payload carries (param_registry.PAYLOAD_PARAMS):
 # the scenario's analysis types say *what kind* of target matters, the task
 # says *which* brands/hashtags/… to aim at.
-TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names", "keywords_list", "topic_list")
+TARGET_KEYS = ("brands", "competitors", "hashtags", "influencer_names")
+
+
+def apply_selection(payload: dict, tracked_users: str, keywords: list[str], keywords_match: str) -> None:
+	"""Normalise the task's selection into `payload` in place.
+
+	Selection belongs to the task, and every reader of it is the runtime's
+	`selection` module, so the stored form is exactly what that module parses
+	(`platform:external_id`). A malformed identity raises `SelectionError`:
+	the task must fail to save, not save a filter that quietly selects nothing.
+	"""
+	try:
+		keys = [user.key() for user in parse_tracked_users(_split_names(tracked_users))]
+	except SelectionError:
+		raise ValueError(
+			"Проверьте «Отслеживаемые авторы»: укажите платформу и id, например vk:123456"
+		) from None
+	if keys:
+		payload["tracked_users"] = keys
+	else:
+		payload.pop("tracked_users", None)
+	if keywords:
+		payload["keywords_list"] = list(dict.fromkeys(keywords))
+		if keywords_match == "all":
+			payload["keywords_match"] = "all"
+		else:
+			payload.pop("keywords_match", None)
+	else:
+		# A match mode without phrases means nothing; keep the payload honest.
+		payload.pop("keywords_match", None)
 
 
 def _split_targets(raw: str) -> list[str]:
@@ -136,7 +176,7 @@ def _build_trigger_config(
 
 
 def _payload_from_form(
-		job_type, monitored_users, excluded_users, start_date, end_date,
+		job_type, excluded_users, start_date, end_date,
 		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
 ) -> dict:
 	"""The flat payload keys a task of this type needs.
@@ -151,8 +191,6 @@ def _payload_from_form(
 	"""
 	job_type = _normalize_web_job_type(job_type)
 	payload: dict = {}
-	if monitored_users:
-		payload["monitored_users"] = _split_names(monitored_users)
 	if excluded_users:
 		payload["excluded_users"] = _split_names(excluded_users)
 	if AgentTaskManager.requires_content_dates(job_type):
@@ -252,7 +290,8 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"is_active": task.id in effective_active,
 		"source_ids": source_ids,
 		"scenario_id": task.agent_scenario_id,
-		"monitored_users": ", ".join(payload.get("monitored_users") or []),
+		"tracked_users": ", ".join(payload.get("tracked_users") or []),
+		"keywords_match": payload.get("keywords_match") or "any",
 		"excluded_users": ", ".join(payload.get("excluded_users") or []),
 		"start_date": cli_dates.get("start_date") or "",
 		"end_date": cli_dates.get("end_date") or "",
@@ -274,7 +313,10 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"cooldown_seconds": task.cooldown_seconds or "",
 	}
 	# The analysis targets live in payload under their own keys (brands, …) and
-	# are edited as comma separated strings, like monitored_users above.
+	# are edited as comma separated strings, like the selection fields above.
+	# The selection's own phrases are edited through the keywords field, so they
+	# are appended here only when no other target uses them.
+	edit["keywords_list"] = ", ".join(payload.get("keywords_list") or [])
 	for key in TARGET_KEYS:
 		edit[key] = ", ".join(payload.get(key) or [])
 	return edit
@@ -575,14 +617,14 @@ async def task_create(
 		cron_custom: str = Form(...),
 		source_ids: list[str] = Form([]),
 		scenario_id: int = Form(default=None),
-		monitored_users: str = Form(""),
+		tracked_users: str = Form(""),
+		keywords_match: str = Form("any"),
 		excluded_users: str = Form(""),
 		brands: str = Form(""),
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
 		influencer_names: str = Form(""),
 		keywords_list: str = Form(""),
-		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
 		digest_period: str = Form(""),
@@ -649,7 +691,6 @@ async def task_create(
 	try:
 		payload = _payload_from_form(
 			job_type,
-			monitored_users,
 			excluded_users,
 			start_date,
 			end_date,
@@ -657,6 +698,7 @@ async def task_create(
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
 		)
+		apply_selection(payload, tracked_users, _split_phrases(keywords_list), keywords_match)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
@@ -668,8 +710,6 @@ async def task_create(
 			"competitors": competitors,
 			"hashtags": hashtags,
 			"influencer_names": influencer_names,
-			"keywords_list": keywords_list,
-			"topic_list": topic_list,
 		},
 	)
 	if job_type == "analyze":
@@ -1334,14 +1374,14 @@ async def task_update(
 		is_active: str = Form(""),
 		source_ids: list[str] = Form([]),
 		scenario_id: int = Form(default=None),
-		monitored_users: str = Form(""),
+		tracked_users: str = Form(""),
+		keywords_match: str = Form("any"),
 		excluded_users: str = Form(""),
 		brands: str = Form(""),
 		competitors: str = Form(""),
 		hashtags: str = Form(""),
 		influencer_names: str = Form(""),
 		keywords_list: str = Form(""),
-		topic_list: str = Form(""),
 		start_date: str = Form(""),
 		end_date: str = Form(""),
 		digest_period: str = Form(""),
@@ -1406,7 +1446,6 @@ async def task_update(
 	try:
 		new_payload = _payload_from_form(
 			job_type,
-			monitored_users,
 			excluded_users,
 			start_date,
 			end_date,
@@ -1414,6 +1453,7 @@ async def task_update(
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
 		)
+		apply_selection(new_payload, tracked_users, _split_phrases(keywords_list), keywords_match)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
@@ -1462,8 +1502,6 @@ async def task_update(
 			"competitors": competitors,
 			"hashtags": hashtags,
 			"influencer_names": influencer_names,
-			"keywords_list": keywords_list,
-			"topic_list": topic_list,
 		},
 	)
 

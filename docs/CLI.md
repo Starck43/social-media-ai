@@ -95,7 +95,8 @@ python -m cli.main collect [options]
 |---|---|---|
 | `--src`, `-s` | all active | Source ids, urls or platform keyword (`vk`/`telegram`/`max`), comma/space separated |
 | `--tenant` | — | Workspace slug or id |
-| `--monitored` | — | Usernames to collect for instead of source defaults |
+| `--tracked` | — | Tracked authors (`platform:external_id`): analysis keeps only items they wrote |
+| `--keywords` | — | Text scope: phrases an item must contain to be analysed |
 | `--excluded` | — | Usernames to skip |
 | `--start-date` | — | Start date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
 | `--end-date` | — | End date `DD-MM-YYYY` (re-fetch window, with `--force-refresh`) |
@@ -113,8 +114,8 @@ python -m cli.main collect --src 739,740 --verbose
 # Collect all active sources on VK
 python -m cli.main collect --src vk --verbose
 
-# Collect by source url with monitored/excluded users
-python -m cli.main collect --src https://vk.com/russkikh_natalia --monitored user_a --excluded spam
+# Collect by source url, keeping only tracked authors and matching phrases
+python -m cli.main collect --src https://vk.com/russkikh_natalia --tracked vk:123456 --keywords "Киров" --excluded spam
 
 # Re-fetch the full date range from the API (analysis still deduped, so tokens
 # are only spent on genuinely new/changed content)
@@ -160,7 +161,8 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | Option | Default | Description |
 |---|---|---|
 | `--sources`, `-s` | — | Comma/space separated source IDs to link via the `agent_task_sources` m2m table (empty = all active) |
-| `--monitored` | — | Usernames to collect for (collect only) |
+| `--tracked` | — | Authors whose items are analysed (`platform:external_id`), filtered over the task's own sources |
+| `--keywords` | — | Text scope: phrases an item must contain (collect/analyze) |
 | `--excluded` | — | Usernames to skip (collect/analyze) |
 | `--scenario` | — | `AgentScenario` ID to apply when the task runs |
 | `--start-date` | — | Content start date `DD-MM-YYYY` (collect/analyze) — stored on the task as `cli_dates.start_date` |
@@ -170,7 +172,6 @@ python -m cli.main task add <name> <cron_expr> <job_type> [options]
 | `--competitors` | — | Comma/space separated competitors to analyze (competitor scenario) |
 | `--hashtags` | — | Comma/space separated hashtags to track (hashtag_analysis scenario) |
 | `--influencers` | — | Comma/space separated authors/influencers (influencer scenario) |
-| `--keywords` | — | Comma/space separated keywords (keywords scenario) |
 | `--topics` | — | Comma/space separated topics (topics scenario) |
 | `--payload`, `-p` | `{}` | Extra JSON payload, e.g. `'{"period": "week"}'` (flat keys; sources/scenario are set separately) |
 
@@ -185,9 +186,9 @@ python -m cli.main task add daily-digest "0 9 * * *" digest
 # Weekly digest on Mondays
 python -m cli.main task add weekly-digest "0 9 * * 1" digest -p '{"period": "week"}'
 
-# Collect from specific sources with monitored/excluded users
+# Collect from specific sources, keeping only tracked authors and matching phrases
 python -m cli.main task add hourly-collect "0 * * * *" collect \
-  --sources "1 2" --monitored "user_a" --excluded "spam"
+  --sources "1 2" --tracked "vk:123456" --keywords "Киров, дизайн" --excluded "spam"
 
 # Analyze with a scenario
 python -m cli.main task add daily-analyze "0 2 * * *" analyze --sources "1" --scenario 5
@@ -214,7 +215,7 @@ Only provided options are changed; all others keep their current values.
 | `--job-type` | New job type: `collect`, `digest`, `prune`, `analyze`, `learn`, `reflect` |
 | `--cron` | New cron expression (5 fields) or `@once` |
 | `--sources` | New comma/space separated source IDs (empty = all active) |
-| `--monitored` | New comma/space separated monitored usernames (collect) |
+| `--tracked` | New tracked authors (`platform:external_id`) |
 | `--excluded` | New comma/space separated excluded usernames (collect/analyze) |
 | `--scenario` | New `AgentScenario` ID |
 | `--period` | Period for digest: `day`, `week` |
@@ -226,7 +227,6 @@ Only provided options are changed; all others keep their current values.
 | `--competitors` | New comma/space separated competitors (competitor scenario) |
 | `--hashtags` | New comma/space separated hashtags (hashtag_analysis) |
 | `--influencers` | New comma/space separated authors/influencers (influencer scenario) |
-| `--keywords` | New comma/space separated keywords (keywords scenario) |
 | `--topics` | New comma/space separated topics (topics scenario) |
 
 **Example:**
@@ -256,7 +256,8 @@ where `<job_type>` is `collect`, `digest`, `analyze`, `prune`, `learn` or
 |---|---|---|
 | `--task`, `-t` | — | Existing task by name or id to run (source already lives on the task) |
 | `--sources`, `-s` | — | Source IDs to link (one-off run) |
-| `--monitored` | — | Usernames to collect (one-off run) |
+| `--tracked` | — | Tracked authors for a one-off run (`platform:external_id`) |
+| `--keywords` | — | Text scope for a one-off run |
 | `--excluded` | — | Usernames to skip (one-off run) |
 | `--scenario` | — | `AgentScenario` ID (one-off run) |
 | `--period` | — | Period for digest/collect: `day`, `week`, `month` etc. |

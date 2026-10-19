@@ -78,7 +78,6 @@
                    hint. A three-word badge in a scan-the-list table only repeated
                    it. #}
                 <th class="px-4 py-3 text-center">Доступ</th>
-                <th class="px-4 py-3">Отслеж.</th>
                 <th class="px-4 py-3">Статус</th>
                 <th class="px-4 py-3">Создан</th>
                 {% if is_superuser %}
@@ -88,7 +87,6 @@
             </thead>
             <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
             {% for source in sources %}
-            {% set monitored = source.params.get("monitored_users", []) if source.params else [] %}
             <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td class="px-4 py-3 font-medium">
                     <a href="/app/sources/{{ source.id }}" class="hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ source.name|e
@@ -116,14 +114,6 @@
                         {% endif %}
                     {% else %}
                         <span class="text-slate-600 dark:text-slate-400">—</span>
-                    {% endif %}
-                </td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
-                    {% if monitored %}
-                    <span
-                        class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">{{ monitored|length }}</span>
-                    {% else %}
-                    <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
@@ -230,12 +220,6 @@
                            class="{{ control('font-mono') }}">
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые пользователи</label>
-                    <input name="monitored_users" x-model="editing.monitored_users_str"
-                           placeholder="username1, username2, @durov" class="{{ control() }}">
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую: username1, username2, @durov</p>
-                </div>
-                <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Режим сбора</label>
                     <select name="mode" x-model="editing.mode" class="{{ control() }}">
                         {% for value, hint in modes %}
@@ -280,16 +264,12 @@
                 external_id: "",
                 source_type: "",
                 is_active: true,
-                monitored_users: [],
-                monitored_users_str: "",
                 mode: "pull",
                 token_owner: "",
             },
             editSource(data) {
                 this.editing = {
                     ...data,
-                    monitored_users: data.monitored_users || [],
-                    monitored_users_str: (data.monitored_users || []).join(", "),
                     mode: data.mode || "pull",
                     token_owner: String(data.token_owner || ""),
                 }

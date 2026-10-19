@@ -1,7 +1,8 @@
 """Tests for the collect job handler: scenario-conditioned source selection.
 
 Verifies that `handle_collect` correctly applies the task's m2m sources,
-monitored_users override and excluded_users filter (docs/AGENT_TASKS.md).
+tracked-user selection is a filter over the source's own content, and the
+excluded_users filter skips a source (docs/design/task-selection.md).
 """
 
 import uuid
@@ -228,87 +229,5 @@ async def test_handle_collect_excludes_users(platform, sources, monkeypatch):
         assert sources[2].id not in called
         assert stats["excluded"] == 1
         assert stats["sources"] == 2
-    finally:
-        await AgentTask.objects.delete_by_id(task.id)
-
-
-async def test_handle_collect_passes_monitored_users_override(platform, sources, monkeypatch):
-    """Task payload monitored_users is passed through to the collector.
-
-    Also pins the two arguments this branch used to drop: the run id (without
-    which its raw copy could never be retired) and the `analyze_inline`
-    decision (it hardcoded `analyze=True`, so the flag did nothing here).
-    """
-    from app.jobs.handlers import handle_collect
-
-    task = await AgentTask.objects.create(
-        name=f"t_{uuid.uuid4().hex[:6]}",
-        job_type="collect",
-        cron_expr="@once",
-        payload={"monitored_users": ["someone", "else"]},
-        is_active=True,
-    )
-    try:
-        from app.web.tasks import _replace_task_sources
-
-        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
-
-        seen = {}
-
-        async def fake_monitored(self, source, analyze=True, monitored_users=None, force_reanalyze=False, run_id=None):
-            seen["source"] = source.id
-            seen["users"] = monitored_users
-            seen["analyze"] = analyze
-            seen["run_id"] = run_id
-            return {"total_items": 5, "total_users": 2, "successful": 2, "failed": 0}
-
-        monkeypatch.setattr(
-            "app.services.monitoring.collector.ContentCollector.collect_monitored_users", fake_monitored
-        )
-
-        stats = await handle_collect({"agent_task_id": task.id, "job_id": 4242})
-        assert seen["source"] == sources[0].id
-        assert seen["users"] == ["someone", "else"]
-        assert stats["items"] == 5
-        # Parking raw content is the default for a collect job, so `analyze=False`...
-        assert seen["analyze"] is False
-        # ...and the run id travels with it, so the raw rows can be retired later.
-        assert seen["run_id"] == 4242
-    finally:
-        await AgentTask.objects.delete_by_id(task.id)
-
-
-async def test_monitored_users_honours_analyze_inline_false(platform, sources, monkeypatch):
-    """`analyze_inline: false` must reach the monitored-users branch too.
-
-    This branch hardcoded `analyze=True`, so a task that asked to defer its
-    analysis got it anyway — and paid for it.
-    """
-    from app.jobs.handlers import handle_collect
-
-    task = await AgentTask.objects.create(
-        name=f"t_{uuid.uuid4().hex[:6]}",
-        job_type="collect",
-        cron_expr="@once",
-        payload={"monitored_users": ["someone"], "analyze_inline": False},
-        is_active=True,
-    )
-    try:
-        from app.web.tasks import _replace_task_sources
-
-        await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
-
-        seen = {}
-
-        async def fake_monitored(self, source, analyze=True, monitored_users=None, force_reanalyze=False, run_id=None):
-            seen["analyze"] = analyze
-            return {"total_items": 5, "total_users": 1, "successful": 1, "failed": 0}
-
-        monkeypatch.setattr(
-            "app.services.monitoring.collector.ContentCollector.collect_monitored_users", fake_monitored
-        )
-
-        await handle_collect({"agent_task_id": task.id, "job_id": 4242})
-        assert seen["analyze"] is False
     finally:
         await AgentTask.objects.delete_by_id(task.id)

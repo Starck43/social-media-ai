@@ -60,15 +60,14 @@ COLLECTION_MODES: tuple[tuple[str, str], ...] = (
 _MODE_LABELS: dict[str, str] = {"pull": "API платформы", "push": "Бот-API", "user": "Личный аккаунт"}
 
 
-def _clean_params(raw: str, base: dict | None = None) -> dict:
-    """Merge a comma-separated `monitored_users` field into `params`."""
-    params = dict(base or {})
-    tokens = [u.strip() for u in raw.split(",") if u.strip()]
-    if tokens:
-        params["monitored_users"] = tokens
-    else:
-        params.pop("monitored_users", None)
-    return params
+def _clean_params(base: dict | None = None) -> dict:
+    """A copy of the source's collection params for editing.
+
+    Whose items are analysed is a task property (`tracked_users`), never a source
+    property (`docs/design/task-selection.md`), so nothing author-related is
+    written here.
+    """
+    return dict(base or {})
 
 
 async def _workspace_members(tenant_id: int) -> list:
@@ -226,7 +225,6 @@ async def source_add(
     platform: str = Form(...),
     external_id: str = Form(...),
     source_type: str = Form(...),
-    monitored_users: str = Form(""),
     mode: str = Form("pull"),
     token_owner: str = Form(""),
     token: str = Form("", alias="_csrf"),
@@ -297,7 +295,7 @@ async def source_add(
 
         clean_name = name.strip()[:100] or f"{platform}:{external_id}"
 
-        params: dict = _clean_params(monitored_users)
+        params: dict = _clean_params()
         params["mode"] = mode
         if owner_id is not None:
             params["token_owner"] = owner_id
@@ -324,7 +322,6 @@ async def source_edit(
     external_id: str = Form(""),
     source_type: str = Form(""),
     is_active: str = Form("", alias="is_active"),
-    monitored_users: str = Form(""),
     mode: str = Form(""),
     token_owner: str = Form(""),
     token: str = Form("", alias="_csrf"),
@@ -380,9 +377,9 @@ async def source_edit(
                 add_flash(request, "error", "Источник с таким ID уже существует")
                 return RedirectResponse("/app/sources", status_code=302)
 
-        # Parse monitored users from comma-separated string into params.
+        # Selection is not a source property; saving drops the removed key.
         params = dict(source.params or {})
-        params = _clean_params(monitored_users, params)
+        params = _clean_params(params)
 
         # Mode: optional — keep existing if not posted.
         if mode:
@@ -545,7 +542,6 @@ async def source_detail(request: Request, source_id: int):
         members=members,
         token_owner=token_owner,
         orphaned_owner_id=owner_id if owner_id is not None and token_owner is None else None,
-        monitored_users=(source.params or {}).get("monitored_users") or [],
         owner_label=owner_label,
         owner_connection=owner_connection,
         schedules=schedules,

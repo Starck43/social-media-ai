@@ -75,13 +75,6 @@
                placeholder="123456789, @channel или https://vk.com/club1"
                class="{{ control('font-mono') }}">
     </div>
-    <div>
-        <label for="{{ idp }}-monitored_users" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Отслеживаемые пользователи</label>
-        <input id="{{ idp }}-monitored_users" name="monitored_users"
-               placeholder="username1, username2, @durov"
-               class="{{ control() }}">
-        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Через запятую. Можно оставить пустым.</p>
-    </div>
 {%- endmacro %}
 
 

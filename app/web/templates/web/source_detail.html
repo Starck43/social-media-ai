@@ -62,20 +62,6 @@
                                 {% endif %}
                             </div>
                         {% endif %}
-                        {% if monitored_users %}
-                            <div>
-                                <dt class="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                    Отслеживаемые
-                                </dt>
-                                <dd class="mt-1 flex flex-wrap gap-1.5">
-                                    {% for handle in monitored_users %}
-                                        <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-xs text-slate-700 dark:text-slate-300">
-                                            {{ handle }}
-                                        </span>
-                                    {% endfor %}
-                                </dd>
-                            </div>
-                        {% endif %}
                         {% if not is_ready %}
                             <p class="rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                                 {{ readiness_hint }}
@@ -226,17 +212,6 @@
                                 </label>
                                 <input id="source-external-id" name="external_id" required maxlength="200"
                                        value="{{ source.external_id|e }}" class="{{ control('font-mono') }}">
-                            </div>
-                            <div>
-                                <label for="source-monitored-users" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">
-                                    Отслеживаемые пользователи
-                                </label>
-                                <input id="source-monitored-users" name="monitored_users"
-                                       value="{{ monitored_users|join(', ')|e }}"
-                                       placeholder="username1, username2, @durov" class="{{ control() }}">
-                                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                                    Через запятую. Можно оставить пустым.
-                                </p>
                             </div>
                             <div>
                                 <label for="source-mode" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">

@@ -15,6 +15,12 @@ we read** (one of three collection layers).
 The layer is picked per source (`Source.params["mode"]`), because most sources
 only need L1 while a few need L2.
 
+**A source is a wall or a channel, not a person to follow.** Whose items are
+eligible for analysis is decided by the task's `tracked_users` filter applied
+over what a source returns — see [task selection](design/task-selection.md).
+Collection never switches a task's sources for the personal walls of listed
+people.
+
 ## Credential vault
 
 Two sources, one reader (`app/services/social/credentials.py`):
@@ -296,6 +302,22 @@ reporting a bug, not a fact.
 | `collection.filter` | VK wall filter (`all`, `owner`, `others`, `suggests`) |
 | `force_refresh`, `cli_dates` | direct CLI collection date/refetch overrides; web jobs clear legacy force flags |
 
+`Source.params["monitored_users"]` is **removed**, not deprecated. It was stored
+on a source but only read as a fallback for the task list, and a listed user
+could be collected only when a separate `USER` source already existed — which is
+what produced two sources for one person
+(`docs/audits/2026-10-18-vk-raw-content.md`). Whose items are analysed is now
+the task's `tracked_users`; nothing on a source selects an author
+([task selection](design/task-selection.md)). The removal migration strips the
+key from stored `params`.
+
+`Source.params["monitored_users"]` is **removed**, not deprecated. It was stored
+on a source but only ever read as a fallback for the task list, and a listed user
+could only be collected when a separate `USER` source already existed — which is
+what created two sources for one person (`docs/audits/2026-10-18-vk-raw-content.md`).
+Whose items are analysed is now the task's `tracked_users`; nothing on a source
+selects an author. The removal migration strips the key from stored `params`.
+
 > `force_refresh` is a direct collection diagnostic and may re-fetch the
 > requested API window. Web task/source force controls have been removed;
 > legacy stored force flags are ignored at web task admission. Re-fetching does
@@ -320,9 +342,6 @@ it as a third outcome:
   collect job records the source with `outcome: "rate_limited"` (and
   `retry_after` when known), counts it in `rate_limited` /
   `rate_limited_sources`, not in `error` or `empty`, and sends no failure alert.
-  For a monitored-users source, deferred users are counted apart from failed
-  ones; a source with some users collected and some deferred keeps
-  `outcome: "collected"` with `rate_limited: N`.
 - **Nothing is acknowledged on deferral.** Items read before the limit are not
   staged and the cursor/watermark does not advance, so the next scheduled run
   reads the same window. The run summary reports «выполнено частично» and the

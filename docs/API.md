@@ -142,7 +142,7 @@ platform console, not the active dashboard workspace. See
 | `GET /users/me` | — | authenticated only |
 | `GET/POST/PUT/DELETE /ai/scenarios` | `agentscenario` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/DELETE /notifications`, `POST /notifications/{id}/mark-read`, `POST /notifications/mark-all-read`, `POST /notifications/cleanup` | `notification` | `VIEW` / `CREATE` / `DELETE` / `UPDATE` / `UPDATE` / `DELETE` |
-| `POST /monitoring/collect/{source,platform,monitored}`, `GET /monitoring/analytics/source/{id}` | `source` | `UPDATE` / `VIEW` |
+| `POST /monitoring/collect/{source,platform}`, `GET /monitoring/analytics/source/{id}` | `source` | `UPDATE` / `VIEW` |
 | `GET/POST/PATCH/DELETE /sources` | `source` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` |
 | `GET/POST/PATCH/DELETE /tasks`, `PATCH /tasks/{id}/pause`, `POST /tasks/{id,run,run}` | `agenttask` | `VIEW` / `CREATE` / `UPDATE` / `DELETE` / `UPDATE` / `UPDATE` / `UPDATE` |
 | `GET/PATCH/POST/POST/GET /credentials`, `POST /credentials/login`, `POST /credentials/oauth` | `credential` | `VIEW` / `UPDATE` / `CONFIGURE` / `CONFIGURE` / `VIEW` |
@@ -398,20 +398,13 @@ Content-Type: application/json
 
 **Permissions:** `source.update`
 
-### Collect Monitored Users
+### Collect Monitored Users — removed
 
-```
-POST /api/v1/monitoring/collect/monitored
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "source_id": 1,
-  "analyze": true
-}
-```
-
-**Permissions:** `source.update`
+`POST /api/v1/monitoring/collect/monitored` no longer exists. It collected
+"monitored users" of a source, replacing that source's own wall and requiring a
+separate `USER` source per person. A task's `tracked_users` selection over the
+task's sources replaces it ([task selection](design/task-selection.md)); author
+selection is not a collection endpoint.
 
 ### Get Source Analytics
 

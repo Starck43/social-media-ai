@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.api.deps import require_model_perm
 from app.models import Source, Platform
 from app.services.monitoring.collector import ContentCollector
-from app.schemas.monitoring import CollectRequest, CollectPlatformRequest, CollectMonitoredRequest
+from app.schemas.monitoring import CollectRequest, CollectPlatformRequest
 from app.types import ActionType
 
 router = APIRouter(tags=["monitoring"])
@@ -60,31 +60,6 @@ async def collect_from_platform(
         "status": "started",
         "platform_id": request.platform_id,
         "message": "Platform content collection started in background"
-    }
-
-
-@router.post("/collect/monitored")
-async def collect_monitored_users(
-    request: CollectMonitoredRequest,
-    background_tasks: BackgroundTasks,
-    _user = Depends(require_model_perm("source", ActionType.UPDATE)),
-):
-    """Collect content from monitored users of a source."""
-    source = await Source.objects.get(id=request.source_id)
-    if not source:
-        raise HTTPException(status_code=404, detail="Source not found")
-
-    collector = ContentCollector()
-    background_tasks.add_task(
-        collector.collect_monitored_users,
-        source=source,
-        analyze=request.analyze
-    )
-
-    return {
-        "status": "started",
-        "source_id": request.source_id,
-        "message": "Monitored users collection started in background"
     }
 
 

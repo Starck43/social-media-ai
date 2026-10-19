@@ -98,7 +98,8 @@ def context(name):
         "platform": {"id": 1, "name": name, "platform_type": {"db_value": "vk"}},
         "source_type": {"db_value": "group", "display_name": name},
         "is_active": True,
-        "params": {"monitored_users": [name]},
+        "params": {},
+
     }
     task = {
         "id": 5,
@@ -106,7 +107,7 @@ def context(name):
         "job_type": "collect",
         "cron_expr": "0 9 * * *",
         "tenant": {"name": name},
-        "payload": {"monitored_users": [name]},
+        "payload": {"tracked_users": [name]},
         "agent_scenario_id": 3,
         "next_run_at": None,
         "last_run_at": None,
@@ -200,7 +201,6 @@ def context(name):
         "last_checked_label": "—",
         "is_ready": True,
         "readiness_hint": "",
-        "monitored_users": [name],
         "platforms": [source["platform"]],
         "source_types": [source["source_type"]],
         "pending_count": 0,

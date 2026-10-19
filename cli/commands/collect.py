@@ -77,7 +77,8 @@ def collect_cmd(
         None, "--src", "-s", help="Source ids, urls or platform (vk/telegram/max), comma/space separated"
     ),
     tenant: str = typer.Option(None, "--tenant", help="Workspace slug or id (empty = all active sources)"),
-    monitored: str = typer.Option(None, "--monitored", help="Usernames to collect for instead of source defaults"),
+    tracked: str = typer.Option(None, "--tracked", help="Tracked authors, platform:id (analysis filter)"),
+    keywords: str = typer.Option(None, "--keywords", help="Text scope phrases for analysis"),
     excluded: str = typer.Option(None, "--excluded", help="Usernames to skip"),
     start_date: str = typer.Option(None, "--start-date", help="Start date DD-MM-YYYY (with --force-refresh)"),
     end_date: str = typer.Option(None, "--end-date", help="End date DD-MM-YYYY (with --force-refresh)"),
@@ -99,8 +100,19 @@ def collect_cmd(
             raise typer.Exit(1)
 
         payload = {"source_ids": [s.id for s in sources]}
-        if monitored:
-            payload["monitored_users"] = parse_usernames(monitored)
+        if tracked or keywords:
+            from app.models.managers.agent_task_manager import AgentTaskManager
+            from app.services.monitoring.selection import SelectionError
+
+            try:
+                payload = AgentTaskManager.build_selection_payload(
+                    tracked_users=parse_usernames(tracked) if tracked else None,
+                    keywords=[v.strip() for v in (keywords or "").split(",") if v.strip()] or None,
+                    existing=payload,
+                )
+            except SelectionError as error:
+                rprint(f"[red]Invalid selection: {error}[/red]")
+                raise typer.Exit(1) from error
         if excluded:
             payload["excluded_users"] = parse_usernames(excluded)
         if force_refresh or start_date or end_date:

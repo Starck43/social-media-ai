@@ -92,10 +92,6 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("status", result)
         self.assertNotIn(PRIVATE, repr(result))
 
-    def monitored(self):
-        self.task_payload = {"monitored_users": ["a", "b"]}
-        self.filter.return_value.first.side_effect = self.children
-
     async def test_partial_analysis_preserves_collected_rows_and_stage_order(self):
         events = []
         async def stage(*args, durable=False):
@@ -210,67 +206,7 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["error"], 0)
                 self.assertNotIn("analysis_errors", result["per_source"][0])
 
-    async def test_real_monitored_children_aggregate_without_losing_success(self):
-        self.monitored()
-        result = await self.handle()
-        self.assertEqual((result["collected"], result["items"], result["new_items"], result["error"]), (1, 4, 2, 1))
-        self.assertEqual(result["per_source"][0]["analysis_errors"], 1)
-        self.assertNotIn("monitored_errors", result["per_source"][0])
-        self.assertEqual(self.analyzer.analyze_content.await_count, 2)
-
-    async def test_child_analysis_errors_do_not_become_collection_failures(self):
-        self.monitored()
-        result = await self.collector.collect_monitored_users(self.source, monitored_users=["a", "b"])
-        self.assertEqual((result["successful"], result["failed"], result["total_items"]), (2, 0, 4))
-        self.assertEqual(result["analysis_errors"], 1)
-
-    async def test_collection_and_analysis_failures_count_parent_once(self):
-        self.monitored()
-        self.collector.collect_from_source = AsyncMock(side_effect=[
-            {"content_count": 2, "new_items": 1, "analysis_errors": 3}, AuthorizationRequired(PRIVATE),
-        ])
-        result = await self.handle()
-        self.assert_collected(result)
-        self.assertEqual(result["error"], 1)
-        per = result["per_source"][0]
-        self.assertEqual((per["analysis_errors"], per["monitored_errors"]), (3, 1))
-        self.assertTrue(per["auth_required"])
-        self.assertNotIn(PRIVATE, repr(result))
-
-    async def test_monitored_positive_aggregate_is_reported_not_complete_total(self):
-        self.monitored()
-        self.collector.collect_from_source = AsyncMock(side_effect=[
-            {"content_count": 2, "new_items": 1, "analysis_errors": 2},
-            {"content_count": 2, "new_items": 1},
-        ])
-        result = await self.collector.collect_monitored_users(self.source, monitored_users=["a", "b"])
-        self.assertEqual(result["analysis_errors"], 2)
-        self.assertEqual((result["successful"], result["failed"]), (2, 0))
-
-    async def test_monitored_unknown_or_malformed_not_zero(self):
-        for value in (True, False, 1.0, "1", None, -1, 0):
-            with self.subTest(value=value):
-                self.filter.return_value.first.side_effect = [self.children[0]]
-                self.collector.collect_from_source = AsyncMock(return_value={
-                    "content_count": 2, "new_items": 1, "analysis_errors": value,
-                })
-                result = await self.collector.collect_monitored_users(self.source, monitored_users=["a"])
-                self.assertNotIn("analysis_errors", result)
-                self.assertEqual(result["failed"], 0)
-
-    async def test_all_reported_child_errors_keep_successful_totals(self):
-        self.monitored()
-        self.collector.collect_from_source = AsyncMock(side_effect=[
-            {"content_count": 2, "new_items": 1, "analysis_errors": 2},
-            {"content_count": 3, "new_items": 0, "analysis_errors": 4},
-        ])
-        result = await self.handle()
-        self.assertEqual((result["items"], result["new_items"], result["error"]), (5, 1, 1))
-        self.assertEqual(result["per_source"][0]["analysis_errors"], 6)
-        self.assertEqual(result["per_source"][0]["outcome"], "collected")
-
-    async def test_cancelled_monitored_child_propagates(self):
-        self.monitored()
+    async def test_cancelled_collection_propagates_without_retiring(self):
         self.analyzer.analyze_content.side_effect = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):
             await self.handle()

@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from app.services.social.credentials import AuthorizationRequired
 
+# Selection is a task property applied to staged content; `handlers` owns when
+# it runs, `selection` owns what it means (docs/design/task-selection.md).
+from app.services.monitoring import selection
+
 if TYPE_CHECKING:
     from app.types import AgentActionType
 
@@ -284,7 +288,9 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
 
     Sources come from the task's m2m `sources` (task.sources); empty = all active.
     Per-task overrides live in the task payload:
-        monitored_users: list[str] — collect these users instead of source defaults
+        tracked_users:  list[str] — provider:external_id authors whose items are
+                        eligible; a filter over each source's own content, never
+                        a collection target (docs/design/task-selection.md)
         excluded_users:  list[str] — skip these users
     """
     from app.services.monitoring.collector import ContentCollector
@@ -292,7 +298,6 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
 
     task = await _load_task(payload.get("agent_task_id"))
     task_payload = _task_payload(task)
-    monitored_users = task_payload.get("monitored_users") or []
     excluded_users = task_payload.get("excluded_users") or []
     # Optional per-run overrides merged into each source's params (the collector
     # reads force_refresh/cli_dates/incremental_mode from source.params).
@@ -366,6 +371,23 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if stage_only:
         await job_progress.begin_phase("collection")
 
+    # `docs/design/task-selection.md`: whose items are eligible is the task's
+    # `tracked_users` filter applied over what each source returns. Selection is
+    # not a reason to read someone else's wall, and it cannot decide content
+    # types — the scenario's `content_types` already does.
+    try:
+        selection_scope = selection.build_scope(task_payload)
+    except selection.SelectionError as error:
+        # A collect task never analyses here (the staged path enforces the
+        # selection), so a broken value cannot make it stage the wrong wall.
+        # Log the bounded code and collect normally.
+        logger.warning(
+            "collect_selection_invalid task_id=%s error_code=%s",
+            _log_id(getattr(task, "id", None)),
+            str(error),
+        )
+        selection_scope = selection.SelectionScope()
+
     for source in sources:
         # Before the exclusion check: progress counts every resolved source.
         await job_progress.step(sources, stats["per_source"])
@@ -375,74 +397,36 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
             continue
         stats["sources"] += 1
         _apply_params(source)
+        # A tracked author is a filter on what a source returns, not a
+        # collection target: the source's own wall is always read.
         try:
-            monitored_failures = 0
-            monitored_auth_required = 0
-            monitored_rate_limited = 0
-            if monitored_users:
-                result = await collector.collect_monitored_users(
-                    source,
-                    # Same `analyze_inline` decision and same run id as the
-                    # single-source branch below. This one hardcoded
-                    # `analyze=True` and dropped `run_id`, so its raw copy could
-                    # be neither written nor retired later.
-                    analyze=bool(analyze_inline),
-                    monitored_users=monitored_users,
-                    force_reanalyze=force_reanalyze,
-                    run_id=run_id,
-                )
-                items = (result or {}).get("total_items", 0)
-                new_items = (result or {}).get("total_new_items", 0)
-                failed = (result or {}).get("failed")
-                auth_required = (result or {}).get("auth_required")
-                # Do not coerce legacy/malformed counters. Auth failures overlap
-                # failed requests, so do not add the two counts together.
-                monitored_auth_required = auth_required if type(auth_required) is int and auth_required > 0 else 0
-                monitored_failures = max(failed if type(failed) is int and failed > 0 else 0, monitored_auth_required)
-                rate_limited = (result or {}).get("rate_limited")
-                monitored_rate_limited = rate_limited if type(rate_limited) is int and rate_limited > 0 else 0
-                if result and result.get("total_items", 0) > 0:
-                    stats["collected"] += 1
-                    stats["items"] += result["total_items"]
-                    stats["new_items"] += result.get("total_new_items", 0)
-                    stats["collected_sources"].append(source.name)
-                    outcome = "collected"
-                elif monitored_failures:
-                    outcome = "auth_required" if monitored_auth_required else "error"
-                elif monitored_rate_limited:
-                    outcome = "rate_limited"
-                else:
-                    stats["empty"] += 1
-                    stats["empty_sources"].append(source.name)
-                    outcome = "empty"
+            analysis_errors = 0
+            result = await collector.collect_from_source(
+                source,
+                analyze=bool(analyze_inline),
+                force_reanalyze=force_reanalyze,
+                run_id=run_id,
+            )
+            items = (result or {}).get("content_count", 0)
+            new_items = (result or {}).get("new_items", 0)
+            if result and result.get("content_count", 0) > 0:
+                stats["collected"] += 1
+                stats["items"] += result["content_count"]
+                stats["new_items"] += result.get("new_items", 0)
+                stats["collected_sources"].append(source.name)
+                outcome = "collected"
             else:
-                result = await collector.collect_from_source(
-                    source,
-                    analyze=bool(analyze_inline),
-                    force_reanalyze=force_reanalyze,
-                    run_id=run_id,
-                )
-                items = (result or {}).get("content_count", 0)
-                new_items = (result or {}).get("new_items", 0)
-                if result and result.get("content_count", 0) > 0:
-                    stats["collected"] += 1
-                    stats["items"] += result["content_count"]
-                    stats["new_items"] += result.get("new_items", 0)
-                    stats["collected_sources"].append(source.name)
-                    outcome = "collected"
-                else:
-                    stats["empty"] += 1
-                    stats["empty_sources"].append(source.name)
-                    outcome = "empty"
+                stats["empty"] += 1
+                stats["empty_sources"].append(source.name)
+                outcome = "empty"
             reported_analysis_errors = (result or {}).get("analysis_errors")
             analysis_errors = (
                 reported_analysis_errors
                 if type(reported_analysis_errors) is int and reported_analysis_errors > 0
                 else 0
             )
-            if monitored_failures or analysis_errors:
-                # The handler counts affected parent sources once, not child
-                # requests. Success and failure may coexist for a monitored group.
+            if analysis_errors:
+                # The handler counts affected parent sources once.
                 stats["error"] += 1
                 stats["error_sources"].append(source.name)
             # `analytics_count` is what the collect run *stored*, not what a later
@@ -463,22 +447,10 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
                     "content_hashes": list((result or {}).get("content_hashes") or []),
                 }
             )
-            if monitored_failures or analysis_errors:
+            if analysis_errors:
                 per = stats["per_source"][-1]
                 per["error"] = True
-                if analysis_errors:
-                    per["analysis_errors"] = analysis_errors
-                if monitored_failures:
-                    per["monitored_errors"] = monitored_failures
-                if monitored_auth_required:
-                    per["auth_required"] = True
-                    per["auth_hint"] = "Проверьте авторизацию отслеживаемых пользователей."
-            if monitored_rate_limited:
-                # Some (or all) monitored users were deferred: the source is at
-                # best partially collected in this run, never "complete".
-                stats["rate_limited"] += 1
-                stats["rate_limited_sources"].append(source.name)
-                stats["per_source"][-1]["rate_limited"] = monitored_rate_limited
+                per["analysis_errors"] = analysis_errors
         except SourceRateLimited as e:
             logger.warning("collect deferred for source %s: platform rate limit", source.id)
             stats["rate_limited"] += 1
@@ -829,7 +801,37 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 if staged:
                     from app.services.ai.analyzer import AIAnalyzer
 
-                    items = [row.as_agent_item() for row in staged]
+                    # Task selection (docs/design/task-selection.md) runs on the
+                    # staged rows *before* the provider call: an item must come
+                    # from an eligible author and carry the task's phrases. The
+                    # scenario still decides content types — it collected them.
+                    staged_scope = selection.build_scope(task_payload)
+                    analyzed_items = [row.as_agent_item() for row in staged]
+                    selected = selection.select_items(analyzed_items, staged_scope)
+                    per["selection"] = {
+                        "eligible": len(selected.eligible),
+                        "rejected": len(selected.rejected),
+                        "reasons": dict(selected.reasons),
+                        "unknown_tracked_users": list(selected.unknown_tracked_users),
+                    }
+                    await job_progress.update_current(sources, stats["per_source"], per)
+                    if not selected.eligible:
+                        # Everything staged is outside the task's selection. It
+                        # stays staged for retention and is not a paid attempt.
+                        stats["skipped"] += 1
+                        if selected.unknown_tracked_users:
+                            logger.info(
+                                "analyze_selection_none_unknown_users source_id=%s count=%s",
+                                _log_id(source.id),
+                                len(selected.unknown_tracked_users),
+                            )
+                        continue
+                    analytics = None
+                    # Selection does not change what the collector produced;
+                    # rows outside it are never retired by an analysis that did
+                    # not cover them, so they leave through normal retention or
+                    # the exhausted-attempts ceiling, not through this path.
+                    items = selected.eligible
                     analyzer = AIAnalyzer()
                     fresh = await analyzer.analyze_content(
                         items,
@@ -879,10 +881,11 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                     from app.services.ai.dedup import analysed_hashes
 
                     covered = analysed_hashes(fresh) | completed_hashes
-                    covered_selected_rows = sum(
-                        1 for row in staged if getattr(row, "content_hash", None) in covered
+                    per["raw_processed"] = sum(
+                        1
+                        for item in items
+                        if item.get("content_hash") in covered
                     )
-                    per["raw_processed"] = covered_selected_rows
                     await job_progress.update_current(sources, stats["per_source"], per)
                     if deleted:
                         logger.info(f"Analysed {len(staged)} staged item(s) for source {source.id}, retired {deleted}")
@@ -891,7 +894,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                             f"Analysis of {len(staged)} staged item(s) for source {source.id} produced "
                             "no result; keeping them staged for a retry"
                         )
-                    counted = await _count_failed_staged(source.id, staged, covered)
+                    counted = await _count_failed_staged(
+                        source.id, [row for row, item in zip(staged, analyzed_items) if item in items], covered
+                    )
                     if counted:
                         logger.warning(
                             f"{counted} staged item(s) of source {source.id} went unanalysed; "

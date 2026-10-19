@@ -500,9 +500,11 @@ class ReportAggregator:
     ) -> list[dict[str, Any]]:
         """Per-user sentiment over the period.
 
-        Only the `monitored_users` mode builds per-person chains
-        (`topic_chain_id = src_{source}_user_{author}`); rows from other modes
-        have no author and are skipped. Each user's analyses are averaged into
+        Per-person chains (`topic_chain_id` carrying `_user_{author}`) are the only
+        rows that name an author; rows from other groupings are skipped. This is
+        a report over analysed people, not a selection of whose posts were
+        analysed (that is the task's `tracked_users`, see
+        `docs/design/task-selection.md`). Each user's analyses are averaged into
         one sentiment score, sorted by volume.
         """
         try:
@@ -543,9 +545,9 @@ class ReportAggregator:
     ) -> list[dict[str, Any]]:
         """Per-user activity over the period.
 
-        Only the `monitored_users` mode builds per-person chains; rows from other
-        modes are skipped. Each user's `content_statistics` are summed into one
-        row, sorted by message volume.
+        Per-person chains (`_user_{author}` in `topic_chain_id`) are the only rows
+        that name an author; rows from other groupings are skipped. Each user's
+        `content_statistics` are summed into one row, sorted by message volume.
         """
         try:
             analytics = await self._analytics_query(days, source_id, tenant_id)
@@ -1420,10 +1422,11 @@ class ReportAggregator:
 
     @staticmethod
     def _chain_author(chain_id: Optional[str]) -> Optional[str]:
-        """Extract the tracked user from a chain id like `src_5_user_123`.
+        """Extract the person from a chain id like `src_5_user_123`.
 
-        Only the `monitored_users` mode builds per-person chains; rows produced
-        by the other modes return None and are skipped by the grouping.
+        Only chains whose identity names an author (the legacy per-person
+        grouping) carry one; every other chain returns None and is skipped by the
+        per-person aggregation.
         """
         if not chain_id:
             return None

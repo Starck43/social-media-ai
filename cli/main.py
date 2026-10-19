@@ -48,6 +48,11 @@ def _run_platform(coro):
         return asyncio.run(coro)
 
 
+def _split_phrases(raw: str | None) -> list[str]:
+    """Comma separated phrases: spaces inside a phrase are kept."""
+    return [" ".join(v.split()) for v in (raw or "").split(",") if v.strip()]
+
+
 def _split_names(raw: str | None) -> list[str]:
     """Split a comma/space separated username string into a clean list."""
     if not raw:
@@ -224,8 +229,10 @@ def task_add(
     source_ids: str = typer.Option(
         None, "--sources", "-s", help="Comma/space separated source IDs to link (empty = all active)"
     ),
-    monitored_users: str = typer.Option(
-        None, "--monitored", help="Comma/space separated usernames to collect for (collect only)"
+    tracked_users: str = typer.Option(
+        None,
+        "--tracked",
+        help="Tracked authors, platform:id (e.g. vk:123456): only their items are analysed",
     ),
     excluded_users: str = typer.Option(
         None, "--excluded", help="Comma/space separated usernames to skip (collect/analyze)"
@@ -268,8 +275,17 @@ def task_add(
         raise typer.Exit(1)
 
     parsed_payload = _json.loads(payload)
-    if monitored_users:
-        parsed_payload["monitored_users"] = _split_names(monitored_users)
+    from app.services.monitoring.selection import SelectionError
+
+    try:
+        parsed_payload = AgentTaskManager.build_selection_payload(
+            tracked_users=_split_names(tracked_users) if tracked_users is not None else None,
+            keywords=_split_phrases(keywords) if keywords is not None else None,
+            existing=parsed_payload,
+        )
+    except SelectionError as error:
+        rprint(f"[red]Invalid selection: {error}[/red]")
+        raise typer.Exit(1) from error
     if excluded_users:
         parsed_payload["excluded_users"] = _split_names(excluded_users)
     for raw, key in (
@@ -367,8 +383,8 @@ def task_update(
     source_ids: str = typer.Option(
         None, "--sources", "-s", help="New comma/space separated source IDs (empty = all active)"
     ),
-    monitored_users: str = typer.Option(
-        None, "--monitored", help="New comma/space separated monitored usernames (collect)"
+    tracked_users: str = typer.Option(
+        None, "--tracked", help="New tracked authors, platform:id"
     ),
     excluded_users: str = typer.Option(
         None, "--excluded", help="New comma/space separated excluded usernames (collect/analyze)"
@@ -424,8 +440,16 @@ def task_update(
 
             for task in matches:
                 updated_payload = dict(task.payload) if task.payload else {}
-                if monitored_users is not None:
-                    updated_payload["monitored_users"] = _split_names(monitored_users)
+                if tracked_users is not None or keywords is not None:
+                    try:
+                        updated_payload = AgentTaskManager.build_selection_payload(
+                            tracked_users=_split_names(tracked_users) if tracked_users is not None else None,
+                            keywords=_split_phrases(keywords) if keywords is not None else None,
+                            existing=updated_payload,
+                        )
+                    except Exception as error:  # selection input, not a runtime fault
+                        rprint(f"[red]Invalid selection: {error}[/red]")
+                        raise typer.Exit(1)
                 if excluded_users is not None:
                     updated_payload["excluded_users"] = _split_names(excluded_users)
                 if period is not None:
@@ -491,7 +515,7 @@ async def _run_task(
     task: str | None,
     job_type: str,
     sources: str | None,
-    monitored: str | None,
+    tracked: str | None,
     excluded: str | None,
     scenario: int | None,
     period: str | None,
@@ -526,6 +550,7 @@ async def _run_task(
     from app.jobs.dispatcher import run_job_now
     from app.jobs.enqueue import enqueue_task_run
     from app.models import AgentTask
+    from app.models.managers.agent_task_manager import AgentTaskManager
 
     from ._tenant import resolve_tenant_id, tenant_label
 
@@ -541,8 +566,16 @@ async def _run_task(
 
         tenant_id = await resolve_tenant_id(tenant)
         payload: dict = {}
-        if monitored:
-            payload["monitored_users"] = _split_names(monitored)
+        if tracked:
+            from app.services.monitoring.selection import SelectionError
+
+            try:
+                payload = AgentTaskManager.build_selection_payload(
+                    tracked_users=_split_names(tracked), keywords=_split_phrases(keywords), existing=payload
+                )
+            except SelectionError as error:
+                rprint(f"[red]Invalid selection: {error}[/red]")
+                raise typer.Exit(1) from error
         if excluded:
             payload["excluded_users"] = _split_names(excluded)
         if period:
@@ -611,7 +644,10 @@ def _make_task_run_command(job_type: str) -> Callable:
     def run(
         task: str = typer.Option(None, "--task", "-t", help="Existing task by name or id to run"),
         sources: str = typer.Option(None, "--sources", "-s", help="Source IDs to link (one-off run)"),
-        monitored: str = typer.Option(None, "--monitored", help="Usernames to collect (one-off run)"),
+        tracked: str = typer.Option(
+            None, "--tracked", help="Tracked authors, platform:id (one-off run)"
+        ),
+        keywords: str = typer.Option(None, "--keywords", help="Text scope phrases (one-off run)"),
         excluded: str = typer.Option(None, "--excluded", help="Usernames to skip (one-off run)"),
         scenario: int = typer.Option(None, "--scenario", help="AgentScenario ID (one-off run)"),
         period: str = typer.Option(None, "--period", help="Period for digest/collect: day | week | last month etc."),
@@ -627,7 +663,6 @@ def _make_task_run_command(job_type: str) -> Callable:
         competitors: str = typer.Option(None, "--competitors", help="Competitors to analyze (one-off run)"),
         hashtags: str = typer.Option(None, "--hashtags", help="Hashtags to track (one-off run)"),
         influencers: str = typer.Option(None, "--influencers", help="Authors/influencers to analyze (one-off run)"),
-        keywords: str = typer.Option(None, "--keywords", help="Keywords to search (one-off run)"),
         topics: str = typer.Option(None, "--topics", help="Topics to analyze (one-off run)"),
     ):
         _run_platform(
@@ -635,7 +670,8 @@ def _make_task_run_command(job_type: str) -> Callable:
                 task=task,
                 job_type=job_type,
                 sources=sources,
-                monitored=monitored,
+                tracked=tracked,
+                keywords=keywords,
                 excluded=excluded,
                 scenario=scenario,
                 period=period,
@@ -647,7 +683,6 @@ def _make_task_run_command(job_type: str) -> Callable:
                 competitors=competitors,
                 hashtags=hashtags,
                 influencers=influencers,
-                keywords=keywords,
                 topics=topics,
             )
         )

@@ -152,9 +152,9 @@ async def test_days_group_lists_each_day(source):
         assert "## По темам" in brief
 
 
-async def test_monitored_users_group_lists_the_author(source):
-        """The per-person grouping keys off the chain id, which only the
-        `monitored_users` analysis mode builds."""
+async def test_per_person_group_lists_the_author(source):
+        """The per-person grouping keys off the chain id, not the task's
+        selection: who is analysed and who is reported are different."""
         text_data = {"entities": [{"name": "ivan", "type": "person"}]}
         await _row(source, day_offset=0, text=text_data, topic_chain_id=f"src_{source.id}_user_ivan")
         brief = await ReportAggregator().generate_digest_brief(period="week", group_by="entities", entity_type="person")

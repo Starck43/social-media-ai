@@ -5,7 +5,7 @@ without an LLM call:
 - the 8 specialized aggregation methods (toxicity, hashtags, brand mentions,
   viral, influencer, competitor, intent, demographics)
 - `generate_digest_brief` grouping by `analyze_type`
-  (themes / days / sources / monitored_users)
+  (themes / days / sources / entities)
 - the builder wiring: `aggregate()` carries the brief, `render_digest()` renders it
 """
 
@@ -338,7 +338,7 @@ async def test_brief_groups_by_sources(source):
     assert "Brief Test Source" in brief
 
 
-async def test_brief_groups_by_monitored_users(source):
+async def test_brief_groups_by_per_person_chains(source):
         await _seed(
             source,
             [

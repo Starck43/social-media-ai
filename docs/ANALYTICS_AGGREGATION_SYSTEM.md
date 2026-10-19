@@ -20,6 +20,45 @@ Main implementation boundaries:
 - `app/api/v1/endpoints/dashboard.py` — analytics API.
 - `app/web/analytics.py` — read-only analytics pages and authorized mutations.
 
+## Selection before analysis (task scope)
+
+Aggregation and analysis answer different questions: **selection** decides which
+collected items reach the model at all, **grouping** only re-arranges rows that
+were already analysed. The two must not be conflated — a keyword typed into the
+analytics filter narrows the report, never the spend.
+
+Selection is declared on the task, in three layers applied before the provider
+call — sources, tracked users, text scope. The contract, matching rules and the
+removal of `monitored_users` live in
+[task selection](design/task-selection.md). This document keeps only what the
+analytics layer depends on:
+
+- items rejected by a selection layer stay staged until normal retention, are
+  never written as analysed, and are not hidden from operator diagnostics;
+- an item's author is `collected_items.author` (the `Author/Timestamp` snapshot
+  of a wall repost), never the carrying source's own identity;
+- reaction/action triggers (`KEYWORD_MATCH`, `USER_MENTION`,
+  `SENTIMENT_THRESHOLD`, `ACTIVITY_SPIKE`) belong to the action, not to the
+  selection: a keyword alarm and a keyword scope are different intentions.
+
+## Subject scope (concept, not implemented)
+
+For questions of the form "who X, according to platform Y", the graph is
+*selected author → item → wall/carrier → text*. A chain is currently anchored on
+`(workspace, source, topic_hint)`; the source is the carrier wall, so the same
+story across several walls becomes several chains. Proposed, pending a separate
+design:
+
+- a chain may be aggregated across sources in one workspace when the hint is
+  identical — the resolver compares within a workspace, not per source;
+- a task (or scenario) may fix a stable `chain_hint` instead of letting each
+  model response name the chain freely, so the story that recurs keeps one
+  identity;
+- a recurring subject (a person, an event, a company) is an **entity**, not a
+  chain. Any "who took part in the trip" / "designers of the city" answer is a
+  set of entity rows requiring evidence, not a free-text summary; today the
+  analytics schema has no entity-evidence table, so such answers stay prose.
+
 ## Grouping contract
 
 The grouping axis and time breakdown are independent query choices.
@@ -29,7 +68,7 @@ The grouping axis and time breakdown are independent query choices.
 | `days` | Chronological view by analysis date | Web analytics only |
 | `themes` | Distinct normalized topics | API, web and digest |
 | `sources` | Exact source identity | API, web and digest |
-| `entities` | Distinct entity name, optionally by person/brand/org | API, web and digest |
+| `entities` | Distinct entity name extracted by the model, optionally by person/brand/org | API, web and digest |
 | `intent` | Extracted intent type | API, web and digest |
 | `topic_chains` | Stored cross-row chain identity | API and digest; dedicated web chain pages |
 
@@ -42,6 +81,13 @@ chains have their own page.
 count each matching analysis once per distinct value. Sources group by source ID,
 so equal display names do not merge. Sentiment and content type are cross-filters,
 not grouping enum members.
+
+**Entities are model-extracted, not a directory.** The `entities` axis lists names
+that the analysis response reported *inside the analysed items*; it is neither a
+verified person registry nor a match against a configured target list. A person
+absent from every item cannot appear here, and a name found here is not proof of
+identity, affiliation or participation. For "who is X" questions the axis ranks
+candidates inside the collected corpus; it does not search the platform.
 
 ## Drill-down
 
@@ -67,9 +113,27 @@ All stored labels and titles are escaped in HTML.
 
 The resolver normalizes topic hints by lowercasing, replacing `ё` with `е`,
 removing punctuation and applying lightweight Russian stemming. Within the same
-workspace/source and lookback window, token-set Sørensen–Dice similarity of at
-least 0.85 may reuse a chain. Otherwise it creates a new ID. A chain may contain a
-single row; existing IDs are never silently merged, split or backfilled.
+workspace/source and lookback window (30 days), token-set Sørensen–Dice
+similarity of at least 0.85 may reuse a chain. Otherwise it creates a new ID. A
+chain may contain a single row; existing IDs are never silently merged, split or
+backfilled.
+
+What the current contract does not promise, and an operator must not assume:
+
+- **The hint is model-chosen.** `topic_hint` is a free string in every model
+  response; two runs over the same story can name it differently and produce two
+  chains. A task cannot pin the hint today — see [subject
+  scope](#subject-scope-concept-not-implemented).
+- **Chains do not cross sources.** The lookup is scoped by `source_id`, so the
+  same story on three walls is three chains. Cross-source reading is an
+  analytics concern (see the proposals above), not a resolver option.
+- **Short hints link loosely.** With one or two tokens the 0.85 ratio is reached
+  by a single shared word, which can join different stories. Treat a chain as a
+  grouping hint, not as proof of semantic identity.
+- **A second matcher exists.** `app/services/ai/theme_matcher.py` links a stored
+  row to a similar chain by `main_topics` overlap at a different threshold
+  (0.30). Chain identity is therefore produced by two rules; a review that
+  changes one must check the other.
 
 The chain list and detail pages are retrospective views. Chain links from a group
 are shown only when the scoped timeline contains at least two matching rows. Chain

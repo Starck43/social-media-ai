@@ -537,9 +537,10 @@ class VKClient(BaseClient):
 			# back to returning the raw screen_name (the API will reject it).
 			resolved = self._resolved_external_id or external_id
 			if resolved != external_id and resolved.lstrip("-").isdigit():
-				logger.warning(f"Invalid VK ID format: {external_id}, using resolved {resolved}")
+				# The expected path, not a fault: the nick was mapped to its id.
+				logger.debug(f"Owner id: screen_name {external_id} → {resolved}")
 				return self._parse_owner_id(resolved, source_type)
-			logger.warning(f"Invalid VK ID format: {external_id}, using as-is")
+			logger.warning(f"Cannot determine VK owner id for {external_id}, using as-is")
 			return external_id
 
 		# Apply negative for all community types

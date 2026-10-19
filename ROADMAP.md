@@ -34,7 +34,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P1-T02 — next bounded recovery/admission gap → [p1](docs/phases/p1-queue-execution.md) — unassigned — TODO
 - [ ] P2-T08 — corporate/shared accounts (owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — owner — TODO
 - [ ] P2-T09 — production billing verification (post-activation, owner-deferred) → [p2](docs/phases/p2-usage-spend.md) — unassigned — TODO
-- [ ] P3-T01 — digest send permission parity acceptance (PR #176 Draft) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
+- [ ] P3-T01 — digest send permission parity acceptance (current-dev DB/ASGI) → [p3](docs/phases/p3-identity-access.md) — remote Notion agent — TODO
 - [ ] P3-T02 — close one actor/workspace/tool/write gap → [p3](docs/phases/p3-identity-access.md) — unassigned — TODO
 - [ ] P4-T01 — staging operator-recovery evidence → [p4](docs/phases/p4-delivery.md) — unassigned — TODO
 - [ ] P5-T01 — close one typed-output/hostile-input/coverage gap → [p5](docs/phases/p5-ai-boundaries.md) — unassigned — TODO
@@ -73,6 +73,12 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P5-T06 — theme-chain similarity SQL fixed for json main_topics (was silently failing since Oct 1) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
 
 - [ ] P5-T07 — text-only scenarios analyze to completion (media ignored per scenario models, text failover, daily-partial coverage merge) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
+
+- [ ] P10-T14 — reconcile ROADMAP against current implementations and isolated evidence → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — READY
+
+## Review notes
+
+Source-pinned [ROADMAP reconciliation](docs/audits/roadmap-current-dev-review.md): implementation/acceptance candidates, current isolated-test blockers and suggested priorities. Other owners/statuses are unchanged. P8-T21 has conflicting meanings between this registry and p8; P8-T22 lacks its phase definition. Coordinate these records before closing or renumbering them.
 
 ## Questions
 

@@ -84,6 +84,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             id=7,
             tenant_id=31,
             agent_task_id=9,
+            initiated_by_user_id=None,
             job_type="learn",
             payload={},
             result=None,
@@ -188,7 +189,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_failed.assert_awaited_once_with(
             7,
             claim=self.claim,
-            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX,
+            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX + "runtime_error",
             allow_retry=False,
         )
         self.assertIn("не подтверждён", self.notify.await_args.kwargs["error"])
@@ -259,7 +260,10 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
     async def test_payload_identity_comes_from_claimed_columns(self):
         self.job.payload = {"agent_task_id": 999, "job_id": 999}
         await self.dispatcher.execute_job(self.job, self.handler)
-        self.assertEqual(self.handler.await_args.args[0], {"agent_task_id": 9, "job_id": 7})
+        self.assertEqual(
+            self.handler.await_args.args[0],
+            {"agent_task_id": 9, "job_id": 7, "_trusted_initiated_by_user_id": None},
+        )
         self.assertEqual(self.scopes, [31])
 
 

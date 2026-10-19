@@ -1,12 +1,13 @@
 # Agent Tasks and Job Queue
 
 Cron scheduling and background work are backed by **PostgreSQL**, not by Celery
-or Redis. Two processes consume the same tables:
+or Redis. The runtime, worker and web app share the same tables:
 
 | Process | Entrypoint | Responsibility |
 | --- | --- | --- |
 | runtime | `python -m app.runtime` | `tasks/runner.py` tick loop, `jobs` worker, and `channels/listener.py` agent chat loop |
 | worker | `python -m app.worker` | claim and execute jobs |
+| web app | ASGI lifespan | independently reap stale claims and apply Job history retention every five minutes |
 
 The process split matters: heavy collection runs in `worker`, so a chat reply
 is never blocked behind a long collection.
@@ -77,8 +78,9 @@ PostgreSQL locking, ASGI authorization, worker execution or database rollback.
 
 ### Clearing the queue (`/app/jobs`)
 
-The page shows the last 50 rows and can delete them: a trash icon per row
-(`POST /app/jobs/{id}/delete`) and «Очистить всё» (`POST /app/jobs/clear`).
+The page shows 50 rows per page and can delete one row
+(`POST /app/jobs/{id}/delete`) or clear safe terminal history
+(`POST /app/jobs/clear`).
 Both are gated on `agenttask.delete` — the same right as the task delete on
 `/app/tasks`, since the rows are the tasks' run history — plus CSRF and a
 shared in-app confirmation dialog (no native browser `confirm()`).
@@ -90,12 +92,10 @@ only after acceptance, preserving CSRF, workspace fields, validation and the
 original submit button (including `formaction`/`formnovalidate`). Cancel, Escape
 and backdrop dismissal do not submit; the dialog restores focus and scroll.
 
-Two limits are deliberate:
-
-- **`running` rows are never deleted.** A claimed row belongs to the worker
-  until it reports back through `mark_done`/`mark_failed`; removing it loses the
-  audit trail of live work and leaves the dispatcher updating a row that no
-  longer exists. The «Очистить всё» flash says how many were kept.
+Bulk clear only removes ordinary terminal rows. Pending/running rows and
+unresolved or review-required outcomes stay for explicit operator action. A
+review-required row can be individually deleted after a stronger warning.
+The clear flash says how many rows were kept.
 - **One workspace at a time.** A superuser without a workspace selected is
   refused, rather than offered a "delete every job of every workspace" button.
 
@@ -113,8 +113,9 @@ current scope and across all its rows (not only the last 50), has:
   unclaimed, with the age of the oldest: the worker loop is stopped or busy with
   one long job;
 - **stale running** jobs — `locked_at` older than 30 minutes, the
-  `JobManager.reap_stale` default cutoff. The worker loop reaps such rows before
-  every claim, so one still `running` means the loop itself is not running;
+  `JobManager.reap_stale` default cutoff. Worker and web maintenance loops
+  quarantine stale claims, so a row still `running` means maintenance is not
+  reaching it; check the worker and web process health;
 - **unconfirmed failures** — `failed` rows whose external outcome is unknown
   (`app/jobs/recovery_policy.py`); inspect them before any retry.
 
@@ -182,10 +183,10 @@ Operator cancellation records a fenced `failed` transition, not proof that an
 in-flight handler or external request stopped. New and existing rows with the
 exact `Cancelled by operator` error are classified as unconfirmed outcomes: the
 queue shows the review warning and does not offer its ordinary retry button.
-Scheduled prune preserves these rows, including attempt, result and cost evidence;
-late completion by the cancelled claim cannot overwrite them. No automatic replay
-or operator-resolution workflow is introduced. Explicit history deletion/clear
-remains destructive and is outside this protection.
+Built-in automatic retention and bulk clear preserve these rows, including
+attempt, result and cost evidence; late completion by the cancelled claim cannot
+overwrite them. An operator can still delete a specific row after confirming the
+strong warning; that manual deletion removes its evidence.
 
 Job columns are merged into the handler payload by `execute_job()`, so handlers
 receive `agent_task_id` and `job_id` alongside their own `payload` keys. Digest
@@ -295,7 +296,7 @@ the task payload, so a task that saved a window keeps it.
 ## Default tasks
 
 `app/tasks/bootstrap.py::ensure_all_default_tasks()` seeds every active
-workspace at startup with `hourly-collect`, `daily-prune`, `hourly-learn` and
+workspace at startup with `hourly-collect`, `hourly-learn` and
 `weekly-reflect`. On new tenant creation the caller must call
 `ensure_all_default_tasks(tenant_id)` separately (it is **not** automatic). The
 bootstrap only inserts, never overwrites — so editing or pausing them in the
@@ -311,6 +312,36 @@ reachable through both interfaces without code changes.
 `learn` self-gates on a message-count watermark, and `reflect` is a no-op when
 memory is empty — so both are cheap even when there is little to do.
 
+### Job history and one-time runs
+
+`/app/jobs` is available to workspace admins and owners. It shows active and
+failed work plus completed runs needing attention by default, with a separate
+history view for completed runs without attention markers and an all-jobs view.
+Ordinary terminal Jobs are removed automatically after 24 hours based on
+`finished_at`; no `daily-prune` schedule or runtime process is required for this
+retention. The Job row alone is deleted: one-time `@once` AgentTask cards and
+analysis, receipts, and billing evidence remain. Unconfirmed or review-required
+outcomes are kept for manual investigation.
+
+The web task form's **Run now** action admits a Job and launches it in the web
+process; it does not require `app.runtime`. A one-time AgentTask card is useful
+when its settings should remain reusable and visible. Direct service one-offs
+can use the existing job admission/enqueue and dispatcher APIs without creating
+a cron task. Future scheduled runs still require `app.runtime`.
+
+Admins can add a `prune` task in the Jobs page to set success and failure
+retention periods (1–8760 hours). This policy is applied by built-in retention
+even when its own schedule does not fire. The most recently updated valid active
+policy wins; with no active policy, the 24-hour defaults apply. Existing prune
+tasks continue to manage raw content and analysis retention; their legacy
+schedule does not define Job-history retention.
+
+Repeating a safe failed source run creates a new Job and preserves the original
+row. Its source and selection snapshot is used so later edits to the recurring
+task do not broaden the replay. Older runs without a reliable snapshot and runs
+with external-action settings cannot be replayed from Jobs; start a new run from
+the task after reviewing its current settings.
+
 > **Tenancy note:** agent_tasks and jobs are tenant-owned (`TenantScopedMixin`).
 > The runner loops over every active `Tenant` and calls `tick_tenant()` inside
 > `tenant_scope(tenant_id)` — one tenant's broken cron won't block others.
@@ -322,8 +353,9 @@ memory is empty — so both are cheap even when there is little to do.
 
 `SCHEDULER_ENABLED`, `SCHEDULER_POLL_SECONDS`, `SCHEDULER_TIMEZONE`,
 `JOB_MAX_ATTEMPTS`, `JOB_RETRY_BACKOFF_SECONDS` (see `app/core/config.py`).
-`daily-prune` also applies `DATA_RETENTION_MONTHS` (default 1) to analysis results
-and unanalysed raw content; see `docs/CONFIGURATION.md#data-retention`.
+`prune` tasks also apply `DATA_RETENTION_MONTHS` (default 1) to analysis results
+and unanalysed raw content; see `docs/CONFIGURATION.md#data-retention`. Job
+history uses the independent built-in policy described above.
 
 `SCHEDULER_TIMEZONE` is only the **fallback**: a workspace's own
 `tenants.timezone` decides when its tasks fire (`app/tasks/cron.py::resolve_tz`

@@ -54,7 +54,8 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         self.clock = Clock()
         self.events = []
         self.renewed = asyncio.Queue()
-        self.job = SimpleNamespace(id=11, tenant_id=31, agent_task_id=7, job_type='learn', status='running',
+        self.job = SimpleNamespace(id=11, tenant_id=31, agent_task_id=7, initiated_by_user_id=None,
+            job_type='learn', status='running',
             attempts=2, started_at=datetime(2026, 10, 10, tzinfo=timezone.utc), payload={}, result=None)
         self.claim = CLAIMS.JobClaim.capture(self.job)
         self.jobs = SimpleNamespace(renew_claim=AsyncMock(), mark_done=AsyncMock(), mark_failed=AsyncMock())

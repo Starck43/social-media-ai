@@ -1,4 +1,4 @@
-{% from "web/_macros.html" import control, task_dates, task_fields, task_trigger_actions, tenant_field, switch_toggle, check_card, check_mark %}
+{% from "web/_macros.html" import control, task_dates, task_fields, task_retention_fields, task_trigger_actions, tenant_field, switch_toggle, check_card, check_mark %}
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
@@ -217,7 +217,8 @@
                   x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
-                {{ task_fields(job_types, "add", "task.job_type") }}
+                {{ task_fields(job_types, "add", "task.job_type", "Хранение истории Jobs" if prefill_retention else "") }}
+                {{ task_retention_fields("add", "task.job_type") }}
 
                 <div>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Расписание</label>
@@ -321,7 +322,7 @@
                 </div>
 
                 {% if sources %}
-                <div>
+                <div x-show="task.job_type !== 'prune'" x-cloak>
                     <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Источники</label>
                     <ul class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2">
                         {% for source in sources %}
@@ -342,7 +343,7 @@
                 </div>
                 {% endif %}
 
-                <div>
+                <div x-show="task.job_type !== 'prune'" x-cloak>
                     <label for="add-scenario_id" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Сценарий для агента</label>
                     <select id="add-scenario_id" name="scenario_id" x-model="task.scenario_id"
                             class="{{ control() }}">
@@ -801,6 +802,7 @@
     const OPEN_ADD_MODAL = {{ open_add_modal|default(false)|tojson }};
     const PREFILL_SOURCE_IDS = {{ prefill_source_ids|default([])|tojson }};
     const PREFILL_SCENARIO_ID = {{ prefill_scenario_id|default(none)|tojson }};
+    const PREFILL_JOB_TYPE = {{ prefill_job_type|default('analyze')|tojson }};
     const RUNNING_JOBS = {{ running_jobs|tojson }};
     const RUN_CSRF = {{ csrf|tojson }};
     const RUN_TERMINAL = ["done", "failed", "cancelled", "not_found"];
@@ -819,7 +821,7 @@
             sending: false,
             task: {
                 source_ids: PREFILL_SOURCE_IDS.slice(),
-                job_type: "analyze",
+                job_type: PREFILL_JOB_TYPE,
                 scenario_id: PREFILL_SCENARIO_ID || "",
                 start_date: "",
                 end_date: "",

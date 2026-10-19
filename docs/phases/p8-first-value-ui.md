@@ -23,8 +23,18 @@ Attention feed lives in the floating bell (B), not a home card.
   isolation, unresolved effects protected, manual web execution without runtime;
   depends: none; owns: jobs lifecycle service/manager/dispatcher, web jobs and
   task forms, application lifespan, task bootstrap, focused tests and subsystem
-  docs; owner: codex-jobs; status: IN_PROGRESS. Base: local dev `959a461`;
-  preserve pre-existing OpenCode edits in shared task/handler/doc files.
+  docs; owner: codex-jobs; status: READY. Initial claim: `959a461`;
+  isolated validation base: `37eeaf7` in `/private/tmp/social-jobs-lifecycle-check`;
+  integrated onto `1f60dd1` after all 25 owned baseline hashes matched; parallel
+  chat changes preserved. Primary OpenCode focused checks: A 79/79, B 52/52,
+  C 67/67 (66 from the full group plus one corrected-node rerun), D 23/23;
+  PostgreSQL E 4/4, including actual attention pagination and aggregates.
+  All 225 cases passed without skips. PostgreSQL used the compatible existing
+  `test_schema`; fixture residue and orphan checks were clean. No migration,
+  schema preparation, runtime startup or live provider calls. Compile/Jinja
+  syntax and diff checks passed. Final review fixed the web maintenance bypass
+  context and verified cancellation with an isolated loop test. All owned Python
+  files match the validated worktree byte for byte; awaiting exact-SHA acceptance.
 
 - [x] P8-T01 — home mixed latest-results feed; accept: permitted analyses and
   digest runs merged into ≤5 cards via a bounded read-time projection;

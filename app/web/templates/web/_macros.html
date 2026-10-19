@@ -84,10 +84,10 @@
    crons. Two widgets, one field name — `tasks.task_create` reads `cron_custom`
    either way. `model` optionally binds the type select to Alpine so the rest
    of the form can show/hide fields per type. #}
-{% macro task_fields(job_types, idp, model=None) -%}
+{% macro task_fields(job_types, idp, model=None, default_name='') -%}
     <div>
         <label for="{{ idp }}-name" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Название</label>
-        <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг"
+        <input id="{{ idp }}-name" name="name" required maxlength="100" placeholder="Ежедневный мониторинг" value="{{ default_name }}"
                class="{{ control() }}">
     </div>
     <div>
@@ -99,6 +99,28 @@
             {% endfor %}
         </select>
     </div>
+{%- endmacro %}
+
+{% macro task_retention_fields(idp, model, success_hours=24, failure_hours=24) -%}
+    <template x-if="{{ model }} === 'prune'">
+        <div class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
+            <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Хранение истории заданий</p>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Срок действует независимо от cron, поэтому выберите повторяемое расписание, например ежедневно. Успешные задания и ошибки по умолчанию хранятся 24 часа. Если включено несколько настроек, действует последняя изменённая активная настройка. Измените срок, если админам нужно больше времени для разбора.</p>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="{{ idp }}-retention-success" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Успешные задания, часы</label>
+                    <input id="{{ idp }}-retention-success" type="number" name="retention_success_hours" min="1" max="8760" required value="{{ success_hours }}" class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Отсчёт начинается после завершения.</p>
+                </div>
+                <div>
+                    <label for="{{ idp }}-retention-failure" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Ошибки, часы</label>
+                    <input id="{{ idp }}-retention-failure" type="number" name="retention_failure_hours" min="1" max="8760" required value="{{ failure_hours }}" class="{{ control() }}">
+                    <p class="mt-1 text-xs text-slate-500">Неопределённые результаты и отмены сохраняются для проверки.</p>
+                </div>
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Сама карточка настройки остаётся в списке задач, пока вы её не удалите.</p>
+        </div>
+    </template>
 {%- endmacro %}
 
 {# The content window a collect/analyze task operates on. `m` is the Alpine

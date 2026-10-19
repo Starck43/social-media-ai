@@ -440,7 +440,7 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
 
         known_delivery_failure = isinstance(error, DeliveryFailure)
         retry = allow_retry and known_delivery_failure and error.retryable is True
-        stored_error = str(error) if known_delivery_failure else OUTCOME_UNCONFIRMED_PREFIX
+        stored_error = str(error) if known_delivery_failure else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
         try:
             receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)
@@ -651,7 +651,6 @@ async def run_pending_once() -> int:
         quarantined = await jobs.reap_stale()
         if type(quarantined) is int and quarantined > 0:
             logger.warning("job_stale_quarantined count=%s", quarantined)
-        await jobs.cleanup_done()
     job = await jobs.claim_next()
     if not job:
         return 0
@@ -674,8 +673,19 @@ async def drain(max_jobs: int | None = None) -> int:
 async def worker_forever(poll_seconds: int = 5) -> None:
     """Worker loop: poll the jobs table and process due jobs."""
     logger.info("worker_started")
+    last_maintenance = 0.0
     while True:
         try:
+            now = asyncio.get_running_loop().time()
+            if now - last_maintenance >= 300:
+                from app.jobs.lifecycle import cleanup_terminal_job_history
+
+                try:
+                    with tenant_scope(bypass=True):
+                        await cleanup_terminal_job_history()
+                except Exception as error:  # noqa: BLE001 — keep queue processing available
+                    logger.warning("job_maintenance_failed error_code=%s", _error_kind(error))
+                last_maintenance = now
             processed = await drain(max_jobs=10)
             await asyncio.sleep(0 if processed else poll_seconds)
         except asyncio.CancelledError:

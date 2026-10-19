@@ -18,6 +18,46 @@ if TYPE_CHECKING:
 JOB_CLEANUP_AFTER_HOURS = 24
 
 
+def web_attention_criteria(job_model):
+    """Safe JSON text predicates for completed jobs that still need attention.
+
+    `as_string()` uses JSON text extraction and avoids casts on legacy or
+    malformed result values. Unexpected non-empty values are conservatively
+    surfaced for a human rather than silently classified as clean success.
+    """
+    from sqlalchemy import func, or_
+
+    def value(key: str):
+        return func.trim(func.lower(func.coalesce(job_model.result[key].as_string(), "")))
+
+    counters = ("error", "errors", "staged_errors", "rate_limited", "collection_errors", "collection_rate_limited")
+    review_flags = ("needs_review", "review_required", "operator_review", "delivery_review")
+    code_fields = ("status", "error", "diagnostic_code", "delivery_status")
+    review_codes = ("partial_delivery_requires_review", "digest_run_in_progress_requires_review")
+    return or_(
+        value("status").in_(("partial", "partial_success", "failed", "error", "requires_review")),
+        *(value(key).notin_(("", "0", "false", "null", "none")) for key in counters),
+        *(value(key).in_(("true", "1", "yes")) for key in review_flags),
+        *(
+            value(key).contains(code)
+            for key in code_fields
+            for code in review_codes
+        ),
+    )
+
+
+def web_page_status_criteria(job_model, statuses: list[str], include_attention: bool | None):
+    """Combine status filters with the active/history attention policy."""
+    from sqlalchemy import and_, not_, or_
+
+    status_criteria = job_model.status.in_(statuses)
+    if include_attention is True and "done" not in statuses:
+        return or_(status_criteria, and_(job_model.status == "done", web_attention_criteria(job_model)))
+    if include_attention is False and "done" in statuses:
+        return and_(status_criteria, not_(web_attention_criteria(job_model)))
+    return status_criteria
+
+
 class JobManager(BaseManager["Job"]):
     """Manager for the Job queue: enqueue, atomic claim, retries."""
 
@@ -339,6 +379,115 @@ class JobManager(BaseManager["Job"]):
             .all()
         )
         return jobs, task_sources, active
+
+    async def enqueue_replay(self, job_id: int, *, initiated_by_user_id: int) -> "Job":
+        """Admit a safe replay as a new row under the authenticated tenant actor."""
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.core.permissions import get_current_user
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+        from app.jobs.replay_policy import replay_block_reason
+        from app.jobs.source_activity import SOURCE_JOB_TYPES, source_conflict
+        from app.models.job import Job as JobModel
+        from app.models.source import Source
+
+        tenant_id = current_tenant_id()
+        actor = get_current_user()
+        actor_id = getattr(actor, "id", None)
+        if (
+            is_bypass()
+            or type(tenant_id) is not int
+            or type(actor_id) is not int
+            or actor_id <= 0
+            or actor_id != initiated_by_user_id
+        ):
+            raise TenantContextError("Job replay requires the authenticated workspace actor")
+        now = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            async with session.begin():
+                await self.lock_source_admission(session, tenant_id)
+                parent = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                block_reason = replay_block_reason(parent)
+                if block_reason is not None:
+                    raise ValueError(block_reason)
+
+                active_replay_id = (
+                    await session.execute(
+                        select(JobModel.id)
+                        .where(
+                            JobModel.tenant_id == tenant_id,
+                            JobModel.status.in_(("pending", "running")),
+                            JobModel.payload["retry_of_job_id"].as_string() == str(parent.id),
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if active_replay_id is not None:
+                    raise ValueError("Повтор этого запуска уже поставлен в очередь или выполняется.")
+
+                payload = dict(parent.payload) if isinstance(parent.payload, dict) else {}
+                if parent.job_type in SOURCE_JOB_TYPES:
+                    snapshot = payload.get("_effective_snapshot")
+                    task_payload = snapshot.get("task_payload") if isinstance(snapshot, dict) else None
+                    source_ids = task_payload.get("source_ids") if isinstance(task_payload, dict) else None
+                    if (
+                        not isinstance(snapshot, dict)
+                        or snapshot.get("version") != 1
+                        or not isinstance(source_ids, list)
+                        or not source_ids
+                        or any(type(source_id) is not int or source_id <= 0 for source_id in source_ids)
+                        or len(source_ids) != len(set(source_ids))
+                    ):
+                        raise ValueError("У старого запуска нет надёжного снимка источников. Создайте новый запуск из задачи.")
+                    if snapshot.get("action_type"):
+                        raise ValueError("У задачи настроено внешнее действие. Проверьте результат и запустите её со страницы задачи.")
+                    existing_sources = set(
+                        (
+                            await session.execute(
+                                select(Source.id).where(Source.tenant_id == tenant_id, Source.id.in_(source_ids))
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    if existing_sources != set(source_ids):
+                        raise ValueError("Источник прошлого запуска больше недоступен в этом пространстве.")
+                    payload["source_ids"] = list(source_ids)
+                    jobs, task_sources, active = await self._source_activity_context(session, tenant_id)
+                    if source_conflict(payload, None, jobs, task_sources, active) is not None:
+                        raise ValueError("Для источника уже есть ожидающая или выполняющаяся задача.")
+                elif parent.agent_task_id is not None:
+                    raise ValueError("Для повтора задачи откройте её страницу: там будут использованы сохранённые настройки.")
+
+                payload.pop("agent_task_id", None)
+                payload["retry_of_job_id"] = parent.id
+                payload["retry_of_task_id"] = parent.agent_task_id
+                if parent.job_type in SOURCE_JOB_TYPES:
+                    # A detached replay reads the immutable snapshot, never the
+                    # current reusable AgentTask configuration.
+                    snapshot = dict(payload["_effective_snapshot"])
+                    snapshot["task_payload"] = dict(snapshot["task_payload"])
+                    payload["_effective_snapshot"] = snapshot
+                    payload["force_refresh"] = False
+                    payload["force_reanalyze"] = False
+                job = await self.enqueue(
+                    parent.job_type,
+                    payload,
+                    agent_task_id=None,
+                    tenant_id=tenant_id,
+                    initiated_by_user_id=actor_id,
+                    run_at=now,
+                    session=session,
+                )
+                await session.flush()
+            return job
 
     async def source_activity(self, source_id: int) -> dict[str, bool]:
         """Read-only UI hint. Admission still rechecks under its transaction lock."""
@@ -1091,15 +1240,127 @@ class JobManager(BaseManager["Job"]):
             .execution_options(synchronize_session=False)
         )
 
-    async def cleanup_done(self, older_than_hours: int | None = None) -> int:
-        """Delete successfully finished jobs older than `older_than_hours`.
+    async def page_for_web(
+        self,
+        tenant_id: int,
+        *,
+        statuses: list[str] | None,
+        page: int,
+        page_size: int = 50,
+        include_attention: bool | None = None,
+    ):
+        """Load one bounded Jobs page and matching total for the web UI.
 
-        Keep status and completion age in the DELETE predicate, so a competing
-        write cannot turn a previously selected candidate into an unqualified
-        deletion. The queryset preserves tenant scope or explicit worker bypass.
-        Return the actual deleted count; database/commit errors propagate.
-        This retains the existing retention policy, not a recovery/audit ledger.
+        `True` adds completed rows with partial/error/review evidence;
+        `False` excludes those rows from clean history; `None` applies only the
+        requested statuses (used by the unfiltered all view).
         """
+        from app.core.tenant_context import current_tenant_id, is_bypass
+
+        if type(tenant_id) is not int or tenant_id <= 0 or type(page) is not int or page < 1:
+            raise ValueError("Invalid Jobs page scope")
+        if not is_bypass() and current_tenant_id() != tenant_id:
+            raise RuntimeError("Jobs page cannot cross the active tenant scope")
+        if page_size < 1 or page_size > 100:
+            raise ValueError("Invalid Jobs page size")
+        if include_attention is not None and type(include_attention) is not bool:
+            raise ValueError("Invalid Jobs attention filter")
+        query = self.filter(tenant_id=tenant_id)
+        if statuses is not None:
+            if not statuses or any(status not in {"pending", "running", "done", "failed"} for status in statuses):
+                raise ValueError("Invalid Jobs status filter")
+            from ..job import Job as JobModel
+
+            query = query.filter(web_page_status_criteria(JobModel, statuses, include_attention))
+        total = await query.count()
+        rows = await query.order_by(self.model.created_at.desc(), self.model.id.desc()).limit(page_size).offset(
+            (page - 1) * page_size
+        )
+        return rows, total
+
+    async def overview_for_web(self, tenant_id: int, *, now: datetime | None = None):
+        """Aggregate workspace queue counts and health without loading history."""
+        from sqlalchemy import func, or_, select
+
+        from app.core.database import async_session_maker
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
+        from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
+        from ..job import Job as JobModel
+
+        if type(tenant_id) is not int or tenant_id <= 0:
+            return (
+                {"pending": 0, "running": 0, "done": 0, "failed": 0, "attention": 0},
+                {"overdue_pending": 0, "oldest_overdue_minutes": None, "stale_running": 0, "unconfirmed_failed": 0},
+            )
+        if not is_bypass() and current_tenant_id() != tenant_id:
+            raise RuntimeError("Jobs overview cannot cross the active tenant scope")
+        now = now or datetime.now(timezone.utc)
+        overdue_cutoff = now - timedelta(minutes=15)
+        stale_cutoff = now - timedelta(minutes=30)
+        async with async_session_maker() as session:
+            counts = (
+                await session.execute(
+                    select(JobModel.status, func.count())
+                    .where(JobModel.tenant_id == tenant_id)
+                    .group_by(JobModel.status)
+                )
+            ).all()
+            overdue, oldest = (
+                await session.execute(
+                    select(func.count(), func.min(JobModel.run_at)).where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.status == "pending",
+                        JobModel.run_at <= overdue_cutoff,
+                    )
+                )
+            ).one()
+            stale = (
+                await session.execute(
+                    select(func.count()).where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.status == "running",
+                        JobModel.locked_at < stale_cutoff,
+                    )
+                )
+            ).scalar_one()
+            uncertain = (
+                await session.execute(
+                    select(func.count()).where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.status == "failed",
+                        or_(
+                            JobModel.error.startswith(OUTCOME_UNCONFIRMED_PREFIX),
+                            JobModel.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX),
+                            JobModel.error == OPERATOR_CANCELLED_ERROR,
+                        ),
+                    )
+                )
+            ).scalar_one()
+            attention = (
+                await session.execute(
+                    select(func.count()).where(
+                        JobModel.tenant_id == tenant_id,
+                        JobModel.status == "done",
+                        web_attention_criteria(JobModel),
+                    )
+                )
+            ).scalar_one()
+        stats = {status: int(count) for status, count in counts}
+        for status in ("pending", "running", "done", "failed"):
+            stats.setdefault(status, 0)
+        stats["attention"] = int(attention)
+        oldest_minutes = int((now - oldest).total_seconds() // 60) if oldest is not None else None
+        signals = {
+            "overdue_pending": int(overdue),
+            "oldest_overdue_minutes": oldest_minutes,
+            "stale_running": int(stale),
+            "unconfirmed_failed": int(uncertain),
+        }
+        return stats, signals
+
+    async def cleanup_done(self, older_than_hours: int | None = None) -> int:
+        """Legacy done-only cleanup API; production maintenance uses lifecycle service."""
         hours = older_than_hours or JOB_CLEANUP_AFTER_HOURS
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         return await self.filter(status="done", finished_at__lt=cutoff).delete()

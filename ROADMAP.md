@@ -18,7 +18,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
-- [ ] P8-T26 — built-in job lifecycle, safe replay and admin retention forms → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-jobs — IN_PROGRESS
+- [ ] P8-T26 — built-in job lifecycle, safe replay and admin retention forms → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-jobs — READY
 - [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — READY
 
 - [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — BLOCKED (persisted acceptance: missing test-schema receipts)

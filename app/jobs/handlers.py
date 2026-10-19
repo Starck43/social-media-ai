@@ -114,6 +114,51 @@ def _task_payload(task) -> dict[str, Any]:
     return dict(task.payload or {}) if task is not None else {}
 
 
+def _effective_replay_snapshot(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Admission-time settings required to replay a source job safely."""
+    if not payload.get("retry_of_job_id") or payload.get("agent_task_id") is not None:
+        return None
+    snapshot = payload.get("_effective_snapshot")
+    if not isinstance(snapshot, dict) or snapshot.get("version") != 1:
+        return None
+    task_payload = snapshot.get("task_payload")
+    source_ids = task_payload.get("source_ids") if isinstance(task_payload, dict) else None
+    if (
+        not isinstance(source_ids, list)
+        or not source_ids
+        or any(type(value) is not int or value <= 0 for value in source_ids)
+        or len(source_ids) != len(set(source_ids))
+    ):
+        return None
+    from app.jobs.replay_policy import _has_replay_window
+
+    if not _has_replay_window(task_payload):
+        return None
+    return snapshot
+
+
+def _replay_task_view(snapshot: dict[str, Any]):
+    """Task-shaped view for saved trigger settings during a detached replay."""
+    from types import SimpleNamespace
+
+    from app.types import BotTriggerType
+
+    trigger_type = BotTriggerType.get_by_name(snapshot.get("trigger_type")) if snapshot.get("trigger_type") else None
+    return SimpleNamespace(
+        id=None,
+        tenant_id=None,
+        trigger_type=trigger_type,
+        trigger_config=snapshot.get("trigger_config") or {},
+        action_type=None,
+        blacklist=[],
+        whitelist=[],
+        rate_limit_per_hour=None,
+        cooldown_seconds=None,
+        sources=[],
+        agent_scenario=None,
+    )
+
+
 def _resolve_content_window(task_payload: dict[str, Any], payload: dict[str, Any], source) -> dict[str, Any]:
     """The content window (cli_dates) for a run, resolved once and applied at every stage.
 
@@ -296,21 +341,22 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     from app.services.monitoring.collector import ContentCollector
     from app.services.social.rate_limit import SourceRateLimited
 
-    task = await _load_task(payload.get("agent_task_id"))
-    task_payload = _task_payload(task)
+    snapshot = _effective_replay_snapshot(payload)
+    task = None if snapshot else await _load_task(payload.get("agent_task_id"))
+    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
     excluded_users = task_payload.get("excluded_users") or []
     # Optional per-run overrides merged into each source's params (the collector
     # reads force_refresh/cli_dates/incremental_mode from source.params).
     # Web task rows may contain historical force flags. They are never runtime
     # overrides; only a direct taskless CLI invocation can request one explicitly.
-    force_refresh = bool(payload.get("force_refresh")) if task is None else False
+    force_refresh = bool(payload.get("force_refresh")) if task is None and snapshot is None else False
     # The content window is resolved once and applied at every stage (collect +
     # analyze) — see `_resolve_content_window`.
     window = _resolve_content_window(task_payload, payload, None)
     cli_dates = window or None
     # Legacy task force flags are ignored. A taskless CLI diagnostic may set
     # this override, but durable receipts still prevent repeat analysis.
-    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None else False
+    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None and snapshot is None else False
     # The job's own id, used to tie staged raw content back to this run so it
     # can be retired once an analysis has consumed it.
     run_id = payload.get("job_id")
@@ -323,7 +369,7 @@ async def handle_collect(payload: dict[str, Any], *, stage_only: bool = False) -
     if analyze_inline is None:
         analyze_inline = payload.get("analyze_inline", False)
 
-    sources = await _resolve_sources(task, payload)
+    sources = await _resolve_sources(None if snapshot else task, payload)
 
     collector = ContentCollector()
 
@@ -558,30 +604,37 @@ async def handle_prune(payload: dict[str, Any]) -> dict[str, Any]:
     """
     from datetime import datetime, timedelta, timezone
 
-    from sqlalchemy import not_, or_
-
     from app.core.config import settings
     from app.core.database import new_session
-    from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
-    from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
-    from app.models import AIAnalytics, CollectedItem, Job
+    from app.models import AIAnalytics, CollectedItem
     from app.utils.retention import months_before
 
-    days = int(payload.get("days", 7))
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=days)
+    if payload.get("mode") == "job_history":
+        # The active payload configures built-in retention independently of
+        # cron; an explicit run also applies that policy immediately.
+        from app.jobs.lifecycle import retention_policy
+
+        policy = retention_policy(payload)
+        if policy is None:
+            raise ValueError("Некорректный срок хранения истории заданий")
+        from app.jobs.lifecycle import cleanup_terminal_job_history
+        from app.core.tenant_context import current_tenant_id
+
+        deleted_jobs = await cleanup_terminal_job_history(tenant_id=current_tenant_id())
+        return {
+            "status": "policy_saved",
+            "success_hours": policy[0],
+            "failure_hours": policy[1],
+            "deleted": deleted_jobs,
+        }
+
     retention_months = settings.DATA_RETENTION_MONTHS
     retention_cutoff = months_before(now, retention_months)
-    # Operational stops and operator cancellations can retain uncertain effects/cost.
-    # Keep their evidence for explicit review; ordinary NULL errors stay eligible.
-    deleted = await (
-        Job.objects.filter(status__in=["done", "failed"])
-        .filter(Job.created_at < cutoff)
-        .filter(or_(Job.error.is_(None), not_(Job.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX))))
-        .filter(or_(Job.error.is_(None), not_(Job.error.startswith(OUTCOME_UNCONFIRMED_PREFIX))))
-        .filter(or_(Job.error.is_(None), not_(Job.error == OPERATOR_CANCELLED_ERROR)))
-        .delete()
-    )
+    # Job history retention is a built-in lifecycle policy. Legacy prune tasks
+    # continue to manage raw and analytics data, but cannot bypass that policy.
+    deleted = 0
+    days = max(1, int(payload.get("days", 7)))
 
     # Unanalysed raw content: same age budget as the job history. Raw text is
     # kept only while an analysis might still want it, so `staged_days` follows
@@ -647,8 +700,9 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
     from app.services.social.guards import extract_target_user, guards_checker
     from app.types import BotActionStatus
 
-    task = await _load_task(payload.get("agent_task_id"))
-    task_payload = _task_payload(task)
+    snapshot = _effective_replay_snapshot(payload)
+    task = _replay_task_view(snapshot) if snapshot else await _load_task(payload.get("agent_task_id"))
+    task_payload = dict(snapshot["task_payload"]) if snapshot else _task_payload(task)
     unified_run = bool(task_payload.get("collect_before_analyze"))
     collection_stats = await handle_collect(payload, stage_only=True) if unified_run else None
     collection_by_source = {
@@ -660,10 +714,12 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
 
     if unified_run:
         await job_progress.begin_phase("analysis")
-    scenario_id = task_payload.get("scenario_id") or payload.get("scenario_id")
+    scenario_id = (
+        snapshot.get("scenario_id") if snapshot else task_payload.get("scenario_id") or payload.get("scenario_id")
+    )
     excluded_users = task_payload.get("excluded_users") or []
-    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None else False
-    keep_raw = bool(payload.get("keep_raw")) if task is None else False
+    force_reanalyze = bool(payload.get("force_reanalyze")) if task is None and snapshot is None else False
+    keep_raw = bool(payload.get("keep_raw")) if task is None and snapshot is None else False
     # The content window gates which staged rows this run drains — the same
     # window that gated collection, so analysis never touches content outside
     # the task's configured period.
@@ -718,7 +774,7 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
             stats["staged_errors"] += 1
             per["staged_error"] = True
 
-    sources = await _resolve_sources(task, payload)
+    sources = await _resolve_sources(None if snapshot else task, payload)
 
     for source in sources:
         await job_progress.step(sources, stats["per_source"])

@@ -96,6 +96,9 @@ class CancelRouteTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # Reuse guard/scope setup only, not the existing run-route test methods.
         web_fixtures.JobRunOutcomeTests.setUp(self)
+        self.superuser_denial = None
+        self.permission_denial = None
+        self.guard_denials = {}
         self.job = manager_fixtures.row()
         self.get.return_value = self.job
         self.cancel = AsyncMock(return_value=True)
@@ -113,8 +116,7 @@ class CancelRouteTests(unittest.IsolatedAsyncioTestCase):
                     action_tenant_id=lambda request, tenant: self.lookup_tenant,
                     add_flash=lambda request, kind, text: self.flashes.append((kind, text)),
                     ensure_csrf=lambda *args: self.csrf,
-                    guard_superuser=lambda *args, **kw: self.superuser_denial,
-                    guard_web=lambda *args, **kw: self.permission_denial,
+                    guard_web=lambda request, model, action, **kw: self.guard_denials.get((model, action)),
                     plural=lambda *args: "",
                     render=AsyncMock(),
                     tenant_filter_context=AsyncMock(),
@@ -179,16 +181,18 @@ class CancelRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.flashes, [])
         self.cancel.assert_awaited_once()
 
-    async def test_csrf_superuser_and_permission_guards_still_precede_lookup(self):
-        for attribute, denial in (
-            ("csrf", False),
-            ("superuser_denial", Redirect("/app/", 302)),
-            ("permission_denial", Redirect("/app/jobs", 302)),
+    async def test_csrf_and_both_permission_gates_precede_lookup(self):
+        self.csrf = False
+        await self.source.job_cancel(self.request, 7, token="csrf", tenant_id=31)
+        self.assertEqual((self.flashes[-1][0], self.flashes[-1][1]), ("error", "Сессия истекла, попробуйте ещё раз"))
+        self.csrf = True
+        for gate, denial in (
+            (("job", "update"), Redirect("/app/", 302)),
+            (("agenttask", "delete"), Redirect("/app/jobs", 302)),
         ):
-            old = getattr(self, attribute)
-            setattr(self, attribute, denial)
+            self.guard_denials[gate] = denial
             await self.source.job_cancel(self.request, 7, token="csrf", tenant_id=31)
-            setattr(self, attribute, old)
+            self.guard_denials.pop(gate)
         self.get.assert_not_awaited()
         self.cancel.assert_not_awaited()
 

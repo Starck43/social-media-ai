@@ -61,23 +61,75 @@ class AgentTaskManager(BaseManager):
 
         super().__init__(AgentTask)
 
+    @staticmethod
+    def _require_job_retention_permission(job_type: str | None) -> None:
+        if job_type != "prune":
+            return
+        from app.core.permissions import PermissionDeniedError, get_current_user, has_permission
+        from app.types import ActionType
+
+        user = get_current_user()
+        if not has_permission(user, "job", ActionType.UPDATE):
+            raise PermissionDeniedError("Missing permission: job.update")
+
+    @staticmethod
+    def _validate_job_retention_schedule(job_type: str | None, payload: Any, cron_expr: str | None) -> None:
+        if (
+            job_type == "prune"
+            and isinstance(payload, dict)
+            and payload.get("mode") == "job_history"
+            and cron_expr == "@once"
+        ):
+            raise ValueError("Настройка хранения истории должна быть повторяемой, например ежедневно.")
+
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
     async def create(self, **kwargs: Any) -> "AgentTask":
+        self._require_job_retention_permission(kwargs.get("job_type"))
+        self._validate_job_retention_schedule(
+            kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr")
+        )
         return await super().create(**kwargs)
 
     @require_permission("agenttask", ActionType.UPDATE)
     async def update_by_id(self, instance_id: int, **kwargs: Any) -> Optional["AgentTask"]:
+        current = await self.get(id=instance_id)
+        self._require_job_retention_permission(getattr(current, "job_type", None))
+        self._require_job_retention_permission(kwargs.get("job_type"))
+        if current is not None:
+            self._validate_job_retention_schedule(
+                kwargs.get("job_type", current.job_type),
+                kwargs.get("payload", current.payload),
+                kwargs.get("cron_expr", current.cron_expr),
+            )
         return await super().update_by_id(instance_id, **kwargs)
+
+    @require_permission("agenttask", ActionType.UPDATE)
+    async def update(self, **values: Any) -> int:
+        for task in await self.filter():
+            if task.job_type == "prune":
+                self._require_job_retention_permission(task.job_type)
+            self._require_job_retention_permission(values.get("job_type"))
+            self._validate_job_retention_schedule(
+                values.get("job_type", task.job_type),
+                values.get("payload", task.payload),
+                values.get("cron_expr", task.cron_expr),
+            )
+        return await super().update(**values)
 
     @require_permission("agenttask", ActionType.DELETE)
     async def delete_by_id(self, instance_id: int) -> bool:
+        current = await self.get(id=instance_id)
+        self._require_job_retention_permission(getattr(current, "job_type", None))
         return await super().delete_by_id(instance_id)
 
     @require_permission("agenttask", ActionType.DELETE)
     async def delete(self, session: AsyncSession | None = None, **filters: Any) -> Callable[[], int] | int:
         """Gate filtered deletion just like delete_by_id; preserve base semantics."""
+        matching = await self.filter(**filters)
+        for task in matching:
+            self._require_job_retention_permission(task.job_type)
         return await super().delete(session=session, **filters)
 
     @require_permission("agenttask", ActionType.UPDATE)
@@ -534,6 +586,9 @@ class AgentTaskManager(BaseManager):
                 row = (await session.execute(query.with_for_update(skip_locked=scheduled))).scalar_one_or_none()
                 if row is None:
                     return None
+                if not scheduled:
+                    self._require_job_retention_permission(row.job_type)
+                self._validate_job_retention_schedule(row.job_type, row.payload, row.cron_expr)
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
@@ -619,6 +674,45 @@ class AgentTaskManager(BaseManager):
                         if not staged_exists:
                             return {"status": "no_staged_content", "task_id": row.id, "reset_count": 0}
                     from app.jobs.source_activity import SOURCE_JOB_TYPES, SourceJobBusy
+
+                    if row.job_type in SOURCE_JOB_TYPES:
+                        # A future replay must use this admission-time scope,
+                        # even if the reusable task is edited or deleted later.
+                        linked_sources = list(row.sources or [])
+                        if any(source.tenant_id != tenant_id for source in linked_sources):
+                            raise TenantContextError("Task source snapshot contains a foreign workspace source")
+                        source_rows = linked_sources
+                        if not source_rows:
+                            source_rows = list(
+                                (
+                                    await session.execute(
+                                        select(Source).where(
+                                            Source.tenant_id == tenant_id,
+                                            Source.is_active.is_(True),
+                                        )
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                        source_ids = list(dict.fromkeys(source.id for source in source_rows))
+                        if not source_ids:
+                            raise ValueError("Source task has no effective sources to snapshot")
+                        payload["source_ids"] = source_ids
+                        trigger_type = getattr(row.trigger_type, "name", None)
+                        action_type = getattr(row.action_type, "name", None)
+                        payload["_effective_snapshot"] = {
+                            "version": 1,
+                            "task_payload": dict(payload),
+                            "scenario_id": row.agent_scenario_id or payload.get("scenario_id"),
+                            "trigger_type": trigger_type,
+                            "trigger_config": dict(row.trigger_config or {}) if row.trigger_config else None,
+                            "action_type": action_type,
+                            "blacklist": list(row.blacklist or []),
+                            "whitelist": list(row.whitelist or []),
+                            "rate_limit_per_hour": row.rate_limit_per_hour,
+                            "cooldown_seconds": row.cooldown_seconds,
+                        }
 
                     jobs = JobManager()
                     admit = jobs.admit_source_job if row.job_type in SOURCE_JOB_TYPES else jobs.enqueue

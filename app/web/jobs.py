@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import and_, func, or_
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
@@ -48,10 +50,9 @@ router = APIRouter(prefix="/jobs")
 # a log viewer; the queue is a status screen, and `/app/tasks` is the place to
 # manage the recurring work itself.
 HISTORY_LIMIT = 50
+RETRYABLE = frozenset({"failed"})  # compatibility for callers; replay uses can_replay() per row.
 
-# Statuses a re-run is meaningful for. `pending` already runs on its own, and
-# `running` is claimed (see the module docstring).
-RETRYABLE = frozenset({"failed"})
+from app.jobs.replay_policy import can_replay, replay_block_reason
 
 # Statuses a delete may touch. `running` is claimed by the worker *right now* —
 # see the module docstring for why that row is off limits.
@@ -60,6 +61,118 @@ DELETABLE = frozenset({"pending", "done", "failed"})
 # Statuses a cancel may touch. Only `running` — anything else is already
 # terminal or not yet in flight.
 CANCELLABLE = frozenset({"running"})
+_REVIEW_CODES = ("partial_delivery_requires_review", "digest_run_in_progress_requires_review")
+
+
+def _safe_job_diagnostic(job: Job) -> dict[str, str]:
+    """Return fixed, non-sensitive guidance; never render raw exception text."""
+    result = job.result if isinstance(job.result, dict) else {}
+    raw = " ".join(str(value) for value in (job.error or "", result.get("diagnostic_code", ""))).lower()
+    error_kind = ""
+    if type(job.error) is str and job.error.startswith("Queue outcome unconfirmed; inspect before retry. "):
+        candidate = job.error.removeprefix("Queue outcome unconfirmed; inspect before retry. ").split(" ", 1)[0]
+        if candidate in {"timeout", "connection_error", "io_error", "value_error", "type_error", "runtime_error", "unknown_error"}:
+            error_kind = candidate
+    if error_kind == "timeout":
+        return {"code": "timeout", "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Время ожидания истекло", "detail": "Внешняя операция не ответила вовремя; результат мог быть неполным.", "action": "Проверьте состояние платформы перед повторным запуском."}
+    if error_kind == "connection_error":
+        return {"code": error_kind, "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Ошибка соединения", "detail": "Подключение к внешнему сервису не установлено.", "action": "Проверьте доступность сервиса и состояние результата перед повтором."}
+    if error_kind == "io_error":
+        return {"code": error_kind, "stage": "handler", "job_id": str(job.id), "counts": "", "title": "Ошибка ввода-вывода", "detail": "Операция с сетью или хранилищем завершилась ошибкой.", "action": "Проверьте инфраструктуру и сохранённый результат."}
+    diagnostic = {"code": "job_failed", "stage": "handler", "title": "Ошибка выполнения", "detail": "Обработчик не завершил задание.", "action": "Проверьте параметры задачи и журнал сервера; затем повторите запуск."}
+    if outcome_unconfirmed(job.error):
+        diagnostic.update(code="outcome_unconfirmed", title="Результат не подтверждён", detail="Возможный внешний эффект нужно проверить вручную.", action="Проверьте целевую платформу перед повторным запуском.")
+    elif "partial_delivery_requires_review" in raw:
+        diagnostic.update(code="partial_delivery_requires_review", stage="delivery", title="Частичная отправка", detail="Часть внешних действий могла выполниться.", action="Сверьте отправленные материалы и продолжите вручную.")
+    elif "digest_run_in_progress_requires_review" in raw:
+        diagnostic.update(code="digest_run_in_progress_requires_review", stage="delivery", title="Отправка дайджеста требует проверки", detail="Нельзя подтвердить итог доставки.", action="Проверьте историю отправок до повтора.")
+    elif job.status == "done" and _job_has_attention(job):
+        diagnostic.update(code="partial_result", stage="processing", title="Частичный результат", detail="Выполнение завершилось с неполным результатом.", action="Откройте задачу и проверьте отчёт перед следующим запуском.")
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else result
+    measured = [f"{key}: {value}" for key, value in counts.items() if key in {"processed", "created", "updated", "failed", "skipped", "sent", "total"} and type(value) is int and value >= 0]
+    diagnostic["counts"] = ", ".join(measured[:5])
+    diagnostic["job_id"] = str(job.id)
+    return diagnostic
+
+
+def _job_requires_review(job: Job) -> bool:
+    if job.status == "failed" and outcome_unconfirmed(job.error):
+        return True
+    result = job.result if isinstance(job.result, dict) else {}
+    if any(result.get(key) is True for key in ("needs_review", "review_required", "operator_review", "delivery_review")):
+        return True
+    return any(
+        code in str(result.get(key, "")).lower() or code in str(job.error or "").lower()
+        for code in _REVIEW_CODES
+        for key in ("status", "error", "diagnostic_code", "delivery_status")
+    )
+
+
+def _job_has_attention(job: Job) -> bool:
+    """Conservative projection for done rows surfaced in the active view."""
+    if job.status != "done":
+        return False
+    if _job_requires_review(job):
+        return True
+    result = job.result if isinstance(job.result, dict) else {}
+    def text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list)):
+            return "[malformed]"
+        if isinstance(value, bool):
+            return str(value).lower()
+        return str(value).strip().lower()
+
+    if text(result.get("status")) in {"partial", "partial_success", "failed", "error", "requires_review"}:
+        return True
+    if any(text(result.get(key)) in {"true", "1", "yes"} for key in ("needs_review", "review_required", "operator_review", "delivery_review")):
+        return True
+    for key in ("status", "error", "diagnostic_code", "delivery_status"):
+        value = text(result.get(key))
+        if any(code in value for code in _REVIEW_CODES):
+            return True
+    for key in ("error", "errors", "staged_errors", "rate_limited", "collection_errors", "collection_rate_limited"):
+        value = text(result.get(key))
+        if value not in {"", "0", "false", "null", "none"}:
+            # Malformed non-scalar counters are visible for review, never cast.
+            return True
+    return False
+
+
+def _safe_terminal_delete_criteria():
+    from app.jobs.attempt_budget import ATTEMPT_BUDGET_STOP_PREFIX
+    from app.jobs.recovery_policy import OPERATOR_CANCELLED_ERROR, OUTCOME_UNCONFIRMED_PREFIX
+
+    safe_error = or_(
+        Job.error.is_(None),
+        and_(
+            Job.error != OPERATOR_CANCELLED_ERROR,
+            Job.error != "Cancelled before start",
+            ~Job.error.startswith(OUTCOME_UNCONFIRMED_PREFIX),
+            ~Job.error.startswith(ATTEMPT_BUDGET_STOP_PREFIX),
+            *(~func.lower(Job.error).contains(code) for code in _REVIEW_CODES),
+        ),
+    )
+    safe_result = and_(
+        *(
+            or_(
+                Job.result[key].as_string().is_(None),
+                func.lower(Job.result[key].as_string()).notin_(("true", "1", *_REVIEW_CODES)),
+            )
+            for key in (
+                "needs_review",
+                "review_required",
+                "operator_review",
+                "delivery_review",
+                "status",
+                "error",
+                "diagnostic_code",
+                "delivery_status",
+            )
+        )
+    )
+    return safe_error, safe_result
 
 # Queue-health thresholds, shown as counts and ages only (no payload/error text).
 # A due job still `pending` this long after `run_at` was not claimed: the worker
@@ -109,6 +222,10 @@ def queue_signals(rows: list[Job], now: datetime) -> dict[str, int | None]:
         "stale_running": stale_running,
         "unconfirmed_failed": unconfirmed_failed,
     }
+
+
+def _replayable_job(job: Job) -> bool:
+    return can_replay(job)
 
 
 async def _jobs_for(tenant_id: int | None) -> list[Job]:
@@ -186,16 +303,57 @@ async def jobs_list(request: Request):
     is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
     tenant_id = getattr(request.state, "tenant_id", None)
-
     from app.core.tenant_context import tenant_scope
+    web_perms = getattr(request.state, "web_perms", None)
+    can_manage_retention = bool(
+        web_perms and (web_perms.is_owner or web_perms.workspace_role in {"owner", "admin"})
+    )
 
-    # Same rule as the dashboard and digests: a superuser with no active
-    # workspace sees the global queue, an ordinary user never does.
-    if is_superuser and tenant_id is None:
-        with tenant_scope(bypass=True):
-            rows = await _jobs_for(filter_tenant_id)
-    else:
-        rows = await _jobs_for(filter_tenant_id if is_superuser else tenant_id)
+    view = request.query_params.get("view", "active")
+    if view not in {"active", "history", "all"}:
+        view = "active"
+    raw_page = request.query_params.get("page", "1")
+    if not raw_page.isdigit() or int(raw_page) < 1:
+        add_flash(request, "error", "Номер страницы должен быть положительным числом")
+        return RedirectResponse(f"/app/jobs?view={view}", status_code=302)
+    page = int(raw_page)
+    status_filters = {"active": ["pending", "running", "failed"], "history": ["done"], "all": None}
+    attention_filters = {"active": True, "history": False, "all": None}
+    from app.models.managers.job_manager import JobManager
+
+    rows, total = await JobManager().page_for_web(
+        tenant_id,
+        statuses=status_filters[view],
+        page=page,
+        page_size=HISTORY_LIMIT,
+        include_attention=attention_filters[view],
+    )
+
+    stats, signals = await JobManager().overview_for_web(tenant_id)
+    retention_policy = None
+    if can_manage_retention and tenant_id is not None:
+        from app.models.agent_task import AgentTask
+        from app.jobs.lifecycle import retention_policy as parse_retention_policy
+
+        with tenant_scope(tenant_id):
+            prune_tasks = await AgentTask.objects.filter(job_type="prune", is_active=True).order_by(
+                AgentTask.updated_at.desc(), AgentTask.id.desc()
+            )
+        for prune_task in prune_tasks:
+            values = parse_retention_policy(prune_task.payload)
+            if values:
+                retention_policy = {"name": prune_task.name, "success_hours": values[0], "failure_hours": values[1]}
+                break
+    total_pages = max(1, (total + HISTORY_LIMIT - 1) // HISTORY_LIMIT)
+    if page > total_pages:
+        page = total_pages
+        rows, total = await JobManager().page_for_web(
+            tenant_id,
+            statuses=status_filters[view],
+            page=page,
+            page_size=HISTORY_LIMIT,
+            include_attention=attention_filters[view],
+        )
 
     # Sources each job touched, so `#1234` also answers "по каким источникам".
     if is_superuser and tenant_id is None:
@@ -204,29 +362,45 @@ async def jobs_list(request: Request):
     else:
         sources_map = await _job_sources(rows)
 
-    # The same outcome classification the run-now modal and the task page use,
-    # so one run reads the same in all three places.
     from app.web.tasks import _run_outcome
 
     job_outcomes = {job.id: _run_outcome(job.job_type, job.result or {}) for job in rows if job.status == "done"}
-    stats, signals = await _queue_overview(filter_tenant_id if is_superuser else tenant_id)
+    for job in rows:
+        if _job_has_attention(job):
+            job_outcomes[job.id] = "partial"
 
     return render(
         request,
         "web/jobs.html",
         section="jobs",
         jobs=rows,
+        view=view,
+        page=page,
+        total_pages=total_pages,
+        total_filtered=total,
         sources_map=sources_map,
         job_outcomes=job_outcomes,
-        unconfirmed_jobs={job.id for job in rows if job.status == "failed" and outcome_unconfirmed(job.error)},
+        job_diagnostics={
+            job.id: _safe_job_diagnostic(job)
+            for job in rows
+            if job.status == "failed" or job_outcomes.get(job.id) == "partial"
+        },
+        unconfirmed_jobs={job.id for job in rows if _job_requires_review(job)},
         stats=stats,
         signals=signals,
         overdue_pending_minutes=OVERDUE_PENDING_MINUTES,
         stale_running_minutes=STALE_RUNNING_MINUTES,
-        retryable=RETRYABLE,
+        retryable={job.id for job in rows if _replayable_job(job)},
+        replay_block_reasons={
+            job.id: replay_block_reason(job)
+            for job in rows
+            if job.status in {"done", "failed"} and not _replayable_job(job)
+        },
         deletable=DELETABLE,
         cancellable=CANCELLABLE,
         is_superuser=is_superuser,
+        can_manage_retention=can_manage_retention,
+        retention_policy=retention_policy,
         tenants=tenants,
         filter_tenant_id=filter_tenant_id,
     )
@@ -277,8 +451,15 @@ async def jobs_clear(
         # The tenant is an explicit filter, not just the manager's guard: the guard
         # is what keeps the *page* honest, and a mutation that trusted it alone
         # would be one refactor away from deleting another workspace's row.
-        kept = await Job.objects.filter(tenant_id=tenant_id, status="running").count()
-        deleted = await Job.objects.filter(tenant_id=tenant_id).exclude(status="running").delete()
+        total = await Job.objects.filter(tenant_id=tenant_id).count()
+        safe_error, safe_result = _safe_terminal_delete_criteria()
+        deleted = await Job.objects.filter(
+            safe_error,
+            safe_result,
+            tenant_id=tenant_id,
+            status__in=["done", "failed"],
+        ).delete()
+        kept = total - deleted
 
     noun = plural(deleted, "задание", "задания", "заданий")
     text = f"Очищено: {deleted} {noun}"
@@ -339,15 +520,14 @@ async def job_delete(
         if job.status not in DELETABLE:
             add_flash(request, "error", f"Задание #{job.id} выполняется — его нельзя удалить")
             return RedirectResponse("/app/jobs", status_code=302)
-
         # The delete repeats the observed row's identity, tenant and a still-
         # deletable status as conditions, not a pre-check alone: if the row
         # changed since the read — reclaimed, rebound or gone — it hits zero rows.
-        deleted = await Job.objects.delete(
+        deleted = await Job.objects.filter(
             id=job.id,
             tenant_id=job.tenant_id,
             status__in=sorted(DELETABLE),
-        )
+        ).delete()
 
     if deleted == 1:
         add_flash(request, "success", f"Задание #{job_id} удалено")
@@ -363,13 +543,7 @@ async def job_run(
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
 ):
-    """Attempt the existing claim path and report only a confirmed outcome.
-
-    This route does not re-arm failed rows or infer completion from a missing
-    claim. A dispatcher error propagates rather than becoming a success flash;
-    a lost claim is the one reported case and renders an explicit error, never
-    completion and never a silent retry.
-    """
+    """Create a new replay job while preserving the original outcome row."""
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/jobs", status_code=302)
@@ -394,37 +568,19 @@ async def job_run(
             add_flash(request, "error", "Задание не найдено")
             return RedirectResponse("/app/jobs", status_code=302)
 
-        if job.status not in RETRYABLE:
-            # `claim_job` returns None for a non-pending row, so this would
-            # otherwise be a silent no-op with no explanation.
-            add_flash(request, "error", f"Задание уже {job.status} — перезапуск не требуется")
+        if not _replayable_job(job):
+            add_flash(request, "error", "Этот запуск нельзя безопасно повторить. Проверьте сохранённый результат и настройки задачи.")
             return RedirectResponse("/app/jobs", status_code=302)
+        actor_id = getattr(getattr(request.state, "web_user", None), "id", None)
+        try:
+            replay = await Job.objects.enqueue_replay(job.id, initiated_by_user_id=actor_id)
+        except ValueError as error:
+            add_flash(request, "error", str(error))
+            return RedirectResponse("/app/jobs", status_code=302)
+    from app.jobs.dispatcher import launch_job_background
 
-    from app.jobs.claim_outcomes import JobClaimLostError
-    from app.jobs.dispatcher import run_job_now
-
-    try:
-        result = await run_job_now(job.id, allow_retry=False)
-    except JobClaimLostError:
-        # The claim moved on: report uncertainty, never success, never a retry.
-        add_flash(
-            request, "error", "Результат выполнения не подтверждён: захват задания потерян. Проверьте его состояние."
-        )
-        return RedirectResponse("/app/jobs", status_code=302)
-    if result is None:
-        add_flash(request, "error", "Запуск не начат: задание не удалось захватить. Проверьте его статус.")
-    elif not isinstance(result, dict):
-        add_flash(request, "error", "Результат запуска не подтверждён. Проверьте состояние задания.")
-    elif result.get("status") == "failed":
-        add_flash(request, "error", f"Задание снова упало: {result.get('error', '?')}")
-    elif result.get("status") == "done":
-        details = result.get("result")
-        if isinstance(details, dict) and details.get("status") == "skipped":
-            add_flash(request, "info", "Задание завершено со статусом «пропущено».")
-        else:
-            add_flash(request, "success", "Задание выполнено")
-    else:
-        add_flash(request, "error", "Выполнение задания не подтверждено. Проверьте его статус.")
+    launch_job_background(replay.id, allow_retry=False)
+    add_flash(request, "success", f"Создан повторный запуск #{replay.id}; исходный job #{job.id} сохранён")
     return RedirectResponse("/app/jobs", status_code=302)
 
 

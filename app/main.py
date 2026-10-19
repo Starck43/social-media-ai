@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Awaitable
@@ -17,7 +18,7 @@ from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
 from app.core.database import async_engine, init_db
 from app.core.health import router as health_router
-from app.core.tenant_context import PlatformScopeMiddleware
+from app.core.tenant_context import PlatformScopeMiddleware, tenant_scope
 from app.web import web_router
 from app.web.middleware import TenantUIMiddleware
 
@@ -38,13 +39,39 @@ async def rate_limit_exceeded_handler(
     return JSONResponse(status_code=429, content={"detail": "Too many requests", "error": "rate_limit_exceeded"})
 
 
+async def _job_maintenance_loop() -> None:
+    """Keep retention and stale-claim quarantine available in web-only mode."""
+    from app.jobs.lifecycle import cleanup_terminal_job_history, reap_stale_jobs
+
+    while True:
+        try:
+            quarantined = await reap_stale_jobs()
+            if quarantined:
+                logger.warning("job_stale_quarantined count=%s", quarantined)
+            with tenant_scope(bypass=True):
+                await cleanup_terminal_job_history()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — maintenance failure must not prevent web startup
+            logger.warning("job_maintenance_failed error_code=%s", type(error).__name__)
+        await asyncio.sleep(300)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Startup
     await init_db()
-    yield
-    # Shutdown
-    await async_engine.dispose()
+    maintenance = asyncio.create_task(_job_maintenance_loop(), name="job-maintenance")
+    try:
+        yield
+    finally:
+        maintenance.cancel()
+        try:
+            await maintenance
+        except asyncio.CancelledError:
+            pass
+        # Shutdown
+        await async_engine.dispose()
 
 
 def create_application() -> FastAPI:

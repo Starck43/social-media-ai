@@ -54,13 +54,19 @@ def _split_phrases(raw: str) -> list[str]:
 	return [" ".join(value.split()) for value in (raw or "").split(",") if value.strip()]
 
 
-def _web_job_type_choices() -> list[tuple[str, str]]:
+def _web_job_type_choices(*, allow_retention: bool = False) -> list[tuple[str, str]]:
 	"""Task types shown in the web UI; collection is part of social analysis."""
 	return [
-		(value, "📊 Анализ соцсетей" if value == "analyze" else label)
+		(value, "📊 Анализ соцсетей" if value == "analyze" else "Хранение истории Jobs" if value == "prune" else label)
 		for value, label in JobType.choices()
-		if value != "collect"
+		if value != "collect" and (allow_retention or value != "prune")
 	]
+
+
+def _can_manage_job_retention(request: Request) -> bool:
+	"""Only active workspace administrators and owners manage retention policy."""
+	perms = getattr(request.state, "web_perms", None)
+	return bool(perms and (perms.is_owner or perms.workspace_role in {"owner", "admin"}))
 
 
 def _normalize_web_job_type(job_type: str) -> str:
@@ -180,6 +186,7 @@ def _build_trigger_config(
 def _payload_from_form(
 		job_type, excluded_users, start_date, end_date,
 		digest_period=None, digest_group_by=None, digest_time_breakdown=False,
+		retention_success_hours=24, retention_failure_hours=24,
 ) -> dict:
 	"""The flat payload keys a task of this type needs.
 
@@ -192,6 +199,17 @@ def _payload_from_form(
 	the operator's preference.
 	"""
 	job_type = _normalize_web_job_type(job_type)
+	if job_type == "prune":
+		from app.jobs.lifecycle import retention_policy
+
+		payload = {
+			"mode": "job_history",
+			"success_hours": retention_success_hours,
+			"failure_hours": retention_failure_hours,
+		}
+		if retention_policy(payload) is None:
+			raise ValueError("Срок хранения должен быть целым числом от 1 до 8760 часов")
+		return payload
 	payload: dict = {}
 	if excluded_users:
 		payload["excluded_users"] = _split_names(excluded_users)
@@ -300,6 +318,8 @@ def _edit_payload(task: AgentTask, effective_active: set[int], source_ids: list[
 		"digest_period": payload.get("period") or "day",
 		"digest_group_by": payload.get("group_by") or "themes",
 		"digest_time_breakdown": bool(payload.get("time_breakdown")),
+		"retention_success_hours": payload.get("success_hours", 24),
+		"retention_failure_hours": payload.get("failure_hours", 24),
 		"trigger_type": getattr(task, "trigger_type", None).name if getattr(task, "trigger_type", None) else "",
 		"trigger_keywords": ", ".join(trigger_config.get("keywords") or []),
 		"trigger_match": trigger_config.get("match", "any"),
@@ -527,6 +547,8 @@ async def tasks_list(request: Request):
 			.prefetch_related("sources", "agent_scenario")
 			.order_by(AgentTask.created_at.desc())
 		)
+	if not _can_manage_job_retention(request):
+		tasks = [task for task in tasks if task.job_type != "prune"]
 
 	sources = await Source.objects.filter(tenant_id=tenant_id).order_by(Source.name)
 
@@ -596,11 +618,17 @@ async def tasks_list(request: Request):
 		scenario_analysis=scenario_analysis,
 		prefill_source_ids=prefill_source_ids,
 		prefill_scenario_id=prefill_scenario_id,
+		prefill_job_type=(
+			"prune"
+			if request.query_params.get("job_type") == "prune" and _can_manage_job_retention(request)
+			else "analyze"
+		),
+		prefill_retention=request.query_params.get("job_type") == "prune" and _can_manage_job_retention(request),
 		open_add_modal=open_add_modal,
 		effective_active=effective_active,
 		unconfirmed_tasks={task.id for task in tasks if outcome_unconfirmed(task.last_error)},
 		running_jobs=running_jobs,
-		job_types=_web_job_type_choices(),
+		job_types=_web_job_type_choices(allow_retention=_can_manage_job_retention(request)),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
 		cron_to_human=cron_to_human,
@@ -632,6 +660,8 @@ async def task_create(
 		digest_period: str = Form(""),
 		digest_group_by: str = Form(""),
 		digest_time_breakdown: str = Form(""),
+		retention_success_hours: int = Form(24),
+		retention_failure_hours: int = Form(24),
 		trigger_type: str = Form(""),
 		trigger_keywords: str = Form(""),
 		trigger_match: str = Form("any"),
@@ -661,6 +691,9 @@ async def task_create(
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
 		return RedirectResponse(back, status_code=302)
 	job_type = _normalize_web_job_type(job_type)
+	if job_type == "prune" and not _can_manage_job_retention(request):
+		add_flash(request, "error", "Настраивать очистку истории заданий могут только администратор и владелец пространства")
+		return RedirectResponse(back, status_code=302)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
@@ -683,12 +716,16 @@ async def task_create(
 	if not tasks_mgr.validate_cron(cron_expr):
 		add_flash(request, "error", f"Некорректное cron-выражение: {cron_expr}")
 		return RedirectResponse(back, status_code=302)
+	if job_type == "prune" and cron_expr == "@once":
+		add_flash(request, "error", "Настройка хранения истории должна быть повторяемой, например ежедневно.")
+		return RedirectResponse(back, status_code=302)
 
 	parsed_source_ids: list[int] = []
-	for s in source_ids:
-		s = s.strip()
-		if s.isdigit():
-			parsed_source_ids.append(int(s))
+	if AgentTaskManager.requires_sources(job_type):
+		for s in source_ids:
+			s = s.strip()
+			if s.isdigit():
+				parsed_source_ids.append(int(s))
 
 	try:
 		payload = _payload_from_form(
@@ -699,21 +736,25 @@ async def task_create(
 			digest_period=digest_period,
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
+			retention_success_hours=retention_success_hours,
+			retention_failure_hours=retention_failure_hours,
 		)
-		apply_selection(payload, tracked_users, _split_phrases(keywords_list), keywords_match)
+		if job_type != "prune":
+			apply_selection(payload, tracked_users, _split_phrases(keywords_list), keywords_match)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
 
-	_apply_targets(
-		payload,
-		{
-			"brands": brands,
-			"competitors": competitors,
-			"hashtags": hashtags,
-			"influencer_names": influencer_names,
-		},
-	)
+	if job_type != "prune":
+		_apply_targets(
+			payload,
+			{
+				"brands": brands,
+				"competitors": competitors,
+				"hashtags": hashtags,
+				"influencer_names": influencer_names,
+			},
+		)
 	if job_type == "analyze":
 		scenario_block = await _unified_analysis_scenario_block(tenant_id, scenario_id)
 		if scenario_block is not None:
@@ -723,7 +764,7 @@ async def task_create(
 	# Warn about missing target params for the scenario's analysis types.
 	# Non-blocking: the task is still created, but analysis will have nothing
 	# specific to look for without these.
-	if scenario_id:
+	if scenario_id and job_type != "prune":
 		sc = await AgentScenario.objects.filter(id=scenario_id).first()
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
@@ -800,7 +841,7 @@ async def task_create(
 			job_type=job_type,
 			cron_expr=cron_expr,
 			payload=payload,
-			agent_scenario_id=scenario_id,
+			agent_scenario_id=None if job_type == "prune" else scenario_id,
 			is_active=is_active,
 			next_run_at=next_run,
 			**trigger_action_fields,
@@ -853,6 +894,8 @@ async def task_detail(request: Request, task_id: int):
 			.first()
 		)
 		if source is not None and not is_superuser and source.tenant_id != request.state.tenant_id:
+			source = None
+		if source is not None and source.job_type == "prune" and not _can_manage_job_retention(request):
 			source = None
 		if source is None:
 			return render(
@@ -1143,6 +1186,9 @@ async def task_edit_page(request: Request, task_id: int):
 		if task is None:
 			add_flash(request, "error", "Задача не найдена")
 			return RedirectResponse("/app/tasks", status_code=302)
+		if task.job_type == "prune" and not _can_manage_job_retention(request):
+			add_flash(request, "error", "Просматривать настройку хранения заданий могут только администратор и владелец пространства")
+			return RedirectResponse("/app/tasks", status_code=302)
 		sources = await Source.objects.filter(tenant_id=task.tenant_id).order_by(Source.name)
 		scenarios = await AgentScenario.objects.filter(tenant_id=task.tenant_id, is_active=True).order_by(
 			AgentScenario.name
@@ -1186,7 +1232,7 @@ async def task_edit_page(request: Request, task_id: int):
 		sources=sources,
 		scenarios=scenarios,
 		scenario_analysis=scenario_analysis,
-		job_types=_web_job_type_choices(),
+		job_types=_web_job_type_choices(allow_retention=_can_manage_job_retention(request)),
 		trigger_types=BotTriggerType.choices(),
 		action_types=AgentActionType.choices(),
 		cron_to_human=cron_to_human,
@@ -1243,6 +1289,9 @@ async def task_toggle(
 	if task is None:
 		add_flash(request, "error", "Задача не найдена")
 		return RedirectResponse("/app/tasks", status_code=302)
+	if task.job_type == "prune" and not _can_manage_job_retention(request):
+		add_flash(request, "error", "Управлять настройкой хранения заданий могут только администратор и владелец пространства")
+		return RedirectResponse("/app/tasks", status_code=302)
 
 	new_active = not task.is_active
 	if new_active:
@@ -1288,6 +1337,9 @@ async def task_run_now(
 	task = await AgentTask.objects.get(id=task_id, tenant_id=tenant_id)
 	if task is None:
 		add_flash(request, "error", "Задача не найдена")
+		return RedirectResponse("/app/tasks", status_code=302)
+	if task.job_type == "prune" and not _can_manage_job_retention(request):
+		add_flash(request, "error", "Запускать настройку хранения заданий могут только администратор и владелец пространства")
 		return RedirectResponse("/app/tasks", status_code=302)
 	if task.job_type == "analyze" and isinstance(task.payload, dict) and task.payload.get("collect_before_analyze"):
 		scenario_block = await _unified_analysis_scenario_block(tenant_id, task.agent_scenario_id)
@@ -1394,6 +1446,8 @@ async def task_update(
 		digest_period: str = Form(""),
 		digest_group_by: str = Form(""),
 		digest_time_breakdown: str = Form(""),
+		retention_success_hours: int = Form(24),
+		retention_failure_hours: int = Form(24),
 		trigger_type: str = Form(""),
 		trigger_keywords: str = Form(""),
 		trigger_match: str = Form("any"),
@@ -1417,6 +1471,9 @@ async def task_update(
 		add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
 		return RedirectResponse(back, status_code=302)
 	job_type = _normalize_web_job_type(job_type)
+	if job_type == "prune" and not _can_manage_job_retention(request):
+		add_flash(request, "error", "Настраивать очистку истории заданий могут только администратор и владелец пространства")
+		return RedirectResponse(back, status_code=302)
 
 	tenant_id = action_tenant_id(request, tenant_id)
 
@@ -1428,6 +1485,9 @@ async def task_update(
 	if task is None:
 		add_flash(request, "error", "Задача не найдена")
 		return RedirectResponse(back, status_code=302)
+	if task.job_type == "prune" and not _can_manage_job_retention(request):
+		add_flash(request, "error", "Управлять настройкой хранения заданий могут только администратор и владелец пространства")
+		return RedirectResponse("/app/tasks", status_code=302)
 
 	cron_expr = cron_expr.strip()
 
@@ -1443,12 +1503,16 @@ async def task_update(
 	if not tasks_mgr.validate_cron(cron_expr):
 		add_flash(request, "error", f"Некорректное cron-выражение: {cron_expr}")
 		return RedirectResponse(back, status_code=302)
+	if job_type == "prune" and cron_expr == "@once":
+		add_flash(request, "error", "Настройка хранения истории должна быть повторяемой, например ежедневно.")
+		return RedirectResponse(back, status_code=302)
 
 	parsed_source_ids: list[int] = []
-	for s in source_ids:
-		s = s.strip()
-		if s.isdigit():
-			parsed_source_ids.append(int(s))
+	if AgentTaskManager.requires_sources(job_type):
+		for s in source_ids:
+			s = s.strip()
+			if s.isdigit():
+				parsed_source_ids.append(int(s))
 
 	try:
 		new_payload = _payload_from_form(
@@ -1459,8 +1523,11 @@ async def task_update(
 			digest_period=digest_period,
 			digest_group_by=digest_group_by,
 			digest_time_breakdown=digest_time_breakdown == "on",
+			retention_success_hours=retention_success_hours,
+			retention_failure_hours=retention_failure_hours,
 		)
-		apply_selection(new_payload, tracked_users, _split_phrases(keywords_list), keywords_match)
+		if job_type != "prune":
+			apply_selection(new_payload, tracked_users, _split_phrases(keywords_list), keywords_match)
 	except ValueError as e:
 		add_flash(request, "error", str(e))
 		return RedirectResponse(back, status_code=302)
@@ -1484,8 +1551,9 @@ async def task_update(
 
 	# Merge into existing payload instead of replacing — keys like "period",
 	# "days", "min_messages" set via CLI or agent tool must survive a web edit.
-	payload = task.payload.copy() if isinstance(task.payload, dict) else {}
-	payload.update(new_payload)
+	payload = new_payload if job_type == "prune" else (task.payload.copy() if isinstance(task.payload, dict) else {})
+	if job_type != "prune":
+		payload.update(new_payload)
 	requested_active = is_active == "on"
 	if job_type == "analyze":
 		scenario_block = await _unified_analysis_scenario_block(
@@ -1502,19 +1570,20 @@ async def task_update(
 	payload.pop("force_reanalyze", None)
 	# The form's target fields are authoritative for their own keys: filled
 	# sets, emptied clears (see `_apply_targets`).
-	_apply_targets(
-		payload,
-		{
-			"brands": brands,
-			"competitors": competitors,
-			"hashtags": hashtags,
-			"influencer_names": influencer_names,
-		},
-	)
+	if job_type != "prune":
+		_apply_targets(
+			payload,
+			{
+				"brands": brands,
+				"competitors": competitors,
+				"hashtags": hashtags,
+				"influencer_names": influencer_names,
+			},
+		)
 
 	# Warn about missing target params for the scenario's analysis types —
 	# the scenario this save binds, not the one the row held before the edit.
-	if scenario_id:
+	if scenario_id and job_type != "prune":
 		sc = await AgentScenario.objects.filter(id=scenario_id).first()
 		if sc and sc.analysis_types:
 			from app.services.ai.param_registry import missing_target_params
@@ -1574,7 +1643,7 @@ async def task_update(
 			job_type=job_type,
 			cron_expr=cron_expr,
 			payload=payload,
-			agent_scenario_id=scenario_id,
+			agent_scenario_id=None if job_type == "prune" else scenario_id,
 			is_active=requested_active and activation_blocked is None,
 			next_run_at=next_run,
 			**trigger_action_fields,

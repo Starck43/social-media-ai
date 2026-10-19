@@ -75,6 +75,10 @@ class Session:
     def begin(self): return Transaction(self)
     async def execute(self, query):
         self.fixture.queries.append(query)
+        if query.target is Source:
+            rows = [SimpleNamespace(id=source_id, tenant_id=self.fixture.tenant, is_active=True, params={})
+                    for source_id in self.fixture.active_sources]
+            return SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:rows))
         if query.target is Source.id:
             return SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:list(self.fixture.active_sources)))
         if query.skip is True and self.fixture.lock.locked():
@@ -129,7 +133,9 @@ class Fixture:
         self.insert_entered=None;self.insert_release=asyncio.Event();self.active_sources=set();self.create_calls=[]
         self.row=SimpleNamespace(id=7,tenant_id=31,is_active=True,next_run_at=NOW,cron_expr='0 * * * *',
             job_type='learn',payload={'original':1},sources=[],agent_scenario=None,
-            last_run_at=None,last_status='failed',last_error='old')
+            last_run_at=None,last_status='failed',last_error='old',trigger_type=None,trigger_config={},
+            action_type=None,agent_scenario_id=None,blacklist=[],whitelist=[],rate_limit_per_hour=None,
+            cooldown_seconds=None)
         context=SimpleNamespace(current_tenant_id=lambda:self.tenant,is_bypass=lambda:self.bypass,TenantContextError=ContextError)
         config=SimpleNamespace(settings=SimpleNamespace(JOB_MAX_ATTEMPTS=3,SCHEDULER_TIMEZONE='UTC'))
         class LocalBase(Base):pass
@@ -222,9 +228,11 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             if configure=='inactive_link':f.row.sources=[SimpleNamespace(is_active=False)]
             self.assertIsNone(await f.admit());self.assertEqual(f.jobs,[])
     async def test_workspace_source_fallback_keeps_tenant_predicate(self):
-        f=self.fixture;f.row.job_type='collect';f.active_sources={14}
-        self.assertEqual((await f.admit())['status'],'enqueued')
+        f=self.fixture;f.row.job_type='collect';f.active_sources={14};f.row.payload={'original':1,'scenario_id':23}
+        receipt=await f.admit()
+        self.assertEqual(receipt['status'],'enqueued')
         self.assertIn(('tenant_id','eq',31),f.queries[1].criteria)
+        self.assertEqual(receipt['job'].payload['_effective_snapshot']['scenario_id'],23)
     async def test_invalid_cron_commits_failure_but_no_job(self):
         f=self.fixture;f.row.cron_expr='invalid'
         self.assertEqual((await f.admit())['status'],'invalid_schedule');self.assertEqual(f.jobs,[])
@@ -354,7 +362,8 @@ class DispatcherPolicyTests(unittest.IsolatedAsyncioTestCase):
             receipt,jobs,module=await self.run_error(error)
             self.assertEqual(receipt.acknowledgement,CLAIMS.OutcomeAck.FAILED)
             self.assertFalse(jobs.mark_failed.await_args.kwargs['allow_retry'])
-            self.assertEqual(receipt.error,POLICY.OUTCOME_UNCONFIRMED_PREFIX)
+            expected_kind = "value_error" if isinstance(error, ValueError) else "timeout" if isinstance(error, TimeoutError) else "connection_error"
+            self.assertEqual(receipt.error,POLICY.OUTCOME_UNCONFIRMED_PREFIX + expected_kind)
             self.assertNotIn('PRIVATE',str(module._notify_job_result.await_args))
             self.assertIn('не подтверждён',module._notify_job_result.await_args.kwargs['error'])
     async def test_explicit_safe_delivery_retry_preserves_backoff_admission(self):
@@ -382,7 +391,9 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
     async def test_ui_shows_unknown_and_does_not_offer_blind_retry(self):
         text=(ROOT/'app/web/templates/web/jobs.html').read_text()
         self.assertIn('job.id in unconfirmed_jobs',text);self.assertIn('результат не подтверждён',text)
-        self.assertIn('job.id not in unconfirmed_jobs and job.status in retryable',text)
+        self.assertIn('job.id in retryable',text)
+        self.assertIn('job.id in unconfirmed_jobs',text)
+        self.assertIn('Удаление безвозвратно сотрёт это свидетельство',text)
         task=(ROOT/'app/web/templates/web/tasks.html').read_text()
         self.assertIn("task.last_status == 'queued'",task);self.assertIn('поставлена в очередь',task)
     async def test_prune_excludes_both_operational_stop_markers(self):
@@ -399,8 +410,7 @@ class ProjectionAndRetentionTests(unittest.IsolatedAsyncioTestCase):
                 CollectedItem=SimpleNamespace(objects=SimpleNamespace(delete_older_than=AsyncMock(return_value=0))),
                 AIAnalytics=SimpleNamespace(objects=SimpleNamespace(delete_expired=AsyncMock(return_value=0))))})
         await module.handle_prune({})
-        self.assertIn(BUDGET.ATTEMPT_BUDGET_STOP_PREFIX,repr(query.calls))
-        self.assertIn(POLICY.OUTCOME_UNCONFIRMED_PREFIX,repr(query.calls))
+        self.assertEqual(query.calls, [])  # Job history now uses the independent built-in lifecycle policy.
 
 
 class DummyAsyncContext:

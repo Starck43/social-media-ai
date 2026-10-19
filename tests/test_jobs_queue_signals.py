@@ -65,6 +65,7 @@ def minutes_ago(minutes):
 class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.query = Query([])
+        self.manager = SimpleNamespace(page_for_web=AsyncMock(), overview_for_web=AsyncMock())
         deps = SimpleNamespace(
             action_tenant_id=lambda *args: None,
             add_flash=lambda *args: None,
@@ -88,6 +89,7 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
                 "fastapi": SimpleNamespace(APIRouter=Router, Form=lambda default=None, **kw: default, Request=object),
                 "fastapi.responses": SimpleNamespace(RedirectResponse=object),
                 "app.models.job": SimpleNamespace(Job=SimpleNamespace(objects=self.query)),
+                "app.models.managers.job_manager": SimpleNamespace(JobManager=lambda: self.manager),
                 "app.web.deps": deps,
                 "app.jobs.recovery_policy": POLICY,
                 "app.core.tenant_context": SimpleNamespace(tenant_scope=tenant_scope),
@@ -180,20 +182,39 @@ class QueueSignalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.query.filters, [])
 
     async def test_jobs_list_passes_signals_and_thresholds_to_the_page(self):
-        self.query.rows = [job("running", locked_at=datetime.now(timezone.utc) - timedelta(hours=1))]
+        self.query.rows = [job("running", locked_at=minutes_ago(60))]
         self.query.order_by = lambda *args: self.query
         self.query.limit = lambda *args: self.query
         self.source.Job.created_at = SimpleNamespace(desc=lambda: None)
         for row in self.query.rows:
             row.id, row.job_type, row.result, row.payload = 1, "collect", {}, {}
-        request = SimpleNamespace(state=SimpleNamespace(web_user=SimpleNamespace(is_active=True), tenant_id=31))
+        stats = {"pending": 0, "running": 1, "done": 0, "failed": 0, "attention": 0}
+        signals = self.signals(self.query.rows)
+        self.manager.page_for_web.return_value = (self.query.rows, len(self.query.rows))
+        self.manager.overview_for_web.return_value = (stats, signals)
+        request = SimpleNamespace(
+            state=SimpleNamespace(
+                web_user=SimpleNamespace(is_active=True),
+                tenant_id=31,
+                web_perms=SimpleNamespace(is_owner=False, workspace_role="member"),
+            ),
+            query_params={"view": "active", "page": "1"},
+        )
         self.assertEqual(await self.source.jobs_list(request), "page")
         kwargs = self.deps.render.call_args.kwargs
         self.assertEqual(kwargs["signals"]["stale_running"], 1)
         self.assertEqual(kwargs["stats"]["running"], 1)
+        self.assertEqual(kwargs["stats"]["attention"], 0)
         self.assertEqual(kwargs["overdue_pending_minutes"], self.source.OVERDUE_PENDING_MINUTES)
         self.assertEqual(kwargs["stale_running_minutes"], self.source.STALE_RUNNING_MINUTES)
-        self.assertIn({"tenant_id": 31}, self.query.filters)
+        self.manager.page_for_web.assert_awaited_once_with(
+            31,
+            statuses=["pending", "running", "failed"],
+            page=1,
+            page_size=self.source.HISTORY_LIMIT,
+            include_attention=True,
+        )
+        self.manager.overview_for_web.assert_awaited_once_with(31)
 
     def test_page_renders_signals_without_row_content(self):
         page = (ROOT / "app/web/templates/web/jobs.html").read_text()

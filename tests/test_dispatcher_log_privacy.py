@@ -59,7 +59,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_failed.assert_awaited_once_with(
             7,
             claim=self.fixture.claim,
-            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX,
+            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX + "runtime_error",
             allow_retry=False,
         )
         self.assertIn("не подтверждён", self.notify.await_args.kwargs["error"])
@@ -73,7 +73,7 @@ class DispatcherLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.jobs.mark_failed.assert_awaited_once_with(
             7,
             claim=self.fixture.claim,
-            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX,
+            error=self.dispatcher.OUTCOME_UNCONFIRMED_PREFIX + "timeout",
             allow_retry=False,
         )
         self.assertIn("не подтверждён", self.notify.await_args.kwargs["error"])

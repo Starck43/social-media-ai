@@ -102,3 +102,65 @@ def test_template_renders_a_failed_state(widget):
     html = (Path(__file__).resolve().parents[1] / "app" / "web" / "templates" / "web" / widget).read_text()
     assert "chat-bubble-failed" in html
     assert "chat-notice-error" in html
+
+class TestStagedConfirmationIsVisible:
+    """A staged confirmation must read as a question, not a missing answer."""
+
+    def test_same_intent_is_compared_by_canonical_digest(self):
+        from app.agent.confirmation import arguments_digest
+        from app.agent.runtime import _same_pending_intent
+
+        args = {"platform": "vk", "source_type": "user", "external_id": "kaban828"}
+        pending = {"name": "source_add", "arguments_digest": arguments_digest(args)}
+        assert _same_pending_intent(pending, "source_add", dict(args))
+        # Key order is not identity: the digest is canonical.
+        reordered = {"external_id": "kaban828", "source_type": "user", "platform": "vk"}
+        assert _same_pending_intent(pending, "source_add", reordered)
+        assert not _same_pending_intent(pending, "source_add", {**args, "external_id": "other"})
+        assert not _same_pending_intent(pending, "task_add", dict(args))
+        assert not _same_pending_intent(None, "source_add", args)
+
+    def test_runtime_answers_the_existing_question_instead_of_twinning(self):
+        import inspect
+
+        from app.agent import runtime
+
+        source = inspect.getsource(runtime._dispatch_or_stage)
+        assert "_same_pending_intent" in source
+        assert "уже ждёт вашего ответа" in source
+
+    def test_staged_question_is_written_to_the_assistant_turn(self):
+        import inspect
+
+        from app.agent import runtime
+
+        source = inspect.getsource(runtime._run_tool_loop)
+        assert "_write_staged_reply(assistant_row" in source
+
+    def test_chat_endpoint_reports_a_waiting_confirmation(self):
+        import inspect
+
+        from app.web import chat
+
+        source = inspect.getsource(chat.chat_send)
+        assert "awaiting_confirmation" in source
+        assert "_confirmation_pending" in source
+
+    def test_client_does_not_claim_an_empty_answer_while_waiting(self):
+        from pathlib import Path
+
+        js = (Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "chat.js").read_text()
+        assert "data.awaiting_confirmation" in js
+        assert "data.warning = data.warning || ''" not in js
+
+
+class TestSourceAddConfirmsWithoutDetaching:
+    def test_compact_row_does_not_touch_the_platform_relation(self):
+        import inspect
+
+        from app.agent.toolset import sources
+
+        source = inspect.getsource(sources._compact)
+        assert "platform_key" in source
+        created = inspect.getsource(sources.source_add)
+        assert "_compact(source, platform_key)" in created

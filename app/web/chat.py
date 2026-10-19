@@ -122,6 +122,22 @@ def _enrich_message(msg) -> dict:
     }
 
 
+async def _confirmation_pending(user_id: int) -> bool:
+    """Whether this user's chat is waiting for a yes/no on a staged action."""
+    from app.agent.runtime import web_session_id
+
+    session_id = await web_session_id(user_id)
+    if session_id is None:
+        return False
+    from app.models import AgentSession
+
+    row = await AgentSession.objects.get(id=session_id)
+    if row is None:
+        return False
+    state = row.state if isinstance(row.state, dict) else {}
+    return isinstance(state.get("pending_confirmation"), dict)
+
+
 def _display_transcript(messages) -> list[dict]:
     """Presentation only: tool-call placeholders stay in storage, not in bubbles."""
     return [
@@ -206,7 +222,13 @@ async def chat_page(request: Request):
     enriched = _display_transcript(messages)
 
     if is_ajax:
-        return JSONResponse({"messages": enriched, "is_owner": _is_owner(request)})
+        return JSONResponse(
+            {
+                "messages": enriched,
+                "awaiting_confirmation": await _confirmation_pending(user.id),
+                "is_owner": _is_owner(request),
+            }
+        )
 
     return render(
         request,
@@ -290,6 +312,9 @@ async def chat_send(
             add_flash(request, "error", reply)
             return RedirectResponse("/app/chat", status_code=302)
 
+        # "A waiting confirmation" is a question the owner must answer, not a
+        # missing answer: the client must not add the "no text" notice on top.
+        awaiting = await _confirmation_pending(user.id)
         if is_ajax:
             return JSONResponse(
                 {
@@ -297,9 +322,10 @@ async def chat_send(
                     "warning": (
                         "Агент завершил обработку без текстового ответа. "
                         "Проверьте результат действия или уточните запрос."
-                        if not (reply or "").strip()
+                        if not (reply or "").strip() and not awaiting
                         else None
                     ),
+                    "awaiting_confirmation": awaiting,
                     "is_owner": _is_owner(request),
                 }
             )

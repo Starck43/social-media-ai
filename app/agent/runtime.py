@@ -101,6 +101,35 @@ def _pending_confirmation(session: Any) -> Optional[dict]:
     return pending if isinstance(pending, dict) else None
 
 
+def _same_pending_intent(existing: Optional[dict], name: str, args: Any) -> bool:
+    """Whether `existing` already asks for exactly this tool call.
+
+    Compared by the stored `arguments_digest` (the same canonical form the
+    confirmation consumes), so a reworded request that resolves to the same
+    action does not create a second pending intent.
+    """
+    if not isinstance(existing, dict) or existing.get("name") != name:
+        return False
+    from app.agent.confirmation import arguments_digest
+
+    stored = existing.get("arguments_digest")
+    return isinstance(stored, str) and bool(stored) and stored == arguments_digest(args)
+
+
+async def _write_staged_reply(row: Any, text: str) -> None:
+    """Store the staged question as this turn's visible assistant line.
+
+    The assistant row was written with an empty `content` before the tool call
+    ran; rewriting that exact row is what makes the question part of the
+    transcript the owner reads, instead of an invisible tool result.
+    """
+    from app.models import AgentMessage
+
+    if row is None or not getattr(row, "id", None):
+        return
+    await AgentMessage.objects.update_by_id(row.id, content=text)
+
+
 async def _patch_session_state(session: Any, updates: dict[str, Any]) -> None:
     """Patch specified keys from locked storage, not this turn's snapshot."""
     from app.models.managers.agent_session_manager import agent_sessions
@@ -635,6 +664,18 @@ async def _dispatch_or_stage(
                 and not pending_actor_matches(existing, fresh)
             ):
                 return "Ожидается подтверждение действия другого пользователя.", True
+            if _same_pending_intent(existing, name, args):
+                # The same action is already waiting for the owner's «да». Staging
+                # it again produced duplicate intents for one request («создай
+                # источник», then «сделай»): the second attempt answers the
+                # existing question instead of creating a twin. The text repeats
+                # the question verbatim so the transcript never shows the same
+                # «pending» line twice without explaining why.
+                return (
+                    "Это действие уже ждёт вашего ответа — повторно не создано.\n"
+                    f"{_human_confirmation(name, existing.get('args') or args)}\n"
+                    "Ответьте «да» или «нет»."
+                ), True
             intent = make_pending_intent(fresh, session, spec, args, call_id)
             if intent is None:
                 return "Не удалось безопасно подготовить подтверждение.", True
@@ -705,7 +746,7 @@ async def _run_tool_loop(
         # assistant message goes back to the API on the next iteration, so it
         # needs the wire shape (`function.arguments` as a JSON string) — the
         # flat call this loop dispatches on is rejected by the provider.
-        await session.append("assistant", content, tool_calls=tool_calls)
+        assistant_row = await session.append("assistant", content, tool_calls=tool_calls)
         messages.append(
             {
                 "role": "assistant",
@@ -732,6 +773,13 @@ async def _run_tool_loop(
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": tool_output})
 
         if stop_loop:
+            # A staged confirmation is the turn's answer. The provider sent no
+            # text (`content` is empty) and the question lives in the tool
+            # result, which the transcript never renders — so the owner would
+            # see an empty reply. Persist the question as the assistant line.
+            staged_text = stop_output if not content else ""
+            if staged_text:
+                await _write_staged_reply(assistant_row, staged_text)
             reply = _join_replies(reply, stop_output)
             break
     else:

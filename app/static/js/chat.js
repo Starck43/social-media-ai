@@ -212,6 +212,12 @@ function chatApp() {
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
                     if (data.warning) this.notice = data.warning
+                    else if (data.awaiting_confirmation) {
+                        // A staged confirmation is a question, not a missing
+                        // answer: the server keeps it in the transcript now, so
+                        // the "no text" notice must not contradict it.
+                        this.notice = ''
+                    }
                     else if (this.messages.at(-1)?.role !== 'assistant') this.notice = 'Ответ без текста. Проверьте результат действия или уточните запрос.'
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {

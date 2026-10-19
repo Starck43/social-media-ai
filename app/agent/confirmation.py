@@ -28,6 +28,15 @@ def _digest(value: Any) -> str | None:
     return hashlib.sha256(text.encode()).hexdigest() if text is not None else None
 
 
+def arguments_digest(args: Any) -> str | None:
+    """Canonical digest of a tool's arguments — the confirmation's identity.
+
+    Public so callers can answer "is this the same request?" without
+    re-implementing the canonicalisation the pending intent stores.
+    """
+    return _digest(args)
+
+
 def tool_contract(spec: Any) -> str | None:
     if spec is None:
         return None

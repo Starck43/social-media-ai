@@ -31,8 +31,12 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
 
 - [ ] P10-T05 (AUD-05, P2) — align legacy API DB probes with bounded redacted
   readiness; accept: bounded generic legacy probe failures; synthetic DB/DSN
-  sentinels absent; root readiness unchanged; depends: none; owner: unassigned;
-  status: TODO
+  sentinels absent; root readiness unchanged; depends: none;
+  owns: app/api/v1/entry.py, tests/test_legacy_api_db_probes.py and scoped
+  docs/API.md health contract; owner: remote Notion agent; status: IN_PROGRESS.
+  Synchronized base: `959a461410aa220cd1059c4e3ee59b55d5f79eaa`;
+  active PRs #216/#217/#220 inspected: no runtime/probe overlap; shared
+  registry/phase edits remain task-scoped, foreign evidence preserved.
 
 - [ ] P10-T06 (AUD-06, P1) — centralize safe provider-error envelopes without
   dropping accounting; accept: allowlisted failure envelopes/logs; no

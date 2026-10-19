@@ -57,7 +57,7 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 - [ ] P10-T02 — no password hashes in HTTP responses (AUD-02) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T03 — profile vs privilege update separation (AUD-03) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T04 — shared cookie-independent login protection (AUD-04) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
-- [ ] P10-T05 — legacy API DB probe alignment (AUD-05) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
+- [ ] P10-T05 — legacy API DB probe alignment (AUD-05) → [p10](docs/phases/p10-audit-hardening.md) — remote Notion agent — IN_PROGRESS
 - [ ] P10-T06 — safe provider-error envelopes (AUD-06) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T07 — digest scope/window/row consistency (AUD-07) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO
 - [ ] P10-T08 — per-component home pipeline gating (AUD-08) → [p10](docs/phases/p10-audit-hardening.md) — unassigned — TODO

@@ -37,8 +37,12 @@ def load_analyzer():
     imports = {
         "app.core.analysis_constants": ns(DEFAULT_ANALYSIS_PARAMS={}),
         "app.core.config": ns(settings=ns(DEBUG=False)),
-        "app.models": ns(AgentScenario=type("Scenario", (), {}), AIAnalytics=type("Analytics", (), {}),
-                         LLMModel=type("Model", (), {}), Source=type("Source", (), {})),
+        "app.models": ns(
+            AgentScenario=type("Scenario", (), {}),
+            AIAnalytics=type("Analytics", (), {}),
+            LLMModel=type("Model", (), {}),
+            Source=type("Source", (), {}),
+        ),
         "app.services.ai.attempt_journal": attempt_journal,
         "app.services.ai.analysis_context": ns(analysis_fingerprint=Mock(return_value="fixture-fingerprint")),
         "app.services.ai.chain_resolver": ns(
@@ -72,12 +76,23 @@ class ReportedErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.module = load_analyzer()
         self.analyzer = self.module.AIAnalyzer()
         self.source = SimpleNamespace(id=1, tenant_id=1, source_type=None)
-        self.scenario = SimpleNamespace(output_schema={"type": "object"}, max_tokens=None, is_active=True)
+        self.scenario = SimpleNamespace(
+            output_schema={"type": "object"},
+            max_tokens=None,
+            is_active=True,
+            text_llm_model_id=None,
+            image_llm_model_id=None,
+            video_llm_model_id=None,
+            llm_strategy=None,
+        )
         self.good = {"parsed": {"analysis": "A measured conclusion"}, "response": {}}
         self.failed = {"parsed": {"analysis": "Error: " + PRIVATE}, "response": {"error": PRIVATE}}
         self.module.ContentClassifier.classify_content = Mock(return_value={"text": [1], "image": [2], "video": []})
         self.analyzer._calculate_content_stats = Mock(return_value={})
         self.analyzer._get_platform_name = AsyncMock(return_value="platform")
+        # The real analyzer asks whether a modality has a configured model
+        # before calling its stage; this fixture supplies its mocked image stage.
+        self.analyzer._get_llm_model = AsyncMock(return_value=SimpleNamespace(id=1))
         self.analyzer._analyze_text = AsyncMock(return_value=self.good)
         self.analyzer._analyze_images = AsyncMock(return_value=self.failed)
         self.analyzer._analyze_videos = AsyncMock(return_value=None)

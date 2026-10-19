@@ -26,6 +26,129 @@ class JobManager(BaseManager["Job"]):
 
         super().__init__(Job)
 
+    @staticmethod
+    def pending_analysis_retry_matches(
+        job,
+        *,
+        tenant_id: int,
+        analysis_id: int,
+        source_id: int,
+        staged_window: dict,
+        initiated_by_user_id: int,
+        now: datetime | None = None,
+    ) -> bool:
+        """Whether an old pending row can be explicitly resumed for one analysis."""
+        from app.services.ai.analysis_retry import parse_staged_window
+
+        now = now or datetime.now(timezone.utc)
+        if (
+            type(tenant_id) is not int
+            or tenant_id <= 0
+            or type(analysis_id) is not int
+            or analysis_id <= 0
+            or type(source_id) is not int
+            or source_id <= 0
+            or type(initiated_by_user_id) is not int
+            or initiated_by_user_id <= 0
+            or job is None
+            or job.tenant_id != tenant_id
+            or job.job_type != "analyze"
+            or job.agent_task_id is not None
+            or job.status != "pending"
+            or not isinstance(job.run_at, datetime)
+            or job.run_at.utcoffset() is None
+            or job.run_at > now
+            or job.attempts != 0
+            or job.initiated_by_user_id not in (None, initiated_by_user_id)
+        ):
+            return False
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        marker = payload.get("retry_analytics_id")
+        if marker is not None and (type(marker) is not int or marker != analysis_id):
+            return False
+        source_ids = payload.get("source_ids")
+        if (
+            not isinstance(source_ids, list)
+            or len(source_ids) != 1
+            or type(source_ids[0]) is not int
+            or source_ids[0] != source_id
+        ):
+            return False
+        try:
+            return parse_staged_window(payload.get("staged_window")) == staged_window
+        except ValueError:
+            return False
+
+    async def adopt_pending_analysis_retry(
+        self,
+        *,
+        job_id: int,
+        tenant_id: int,
+        analysis_id: int,
+        source_id: int,
+        staged_window: dict,
+        initiated_by_user_id: int,
+    ) -> bool:
+        """Stamp and resume one exact legacy pending retry under admission/row locks."""
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.core.permissions import get_current_user
+        from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
+
+        from ..job import Job as JobModel
+
+        actor = get_current_user()
+        trusted_actor_id = getattr(actor, "id", None)
+        if (
+            is_bypass()
+            or type(current_tenant_id()) is not int
+            or current_tenant_id() != tenant_id
+            or type(trusted_actor_id) is not int
+            or trusted_actor_id <= 0
+            or trusted_actor_id != initiated_by_user_id
+        ):
+            raise TenantContextError("Pending retry does not match the authenticated workspace actor")
+        now = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            async with session.begin():
+                await self.lock_source_admission(session, tenant_id)
+                job = (
+                    await session.execute(
+                        select(JobModel)
+                        .where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if not self.pending_analysis_retry_matches(
+                    job,
+                    tenant_id=tenant_id,
+                    analysis_id=analysis_id,
+                    source_id=source_id,
+                    staged_window=staged_window,
+                    initiated_by_user_id=initiated_by_user_id,
+                    now=now,
+                ):
+                    return False
+                from app.jobs.source_activity import job_source_ids
+
+                active_jobs, task_sources, active_sources = await self._source_activity_context(session, tenant_id)
+                if any(
+                    current.id != job_id
+                    and source_id
+                    in job_source_ids(current.payload, current.agent_task_id, task_sources, active_sources)
+                    for current in active_jobs
+                ):
+                    return False
+                payload = dict(job.payload)
+                payload["retry_analytics_id"] = analysis_id
+                job.payload = payload
+                if job.initiated_by_user_id is None:
+                    job.initiated_by_user_id = initiated_by_user_id
+                await session.flush()
+        return True
+
     async def enqueue(
         self,
         job_type: str,

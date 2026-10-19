@@ -17,6 +17,23 @@ def _log_id(value: Any) -> int | None:
     return value if type(value) is int and 0 < value <= 2**63 - 1 else None
 
 
+def _fresh_analytics_ids(rows: Any) -> list[int]:
+    """Return a bounded allowlist of persisted IDs from this analyzer result."""
+    if not isinstance(rows, (list, tuple)):
+        return []
+    ids: list[int] = []
+    seen: set[int] = set()
+    for row in rows:
+        analytics_id = _log_id(getattr(row, "id", None))
+        if analytics_id is None or analytics_id in seen:
+            continue
+        ids.append(analytics_id)
+        seen.add(analytics_id)
+        if len(ids) >= ANALYZE_STAGE_BATCH:
+            break
+    return ids
+
+
 def _error_kind(error: BaseException) -> str:
     """Bounded categories, not exception messages, repr, args or tracebacks."""
     if isinstance(error, TimeoutError):
@@ -739,7 +756,13 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
         # Per-source counters, so the run-now modal can link to each source and
         # the source page can show what the agent analysed *here*. `analyzed` and
         # `actions_created` below stay run-wide; these are this source's share.
-        per: dict[str, Any] = {"source_id": source.id, "name": source.name, "analyzed": 0, "actions": 0}
+        per: dict[str, Any] = {
+            "source_id": source.id,
+            "name": source.name,
+            "analyzed": 0,
+            "actions": 0,
+            "analytics_ids": [],
+        }
         progress_attempted = False
         try:
             stats["sources"] += 1
@@ -826,6 +849,10 @@ async def handle_analyze(payload: dict[str, Any]) -> dict[str, Any]:
                             "initiated_by_user_id": payload.get("_trusted_initiated_by_user_id"),
                         },
                     )
+                    # These are only rows persisted by this fresh analyzer call.
+                    # Capture before trigger filtering, which may discard all of
+                    # them while the detail page still needs to link to results.
+                    per["analytics_ids"] = _fresh_analytics_ids(fresh)
                     # A client can report a failure without raising, including
                     # a failed sibling alongside useful saved analysis. Keep
                     # legacy/malformed diagnostics unknown, not coerced to zero.

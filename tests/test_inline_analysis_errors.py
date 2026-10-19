@@ -98,8 +98,9 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_analysis_preserves_collected_rows_and_stage_order(self):
         events = []
-        async def stage(*args):
+        async def stage(*args, durable=False):
             events.append("stage")
+            self.assertFalse(durable)
             return 2
         async def analyze(*args, **kwargs):
             events.append("analyze")

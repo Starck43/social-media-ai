@@ -18,6 +18,10 @@ import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, select_autoescape
 
 ROOT = Path(__file__).resolve().parents[2]
+PROGRESS_MACRO = (
+    "{% macro progress_bar(label, state='unknown', percent=none, processed=none, total=none, note=none) %}"
+    "<div>{{ label }}</div>{% endmacro %}"
+)
 
 
 def pure_module(name, path):
@@ -119,6 +123,7 @@ class Transaction:
 def route_scope():
     scope = functions("app/web/analytics.py", "analytics_retry")
     row = NS(
+        id=1127,
         source_id=2939,
         source=NS(tenant_id=7),
         summary_data={"content_statistics": {"content_date_range": {"earliest": START, "latest": END}}},
@@ -148,7 +153,9 @@ def route_scope():
         render_analysis=projection.render_analysis,
         parse_staged_window=retry.parse_staged_window,
         _source_has_running_job=AsyncMock(return_value={"collect": False, "analyze": False}),
-        launch_job_background=lambda job_id, **kw: None,
+        launch_job_background=Mock(),
+        get_current_user=lambda: NS(id=81),
+        AgentScenarioManager=lambda: NS(get=AsyncMock(return_value=None)),
     )
     return scope, row, manager, collected, jobs, session, transaction
 
@@ -156,8 +163,12 @@ def route_scope():
 @pytest.mark.asyncio
 async def test_detail_retry_passes_identical_window_to_read_reset_and_job():
     scope, row, manager, collected, jobs, session, tx = route_scope()
-    response = await scope["analytics_retry"](NS(), 1127, token="fake", tenant_id=7)
-    assert response.url == "/app/analytics/1127"
+    launch_observed = []
+    scope["launch_job_background"].side_effect = lambda _job_id, **_kwargs: launch_observed.append(tx.outcome)
+    response = await scope["analytics_retry"](
+        NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
+    )
+    assert response.url == "/app/analytics/1127?retry_job_id=20"
     manager.get.assert_awaited_once_with(id=1127, tenant_id=7)
     bounds = retry.parse_staged_window({"start_date": START, "end_date": END})
     collected.for_source.assert_awaited_once_with(2939, limit=1, include_exhausted=True, **bounds)
@@ -167,16 +178,36 @@ async def test_detail_retry_passes_identical_window_to_read_reset_and_job():
         "job_type": "analyze",
         "tenant_id": 7,
         "session": session,
-        "payload": {"source_ids": [2939], "staged_window": {"start_date": START, "end_date": END}},
+        "payload": {
+            "source_ids": [2939],
+            "staged_window": {"start_date": START, "end_date": END},
+            "retry_analytics_id": 1127,
+        },
+        "initiated_by_user_id": 81,
     }
+    assert args["payload"]["retry_analytics_id"] == 1127
     assert tx.outcome == "commit"
     session.close.assert_awaited_once()
+    scope["launch_job_background"].assert_called_once_with(20, allow_retry=False)
+    assert launch_observed == ["commit"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "blocked",
-    ["csrf", "view", "analyze", "tenant", "missing", "foreign-source", "window", "empty", "pending", "running"],
+    [
+        "csrf",
+        "view",
+        "analyze",
+        "tenant",
+        "missing",
+        "foreign-source",
+        "actor",
+        "window",
+        "empty",
+        "pending",
+        "running",
+    ],
 )
 async def test_detail_retry_blockers_never_write(blocked):
     scope, row, manager, collected, jobs, session, tx = route_scope()
@@ -192,6 +223,8 @@ async def test_detail_retry_blockers_never_write(blocked):
         manager.get.return_value = None
     elif blocked == "foreign-source":
         row.source.tenant_id = 8
+    elif blocked == "actor":
+        scope["get_current_user"] = lambda: NS(id=82)
     elif blocked == "window":
         row.summary_data = {}
     elif blocked == "empty":
@@ -201,7 +234,9 @@ async def test_detail_retry_blockers_never_write(blocked):
             "collect": blocked == "pending",
             "analyze": blocked == "running",
         }
-    await scope["analytics_retry"](NS(), 1127, token="fake", tenant_id=7)
+    await scope["analytics_retry"](
+        NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
+    )
     collected.reset_attempts.assert_not_awaited()
     jobs.enqueue.assert_not_awaited()
     assert tx.outcome is None
@@ -212,7 +247,9 @@ async def test_enqueue_failure_rolls_back_reset_and_never_reports_success():
     scope, _, _, _, jobs, session, tx = route_scope()
     jobs.enqueue.side_effect = RuntimeError("synthetic queue failure")
     with pytest.raises(RuntimeError):
-        await scope["analytics_retry"](NS(), 1127, token="fake", tenant_id=7)
+        await scope["analytics_retry"](
+            NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7
+        )
     assert tx.outcome == "rollback"
     session.close.assert_awaited_once()
     assert not scope["add_flash"].called
@@ -230,6 +267,19 @@ async def test_pending_and_running_jobs_are_both_considered():
 def template_context(**overrides):
     context = dict(
         display=projection.render_analysis({}),
+        retry={
+            "needed": True,
+            "can_retry": True,
+            "available": True,
+            "window_known": True,
+            "status": None,
+            "poll_url": None,
+            "progress": None,
+            "blocking": [],
+            "saved_analyses": [],
+            "task_links": [],
+            "scenario_pinned": True,
+        },
         analysis=NS(
             id=1127,
             source=NS(name="<script>bad</script>"),
@@ -278,29 +328,54 @@ def render_detail(**overrides):
 
 @pytest.mark.parametrize("is_superuser", [False, True])
 def test_retry_template_reuses_post_csrf_confirmation_and_existing_button_style(is_superuser):
-    html = render_detail(is_superuser=is_superuser, platform_name="<script>bad</script>")
+    partial = (ROOT / "app/web/templates/web/analytics_retry_status.html").read_text()
+    env = Environment(
+        loader=DictLoader(
+            {
+                "web/_run_progress.html": PROGRESS_MACRO,
+                "web/analytics_retry_status.html": partial,
+            }
+        ),
+        autoescape=select_autoescape(("html",)),
+    )
+    context = template_context(is_superuser=is_superuser)
+    html = env.get_template("web/analytics_retry_status.html").render(
+        retry=context["retry"], analysis=context["analysis"], csrf=context["csrf"], is_superuser=is_superuser
+    )
     assert 'action="/app/analytics/1127/retry"' in html
     assert 'method="post"' in html and 'name="_csrf" value="fixture-only"' in html
     assert ('name="tenant_id" value="7"' in html) is is_superuser
     assert 'data-confirm-title="Повторить анализ?"' in html
     assert "bg-violet-500" in html
-    assert "не пересобирает эту запись целиком" in html
-    assert "&lt;script&gt;bad&lt;/script&gt;" in html
-    assert "<script>bad</script>" not in html
+    assert "Период исходных материалов" not in html
 
 
 @pytest.mark.parametrize(
     "overrides, message",
     [
         ({"can_retry": False}, None),
-        ({"retry_needed": False}, None),
-        ({"retry_running": True}, "уже в очереди"),
-        ({"retry_available": False}, "нет оставшихся сырых материалов"),
-        ({"retry_available": False, "retry_window_known": False}, "Период исходных материалов не сохранён"),
+        ({"needed": False}, None),
+        ({"status": "running"}, None),
+        ({"available": False}, "нет оставшихся сырых материалов"),
+        ({"available": False, "window_known": False}, "Период анализа не сохранён"),
     ],
 )
 def test_retry_template_only_offers_action_when_appropriate(overrides, message):
-    html = render_detail(**overrides)
+    partial = (ROOT / "app/web/templates/web/analytics_retry_status.html").read_text()
+    env = Environment(
+        loader=DictLoader(
+            {
+                "web/_run_progress.html": PROGRESS_MACRO,
+                "web/analytics_retry_status.html": partial,
+            }
+        ),
+        autoescape=select_autoescape(("html",)),
+    )
+    context = template_context()
+    context["retry"].update(overrides)
+    html = env.get_template("web/analytics_retry_status.html").render(
+        retry=context["retry"], analysis=context["analysis"], csrf=context["csrf"], is_superuser=False
+    )
     assert 'action="/app/analytics/1127/retry"' not in html
     if message:
         assert message in html
@@ -381,7 +456,7 @@ async def test_source_retry_reuses_configured_period_and_atomic_queue(state):
         assert jobs.enqueue.await_args.kwargs["session"] is session
 
 
-def source_html(rights=True, **overrides):
+def source_html(rights=True, can_view_tasks=None, can_create_tasks=None, **overrides):
     env = Environment(
         loader=ChoiceLoader(
             [
@@ -403,17 +478,31 @@ def source_html(rights=True, **overrides):
         params={},
         is_active=True,
     )
+    can_view_tasks = rights if can_view_tasks is None else can_view_tasks
+    can_create_tasks = rights if can_create_tasks is None else can_create_tasks
     context = dict(
         source=source,
-        perms=NS(can=lambda *args: rights),
-        running={"collect": False, "analyze": False},
+        perms=NS(
+            can=lambda model, action: (
+                can_view_tasks if (model, action) == ("agenttask", "view")
+                else can_create_tasks if (model, action) == ("agenttask", "create")
+                else rights
+            )
+        ),
         csrf="fake",
         is_superuser=False,
-        is_source_admin=False,
-        can_delete=False,
+        can_update=rights,
+        can_view_tasks=can_view_tasks,
         analytics_count=1,
-        usage_count=0,
-        mode=NS(label="Pull", hint="Fixture", is_push=True),
+        recent_count=1,
+        mode=NS(key="pull", label="API платформы", hint="Fixture", is_push=False),
+        modes=(("pull", "API"), ("push", "Bot"), ("user", "User")),
+        mode_labels={"pull": "API платформы", "push": "Бот-API", "user": "Личный аккаунт"},
+        members=[NS(id=4, username="member")],
+        token_owner=NS(id=4, username="member"),
+        orphaned_owner_id=None,
+        owner_label="member (личный токен)",
+        owner_connection=None,
         monitored_users=[],
         schedules=[],
         sentiment_label="—",
@@ -424,48 +513,124 @@ def source_html(rights=True, **overrides):
         source_types=[],
         pending_count=3,
         given_up=1,
-        given_up_label="запись",
-        collections=[],
         request=NS(url=NS(path="/app/sources/2939", query="")),
-        recent=[
-            dict(
-                id=1127,
-                analysis_date="10.09.2026",
-                main_topics=[],
-                sentiment=None,
-                llm_model=None,
-                cost_usd=None,
-                analysis_incomplete=True,
-            )
-        ],
     )
     context.update(overrides)
     return env.get_template("web/source_detail.html").render(**context)
 
 
-def test_source_exposes_backlog_incomplete_badge_and_retry():
-    html = source_html()
-    assert "data-analysis-backlog" in html
-    assert 'data-coverage="incomplete"' in html
-    assert "Повторить анализ" in html
-    assert "Автоматические попытки для них приостановлены" in html
-
-
-def test_source_hides_all_analysis_buttons_without_permission():
-    html = source_html(rights=False)
-    assert 'action="/app/sources/2939/analyze"' not in html
-    assert "data-analysis-backlog" in html  # read-only explanation remains
-
-
-def test_source_shows_raw_content_delete_only_to_admin_and_when_idle():
-    assert "delete-unprocessed" not in source_html()
-    assert 'action="/app/sources/2939/delete-unprocessed"' in source_html(is_source_admin=True)
-    assert "delete-unprocessed" not in source_html(
-        is_source_admin=True, running={"collect": True, "analyze": False}
+def test_source_detail_shows_entity_settings_stats_and_one_task_cta():
+    task = NS(
+        id=51,
+        name="Daily scan",
+        effective_active=True,
+        is_active=True,
+        cron_label="Ежедневно",
+        next_run_label="завтра",
     )
-    assert "delete-unprocessed" not in source_html(
-        is_source_admin=True, running={"collect": False, "analyze": True}
+    html = source_html(schedules=[task])
+    assert "Настройки источника" in html
+    assert html.count('href="/app/tasks?create=1&amp;source_id=2939"') == 1
+    assert 'name="mode"' in html
+    assert 'name="token_owner"' in html
+    assert 'name="is_active"' in html
+    assert "Связанные с источником задачи" in html
+    assert 'href="/app/tasks/51"' in html
+    assert html.count("Создать задачу для источника") == 1
+    assert "progress" not in html.lower()
+    assert "Повторить анализ" not in html
+    assert "Последние анализы" not in html
+
+
+def test_source_detail_permission_gates_settings_task_list_and_cta():
+    html = source_html(rights=False, can_view_tasks=False, can_create_tasks=False)
+    assert "У вас нет права изменять настройки источника." in html
+    assert 'method="post" action="/app/sources/2939"' not in html
+    assert "Нет доступа к просмотру задач." in html
+    assert "Создать задачу для источника" not in html
+
+
+def test_source_create_cta_does_not_require_task_view_permission():
+    html = source_html(rights=False, can_view_tasks=False, can_create_tasks=True)
+    assert "Нет доступа к просмотру задач." in html
+    assert html.count("Создать задачу для источника") == 1
+    assert html.count('href="/app/tasks?create=1&amp;source_id=2939"') == 1
+
+
+def source_edit_scope(form_data):
+    scope = functions("app/web/sources.py", "source_edit", "_validate_token_owner", "_clean_params")
+    source = NS(
+        id=2939,
+        tenant_id=7,
+        name="Fixture",
+        platform=NS(id=1),
+        platform_id=1,
+        external_id="123",
+        source_type=NS(db_value="user"),
+        is_active=True,
+        params={"mode": "pull", "token_owner": 4, "runtime_watermark": "keep"},
     )
+    manager = NS(get=AsyncMock(return_value=source), update_by_id=AsyncMock())
+    flashes = Mock()
+    request = NS(form=AsyncMock(return_value=form_data))
+    scope.update(
+        Source=NS(objects=manager),
+        SourceType=NS(get_by_value=lambda _value: source.source_type),
+        ensure_csrf=Mock(return_value=True),
+        action_tenant_id=Mock(return_value=7),
+        guard_web=Mock(return_value=None),
+        add_flash=flashes,
+        RedirectResponse=Response,
+        tenant_scope=lambda _tenant_id: nullcontext(),
+        COLLECTION_MODES=(
+            ("pull", "API"),
+            ("push", "Bot"),
+            ("user", "User"),
+        ),
+        _workspace_members=AsyncMock(return_value=[NS(id=4), NS(id=8)]),
+    )
+    return scope, request, source, manager, flashes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("form_data", "token_owner", "expected_owner", "should_update"),
+    [
+        ({"mode": "pull"}, "", 4, True),
+        ({"token_owner": "", "mode": "pull"}, "", None, True),
+        ({"token_owner": "8", "mode": "pull"}, "8", 8, True),
+        ({"token_owner": "99", "mode": "pull"}, "99", 4, False),
+    ],
+)
+async def test_source_edit_token_owner_respects_posted_field_membership(
+    form_data, token_owner, expected_owner, should_update
+):
+    scope, request, _source, manager, flashes = source_edit_scope(form_data)
+    response = await scope["source_edit"](
+        request,
+        2939,
+        name="Fixture",
+        platform="",
+        external_id="123",
+        source_type="",
+        is_active="on",
+        monitored_users="",
+        mode="pull",
+        token_owner=token_owner,
+        token="csrf",
+        tenant_id=7,
+    )
+
+    if should_update:
+        assert response.url == "/app/sources/2939"
+        saved_params = manager.update_by_id.await_args.kwargs["params"]
+        assert saved_params.get("token_owner") == expected_owner
+        assert saved_params["runtime_watermark"] == "keep"
+    else:
+        assert response.url == "/app/sources"
+        manager.update_by_id.assert_not_awaited()
+        flashes.assert_called_once()
+    request.form.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -534,7 +699,7 @@ async def test_atomic_busy_conflict_rolls_back_attempt_reset_and_reports_info(fu
     jobs.enqueue.side_effect = activity.SourceJobBusy(NS(id=99, status="pending"))
     if function == "analytics_retry":
         scope = original
-        await scope[function](NS(), 1127, token="fake", tenant_id=7)
+        await scope[function](NS(state=NS(web_user=NS(id=81))), 1127, token="fake", tenant_id=7)
     else:
         scope = functions(path, function)
         scope.update(original)

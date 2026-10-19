@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models import Permission, User
@@ -10,6 +12,7 @@ from app.api.v1.endpoints import (
 )
 
 router = APIRouter()
+DB_PROBE_TIMEOUT_SECONDS = 2.0
 
 # Every data router requires a bearer token. `ApiScopeMiddleware` already
 # rejects unauthenticated /api/* requests, this is the defense-in-depth layer
@@ -38,15 +41,23 @@ router.include_router(credentials.router, prefix="/credentials", tags=["credenti
 # no tenant context) instead of raw `SELECT`s on a session: same connectivity
 # signal, but it goes through the manager layer and cannot drift out of sync
 # with it. The previous version also crashed, awaiting a sync `Session`.
-@router.get("/test-db", include_in_schema=False, dependencies=API_AUTH)
-async def test_database():
+async def _probe_database():
+    """Bound the legacy ORM read; never disclose internal failure details.
+
+    Cancellation propagates. The timeout assumes a cooperative async driver.
+    """
     try:
-        permission_count = await Permission.objects.count()
-    except Exception as exc:
+        return await asyncio.wait_for(Permission.objects.count(), timeout=DB_PROBE_TIMEOUT_SECONDS)
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=f"Database connection error: {str(exc)}",
-        )
+            detail="Database connection error",
+        ) from None
+
+
+@router.get("/test-db", include_in_schema=False, dependencies=API_AUTH)
+async def test_database():
+    permission_count = await _probe_database()
     return {"database": "connected", "permissions": permission_count}
 
 
@@ -57,15 +68,6 @@ async def test_auth(current_user: User = Depends(get_authenticated_user)):
 
 @router.get("/health", tags=["Health"])
 async def health_check():
-	"""Health check endpoint"""
-	try:
-		await Permission.objects.count()
-		return {
-			"status": "ok",
-			"database": "connected"
-		}
-	except Exception as e:
-		raise HTTPException(
-			status_code=500,
-			detail=f"Database connection error: {str(e)}"
-		)
+    """Legacy connectivity check; not the root readiness contract."""
+    await _probe_database()
+    return {"status": "ok", "database": "connected"}

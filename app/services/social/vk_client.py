@@ -267,18 +267,27 @@ class VKClient(BaseClient):
 		if external_id.lstrip("-").isdigit():
 			return external_id
 
-		# Resolve screen_name via VK API
+		# Resolve screen_name via VK API. A nick is tried as a person first
+		# (`users.get`), then as a community: `utils.resolveScreenName` answers
+		# error 1051 ("method is not available for this profile type") for a
+		# service key, yet `users.get` still maps the same nick to its id.
 		logger.info(f"Resolving screen_name: {external_id}")
 		platform_params = self.platform.params or {}
 		api_base = platform_params.get("api_base_url") or settings.VK_API_BASE_URL
 		api_version = platform_params.get("api_version") or settings.VK_API_VERSION
-		url = f"{api_base}/utils.resolveScreenName"
-		params = {"screen_name": external_id, "access_token": self._token(), "v": api_version}
+		auth = {"access_token": self._token(), "v": api_version}
 
 		import httpx
 
 		async with httpx.AsyncClient() as client:
-			response = await client.get(url, params=params)
+			user_id = await self._resolve_user_id(client, api_base, auth, external_id)
+			if user_id is not None:
+				logger.info(f"Resolved {external_id} → {user_id} (type: user)")
+				return user_id
+
+			response = await client.get(
+				f"{api_base}/utils.resolveScreenName", params={"screen_name": external_id, **auth}
+			)
 			data = response.json()
 
 			if "response" in data and data["response"]:
@@ -296,6 +305,31 @@ class VKClient(BaseClient):
 
 			logger.warning(f"Cannot resolve screen_name: {external_id}, using as-is")
 			return external_id
+
+	async def _resolve_user_id(self, client: Any, api_base: str, auth: dict, screen_name: str) -> str | None:
+		"""Numeric id of the person with this nick, or None when it is not a person.
+
+		`users.get` accepts a screen_name in `user_ids` and returns an empty list
+		for a community nick — that empty answer is how "not a person" is told
+		apart from "the call failed". A failed call returns None too and lets the
+		next resolution step decide; nothing here turns a transport error into a
+		wrong id.
+		"""
+		try:
+			response = await client.get(
+				f"{api_base}/users.get", params={"user_ids": screen_name, **auth}
+			)
+			data = response.json()
+		except Exception:  # noqa: BLE001 — resolution is best-effort; collection decides
+			logger.debug("VK users.get probe failed for %s", screen_name, exc_info=True)
+			return None
+		rows = data.get("response") if isinstance(data, dict) else None
+		if isinstance(rows, list) and rows:
+			row = rows[0]
+			user_id = row.get("id") if isinstance(row, dict) else None
+			if user_id:
+				return str(user_id)
+		return None
 
 	def _build_params(self, source: Source, method: str) -> dict:
 		"""

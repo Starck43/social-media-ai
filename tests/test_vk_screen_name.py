@@ -77,7 +77,8 @@ def _patch_httpx(monkeypatch, fake_client):
 
 async def test_resolve_user_screen_name(monkeypatch, platform):
     fake = FakeClient()
-    fake.script = [{"response": {"object_id": 123456, "type": "user"}}]
+    # users.get answers empty (not scripted as a person), then resolveScreenName.
+    fake.script = [{"response": []}, {"response": {"object_id": 123456, "type": "user"}}]
     _patch_httpx(monkeypatch, fake)
 
     client = VKClient(platform=platform)
@@ -85,7 +86,7 @@ async def test_resolve_user_screen_name(monkeypatch, platform):
     resolved = await client._resolve_external_id("russkikh_natalia")
 
     assert resolved == "123456"
-    url, params = fake.calls[0]
+    url, params = fake.calls[-1]
     assert url.endswith("utils.resolveScreenName")
     assert params["screen_name"] == "russkikh_natalia"
     assert params["access_token"] == "test-token"
@@ -93,7 +94,7 @@ async def test_resolve_user_screen_name(monkeypatch, platform):
 
 async def test_resolve_group_screen_name_gets_minus_prefix(monkeypatch, platform):
     fake = FakeClient()
-    fake.script = [{"response": {"object_id": 999, "type": "group"}}]
+    fake.script = [{"response": []}, {"response": {"object_id": 999, "type": "group"}}]
     _patch_httpx(monkeypatch, fake)
 
     client = VKClient(platform=platform)
@@ -117,7 +118,7 @@ async def test_resolve_leaves_numeric_untouched(monkeypatch, platform):
 
 async def test_build_params_uses_resolved_owner_id(monkeypatch, platform, user_source):
     fake = FakeClient()
-    fake.script = [{"response": {"object_id": 123456, "type": "user"}}]
+    fake.script = [{"response": [{"id": 123456}]}]
     _patch_httpx(monkeypatch, fake)
 
     client = VKClient(platform=platform)
@@ -126,3 +127,57 @@ async def test_build_params_uses_resolved_owner_id(monkeypatch, platform, user_s
 
     params = client._build_params(user_source, "wall.get")
     assert params["owner_id"] == "123456"
+
+
+class _UserThenScreenName(FakeClient):
+    """`users.get` answers first; the script holds its answer, then resolveScreenName's."""
+
+
+async def test_user_nick_resolves_even_when_resolve_screen_name_is_refused(monkeypatch, platform):
+    """A service key gets error 1051 from resolveScreenName but users.get still maps a nick.
+
+    VK answers «Method is not available for this profile type» for
+    utils.resolveScreenName while `users.get(user_ids=<nick>)` returns the same
+    person's id. Collection must use that id, not fall back to the raw nick.
+    """
+    fake = FakeClient()
+    fake.script = [
+        {"response": [{"id": 19149862, "first_name": "Anna"}]},
+        {"error": {"error_code": 1051, "error_msg": "Method is not available for this profile type"}},
+    ]
+    _patch_httpx(monkeypatch, fake)
+
+    client = VKClient(platform=platform)
+    client._access_token = "test-token"
+    resolved = await client._resolve_external_id("annastrizhovadesign")
+
+    assert resolved == "19149862"
+    assert fake.calls[0][0].endswith("users.get")
+    assert fake.calls[0][1]["user_ids"] == "annastrizhovadesign"
+
+
+async def test_community_nick_falls_back_to_resolve_screen_name(monkeypatch, platform):
+    """An empty users.get answer means "not a person", so the group path still runs."""
+    fake = FakeClient()
+    fake.script = [
+        {"response": []},
+        {"response": {"object_id": 777, "type": "group"}},
+    ]
+    _patch_httpx(monkeypatch, fake)
+
+    client = VKClient(platform=platform)
+    client._access_token = "test-token"
+    assert await client._resolve_external_id("some_club") == "-777"
+
+
+async def test_a_failed_user_probe_does_not_invent_an_id(monkeypatch, platform):
+    fake = FakeClient()
+    fake.script = [
+        {"error": {"error_code": 5, "error_msg": "User authorization failed"}},
+        {"error": {"error_code": 1051, "error_msg": "Method is not available for this profile type"}},
+    ]
+    _patch_httpx(monkeypatch, fake)
+
+    client = VKClient(platform=platform)
+    client._access_token = "test-token"
+    assert await client._resolve_external_id("unknown_nick") == "unknown_nick"

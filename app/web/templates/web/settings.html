@@ -23,6 +23,9 @@
                 {% for key in visible_tabs %}
                 <a href="/app/settings?tab={{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ section_labels[key] }}</a>
                 {% endfor %}
+                {% if user and user.is_platform_admin|default(false) %}
+                <a href="/admin/platform/list">Платформы</a>
+                {% endif %}
             </nav>
             {% if user and user.has_admin_access() %}
             <div class="settings-admin">

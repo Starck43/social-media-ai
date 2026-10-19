@@ -491,6 +491,12 @@ P8-T06 and does not alter its task record.
   macro/initialization, bounded self-role guards, tenancy docs and focused
   regression expectations; owner: remote Notion agent;
   status: READY in PR #222 for owner-authorized merge, not self-accepted DONE.
+  Follow-up: READY — admin-only Platforms navigation entry to the existing
+  `/admin/platform/list` catalog using the active `is_platform_admin` predicate.
+  Based on dev `6a040b0dd980c5c8a899e8b43a11b8f3cc94789c`; template/source diff
+  reviewed only. No tests run at explicit owner request; no backend/schema
+  changes. Owner authorized immediate merge into dev; task acceptance remains
+  separate. PR #222 was already merged, so this uses a small follow-up PR.
   Initial implementation `500900ba86293f063d0bf0bce6f551be788dc023` passed
   109 isolated tests and 104 browser cases; its review follow-up supersedes
   the initial hidden tariff comparison and visible owner role editor.

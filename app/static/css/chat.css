@@ -182,6 +182,9 @@
 .chat-message-body { max-width:85%; min-width:0; }
 .chat-row-assistant .chat-message-body { max-width:100%; }
 .chat-bubble-user { background:var(--ui-accent-soft); color:var(--color-text); border:1px solid var(--color-border); }
+/* A refused turn keeps the text visible and marks it: the user must be able to
+   tell "not sent" from "sent, no answer". */
+.chat-bubble-failed { border-color:#f43f5e; box-shadow:inset 0 0 0 1px #f43f5e; }
 /* Assistant replies render as plain text (Notion-style), no bubble */
 .chat-bubble-agent { background:none; border:0; border-radius:0; padding:0; color:var(--color-text); line-height:1.6; }
 .chat-bubble-agent .msg-prose p { margin:0.45rem 0; }
@@ -212,6 +215,8 @@
 .chat-send:disabled { opacity:.5; cursor:not-allowed; }
 .chat-hint { margin:8px 24px 12px; }
 .chat-notice { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; color:var(--color-text); background:var(--color-surface-secondary); font-size:14px; }
+/* Failures (a refused turn, a limit) must not read like a passive hint. */
+.chat-notice-error { background:#fff1f2; color:#9f1239; border-top:1px solid #fecdd3; }
 .chat-notice button { padding:4px 8px; text-decoration:underline; min-height:0; }
 .ui-shell .chat-input:focus-visible, .ui-shell .chat-send:focus-visible { outline:0 solid var(--ui-accent); outline-offset:2px; }
 @media(max-width:639px) { .chat-input { font-size:16px; } .chat-page { height:calc(100dvh - 230px); } .chat-window { min-height:240px; } .chat-composer { margin-inline:8px; } .chat-message-body { max-width:100%; } .chat-hint { margin-inline:16px; font-size:11px; } }

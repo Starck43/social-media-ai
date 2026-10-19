@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 # private messenger chat maps to a conversation.
 WEB_CHANNEL = "web"
 
+# The daily spend cap answers with this prefix, so the web surface can return a
+# real "limit reached" status (429) instead of a 200 carrying an apology the
+# browser cannot style. The text itself stays readable in any messenger.
+LIMIT_REACHED_PREFIX = "Дневной лимит"
+
 
 def _canonical_permission_key(value: str | None) -> str | None:
     """Resolve a declared tool right through the versioned resource catalog."""
@@ -434,8 +439,15 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         )
 
     limit = await tenant_daily_cost_limit(resolution.tenant_id)
-    if limit and await _cost_today() >= limit:
-        return "Дневной лимит расходов на агента исчерпан. Попробуйте позже."
+    if limit:
+        spent = await _cost_today()
+        if spent >= limit:
+            return (
+                f"{LIMIT_REACHED_PREFIX} расходов на агента исчерпан "
+                f"(${spent:.2f} из ${limit:.2f}).\n"
+                "Новый запрос не отправлен и не оплачен. Подождите до смены дня (UTC) "
+                "или попросите администратора поднять лимит."
+            )
 
     from app.models.managers.agent_session_manager import agent_sessions
 
@@ -660,7 +672,9 @@ async def _run_tool_loop(
             await session.append("assistant", denied)
             return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
-            reply = _join_replies(reply, "Дневной лимит расходов исчерпан во время обработки запроса.")
+            reply = _join_replies(
+                reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса."
+            )
             break
 
         try:

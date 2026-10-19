@@ -28,6 +28,8 @@ SELECTED = {
     "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
     "tool_specs_for",
     "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
+    # The confirmation path resolves a tool's declared right through the catalog.
+    "_canonical_permission_key",
 }
 
 
@@ -69,7 +71,12 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.capture = Capture()
         logger = logging.Logger("isolated-runtime-review", level=logging.DEBUG)
         logger.addHandler(self.capture)
-        self.identity = SimpleNamespace(user=object(), is_owner=False, member_grants=None)
+        # `_run_tool_loop` re-checks the fresh identity each iteration, including
+        # whether the member may use AI chat at all.
+        self.identity = SimpleNamespace(
+            user=object(), user_id=1, is_owner=False, member_grants=None, ai_chat_enabled=True,
+            actor_binding=lambda: {}, approval_binding=lambda: {},
+        )
         self.ns = {
             "Any": Any, "Optional": Optional, "RuntimeIdentity": Any,
             "logger": logger, "logging": logging, "json": json, "re": re,
@@ -79,6 +86,9 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
             "permission_scope": lambda *args, **kwargs: nullcontext(),
             "has_permission_by_codename": lambda *args: True,
             "TOOL_REGISTRY": {}, "_record_usage": AsyncMock(),
+            # The tool loop and the confirmation path run inside a memory actor
+            # scope; the isolated module must be given one, like the real import.
+            "memory_actor_scope": lambda *args, **kwargs: nullcontext(),
         }
         exec(compile(ast.Module(body=definitions, type_ignores=[]), "isolated-runtime.py", "exec"), self.ns)
 
@@ -130,6 +140,9 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.ns["tenant_daily_cost_limit"] = AsyncMock(return_value=None)
         self.ns["pending_rejection"] = lambda *args: None
         self.ns["pending_actor_matches"] = lambda *args: True
+        # The declared right is resolved through the catalog, like the real
+        # helper; a stub keeps the synthetic tool's permission admissable.
+        self.ns["_canonical_permission_key"] = lambda value: value
         self.ns["confirmed_dispatch_scope"] = lambda *args: nullcontext()
         call = AsyncMock(side_effect=RuntimeError(PRIVATE))
         self.ns["call_tool"] = call

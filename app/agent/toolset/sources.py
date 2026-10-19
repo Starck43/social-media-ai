@@ -53,17 +53,22 @@ async def sources_list(only_active: bool = True, limit: int = 20) -> list[dict[s
         else Source.objects.select_related("platform")
     )
     rows = await qs.limit(min(int(limit), 100))
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "platform": s.platform.name if s.platform else "?",
-            "type": s.source_type.name if s.source_type else "?",
-            "external_id": s.external_id,
-            "is_active": s.is_active,
-        }
-        for s in rows
-    ]
+    return [_compact(s) for s in rows]
+
+
+# Rows the model reads. A verbose row (display name, platform label, enum name,
+# active flag) costs tokens on every turn the chat loads this list into context;
+# `docs/AGENT.md` "Aggregate-first analytics tools" sets the same rule for the
+# analytics tools. `source_get` / `source_add` can always reach the full row.
+def _compact(source: Any) -> dict[str, Any]:
+    platform = getattr(getattr(source, "platform", None), "platform_type", None)
+    return {
+        "id": source.id,
+        "name": source.name,
+        "platform": getattr(platform, "db_value", platform) or "?",
+        "type": (source.source_type.name if source.source_type else "?").lower(),
+        "external_id": source.external_id,
+    }
 
 
 @tool(
@@ -101,13 +106,18 @@ async def source_add(platform: str, source_type: str, external_id: str, name: st
     except KeyError:
         return {"error": f"Unknown source_type: {source_type}. Use one of: {', '.join(_TYPE_ALIASES)}"}
 
+    existing = await SourceManager().get_source_by_platform(plat.id, external_id.strip())
+    if existing is not None:
+        # Re-adding is not an error: the caller asked for an outcome ("this
+        # source is in the workspace"), and a duplicate is that outcome.
+        return {"status": "exists", **_compact(existing)}
     source = await SourceManager().create_source(
         platform_id=plat.id,
         source_type=st,
         external_id=external_id.strip(),
         name=name or external_id.strip(),
     )
-    return {"status": "created", "source_id": source.id, "name": source.name}
+    return {"status": "created", **_compact(source)}
 
 
 @tool(

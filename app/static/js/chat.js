@@ -194,10 +194,19 @@ function chatApp() {
                         signal: this.abortController.signal,
                     })
 
-                    const data = await response.json()
+                    let data = {}
+                    try {
+                        data = await response.json()
+                    } catch (parseError) {
+                        // A gateway/HTML error page is still an error with a
+                        // status code, not "the server said nothing".
+                        if (response.ok) throw parseError
+                    }
 
                     if (!response.ok || data.error) {
-                        throw new Error(data.error || 'Ошибка отправки')
+                        const error = new Error(data.error || `Ошибка отправки (${response.status})`)
+                        error.code = data.code || null
+                        throw error
                     }
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
@@ -212,10 +221,14 @@ function chatApp() {
                         return
                     }
                     console.error('Chat send error:', err)
-                    // Remove the optimistic user message and show error
-                    this.messages = this.messages.filter(m => m !== userMsg)
+                    // Keep the user's message visible and mark it as not sent:
+                    // removing it made a refused turn look like the text was
+                    // never typed, which is exactly how a spent daily limit
+                    // looked like a broken form.
+                    userMsg.failed = true
                     textarea.value = text
-                    this.notice = err.message || 'Не удалось отправить сообщение. Текст сохранён, попробуйте ещё раз.'
+                    this.notice = (err.code === 'daily_limit_reached' ? 'Лимит: ' : '') +
+                        (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
                 } finally {
                     this.pending = false

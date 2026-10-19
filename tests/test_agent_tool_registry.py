@@ -247,11 +247,26 @@ async def test_viewer_cannot_execute_action_send(_bound_chats, monkeypatch):
     reaches the model as the tool result.
     """
     from app.models import AgentMessage, AgentSession
+    from app.models.managers.tenant_manager import tenant_users
+
+    # A member needs the separate AI grant to reach the agent at all (owners
+    # have it by default). Without it the turn stops before the tool gate, and
+    # this test would silently assert the wrong boundary. Granting it goes
+    # through the owner's own authority, not around it.
+    #
+    # The grant is applied in the fixture's throwaway workspace only, and the
+    # owner's authority path is a separate contract (it requires the owner's
+    # *web* membership); this test is about the tool gate, so the flag is set
+    # directly on the already-created row.
+    viewer = await tenant_users.get(
+        tenant_id=_bound_chats["tenant_id"], channel="telegram", external_user_id=_bound_chats["viewer_chat"]
+    )
+    await tenant_users.update_by_id(viewer.id, ai_chat_enabled=True)
 
     dispatched: list = []
     _stub_loop(monkeypatch, dispatched, repeat=False)
 
-    await agent_runtime.handle_inbound(
+    reply = await agent_runtime.handle_inbound(
         _inbound("отправь действие 1", chat_id=_bound_chats["viewer_chat"], user_id=_bound_chats["viewer_chat"])
     )
     assert dispatched == [], "the gated tool must never reach the handler"

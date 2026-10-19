@@ -256,7 +256,7 @@ async def chat_send(
             return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
 
-    from app.agent.runtime import handle_web_message
+    from app.agent.runtime import LIMIT_REACHED_PREFIX, handle_web_message
 
     # The runtime reloads the owner membership before it admits a paid turn.
     try:
@@ -268,6 +268,16 @@ async def chat_send(
             role_codename=_membership_role(request),
         )
 
+        # A spent daily cap is not an answer: it is a refusal. It becomes a real
+        # 429 with a code, so the browser styles it as a failure instead of
+        # showing "200 with an apology" where the message looked lost.
+        limit_reached = isinstance(reply, str) and reply.startswith(LIMIT_REACHED_PREFIX)
+        if is_ajax and limit_reached:
+            return JSONResponse(
+                {"error": reply, "code": "daily_limit_reached", "messages": []},
+                status_code=429,
+            )
+
         if reply is None:
             if is_ajax:
                 return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
@@ -275,6 +285,10 @@ async def chat_send(
 
         raw_messages = await _transcript(user.id)
         enriched = _display_transcript(raw_messages)
+
+        if limit_reached:
+            add_flash(request, "error", reply)
+            return RedirectResponse("/app/chat", status_code=302)
 
         if is_ajax:
             return JSONResponse(

@@ -92,13 +92,18 @@
                         <!-- Message bubble -->
                         <div
                             class="text-sm"
-                            :class="message.role === 'user' ? 'rounded-2xl px-3.5 py-2 chat-bubble-user rounded-tr-none' : 'chat-bubble-agent'">
+                            :class="[
+                                message.role === 'user' ? 'rounded-2xl px-3.5 py-2 chat-bubble-user rounded-tr-none' : 'chat-bubble-agent',
+                                message.failed ? 'chat-bubble-failed' : '',
+                            ]">
                             <div x-show="message.role !== 'user'"
                                  class="agent-msg break-words msg-prose"
                                  x-html="renderMarkdown(message.content || '')"></div>
                             <div x-show="message.role === 'user'"
                                  class="whitespace-pre-wrap break-words"
                                  x-text="message.content || ''"></div>
+                            <p x-show="message.failed" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400"
+                               x-text="'Не отправлено — текст сохранён в поле ввода.'"></p>
                         </div>
 
                         <!-- Timestamp + actions -->
@@ -203,7 +208,7 @@
             </button>
         </div>
 
-        <div x-show="notice" x-cloak class="chat-notice" role="status"><span x-text="notice"></span>
+        <div x-show="notice" x-cloak class="chat-notice chat-notice-error" role="alert"><span x-text="notice"></span>
             <button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button>
         </div>
         <div x-show="confirmation" x-cloak class="chat-notice">

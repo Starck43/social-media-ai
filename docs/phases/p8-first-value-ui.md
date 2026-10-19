@@ -485,8 +485,29 @@ P8-T06 and does not alter its task record.
   compact invitation/member controls without changing routes or permissions.
   Depends: none; owns: settings template/CSS, invite partial presentation and
   focused offline settings tests; owner: remote Notion agent;
-  status: IN_PROGRESS. Claimed 2026-10-19 on dev
-  `959a461410aa220cd1059c4e3ee59b55d5f79eaa`; active PRs #216/#217/#220/#221
-  inspected, foreign ownership/evidence preserved. No runtime/DB changes planned.
+  status: READY for coordinator review in PR #222; implementation
+  `500900ba86293f063d0bf0bce6f551be788dc023`. Synchronized dev
+  `959a461410aa220cd1059c4e3ee59b55d5f79eaa` and active PRs
+  #216/#217/#220/#221 rechecked 2026-10-19; foreign owners/evidence preserved.
+  Sandbox evidence at that exact implementation SHA: 109 isolated pytest
+  checks passed (0 failed/skipped) across `test_settings_layout.py`,
+  `test_settings_scopes.py` and `test_template_autoescape.py`, with
+  `--noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header`.
+  `tests/settings_layout_fixtures.py` plus `tests/web_settings_layout.cjs`
+  passed 104 synthetic browser cases: 13 settings states, widths
+  375/390/768/1440, light/dark. All requests intercepted or aborted; checked
+  navigation, model-probe/save separation, native validation, role/AI/access
+  forms, confirmation cancel/accept, lazy invites, issue/revoke/result and
+  control overflow. Representative route, mobile/desktop, dark/light,
+  expanded/empty/error and dialog screenshots visually inspected; long model
+  labels remain two lines. Six new text/accent contrast pairs exceed 4.5:1.
+  Environment: isolated venv, Python 3.13.14, pytest 9.1.1,
+  pytest-asyncio 1.4.0, Jinja2 3.1.6, Playwright 1.63.0, Chromium 153.0.8010.12.
+  Black/isort, JS syntax and diff checks passed. Two stale settings-test user
+  fixtures gained the current shell's `role` field; no assertions weakened.
+  No handler, permission policy, schema or production dependency changed;
+  no application/runtime start, real DB/provider, migration or deployment.
+  Synthetic checks are not full-suite/real permission/persistence acceptance.
+  READY is not DONE or merge approval; coordinator accepts the exact head.
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

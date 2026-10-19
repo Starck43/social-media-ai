@@ -166,11 +166,22 @@ GET /api/v1/health
 }
 ```
 
-No authentication required. This legacy probe has no bounded timeout and returns
-raw exception text with HTTP 500 on failure. Do not use it as the production
-readiness contract: root `/readyz` and `/health` return generic 200/503 responses
-with a two-second DB probe; `/livez` never queries the DB. Legacy-probe redaction
-is an open audit follow-up, not a code change made by this documentation update.
+No authentication required. This legacy probe bounds its ORM read to two seconds
+and returns HTTP 500 with `{"detail": "Database connection error"}` for DB
+errors and timeouts, never the internal exception or DSN. Cancellation propagates;
+the timeout assumes a cooperative async driver, not a hard wall-clock deadline
+for blocking or cancellation-suppressing code.
+
+The hidden `GET /api/v1/test-db` probe keeps its Bearer authentication dependency
+and successful `{"database": "connected", "permissions": <count>}` contract,
+including zero counts. It uses the same bounded, generic HTTP 500 failure.
+`/api/v1/test-auth` and all existing router auth dependencies are unchanged.
+
+Do not use these legacy probes as the production readiness contract: root
+`/readyz` and `/health` retain generic 200/503 responses with a two-second DB
+probe; `/livez` never queries the DB. `app/core/health.py` is unchanged.
+See [isolated verification and acceptance handoff](validation/legacy-api-db-probes.md)
+for exact source revisions, commands and the remaining real-environment checks.
 
 ---
 

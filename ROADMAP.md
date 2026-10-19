@@ -68,6 +68,12 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 - [ ] P8-T21 — compact inline task source picker → [p8](docs/phases/p8-first-value-ui.md) — $local — READY
 
+- [ ] P5-T05 — bounded-output map-reduce analysis pipeline (any model, any volume) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — IN_PROGRESS
+
+- [ ] P5-T06 — theme-chain similarity SQL fixed for json main_topics (was silently failing since Oct 1) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
+
+- [ ] P5-T07 — text-only scenarios analyze to completion (media ignored per scenario models, text failover, daily-partial coverage merge) → [p5](docs/phases/p5-ai-boundaries.md) — $local (opencode) — READY
+
 ## Questions
 
 <!-- Q-<n> — question; context: <link/file>; asked by: <agent>; status: OPEN|RESOLVED(delete row) -->

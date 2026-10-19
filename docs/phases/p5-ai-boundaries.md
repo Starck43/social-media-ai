@@ -90,6 +90,62 @@ safely.
   receipt design/implementation and focused tests; owner: codex-analysis-receipts;
   status: IN_PROGRESS.
 
+- [ ] P5-T05 — bounded-output map-reduce analysis pipeline so any text model,
+  including small output caps (observed: `zai-org/GLM-5.3-Flash` truncated at
+  2048 completion tokens), can process any staged volume: per-item map
+  extraction with a fixed compact output contract, a bounded reduce/aggregation
+  stage, truncation visibility (`finish_reason`/effective max tokens) in the
+  attempt journal, output-budget chunk descent with per-chunk retry, drain loop
+  bounded by a per-run token/cost/time budget; the whole-batch single request
+  path stays until all slices land. Design: docs/design/analysis-map-reduce.md;
+  accept: truncated response no longer zeroes the whole batch, per-item coverage
+  is visible in job progress, focused tests via R10 (mocked LLM), costs stay
+  journaled and capped; depends: P5-T04 (receipts), P8-T22 (shared
+  analyzer/handler files); owns: design doc, app/services/ai/analyzer.py,
+  app/services/ai/attempt_journal.py, app/jobs/handlers.py; owner: $local
+  (opencode); status: IN_PROGRESS (design)
+
+- [ ] P5-T06 — theme-chain similarity search works against `ai_analytics.main_topics`
+  (json column): the raw SQL silently failed on every call since Oct 1 — an
+  uninterpolated `{settings.DB_SCHEMA}` placeholder plus text[]-only array
+  operators (`&`, `|`) that PostgreSQL does not define for json or any array
+  type — so analyses never auto-linked into topic chains and each run logged
+  `ProgrammingError` noise. Fix: expand the json column into a text[]
+  per row (`json_array_elements_text` with a `json_typeof` array guard),
+  compute the Jaccard ratio via `unnest` INTERSECT/UNION counts, keep only the
+  provider-valid overlap operator `&&`, cast array parameters `::text[]`.
+  Verified read-only on live data: record 1131 self-match similarity 1.0,
+  record 1132 found at 0.67 for the live prompt theme set; 77 no-DB tests
+  pass via `pytest --noconftest` (new `tests/test_theme_matcher_sql.py` pins
+  the SQL contract); full DB pytest scope still blocked by the shared
+  test-schema sync refusal (separate issue, R8). Evidence: fix diff in
+  `app/services/ai/theme_matcher.py`, SQL probe outputs vs live workspace;
+  depends: none; owns: app/services/ai/theme_matcher.py,
+  tests/test_theme_matcher_sql.py; owner: $local (opencode); status: READY
+
+- [ ] P5-T07 — analysis runs to completion for text-only scenarios: staged
+  attachments without a usable URL are not media for analysis (collector
+  found none — VK raw-content audit Q-2), so a post retires on its text
+  coverage instead of being withheld forever; a media modality without a
+  configured model is ignored rather than a coverage gap; the text stage
+  walks a bounded queue of active capable models when the scenario model
+  fails (failover verified live: GLM/River refused → Qwen/LLM Tech
+  succeeded); a fuller same-fingerprint run merges its coverage hashes into
+  the existing daily partial row instead of being dropped, so staged records
+  retire and the run stops burning attempts; source page shows one merged
+  backlog card with a single action button. Evidence: live CLI runs —
+  raw_processed 100/100 then backlog window drained to 0 (`in_window: 0`);
+  debug-traced failover path (`text_analysis_attempt_unusable` → completed
+  via fallback); new no-DB tests
+  `tests/test_media_coverage_semantics.py` (86 total pass via
+  `pytest --noconftest`); depends: P5-T04, P8-T22; owns:
+  app/services/ai/content_classifier.py, app/services/ai/analyzer.py,
+  app/models/managers/llm_model_manager.py,
+  app/models/managers/ai_analytics_manager.py, app/services/ai/theme_matcher.py,
+  app/web/templates/web/source_detail.html,
+  tests/test_media_coverage_semantics.py, tests/test_theme_matcher_sql.py;
+  owner: $local (opencode); status: READY
+
 ## Phase approval
 
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

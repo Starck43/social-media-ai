@@ -1,6 +1,6 @@
 {% include "web/_flashes.html" %}
         {% if issued_invite %}
-            <div class="mt-6 rounded-2xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/30 p-5" data-issued-invite>
+            <div class="mt-4 rounded-xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/30 p-5" data-issued-invite>
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Приглашение создано</h3>
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
                     Уровень: {{ issued_invite.role }} · действует до {{ issued_invite.expires }} · одно использование.
@@ -18,7 +18,7 @@
                         <div>
                             <label for="invite-link" class="text-xs text-slate-600 dark:text-slate-400">Ссылка</label>
                             <input id="invite-link" readonly value="{{ issued_invite.link }}" onclick="this.select()"
-                                   class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none">
+                                   class="mt-1 min-h-11 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none">
                         </div>
                     </div>
                 </div>
@@ -26,60 +26,48 @@
         {% endif %}
         {% if perms.can_manage_workspace(tenant.id if tenant else none) %}
             <form method="post" action="/app/settings/invites"
-                  class="mt-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
+                  class="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Пригласить участника</h3>
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                    Ссылка и QR-код одноразовые. Уровень доступа можно поменять позже в таблице ниже.
+                    Ссылка и QR-код одноразовые. После вступления роль можно изменить в разделе «Команда».
                 </p>
                 <div class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
                     <label class="block text-xs text-slate-600 dark:text-slate-400">Уровень доступа
-                        <select name="role" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
+                        <select name="role" class="mt-1 min-h-11 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
                             {% for level in invite_roles %}
                                 <option value="{{ level.key }}" {% if level.key == invite_default %}selected{% endif %}>{{ level.label }} — {{ level.hint }}</option>
                             {% endfor %}
                         </select>
                     </label>
                     <label class="block text-xs text-slate-600 dark:text-slate-400">Срок
-                        <select name="days" class="mt-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
+                        <select name="days" class="mt-1 min-h-11 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm outline-none focus:border-cyan-500">
                             {% for d in invite_days %}
                                 <option value="{{ d }}" {% if d == 7 %}selected{% endif %}>{{ d }} {{ 'день' if d == 1 else 'дней' }}</option>
                             {% endfor %}
                         </select>
                     </label>
-                    <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">Создать приглашение</button>
+                    <button class="min-h-11 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">Создать приглашение</button>
                 </div>
             </form>
             {% if open_invites %}
-                <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50" data-open-invites>
+                <div class="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50" data-open-invites>
                     <h3 class="px-5 pt-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Активные приглашения</h3>
-                    <table class="mt-2 w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-slate-200 dark:border-slate-800 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                <th class="px-5 py-3">Уровень</th>
-                                <th class="px-5 py-3">Создано</th>
-                                <th class="px-5 py-3">Действует до</th>
-                                <th class="px-5 py-3">Использовано</th>
-                                <th class="px-5 py-3 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for inv in open_invites %}
-                                <tr class="border-b border-slate-200 dark:border-slate-800/50 last:border-0">
-                                    <td class="px-5 py-3 text-slate-800 dark:text-slate-200">{{ inv.role }}</td>
-                                    <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ inv.created }}</td>
-                                    <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ inv.expires }}</td>
-                                    <td class="px-5 py-3 text-slate-600 dark:text-slate-400">{{ inv.uses }}</td>
-                                    <td class="px-5 py-3 text-right">
-                                        <form method="post" action="/app/settings/invites/{{ inv.id }}/revoke" class="inline">
-                                            <input type="hidden" name="_csrf" value="{{ csrf }}">
-                                            <button class="rounded-lg border border-rose-300 dark:border-rose-800 px-3 py-1 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30">Отозвать</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <ul class="divide-y divide-slate-200 dark:divide-slate-800 px-5">
+                        {% for inv in open_invites %}
+                        <li class="flex flex-wrap items-center justify-between gap-3 py-4">
+                            <div class="min-w-0 break-words text-sm">
+                                <p class="font-medium">{{ inv.role }}</p>
+                                <p class="mt-1 text-slate-600 dark:text-slate-400">До {{ inv.expires }} · использовано {{ inv.uses }}</p>
+                                <p class="mt-1 text-slate-600 dark:text-slate-400">Создано {{ inv.created }}</p>
+                            </div>
+                            <form method="post" action="/app/settings/invites/{{ inv.id }}/revoke" data-confirm="Отозвать приглашение? По этой ссылке больше нельзя будет вступить в пространство.">
+                                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                <button class="ui-control min-h-11 text-rose-700 dark:text-rose-300">Отозвать</button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
                 </div>
             {% endif %}
         {% endif %}

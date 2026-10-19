@@ -479,4 +479,14 @@ P8-T06 and does not alter its task record.
   Accepted this bounded no-DB contract and removed its open registry row;
   persisted worker/billing acceptance and phase approval are not implied.
 
+- [ ] P8-T25 — settings information layout and compact member access; accept:
+  replace the two segment rows with one settings navigation, describe each
+  section, align forms/buttons, put the model test beside its selector, and
+  compact invitation/member controls without changing routes or permissions.
+  Depends: none; owns: settings template/CSS, invite partial presentation and
+  focused offline settings tests; owner: remote Notion agent;
+  status: IN_PROGRESS. Claimed 2026-10-19 on dev
+  `959a461410aa220cd1059c4e3ee59b55d5f79eaa`; active PRs #216/#217/#220/#221
+  inspected, foreign ownership/evidence preserved. No runtime/DB changes planned.
+
 - [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —

@@ -18,6 +18,8 @@ Rules for every agent (Codex, OpenCode, Kilo, remote):
 
 ## Tasks
 
+- [ ] P8-T25 — settings information layout and compact member access → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — IN_PROGRESS
+
 - [ ] P8-T22 — unified social analysis tasks and operator web journey → [p8](docs/phases/p8-first-value-ui.md) — owner: codex-social-analysis — BLOCKED (persisted acceptance: missing test-schema receipts)
 
 - [ ] P8-T20 — provider cost evidence and compact diagnostic controls → [p8](docs/phases/p8-first-value-ui.md) — remote Notion agent — BLOCKED
